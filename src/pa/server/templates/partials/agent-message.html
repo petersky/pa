@@ -1,0 +1,6 @@
+<div class="chat-message chat-message-{{ role }}">
+  <div class="chat-bubble">{{ content }}</div>
+  {% if reply %}
+  <div class="chat-bubble chat-bubble-agent">{{ reply }}</div>
+  {% endif %}
+</div>

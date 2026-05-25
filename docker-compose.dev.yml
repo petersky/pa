@@ -1,0 +1,23 @@
+services:
+  pa-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "8081:8081"
+    volumes:
+      - .:/app
+      - pa-dev-venv:/app/.venv
+      - ./.dev/pa-data:/data
+    environment:
+      PA_DATA_DIR: /data
+      PA_INSTANCE_NAME: dev
+      PA_HOST: 0.0.0.0
+      PA_PORT: "8081"
+      PA_AGENT_ENABLED: "false"
+      PA_DEBUG: "true"
+      PA_DEV_TOOLS: "true"
+    command: ["uv", "run", "pa", "serve", "--host", "0.0.0.0", "--port", "8081", "--reload", "--debug"]
+
+volumes:
+  pa-dev-venv:

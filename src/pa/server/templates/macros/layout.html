@@ -1,0 +1,28 @@
+{# Three-column page layout: optional left sidebar, main panel, optional right sidebar #}
+
+{% macro page_layout(left=None, main=None, right=None, class='') %}
+<div class="page-layout {{ class }}">
+  {% if left %}
+  <aside class="page-sidebar page-sidebar-left">
+    {{ left }}
+  </aside>
+  {% endif %}
+  <section class="page-main">
+    {{ main }}
+  </section>
+  {% if right %}
+  <aside class="page-sidebar page-sidebar-right">
+    {{ right }}
+  </aside>
+  {% endif %}
+</div>
+{% endmacro %}
+
+{% macro panel(title=None, class='') %}
+<div class="panel {{ class }}">
+  {% if title %}
+  <div class="panel-header"><h2>{{ title }}</h2></div>
+  {% endif %}
+  {{ caller() }}
+</div>
+{% endmacro %}

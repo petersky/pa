@@ -1,0 +1,16 @@
+{
+  "name": "PA Development",
+  "dockerComposeFile": "../docker-compose.dev.yml",
+  "service": "pa-dev",
+  "workspaceFolder": "/app",
+  "forwardPorts": [8081],
+  "postCreateCommand": "uv sync && pa init --name dev --data-dir /data || true",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "charliermarsh.ruff"
+      ]
+    }
+  }
+}

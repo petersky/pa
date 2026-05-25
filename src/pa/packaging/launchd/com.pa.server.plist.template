@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.pa.server</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{{PA_BIN}}</string>
+        <string>serve</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PA_DATA_DIR</key>
+        <string>{{PA_DATA_DIR}}</string>
+        <key>PA_HOST</key>
+        <string>{{PA_HOST}}</string>
+        <key>PA_PORT</key>
+        <string>{{PA_PORT}}</string>
+        <key>PA_INSTANCE_NAME</key>
+        <string>{{PA_INSTANCE_NAME}}</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>{{PA_LOG_DIR}}/server.log</string>
+    <key>StandardErrorPath</key>
+    <string>{{PA_LOG_DIR}}/server.err.log</string>
+</dict>
+</plist>

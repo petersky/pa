@@ -1,0 +1,18 @@
+[data-theme="pa"][data-appearance="dark"] {
+  color-scheme: dark;
+
+  --pa-bg: #0f1117;
+  --pa-surface: #1a1d27;
+  --pa-surface-raised: #222633;
+  --pa-border: #2a2f3d;
+  --pa-text: #e8eaef;
+  --pa-text-muted: #8b93a7;
+  --pa-accent: #6c9eff;
+  --pa-accent-hover: #8bb3ff;
+  --pa-accent-subtle: #1e293b;
+  --pa-ok: #4ade80;
+  --pa-warn: #fbbf24;
+  --pa-danger: #f87171;
+  --pa-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
+  --pa-focus: 0 0 0 3px rgb(108 158 255 / 0.35);
+}

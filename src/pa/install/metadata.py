@@ -1,0 +1,40 @@
+"""Install metadata persisted on the host."""
+
+from __future__ import annotations
+
+import json
+from datetime import UTC, datetime
+from pathlib import Path
+
+from pydantic import BaseModel, Field
+
+from pa import __version__
+
+
+class InstallMetadata(BaseModel):
+    version: str = __version__
+    installed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    method: str = "uv-tool"
+    channel: str = "github"
+    pa_bin: str | None = None
+
+
+def install_metadata_path(data_dir: Path) -> Path:
+    return data_dir / "install.json"
+
+
+def load_install_metadata(data_dir: Path) -> InstallMetadata | None:
+    path = install_metadata_path(data_dir)
+    if not path.exists():
+        return None
+    try:
+        return InstallMetadata.model_validate_json(path.read_text())
+    except (json.JSONDecodeError, ValueError):
+        return None
+
+
+def save_install_metadata(data_dir: Path, metadata: InstallMetadata) -> InstallMetadata:
+    data_dir.mkdir(parents=True, exist_ok=True)
+    path = install_metadata_path(data_dir)
+    path.write_text(metadata.model_dump_json(indent=2))
+    return metadata

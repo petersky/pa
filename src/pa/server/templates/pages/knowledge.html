@@ -1,0 +1,35 @@
+{% from "macros/layout.html" import page_layout %}
+
+{% set left %}
+<div class="panel">
+  <div class="panel-header"><h2>Sources</h2></div>
+  <nav class="sidebar-menu">
+    <button class="sidebar-menu-item active"
+            hx-get="/partials/knowledge"
+            hx-target="#knowledge-main-list"
+            hx-swap="innerHTML">All sessions</button>
+  </nav>
+</div>
+{% endset %}
+
+{% set main %}
+<div class="panel panel-fill">
+  <div class="panel-header">
+    <h2>Knowledge</h2>
+    <button class="ghost" hx-get="/partials/knowledge"
+            hx-target="#knowledge-main-list" hx-swap="innerHTML">Refresh</button>
+  </div>
+  <div id="knowledge-main-list" class="scroll-region">
+    {% include "partials/knowledge.html" %}
+  </div>
+</div>
+{% endset %}
+
+{% set right %}
+<div class="panel">
+  <div class="panel-header"><h2>Linked items</h2></div>
+  <p class="muted">{{ items | length }} items tracked. Knowledge entries link to sessions and items as agents work.</p>
+</div>
+{% endset %}
+
+{{ page_layout(left=left, main=main, right=right, class='page-knowledge') }}

@@ -1,0 +1,19 @@
+FROM ghcr.io/astral-sh/uv:python3.14-bookworm
+
+WORKDIR /app
+
+RUN groupadd --gid 1000 pa && \
+    useradd --uid 1000 --gid pa --create-home pa
+
+COPY pyproject.toml README.md ./
+COPY src ./src
+
+RUN uv sync
+
+RUN mkdir -p /data && chown pa:pa /data
+
+USER pa
+
+EXPOSE 8081
+
+CMD ["uv", "run", "pa", "serve", "--host", "0.0.0.0", "--port", "8081", "--reload", "--debug"]

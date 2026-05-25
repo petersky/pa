@@ -1,0 +1,55 @@
+{% from "macros/icons.html" import icon %}
+
+<div class="chrome-actions">
+  <span class="instance-indicator icon-btn"
+        title="Instance: {{ instance_name }}"
+        aria-label="Instance: {{ instance_name }}">
+    {{ icon('instance', 'icon icon-sm') }}
+  </span>
+
+  {% if agent_connected %}
+  <a href="/agent"
+     class="status-btn online"
+     title="Agent online — open chat"
+     hx-get="/agent"
+     hx-target="#app-view"
+     hx-push-url="true"
+     hx-swap="innerHTML">
+    {{ icon('agent', 'icon icon-sm') }}
+    <span class="status-dot"></span>
+    <span class="status-label">Agent</span>
+  </a>
+  {% else %}
+  <button type="button" class="status-btn offline" disabled title="Agent offline">
+    {{ icon('agent', 'icon icon-sm') }}
+    <span class="status-dot"></span>
+    <span class="status-label">Offline</span>
+  </button>
+  {% endif %}
+
+  <button type="button"
+          id="pa-theme-toggle"
+          class="icon-btn"
+          title="Theme: {{ appearance }}"
+          aria-label="Toggle theme appearance"
+          data-appearance="{{ appearance }}">
+    {% if appearance == 'light' %}
+      {{ icon('theme-light') }}
+    {% elif appearance == 'dark' %}
+      {{ icon('theme-dark') }}
+    {% else %}
+      {{ icon('theme-system') }}
+    {% endif %}
+  </button>
+
+  <a href="/settings"
+     class="icon-btn{% if active_path == '/settings' %} active{% endif %}"
+     title="Settings"
+     aria-label="Settings"
+     hx-get="/settings"
+     hx-target="#app-view"
+     hx-push-url="true"
+     hx-swap="innerHTML">
+    {{ icon('gear') }}
+  </a>
+</div>

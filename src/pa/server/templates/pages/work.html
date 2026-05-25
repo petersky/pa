@@ -1,0 +1,45 @@
+{% from "macros/layout.html" import page_layout %}
+
+{% set left %}
+<div class="panel">
+  <div class="panel-header"><h2>Filter</h2></div>
+  <nav class="sidebar-menu">
+    <button class="sidebar-menu-item active"
+            hx-get="/partials/items"
+            hx-target="#work-items-list"
+            hx-swap="innerHTML">All items</button>
+    {% for k in kinds %}
+    <button class="sidebar-menu-item"
+            hx-get="/partials/items?kind={{ k.value }}"
+            hx-target="#work-items-list"
+            hx-swap="innerHTML">{{ k.value | capitalize }}</button>
+    {% endfor %}
+  </nav>
+</div>
+{% endset %}
+
+{% set main %}
+<div class="panel panel-fill">
+  <div class="panel-header">
+    <h2>Work</h2>
+    <a href="/"
+       class="text-btn"
+       hx-get="/"
+       hx-target="#app-view"
+       hx-push-url="true"
+       hx-swap="innerHTML">+ Capture new</a>
+  </div>
+  <div id="work-items-list" class="scroll-region">
+    {% include "partials/items.html" %}
+  </div>
+</div>
+{% endset %}
+
+{% set right %}
+<div class="panel">
+  <div class="panel-header"><h2>About</h2></div>
+  <p class="muted">Goals, tasks, projects, and concerns — filter from the left, capture from Home.</p>
+</div>
+{% endset %}
+
+{{ page_layout(left=left, main=main, right=right, class='page-work') }}

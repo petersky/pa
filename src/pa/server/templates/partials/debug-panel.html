@@ -1,0 +1,18 @@
+<details class="debug-panel" open>
+  <summary>Developer tools</summary>
+  <div class="debug-grid">
+    <section>
+      <h3>Modules ({{ modules | length }})</h3>
+      <pre>{{ modules | tojson(indent=2) }}</pre>
+    </section>
+    <section>
+      <h3>Hooks</h3>
+      <pre>{{ hooks | tojson(indent=2) }}</pre>
+      {% if recent_events %}
+      <h3>Recent events</h3>
+      <pre>{% for event in recent_events %}{{ event.name }} @ {{ '%.3f' | format(event.timestamp) }}
+{% endfor %}</pre>
+      {% endif %}
+    </section>
+  </div>
+</details>

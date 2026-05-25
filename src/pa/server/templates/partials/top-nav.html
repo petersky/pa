@@ -1,0 +1,15 @@
+{% from "macros/icons.html" import icon %}
+
+<nav class="top-nav" aria-label="Main">
+  {% for nav_page in nav_pages %}
+  <a href="{{ nav_page.path }}"
+     class="nav-btn{% if active_path == nav_page.path %} active{% endif %}"
+     hx-get="{{ nav_page.path }}"
+     hx-target="#app-view"
+     hx-push-url="true"
+     hx-swap="innerHTML">
+    {{ icon(nav_page.icon) }}
+    <span>{{ nav_page.label }}</span>
+  </a>
+  {% endfor %}
+</nav>

@@ -1,0 +1,18 @@
+{% if items %}
+<ul class="item-list">
+  {% for item in items %}
+  <li class="item item-{{ item.kind.value }}">
+    <div class="item-meta">
+      <span class="badge">{{ item.kind.value }}</span>
+      <span class="status status-{{ item.status.value }}">{{ item.status.value }}</span>
+    </div>
+    <h3>{{ item.title }}</h3>
+    {% if item.body %}
+    <p>{{ item.body }}</p>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="empty">Nothing captured yet.</p>
+{% endif %}

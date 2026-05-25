@@ -1,0 +1,59 @@
+{% from "macros/layout.html" import page_layout %}
+
+{% set left %}
+<div class="panel">
+  <div class="panel-header"><h2>Capture</h2></div>
+  <form method="post" action="/items" class="stack">
+    <label>
+      Kind
+      <select name="kind" required>
+        {% for k in kinds %}
+        <option value="{{ k.value }}">{{ k.value }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      Title
+      <input type="text" name="title" required placeholder="What needs attention?">
+    </label>
+    <label>
+      Details
+      <textarea name="body" rows="4" placeholder="Context, intent, constraints…"></textarea>
+    </label>
+    <button type="submit">Add</button>
+  </form>
+</div>
+{% endset %}
+
+{% set main %}
+<div class="panel">
+  <div class="panel-header">
+    <h2>Recent items</h2>
+    <div class="filters">
+      <button class="ghost" hx-get="/partials/items" hx-target="#home-items-list" hx-swap="innerHTML">All</button>
+      {% for k in kinds %}
+      <button class="ghost" hx-get="/partials/items?kind={{ k.value }}"
+              hx-target="#home-items-list" hx-swap="innerHTML">{{ k.value }}</button>
+      {% endfor %}
+    </div>
+  </div>
+  <div id="home-items-list">
+    {% include "partials/items.html" %}
+  </div>
+</div>
+{% endset %}
+
+{% set right %}
+<div class="panel">
+  <div class="panel-header">
+    <h2>Knowledge</h2>
+    <button class="ghost" hx-get="/partials/knowledge"
+            hx-target="#home-knowledge-list" hx-swap="innerHTML">Refresh</button>
+  </div>
+  <div id="home-knowledge-list">
+    {% include "partials/knowledge.html" %}
+  </div>
+</div>
+{% endset %}
+
+{{ page_layout(left=left, main=main, right=right) }}

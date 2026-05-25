@@ -1,0 +1,48 @@
+{% from "macros/layout.html" import page_layout %}
+
+{% set main %}
+<div class="panel">
+  <div class="panel-header"><h2>Appearance</h2></div>
+  <p class="muted">Use the theme icon in the header to cycle: system → light → dark.</p>
+  <dl class="settings-dl">
+    <dt>Current mode</dt>
+    <dd>{{ prefs.appearance.value }}</dd>
+    <dt>Theme</dt>
+    <dd>{{ prefs.theme_id }}</dd>
+  </dl>
+</div>
+
+<div class="panel">
+  <div class="panel-header"><h2>Instance</h2></div>
+  <dl class="settings-dl">
+    <dt>Name</dt>
+    <dd>{{ settings.instance_name }}</dd>
+    <dt>ID</dt>
+    <dd><code>{{ settings.instance_id }}</code></dd>
+    <dt>Data directory</dt>
+    <dd><code>{{ settings.data_dir }}</code></dd>
+    <dt>Server</dt>
+    <dd><code>{{ settings.host }}:{{ settings.port }}</code></dd>
+    <dt>Agent</dt>
+    <dd>{{ 'enabled' if settings.agent_enabled else 'disabled' }}</dd>
+    <dt>Debug</dt>
+    <dd>{{ 'on' if settings.debug else 'off' }}</dd>
+  </dl>
+</div>
+{% endset %}
+
+{% set right %}
+<div class="panel">
+  <div class="panel-header"><h2>Themes</h2></div>
+  <ul class="theme-list">
+    {% for t in themes %}
+    <li>
+      <strong>{{ t.name }}</strong>
+      <span class="muted">{{ t.description }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endset %}
+
+{{ page_layout(main=main, right=right, class='page-settings') }}

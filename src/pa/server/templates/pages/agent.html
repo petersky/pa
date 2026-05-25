@@ -1,0 +1,51 @@
+{% from "macros/layout.html" import page_layout %}
+{% from "macros/icons.html" import icon %}
+
+{% set main %}
+<div class="panel panel-fill agent-chat">
+  {% if agent_connected %}
+  <div class="panel-header">
+    <h2>Instance agent</h2>
+    <span class="badge badge-ok">Online</span>
+  </div>
+  <div id="agent-messages" class="chat-messages scroll-region">
+    <p class="muted chat-placeholder">Send a message to the always-on instance agent.</p>
+  </div>
+  <form class="chat-input stack"
+        hx-post="/partials/agent/prompt"
+        hx-target="#agent-messages"
+        hx-swap="beforeend">
+    <label class="sr-only" for="agent-message">Message</label>
+    <textarea id="agent-message" name="message" rows="2" required
+              placeholder="Message the instance agent…"></textarea>
+    <button type="submit">Send</button>
+  </form>
+  {% else %}
+  <div class="empty-state">
+    {{ icon('agent', 'icon icon-lg') }}
+    <h2>Agent offline</h2>
+    <p class="muted">The instance agent is not connected. Enable the agent and restart PA to chat.</p>
+  </div>
+  {% endif %}
+</div>
+{% endset %}
+
+{% set right %}
+<div class="panel">
+  <div class="panel-header"><h2>Session</h2></div>
+  {% if sessions %}
+  <ul class="session-list">
+    {% for s in sessions %}
+    <li>
+      <strong>{{ s.agent_name }}</strong>
+      <span class="muted">{{ s.status }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted">No agent sessions yet.</p>
+  {% endif %}
+</div>
+{% endset %}
+
+{{ page_layout(main=main, right=right, class='page-agent') }}

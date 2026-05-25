@@ -1,0 +1,9 @@
+{
+  "id": "pa",
+  "name": "PA",
+  "description": "Default PA theme — calm, focused, readable",
+  "variants": [
+    {"id": "light", "label": "Light"},
+    {"id": "dark", "label": "Dark"}
+  ]
+}
