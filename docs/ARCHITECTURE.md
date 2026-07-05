@@ -94,7 +94,30 @@ Pages register via `PageRegistry` (`pa/core/ui/pages.py`). See `UiShellModule` a
 | Path | Page |
 |------|------|
 | `/` | Home |
-| `/work` | Work items |
+| `/work` | Work board (cards by lane) |
 | `/knowledge` | Knowledge |
+| `/fleet` | Fleet and realm management |
 | `/agent` | Agent chat (via status button when online) |
 | `/settings` | Settings (via gear icon) |
+
+## Fleet, realms, and sync
+
+PA separates **who runs instances** from **what card state is shared**:
+
+| Term | Meaning |
+|------|---------|
+| **Fleet** | Instances a user owns and admins |
+| **Realm** | Sync namespace for cards (universe of shared state) |
+| **Instance** | One PA install |
+| **Membership** | Principal or fleet bound to a realm with a role |
+| **Relay** | Instance that forwards sync between network partitions |
+
+Card state is stored as an append-only **event log** (git-inspired content-addressed objects) with a SQLite **projection** for fast reads. Instances sync via `POST /api/sync/*` endpoints.
+
+Configure with:
+
+- `PA_FLEET_ID`, `PA_SUBSCRIBED_REALMS`, `PA_ZONE`, `PA_CAPABILITIES`, `PA_RELAY_ENABLED`
+- `PA_SYNC_TOKEN` — bearer token for instance-to-instance auth (T1)
+- `PA_PEERS` — comma-separated peer URLs
+
+CLI: `pa fleet list`, `pa realm list`, `pa peers`, `pa sync status`, `pa login`

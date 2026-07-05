@@ -1,0 +1,61 @@
+{% from "macros/layout.html" import page_layout %}
+
+{% set main %}
+<div class="panel">
+  <div class="panel-header">
+    <h2>Fleet — {{ fleet_id }}</h2>
+    <button class="ghost" hx-get="/api/fleet/health" hx-swap="none">Refresh health</button>
+  </div>
+  <p class="muted">Zone: {{ zone }} · Manage instances from this UI or via <code>pa fleet</code>.</p>
+
+  <h3>Instances</h3>
+  {% if fleet_instances %}
+  <table class="data-table">
+    <thead>
+      <tr><th>Name</th><th>URL</th><th>Zone</th><th>Capabilities</th><th>Status</th></tr>
+    </thead>
+    <tbody>
+      {% for inst in fleet_instances %}
+      <tr>
+        <td>{{ inst.name }}</td>
+        <td><a href="{{ inst.url }}" target="_blank">{{ inst.url }}</a></td>
+        <td>{{ inst.zone }}</td>
+        <td>{{ inst.capabilities | join(', ') }}</td>
+        <td>{% if inst.healthy %}<span class="status status-active">up</span>{% else %}<span class="status status-blocked">down</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">No fleet instances registered.</p>
+  {% endif %}
+
+  <h3>Realms</h3>
+  <ul class="item-list">
+    {% for realm in realms %}
+    <li class="item"><h3>{{ realm.name or realm.id }}</h3><span class="badge">{{ realm.id }}</span></li>
+    {% endfor %}
+  </ul>
+
+  <h3>Peer routes</h3>
+  {% if peer_routes %}
+  <ul class="item-list">
+    {% for route in peer_routes %}
+    <li class="item">
+      <span class="badge">{{ route.realm_id }}</span>
+      {{ route.target_url }}
+      <span class="muted">({{ route.mode.value }}{% if route.zone %}, {{ route.zone }}{% endif %})</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted">Configure <code>PA_PEERS</code> or register remote instances.</p>
+  {% endif %}
+
+  <h3>Add instance</h3>
+  <p class="muted">Generate a join token: <code>pa fleet join-token</code>, then on the remote host:</p>
+  <pre>PA_FLEET_TOKEN=&lt;token&gt; curl .../install-remote.sh | bash</pre>
+</div>
+{% endset %}
+
+{{ page_layout(main=main, class='page-fleet') }}

@@ -17,7 +17,14 @@ def health() -> dict[str, str]:
 @router.get("/instance")
 def instance_info(request: Request) -> dict:
     registry = request.app.state.ctx.require_service("peer_registry")
-    return registry.self_info.model_dump()
+    log = request.app.state.ctx.services.get("event_log")
+    sync_heads = {}
+    if log:
+        for ref in log.list_refs():
+            sync_heads[ref.realm_id] = ref.head_hash
+    info = registry.self_info
+    info.sync_head = sync_heads
+    return info.model_dump()
 
 
 @router.get("/peers")
@@ -38,11 +45,31 @@ async def agent_prompt(request: Request, body: dict) -> dict:
     message = body.get("message", "").strip()
     if not message:
         raise HTTPException(status_code=400, detail="message required")
-    item_id = body.get("item_id")
+    card_id = body.get("card_id") or body.get("item_id")
+    principal_id = body.get("principal_id", "user:local")
+    target_instance_id = body.get("target_instance_id")
+    realm_id = body.get("realm_id")
+
     agent = request.app.state.ctx.require_service("instance_agent")
-    if not agent.connected:
+    if not agent.connected and not target_instance_id:
         raise HTTPException(status_code=503, detail="Instance agent not connected")
-    stop_reason = await agent.prompt(message, item_id=item_id)
+
+    router_svc = request.app.state.ctx.services.get("execution_router")
+    if router_svc:
+        stop_reason = await router_svc.prompt(
+            message,
+            principal_id=principal_id,
+            card_id=card_id,
+            realm_id=realm_id,
+            target_instance_id=target_instance_id,
+            local_agent=agent,
+        )
+    else:
+        stop_reason = await agent.prompt(
+            message,
+            item_id=card_id,
+            principal_id=principal_id,
+        )
     return {"stop_reason": stop_reason}
 
 
@@ -52,6 +79,11 @@ def get_config() -> dict:
     return {
         "instance_id": settings.instance_id,
         "instance_name": settings.instance_name,
+        "fleet_id": settings.fleet_id,
+        "subscribed_realms": settings.subscribed_realms,
+        "zone": settings.zone,
+        "capabilities": settings.capabilities,
+        "relay_enabled": settings.relay_enabled,
         "host": settings.host,
         "port": settings.port,
         "agent_enabled": settings.agent_enabled,
@@ -67,7 +99,7 @@ class InstanceModule(Module):
 
     @property
     def version(self) -> str:
-        return "0.0.1"
+        return "0.2.0"
 
     @property
     def description(self) -> str:
@@ -85,6 +117,10 @@ class InstanceModule(Module):
             return {
                 "id": settings.instance_id,
                 "name": settings.instance_name,
+                "fleet_id": settings.fleet_id,
+                "subscribed_realms": settings.subscribed_realms,
+                "zone": settings.zone,
+                "capabilities": settings.capabilities,
                 "host": settings.host,
                 "port": settings.port,
                 "peers": settings.peers,

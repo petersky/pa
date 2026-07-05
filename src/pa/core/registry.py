@@ -60,13 +60,21 @@ class ModuleRegistry:
                 logger.exception("Failed to load module entry point %s", ep.name)
 
     def load_builtins(self) -> None:
+        from pa.modules.auth import AuthModule
         from pa.modules.debug import DebugModule
+        from pa.modules.fleet import FleetModule
         from pa.modules.instance import InstanceModule
         from pa.modules.items import ItemsModule
+        from pa.modules.sync import SyncModule
         from pa.modules.theme import ThemeModule
+        from pa.modules.trust import TrustModule
         from pa.modules.ui_shell import UiShellModule
 
         for module in (
+            AuthModule(),
+            FleetModule(),
+            SyncModule(),
+            TrustModule(),
             ItemsModule(),
             InstanceModule(),
             ThemeModule(),

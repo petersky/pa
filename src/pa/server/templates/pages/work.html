@@ -2,17 +2,24 @@
 
 {% set left %}
 <div class="panel">
-  <div class="panel-header"><h2>Filter</h2></div>
+  <div class="panel-header"><h2>Realm</h2></div>
+  <nav class="sidebar-menu">
+    {% for r in realms %}
+    <a class="sidebar-menu-item {% if r == active_realm %}active{% endif %}"
+       href="/work?realm={{ r }}">{{ r }}</a>
+    {% endfor %}
+  </nav>
+  <div class="panel-header"><h2>Lanes</h2></div>
   <nav class="sidebar-menu">
     <button class="sidebar-menu-item active"
-            hx-get="/partials/items"
-            hx-target="#work-items-list"
-            hx-swap="innerHTML">All items</button>
-    {% for k in kinds %}
+            hx-get="/partials/cards?realm={{ active_realm }}"
+            hx-target="#work-board"
+            hx-swap="innerHTML">All</button>
+    {% for lane in lanes %}
     <button class="sidebar-menu-item"
-            hx-get="/partials/items?kind={{ k.value }}"
-            hx-target="#work-items-list"
-            hx-swap="innerHTML">{{ k.value | capitalize }}</button>
+            hx-get="/partials/cards?realm={{ active_realm }}&lane={{ lane.value }}"
+            hx-target="#work-board"
+            hx-swap="innerHTML">{{ lane.value | capitalize }}</button>
     {% endfor %}
   </nav>
 </div>
@@ -21,24 +28,40 @@
 {% set main %}
 <div class="panel panel-fill">
   <div class="panel-header">
-    <h2>Work</h2>
-    <a href="/"
-       class="text-btn"
-       hx-get="/"
-       hx-target="#app-view"
-       hx-push-url="true"
-       hx-swap="innerHTML">+ Capture new</a>
+    <h2>Board — {{ active_realm }}</h2>
+    <a href="/" class="text-btn">+ Capture</a>
   </div>
-  <div id="work-items-list" class="scroll-region">
-    {% include "partials/items.html" %}
+  <div class="board-grid">
+    {% for lane in lanes %}
+    <div class="board-column">
+      <h3>{{ lane.value | capitalize }}</h3>
+      <div class="board-column-body"
+           hx-get="/partials/cards?realm={{ active_realm }}&lane={{ lane.value }}"
+           hx-trigger="load"
+           hx-swap="innerHTML">
+        <p class="muted">Loading…</p>
+      </div>
+    </div>
+    {% endfor %}
   </div>
+  <div id="work-board" class="hidden"></div>
 </div>
 {% endset %}
 
 {% set right %}
 <div class="panel">
-  <div class="panel-header"><h2>About</h2></div>
-  <p class="muted">Goals, tasks, projects, and concerns — filter from the left, capture from Home.</p>
+  <div class="panel-header"><h2>Filter by kind</h2></div>
+  <nav class="sidebar-menu">
+    {% for k in kinds %}
+    <button class="sidebar-menu-item"
+            hx-get="/partials/items?kind={{ k.value }}"
+            hx-target="#work-items-list"
+            hx-swap="innerHTML">{{ k.value | capitalize }}</button>
+    {% endfor %}
+  </nav>
+  <div id="work-items-list" class="scroll-region">
+    {% include "partials/items.html" %}
+  </div>
 </div>
 {% endset %}
 

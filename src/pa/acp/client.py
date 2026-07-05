@@ -76,12 +76,22 @@ class AgentConnection:
         self.store.save_session(self.session)
         return self.session
 
-    async def prompt(self, message: str, item_id: str | None = None) -> str:
+    async def prompt(
+        self,
+        message: str,
+        item_id: str | None = None,
+        *,
+        principal_id: str | None = None,
+        cwd: str | None = None,
+    ) -> str:
         if not self._conn or not self.session or not self.session.external_session_id:
             raise RuntimeError("Not connected to agent")
 
         if item_id:
             self.session.item_id = item_id
+            self.session.card_id = item_id
+        if principal_id:
+            self.session.principal_id = principal_id
         self.session.status = "prompting"
         self.session.updated_at = datetime.now(UTC)
         self.store.save_session(self.session)

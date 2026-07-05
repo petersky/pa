@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import os
+from contextlib import contextmanager
 from typing import Any
 
 from pa.acp.client import AgentConnection
@@ -7,6 +9,22 @@ from pa.config import Settings
 from pa.domain.store import Store
 
 logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def _agent_env_overlay(extra: dict[str, str]):
+  prev: dict[str, str | None] = {}
+  for key, value in extra.items():
+      prev[key] = os.environ.get(key)
+      os.environ[key] = value
+  try:
+      yield
+  finally:
+      for key, old in prev.items():
+          if old is None:
+              os.environ.pop(key, None)
+          else:
+              os.environ[key] = old
 
 
 class InstanceAgent:
@@ -43,10 +61,25 @@ class InstanceAgent:
             await self._connection.disconnect()
             self._connection = None
 
-    async def prompt(self, message: str, item_id: str | None = None) -> str:
+    async def prompt(
+        self,
+        message: str,
+        item_id: str | None = None,
+        *,
+        principal_id: str | None = None,
+        agent_env: dict[str, str] | None = None,
+        cwd: str | None = None,
+    ) -> str:
         if not self._connection:
             raise RuntimeError("Instance agent not connected")
-        return await self._connection.prompt(message, item_id=item_id)
+        env = agent_env or {}
+        with _agent_env_overlay(env):
+            return await self._connection.prompt(
+                message,
+                item_id=item_id,
+                principal_id=principal_id,
+                cwd=cwd,
+            )
 
 
 _instance_agent: InstanceAgent | None = None

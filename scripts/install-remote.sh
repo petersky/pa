@@ -70,7 +70,17 @@ fi
 
 if [[ ! -f "${HOME}/.pa/config.json" ]]; then
   echo "Initializing instance '${NAME}'..."
-  "${PA_BIN}" init --name "${NAME}"
+  INIT_ARGS=(--name "${NAME}")
+  [[ -n "${PA_REALM:-}" ]] && INIT_ARGS+=(--realm "${PA_REALM}")
+  "${PA_BIN}" init "${INIT_ARGS[@]}"
+fi
+
+if [[ -n "${PA_FLEET_TOKEN:-}" ]]; then
+  echo "Joining fleet..."
+  curl -fsS -X POST "http://127.0.0.1:8080/api/fleet/join" \
+    -H "Content-Type: application/json" \
+    -d "{\"token\":\"${PA_FLEET_TOKEN}\",\"name\":\"${NAME}\",\"url\":\"http://127.0.0.1:8080\"}" \
+    2>/dev/null || echo "Note: fleet join will complete when server is running."
 fi
 
 if [[ "$(uname -s)" == "Darwin" && "${PA_SKIP_SERVICE:-0}" != "1" ]]; then

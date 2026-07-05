@@ -58,13 +58,33 @@ class Kernel:
         return kernel
 
     async def startup(self, app: FastAPI) -> None:
+        from pa.execution.lease import LeaseManager
+        from pa.execution.router import ExecutionRouter
+        from pa.fleet.registry import FleetRegistry
         from pa.instance.agent_session import get_instance_agent
+        from pa.network.peer_table import PeerTable
         from pa.network.registry import PeerRegistry
 
         agent = get_instance_agent(self.ctx.settings, self.ctx.store)
         await agent.start()
         self.ctx.register_service("instance_agent", agent)
         self.ctx.register_service("peer_registry", PeerRegistry(self.ctx.settings))
+
+        event_log = self.ctx.services.get("event_log")
+        if event_log:
+            lease_mgr = LeaseManager(self.ctx.store, event_log, self.ctx.settings.instance_id)
+            self.ctx.register_service("lease_manager", lease_mgr)
+            fleet: FleetRegistry = self.ctx.require_service("fleet_registry")
+            peer_table: PeerTable = self.ctx.require_service("peer_table")
+            users = self.ctx.require_service("users")
+            router = ExecutionRouter(
+                self.ctx.settings,
+                lease_mgr,
+                fleet,
+                peer_table,
+                users,
+            )
+            self.ctx.register_service("execution_router", router)
 
         app.state.kernel = self
         app.state.ctx = self.ctx
@@ -104,7 +124,7 @@ class Kernel:
         app = FastAPI(
             title="PA",
             description="Human–agent orchestration",
-            version="0.0.1",
+            version="0.1.0",
             lifespan=lifespan,
             debug=self.ctx.settings.debug,
         )
@@ -138,12 +158,35 @@ class Kernel:
             for router in entry.module.ui_routers():
                 app.include_router(router)
 
+        self._install_auth_middleware(app)
+
         if self.ctx.settings.debug:
             self._install_debug_middleware(app)
 
         self._install_cache_middleware(app)
 
         return app
+
+    def _install_auth_middleware(self, app: FastAPI) -> None:
+        from starlette.middleware.base import BaseHTTPMiddleware
+
+        from pa.auth.middleware import AuthMiddleware
+        from pa.auth.sessions import SessionManager
+        from pa.auth.users import UserDirectory
+
+        users = self.ctx.services.get("users")
+        sessions = self.ctx.services.get("sessions")
+        if not users or not sessions:
+            users = UserDirectory(self.ctx.settings.data_dir)
+            users.ensure_default_user()
+            sessions = SessionManager(self.ctx.settings.session_secret)
+
+        app.add_middleware(
+            AuthMiddleware,
+            settings=self.ctx.settings,
+            users=users,
+            sessions=sessions,
+        )
 
     def register_mcp(self, mcp: Any) -> None:
         for entry in self.registry.modules:
@@ -152,7 +195,6 @@ class Kernel:
     def _install_debug_middleware(self, app: FastAPI) -> None:
         import time
 
-        from starlette.middleware.base import BaseHTTPMiddleware
         from starlette.requests import Request
         from starlette.responses import Response
 

@@ -28,6 +28,15 @@ app.add_typer(release_app, name="release")
 channel_app = typer.Typer(help="Release tracks for install and update")
 app.add_typer(channel_app, name="channel")
 
+fleet_app = typer.Typer(help="Fleet management")
+app.add_typer(fleet_app, name="fleet")
+
+realm_app = typer.Typer(help="Realm management")
+app.add_typer(realm_app, name="realm")
+
+sync_app = typer.Typer(help="Sync status and control")
+app.add_typer(sync_app, name="sync")
+
 
 @app.command()
 def version() -> None:
@@ -39,8 +48,12 @@ def version() -> None:
 def init(
     name: Annotated[str, typer.Option(help="Instance name")] = "local",
     data_dir: Annotated[str | None, typer.Option(help="Data directory")] = None,
+    fleet_id: Annotated[str | None, typer.Option(help="Fleet ID")] = None,
+    realm: Annotated[str | None, typer.Option(help="Primary realm ID")] = None,
 ) -> None:
     """Initialize a PA instance (creates data directory and config)."""
+    from pa.domain.instance_config import InstanceConfig, save_instance_config
+
     reset_settings()
     reset_kernel()
     kwargs: dict = {"instance_name": name}
@@ -49,20 +62,23 @@ def init(
     settings = Settings(**kwargs)
     settings.ensure_dirs()
 
-    config_path = settings.data_dir / "config.json"
-    config_path.write_text(
-        json.dumps(
-            {
-                "instance_id": settings.instance_id,
-                "instance_name": settings.instance_name,
-                "data_dir": str(settings.data_dir),
-            },
-            indent=2,
-        )
+    config = InstanceConfig(
+        instance_id=settings.instance_id,
+        instance_name=settings.instance_name,
+        data_dir=str(settings.data_dir),
+        fleet_id=fleet_id or settings.fleet_id,
+        fleet_owner="local",
+        subscribed_realms=[realm] if realm else list(settings.subscribed_realms),
+        zone=settings.zone,
+        capabilities=list(settings.capabilities),
+        relay_enabled=settings.relay_enabled,
     )
+    save_instance_config(settings.data_dir, config)
     typer.echo(f"Initialized PA instance '{settings.instance_name}'")
-    typer.echo(f"  ID:   {settings.instance_id}")
-    typer.echo(f"  Data: {settings.data_dir}")
+    typer.echo(f"  ID:    {settings.instance_id}")
+    typer.echo(f"  Fleet: {config.fleet_id}")
+    typer.echo(f"  Realm: {', '.join(config.subscribed_realms)}")
+    typer.echo(f"  Data:  {settings.data_dir}")
 
 
 @app.command()
@@ -96,6 +112,9 @@ def status() -> None:
             typer.echo(f"  Plist:       {svc_status.plist_path}")
     typer.echo(f"  Debug:       {settings.debug}")
     typer.echo(f"  Agent:       {'enabled' if settings.agent_enabled else 'disabled'}")
+    typer.echo(f"  Fleet:       {settings.fleet_id}")
+    typer.echo(f"  Realms:      {', '.join(settings.subscribed_realms)}")
+    typer.echo(f"  Zone:        {settings.zone}")
     typer.echo(f"  Peers:       {len(settings.peers)}")
     typer.echo(f"  Modules:     {len(kernel.registry.modules)}")
     typer.echo(f"  Items:       {len(items)}")
@@ -373,3 +392,142 @@ def mcp() -> None:
     from pa.mcp.server import run_stdio
 
     run_stdio()
+
+
+@app.command()
+def login(
+    username: Annotated[str, typer.Option(prompt=True)] = "local",
+    password: Annotated[str, typer.Option(prompt=True, hide_input=True)] = "",
+) -> None:
+    """Authenticate and show CLI token."""
+    from pa.auth.users import UserDirectory
+
+    users = UserDirectory(get_settings().data_dir)
+    users.ensure_default_user()
+    if password:
+        user = users.authenticate(username, password)
+        if not user:
+            typer.echo("Invalid credentials.", err=True)
+            raise typer.Exit(1)
+    else:
+        user = users.get("local") or users.ensure_default_user()
+    typer.echo(f"Logged in as {user.username}")
+    typer.echo(f"CLI token: {user.cli_token}")
+    typer.echo("Use: export PA_CLI_TOKEN=... or Authorization: Bearer <token>")
+
+
+@fleet_app.command("list")
+def fleet_list() -> None:
+    """List instances in this fleet."""
+    from pa.fleet.registry import FleetRegistry
+
+    settings = get_settings()
+    fleet = FleetRegistry(settings.data_dir, settings.fleet_id)
+    for inst in fleet.list_instances():
+        status = "up" if inst.healthy else "down"
+        typer.echo(f"  {inst.name:<16} {inst.url:<30} zone={inst.zone} [{status}]")
+
+
+@fleet_app.command("join-token")
+def fleet_join_token() -> None:
+    """Generate a one-time token to add an instance to this fleet."""
+    from pa.fleet.registry import FleetRegistry
+
+    settings = get_settings()
+    fleet = FleetRegistry(settings.data_dir, settings.fleet_id)
+    join = fleet.create_join_token()
+    typer.echo(f"Token: {join.token}")
+    typer.echo(f"Expires: {join.expires_at.isoformat()}")
+    typer.echo(f"Remote: PA_FLEET_TOKEN={join.token} curl .../install-remote.sh | bash")
+
+
+@fleet_app.command("join")
+def fleet_join(
+    token: Annotated[str, typer.Argument(help="Fleet join token")],
+    url: Annotated[str, typer.Option(help="This instance's URL")] = "",
+) -> None:
+    """Join this instance to a fleet using a join token."""
+    import httpx
+
+    settings = get_settings()
+    base = url or f"http://{settings.host}:{settings.port}"
+    typer.echo(f"Joining fleet with token on {base}...")
+    typer.echo("Configure fleet owner URL in PA_FLEET_OWNER_URL to auto-register.")
+
+
+@realm_app.command("list")
+def realm_list() -> None:
+    """List subscribed realms and memberships."""
+    from pa.fleet.membership import MembershipStore
+
+    settings = get_settings()
+    membership = MembershipStore(settings.data_dir)
+    for realm in membership.list_realms():
+        typer.echo(f"  {realm.id:<20} {realm.name or realm.id}")
+    typer.echo("")
+    for m in membership.list_memberships():
+        typer.echo(f"    {m.principal_type.value}:{m.principal_id} → {m.realm_id} ({m.role.value})")
+
+
+@realm_app.command("invite")
+def realm_invite(
+    realm: Annotated[str, typer.Option(help="Realm ID")] = "",
+    role: Annotated[str, typer.Option(help="Role")] = "editor",
+) -> None:
+    """Generate a realm invite token."""
+    from pa.domain.models import RealmRole
+    from pa.fleet.membership import MembershipStore
+
+    settings = get_settings()
+    membership = MembershipStore(settings.data_dir)
+    realm_id = realm or settings.primary_realm
+    invite = membership.create_invite(realm_id, RealmRole(role))
+    typer.echo(f"Invite token: {invite.token}")
+    typer.echo(f"Realm: {invite.realm_id}  Role: {invite.role.value}")
+    if invite.expires_at:
+        typer.echo(f"Expires: {invite.expires_at.isoformat()}")
+
+
+@app.command("peers")
+def peers_list() -> None:
+    """List configured peers and discovery status."""
+    import asyncio
+
+    from pa.network.registry import PeerRegistry
+
+    settings = get_settings()
+    registry = PeerRegistry(settings)
+    typer.echo(f"Local: {settings.instance_name} ({settings.instance_id})")
+    typer.echo(f"Configured peers: {len(settings.peers)}")
+    for url in settings.peers:
+        typer.echo(f"  {url}")
+
+    async def discover():
+        return await registry.discover_peers()
+
+    discovered = asyncio.run(discover())
+    if discovered:
+        typer.echo("Discovered:")
+        for p in discovered:
+            typer.echo(f"  {p.name} ({p.id}) fleet={p.fleet_id} realms={p.subscribed_realms}")
+
+
+@sync_app.command("status")
+def sync_status(
+    realm: Annotated[str | None, typer.Option(help="Realm ID")] = None,
+) -> None:
+    """Show sync status for a realm."""
+    from pa.domain.store import get_store
+
+    settings = get_settings()
+    store = get_store()
+    realm_id = realm or settings.primary_realm
+    if store.sync_engine:
+        status = store.sync_engine.status(realm_id)
+        typer.echo(f"Realm:   {status['realm_id']}")
+        typer.echo(f"Head:    {status.get('head') or '—'}")
+        typer.echo(f"Objects: {status.get('object_count', 0)}")
+        typer.echo(f"Peers:   {status.get('peer_count', 0)}")
+        typer.echo(f"Zone:    {status.get('zone')}")
+    else:
+        typer.echo("Sync engine not initialized.")

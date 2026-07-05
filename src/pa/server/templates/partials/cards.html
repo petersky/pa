@@ -1,0 +1,18 @@
+{% if cards %}
+<ul class="item-list">
+  {% for card in cards %}
+  <li class="item item-{{ card.kind.value }}">
+    <div class="item-meta">
+      <span class="badge">{{ card.kind.value }}</span>
+      <span class="status status-{{ card.lane.value }}">{{ card.lane.value }}</span>
+    </div>
+    <h3>{{ card.title }}</h3>
+    {% if card.body %}
+    <p>{{ card.body }}</p>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="empty">No cards in this lane.</p>
+{% endif %}
