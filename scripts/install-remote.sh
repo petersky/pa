@@ -8,12 +8,27 @@
 #   PA_CHANNEL=release           Release track: release, beta, alpha, dev
 #   PA_GIT_REF=                  Override ref (tag or branch); skips channel lookup
 #   PA_INSTANCE_NAME=local       Instance name for pa init
-#   PA_SKIP_SERVICE=1            Skip launchd registration (macOS)
+#   PA_INSTANCE_URL=             Public URL (Tailscale), e.g. http://mini:8080
+#   PA_FLEET_OWNER_URL=          Fleet owner URL when joining with PA_FLEET_TOKEN
+#   PA_FLEET_TOKEN=              One-time fleet join token
+#   PA_SYNC_TOKEN=               Shared sync secret for inter-instance API
+#   PA_PEERS=                    Comma-separated peer URLs
+#   PA_REALM=                    Primary realm ID
+#   PA_HOST=0.0.0.0              Bind host (default 0.0.0.0 when fleet vars set)
+#   PA_PORT=8080                 Server port
+#   PA_SKIP_SERVICE=1            Skip service registration
 set -euo pipefail
 
 REPO="${PA_GITHUB_REPO:-petersky/pa}"
 NAME="${PA_INSTANCE_NAME:-local}"
 CHANNEL="${PA_CHANNEL:-release}"
+PORT="${PA_PORT:-8080}"
+
+if [[ -n "${PA_FLEET_TOKEN:-}" || -n "${PA_PEERS:-}" || -n "${PA_INSTANCE_URL:-}" ]]; then
+  HOST="${PA_HOST:-0.0.0.0}"
+else
+  HOST="${PA_HOST:-127.0.0.1}"
+fi
 
 resolve_ref_from_channel() {
   local track="$1"
@@ -68,26 +83,60 @@ if [[ ! -x "${PA_BIN}" ]]; then
   exit 1
 fi
 
+INSTANCE_URL="${PA_INSTANCE_URL:-http://127.0.0.1:${PORT}}"
+if [[ -n "${PA_INSTANCE_URL:-}" ]]; then
+  INSTANCE_URL="${PA_INSTANCE_URL%/}"
+fi
+
 if [[ ! -f "${HOME}/.pa/config.json" ]]; then
   echo "Initializing instance '${NAME}'..."
-  INIT_ARGS=(--name "${NAME}")
+  INIT_ARGS=(--name "${NAME}" --track "${CHANNEL}" --url "${INSTANCE_URL}")
   [[ -n "${PA_REALM:-}" ]] && INIT_ARGS+=(--realm "${PA_REALM}")
-  "${PA_BIN}" init "${INIT_ARGS[@]}"
+  [[ -n "${PA_PEERS:-}" ]] && INIT_ARGS+=(--peers "${PA_PEERS}")
+  [[ -n "${PA_SYNC_TOKEN:-}" ]] && INIT_ARGS+=(--sync-token "${PA_SYNC_TOKEN}")
+  PA_HOST="${HOST}" PA_PORT="${PORT}" "${PA_BIN}" init "${INIT_ARGS[@]}"
+fi
+
+export PA_HOST="${HOST}"
+export PA_PORT="${PORT}"
+export PA_RELEASE_TRACK="${CHANNEL}"
+[[ -n "${PA_SYNC_TOKEN:-}" ]] && export PA_SYNC_TOKEN
+[[ -n "${PA_PEERS:-}" ]] && export PA_PEERS
+[[ -n "${PA_INSTANCE_URL:-}" ]] && export PA_INSTANCE_URL
+[[ -n "${PA_FLEET_OWNER_URL:-}" ]] && export PA_FLEET_OWNER_URL
+
+"${PA_BIN}" install --record-only --channel "${CHANNEL}" || true
+
+if [[ "${PA_SKIP_SERVICE:-0}" != "1" ]]; then
+  if [[ "$(uname -s)" == "Darwin" || "$(uname -s)" == "Linux" ]]; then
+    echo "Registering service..."
+    "${PA_BIN}" install --service-only || true
+    echo "Starting service..."
+    "${PA_BIN}" start || true
+  fi
 fi
 
 if [[ -n "${PA_FLEET_TOKEN:-}" ]]; then
-  echo "Joining fleet..."
-  curl -fsS -X POST "http://127.0.0.1:8080/api/fleet/join" \
-    -H "Content-Type: application/json" \
-    -d "{\"token\":\"${PA_FLEET_TOKEN}\",\"name\":\"${NAME}\",\"url\":\"http://127.0.0.1:8080\"}" \
-    2>/dev/null || echo "Note: fleet join will complete when server is running."
-fi
-
-if [[ "$(uname -s)" == "Darwin" && "${PA_SKIP_SERVICE:-0}" != "1" ]]; then
-  echo "Registering launchd service..."
-  "${PA_BIN}" install --service-only
-  echo "Starting service..."
-  "${PA_BIN}" start
+  OWNER_URL="${PA_FLEET_OWNER_URL:-}"
+  if [[ -z "${OWNER_URL}" ]]; then
+    echo "warning: PA_FLEET_TOKEN set but PA_FLEET_OWNER_URL missing; skipping fleet join" >&2
+  else
+    echo "Joining fleet at ${OWNER_URL}..."
+    export PA_FLEET_OWNER_URL="${OWNER_URL}"
+    for attempt in 1 2 3 4 5; do
+      if PA_FLEET_OWNER_URL="${OWNER_URL}" "${PA_BIN}" fleet join "${PA_FLEET_TOKEN}" \
+        --url "${INSTANCE_URL}" --owner "${OWNER_URL}" --name "${NAME}"; then
+        break
+      fi
+      if [[ "${attempt}" -eq 5 ]]; then
+        echo "warning: fleet join failed; run manually after server is up:" >&2
+        echo "  PA_FLEET_OWNER_URL=${OWNER_URL} pa fleet join ${PA_FLEET_TOKEN} --url ${INSTANCE_URL}" >&2
+      else
+        sleep 2
+      fi
+    done
+    "${PA_BIN}" install --service-only 2>/dev/null || true
+  fi
 fi
 
 echo ""
@@ -95,6 +144,7 @@ echo "PA installed successfully."
 echo "  Version: $("${PA_BIN}" version)"
 echo "  Track:   ${CHANNEL} (${REF})"
 echo "  Binary:  ${PA_BIN}"
-echo "  Server:  http://127.0.0.1:8080"
+echo "  Server:  ${INSTANCE_URL}"
 echo "  Status:  ${PA_BIN} status"
+echo "  Doctor:  ${PA_BIN} doctor"
 echo "  Logs:    ${PA_BIN} logs -f"

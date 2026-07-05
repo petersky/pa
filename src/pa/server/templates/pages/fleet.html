@@ -53,8 +53,10 @@
   {% endif %}
 
   <h3>Add instance</h3>
-  <p class="muted">Generate a join token: <code>pa fleet join-token</code>, then on the remote host:</p>
-  <pre>PA_FLEET_TOKEN=&lt;token&gt; curl .../install-remote.sh | bash</pre>
+  <p class="muted">Generate a join token: <code>pa fleet join-token</code>, then on the remote host (Tailscale):</p>
+  <pre>PA_FLEET_OWNER_URL={{ settings.instance_url or ('http://' ~ settings.host ~ ':' ~ settings.port) }} \
+PA_FLEET_TOKEN=&lt;token&gt; PA_INSTANCE_URL=http://mini:8080 \
+curl -fsSL https://raw.githubusercontent.com/petersky/pa/main/scripts/install-remote.sh | bash</pre>
 </div>
 {% endset %}
 

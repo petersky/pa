@@ -9,7 +9,7 @@ from pathlib import Path
 
 from pa import __version__
 from pa.cli import service as svc
-from pa.config import Settings
+from pa.config import Settings, get_settings, reset_settings
 from pa.install.metadata import InstallMetadata, save_install_metadata
 
 
@@ -19,13 +19,29 @@ def _run(cmd: list[str], *, cwd: Path | None = None) -> None:
         raise RuntimeError(f"Command failed: {' '.join(cmd)}")
 
 
+def record_install(*, channel: str = "release", pa_bin: Path | None = None) -> None:
+    """Write install.json without running a full install."""
+    reset_settings()
+    settings = get_settings()
+    bin_path = pa_bin or svc.find_pa_binary()
+    save_install_metadata(
+        settings.data_dir,
+        InstallMetadata(
+            version=__version__,
+            method="uv-tool",
+            channel=channel,
+            pa_bin=str(bin_path) if bin_path else None,
+        ),
+    )
+
+
 def install_from_path(
     source: Path | None = None,
     *,
     name: str = "local",
     start_service: bool = True,
 ) -> None:
-    """Install PA via uv tool and register launchd service."""
+    """Install PA via uv tool and register host service."""
     if not shutil.which("uv"):
         raise RuntimeError("uv is required. Install from https://docs.astral.sh/uv/")
 
@@ -46,8 +62,8 @@ def install_from_path(
     if not config_path.exists():
         _run([str(pa_bin), "init", "--name", name])
 
-    if sys.platform == "darwin":
-        svc.install_plist(settings, pa_bin)
+    if svc.service_supported():
+        svc.install_service(settings, pa_bin)
         svc.bootstrap()
         if start_service:
             svc.start()
@@ -57,7 +73,7 @@ def install_from_path(
         InstallMetadata(
             version=__version__,
             method="uv-tool",
-            channel=settings.update_channel,
+            channel=settings.release_track,
             pa_bin=str(pa_bin),
         ),
     )

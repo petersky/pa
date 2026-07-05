@@ -15,10 +15,15 @@ class InstanceConfig(BaseModel):
     data_dir: str = ""
     fleet_id: str = Field(default_factory=lambda: str(uuid4()))
     fleet_owner: str = "local"
+    fleet_owner_url: str = ""
+    instance_url: str = ""
     subscribed_realms: list[str] = Field(default_factory=lambda: ["default"])
     zone: str = "default"
     capabilities: list[str] = Field(default_factory=list)
     relay_enabled: bool = False
+    peers: list[str] = Field(default_factory=list)
+    release_track: str = "release"
+    sync_token: str = ""
 
 
 def config_path(data_dir: Path) -> Path:
@@ -53,12 +58,29 @@ def merge_config_into_settings(data_dir: Path, settings_dict: dict) -> dict:
         "instance_name": loaded.instance_name,
         "fleet_id": loaded.fleet_id,
         "fleet_owner": loaded.fleet_owner,
+        "fleet_owner_url": loaded.fleet_owner_url,
+        "instance_url": loaded.instance_url,
         "subscribed_realms": loaded.subscribed_realms,
         "zone": loaded.zone,
         "capabilities": loaded.capabilities,
         "relay_enabled": loaded.relay_enabled,
+        "peers": loaded.peers,
+        "release_track": loaded.release_track,
+        "sync_token": loaded.sync_token,
     }
     for key, value in mapping.items():
         if key not in settings_dict or settings_dict.get(key) in (None, "", []):
             settings_dict[key] = value
     return settings_dict
+
+
+def update_instance_config(data_dir: Path, **updates: object) -> InstanceConfig:
+    """Merge updates into config.json and return the result."""
+    config = load_instance_config(data_dir) or InstanceConfig(data_dir=str(data_dir))
+    data = config.model_dump()
+    for key, value in updates.items():
+        if value is not None:
+            data[key] = value
+    updated = InstanceConfig.model_validate(data)
+    save_instance_config(data_dir, updated)
+    return updated

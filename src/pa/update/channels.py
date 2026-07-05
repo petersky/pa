@@ -54,11 +54,12 @@ class GitHubTrackChannel(UpdateChannel):
 
     def latest(self) -> ReleaseInfo | None:
         if self.track == ReleaseTrack.DEV:
+            ref = _ref_from_channels_json(self.track, repo=self.repo) or "main"
             return ReleaseInfo(
                 version="dev",
-                install_spec=f"git+https://github.com/{self.repo}.git@main",
+                install_spec=f"git+https://github.com/{self.repo}.git@{ref}",
                 url=f"https://github.com/{self.repo}",
-                tag="main",
+                tag=ref,
                 track=self.track,
             )
 
@@ -67,6 +68,17 @@ class GitHubTrackChannel(UpdateChannel):
             match = self._pick_release(releases)
             if match:
                 return self._release_info(match)
+
+        ref = _ref_from_channels_json(self.track, repo=self.repo)
+        if ref:
+            version = ref.lstrip("v") if ref != "main" else "dev"
+            return ReleaseInfo(
+                version=version,
+                install_spec=f"git+https://github.com/{self.repo}.git@{ref}",
+                url=f"https://github.com/{self.repo}",
+                tag=ref,
+                track=self.track,
+            )
 
         return self._latest_tag_fallback()
 
@@ -207,8 +219,11 @@ def get_channel(name: str, *, repo: str = "petersky/pa") -> UpdateChannel:
     return GitHubTrackChannel(normalized, repo)
 
 
-def resolve_install_ref(track: str, *, repo: str = "petersky/pa") -> str:
+def resolve_track_ref(track: str, *, repo: str = "petersky/pa") -> str:
     """Return git ref (tag or branch) for a release track."""
+    ref = _ref_from_channels_json(track, repo=repo)
+    if ref:
+        return ref
     channel = get_channel(track, repo=repo)
     release = channel.latest()
     if not release:
@@ -216,3 +231,19 @@ def resolve_install_ref(track: str, *, repo: str = "petersky/pa") -> str:
     if release.tag:
         return release.tag
     return "main"
+
+
+def _ref_from_channels_json(track: str, *, repo: str = "petersky/pa") -> str | None:
+    """Read channels.json from main branch (same source as install-remote.sh)."""
+    import json
+
+    normalized = normalize_track(track)
+    url = f"https://raw.githubusercontent.com/{repo.strip().strip('/')}/main/channels.json"
+    try:
+        resp = httpx.get(url, timeout=15.0, follow_redirects=True)
+        resp.raise_for_status()
+        data = json.loads(resp.text)
+        ref = data.get(normalized) or data.get(track)
+        return ref if ref else None
+    except (httpx.HTTPError, json.JSONDecodeError, KeyError):
+        return None

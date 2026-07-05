@@ -53,6 +53,10 @@ def init(
     data_dir: Annotated[str | None, typer.Option(help="Data directory")] = None,
     fleet_id: Annotated[str | None, typer.Option(help="Fleet ID")] = None,
     realm: Annotated[str | None, typer.Option(help="Primary realm ID")] = None,
+    url: Annotated[str | None, typer.Option(help="Public instance URL (Tailscale)")] = None,
+    track: Annotated[str | None, typer.Option(help="Release track")] = None,
+    peers: Annotated[str | None, typer.Option(help="Comma-separated peer URLs")] = None,
+    sync_token: Annotated[str | None, typer.Option(help="Shared sync token")] = None,
 ) -> None:
     """Initialize a PA instance (creates data directory and config)."""
     from pa.domain.instance_config import InstanceConfig, save_instance_config
@@ -65,22 +69,30 @@ def init(
     settings = Settings(**kwargs)
     settings.ensure_dirs()
 
+    peer_list = [p.strip() for p in peers.split(",") if p.strip()] if peers else []
+
     config = InstanceConfig(
         instance_id=settings.instance_id,
         instance_name=settings.instance_name,
         data_dir=str(settings.data_dir),
         fleet_id=fleet_id or settings.fleet_id,
         fleet_owner="local",
+        instance_url=url or "",
         subscribed_realms=[realm] if realm else list(settings.subscribed_realms),
         zone=settings.zone,
         capabilities=list(settings.capabilities),
         relay_enabled=settings.relay_enabled,
+        peers=peer_list,
+        release_track=track or settings.release_track,
+        sync_token=sync_token or "",
     )
     save_instance_config(settings.data_dir, config)
     typer.echo(f"Initialized PA instance '{settings.instance_name}'")
     typer.echo(f"  ID:    {settings.instance_id}")
     typer.echo(f"  Fleet: {config.fleet_id}")
     typer.echo(f"  Realm: {', '.join(config.subscribed_realms)}")
+    if config.instance_url:
+        typer.echo(f"  URL:   {config.instance_url}")
     typer.echo(f"  Data:  {settings.data_dir}")
 
 
@@ -109,10 +121,13 @@ def status() -> None:
         if install_meta.channel:
             typer.echo(f"  Track:       {install_meta.channel}")
     typer.echo(f"  Update:      {settings.release_track} track")
-    if sys.platform == "darwin":
-        typer.echo(f"  Service:     {'running' if svc_status.running else 'stopped'}")
+    if svc_status.installed or svc.service_supported():
+        typer.echo(
+            f"  Service:     {'running' if svc_status.running else 'stopped'}"
+            f" ({svc_status.backend})"
+        )
         if svc_status.installed:
-            typer.echo(f"  Plist:       {svc_status.plist_path}")
+            typer.echo(f"  Unit:        {svc_status.plist_path}")
     typer.echo(f"  Debug:       {settings.debug}")
     typer.echo(f"  Agent:       {'enabled' if settings.agent_enabled else 'disabled'}")
     typer.echo(f"  Fleet:       {settings.fleet_id}")
@@ -129,8 +144,13 @@ def status() -> None:
 def install(
     service_only: Annotated[
         bool,
-        typer.Option("--service-only", help="Only register/reload launchd plist"),
+        typer.Option("--service-only", help="Only register/reload host service unit"),
     ] = False,
+    record_only: Annotated[
+        bool,
+        typer.Option("--record-only", help="Only write install.json metadata"),
+    ] = False,
+    channel: Annotated[str, typer.Option(help="Release track for install metadata")] = "release",
     name: Annotated[str, typer.Option(help="Instance name")] = "local",
     no_start: Annotated[bool, typer.Option(help="Do not start service after install")] = False,
     from_source: Annotated[
@@ -138,22 +158,27 @@ def install(
         typer.Option("--from-source", help="Install from local path (repo root)"),
     ] = None,
 ) -> None:
-    """Install PA on the host (uv tool + init + launchd)."""
+    """Install PA on the host (uv tool + init + launchd/systemd)."""
     from pa.cli import service as svc
-    from pa.install.runner import install_from_path
+    from pa.install.runner import install_from_path, record_install
+
+    if record_only:
+        record_install(channel=channel, pa_bin=svc.find_pa_binary())
+        typer.echo(f"Recorded install metadata (track: {channel}).")
+        return
 
     if service_only:
-        if sys.platform != "darwin":
-            typer.echo("Service management is only supported on macOS.", err=True)
+        if not svc.service_supported():
+            typer.echo("Service management is not supported on this platform.", err=True)
             raise typer.Exit(1)
         settings = get_settings()
         pa_bin = svc.find_pa_binary()
         if not pa_bin:
             typer.echo("pa binary not found in PATH.", err=True)
             raise typer.Exit(1)
-        path = svc.install_plist(settings, pa_bin)
+        path = svc.install_service(settings, pa_bin)
         svc.bootstrap()
-        typer.echo(f"Registered launchd service: {path}")
+        typer.echo(f"Registered {svc.get_status(settings).backend} service: {path}")
         return
 
     try:
@@ -170,7 +195,7 @@ def install(
 
 @app.command()
 def start() -> None:
-    """Start the PA launchd service (macOS)."""
+    """Start the PA host service (launchd or systemd)."""
     from pa.cli import service as svc
 
     try:
@@ -183,7 +208,7 @@ def start() -> None:
 
 @app.command()
 def stop() -> None:
-    """Stop the PA launchd service (macOS)."""
+    """Stop the PA host service."""
     from pa.cli import service as svc
 
     try:
@@ -196,7 +221,7 @@ def stop() -> None:
 
 @app.command(name="restart")
 def restart_cmd() -> None:
-    """Restart the PA launchd service (macOS)."""
+    """Restart the PA host service."""
     from pa.cli import service as svc
 
     try:
@@ -354,6 +379,14 @@ def plugins_list() -> None:
 
 
 @app.command()
+def doctor() -> None:
+    """Run post-install health checks."""
+    from pa.cli.doctor import run_doctor
+
+    raise typer.Exit(run_doctor())
+
+
+@app.command()
 def serve(
     host: Annotated[str | None, typer.Option(help="Bind host")] = None,
     port: Annotated[int | None, typer.Option(help="Bind port")] = None,
@@ -441,21 +474,69 @@ def fleet_join_token() -> None:
     join = fleet.create_join_token()
     typer.echo(f"Token: {join.token}")
     typer.echo(f"Expires: {join.expires_at.isoformat()}")
-    typer.echo(f"Remote: PA_FLEET_TOKEN={join.token} curl .../install-remote.sh | bash")
+    owner = settings.instance_url or f"http://{settings.host}:{settings.port}"
+    typer.echo(f"Remote install:")
+    typer.echo(f"  PA_FLEET_OWNER_URL={owner} PA_FLEET_TOKEN={join.token} \\")
+    typer.echo(f"  PA_INSTANCE_URL=http://<remote-host>:8080 curl .../install-remote.sh | bash")
 
 
 @fleet_app.command("join")
 def fleet_join(
     token: Annotated[str, typer.Argument(help="Fleet join token")],
     url: Annotated[str, typer.Option(help="This instance's URL")] = "",
+    owner: Annotated[str, typer.Option(help="Fleet owner URL")] = "",
+    name: Annotated[str | None, typer.Option(help="Instance name")] = None,
 ) -> None:
     """Join this instance to a fleet using a join token."""
+    import asyncio
+    import os
+
     import httpx
 
+    from pa.domain.instance_config import load_instance_config
+    from pa.fleet.join import apply_join_response, join_fleet
+
     settings = get_settings()
-    base = url or f"http://{settings.host}:{settings.port}"
-    typer.echo(f"Joining fleet with token on {base}...")
-    typer.echo("Configure fleet owner URL in PA_FLEET_OWNER_URL to auto-register.")
+    config = load_instance_config(settings.data_dir)
+    if not config:
+        typer.echo("Run pa init first.", err=True)
+        raise typer.Exit(1)
+
+    owner_url = owner or os.environ.get("PA_FLEET_OWNER_URL", "") or settings.fleet_owner_url
+    if not owner_url:
+        typer.echo("Set --owner or PA_FLEET_OWNER_URL.", err=True)
+        raise typer.Exit(1)
+
+    instance_url = url or settings.instance_url or f"http://{settings.host}:{settings.port}"
+    instance_name = name or settings.instance_name
+
+    async def _join():
+        return await join_fleet(
+            owner_url,
+            token,
+            instance_id=config.instance_id,
+            name=instance_name,
+            url=instance_url,
+            zone=settings.zone,
+            capabilities=list(settings.capabilities),
+            sync_token=settings.sync_token,
+        )
+
+    try:
+        result = asyncio.run(_join())
+    except httpx.HTTPError as exc:
+        typer.echo(f"Fleet join failed: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    apply_join_response(
+        settings.data_dir,
+        fleet_id=result["fleet_id"],
+        owner_url=result.get("owner_url", owner_url),
+        subscribed_realms=result.get("subscribed_realms"),
+    )
+    typer.echo(f"Joined fleet {result['fleet_id']}")
+    typer.echo(f"  Owner: {result.get('owner_url', owner_url)}")
+    typer.echo("Re-run pa install --service-only to refresh service env.")
 
 
 @realm_app.command("list")

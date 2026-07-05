@@ -18,7 +18,7 @@ PA separates **daily usage** (host install) from **development** (container). Bo
 ### Prerequisites
 
 - [uv](https://docs.astral.sh/uv/)
-- macOS (for launchd service management)
+- macOS (launchd) or Linux (systemd user unit) for service management
 
 ### Install
 
@@ -69,17 +69,21 @@ pa update          # install latest on configured track
 pa update --channel beta
 pa update --restart
 pa channel list    # show tracks and latest versions
+pa doctor          # post-install health checks
 ```
+
+For a **multi-machine Tailscale setup** (MacBook + Mac mini + Linux dev/staging), see [MULTI_MACHINE.md](MULTI_MACHINE.md).
 
 ### Service files
 
-- Plist: `~/Library/LaunchAgents/com.pa.server.plist`
+- macOS plist: `~/Library/LaunchAgents/com.pa.server.plist`
+- Linux unit: `~/.config/systemd/user/pa-server.service`
 - Logs: `~/.pa/logs/server.log`, `~/.pa/logs/server.err.log`
 - Install metadata: `~/.pa/install.json`
 
 ### Configuration
 
-Set environment variables in the launchd plist (re-run `pa install --service-only` after changing), or use `~/.pa` defaults:
+Set environment variables in the service unit (re-run `pa install --service-only` after changing), or use `~/.pa/config.json`:
 
 | Variable | Default | Description |
 |----------|---------|-------------|

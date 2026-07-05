@@ -11,14 +11,7 @@
     </array>
     <key>EnvironmentVariables</key>
     <dict>
-        <key>PA_DATA_DIR</key>
-        <string>{{PA_DATA_DIR}}</string>
-        <key>PA_HOST</key>
-        <string>{{PA_HOST}}</string>
-        <key>PA_PORT</key>
-        <string>{{PA_PORT}}</string>
-        <key>PA_INSTANCE_NAME</key>
-        <string>{{PA_INSTANCE_NAME}}</string>
+{{ENV_PLIST}}
     </dict>
     <key>RunAtLoad</key>
     <true/>

@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     # Fleet / realm
     fleet_id: str = Field(default_factory=lambda: str(uuid4()))
     fleet_owner: str = "local"
+    fleet_owner_url: str = ""
+    instance_url: str = ""
     subscribed_realms: list[str] = Field(default_factory=lambda: ["default"])
     zone: str = "default"
     capabilities: list[str] = Field(default_factory=list)

@@ -1,0 +1,18 @@
+[Unit]
+Description=PA Server ({{PA_INSTANCE_NAME}})
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart={{PA_BIN}} serve
+Restart=on-failure
+RestartSec=5
+
+{{ENV_LINES}}
+
+StandardOutput=append:{{PA_LOG_DIR}}/server.log
+StandardError=append:{{PA_LOG_DIR}}/server.err.log
+
+[Install]
+WantedBy=default.target

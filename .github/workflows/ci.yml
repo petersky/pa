@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.14
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Boot smoke test
+        run: uv run python -c "from pa.core.kernel import Kernel; Kernel.boot().build_app()"
+
+      - name: Channel resolution smoke
+        run: uv run python -c "from pa.update.channels import resolve_track_ref; print(resolve_track_ref('release'))"

@@ -46,24 +46,44 @@ def list_fleet_instances(request: Request) -> list[dict]:
 @router.post("/fleet/join")
 async def fleet_join(request: Request, body: dict) -> dict:
     token = body.get("token", "")
+    joiner_id = body.get("instance_id", "")
     name = body.get("name", "remote")
     url = body.get("url", "")
     zone = body.get("zone", "default")
     capabilities = body.get("capabilities", [])
+    if not token or not joiner_id:
+        raise HTTPException(status_code=400, detail="token and instance_id required")
+
     fleet: FleetRegistry = request.app.state.ctx.require_service("fleet_registry")
     join = fleet.consume_join_token(token)
     if not join:
         raise HTTPException(status_code=400, detail="Invalid or expired join token")
+
     settings = get_settings()
-    inst = fleet.register_self(
-        settings.instance_id,
-        name,
-        url or f"http://{settings.host}:{settings.port}",
+    owner_url = settings.instance_url or f"http://{settings.host}:{settings.port}"
+    peer_table: PeerTable = request.app.state.ctx.require_service("peer_table")
+    realms = list(settings.subscribed_realms)
+
+    from pa.fleet.join import register_joiner_on_owner
+
+    inst = register_joiner_on_owner(
+        fleet,
+        peer_table,
+        joiner_id=joiner_id,
+        name=name,
+        url=url or owner_url,
         zone=zone,
         capabilities=capabilities,
-        relay_enabled=settings.relay_enabled,
+        realms=realms,
     )
-    return {"fleet_id": join.fleet_id, "instance": inst.model_dump(mode="json")}
+    owner_inst = fleet.get_instance(settings.instance_id)
+    return {
+        "fleet_id": join.fleet_id,
+        "owner_url": owner_url.rstrip("/"),
+        "owner_instance": owner_inst.model_dump(mode="json") if owner_inst else None,
+        "subscribed_realms": realms,
+        "instance": inst.model_dump(mode="json"),
+    }
 
 
 @router.post("/fleet/join-token")
