@@ -67,7 +67,9 @@ uv run pa serve
 | `pa install` | Install on host (uv tool + launchd) |
 | `pa start` / `pa stop` / `pa restart` | Manage launchd service (macOS) |
 | `pa logs` | Tail server logs (`-f` to follow) |
-| `pa update` | Check/install updates (`--check`, `--restart`) |
+| `pa update` | Check/install updates (`--check`, `--channel`, `--restart`) |
+| `pa channel list` | Show release tracks and latest versions |
+| `pa release patch\|minor\|major\|beta\|alpha` | Bump version and create git tag (maintainers) |
 | `pa init` | Initialize data directory and instance config |
 | `pa serve` | Start the FastAPI + HTMX server (foreground) |
 | `pa status` | Show instance status |
@@ -92,7 +94,8 @@ Environment variables (prefix `PA_`):
 | `PA_DEBUG` | `false` | Debug logging, hook history, dev tools |
 | `PA_DEV_TOOLS` | `false` | In-browser developer panel (auto-on with debug) |
 | `PA_LOG_LEVEL` | `INFO` | Log level (`DEBUG`, `INFO`, …) |
-| `PA_UPDATE_CHANNEL` | `github` | Update source: `github` or `pypi` |
+| `PA_RELEASE_TRACK` | `release` | Update track: `release`, `beta`, `alpha`, `dev`, or `pypi` |
+| `PA_UPDATE_CHANNEL` | *(alias)* | Legacy alias for `PA_RELEASE_TRACK` |
 | `PA_UPDATE_REPO` | `petersky/pa` | GitHub repo for release checks |
 
 ## Theming

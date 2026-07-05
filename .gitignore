@@ -7,5 +7,6 @@ build/
 .env
 .env.dev
 .dev/
+docker-compose.override.yml
 .pa/
 *.db

@@ -15,7 +15,7 @@ class InstallMetadata(BaseModel):
     version: str = __version__
     installed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     method: str = "uv-tool"
-    channel: str = "github"
+    channel: str = "release"
     pa_bin: str | None = None
 
 

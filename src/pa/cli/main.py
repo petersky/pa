@@ -22,6 +22,12 @@ app = typer.Typer(
 plugins_app = typer.Typer(help="Discover and inspect plugins")
 app.add_typer(plugins_app, name="plugins")
 
+release_app = typer.Typer(help="Create releases (maintainers)")
+app.add_typer(release_app, name="release")
+
+channel_app = typer.Typer(help="Release tracks for install and update")
+app.add_typer(channel_app, name="channel")
+
 
 @app.command()
 def version() -> None:
@@ -81,6 +87,9 @@ def status() -> None:
     typer.echo(f"  Binary:      {pa_bin or 'not found'}")
     if install_meta:
         typer.echo(f"  Installed:   {install_meta.version} ({install_meta.method})")
+        if install_meta.channel:
+            typer.echo(f"  Track:       {install_meta.channel}")
+    typer.echo(f"  Update:      {settings.release_track} track")
     if sys.platform == "darwin":
         typer.echo(f"  Service:     {'running' if svc_status.running else 'stopped'}")
         if svc_status.installed:
@@ -197,7 +206,7 @@ def update(
     restart: Annotated[bool, typer.Option("--restart", help="Restart service after update")] = False,
     channel: Annotated[
         str | None,
-        typer.Option(help="Update channel: github or pypi"),
+        typer.Option(help="Release track: release, beta, alpha, dev, or pypi"),
     ] = None,
 ) -> None:
     """Check for and install PA updates."""
@@ -206,7 +215,7 @@ def update(
     settings = get_settings()
 
     if check:
-        result = check_update(settings)
+        result = check_update(settings, channel_name=channel)
         typer.echo(f"Installed: {result.current}")
         typer.echo(f"Latest:    {result.latest or 'unknown'}")
         if result.upgrade_available:
@@ -228,6 +237,72 @@ def update(
     typer.echo(f"Updated PA {result.current} → {result.latest}")
     if restart:
         typer.echo("Service restarted.")
+
+
+def _release_command(bump: str):
+    def command(
+        push: Annotated[
+            bool,
+            typer.Option("--push", help="Push commit and tag to origin"),
+        ] = False,
+        no_commit: Annotated[
+            bool,
+            typer.Option("--no-commit", help="Skip git commit (still creates tag)"),
+        ] = False,
+        message: Annotated[
+            str | None,
+            typer.Option("-m", "--message", help="Commit/tag message"),
+        ] = None,
+    ) -> None:
+        from pa.release.runner import create_release
+
+        try:
+            result = create_release(
+                bump,
+                commit=not no_commit,
+                push=push,
+                message=message,
+            )
+        except (RuntimeError, ValueError) as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(1) from exc
+
+        typer.echo(f"Bumped {result.old_version} → {result.new_version}")
+        typer.echo(f"Tag: {result.tag} ({result.track} track)")
+        if push:
+            typer.echo("Pushed to origin.")
+        else:
+            typer.echo("Local tag created. Run with --push to publish.")
+
+    return command
+
+
+for _bump in ("patch", "minor", "major", "alpha", "beta", "rc"):
+    release_app.command(
+        _bump,
+        help=f"Bump {_bump} version and create git tag",
+    )(_release_command(_bump))
+
+
+@channel_app.command("list")
+def channel_list() -> None:
+    """List release tracks and their latest versions."""
+    from pa.update.registry import describe_tracks
+    from pa.update.channels import get_channel
+
+    settings = get_settings()
+    typer.echo(f"Repository: {settings.update_repo}")
+    typer.echo("")
+    for track in describe_tracks():
+        channel = get_channel(track["name"], repo=settings.update_repo)
+        release = channel.latest()
+        latest = release.version if release else "unknown"
+        ref = release.tag if release and release.tag else "—"
+        typer.echo(f"  {track['name']:<8} {latest:<16} ref={ref}")
+        typer.echo(f"           {track['description']}")
+    typer.echo("")
+    typer.echo("Install: PA_CHANNEL=<track> curl .../install-remote.sh | bash")
+    typer.echo("Update:  pa update --channel <track>")
 
 
 @plugins_app.command("list")

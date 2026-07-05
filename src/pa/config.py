@@ -1,7 +1,7 @@
 from pathlib import Path
 from uuid import uuid4
 
-from pydantic import Field, model_validator
+from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -38,9 +38,27 @@ class Settings(BaseSettings):
     default_theme_id: str = "pa"
 
     # Install / update
-    update_channel: str = "github"
+    release_track: str = Field(
+        default="release",
+        validation_alias=AliasChoices("release_track", "update_channel"),
+    )
     update_repo: str = "petersky/pa"
     install_method: str = "uv-tool"
+
+    @model_validator(mode="after")
+    def _normalize_legacy_settings(self) -> Settings:
+        # PA_UPDATE_CHANNEL legacy: github/stable -> release, pypi unchanged
+        track = self.release_track.strip().lower()
+        if track in ("github", "stable"):
+            self.release_track = "release"
+        elif track == "main":
+            self.release_track = "dev"
+        return self
+
+    @property
+    def update_channel(self) -> str:
+        """Backward-compatible alias for release_track."""
+        return self.release_track
 
     @model_validator(mode="after")
     def _apply_debug_defaults(self) -> Settings:

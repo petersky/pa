@@ -1,0 +1,15 @@
+# Per-worktree overrides for parallel agent development.
+#
+# Copy to docker-compose.override.yml in a git worktree (this file is gitignored):
+#
+#   cp docker-compose.override.example.yml docker-compose.override.yml
+#
+# Docker Compose merges this with docker-compose.dev.yml automatically.
+# Change the host port (left side) when running multiple worktrees at once.
+
+services:
+  pa-dev:
+    ports:
+      - "8082:8081"   # browse at http://127.0.0.1:8082
+    environment:
+      PA_INSTANCE_NAME: dev-wt-8082

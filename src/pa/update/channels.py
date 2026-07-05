@@ -10,6 +10,7 @@ from dataclasses import dataclass
 import httpx
 
 from pa import __version__
+from pa.update.registry import ReleaseTrack, normalize_track
 
 
 @dataclass(frozen=True)
@@ -17,9 +18,13 @@ class ReleaseInfo:
     version: str
     install_spec: str
     url: str | None = None
+    tag: str | None = None
+    track: str | None = None
 
 
 class UpdateChannel(ABC):
+    track: str
+
     @abstractmethod
     def latest(self) -> ReleaseInfo | None: ...
 
@@ -36,24 +41,75 @@ def is_newer(current: str, latest: str) -> bool:
     return _parse_version(latest) > _parse_version(current)
 
 
-class GitHubReleaseChannel(UpdateChannel):
-    def __init__(self, repo: str) -> None:
+def _github_headers() -> dict[str, str]:
+    return {"Accept": "application/vnd.github+json"}
+
+
+class GitHubTrackChannel(UpdateChannel):
+    """Resolve a release track from GitHub releases and tags."""
+
+    def __init__(self, track: str, repo: str) -> None:
+        self.track = normalize_track(track)
         self.repo = repo.strip().strip("/")
 
     def latest(self) -> ReleaseInfo | None:
-        url = f"https://api.github.com/repos/{self.repo}/releases/latest"
-        try:
-            resp = httpx.get(url, timeout=15.0, headers={"Accept": "application/vnd.github+json"})
-            if resp.status_code == 404:
-                return self._latest_tag_fallback()
-            resp.raise_for_status()
-            data = resp.json()
-        except httpx.HTTPError:
-            return self._latest_tag_fallback()
+        if self.track == ReleaseTrack.DEV:
+            return ReleaseInfo(
+                version="dev",
+                install_spec=f"git+https://github.com/{self.repo}.git@main",
+                url=f"https://github.com/{self.repo}",
+                tag="main",
+                track=self.track,
+            )
 
-        tag = data.get("tag_name", "").lstrip("v")
-        if not tag:
+        releases = self._list_releases()
+        if releases:
+            match = self._pick_release(releases)
+            if match:
+                return self._release_info(match)
+
+        return self._latest_tag_fallback()
+
+    def _list_releases(self) -> list[dict]:
+        url = f"https://api.github.com/repos/{self.repo}/releases"
+        try:
+            resp = httpx.get(
+                url,
+                timeout=15.0,
+                headers=_github_headers(),
+                params={"per_page": 30},
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except httpx.HTTPError:
+            return []
+
+    def _pick_release(self, releases: list[dict]) -> dict | None:
+        if self.track == ReleaseTrack.RELEASE:
+            for item in releases:
+                if not item.get("prerelease"):
+                    return item
             return None
+
+        if self.track == ReleaseTrack.BETA:
+            for item in releases:
+                tag = item.get("tag_name", "").lower()
+                if item.get("prerelease") and "beta" in tag:
+                    return item
+            return None
+
+        if self.track == ReleaseTrack.ALPHA:
+            for item in releases:
+                tag = item.get("tag_name", "").lower()
+                if item.get("prerelease") and "alpha" in tag:
+                    return item
+            return None
+
+        return None
+
+    def _release_info(self, data: dict) -> ReleaseInfo:
+        tag_name = data.get("tag_name", "")
+        version = tag_name.lstrip("v")
 
         wheel_url = None
         for asset in data.get("assets", []):
@@ -62,38 +118,58 @@ class GitHubReleaseChannel(UpdateChannel):
                 wheel_url = asset.get("browser_download_url")
                 break
 
-        if wheel_url:
-            return ReleaseInfo(version=tag, install_spec=wheel_url, url=wheel_url)
-
+        install_spec = (
+            wheel_url
+            if wheel_url
+            else f"git+https://github.com/{self.repo}.git@{tag_name}"
+        )
         return ReleaseInfo(
-            version=tag,
-            install_spec=f"git+https://github.com/{self.repo}.git@{data.get('tag_name', tag)}",
+            version=version,
+            install_spec=install_spec,
             url=data.get("html_url"),
+            tag=tag_name,
+            track=self.track,
         )
 
     def _latest_tag_fallback(self) -> ReleaseInfo | None:
         url = f"https://api.github.com/repos/{self.repo}/tags"
         try:
-            resp = httpx.get(url, timeout=15.0, headers={"Accept": "application/vnd.github+json"})
+            resp = httpx.get(url, timeout=15.0, headers=_github_headers())
             resp.raise_for_status()
             tags = resp.json()
         except httpx.HTTPError:
             return None
-        if not tags:
-            return None
-        tag_name = tags[0].get("name", "")
-        version = tag_name.lstrip("v")
-        return ReleaseInfo(
-            version=version,
-            install_spec=f"git+https://github.com/{self.repo}.git@{tag_name}",
-            url=f"https://github.com/{self.repo}/releases/tag/{tag_name}",
-        )
+
+        for item in tags:
+            tag_name = item.get("name", "")
+            if self._tag_matches_track(tag_name):
+                version = tag_name.lstrip("v")
+                return ReleaseInfo(
+                    version=version,
+                    install_spec=f"git+https://github.com/{self.repo}.git@{tag_name}",
+                    url=f"https://github.com/{self.repo}/releases/tag/{tag_name}",
+                    tag=tag_name,
+                    track=self.track,
+                )
+        return None
+
+    def _tag_matches_track(self, tag_name: str) -> bool:
+        lower = tag_name.lower()
+        if self.track == ReleaseTrack.RELEASE:
+            return bool(re.fullmatch(r"v?\d+\.\d+\.\d+", tag_name))
+        if self.track == ReleaseTrack.BETA:
+            return "beta" in lower
+        if self.track == ReleaseTrack.ALPHA:
+            return "alpha" in lower
+        return False
 
     def install(self, release: ReleaseInfo) -> None:
         _uv_tool_install(release.install_spec)
 
 
 class PyPIChannel(UpdateChannel):
+    track = "pypi"
+
     def __init__(self, package: str = "pa") -> None:
         self.package = package
 
@@ -108,6 +184,7 @@ class PyPIChannel(UpdateChannel):
         return ReleaseInfo(
             version=version,
             install_spec=f"{self.package}=={version}",
+            track="pypi",
         )
 
     def install(self, release: ReleaseInfo) -> None:
@@ -124,6 +201,18 @@ def _uv_tool_install(spec: str) -> None:
 
 
 def get_channel(name: str, *, repo: str = "petersky/pa") -> UpdateChannel:
-    if name == "pypi":
+    normalized = normalize_track(name)
+    if normalized == "pypi":
         return PyPIChannel()
-    return GitHubReleaseChannel(repo)
+    return GitHubTrackChannel(normalized, repo)
+
+
+def resolve_install_ref(track: str, *, repo: str = "petersky/pa") -> str:
+    """Return git ref (tag or branch) for a release track."""
+    channel = get_channel(track, repo=repo)
+    release = channel.latest()
+    if not release:
+        raise RuntimeError(f"Could not resolve release track: {track}")
+    if release.tag:
+        return release.tag
+    return "main"

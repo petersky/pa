@@ -20,9 +20,14 @@ class UpdateResult:
     release: ReleaseInfo | None = None
 
 
-def check_update(settings: Settings | None = None) -> UpdateResult:
+def check_update(
+    settings: Settings | None = None,
+    *,
+    channel_name: str | None = None,
+) -> UpdateResult:
     settings = settings or Settings()
-    channel = get_channel(settings.update_channel, repo=settings.update_repo)
+    track = channel_name or settings.release_track
+    channel = get_channel(track, repo=settings.update_repo)
     release = channel.latest()
     latest = release.version if release else None
     return UpdateResult(
@@ -40,7 +45,7 @@ def run_update(
     restart: bool = False,
 ) -> UpdateResult:
     settings = settings or Settings()
-    name = channel_name or settings.update_channel
+    name = channel_name or settings.release_track
     channel = get_channel(name, repo=settings.update_repo)
     release = channel.latest()
 
