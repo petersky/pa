@@ -1,6 +1,6 @@
 [project]
 name = "pa"
-version = "0.1.0"
+version = "0.1.1"
 description = "Human–agent orchestration: goals, tasks, knowledge, and distributed coordination"
 readme = "README.md"
 requires-python = ">=3.14"
@@ -31,6 +31,3 @@ packages = ["src/pa"]
 
 [tool.hatch.build.targets.sdist]
 only-include = ["src/pa"]
-
-[tool.hatch.build.targets.wheel.force-include]
-"src/pa/packaging" = "pa/packaging"
