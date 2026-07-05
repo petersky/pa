@@ -33,17 +33,29 @@ def _active_realm(request: Request) -> str:
     return request.query_params.get("realm") or request.app.state.ctx.settings.primary_realm
 
 
+def _active_project(request: Request) -> str | None:
+    return request.query_params.get("project")
+
+
 def _cards_context(request: Request, *, kind: CardKind | None = None, lane: CardLane | None = None) -> dict:
     store = get_store()
     realm = _active_realm(request)
-    cards = store.list_cards(realm_id=realm, kind=kind, lane=lane)
+    project_id = _active_project(request)
+    cards = store.list_cards(
+        realm_id=realm,
+        kind=kind,
+        lane=lane,
+        project_id=project_id,
+    )
     return {
         "cards": cards,
         "items": [Item.from_card(c) for c in cards],
         "kinds": list(CardKind),
         "lanes": list(CardLane),
+        "projects": store.list_projects(realm_id=realm),
         "realms": request.app.state.ctx.settings.subscribed_realms,
         "active_realm": realm,
+        "active_project": project_id,
     }
 
 
@@ -214,9 +226,15 @@ def items_partial(request: Request, kind: ItemKind | None = None) -> HTMLRespons
 
 
 @ui_router.get("/partials/cards", response_class=HTMLResponse)
-def cards_partial(request: Request, lane: CardLane | None = None, realm: str | None = None) -> HTMLResponse:
+def cards_partial(
+    request: Request,
+    lane: CardLane | None = None,
+    realm: str | None = None,
+    project: str | None = None,
+) -> HTMLResponse:
     realm_id = realm or _active_realm(request)
-    cards = get_store().list_cards(realm_id=realm_id, lane=lane)
+    project_id = project or _active_project(request)
+    cards = get_store().list_cards(realm_id=realm_id, lane=lane, project_id=project_id)
     return _templates(request).TemplateResponse(
         request,
         "partials/cards.html",

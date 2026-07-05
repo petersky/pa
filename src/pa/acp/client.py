@@ -5,6 +5,7 @@ from uuid import uuid4
 from acp import PROTOCOL_VERSION, spawn_agent_process, text_block
 from acp.interfaces import Client
 
+from pa.acp.mcp_config import pa_mcp_servers
 from pa.config import Settings
 from pa.domain.models import AgentSession
 from pa.domain.store import Store
@@ -66,7 +67,7 @@ class AgentConnection:
         await self._conn.initialize(protocol_version=PROTOCOL_VERSION)
         acp_session = await self._conn.new_session(
             cwd=str(self.settings.data_dir),
-            mcp_servers=[],
+            mcp_servers=pa_mcp_servers(self.settings),
         )
         self.session = AgentSession(
             agent_name=self.agent_name,
@@ -82,6 +83,7 @@ class AgentConnection:
         item_id: str | None = None,
         *,
         principal_id: str | None = None,
+        project_id: str | None = None,
         cwd: str | None = None,
     ) -> str:
         if not self._conn or not self.session or not self.session.external_session_id:
@@ -90,6 +92,8 @@ class AgentConnection:
         if item_id:
             self.session.item_id = item_id
             self.session.card_id = item_id
+        if project_id:
+            self.session.project_id = project_id
         if principal_id:
             self.session.principal_id = principal_id
         self.session.status = "prompting"

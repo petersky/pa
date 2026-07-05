@@ -1,6 +1,6 @@
 # PA — Personal Agent, or Personal Assistant, or Primary Agent, or Probably Alive...
 
-PA is an orchestration interface for humans and agents to operate together — capturing goals, tasks, projects, and concerns, engaging with agents through multiple channels, and evolving with each interaction.
+PA is an **agent-native** orchestration platform: agents and humans are co-equal operators. Agents direct PA (create cards, manage projects, run work across a fleet) and PA directs agents (leases, project context, routing, per-user credentials). The web UI, CLI, MCP, and ACP chat are peer interfaces — not a hierarchy with UI on top.
 
 **v0.0.1** — this begins now.
 
@@ -21,8 +21,8 @@ PA uses a **modular kernel**: built-in features and external plugins implement t
 
 - **Backend server** (`pa serve`) — FastAPI REST API + HTMX web UI
 - **CLI** (`pa ...`) — terminal interactions
-- **ACP client** — communicates with agent servers via [Agent Client Protocol](https://agentclientprotocol.com/protocol/overview) (starting with Cursor's `agent acp`)
-- **MCP server** (`pa mcp`) — exposes PA tools to agent sessions
+- **MCP server** (`pa mcp`) — primary agent API; exposes cards, projects, fleet, and more
+- **ACP client** — agent session transport; PA tools injected via MCP stdio bridge
 - **Knowledge capture** — summarizes and stores learnings from agent interactions
 - **Distributed foundations** — instance identity, peer registry, cross-instance awareness
 

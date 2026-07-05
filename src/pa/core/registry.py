@@ -63,8 +63,10 @@ class ModuleRegistry:
         from pa.modules.auth import AuthModule
         from pa.modules.debug import DebugModule
         from pa.modules.fleet import FleetModule
+        from pa.modules.integrations import IntegrationsModule
         from pa.modules.instance import InstanceModule
         from pa.modules.items import ItemsModule
+        from pa.modules.projects import ProjectsModule
         from pa.modules.sync import SyncModule
         from pa.modules.theme import ThemeModule
         from pa.modules.trust import TrustModule
@@ -74,6 +76,8 @@ class ModuleRegistry:
             AuthModule(),
             FleetModule(),
             SyncModule(),
+            IntegrationsModule(),
+            ProjectsModule(),
             TrustModule(),
             ItemsModule(),
             InstanceModule(),

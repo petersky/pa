@@ -25,6 +25,12 @@ from pa.domain.models import (
     ItemStatus,
     ItemUpdate,
     KnowledgeEntry,
+    Project,
+    ProjectCreate,
+    ProjectMembership,
+    ProjectRepo,
+    ProjectStatus,
+    ProjectUpdate,
     _STATUS_TO_LANE,
 )
 from pa.sync.event_log import EventLog
@@ -73,6 +79,23 @@ class CardProjection:
                 );
                 CREATE INDEX IF NOT EXISTS idx_cards_realm ON cards(realm_id);
                 CREATE INDEX IF NOT EXISTS idx_cards_lane ON cards(lane);
+                CREATE TABLE IF NOT EXISTS projects (
+                    id TEXT PRIMARY KEY,
+                    realm_id TEXT NOT NULL DEFAULT 'default',
+                    title TEXT NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT 'active',
+                    memberships TEXT NOT NULL DEFAULT '[]',
+                    repos TEXT NOT NULL DEFAULT '[]',
+                    agent_prompt TEXT NOT NULL DEFAULT '',
+                    tool_config TEXT NOT NULL DEFAULT '{}',
+                    tags TEXT NOT NULL DEFAULT '[]',
+                    created_by_principal TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_projects_realm ON projects(realm_id);
+                CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
                 CREATE TABLE IF NOT EXISTS items (
                     id TEXT PRIMARY KEY,
                     kind TEXT NOT NULL,
@@ -108,6 +131,15 @@ class CardProjection:
                 """
             )
             self._migrate_items_to_cards(conn)
+            self._migrate_schema(conn)
+
+    def _migrate_schema(self, conn: sqlite3.Connection) -> None:
+        card_cols = {row[1] for row in conn.execute("PRAGMA table_info(cards)").fetchall()}
+        if "project_id" not in card_cols:
+            conn.execute("ALTER TABLE cards ADD COLUMN project_id TEXT")
+        session_cols = {row[1] for row in conn.execute("PRAGMA table_info(agent_sessions)").fetchall()}
+        if "project_id" not in session_cols:
+            conn.execute("ALTER TABLE agent_sessions ADD COLUMN project_id TEXT")
 
     def _migrate_items_to_cards(self, conn: sqlite3.Connection) -> None:
         count = conn.execute("SELECT COUNT(*) FROM cards").fetchone()[0]
@@ -152,6 +184,12 @@ class CardProjection:
             self._apply_lease(event)
         elif event.type == EventType.LEASE_RELEASED:
             self._apply_lease_release(event)
+        elif event.type == EventType.PROJECT_CREATED:
+            self._apply_project_created(event)
+        elif event.type == EventType.PROJECT_UPDATED:
+            self._apply_project_updated(event)
+        elif event.type == EventType.PROJECT_ARCHIVED:
+            self._apply_project_archived(event)
 
     def _apply_created(self, event: CardEvent) -> None:
         p = event.payload
@@ -163,6 +201,7 @@ class CardProjection:
             body=p.get("body", ""),
             lane=CardLane(p.get("lane", "inbox")),
             parent_id=p.get("parent_id"),
+            project_id=p.get("project_id"),
             tags=p.get("tags", []),
             preferred_instance=p.get("preferred_instance"),
             preferred_capabilities=p.get("preferred_capabilities", []),
@@ -170,6 +209,51 @@ class CardProjection:
             created_by_instance=event.author_instance,
         )
         self._upsert_card(card)
+
+    def _apply_project_created(self, event: CardEvent) -> None:
+        p = event.payload
+        project = Project(
+            id=p.get("id", event.project_id or str(uuid4())),
+            realm_id=event.realm_id,
+            title=p.get("title", ""),
+            description=p.get("description", ""),
+            status=ProjectStatus(p.get("status", "active")),
+            memberships=[ProjectMembership.model_validate(m) for m in p.get("memberships", [])],
+            repos=[ProjectRepo.model_validate(r) for r in p.get("repos", [])],
+            agent_prompt=p.get("agent_prompt", ""),
+            tool_config=p.get("tool_config", {}),
+            tags=p.get("tags", []),
+            created_by_principal=event.author_principal,
+        )
+        self._upsert_project(project)
+
+    def _apply_project_updated(self, event: CardEvent) -> None:
+        if not event.project_id:
+            return
+        project = self.get_project(event.project_id, realm_id=event.realm_id)
+        if not project:
+            return
+        for key, value in event.payload.items():
+            if key == "status" and value is not None:
+                project.status = ProjectStatus(value)
+            elif key == "memberships" and value is not None:
+                project.memberships = [ProjectMembership.model_validate(m) for m in value]
+            elif key == "repos" and value is not None:
+                project.repos = [ProjectRepo.model_validate(r) for r in value]
+            elif hasattr(project, key):
+                setattr(project, key, value)
+        project.updated_at = datetime.now(UTC)
+        self._upsert_project(project)
+
+    def _apply_project_archived(self, event: CardEvent) -> None:
+        if not event.project_id:
+            return
+        project = self.get_project(event.project_id, realm_id=event.realm_id)
+        if not project:
+            return
+        project.status = ProjectStatus.ARCHIVED
+        project.updated_at = datetime.now(UTC)
+        self._upsert_project(project)
 
     def _apply_updated(self, event: CardEvent) -> None:
         if not event.card_id:
@@ -219,11 +303,11 @@ class CardProjection:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO cards
-                (id, realm_id, kind, title, body, lane, parent_id, tags, visibility,
+                (id, realm_id, kind, title, body, lane, parent_id, project_id, tags, visibility,
                  owner_principal, preferred_instance, preferred_capabilities,
                  lease_holder_instance, lease_holder_principal, lease_expires_at,
                  created_by_principal, created_by_instance, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     card.id,
@@ -233,6 +317,7 @@ class CardProjection:
                     card.body,
                     card.lane.value,
                     card.parent_id,
+                    card.project_id,
                     json.dumps(card.tags),
                     card.visibility,
                     card.owner_principal,
@@ -263,6 +348,7 @@ class CardProjection:
             body=data.body,
             lane=data.lane,
             parent_id=data.parent_id,
+            project_id=data.project_id,
             tags=data.tags,
             preferred_instance=data.preferred_instance,
             preferred_capabilities=data.preferred_capabilities,
@@ -292,6 +378,7 @@ class CardProjection:
         realm_id: str | None = None,
         lane: CardLane | None = None,
         kind: CardKind | None = None,
+        project_id: str | None = None,
     ) -> list[Card]:
         query = "SELECT * FROM cards WHERE 1=1"
         params: list[str] = []
@@ -304,6 +391,9 @@ class CardProjection:
         if kind:
             query += " AND kind = ?"
             params.append(kind.value)
+        if project_id:
+            query += " AND project_id = ?"
+            params.append(project_id)
         query += " ORDER BY updated_at DESC"
         with self._conn() as conn:
             rows = conn.execute(query, params).fetchall()
@@ -362,6 +452,183 @@ class CardProjection:
             cur = conn.execute("DELETE FROM cards WHERE id = ?", (card_id,))
         return cur.rowcount > 0
 
+    def _upsert_project(self, project: Project) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO projects
+                (id, realm_id, title, description, status, memberships, repos,
+                 agent_prompt, tool_config, tags, created_by_principal, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    project.id,
+                    project.realm_id,
+                    project.title,
+                    project.description,
+                    project.status.value,
+                    json.dumps([m.model_dump() for m in project.memberships]),
+                    json.dumps([r.model_dump() for r in project.repos]),
+                    project.agent_prompt,
+                    json.dumps(project.tool_config),
+                    json.dumps(project.tags),
+                    project.created_by_principal,
+                    project.created_at.isoformat(),
+                    project.updated_at.isoformat(),
+                ),
+            )
+
+    def create_project(
+        self,
+        data: ProjectCreate,
+        *,
+        principal_id: str = "user:local",
+        instance_id: str = "local",
+        via_log: bool = True,
+    ) -> Project:
+        project = Project(
+            realm_id=data.realm_id,
+            title=data.title,
+            description=data.description,
+            repos=list(data.repos),
+            agent_prompt=data.agent_prompt,
+            tool_config=dict(data.tool_config),
+            tags=data.tags,
+            created_by_principal=principal_id,
+        )
+        if via_log and self.event_log:
+            event = CardEvent(
+                type=EventType.PROJECT_CREATED,
+                realm_id=project.realm_id,
+                project_id=project.id,
+                author_principal=principal_id,
+                author_instance=instance_id,
+                payload=project.model_dump(mode="json"),
+            )
+            self.event_log.append_event(event, on_commit=self._on_commit)
+            self.apply_event(event)
+        else:
+            self._upsert_project(project)
+        return project
+
+    def list_projects(
+        self,
+        realm_id: str | None = None,
+        status: ProjectStatus | None = None,
+    ) -> list[Project]:
+        query = "SELECT * FROM projects WHERE 1=1"
+        params: list[str] = []
+        if realm_id:
+            query += " AND realm_id = ?"
+            params.append(realm_id)
+        if status:
+            query += " AND status = ?"
+            params.append(status.value)
+        query += " ORDER BY updated_at DESC"
+        with self._conn() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [self._row_to_project(row) for row in rows]
+
+    def get_project(self, project_id: str, realm_id: str | None = None) -> Project | None:
+        query = "SELECT * FROM projects WHERE id = ?"
+        params: list[str] = [project_id]
+        if realm_id:
+            query += " AND realm_id = ?"
+            params.append(realm_id)
+        with self._conn() as conn:
+            row = conn.execute(query, params).fetchone()
+        return self._row_to_project(row) if row else None
+
+    def update_project(
+        self,
+        project_id: str,
+        data: ProjectUpdate,
+        *,
+        realm_id: str = "default",
+        principal_id: str = "user:local",
+        instance_id: str = "local",
+    ) -> Project | None:
+        project = self.get_project(project_id, realm_id=realm_id)
+        if not project:
+            return None
+        updates = data.model_dump(exclude_unset=True)
+        payload = {}
+        for key, value in updates.items():
+            if key == "status" and value is not None:
+                payload["status"] = value.value if hasattr(value, "value") else value
+            elif key in ("memberships", "repos") and value is not None:
+                payload[key] = [v.model_dump() if hasattr(v, "model_dump") else v for v in value]
+            elif value is not None:
+                payload[key] = value
+        if self.event_log and payload:
+            event = CardEvent(
+                type=EventType.PROJECT_UPDATED,
+                realm_id=realm_id,
+                project_id=project_id,
+                author_principal=principal_id,
+                author_instance=instance_id,
+                payload=payload,
+            )
+            self.event_log.append_event(event, on_commit=self._on_commit)
+            self.apply_event(event)
+            return self.get_project(project_id, realm_id=realm_id)
+        for key, value in updates.items():
+            if value is not None:
+                setattr(project, key, value)
+        project.updated_at = datetime.now(UTC)
+        self._upsert_project(project)
+        return project
+
+    def archive_project(
+        self,
+        project_id: str,
+        *,
+        realm_id: str = "default",
+        principal_id: str = "user:local",
+        instance_id: str = "local",
+    ) -> Project | None:
+        if not self.get_project(project_id, realm_id=realm_id):
+            return None
+        if self.event_log:
+            event = CardEvent(
+                type=EventType.PROJECT_ARCHIVED,
+                realm_id=realm_id,
+                project_id=project_id,
+                author_principal=principal_id,
+                author_instance=instance_id,
+                payload={},
+            )
+            self.event_log.append_event(event, on_commit=self._on_commit)
+            self.apply_event(event)
+            return self.get_project(project_id, realm_id=realm_id)
+        return self.update_project(
+            project_id,
+            ProjectUpdate(status=ProjectStatus.ARCHIVED),
+            realm_id=realm_id,
+            principal_id=principal_id,
+            instance_id=instance_id,
+        )
+
+    def list_cards_for_project(self, project_id: str, realm_id: str | None = None) -> list[Card]:
+        return self.list_cards(realm_id=realm_id, project_id=project_id)
+
+    def assign_card_to_project(
+        self,
+        card_id: str,
+        project_id: str | None,
+        *,
+        realm_id: str = "default",
+        principal_id: str = "user:local",
+        instance_id: str = "local",
+    ) -> Card | None:
+        return self.update_card(
+            card_id,
+            CardUpdate(project_id=project_id),
+            realm_id=realm_id,
+            principal_id=principal_id,
+            instance_id=instance_id,
+        )
+
     # Legacy item API
     def create_item(self, data: ItemCreate, **kwargs) -> Item:
         card = self.create_card(data.to_card_create(), **kwargs)
@@ -391,9 +658,9 @@ class CardProjection:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO agent_sessions
-                (id, agent_name, external_session_id, item_id, card_id, principal_id,
+                (id, agent_name, external_session_id, item_id, card_id, project_id, principal_id,
                  status, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     session.id,
@@ -401,6 +668,7 @@ class CardProjection:
                     session.external_session_id,
                     session.item_id or session.card_id,
                     session.card_id or session.item_id,
+                    session.project_id,
                     session.principal_id,
                     session.status,
                     session.created_at.isoformat(),
@@ -463,10 +731,30 @@ class CardProjection:
             return
         with self._conn() as conn:
             conn.execute("DELETE FROM cards WHERE realm_id = ?", (realm_id,))
+            conn.execute("DELETE FROM projects WHERE realm_id = ?", (realm_id,))
         self.event_log.apply_commit_chain(head, self.apply_event)
 
     @staticmethod
+    def _row_to_project(row: sqlite3.Row) -> Project:
+        return Project(
+            id=row["id"],
+            realm_id=row["realm_id"],
+            title=row["title"],
+            description=row["description"],
+            status=ProjectStatus(row["status"]),
+            memberships=[ProjectMembership.model_validate(m) for m in json.loads(row["memberships"])],
+            repos=[ProjectRepo.model_validate(r) for r in json.loads(row["repos"])],
+            agent_prompt=row["agent_prompt"],
+            tool_config=json.loads(row["tool_config"]),
+            tags=json.loads(row["tags"]),
+            created_by_principal=row["created_by_principal"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+            updated_at=datetime.fromisoformat(row["updated_at"]),
+        )
+
+    @staticmethod
     def _row_to_card(row: sqlite3.Row) -> Card:
+        keys = row.keys()
         return Card(
             id=row["id"],
             realm_id=row["realm_id"],
@@ -475,6 +763,7 @@ class CardProjection:
             body=row["body"],
             lane=CardLane(row["lane"]),
             parent_id=row["parent_id"],
+            project_id=row["project_id"] if "project_id" in keys else None,
             tags=json.loads(row["tags"]),
             visibility=row["visibility"],
             owner_principal=row["owner_principal"],
@@ -500,6 +789,7 @@ class CardProjection:
             external_session_id=row["external_session_id"],
             item_id=row["item_id"],
             card_id=row["card_id"] if "card_id" in keys else row["item_id"],
+            project_id=row["project_id"] if "project_id" in keys else None,
             principal_id=row["principal_id"] if "principal_id" in keys else None,
             status=row["status"],
             created_at=datetime.fromisoformat(row["created_at"]),

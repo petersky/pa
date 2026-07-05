@@ -46,6 +46,7 @@ async def agent_prompt(request: Request, body: dict) -> dict:
     if not message:
         raise HTTPException(status_code=400, detail="message required")
     card_id = body.get("card_id") or body.get("item_id")
+    project_id = body.get("project_id")
     principal_id = body.get("principal_id", "user:local")
     target_instance_id = body.get("target_instance_id")
     realm_id = body.get("realm_id")
@@ -60,15 +61,28 @@ async def agent_prompt(request: Request, body: dict) -> dict:
             message,
             principal_id=principal_id,
             card_id=card_id,
+            project_id=project_id,
             realm_id=realm_id,
             target_instance_id=target_instance_id,
             local_agent=agent,
         )
     else:
+        from pa.agent.context import augment_message_with_context
+
+        settings = request.app.state.ctx.settings
+        realm = realm_id or settings.primary_realm
+        message = augment_message_with_context(
+            request.app.state.ctx.store,
+            message,
+            card_id=card_id,
+            project_id=project_id,
+            realm_id=realm,
+        )
         stop_reason = await agent.prompt(
             message,
             item_id=card_id,
             principal_id=principal_id,
+            project_id=project_id,
         )
     return {"stop_reason": stop_reason}
 

@@ -543,6 +543,16 @@ code {
   font-size: 12px;
 }
 
+.code-block {
+  margin: 0.35rem 0 0;
+  padding: 0.35rem;
+  background: var(--pa-bg);
+  border-radius: 5px;
+  overflow: auto;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
 .debug-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

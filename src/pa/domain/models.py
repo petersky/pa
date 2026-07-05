@@ -115,6 +115,62 @@ class FleetJoinToken(BaseModel):
     created_by: str = ""
 
 
+# --- Projects (card containers) ---
+
+
+class ProjectStatus(StrEnum):
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+
+
+class ProjectRepo(BaseModel):
+    url: str
+    branch: str | None = None
+    path: str | None = None
+
+
+class ProjectMembership(BaseModel):
+    principal_id: str
+    role: str = "editor"
+
+
+class Project(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    realm_id: str = "default"
+    title: str
+    description: str = ""
+    status: ProjectStatus = ProjectStatus.ACTIVE
+    memberships: list[ProjectMembership] = Field(default_factory=list)
+    repos: list[ProjectRepo] = Field(default_factory=list)
+    agent_prompt: str = ""
+    tool_config: dict = Field(default_factory=dict)
+    tags: list[str] = Field(default_factory=list)
+    created_by_principal: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class ProjectCreate(BaseModel):
+    realm_id: str = "default"
+    title: str
+    description: str = ""
+    tags: list[str] = Field(default_factory=list)
+    repos: list[ProjectRepo] = Field(default_factory=list)
+    agent_prompt: str = ""
+    tool_config: dict = Field(default_factory=dict)
+
+
+class ProjectUpdate(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    status: ProjectStatus | None = None
+    tags: list[str] | None = None
+    repos: list[ProjectRepo] | None = None
+    agent_prompt: str | None = None
+    tool_config: dict | None = None
+    memberships: list[ProjectMembership] | None = None
+
+
 # --- Cards (data plane) ---
 
 
@@ -140,6 +196,7 @@ class Card(BaseModel):
     body: str = ""
     lane: CardLane = CardLane.INBOX
     parent_id: str | None = None
+    project_id: str | None = None
     tags: list[str] = Field(default_factory=list)
     visibility: str = "realm"
     owner_principal: str | None = None
@@ -161,6 +218,7 @@ class CardCreate(BaseModel):
     body: str = ""
     lane: CardLane = CardLane.INBOX
     parent_id: str | None = None
+    project_id: str | None = None
     tags: list[str] = Field(default_factory=list)
     preferred_instance: str | None = None
     preferred_capabilities: list[str] = Field(default_factory=list)
@@ -171,6 +229,7 @@ class CardUpdate(BaseModel):
     body: str | None = None
     lane: CardLane | None = None
     parent_id: str | None = None
+    project_id: str | None = None
     tags: list[str] | None = None
     preferred_instance: str | None = None
     preferred_capabilities: list[str] | None = None
@@ -183,6 +242,9 @@ class EventType(StrEnum):
     CARD_CREATED = "card_created"
     CARD_UPDATED = "card_updated"
     CARD_DELETED = "card_deleted"
+    PROJECT_CREATED = "project_created"
+    PROJECT_UPDATED = "project_updated"
+    PROJECT_ARCHIVED = "project_archived"
     LEASE_GRANTED = "lease_granted"
     LEASE_RELEASED = "lease_released"
     AGENT_PROGRESS = "agent_progress"
@@ -194,6 +256,7 @@ class CardEvent(BaseModel):
     type: EventType
     realm_id: str
     card_id: str | None = None
+    project_id: str | None = None
     author_principal: str
     author_instance: str
     payload: dict = Field(default_factory=dict)
@@ -321,6 +384,7 @@ class AgentSession(BaseModel):
     external_session_id: str | None = None
     item_id: str | None = None
     card_id: str | None = None
+    project_id: str | None = None
     principal_id: str | None = None
     status: str = "idle"
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

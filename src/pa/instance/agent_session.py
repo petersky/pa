@@ -67,6 +67,7 @@ class InstanceAgent:
         item_id: str | None = None,
         *,
         principal_id: str | None = None,
+        project_id: str | None = None,
         agent_env: dict[str, str] | None = None,
         cwd: str | None = None,
     ) -> str:
@@ -78,6 +79,7 @@ class InstanceAgent:
                 message,
                 item_id=item_id,
                 principal_id=principal_id,
+                project_id=project_id,
                 cwd=cwd,
             )
 

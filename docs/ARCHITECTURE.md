@@ -96,6 +96,7 @@ Pages register via `PageRegistry` (`pa/core/ui/pages.py`). See `UiShellModule` a
 | `/` | Home |
 | `/work` | Work board (cards by lane) |
 | `/knowledge` | Knowledge |
+| `/projects` | Projects (card containers + agent context) |
 | `/fleet` | Fleet and realm management |
 | `/agent` | Agent chat (via status button when online) |
 | `/settings` | Settings (via gear icon) |
@@ -121,3 +122,40 @@ Configure with:
 - `PA_PEERS` — comma-separated peer URLs
 
 CLI: `pa fleet list`, `pa realm list`, `pa peers`, `pa sync status`, `pa login`
+
+## Projects
+
+A **Project** is a realm-scoped container for cards with its own metadata:
+
+- Description, tags, memberships
+- Associated repositories (`ProjectRepo`)
+- Default `agent_prompt` and `tool_config` injected when agents work on project cards
+
+Cards link via `project_id`. Use `CardKind.PROJECT` only for legacy work-item taxonomy — prefer the Project entity for grouping.
+
+## Agent-native design
+
+PA is designed **agent-first**: agents can direct PA and be directed by it, including as the primary interface.
+
+### Principles
+
+1. **MCP is the agent API** — capabilities agents need exist as MCP tools (cards, projects, fleet, sync).
+2. **ACP is session transport** — the instance agent connects via ACP; PA MCP is injected as a stdio server in the session.
+3. **Bidirectional control**
+   - *Agent → PA:* create/move cards, assign projects, query fleet, trigger execution.
+   - *PA → Agent:* leases, project context prefix on prompts, per-user env, instance routing.
+4. **Project context** — prompts with a `card_id` or `project_id` prepend the project's `agent_prompt` and repo list.
+5. **UI is optional** — HTMX web UI, CLI, MCP, and ACP chat are peers.
+
+### Interfaces
+
+| Interface | Role |
+|-----------|------|
+| `pa mcp` | Tool surface for any agent session |
+| ACP (`agent acp`) | Interactive chat; PA tools via MCP bridge |
+| `pa` CLI | Human/script operator |
+| Web UI | Human-friendly views of cards, projects, fleet |
+
+## External integrations
+
+Planned sync with GitHub Issues, Notion, Jira, and others. Scaffold only — see [INTEGRATIONS.md](INTEGRATIONS.md).

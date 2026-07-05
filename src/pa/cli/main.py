@@ -37,6 +37,9 @@ app.add_typer(realm_app, name="realm")
 sync_app = typer.Typer(help="Sync status and control")
 app.add_typer(sync_app, name="sync")
 
+project_app = typer.Typer(help="Project management")
+app.add_typer(project_app, name="project")
+
 
 @app.command()
 def version() -> None:
@@ -510,6 +513,40 @@ def peers_list() -> None:
         typer.echo("Discovered:")
         for p in discovered:
             typer.echo(f"  {p.name} ({p.id}) fleet={p.fleet_id} realms={p.subscribed_realms}")
+
+
+@project_app.command("list")
+def project_list(
+    realm: Annotated[str | None, typer.Option(help="Realm ID")] = None,
+) -> None:
+    """List projects in a realm."""
+    from pa.domain.store import get_store
+
+    settings = get_settings()
+    store = get_store()
+    realm_id = realm or settings.primary_realm
+    for project in store.list_projects(realm_id=realm_id):
+        typer.echo(f"  {project.id:<36} {project.title}")
+
+
+@project_app.command("create")
+def project_create(
+    title: Annotated[str, typer.Argument(help="Project title")],
+    description: Annotated[str, typer.Option(help="Description")] = "",
+    realm: Annotated[str | None, typer.Option(help="Realm ID")] = None,
+) -> None:
+    """Create a new project."""
+    from pa.domain.models import ProjectCreate
+    from pa.domain.store import get_store
+
+    settings = get_settings()
+    store = get_store()
+    realm_id = realm or settings.primary_realm
+    project = store.create_project(
+        ProjectCreate(realm_id=realm_id, title=title, description=description),
+        instance_id=settings.instance_id,
+    )
+    typer.echo(f"Created project {project.id}: {project.title}")
 
 
 @sync_app.command("status")

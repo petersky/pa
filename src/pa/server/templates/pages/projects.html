@@ -1,0 +1,47 @@
+{% from "macros/layout.html" import page_layout %}
+
+{% set main %}
+<div class="panel">
+  <div class="panel-header">
+    <h2>Projects — {{ active_realm }}</h2>
+    <a href="/?realm={{ active_realm }}" class="text-btn">+ New card</a>
+  </div>
+
+  {% if project %}
+  <div class="panel" style="margin-bottom: 1rem;">
+    <h3>{{ project.title }}</h3>
+    {% if project.description %}<p>{{ project.description }}</p>{% endif %}
+    {% if project.agent_prompt %}
+    <details>
+      <summary>Agent prompt</summary>
+      <pre class="code-block">{{ project.agent_prompt }}</pre>
+    </details>
+    {% endif %}
+    {% if project.repos %}
+    <p class="muted">Repos: {% for r in project.repos %}{{ r.url }}{% if not loop.last %}, {% endif %}{% endfor %}</p>
+    {% endif %}
+    <h4>Cards ({{ cards | length }})</h4>
+    {% include "partials/cards.html" %}
+  </div>
+  {% endif %}
+
+  <h3>All projects</h3>
+  {% if projects %}
+  <ul class="item-list">
+    {% for p in projects %}
+    <li class="item">
+      <a href="/projects?realm={{ active_realm }}&project={{ p.id }}">
+        <h3>{{ p.title }}</h3>
+      </a>
+      <span class="badge">{{ p.status.value }}</span>
+      {% if p.description %}<p class="muted">{{ p.description[:120] }}{% if p.description|length > 120 %}…{% endif %}</p>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="empty">No projects yet. Create one with <code>pa project create "Title"</code> or MCP <code>create_project</code>.</p>
+  {% endif %}
+</div>
+{% endset %}
+
+{{ page_layout(main=main, class='page-projects') }}

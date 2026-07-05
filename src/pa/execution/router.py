@@ -6,6 +6,7 @@ import logging
 
 import httpx
 
+from pa.agent.context import augment_message_with_context
 from pa.auth.users import UserDirectory
 from pa.config import Settings
 from pa.domain.models import FleetInstance
@@ -53,11 +54,19 @@ class ExecutionRouter:
         *,
         principal_id: str = "user:local",
         card_id: str | None = None,
+        project_id: str | None = None,
         realm_id: str | None = None,
         target_instance_id: str | None = None,
         local_agent,
     ) -> str:
         realm_id = realm_id or self.settings.primary_realm
+        message = augment_message_with_context(
+            self.leases.store,
+            message,
+            card_id=card_id,
+            project_id=project_id,
+            realm_id=realm_id,
+        )
 
         if card_id:
             if not self.leases.grant(
@@ -73,6 +82,8 @@ class ExecutionRouter:
                         message,
                         principal_id=principal_id,
                         card_id=card_id,
+                        project_id=project_id,
+                        realm_id=realm_id,
                     )
 
         target = await self._resolve_target(card_id, realm_id, target_instance_id)
@@ -82,12 +93,15 @@ class ExecutionRouter:
                 message,
                 principal_id=principal_id,
                 card_id=card_id,
+                project_id=project_id,
+                realm_id=realm_id,
             )
 
         return await local_agent.prompt(
             message,
             item_id=card_id,
             principal_id=principal_id,
+            project_id=project_id,
             agent_env=self._user_env(principal_id),
             cwd=self._user_data_dir(principal_id),
         )
@@ -126,6 +140,8 @@ class ExecutionRouter:
         *,
         principal_id: str,
         card_id: str | None,
+        project_id: str | None = None,
+        realm_id: str | None = None,
     ) -> str:
         inst = self.fleet.get_instance(target_instance_id)
         url = inst.url if inst else None
@@ -148,6 +164,8 @@ class ExecutionRouter:
                     "message": message,
                     "item_id": card_id,
                     "card_id": card_id,
+                    "project_id": project_id,
+                    "realm_id": realm_id,
                     "principal_id": principal_id,
                     "target_instance_id": target_instance_id,
                 },
