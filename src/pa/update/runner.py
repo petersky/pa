@@ -52,7 +52,7 @@ def run_update(
     result = UpdateResult(
         current=__version__,
         latest=release.version if release else None,
-        upgrade_available=bool(release and is_newer(__version__, release)),
+        upgrade_available=bool(release and is_newer(__version__, release.version)),
         release=release,
     )
 
