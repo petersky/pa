@@ -137,9 +137,24 @@ class CardProjection:
         card_cols = {row[1] for row in conn.execute("PRAGMA table_info(cards)").fetchall()}
         if "project_id" not in card_cols:
             conn.execute("ALTER TABLE cards ADD COLUMN project_id TEXT")
+
         session_cols = {row[1] for row in conn.execute("PRAGMA table_info(agent_sessions)").fetchall()}
+        if "card_id" not in session_cols:
+            conn.execute("ALTER TABLE agent_sessions ADD COLUMN card_id TEXT")
+            conn.execute(
+                "UPDATE agent_sessions SET card_id = item_id WHERE card_id IS NULL AND item_id IS NOT NULL"
+            )
+        if "principal_id" not in session_cols:
+            conn.execute("ALTER TABLE agent_sessions ADD COLUMN principal_id TEXT")
         if "project_id" not in session_cols:
             conn.execute("ALTER TABLE agent_sessions ADD COLUMN project_id TEXT")
+
+        knowledge_cols = {row[1] for row in conn.execute("PRAGMA table_info(knowledge)").fetchall()}
+        if knowledge_cols and "card_id" not in knowledge_cols:
+            conn.execute("ALTER TABLE knowledge ADD COLUMN card_id TEXT")
+            conn.execute(
+                "UPDATE knowledge SET card_id = item_id WHERE card_id IS NULL AND item_id IS NOT NULL"
+            )
 
     def _migrate_items_to_cards(self, conn: sqlite3.Connection) -> None:
         count = conn.execute("SELECT COUNT(*) FROM cards").fetchone()[0]
