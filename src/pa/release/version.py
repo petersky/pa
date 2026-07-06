@@ -15,6 +15,22 @@ _PRERELEASE = re.compile(
     r"^(\d+)\.(\d+)\.(\d+)-(alpha|beta|rc)\.(\d+)$",
     re.IGNORECASE,
 )
+_VALID = re.compile(
+    r"^(\d+)\.(\d+)\.(\d+)(?:-(alpha|beta|rc)\.(\d+))?$",
+    re.IGNORECASE,
+)
+
+
+def validate_version(version: str) -> str:
+    if not _VALID.match(version):
+        raise ValueError(f"Invalid semver: {version}")
+    return version
+
+
+def set_version(version: str) -> str:
+    version = validate_version(version)
+    write_version(version)
+    return version
 
 
 def read_version() -> str:

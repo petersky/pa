@@ -269,7 +269,30 @@ PA_CHANNEL=beta curl -fsSL .../install-remote.sh | bash
 
 ### Creating releases (maintainers)
 
-From a git checkout with a clean working tree:
+From a git checkout with a clean working tree.
+
+**Recommended** — agent-generated release notes via [`scripts/release.sh`](../scripts/release.sh):
+
+```bash
+./scripts/release.sh patch              # bump, generate notes, commit, tag
+./scripts/release.sh minor --push       # also push tag (triggers CI)
+./scripts/release.sh 1.2.3 --channel beta
+./scripts/release.sh --amend --tag v0.1.2   # regenerate notes for existing tag
+./scripts/release.sh patch --no-agent   # skip agent; template + changelog only
+```
+
+Configure the notes agent:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `PA_RELEASE_AGENT` | `agent` | Agent command |
+| `PA_RELEASE_AGENT_ARGS` | `--print` | Agent arguments |
+| `PA_RELEASE_AGENT_USE_STDIN` | — | Set to `1` to pass prompt on stdin |
+
+Release notes template: [`docs/RELEASE_NOTES_TEMPLATE.md`](RELEASE_NOTES_TEMPLATE.md)  
+Output: `releases/vX.Y.Z.md`
+
+**Low-level** (no agent notes):
 
 ```bash
 pa release patch          # 0.0.1 → 0.0.2, tag v0.0.2
