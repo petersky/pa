@@ -134,6 +134,14 @@ def amend_release_notes(
     return written
 
 
+def push_existing_release(tag: str) -> None:
+    """Push main and an existing local tag to origin."""
+    if not tag.startswith("v"):
+        tag = f"v{tag}"
+    _run(["git", "push"])
+    _run(["git", "push", "origin", tag])
+
+
 def publish_github_release(tag: str, notes_path: Path, *, amend: bool = False) -> None:
     """Create or update GitHub release with notes file."""
     if amend:

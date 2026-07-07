@@ -8,7 +8,6 @@ import time
 from pathlib import Path
 
 from pa.release.notes import (
-    changelog_since,
     generate_release_notes,
     latest_tag,
     notes_path_for_tag,
@@ -19,6 +18,7 @@ from pa.release.runner import (
     amend_release_notes,
     create_release,
     publish_github_release,
+    push_existing_release,
     resolve_version,
 )
 from pa.release.version import read_version, tag_for_version, track_for_version
@@ -35,7 +35,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--channel", help="channels.json track (release, beta, alpha, dev)")
     parser.add_argument("--amend", action="store_true", help="Amend existing release notes")
-    parser.add_argument("--tag", help="Tag to amend (default: latest)")
+    parser.add_argument(
+        "--publish",
+        action="store_true",
+        help="Push current tag to origin and publish notes (no version bump)",
+    )
+    parser.add_argument("--tag", help="Tag for amend/publish (default: latest or current version)")
     parser.add_argument("--agent", dest="agent_cmd", help="Agent command")
     parser.add_argument("--agent-args", dest="agent_args", help="Agent arguments")
     parser.add_argument("--push", action="store_true", help="Push commit and tag")
@@ -57,7 +62,10 @@ def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
 
     if args.dry_run:
-        if args.amend:
+        if args.publish:
+            tag = args.tag or tag_for_version(read_version())
+            print(f"dry-run: publish {tag}")
+        elif args.amend:
             tag = args.tag or latest_tag() or "?"
             print(f"dry-run: amend {tag}")
         elif args.version:
@@ -66,6 +74,32 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print("error: version required", file=sys.stderr)
             return 1
+        return 0
+
+    if args.publish:
+        tag = args.tag or tag_for_version(read_version())
+        if not tag.startswith("v"):
+            tag = f"v{tag}"
+        notes_path = args.notes_file or notes_path_for_tag(tag)
+        if not notes_path.exists():
+            print(f"error: release notes not found: {notes_path}", file=sys.stderr)
+            return 1
+        print(f"Publishing {tag}...")
+        push_existing_release(tag)
+        if not args.skip_gh:
+            if args.wait_ci > 0:
+                print(f"Waiting {args.wait_ci}s for CI to create GitHub release...")
+                time.sleep(args.wait_ci)
+            try:
+                publish_github_release(tag, notes_path, amend=False)
+                print(f"Published release notes to GitHub for {tag}.")
+            except RuntimeError as exc:
+                print(f"warning: gh release publish failed: {exc}", file=sys.stderr)
+                print(
+                    f"  Try manually: gh release edit {tag} --notes-file {notes_path}",
+                    file=sys.stderr,
+                )
+        print(f"Done. Published {tag}")
         return 0
 
     if args.amend:
@@ -163,6 +197,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  Notes: {notes_path}")
     if not args.push:
         print("  Push to publish: git push && git push origin", tag)
+        print("  Or: ./scripts/release.sh --publish")
         print("  Or re-run with --push to commit, tag, push, and publish notes.")
     return 0
 
