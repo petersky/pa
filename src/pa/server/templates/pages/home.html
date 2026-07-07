@@ -3,12 +3,17 @@
 {% set left %}
 <div class="panel">
   <div class="panel-header"><h2>Capture</h2></div>
-  <form method="post" action="/items" class="stack">
+  <form class="stack"
+        hx-post="/items"
+        hx-target="#home-items-list"
+        hx-swap="innerHTML"
+        hx-on::after-request="if(event.detail.successful) this.reset()">
+    <input type="hidden" name="csrf" value="{{ csrf_token }}">
     <label>
       Kind
       <select name="kind" required>
         {% for k in kinds %}
-        <option value="{{ k.value }}">{{ k.value }}</option>
+        <option value="{{ k.value }}">{{ k.value | capitalize }}</option>
         {% endfor %}
       </select>
     </label>

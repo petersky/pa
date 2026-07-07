@@ -35,16 +35,28 @@ resolve_ref_from_channel() {
   local channels_url="https://raw.githubusercontent.com/${REPO}/main/channels.json"
   local ref=""
 
+  if ! curl -fsSL "${channels_url}" -o /tmp/pa-channels.json; then
+    if [[ "${track}" == "release" ]]; then
+      echo "error: could not fetch channels.json for release track" >&2
+      exit 1
+    fi
+    echo "main"
+    return
+  fi
+
   if command -v jq >/dev/null 2>&1; then
-    ref="$(curl -fsSL "${channels_url}" | jq -r --arg ch "${track}" '.[$ch] // empty' 2>/dev/null || true)"
+    ref="$(jq -r --arg ch "${track}" '.[$ch] // empty' /tmp/pa-channels.json 2>/dev/null || true)"
   else
-    ref="$(curl -fsSL "${channels_url}" 2>/dev/null | sed -n "s/.*\"${track}\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" | head -1 || true)"
+    ref="$(sed -n "s/.*\"${track}\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" /tmp/pa-channels.json | head -1 || true)"
   fi
 
   if [[ -z "${ref}" ]]; then
     case "${track}" in
       dev) ref="main" ;;
-      release) ref="main" ;;
+      release)
+        echo "error: release track missing from channels.json" >&2
+        exit 1
+        ;;
       *) ref="main" ;;
     esac
   fi
@@ -105,14 +117,19 @@ export PA_RELEASE_TRACK="${CHANNEL}"
 [[ -n "${PA_INSTANCE_URL:-}" ]] && export PA_INSTANCE_URL
 [[ -n "${PA_FLEET_OWNER_URL:-}" ]] && export PA_FLEET_OWNER_URL
 
-"${PA_BIN}" install --record-only --channel "${CHANNEL}" || true
+"${PA_BIN}" install --record-only --channel "${CHANNEL}"
 
+SERVICE_OK=1
 if [[ "${PA_SKIP_SERVICE:-0}" != "1" ]]; then
   if [[ "$(uname -s)" == "Darwin" || "$(uname -s)" == "Linux" ]]; then
     echo "Registering service..."
-    "${PA_BIN}" install --service-only || true
-    echo "Starting service..."
-    "${PA_BIN}" start || true
+    if ! "${PA_BIN}" install --service-only; then
+      echo "error: service registration failed" >&2
+      SERVICE_OK=0
+    elif ! "${PA_BIN}" start; then
+      echo "error: service start failed" >&2
+      SERVICE_OK=0
+    fi
   fi
 fi
 
@@ -123,20 +140,27 @@ if [[ -n "${PA_FLEET_TOKEN:-}" ]]; then
   else
     echo "Joining fleet at ${OWNER_URL}..."
     export PA_FLEET_OWNER_URL="${OWNER_URL}"
+    JOINED=0
     for attempt in 1 2 3 4 5; do
       if PA_FLEET_OWNER_URL="${OWNER_URL}" "${PA_BIN}" fleet join "${PA_FLEET_TOKEN}" \
         --url "${INSTANCE_URL}" --owner "${OWNER_URL}" --name "${NAME}"; then
+        JOINED=1
         break
       fi
-      if [[ "${attempt}" -eq 5 ]]; then
-        echo "warning: fleet join failed; run manually after server is up:" >&2
-        echo "  PA_FLEET_OWNER_URL=${OWNER_URL} pa fleet join ${PA_FLEET_TOKEN} --url ${INSTANCE_URL}" >&2
-      else
-        sleep 2
-      fi
+      sleep 2
     done
-    "${PA_BIN}" install --service-only 2>/dev/null || true
+    if [[ "${JOINED}" -eq 0 ]]; then
+      echo "warning: fleet join failed; run manually after server is up:" >&2
+      echo "  PA_FLEET_OWNER_URL=${OWNER_URL} pa fleet join <token> --url ${INSTANCE_URL}" >&2
+    else
+      "${PA_BIN}" install --service-only || true
+    fi
   fi
+fi
+
+if [[ "${SERVICE_OK}" -eq 0 ]]; then
+  echo "error: PA installed but service is not running. Check: ${PA_BIN} doctor" >&2
+  exit 1
 fi
 
 echo ""

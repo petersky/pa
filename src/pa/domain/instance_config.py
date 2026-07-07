@@ -8,6 +8,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+from pa.core.io import atomic_write_json
+
 
 class InstanceConfig(BaseModel):
     instance_id: str = Field(default_factory=lambda: str(uuid4()))
@@ -24,6 +26,7 @@ class InstanceConfig(BaseModel):
     peers: list[str] = Field(default_factory=list)
     release_track: str = "release"
     sync_token: str = ""
+    session_secret: str = ""
 
 
 def config_path(data_dir: Path) -> Path:
@@ -44,8 +47,18 @@ def load_instance_config(data_dir: Path) -> InstanceConfig | None:
 def save_instance_config(data_dir: Path, config: InstanceConfig) -> Path:
     data_dir.mkdir(parents=True, exist_ok=True)
     path = config_path(data_dir)
-    path.write_text(json.dumps(config.model_dump(), indent=2) + "\n")
+    atomic_write_json(path, config.model_dump())
     return path
+
+
+def ensure_session_secret(data_dir: Path) -> str:
+    """Return a stable session secret, persisting to config.json if needed."""
+    config = load_instance_config(data_dir)
+    if config and config.session_secret:
+        return config.session_secret
+    secret = str(uuid4())
+    update_instance_config(data_dir, session_secret=secret)
+    return secret
 
 
 def merge_config_into_settings(data_dir: Path, settings_dict: dict) -> dict:
@@ -67,10 +80,13 @@ def merge_config_into_settings(data_dir: Path, settings_dict: dict) -> dict:
         "peers": loaded.peers,
         "release_track": loaded.release_track,
         "sync_token": loaded.sync_token,
+        "session_secret": loaded.session_secret,
     }
     for key, value in mapping.items():
         if key not in settings_dict or settings_dict.get(key) in (None, "", []):
             settings_dict[key] = value
+    if loaded.session_secret:
+        settings_dict["session_secret"] = loaded.session_secret
     return settings_dict
 
 

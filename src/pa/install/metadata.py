@@ -9,6 +9,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from pa import __version__
+from pa.core.io import atomic_write_json
 
 
 class InstallMetadata(BaseModel):
@@ -36,5 +37,5 @@ def load_install_metadata(data_dir: Path) -> InstallMetadata | None:
 def save_install_metadata(data_dir: Path, metadata: InstallMetadata) -> InstallMetadata:
     data_dir.mkdir(parents=True, exist_ok=True)
     path = install_metadata_path(data_dir)
-    path.write_text(metadata.model_dump_json(indent=2))
+    atomic_write_json(path, metadata.model_dump(mode="json"))
     return metadata

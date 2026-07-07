@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 
 from pa.domain.models import RealmGrant
+from pa.core.io import atomic_write_json
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,7 @@ class GrantStore:
 
     def _save(self) -> None:
         payload = {"grants": [g.model_dump(mode="json") for g in self._grants]}
-        self.path.write_text(json.dumps(payload, indent=2) + "\n")
+        atomic_write_json(self.path, payload)
 
     def add(self, grant: RealmGrant) -> RealmGrant:
         self._grants.append(grant)

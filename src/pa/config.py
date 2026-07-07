@@ -7,7 +7,11 @@ import json
 from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
-from pa.domain.instance_config import load_instance_config, merge_config_into_settings
+from pa.domain.instance_config import (
+    config_path,
+    ensure_session_secret,
+    merge_config_into_settings,
+)
 
 
 def default_data_dir() -> Path:
@@ -145,6 +149,8 @@ def get_settings() -> Settings:
         data_dir = default_data_dir()
         kwargs: dict = {}
         merge_config_into_settings(data_dir, kwargs)
+        if config_path(data_dir).exists():
+            kwargs["session_secret"] = ensure_session_secret(data_dir)
         _settings = Settings(**kwargs)
         _settings.ensure_dirs()
         if _settings.sync_token:

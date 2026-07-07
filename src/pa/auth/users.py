@@ -9,6 +9,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from pa.core.io import atomic_write_json
+
 
 class UserRecord(BaseModel):
     id: str
@@ -62,7 +64,7 @@ class UserDirectory:
     def _save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         payload = {"users": [u.model_dump() for u in self._users.values()]}
-        self.path.write_text(json.dumps(payload, indent=2) + "\n")
+        atomic_write_json(self.path, payload)
 
     def ensure_default_user(self) -> UserRecord:
         if self._users:

@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in — PA</title>
+  <link rel="stylesheet" href="{{ static_url('style.css') }}">
+</head>
+<body class="app-shell login-page">
+  <main class="login-panel">
+    <h1>Sign in to PA</h1>
+    {% if error %}
+    <p class="login-error" role="alert">{{ error }}</p>
+    {% endif %}
+    <form method="post" action="/login" class="stack">
+      <input type="hidden" name="csrf" value="{{ csrf_token }}">
+      <label>
+        Username
+        <input type="text" name="username" required autocomplete="username" autofocus>
+      </label>
+      <label>
+        Password
+        <input type="password" name="password" required autocomplete="current-password">
+      </label>
+      <button type="submit">Sign in</button>
+    </form>
+    <p class="muted">Use credentials created via <code>pa user create</code>.</p>
+  </main>
+</body>
+</html>

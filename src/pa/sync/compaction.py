@@ -10,6 +10,7 @@ from pathlib import Path
 from pa.domain.models import Card
 from pa.sync.event_log import EventLog
 from pa.sync.object_store import ObjectStore
+from pa.core.io import atomic_write_json
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +37,7 @@ class SyncMetrics:
         self._save()
 
     def _save(self) -> None:
-        self.path.write_text(json.dumps(self._metrics, indent=2) + "\n")
+        atomic_write_json(self.path, self._metrics)
 
     def snapshot(self) -> dict:
         return dict(self._metrics)

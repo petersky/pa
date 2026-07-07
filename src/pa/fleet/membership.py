@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from pa.domain.models import Membership, PrincipalType, Realm, RealmInvite, RealmRole
+from pa.core.io import atomic_write_json
 
 
 class MembershipStore:
@@ -46,11 +47,11 @@ class MembershipStore:
             "realms": [r.model_dump() for r in self._realms.values()],
             "memberships": [m.model_dump(mode="json") for m in self._memberships],
         }
-        self.path.write_text(json.dumps(payload, indent=2) + "\n")
+        atomic_write_json(self.path, payload)
 
     def _save_invites(self) -> None:
         payload = {"invites": [i.model_dump(mode="json") for i in self._invites.values()]}
-        self.invites_path.write_text(json.dumps(payload, indent=2) + "\n")
+        atomic_write_json(self.invites_path, payload)
 
     def ensure_realm(self, realm_id: str, name: str = "") -> Realm:
         if realm_id not in self._realms:

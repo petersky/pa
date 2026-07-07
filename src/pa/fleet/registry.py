@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from pa.domain.models import FleetInstance, FleetJoinToken
+from pa.core.io import atomic_write_json
 
 
 class FleetRegistry:
@@ -41,11 +42,11 @@ class FleetRegistry:
     def _save_instances(self) -> None:
         self.instances_path.parent.mkdir(parents=True, exist_ok=True)
         payload = {"instances": [i.model_dump(mode="json") for i in self._instances.values()]}
-        self.instances_path.write_text(json.dumps(payload, indent=2) + "\n")
+        atomic_write_json(self.instances_path, payload)
 
     def _save_tokens(self) -> None:
         payload = {"tokens": [t.model_dump(mode="json") for t in self._tokens.values()]}
-        self.tokens_path.write_text(json.dumps(payload, indent=2) + "\n")
+        atomic_write_json(self.tokens_path, payload)
 
     def register_self(
         self,

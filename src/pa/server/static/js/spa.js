@@ -40,6 +40,13 @@
     }, 4000);
   }
 
+  document.body.addEventListener("htmx:configRequest", function (event) {
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    if (meta && meta.content) {
+      event.detail.headers["X-CSRF-Token"] = meta.content;
+    }
+  });
+
   document.body.addEventListener("htmx:afterSwap", function (event) {
     if (event.detail.target && event.detail.target.id === "app-view") {
       setActiveNav(window.location.pathname);

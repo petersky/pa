@@ -85,6 +85,7 @@ def init(
         peers=peer_list,
         release_track=track or settings.release_track,
         sync_token=sync_token or "",
+        session_secret=settings.session_secret,
     )
     save_instance_config(settings.data_dir, config)
     typer.echo(f"Initialized PA instance '{settings.instance_name}'")

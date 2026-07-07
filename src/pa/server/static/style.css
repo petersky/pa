@@ -482,6 +482,34 @@ button.ghost, .text-btn {
 
 .settings-dl dd { margin: 0; }
 
+/* ── Login ── */
+
+.login-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+}
+
+.login-panel {
+  width: min(100%, 22rem);
+  padding: 1.5rem;
+  border: 1px solid var(--pa-border);
+  border-radius: 8px;
+  background: var(--pa-surface);
+}
+
+.login-panel h1 {
+  margin: 0 0 1rem;
+  font-size: 1.25rem;
+}
+
+.login-error {
+  color: var(--pa-danger);
+  margin: 0 0 0.75rem;
+  font-size: 0.9rem;
+}
+
 code {
   font-size: 0.8rem;
   word-break: break-all;

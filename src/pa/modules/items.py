@@ -177,20 +177,28 @@ def list_knowledge(item_id: str | None = None, limit: int = 50) -> list[dict]:
     return [entry.model_dump(mode="json") for entry in entries]
 
 
-@ui_router.post("/items")
+@ui_router.post("/items", response_model=None)
 def create_item_ui(
     request: Request,
     kind: ItemKind = Form(...),
     title: str = Form(...),
     body: str = Form(""),
-) -> RedirectResponse:
+) -> HTMLResponse | RedirectResponse:
     realm = _active_realm(request)
     get_store().create_card(
         ItemCreate(kind=kind, title=title, body=body).to_card_create(realm),
         principal_id=get_principal_id(request),
         instance_id=request.app.state.ctx.settings.instance_id,
     )
-    return RedirectResponse(url="/", status_code=303)
+    cards = get_store().list_cards(realm_id=realm)
+    items = [Item.from_card(c) for c in cards]
+    if request.headers.get("HX-Request"):
+        return _templates(request).TemplateResponse(
+            request,
+            "partials/items.html",
+            {"items": items, "cards": cards},
+        )
+    return RedirectResponse(url=f"/?realm={realm}", status_code=303)
 
 
 @ui_router.post("/cards")

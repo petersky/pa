@@ -8,6 +8,7 @@ from fastapi import HTTPException, Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, Response
 
+from pa.auth.csrf import COOKIE_NAME, generate_token, validate_request
 from pa.auth.sessions import SessionManager
 from pa.auth.users import UserDirectory
 from pa.config import Settings
@@ -27,6 +28,12 @@ SYNC_PATHS = {
     "/api/sync/refs",
 }
 
+CSRF_EXEMPT_PATHS = {
+    "/api/fleet/join",
+    "/api/auth/login",
+    "/login",
+}
+
 
 def _is_public(path: str) -> bool:
     if path in PUBLIC_PATHS:
@@ -40,6 +47,17 @@ def _is_public(path: str) -> bool:
 
 def _is_sync_path(path: str) -> bool:
     return path in SYNC_PATHS
+
+
+def _needs_csrf(request: Request) -> bool:
+    if request.method not in ("POST", "PUT", "PATCH", "DELETE"):
+        return False
+    path = request.url.path
+    if _is_public(path) or path in CSRF_EXEMPT_PATHS:
+        return False
+    if path.startswith("/api/") and request.headers.get("authorization", "").startswith("Bearer "):
+        return False
+    return True
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -106,7 +124,21 @@ class AuthMiddleware(BaseHTTPMiddleware):
             request.state.user = default
             request.state.principal_id = f"user:{default.id}"
 
+        if _needs_csrf(request) and not validate_request(request):
+            return JSONResponse({"detail": "CSRF validation failed"}, status_code=403)
+
         response = await call_next(request)
+
+        if not request.cookies.get(COOKIE_NAME):
+            token = generate_token()
+            response.set_cookie(
+                COOKIE_NAME,
+                token,
+                httponly=False,
+                samesite="lax",
+                max_age=86400 * 30,
+            )
+
         return response
 
 

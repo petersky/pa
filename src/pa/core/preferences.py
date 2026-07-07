@@ -6,6 +6,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from pa.core.io import atomic_write_json
+
 
 class AppearanceMode(StrEnum):
     SYSTEM = "system"
@@ -33,7 +35,7 @@ class PreferencesStore:
 
     def save(self, prefs: UserPreferences) -> UserPreferences:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(prefs.model_dump_json(indent=2))
+        atomic_write_json(self.path, prefs.model_dump())
         return prefs
 
     def update(self, **kwargs) -> UserPreferences:

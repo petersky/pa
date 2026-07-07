@@ -35,6 +35,7 @@ def _shell_context(request: Request) -> dict:
         "nav_pages": pages.nav_pages(),
         "asset_version": assets.version,
         "static_url": assets.url,
+        "csrf_token": request.cookies.get("pa_csrf", ""),
     }
 
 
@@ -82,7 +83,7 @@ def page_home(request: Request) -> HTMLResponse:
 
 @router.get("/{page_path:path}", response_class=HTMLResponse)
 def page_route(request: Request, page_path: str) -> HTMLResponse:
-    reserved = ("partials", "static", "api", "items")
+    reserved = ("partials", "static", "api", "items", "login")
     first = page_path.split("/", 1)[0]
     if first in reserved:
         raise HTTPException(status_code=404)
