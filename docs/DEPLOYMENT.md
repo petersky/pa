@@ -274,9 +274,11 @@ From a git checkout with a clean working tree.
 **Recommended** — agent-generated release notes via [`scripts/release.sh`](../scripts/release.sh):
 
 ```bash
-./scripts/release.sh patch              # bump, generate notes, commit, tag
-./scripts/release.sh minor --push       # also push tag (triggers CI)
+./scripts/release.sh patch              # bump, notes, commit, tag, push (default)
+./scripts/release.sh patch --no-push    # local only, no push
+./scripts/release.sh minor
 ./scripts/release.sh 1.2.3 --channel beta
+./scripts/release.sh --publish          # push current tag + publish notes
 ./scripts/release.sh --amend --tag v0.1.2   # regenerate notes for existing tag
 ./scripts/release.sh patch --no-agent   # skip agent; template + changelog only
 ```
@@ -295,11 +297,11 @@ Output: `releases/vX.Y.Z.md`
 **Low-level** (no agent notes):
 
 ```bash
-pa release patch          # 0.0.1 → 0.0.2, tag v0.0.2
+pa release patch          # 0.0.1 → 0.0.2, tag v0.0.2, push (default)
 pa release minor
 pa release major
 pa release beta           # 0.0.2-beta.1
-pa release patch --push   # commit, tag, push to origin
+pa release patch --no-push   # local only, no push
 ```
 
 Pushing a `v*` tag triggers [`.github/workflows/release.yml`](../.github/workflows/release.yml) to build a wheel and publish a GitHub Release (prerelease for alpha/beta/rc tags).

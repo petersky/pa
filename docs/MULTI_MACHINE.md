@@ -203,5 +203,5 @@ pa sync status --realm personal
 ## CI/CD (maintainers)
 
 - Push `v*` tag → GitHub Release with wheel + `channels.json` update
-- `pa release patch|minor|major --push` for local releases
+- `pa release patch|minor|major` for local releases (pushes by default; use `--no-push` to skip)
 - CI smoke tests on PR/push to `main`

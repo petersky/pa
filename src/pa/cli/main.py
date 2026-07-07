@@ -288,9 +288,9 @@ def update(
 
 def _release_command(bump: str):
     def command(
-        push: Annotated[
+        no_push: Annotated[
             bool,
-            typer.Option("--push", help="Push commit and tag to origin"),
+            typer.Option("--no-push", help="Skip pushing commit and tag to origin"),
         ] = False,
         no_commit: Annotated[
             bool,
@@ -307,7 +307,7 @@ def _release_command(bump: str):
             result = create_release(
                 bump,
                 commit=not no_commit,
-                push=push,
+                push=not no_push,
                 message=message,
             )
         except (RuntimeError, ValueError) as exc:
@@ -316,10 +316,10 @@ def _release_command(bump: str):
 
         typer.echo(f"Bumped {result.old_version} → {result.new_version}")
         typer.echo(f"Tag: {result.tag} ({result.track} track)")
-        if push:
-            typer.echo("Pushed to origin.")
+        if no_push:
+            typer.echo("Local only (--no-push). Re-run without --no-push to publish.")
         else:
-            typer.echo("Local tag created. Run with --push to publish.")
+            typer.echo("Pushed to origin.")
 
     return command
 

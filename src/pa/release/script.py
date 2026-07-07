@@ -43,7 +43,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--tag", help="Tag for amend/publish (default: latest or current version)")
     parser.add_argument("--agent", dest="agent_cmd", help="Agent command")
     parser.add_argument("--agent-args", dest="agent_args", help="Agent arguments")
-    parser.add_argument("--push", action="store_true", help="Push commit and tag")
+    parser.add_argument(
+        "--no-push",
+        action="store_true",
+        help="Skip pushing commit and tag to origin (default: push)",
+    )
     parser.add_argument("--no-commit", action="store_true", help="Skip git commit")
     parser.add_argument("--no-agent", action="store_true", help="Skip agent; use prefilled template")
     parser.add_argument("--notes-file", type=Path, help="Override release notes path")
@@ -60,6 +64,7 @@ def _tag_version(tag: str) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
+    do_push = not args.no_push
 
     if args.dry_run:
         if args.publish:
@@ -130,12 +135,12 @@ def main(argv: list[str] | None = None) -> int:
             tag,
             content,
             commit=not args.no_commit,
-            push=args.push,
+            push=do_push,
             message=args.message,
             notes_path=notes_path,
         )
 
-        if not args.skip_gh and args.push:
+        if not args.skip_gh and do_push:
             try:
                 publish_github_release(tag, notes_path, amend=True)
                 print(f"Updated GitHub release notes for {tag}.")
@@ -172,14 +177,14 @@ def main(argv: list[str] | None = None) -> int:
         args.version,
         channel=args.channel,
         commit=not args.no_commit,
-        push=args.push,
+        push=do_push,
         message=args.message,
         notes_content=content,
         notes_path=notes_path,
     )
     print(f"{result.old_version} -> {result.new_version} ({result.tag})")
 
-    if not args.skip_gh and args.push:
+    if not args.skip_gh and do_push:
         if args.wait_ci > 0:
             print(f"Waiting {args.wait_ci}s for CI to create GitHub release...")
             time.sleep(args.wait_ci)
@@ -195,10 +200,9 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"\nRelease {tag} complete.")
     print(f"  Notes: {notes_path}")
-    if not args.push:
-        print("  Push to publish: git push && git push origin", tag)
-        print("  Or: ./scripts/release.sh --publish")
-        print("  Or re-run with --push to commit, tag, push, and publish notes.")
+    if not do_push:
+        print("  Skipped push (--no-push). Publish later:")
+        print(f"    ./scripts/release.sh --publish --tag {tag}")
     return 0
 
 
