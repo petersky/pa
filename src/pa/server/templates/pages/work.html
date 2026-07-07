@@ -45,6 +45,12 @@
 
 {% set right %}
 <div class="panel">
+  <div class="panel-header"><h2>Card</h2></div>
+  <div id="card-detail" class="scroll-region">
+    {% include "partials/card-detail-empty.html" %}
+  </div>
+</div>
+<div class="panel">
   <div class="panel-header"><h2>Filter by kind</h2></div>
   <nav class="sidebar-menu">
     {% for k in kinds %}

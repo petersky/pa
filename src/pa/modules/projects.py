@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from pa.auth.middleware import get_principal_id
@@ -88,12 +88,18 @@ def project_cards_api(request: Request, project_id: str, realm: str | None = Non
 
 
 @router.post("/projects/{project_id}/assign/{card_id}")
-def assign_card_api(request: Request, project_id: str, card_id: str) -> dict:
+def assign_card_api(
+    request: Request,
+    project_id: str,
+    card_id: str,
+    realm: str | None = None,
+) -> dict:
     settings = request.app.state.ctx.settings
+    realm_id = realm or _active_realm(request)
     card = get_store().assign_card_to_project(
         card_id,
         project_id,
-        realm_id=settings.primary_realm,
+        realm_id=realm_id,
         principal_id=get_principal_id(request),
         instance_id=settings.instance_id,
     )
@@ -106,6 +112,27 @@ def assign_card_api(request: Request, project_id: str, card_id: str) -> dict:
 def projects_page(request: Request):
     from pa.modules.ui_shell import render_page
 
+    page = request.app.state.ctx.require_service("pages").get_by_path("/projects")
+    if not page:
+        raise HTTPException(status_code=404)
+    return render_page(request, page)
+
+
+@ui_router.post("/projects", response_model=None)
+def create_project_ui(
+    request: Request,
+    title: str = Form(...),
+    description: str = Form(""),
+    realm: str | None = None,
+) -> HTMLResponse:
+    from pa.modules.ui_shell import render_page
+
+    realm_id = realm or _active_realm(request)
+    get_store().create_project(
+        ProjectCreate(realm_id=realm_id, title=title, description=description),
+        principal_id=get_principal_id(request),
+        instance_id=request.app.state.ctx.settings.instance_id,
+    )
     page = request.app.state.ctx.require_service("pages").get_by_path("/projects")
     if not page:
         raise HTTPException(status_code=404)

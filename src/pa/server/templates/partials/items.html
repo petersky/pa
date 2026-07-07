@@ -6,7 +6,12 @@
       <span class="badge">{{ item.kind.value }}</span>
       <span class="status status-{{ item.status.value }}">{{ item.status.value }}</span>
     </div>
-    <h3>{{ item.title }}</h3>
+    <h3 class="card-title-btn"
+        role="button"
+        tabindex="0"
+        hx-get="/partials/cards/{{ item.id }}/detail?realm={{ active_realm | default('default') }}"
+        hx-target="#card-detail"
+        hx-swap="innerHTML">{{ item.title }}</h3>
     {% if item.body %}
     <p>{{ item.body }}</p>
     {% endif %}

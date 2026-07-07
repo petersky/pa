@@ -20,10 +20,25 @@ router = APIRouter()
 ui_router = APIRouter()
 
 
+def _refresh_fleet_health(fleet: FleetRegistry) -> None:
+    for inst in fleet.list_instances():
+        healthy = False
+        try:
+            with httpx.Client(timeout=5.0) as client:
+                resp = client.get(f"{inst.url.rstrip('/')}/api/health")
+                healthy = resp.status_code == 200
+        except httpx.HTTPError:
+            pass
+        inst.healthy = healthy
+        inst.last_seen = datetime.now(UTC)
+        fleet.upsert_instance(inst)
+
+
 def _fleet_context(request: Request) -> dict:
     ctx = request.app.state.ctx
     settings = ctx.settings
     fleet: FleetRegistry = ctx.require_service("fleet_registry")
+    _refresh_fleet_health(fleet)
     membership: MembershipStore = ctx.require_service("membership")
     peer_table: PeerTable = ctx.require_service("peer_table")
     return {

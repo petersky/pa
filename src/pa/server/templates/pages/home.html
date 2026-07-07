@@ -50,6 +50,12 @@
 
 {% set right %}
 <div class="panel">
+  <div class="panel-header"><h2>Card</h2></div>
+  <div id="card-detail" class="scroll-region">
+    {% include "partials/card-detail-empty.html" %}
+  </div>
+</div>
+<div class="panel">
   <div class="panel-header">
     <h2>Knowledge</h2>
     <button class="ghost" hx-get="/partials/knowledge"

@@ -466,6 +466,39 @@ button.ghost, .text-btn {
 
 .muted, .empty { color: var(--pa-text-muted); font-size: 0.8667rem; }
 
+.card-title-btn {
+  cursor: pointer;
+  margin: 0;
+}
+
+.card-title-btn:hover {
+  color: var(--pa-accent, var(--pa-text));
+  text-decoration: underline;
+}
+
+.card-detail .form-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+button.danger, .ghost.danger {
+  color: var(--pa-danger);
+}
+
+.panel-inset {
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  border: 1px solid var(--pa-border);
+  border-radius: 6px;
+}
+
+.panel-inset summary {
+  cursor: pointer;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
 /* ── Settings ── */
 
 .settings-dl {

@@ -228,7 +228,11 @@ def items_partial(request: Request, kind: ItemKind | None = None) -> HTMLRespons
     return _templates(request).TemplateResponse(
         request,
         "partials/items.html",
-        {"items": [Item.from_card(c) for c in cards], "cards": cards},
+        {
+            "items": [Item.from_card(c) for c in cards],
+            "cards": cards,
+            "active_realm": realm,
+        },
     )
 
 
@@ -246,6 +250,80 @@ def cards_partial(
         request,
         "partials/cards.html",
         {"cards": cards, "lane": lane},
+    )
+
+
+@ui_router.get("/partials/card-detail-empty", response_class=HTMLResponse)
+def card_detail_empty(request: Request) -> HTMLResponse:
+    return _templates(request).TemplateResponse(
+        request,
+        "partials/card-detail-empty.html",
+        {},
+    )
+
+
+@ui_router.get("/partials/cards/{card_id}/detail", response_class=HTMLResponse)
+def card_detail_partial(request: Request, card_id: str, realm: str | None = None) -> HTMLResponse:
+    realm_id = realm or _active_realm(request)
+    card = get_store().get_card(card_id, realm_id=realm_id)
+    return _templates(request).TemplateResponse(
+        request,
+        "partials/card-detail.html",
+        {
+            "card": card,
+            "lanes": list(CardLane),
+            "csrf_token": request.cookies.get("pa_csrf", ""),
+        },
+    )
+
+
+@ui_router.post("/partials/cards/{card_id}", response_model=None)
+def card_detail_update(
+    request: Request,
+    card_id: str,
+    title: str = Form(...),
+    body: str = Form(""),
+    lane: CardLane = Form(...),
+    realm: str | None = None,
+) -> HTMLResponse:
+    realm_id = realm or _active_realm(request)
+    settings = request.app.state.ctx.settings
+    card = get_store().update_card(
+        card_id,
+        CardUpdate(title=title, body=body, lane=lane),
+        realm_id=realm_id,
+        principal_id=get_principal_id(request),
+        instance_id=settings.instance_id,
+    )
+    return _templates(request).TemplateResponse(
+        request,
+        "partials/card-detail.html",
+        {
+            "card": card,
+            "lanes": list(CardLane),
+            "csrf_token": request.cookies.get("pa_csrf", ""),
+        },
+    )
+
+
+@ui_router.delete("/partials/cards/{card_id}", response_model=None)
+def card_detail_delete(
+    request: Request,
+    card_id: str,
+    realm: str | None = None,
+) -> HTMLResponse:
+    realm_id = realm or _active_realm(request)
+    settings = request.app.state.ctx.settings
+    get_store().delete_card(
+        card_id,
+        realm_id=realm_id,
+        principal_id=get_principal_id(request),
+        instance_id=settings.instance_id,
+    )
+    return _templates(request).TemplateResponse(
+        request,
+        "partials/card-detail-empty.html",
+        {},
     )
 
 

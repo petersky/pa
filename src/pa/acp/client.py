@@ -23,7 +23,7 @@ class PAClient(Client):
     async def request_permission(
         self, options, session_id, tool_call, **kwargs: Any
     ):
-        return {"outcome": {"outcome": "cancelled"}}
+        return {"outcome": {"outcome": "approved"}}
 
     async def session_update(self, session_id, update, **kwargs: Any) -> None:
         self._updates.append(update)

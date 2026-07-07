@@ -7,6 +7,27 @@
     <a href="/?realm={{ active_realm }}" class="text-btn">+ New card</a>
   </div>
 
+  <details class="panel-inset">
+    <summary>New project</summary>
+    <form class="stack"
+          hx-post="/projects"
+          hx-target="#app-view"
+          hx-push-url="true"
+          hx-swap="innerHTML">
+      <input type="hidden" name="realm" value="{{ active_realm }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token }}">
+      <label>
+        Title
+        <input type="text" name="title" required placeholder="Project name">
+      </label>
+      <label>
+        Description
+        <textarea name="description" rows="2" placeholder="Optional"></textarea>
+      </label>
+      <button type="submit">Create project</button>
+    </form>
+  </details>
+
   {% if project %}
   <div class="panel" style="margin-bottom: 1rem;">
     <h3>{{ project.title }}</h3>
@@ -39,7 +60,7 @@
     {% endfor %}
   </ul>
   {% else %}
-  <p class="empty">No projects yet. Create one with <code>pa project create "Title"</code> or MCP <code>create_project</code>.</p>
+  <p class="empty">No projects yet. Create one above.</p>
   {% endif %}
 </div>
 {% endset %}
