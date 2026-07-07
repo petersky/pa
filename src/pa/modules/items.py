@@ -249,7 +249,12 @@ def cards_partial(
     return _templates(request).TemplateResponse(
         request,
         "partials/cards.html",
-        {"cards": cards, "lane": lane},
+        {
+            "cards": cards,
+            "lane": lane,
+            "lanes": list(CardLane),
+            "active_realm": realm_id,
+        },
     )
 
 
@@ -325,6 +330,25 @@ def card_detail_delete(
         "partials/card-detail-empty.html",
         {},
     )
+
+
+@ui_router.post("/partials/cards/{card_id}/move", response_model=None)
+def card_lane_move(
+    request: Request,
+    card_id: str,
+    lane: CardLane = Form(...),
+    realm: str | None = None,
+) -> HTMLResponse:
+    realm_id = realm or _active_realm(request)
+    settings = request.app.state.ctx.settings
+    get_store().update_card(
+        card_id,
+        CardUpdate(lane=lane),
+        realm_id=realm_id,
+        principal_id=get_principal_id(request),
+        instance_id=settings.instance_id,
+    )
+    return HTMLResponse("", status_code=204)
 
 
 @ui_router.get("/partials/knowledge", response_class=HTMLResponse)

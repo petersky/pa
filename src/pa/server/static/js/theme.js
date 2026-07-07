@@ -32,6 +32,22 @@
     return { appearance, themeId };
   }
 
+  function csrfToken() {
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.content : "";
+  }
+
+  function secureCookieSuffix() {
+    return window.location.protocol === "https:" ? "; secure" : "";
+  }
+
+  async function apiPutTheme(body) {
+    const headers = { "Content-Type": "application/json" };
+    const token = csrfToken();
+    if (token) headers["X-CSRF-Token"] = token;
+    await fetch("/api/ui/theme", { method: "PUT", headers, body: JSON.stringify(body) });
+  }
+
   function applyTheme(prefs) {
     const resolved = resolveAppearance(prefs.appearance);
     document.documentElement.dataset.theme = prefs.themeId;
@@ -104,22 +120,48 @@
 
   async function setAppearance(appearance) {
     localStorage.setItem(STORAGE_KEY, appearance);
-    document.cookie = `pa_appearance=${encodeURIComponent(appearance)}; path=/; max-age=31536000; samesite=lax`;
+    document.cookie =
+      `pa_appearance=${encodeURIComponent(appearance)}; path=/; max-age=31536000; samesite=lax` +
+      secureCookieSuffix();
     const prefs = getPreferences();
     applyTheme(prefs);
     loadVariantStyles(prefs.themeId, prefs.appearance);
     try {
-      await fetch("/api/ui/theme", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ appearance }),
-      });
+      await apiPutTheme({ appearance });
     } catch (_) {
       /* offline — local preference still applies */
     }
   }
 
-  window.PATheme = { init, setAppearance, getPreferences, resolveAppearance, cycleAppearance, staticUrl };
+  async function setThemeId(themeId, button) {
+    localStorage.setItem(THEME_KEY, themeId);
+    document.cookie =
+      `pa_theme=${encodeURIComponent(themeId)}; path=/; max-age=31536000; samesite=lax` +
+      secureCookieSuffix();
+    document.documentElement.dataset.themeId = themeId;
+    const prefs = getPreferences();
+    applyTheme({ appearance: prefs.appearance, themeId });
+    loadVariantStyles(themeId, prefs.appearance);
+    document.querySelectorAll(".theme-card").forEach(function (el) {
+      el.classList.toggle("active", el.dataset.themeId === themeId);
+    });
+    if (button) button.classList.add("active");
+    try {
+      await apiPutTheme({ theme_id: themeId });
+    } catch (_) {
+      /* offline */
+    }
+  }
+
+  window.PATheme = {
+    init,
+    setAppearance,
+    setThemeId,
+    getPreferences,
+    resolveAppearance,
+    cycleAppearance,
+    staticUrl,
+  };
   init();
   document.body.addEventListener("htmx:afterSwap", bindThemeToggle);
 })();

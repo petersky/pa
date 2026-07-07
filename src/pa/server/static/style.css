@@ -499,6 +499,54 @@ button.danger, .ghost.danger {
   margin-bottom: 0.5rem;
 }
 
+.card-lane-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.35rem;
+}
+
+button.small, .ghost.small {
+  font-size: 0.75rem;
+  padding: 0.1rem 0.35rem;
+}
+
+.theme-picker {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.theme-card {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.6rem 0.75rem;
+  margin-bottom: 0.35rem;
+  border: 1px solid var(--pa-border);
+  border-radius: 6px;
+  background: var(--pa-surface);
+  cursor: pointer;
+}
+
+.theme-card:hover {
+  border-color: var(--pa-accent, var(--pa-text-muted));
+}
+
+.theme-card.active {
+  border-color: var(--pa-accent, var(--pa-ok));
+  box-shadow: inset 0 0 0 1px var(--pa-accent, var(--pa-ok));
+}
+
+.theme-card strong {
+  display: block;
+}
+
+.theme-card .muted {
+  display: block;
+  margin-top: 0.15rem;
+}
+
 /* ── Settings ── */
 
 .settings-dl {

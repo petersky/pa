@@ -636,20 +636,11 @@ def sync_status(
     realm: Annotated[str | None, typer.Option(help="Realm ID")] = None,
 ) -> None:
     """Show sync status for a realm."""
-    from pa.fleet.membership import MembershipStore
-    from pa.network.peer_table import PeerTable
-    from pa.sync.engine import SyncEngine
-    from pa.sync.infrastructure import get_event_log, get_object_store
+    from pa.sync.infrastructure import get_sync_engine
 
     settings = get_settings()
     realm_id = realm or settings.primary_realm
-    engine = SyncEngine(
-        settings,
-        get_object_store(settings),
-        get_event_log(settings),
-        PeerTable(settings.data_dir),
-        MembershipStore(settings.data_dir),
-    )
+    engine = get_sync_engine(settings)
     status = engine.status(realm_id)
     typer.echo(f"Realm:   {status['realm_id']}")
     typer.echo(f"Head:    {status.get('head') or '—'}")

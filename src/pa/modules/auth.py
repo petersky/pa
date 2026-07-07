@@ -5,6 +5,7 @@ import secrets
 from fastapi import APIRouter, Form, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from pa.auth.cookies import use_secure_cookies
 from pa.auth.csrf import COOKIE_NAME
 from pa.auth.middleware import require_user
 from pa.auth.sessions import SessionManager
@@ -34,17 +35,20 @@ def login(
         token,
         httponly=True,
         samesite="lax",
+        secure=use_secure_cookies(request, request.app.state.ctx.settings),
         max_age=86400 * 7,
     )
     return {"user_id": user.id, "username": user.username}
 
 
 @router.post("/auth/logout")
-def logout(response: Response) -> dict:
+def logout(request: Request, response: Response) -> dict:
+    secure = use_secure_cookies(request, request.app.state.ctx.settings)
     response.delete_cookie(
         SessionManager.COOKIE_NAME,
         path="/",
         samesite="lax",
+        secure=secure,
     )
     return {"ok": True}
 
@@ -96,11 +100,13 @@ def login_form(
 
     token = sessions.create_token(user)
     response = RedirectResponse("/", status_code=303)
+    settings = request.app.state.ctx.settings
     response.set_cookie(
         SessionManager.COOKIE_NAME,
         token,
         httponly=True,
         samesite="lax",
+        secure=use_secure_cookies(request, settings),
         max_age=86400 * 7,
     )
     return response

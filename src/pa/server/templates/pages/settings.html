@@ -34,11 +34,16 @@
 {% set right %}
 <div class="panel">
   <div class="panel-header"><h2>Themes</h2></div>
-  <ul class="theme-list">
+  <ul class="theme-list theme-picker">
     {% for t in themes %}
     <li>
-      <strong>{{ t.name }}</strong>
-      <span class="muted">{{ t.description }}</span>
+      <button type="button"
+              class="theme-card{% if t.id == prefs.theme_id %} active{% endif %}"
+              data-theme-id="{{ t.id }}"
+              onclick="PATheme.setThemeId('{{ t.id }}', this)">
+        <strong>{{ t.name }}</strong>
+        <span class="muted">{{ t.description }}</span>
+      </button>
     </li>
     {% endfor %}
   </ul>

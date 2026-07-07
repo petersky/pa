@@ -16,6 +16,21 @@
     {% if card.body %}
     <p>{{ card.body }}</p>
     {% endif %}
+    {% if lanes %}
+    <div class="card-lane-actions">
+      {% for lane in lanes %}
+      {% if lane != card.lane %}
+      <button type="button" class="ghost small"
+              hx-post="/partials/cards/{{ card.id }}/move?realm={{ card.realm_id }}"
+              hx-vals='{"lane": "{{ lane.value }}"}'
+              hx-swap="none"
+              hx-on::after-request="if(event.detail.successful) htmx.trigger(document.body, 'boardRefresh')">
+        → {{ lane.value | capitalize }}
+      </button>
+      {% endif %}
+      {% endfor %}
+    </div>
+    {% endif %}
   </li>
   {% endfor %}
 </ul>

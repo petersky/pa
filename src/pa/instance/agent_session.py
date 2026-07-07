@@ -13,18 +13,18 @@ logger = logging.getLogger(__name__)
 
 @contextmanager
 def _agent_env_overlay(extra: dict[str, str]):
-  prev: dict[str, str | None] = {}
-  for key, value in extra.items():
-      prev[key] = os.environ.get(key)
-      os.environ[key] = value
-  try:
-      yield
-  finally:
-      for key, old in prev.items():
-          if old is None:
-              os.environ.pop(key, None)
-          else:
-              os.environ[key] = old
+    prev: dict[str, str | None] = {}
+    for key, value in extra.items():
+        prev[key] = os.environ.get(key)
+        os.environ[key] = value
+    try:
+        yield
+    finally:
+        for key, old in prev.items():
+            if old is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = old
 
 
 class InstanceAgent:
@@ -34,7 +34,7 @@ class InstanceAgent:
         self.settings = settings
         self.store = store
         self._connection: AgentConnection | None = None
-        self._task: asyncio.Task[Any] | None = None
+        self._prompt_lock = asyncio.Lock()
 
     @property
     def connected(self) -> bool:
@@ -74,14 +74,15 @@ class InstanceAgent:
         if not self._connection:
             raise RuntimeError("Instance agent not connected")
         env = agent_env or {}
-        with _agent_env_overlay(env):
-            return await self._connection.prompt(
-                message,
-                item_id=item_id,
-                principal_id=principal_id,
-                project_id=project_id,
-                cwd=cwd,
-            )
+        async with self._prompt_lock:
+            with _agent_env_overlay(env):
+                return await self._connection.prompt(
+                    message,
+                    item_id=item_id,
+                    principal_id=principal_id,
+                    project_id=project_id,
+                    cwd=cwd,
+                )
 
 
 _instance_agent: InstanceAgent | None = None

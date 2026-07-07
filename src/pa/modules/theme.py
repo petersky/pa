@@ -8,6 +8,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from pa.auth.cookies import use_secure_cookies
 from pa.core.contracts import Module
 from pa.core.context import AppContext
 from pa.core.preferences import AppearanceMode, get_preferences_store
@@ -107,17 +108,20 @@ def set_theme_preference(request: Request, body: ThemePreferenceUpdate) -> JSONR
             "appearance": prefs.appearance.value,
         }
     )
+    secure = use_secure_cookies(request, request.app.state.ctx.settings)
     response.set_cookie(
         "pa_appearance",
         prefs.appearance.value,
         max_age=60 * 60 * 24 * 365,
         samesite="lax",
+        secure=secure,
     )
     response.set_cookie(
         "pa_theme",
         prefs.theme_id,
         max_age=60 * 60 * 24 * 365,
         samesite="lax",
+        secure=secure,
     )
     return response
 

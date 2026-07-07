@@ -33,7 +33,7 @@
       <h3>{{ lane.value | capitalize }}</h3>
       <div class="board-column-body"
            hx-get="/partials/cards?realm={{ active_realm }}{% if active_project %}&project={{ active_project }}{% endif %}&lane={{ lane.value }}"
-           hx-trigger="load"
+           hx-trigger="load, boardRefresh from:body"
            hx-swap="innerHTML">
         <p class="muted">Loading…</p>
       </div>

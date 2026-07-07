@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
+from pa.core.io import atomic_write_json
 from pa.integrations.base import Connector, ExternalSystem, SyncBinding
 from pa.integrations.stubs.github import GitHubIssuesConnector
 from pa.integrations.stubs.jira import JiraConnector
 from pa.integrations.stubs.notion import NotionConnector
+
+logger = logging.getLogger(__name__)
 
 
 class IntegrationsRegistry:
@@ -35,13 +39,46 @@ class IntegrationsRegistry:
     def _save(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         payload = {"bindings": [b.model_dump(mode="json") for b in self._bindings]}
-        self.bindings_path.write_text(json.dumps(payload, indent=2) + "\n")
+        atomic_write_json(self.bindings_path, payload)
 
-    def list_systems(self) -> list[str]:
-        return [s.value for s in self._connectors]
+    def list_systems(self) -> list[dict]:
+        return [
+            {
+                "id": system.value,
+                "stub": bool(getattr(connector, "STUB", False)),
+            }
+            for system, connector in self._connectors.items()
+        ]
 
     def get_connector(self, system: ExternalSystem) -> Connector | None:
         return self._connectors.get(system)
+
+    def is_stub(self, system: ExternalSystem) -> bool:
+        connector = self.get_connector(system)
+        return bool(connector and getattr(connector, "STUB", False))
+
+    def configure(self, system: ExternalSystem, config: dict) -> None:
+        connector = self.get_connector(system)
+        if not connector:
+            raise ValueError(f"Unknown system: {system}")
+        if getattr(connector, "STUB", False):
+            logger.warning(
+                "Connector %s is a stub; configuration is stored but sync is not implemented",
+                system.value,
+            )
+        connector.configure(config)
+
+    async def pull_binding(self, binding: SyncBinding) -> dict:
+        connector = self.get_connector(binding.external_ref.system)
+        if not connector:
+            raise ValueError(f"Unknown system: {binding.external_ref.system}")
+        if getattr(connector, "STUB", False):
+            logger.warning(
+                "Connector %s is a stub; pull for binding %s returned no data",
+                binding.external_ref.system.value,
+                binding.id,
+            )
+        return await connector.pull(binding)
 
     def list_bindings(self, realm_id: str | None = None) -> list[SyncBinding]:
         if realm_id:
@@ -49,6 +86,11 @@ class IntegrationsRegistry:
         return list(self._bindings)
 
     def add_binding(self, binding: SyncBinding) -> SyncBinding:
+        if self.is_stub(binding.external_ref.system):
+            logger.warning(
+                "Adding binding for stub connector %s; sync will not fetch external data",
+                binding.external_ref.system.value,
+            )
         self._bindings.append(binding)
         self._save()
         return binding

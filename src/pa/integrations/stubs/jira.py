@@ -7,12 +7,13 @@ from pa.integrations.base import ExternalRef, ExternalSystem, SyncBinding
 
 class JiraConnector:
     system = ExternalSystem.JIRA
+    STUB = True
 
     def configure(self, config: dict) -> None:
         pass
 
     async def pull(self, binding: SyncBinding) -> dict:
-        return {}
+        return {"_stub": True, "items": []}
 
     async def push(self, binding: SyncBinding, pa_snapshot: dict) -> ExternalRef:
         raise NotImplementedError("Jira sync not implemented")

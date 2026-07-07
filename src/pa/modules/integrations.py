@@ -53,14 +53,17 @@ async def sync_binding(request: Request, binding_id: str) -> dict:
     binding = registry.get_binding(binding_id)
     if not binding:
         raise HTTPException(status_code=404, detail="Binding not found")
+    if registry.is_stub(binding.external_ref.system):
+        raise HTTPException(
+            status_code=501,
+            detail=f"Connector {binding.external_ref.system.value} is a stub and cannot sync yet",
+        )
     await request.app.state.ctx.hooks.emit(
         "integration.sync.requested",
         binding_id=binding_id,
     )
-    raise HTTPException(
-        status_code=501,
-        detail="External sync not implemented yet; see docs/INTEGRATIONS.md",
-    )
+    data = await registry.pull_binding(binding)
+    return {"binding_id": binding_id, "data": data}
 
 
 class IntegrationsModule(Module):

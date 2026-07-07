@@ -234,6 +234,8 @@ class FleetModule(Module):
 
     def on_load(self, ctx: AppContext) -> None:
         settings = ctx.settings
+        from pa.sync.infrastructure import get_membership_store, get_peer_table
+
         fleet = FleetRegistry(settings.data_dir, settings.fleet_id)
         fleet.register_self(
             settings.instance_id,
@@ -244,12 +246,12 @@ class FleetModule(Module):
             relay_enabled=settings.relay_enabled,
         )
         ctx.register_service("fleet_registry", fleet)
-        membership = MembershipStore(settings.data_dir)
+        membership = get_membership_store(settings)
         for realm in settings.subscribed_realms:
             membership.ensure_realm(realm)
             membership.ensure_owner_membership(realm, "local", fleet_id=settings.fleet_id)
         ctx.register_service("membership", membership)
-        peer_table = PeerTable(settings.data_dir)
+        peer_table = get_peer_table(settings)
         for realm in settings.subscribed_realms:
             peer_table.sync_from_settings_peers(realm, settings.peers, settings.zone)
         ctx.register_service("peer_table", peer_table)

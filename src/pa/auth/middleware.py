@@ -8,6 +8,7 @@ from fastapi import HTTPException, Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, Response
 
+from pa.auth.cookies import use_secure_cookies
 from pa.auth.csrf import COOKIE_NAME, generate_token, validate_request
 from pa.auth.sessions import SessionManager
 from pa.auth.users import UserDirectory
@@ -136,6 +137,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 token,
                 httponly=False,
                 samesite="lax",
+                secure=use_secure_cookies(request, self.settings),
                 max_age=86400 * 30,
             )
 

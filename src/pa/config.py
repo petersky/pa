@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     # Auth (T1)
     sync_token: str = ""
     auth_required: bool = False
+    secure_cookies: bool = False
     session_secret: str = Field(default_factory=lambda: str(uuid4()))
 
     # OIDC hooks (T2+)

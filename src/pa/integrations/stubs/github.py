@@ -7,12 +7,13 @@ from pa.integrations.base import Connector, ExternalRef, ExternalSystem, SyncBin
 
 class GitHubIssuesConnector:
     system = ExternalSystem.GITHUB_ISSUES
+    STUB = True
 
     def configure(self, config: dict) -> None:
         pass
 
     async def pull(self, binding: SyncBinding) -> dict:
-        return {}
+        return {"_stub": True, "items": []}
 
     async def push(self, binding: SyncBinding, pa_snapshot: dict) -> ExternalRef:
         raise NotImplementedError("GitHub Issues sync not implemented")
