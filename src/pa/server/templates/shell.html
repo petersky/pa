@@ -15,6 +15,7 @@
         href="{{ static_url('themes/' ~ (theme_id | default('pa')) ~ '/light.css') }}">
   <script>
     window.PA_ASSETS = { version: "{{ asset_version }}" };
+    window.PA_BUILD = "{{ build_id | default(pa_version ~ '+' ~ asset_version) }}";
     (function () {
       var v = window.PA_ASSETS.version;
       var pref = document.documentElement.dataset.appearancePref || "system";
@@ -33,6 +34,10 @@
   {% block head %}{% endblock %}
 </head>
 <body class="app-shell">
+  <div id="pa-update-banner" class="pa-update-banner hidden" role="status" aria-live="polite">
+    <span>A new version of PA is available.</span>
+    <button type="button" class="primary small" id="pa-update-refresh">Refresh</button>
+  </div>
   <header class="site-header">
     <div class="header-start">
       <a href="/"

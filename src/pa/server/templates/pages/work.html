@@ -29,7 +29,7 @@
   </div>
   <div class="board-grid">
     {% for lane in lanes %}
-    <div class="board-column">
+    <div class="board-column" data-lane="{{ lane.value }}">
       <h3>{{ lane.value | capitalize }}</h3>
       <div class="board-column-body"
            hx-get="/partials/cards?realm={{ active_realm }}{% if active_project %}&project={{ active_project }}{% endif %}&lane={{ lane.value }}"

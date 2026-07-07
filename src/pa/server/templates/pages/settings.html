@@ -15,18 +15,59 @@
 <div class="panel">
   <div class="panel-header"><h2>Instance</h2></div>
   <dl class="settings-dl">
+    <dt>PA version</dt>
+    <dd>{{ status.version }}</dd>
     <dt>Name</dt>
-    <dd>{{ settings.instance_name }}</dd>
-    <dt>ID</dt>
-    <dd><code>{{ settings.instance_id }}</code></dd>
+    <dd>{{ status.instance_name }}</dd>
+    <dt>Instance ID</dt>
+    <dd><code>{{ status.instance_id }}</code></dd>
     <dt>Data directory</dt>
-    <dd><code>{{ settings.data_dir }}</code></dd>
+    <dd><code>{{ status.data_dir }}</code></dd>
     <dt>Server</dt>
-    <dd><code>{{ settings.host }}:{{ settings.port }}</code></dd>
-    <dt>Agent</dt>
-    <dd>{{ 'enabled' if settings.agent_enabled else 'disabled' }}</dd>
+    <dd><code>{{ status.server_url }}</code></dd>
+    <dt>Binary</dt>
+    <dd><code>{{ status.binary or 'not found' }}</code></dd>
+    {% if status.installed_version %}
+    <dt>Installed</dt>
+    <dd>{{ status.installed_version }} ({{ status.install_method }})</dd>
+    {% if status.install_channel %}
+    <dt>Track</dt>
+    <dd>{{ status.install_channel }}</dd>
+    {% endif %}
+    {% endif %}
+    <dt>Update channel</dt>
+    <dd>{{ status.release_track }}</dd>
+    <dt>Service</dt>
+    <dd>
+      <span class="status status-{{ status.service.state }}">{{ status.service.state }}</span>
+      {% if status.service.backend != 'none' %}({{ status.service.backend }}){% endif %}
+    </dd>
+    {% if status.service.installed %}
+    <dt>Unit</dt>
+    <dd><code class="unit-path">{{ status.service.unit_path }}</code></dd>
+    {% endif %}
     <dt>Debug</dt>
-    <dd>{{ 'on' if settings.debug else 'off' }}</dd>
+    <dd>{{ 'on' if status.debug else 'off' }}</dd>
+    <dt>Agent</dt>
+    <dd>{{ 'enabled' if status.agent_enabled else 'disabled' }}</dd>
+    <dt>Fleet</dt>
+    <dd><code>{{ status.fleet_id }}</code></dd>
+    <dt>Realms</dt>
+    <dd>{{ status.realms | join(', ') }}</dd>
+    <dt>Zone</dt>
+    <dd>{{ status.zone }}</dd>
+    <dt>Peers</dt>
+    <dd>{{ status.peer_count }}</dd>
+    <dt>Modules</dt>
+    <dd>{{ status.module_count }}</dd>
+    <dt>Items</dt>
+    <dd>{{ status.item_count }}</dd>
+    <dt>Sessions</dt>
+    <dd>{{ status.session_count }}</dd>
+    <dt>Knowledge</dt>
+    <dd>{{ status.knowledge_count }} recent entries</dd>
+    <dt>Build</dt>
+    <dd><code>{{ status.build_id }}</code></dd>
   </dl>
 </div>
 {% endset %}

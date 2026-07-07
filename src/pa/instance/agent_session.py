@@ -73,7 +73,9 @@ class InstanceAgent:
     ) -> str:
         if not self._connection:
             raise RuntimeError("Instance agent not connected")
-        env = agent_env or {}
+        env = dict(agent_env or {})
+        if cwd:
+            env["PWD"] = cwd
         async with self._prompt_lock:
             with _agent_env_overlay(env):
                 return await self._connection.prompt(

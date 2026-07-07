@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
+from pa.auth.middleware import get_principal_id
 from pa.core.contracts import Module
 from pa.core.context import AppContext
 from pa.core.preferences import get_preferences_store
@@ -16,10 +17,17 @@ def _templates(request: Request):
     return request.app.state.templates
 
 
+def _user_id_from_request(request: Request) -> str | None:
+    principal = get_principal_id(request)
+    if principal.startswith("user:"):
+        return principal[5:]
+    return None
+
+
 def _shell_context(request: Request) -> dict:
     ctx: AppContext = request.app.state.ctx
     settings = ctx.settings
-    prefs = get_preferences_store(settings.data_dir).load()
+    prefs = get_preferences_store(settings.data_dir, user_id=_user_id_from_request(request)).load()
     agent = ctx.require_service("instance_agent")
     pages: PageRegistry = ctx.require_service("pages")
     assets = ctx.require_service("assets")
@@ -36,6 +44,8 @@ def _shell_context(request: Request) -> dict:
         "asset_version": assets.version,
         "static_url": assets.url,
         "csrf_token": request.cookies.get("pa_csrf", ""),
+        "pa_version": __import__("pa").__version__,
+        "build_id": f"{__import__('pa').__version__}+{assets.version}",
     }
 
 
@@ -56,10 +66,18 @@ def render_page(request: Request, page: PageDefinition) -> HTMLResponse:
 def _settings_context(request: Request) -> dict:
     ctx: AppContext = request.app.state.ctx
     settings = ctx.settings
-    prefs = get_preferences_store(settings.data_dir).load()
+    principal = get_principal_id(request)
+    user_id = principal[5:] if principal.startswith("user:") else None
+    prefs = get_preferences_store(settings.data_dir, user_id=user_id).load()
+    kernel = request.app.state.kernel
+    from pa.status.info import build_status_snapshot
+
+    status = build_status_snapshot(ctx, module_count=len(kernel.registry.modules))
     return {
         "prefs": prefs,
         "settings": settings,
+        "status": status,
+        "themes": get_theme_catalog(),
     }
 
 

@@ -40,6 +40,9 @@ app.add_typer(sync_app, name="sync")
 project_app = typer.Typer(help="Project management")
 app.add_typer(project_app, name="project")
 
+user_app = typer.Typer(help="User management")
+app.add_typer(user_app, name="user")
+
 
 @app.command()
 def version() -> None:
@@ -100,45 +103,41 @@ def init(
 @app.command()
 def status() -> None:
     """Show current instance status."""
-    from pa.cli import service as svc
+    from pa.status.info import build_status_snapshot
 
     settings = get_settings()
-    store = get_store()
     kernel = Kernel.boot(load_modules=True)
-    items = store.list_items()
-    sessions = store.list_sessions()
-    knowledge = store.list_knowledge(limit=5)
-    svc_status = svc.get_status(settings)
-    install_meta = load_install_metadata(settings.data_dir)
-    pa_bin = svc.find_pa_binary()
+    snap = build_status_snapshot(kernel.ctx, module_count=len(kernel.registry.modules))
 
-    typer.echo(f"PA {__version__} — {settings.instance_name}")
-    typer.echo(f"  Instance ID: {settings.instance_id}")
-    typer.echo(f"  Data dir:    {settings.data_dir}")
-    typer.echo(f"  Server:      http://{settings.host}:{settings.port}")
-    typer.echo(f"  Binary:      {pa_bin or 'not found'}")
-    if install_meta:
-        typer.echo(f"  Installed:   {install_meta.version} ({install_meta.method})")
-        if install_meta.channel:
-            typer.echo(f"  Track:       {install_meta.channel}")
-    typer.echo(f"  Update:      {settings.release_track} track")
-    if svc_status.installed or svc.service_supported():
+    typer.echo(f"PA {snap['version']} — {snap['instance_name']}")
+    typer.echo(f"  Instance ID: {snap['instance_id']}")
+    typer.echo(f"  Data dir:    {snap['data_dir']}")
+    typer.echo(f"  Server:      {snap['server_url']}")
+    typer.echo(f"  Binary:      {snap['binary'] or 'not found'}")
+    if snap["installed_version"]:
+        typer.echo(f"  Installed:   {snap['installed_version']} ({snap['install_method']})")
+        if snap.get("install_channel"):
+            typer.echo(f"  Track:       {snap['install_channel']}")
+    typer.echo(f"  Update:      {snap['release_track']} track")
+    from pa.cli import service as svc
+
+    svc_info = snap["service"]
+    if svc_info["installed"] or svc.service_supported():
         typer.echo(
-            f"  Service:     {'running' if svc_status.running else 'stopped'}"
-            f" ({svc_status.backend})"
+            f"  Service:     {svc_info['state']} ({svc_info['backend']})"
         )
-        if svc_status.installed:
-            typer.echo(f"  Unit:        {svc_status.plist_path}")
-    typer.echo(f"  Debug:       {settings.debug}")
-    typer.echo(f"  Agent:       {'enabled' if settings.agent_enabled else 'disabled'}")
-    typer.echo(f"  Fleet:       {settings.fleet_id}")
-    typer.echo(f"  Realms:      {', '.join(settings.subscribed_realms)}")
-    typer.echo(f"  Zone:        {settings.zone}")
-    typer.echo(f"  Peers:       {len(settings.peers)}")
-    typer.echo(f"  Modules:     {len(kernel.registry.modules)}")
-    typer.echo(f"  Items:       {len(items)}")
-    typer.echo(f"  Sessions:    {len(sessions)}")
-    typer.echo(f"  Knowledge:   {len(knowledge)} recent entries")
+        if svc_info["installed"]:
+            typer.echo(f"  Unit:        {svc_info['unit_path']}")
+    typer.echo(f"  Debug:       {snap['debug']}")
+    typer.echo(f"  Agent:       {'enabled' if snap['agent_enabled'] else 'disabled'}")
+    typer.echo(f"  Fleet:       {snap['fleet_id']}")
+    typer.echo(f"  Realms:      {', '.join(snap['realms'])}")
+    typer.echo(f"  Zone:        {snap['zone']}")
+    typer.echo(f"  Peers:       {snap['peer_count']}")
+    typer.echo(f"  Modules:     {snap['module_count']}")
+    typer.echo(f"  Items:       {snap['item_count']}")
+    typer.echo(f"  Sessions:    {snap['session_count']}")
+    typer.echo(f"  Knowledge:   {snap['knowledge_count']} recent entries")
 
 
 @app.command()
@@ -199,8 +198,9 @@ def start() -> None:
     """Start the PA host service (launchd or systemd)."""
     from pa.cli import service as svc
 
+    settings = get_settings()
     try:
-        svc.start()
+        svc.start(settings)
         typer.echo("PA service started.")
     except RuntimeError as exc:
         typer.echo(str(exc), err=True)
@@ -225,8 +225,9 @@ def restart_cmd() -> None:
     """Restart the PA host service."""
     from pa.cli import service as svc
 
+    settings = get_settings()
     try:
-        svc.restart()
+        svc.restart(settings)
         typer.echo("PA service restarted.")
     except RuntimeError as exc:
         typer.echo(str(exc), err=True)
@@ -451,6 +452,27 @@ def login(
     typer.echo(f"Logged in as {user.username}")
     typer.echo(f"CLI token: {user.cli_token}")
     typer.echo("Use: export PA_CLI_TOKEN=... or Authorization: Bearer <token>")
+
+
+@user_app.command("set-password")
+def user_set_password(
+    username: Annotated[str, typer.Argument(help="Username")],
+    password: Annotated[
+        str,
+        typer.Option(prompt=True, hide_input=True, confirmation_prompt=True),
+    ],
+) -> None:
+    """Set a user's password."""
+    from pa.auth.users import UserDirectory
+
+    users = UserDirectory(get_settings().data_dir)
+    users.ensure_default_user()
+    try:
+        user = users.set_password(username, password)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1) from exc
+    typer.echo(f"Password updated for {user.username}")
 
 
 @fleet_app.command("list")

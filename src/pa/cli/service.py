@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from xml.sax.saxutils import escape
 from dataclasses import dataclass
 from pathlib import Path
@@ -188,18 +189,28 @@ def _run_systemctl(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def bootstrap() -> None:
+def _unload_launchd_job() -> None:
+    result = _run_launchctl("bootout", _domain_target())
+    if result.returncode == 0:
+        time.sleep(0.5)
+
+
+def bootstrap(*, reload: bool = False) -> None:
     if _is_darwin():
         plist = _plist_path()
         if not plist.exists():
             raise RuntimeError(f"Plist not installed: {plist}")
-        domain = _domain_target()
-        bootout = _run_launchctl("bootout", domain)
-        if bootout.returncode != 0 and "No such process" not in bootout.stderr:
-            pass
-        result = _run_launchctl("bootstrap", f"gui/{os.getuid()}", str(plist))
+        gui_domain = f"gui/{os.getuid()}"
+        status = get_status()
+        if status.loaded:
+            if reload:
+                _unload_launchd_job()
+            else:
+                return
+        result = _run_launchctl("bootstrap", gui_domain, str(plist))
         if result.returncode != 0:
-            raise RuntimeError(result.stderr.strip() or "launchctl bootstrap failed")
+            err = (result.stderr or result.stdout or "").strip()
+            raise RuntimeError(err or "launchctl bootstrap failed")
         return
 
     if _is_linux():
@@ -212,11 +223,21 @@ def bootstrap() -> None:
     raise RuntimeError(f"Unsupported platform: {sys.platform}")
 
 
-def start() -> None:
+def start(settings: Settings | None = None) -> None:
+    settings = settings or Settings()
     if _is_darwin():
+        if not _plist_path().exists():
+            raise RuntimeError("PA service not installed. Run: pa install --service-only")
+        status = get_status(settings)
+        if not status.loaded:
+            bootstrap()
         result = _run_launchctl("kickstart", "-k", _domain_target())
         if result.returncode != 0:
-            raise RuntimeError(result.stderr.strip() or "launchctl kickstart failed")
+            bootstrap()
+            result = _run_launchctl("kickstart", "-k", _domain_target())
+        if result.returncode != 0:
+            err = (result.stderr or result.stdout or "").strip()
+            raise RuntimeError(err or "launchctl kickstart failed")
         return
 
     if _is_linux():
@@ -244,14 +265,28 @@ def stop() -> None:
     raise RuntimeError(f"Unsupported platform: {sys.platform}")
 
 
-def restart() -> None:
+def restart(settings: Settings | None = None) -> None:
+    settings = settings or Settings()
+    if _is_darwin():
+        if not _plist_path().exists():
+            raise RuntimeError("PA service not installed. Run: pa install --service-only")
+        pa_bin = find_pa_binary()
+        if pa_bin:
+            install_plist(settings, pa_bin)
+        bootstrap(reload=True)
+        result = _run_launchctl("kickstart", "-k", _domain_target())
+        if result.returncode != 0:
+            err = (result.stderr or result.stdout or "").strip()
+            raise RuntimeError(err or "launchctl kickstart failed")
+        return
+
     if _is_linux():
         result = _run_systemctl("restart", SYSTEMD_UNIT)
         if result.returncode != 0:
             raise RuntimeError(result.stderr.strip() or "systemctl restart failed")
         return
-    stop()
-    start()
+
+    raise RuntimeError(f"Unsupported platform: {sys.platform}")
 
 
 def get_status(settings: Settings | None = None) -> ServiceStatus:

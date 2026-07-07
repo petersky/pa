@@ -15,6 +15,17 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@router.get("/status")
+def instance_status(request: Request) -> dict:
+    kernel = request.app.state.kernel
+    from pa.status.info import build_status_snapshot
+
+    return build_status_snapshot(
+        request.app.state.ctx,
+        module_count=len(kernel.registry.modules),
+    )
+
+
 @router.get("/instance")
 def instance_info(request: Request) -> dict:
     registry = request.app.state.ctx.require_service("peer_registry")

@@ -1,4 +1,6 @@
 (function () {
+  var VERSION_POLL_MS = 45000;
+
   function setActiveNav(path) {
     document.querySelectorAll(".nav-btn").forEach(function (btn) {
       btn.classList.toggle("active", btn.getAttribute("href") === path);
@@ -40,17 +42,127 @@
     }, 4000);
   }
 
-  document.body.addEventListener("htmx:configRequest", function (event) {
+  function csrfHeader() {
     var meta = document.querySelector('meta[name="csrf-token"]');
-    if (meta && meta.content) {
-      event.detail.headers["X-CSRF-Token"] = meta.content;
+    return meta && meta.content ? { "X-CSRF-Token": meta.content } : {};
+  }
+
+  function reloadWithCacheBust() {
+    var url = new URL(window.location.href);
+    url.searchParams.set("_cb", String(Date.now()));
+    window.location.replace(url.toString());
+  }
+
+  function showUpdateBanner() {
+    var banner = document.getElementById("pa-update-banner");
+    if (!banner || !banner.classList.contains("hidden")) {
+      return;
     }
+    banner.classList.remove("hidden");
+    var btn = document.getElementById("pa-update-refresh");
+    if (btn && !btn.dataset.bound) {
+      btn.dataset.bound = "1";
+      btn.addEventListener("click", reloadWithCacheBust);
+    }
+  }
+
+  function checkServerBuild() {
+    var current = window.PA_BUILD;
+    if (!current) return;
+    fetch("/api/ui/assets", { cache: "no-store" })
+      .then(function (resp) {
+        if (!resp.ok) return null;
+        return resp.json();
+      })
+      .then(function (data) {
+        if (!data || !data.build_id || data.build_id === current) return;
+        showUpdateBanner();
+      })
+      .catch(function () {});
+  }
+
+  function initBoardDragDrop(root) {
+    var scope = root || document;
+    scope.querySelectorAll(".board-column").forEach(function (col) {
+      if (col.dataset.dndBound) return;
+      col.dataset.dndBound = "1";
+      var lane = col.dataset.lane;
+      var body = col.querySelector(".board-column-body");
+      if (!body || !lane) return;
+
+      body.addEventListener("dragover", function (event) {
+        event.preventDefault();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+        col.classList.add("drag-over");
+      });
+      body.addEventListener("dragleave", function (event) {
+        if (!col.contains(event.relatedTarget)) {
+          col.classList.remove("drag-over");
+        }
+      });
+      body.addEventListener("drop", function (event) {
+        event.preventDefault();
+        col.classList.remove("drag-over");
+        var cardId = event.dataTransfer && event.dataTransfer.getData("text/pa-card-id");
+        var realm = event.dataTransfer && event.dataTransfer.getData("text/pa-realm");
+        var fromLane = event.dataTransfer && event.dataTransfer.getData("text/pa-lane");
+        if (!cardId || !realm || fromLane === lane) return;
+
+        var bodyParams = new URLSearchParams({ lane: lane });
+        fetch("/partials/cards/" + encodeURIComponent(cardId) + "/move?realm=" + encodeURIComponent(realm), {
+          method: "POST",
+          headers: Object.assign({ "Content-Type": "application/x-www-form-urlencoded" }, csrfHeader()),
+          body: bodyParams.toString(),
+        })
+          .then(function (resp) {
+            if (!resp.ok) throw new Error("Move failed");
+            document.body.dispatchEvent(new CustomEvent("boardRefresh"));
+          })
+          .catch(function () {
+            showToast("Could not move card", "error");
+          });
+      });
+    });
+
+    scope.querySelectorAll(".item-list .item[draggable]").forEach(function (item) {
+      if (item.dataset.dndBound) return;
+      item.dataset.dndBound = "1";
+      item.addEventListener("dragstart", function (event) {
+        var cardId = item.dataset.cardId;
+        var realm = item.dataset.realm;
+        var laneEl = item.closest(".board-column");
+        var lane = laneEl && laneEl.dataset.lane;
+        if (!cardId || !realm || !event.dataTransfer) return;
+        event.dataTransfer.setData("text/pa-card-id", cardId);
+        event.dataTransfer.setData("text/pa-realm", realm);
+        event.dataTransfer.setData("text/pa-lane", lane || "");
+        event.dataTransfer.effectAllowed = "move";
+        item.classList.add("dragging");
+      });
+      item.addEventListener("dragend", function () {
+        item.classList.remove("dragging");
+        document.querySelectorAll(".board-column.drag-over").forEach(function (col) {
+          col.classList.remove("drag-over");
+        });
+      });
+    });
+  }
+
+  document.body.addEventListener("htmx:configRequest", function (event) {
+    var headers = csrfHeader();
+    Object.keys(headers).forEach(function (key) {
+      event.detail.headers[key] = headers[key];
+    });
   });
 
   document.body.addEventListener("htmx:afterSwap", function (event) {
     if (event.detail.target && event.detail.target.id === "app-view") {
       setActiveNav(window.location.pathname);
       updateTitle();
+      initBoardDragDrop(event.detail.target);
+    }
+    if (event.detail.target && event.detail.target.classList.contains("board-column-body")) {
+      initBoardDragDrop(event.detail.target.closest(".board-grid") || document);
     }
     if (event.detail.target && event.detail.target.id === "agent-messages") {
       const placeholder = document.querySelector(".chat-placeholder");
@@ -90,5 +202,8 @@
   document.addEventListener("DOMContentLoaded", function () {
     setActiveNav(window.location.pathname);
     updateTitle();
+    initBoardDragDrop(document);
+    checkServerBuild();
+    window.setInterval(checkServerBuild, VERSION_POLL_MS);
   });
 })();

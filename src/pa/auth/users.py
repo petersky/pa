@@ -127,3 +127,17 @@ class UserDirectory:
         user.agent_env = env
         self._save()
         return user
+
+    def get_by_username(self, username: str) -> UserRecord | None:
+        for user in self._users.values():
+            if user.username == username:
+                return user
+        return None
+
+    def set_password(self, username: str, password: str) -> UserRecord:
+        user = self.get_by_username(username)
+        if not user:
+            raise ValueError(f"User not found: {username}")
+        user.password_hash = hash_password(password)
+        self._save()
+        return user

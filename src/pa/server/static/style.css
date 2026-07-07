@@ -437,6 +437,37 @@ button.ghost, .text-btn {
 .pa-toast.visible { opacity: 1; }
 .pa-toast[data-kind="error"] { border-color: var(--pa-danger); }
 
+.pa-update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 0.55rem 1rem;
+  background: color-mix(in srgb, var(--pa-accent, #4a9eff) 18%, var(--pa-surface));
+  border-bottom: 1px solid var(--pa-border);
+  font-size: 0.9rem;
+}
+
+.pa-update-banner.hidden { display: none; }
+
+.status-running { background: color-mix(in srgb, var(--pa-ok) 20%, transparent); color: var(--pa-ok); }
+.status-stopped { background: color-mix(in srgb, var(--pa-danger) 15%, transparent); color: var(--pa-danger); }
+.status-unavailable { opacity: 0.75; }
+
+.board-column.drag-over {
+  outline: 2px dashed var(--pa-accent, #4a9eff);
+  outline-offset: -2px;
+}
+
+.item.dragging {
+  opacity: 0.55;
+}
+
+.settings-dl .unit-path {
+  word-break: break-all;
+  font-size: 0.8rem;
+}
+
 .htmx-indicator {
   display: none;
 }

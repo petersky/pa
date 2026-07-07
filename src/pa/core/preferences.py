@@ -21,14 +21,20 @@ class UserPreferences(BaseModel):
 
 
 class PreferencesStore:
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, fallback_path: Path | None = None) -> None:
         self.path = path
+        self.fallback_path = fallback_path
 
     def load(self) -> UserPreferences:
-        if not self.path.exists():
-            return UserPreferences()
+        if self.path.exists():
+            return self._read(self.path)
+        if self.fallback_path and self.fallback_path.exists():
+            return self._read(self.fallback_path)
+        return UserPreferences()
+
+    def _read(self, path: Path) -> UserPreferences:
         try:
-            data = json.loads(self.path.read_text())
+            data = json.loads(path.read_text())
             return UserPreferences.model_validate(data)
         except (json.JSONDecodeError, ValueError):
             return UserPreferences()
@@ -44,5 +50,9 @@ class PreferencesStore:
         return self.save(updated)
 
 
-def get_preferences_store(data_dir: Path) -> PreferencesStore:
-    return PreferencesStore(data_dir / "preferences.json")
+def get_preferences_store(data_dir: Path, user_id: str | None = None) -> PreferencesStore:
+    global_path = data_dir / "preferences.json"
+    if not user_id:
+        return PreferencesStore(global_path)
+    user_path = data_dir / "users" / user_id / "preferences.json"
+    return PreferencesStore(user_path, fallback_path=global_path)

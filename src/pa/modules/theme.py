@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from pa.auth.cookies import use_secure_cookies
+from pa.auth.middleware import get_principal_id
 from pa.core.contracts import Module
 from pa.core.context import AppContext
 from pa.core.preferences import AppearanceMode, get_preferences_store
@@ -69,6 +70,18 @@ def get_theme_catalog() -> list[dict]:
 router = APIRouter(prefix="/ui")
 
 
+def _user_id_from_request(request: Request) -> str | None:
+    principal = get_principal_id(request)
+    if principal.startswith("user:"):
+        return principal[5:]
+    return None
+
+
+def _prefs_store(request: Request):
+    settings = request.app.state.ctx.settings
+    return get_preferences_store(settings.data_dir, user_id=_user_id_from_request(request))
+
+
 class ThemePreferenceUpdate(BaseModel):
     appearance: AppearanceMode | None = None
     theme_id: str | None = None
@@ -81,25 +94,34 @@ def list_themes() -> list[dict]:
 
 @router.get("/assets")
 def asset_info(request: Request) -> dict:
+    from pa import __version__
+
     assets = request.app.state.ctx.require_service("assets")
-    return {"version": assets.version}
+    return {
+        "version": assets.version,
+        "pa_version": __version__,
+        "build_id": f"{__version__}+{assets.version}",
+    }
 
 
 @router.get("/theme")
 def get_theme_preference(request: Request) -> dict:
-    prefs = get_preferences_store(request.app.state.ctx.settings.data_dir).load()
+    prefs = _prefs_store(request).load()
     assets = request.app.state.ctx.require_service("assets")
+    from pa import __version__
+
     return {
         "theme_id": prefs.theme_id,
         "appearance": prefs.appearance.value,
         "themes": get_theme_catalog(),
         "asset_version": assets.version,
+        "build_id": f"{__version__}+{assets.version}",
     }
 
 
 @router.put("/theme")
 def set_theme_preference(request: Request, body: ThemePreferenceUpdate) -> JSONResponse:
-    store = get_preferences_store(request.app.state.ctx.settings.data_dir)
+    store = _prefs_store(request)
     updates = body.model_dump(exclude_unset=True)
     prefs = store.update(**updates)
     response = JSONResponse(
