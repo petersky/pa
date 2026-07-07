@@ -18,19 +18,6 @@
        href="/work?realm={{ active_realm }}&project={{ p.id }}">{{ p.title }}</a>
     {% endfor %}
   </nav>
-  <div class="panel-header"><h2>Lanes</h2></div>
-  <nav class="sidebar-menu">
-    <button class="sidebar-menu-item active"
-            hx-get="/partials/cards?realm={{ active_realm }}{% if active_project %}&project={{ active_project }}{% endif %}"
-            hx-target="#work-board"
-            hx-swap="innerHTML">All</button>
-    {% for lane in lanes %}
-    <button class="sidebar-menu-item"
-            hx-get="/partials/cards?realm={{ active_realm }}{% if active_project %}&project={{ active_project }}{% endif %}&lane={{ lane.value }}"
-            hx-target="#work-board"
-            hx-swap="innerHTML">{{ lane.value | capitalize }}</button>
-    {% endfor %}
-  </nav>
 </div>
 {% endset %}
 
@@ -53,7 +40,6 @@
     </div>
     {% endfor %}
   </div>
-  <div id="work-board" class="hidden"></div>
 </div>
 {% endset %}
 
@@ -63,7 +49,7 @@
   <nav class="sidebar-menu">
     {% for k in kinds %}
     <button class="sidebar-menu-item"
-            hx-get="/partials/items?kind={{ k.value }}"
+            hx-get="/partials/items?realm={{ active_realm }}&kind={{ k.value }}"
             hx-target="#work-items-list"
             hx-swap="innerHTML">{{ k.value | capitalize }}</button>
     {% endfor %}

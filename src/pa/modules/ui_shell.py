@@ -102,7 +102,11 @@ async def agent_prompt_partial(
 ) -> HTMLResponse:
     text = message.strip()
     if not text:
-        raise HTTPException(status_code=400, detail="message required")
+        return _templates(request).TemplateResponse(
+            request,
+            "partials/agent-message.html",
+            {"role": "system", "content": "Message is required."},
+        )
 
     agent = request.app.state.ctx.require_service("instance_agent")
     if not agent.connected:
@@ -115,8 +119,8 @@ async def agent_prompt_partial(
     try:
         stop_reason = await agent.prompt(text)
         content = f"Turn completed ({stop_reason})."
-    except Exception as exc:
-        content = f"Error: {exc}"
+    except Exception:
+        content = "Something went wrong. Try again or check the server logs."
 
     return _templates(request).TemplateResponse(
         request,

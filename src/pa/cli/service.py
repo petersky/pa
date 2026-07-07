@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import sys
+from xml.sax.saxutils import escape
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -83,8 +84,8 @@ def find_pa_binary() -> Path | None:
 def _format_plist_env(env: dict[str, str]) -> str:
     lines = []
     for key, value in sorted(env.items()):
-        lines.append(f"        <key>{key}</key>")
-        lines.append(f"        <string>{value}</string>")
+        lines.append(f"        <key>{escape(key)}</key>")
+        lines.append(f"        <string>{escape(value)}</string>")
     return "\n".join(lines)
 
 

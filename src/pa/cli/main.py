@@ -182,7 +182,7 @@ def install(
         return
 
     try:
-        install_from_path(from_source, name=name, start_service=not no_start)
+        install_from_path(from_source, name=name, channel=channel, start_service=not no_start)
     except RuntimeError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(1) from exc
@@ -635,17 +635,23 @@ def sync_status(
     realm: Annotated[str | None, typer.Option(help="Realm ID")] = None,
 ) -> None:
     """Show sync status for a realm."""
-    from pa.domain.store import get_store
+    from pa.fleet.membership import MembershipStore
+    from pa.network.peer_table import PeerTable
+    from pa.sync.engine import SyncEngine
+    from pa.sync.infrastructure import get_event_log, get_object_store
 
     settings = get_settings()
-    store = get_store()
     realm_id = realm or settings.primary_realm
-    if store.sync_engine:
-        status = store.sync_engine.status(realm_id)
-        typer.echo(f"Realm:   {status['realm_id']}")
-        typer.echo(f"Head:    {status.get('head') or '—'}")
-        typer.echo(f"Objects: {status.get('object_count', 0)}")
-        typer.echo(f"Peers:   {status.get('peer_count', 0)}")
-        typer.echo(f"Zone:    {status.get('zone')}")
-    else:
-        typer.echo("Sync engine not initialized.")
+    engine = SyncEngine(
+        settings,
+        get_object_store(settings),
+        get_event_log(settings),
+        PeerTable(settings.data_dir),
+        MembershipStore(settings.data_dir),
+    )
+    status = engine.status(realm_id)
+    typer.echo(f"Realm:   {status['realm_id']}")
+    typer.echo(f"Head:    {status.get('head') or '—'}")
+    typer.echo(f"Objects: {status.get('object_count', 0)}")
+    typer.echo(f"Peers:   {status.get('peer_count', 0)}")
+    typer.echo(f"Zone:    {status.get('zone')}")

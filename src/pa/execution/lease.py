@@ -51,7 +51,22 @@ class LeaseManager:
         self.store.apply_event(event)
         return True
 
-    def release(self, card_id: str, realm_id: str, *, principal_id: str) -> bool:
+    def release(
+        self,
+        card_id: str,
+        realm_id: str,
+        *,
+        principal_id: str,
+        holder_instance: str | None = None,
+    ) -> bool:
+        card = self.store.get_card(card_id, realm_id=realm_id)
+        if not card or not card.lease_holder_instance:
+            return False
+        expected = holder_instance or self.instance_id
+        if card.lease_holder_instance != expected:
+            return False
+        if card.lease_expires_at and card.lease_expires_at < datetime.now(UTC):
+            return False
         event = CardEvent(
             type=EventType.LEASE_RELEASED,
             realm_id=realm_id,

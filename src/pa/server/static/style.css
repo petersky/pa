@@ -309,7 +309,8 @@ input, select, textarea, button {
   padding: 0.35rem 0.5rem;
 }
 
-input:focus, select:focus, textarea:focus, button:focus-visible {
+input:focus, select:focus, textarea:focus, button:focus-visible,
+a:focus-visible, .nav-btn:focus-visible {
   outline: none;
   box-shadow: var(--pa-focus);
 }
@@ -414,6 +415,40 @@ button.ghost, .text-btn {
 
 .status-active { background: color-mix(in srgb, var(--pa-ok) 20%, transparent); color: var(--pa-ok); }
 .status-done { opacity: 0.7; }
+.status-blocked { background: color-mix(in srgb, var(--pa-danger) 20%, transparent); color: var(--pa-danger); }
+
+.pa-toast {
+  position: fixed;
+  bottom: 1.25rem;
+  right: 1.25rem;
+  max-width: 24rem;
+  padding: 0.65rem 0.9rem;
+  border-radius: 6px;
+  background: var(--pa-surface-elevated, var(--pa-surface));
+  border: 1px solid var(--pa-border);
+  color: var(--pa-text);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+  z-index: 1000;
+}
+
+.pa-toast.visible { opacity: 1; }
+.pa-toast[data-kind="error"] { border-color: var(--pa-danger); }
+
+.htmx-indicator {
+  display: none;
+}
+
+.htmx-request .htmx-indicator,
+.htmx-request.htmx-indicator {
+  display: inline-block;
+}
+
+.htmx-request .htmx-hide {
+  display: none;
+}
 
 .knowledge-list li {
   padding: 0.45rem 0;
@@ -595,7 +630,7 @@ code {
   margin: 0 0 0.5rem;
   font-size: 0.85rem;
   text-transform: capitalize;
-  color: var(--pa-muted);
+  color: var(--pa-text-muted);
 }
 
 .board-column-body {

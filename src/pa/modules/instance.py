@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request
 
+from pa.auth.middleware import get_principal_id
 from pa.config import get_settings
 from pa.core.contracts import Module
 from pa.core.context import AppContext
@@ -47,7 +48,9 @@ async def agent_prompt(request: Request, body: dict) -> dict:
         raise HTTPException(status_code=400, detail="message required")
     card_id = body.get("card_id") or body.get("item_id")
     project_id = body.get("project_id")
-    principal_id = body.get("principal_id", "user:local")
+    principal_id = get_principal_id(request)
+    if request.state.instance_authenticated and body.get("principal_id"):
+        principal_id = body.get("principal_id", principal_id)
     target_instance_id = body.get("target_instance_id")
     realm_id = body.get("realm_id")
 

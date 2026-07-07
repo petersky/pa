@@ -4,7 +4,7 @@
 <div class="panel">
   <div class="panel-header">
     <h2>Fleet — {{ fleet_id }}</h2>
-    <button class="ghost" hx-get="/api/fleet/health" hx-swap="none">Refresh health</button>
+    <button class="ghost" hx-get="/fleet" hx-target="#app-view" hx-push-url="true" hx-swap="innerHTML">Refresh health</button>
   </div>
   <p class="muted">Zone: {{ zone }} · Manage instances from this UI or via <code>pa fleet</code>.</p>
 

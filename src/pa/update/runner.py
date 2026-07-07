@@ -4,10 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
 
 from pa import __version__
-from pa.config import Settings
+from pa.config import Settings, reset_settings
 from pa.install.metadata import InstallMetadata, save_install_metadata
 from pa.update.channels import ReleaseInfo, get_channel, is_newer
 
@@ -33,7 +32,7 @@ def check_update(
     return UpdateResult(
         current=__version__,
         latest=latest,
-        upgrade_available=bool(latest and is_newer(__version__, latest)),
+        upgrade_available=bool(latest and is_newer(__version__, latest, track=track)),
         release=release,
     )
 
@@ -52,7 +51,9 @@ def run_update(
     result = UpdateResult(
         current=__version__,
         latest=release.version if release else None,
-        upgrade_available=bool(release and is_newer(__version__, release.version)),
+        upgrade_available=bool(
+            release and is_newer(__version__, release.version, track=name)
+        ),
         release=release,
     )
 
@@ -60,16 +61,24 @@ def run_update(
         return result
 
     channel.install(release)
+    reset_settings()
+    from pa.cli import service as svc
+    from pa.install.runner import read_pa_version
+
+    pa_bin = svc.find_pa_binary()
+    installed_version = read_pa_version(pa_bin) if pa_bin else release.version
 
     save_install_metadata(
         settings.data_dir,
         InstallMetadata(
-            version=release.version,
+            version=installed_version,
             method=settings.install_method,
             channel=name,
             installed_at=datetime.now(UTC),
         ),
     )
+
+    result.current = installed_version
 
     if restart:
         from pa.cli import service as svc

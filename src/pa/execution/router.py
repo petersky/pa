@@ -68,6 +68,7 @@ class ExecutionRouter:
             realm_id=realm_id,
         )
 
+        lease_held = False
         if card_id:
             if not self.leases.grant(
                 card_id,
@@ -85,26 +86,37 @@ class ExecutionRouter:
                         project_id=project_id,
                         realm_id=realm_id,
                     )
+                raise RuntimeError(f"Card {card_id} is leased by another instance")
+            lease_held = True
 
-        target = await self._resolve_target(card_id, realm_id, target_instance_id)
-        if target and target != self.settings.instance_id:
-            return await self._remote_prompt(
-                target,
+        try:
+            target = await self._resolve_target(card_id, realm_id, target_instance_id)
+            if target and target != self.settings.instance_id:
+                return await self._remote_prompt(
+                    target,
+                    message,
+                    principal_id=principal_id,
+                    card_id=card_id,
+                    project_id=project_id,
+                    realm_id=realm_id,
+                )
+
+            return await local_agent.prompt(
                 message,
+                item_id=card_id,
                 principal_id=principal_id,
-                card_id=card_id,
                 project_id=project_id,
-                realm_id=realm_id,
+                agent_env=self._user_env(principal_id),
+                cwd=self._user_data_dir(principal_id),
             )
-
-        return await local_agent.prompt(
-            message,
-            item_id=card_id,
-            principal_id=principal_id,
-            project_id=project_id,
-            agent_env=self._user_env(principal_id),
-            cwd=self._user_data_dir(principal_id),
-        )
+        finally:
+            if card_id and lease_held:
+                self.leases.release(
+                    card_id,
+                    realm_id,
+                    principal_id=principal_id,
+                    holder_instance=self.settings.instance_id,
+                )
 
     async def _resolve_target(
         self,

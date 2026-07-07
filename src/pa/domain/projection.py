@@ -462,7 +462,30 @@ class CardProjection:
         self._upsert_card(card)
         return card
 
-    def delete_card(self, card_id: str) -> bool:
+    def delete_card(
+        self,
+        card_id: str,
+        *,
+        realm_id: str | None = None,
+        principal_id: str = "user:local",
+        instance_id: str = "local",
+        via_log: bool = True,
+    ) -> bool:
+        card = self.get_card(card_id, realm_id=realm_id)
+        if not card:
+            return False
+        if via_log and self.event_log:
+            event = CardEvent(
+                type=EventType.CARD_DELETED,
+                realm_id=card.realm_id,
+                card_id=card_id,
+                author_principal=principal_id,
+                author_instance=instance_id,
+                payload={},
+            )
+            self.event_log.append_event(event, on_commit=self._on_commit)
+            self.apply_event(event)
+            return True
         with self._conn() as conn:
             cur = conn.execute("DELETE FROM cards WHERE id = ?", (card_id,))
         return cur.rowcount > 0
@@ -665,8 +688,8 @@ class CardProjection:
         card = self.update_card(item_id, data.to_card_update(), **kwargs)
         return Item.from_card(card) if card else None
 
-    def delete_item(self, item_id: str) -> bool:
-        return self.delete_card(item_id)
+    def delete_item(self, item_id: str, **kwargs) -> bool:
+        return self.delete_card(item_id, **kwargs)
 
     def save_session(self, session: AgentSession) -> AgentSession:
         with self._conn() as conn:

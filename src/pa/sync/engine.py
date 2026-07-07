@@ -120,28 +120,50 @@ class SyncEngine:
         walk(head_hash)
         return objects
 
-    async def pull_from_peer(self, realm_id: str, peer_url: str) -> None:
+    async def pull_from_peer(self, realm_id: str, peer_url: str) -> str | None:
+        """Pull missing objects from peer. Returns peer head hash if advanced."""
+        base = peer_url.rstrip("/")
         async with httpx.AsyncClient(timeout=15.0) as client:
             local_hashes = set(self.store.list_hashes())
             try:
                 resp = await client.post(
-                    f"{peer_url}/api/sync/have",
+                    f"{base}/api/sync/have",
                     json={"realm_id": realm_id, "hashes": list(local_hashes)},
                     headers=self._headers(),
                 )
                 resp.raise_for_status()
                 missing = resp.json().get("missing", [])
                 if not missing:
-                    return
+                    return None
                 resp = await client.post(
-                    f"{peer_url}/api/sync/get",
+                    f"{base}/api/sync/get",
                     json={"hashes": missing},
                     headers=self._headers(),
                 )
                 resp.raise_for_status()
                 self.ingest_objects(resp.json().get("objects", {}))
+
+                refs_resp = await client.get(
+                    f"{base}/api/sync/refs?realm={realm_id}",
+                    headers=self._headers(),
+                )
+                refs_resp.raise_for_status()
+                peer_head = None
+                for ref in refs_resp.json():
+                    if ref.get("realm_id") == realm_id:
+                        peer_head = ref.get("head_hash")
+                        break
+                if not peer_head:
+                    return None
+                local_head = self.log.get_head(realm_id)
+                if local_head == peer_head:
+                    return None
+                if not local_head or self.log.is_ancestor(local_head, peer_head):
+                    self.log.advance_ref(realm_id, peer_head)
+                    return peer_head
             except httpx.HTTPError as exc:
                 logger.warning("Sync pull from %s failed: %s", peer_url, exc)
+        return None
 
     def ingest_objects(self, objects_b64: dict[str, str]) -> list[str]:
         import base64
@@ -154,12 +176,13 @@ class SyncEngine:
             imported.append(h)
         return imported
 
-    async def anti_entropy(self, realm_id: str) -> None:
+    async def anti_entropy(self, realm_id: str) -> bool:
         routes = self.peer_table.routes_for_realm(realm_id)
-        await asyncio.gather(
+        results = await asyncio.gather(
             *(self.pull_from_peer(realm_id, r.target_url) for r in routes),
             return_exceptions=True,
         )
+        return any(isinstance(result, str) and result for result in results)
 
     def status(self, realm_id: str) -> dict:
         head = self.log.get_head(realm_id)

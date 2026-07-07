@@ -107,15 +107,16 @@ def run_doctor() -> int:
         typer.echo("  [info] No peers configured")
 
     from pa.domain.store import get_store
+    from pa.sync.infrastructure import get_event_log, get_object_store
 
     store = get_store()
-    if store.sync_engine:
-        for realm in settings.subscribed_realms:
-            status = store.sync_engine.status(realm)
-            head = status.get("head") or "—"
-            typer.echo(f"  [ok]   Sync {realm}: head={head} peers={status.get('peer_count', 0)}")
-    else:
-        warnings.append("sync engine not initialized")
+    event_log = get_event_log(settings)
+    obj_store = get_object_store(settings)
+    for realm in settings.subscribed_realms:
+        head = event_log.get_head(realm) or "—"
+        typer.echo(
+            f"  [ok]   Sync {realm}: head={head} objects={len(obj_store.list_hashes())}"
+        )
 
     typer.echo("")
     for w in warnings:

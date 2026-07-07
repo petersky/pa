@@ -122,8 +122,8 @@ class MembershipStore:
             if m.principal_type == PrincipalType.FLEET:
                 if role_order.get(m.role, 0) >= required:
                     return True
-        # Default: subscribed realms allow local fleet
-        return True
+        # Default: no matching membership means no access
+        return False
 
     def create_invite(
         self,

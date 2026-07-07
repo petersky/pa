@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import hmac
+
 from fastapi import HTTPException, Request
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import Response
+from starlette.responses import JSONResponse, Response
 
 from pa.auth.sessions import SessionManager
 from pa.auth.users import UserDirectory
@@ -15,6 +17,14 @@ PUBLIC_PATHS = {
     "/api/auth/login",
     "/api/fleet/join",
     "/login",
+}
+
+SYNC_PATHS = {
+    "/api/sync/have",
+    "/api/sync/get",
+    "/api/sync/push",
+    "/api/sync/relay",
+    "/api/sync/refs",
 }
 
 
@@ -28,6 +38,10 @@ def _is_public(path: str) -> bool:
     return False
 
 
+def _is_sync_path(path: str) -> bool:
+    return path in SYNC_PATHS
+
+
 class AuthMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, settings: Settings, users: UserDirectory, sessions: SessionManager):
         super().__init__(app)
@@ -38,27 +52,26 @@ class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:
         request.state.principal_id = None
         request.state.user = None
+        request.state.instance_authenticated = False
 
-        # Instance auth for sync/fleet API
+        path = request.url.path
+        is_public = _is_public(path)
+
         auth_header = request.headers.get("authorization", "")
         if auth_header.startswith("Bearer "):
             token = auth_header[7:]
-            if self.settings.sync_token and token == self.settings.sync_token:
+            if self.settings.sync_token and hmac.compare_digest(
+                token, self.settings.sync_token
+            ):
                 request.state.instance_authenticated = True
             else:
                 user = self.users.get_by_cli_token(token)
                 if user:
                     request.state.user = user
                     request.state.principal_id = f"user:{user.id}"
-            if not request.state.principal_id:
-                cli_user = self.users.get_by_cli_token(token)
-                if cli_user:
-                    request.state.user = cli_user
-                    request.state.principal_id = f"user:{cli_user.id}"
 
-        # Session cookie
         session_token = request.cookies.get(self.sessions.COOKIE_NAME)
-        if session_token:
+        if session_token and not request.state.principal_id:
             uid = self.sessions.verify_token(session_token)
             if uid:
                 user = self.users.get(uid)
@@ -66,7 +79,29 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     request.state.user = user
                     request.state.principal_id = f"user:{user.id}"
 
+        if (
+            self.settings.auth_required
+            and _is_sync_path(path)
+            and not is_public
+            and not request.state.instance_authenticated
+        ):
+            return JSONResponse(
+                {"detail": "Instance authentication required"},
+                status_code=401,
+            )
+
         if not request.state.principal_id:
+            needs_user_auth = (
+                self.settings.auth_required
+                and path.startswith("/api/")
+                and not is_public
+                and not _is_sync_path(path)
+            )
+            if needs_user_auth:
+                return JSONResponse(
+                    {"detail": "Authentication required"},
+                    status_code=401,
+                )
             default = self.users.ensure_default_user()
             request.state.user = default
             request.state.principal_id = f"user:{default.id}"

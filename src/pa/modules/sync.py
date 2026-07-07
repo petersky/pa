@@ -4,6 +4,7 @@ import base64
 
 from fastapi import APIRouter, HTTPException, Request
 
+from pa.auth.middleware import get_principal_id
 from pa.core.contracts import Module
 from pa.core.context import AppContext
 from pa.domain.store import get_store
@@ -11,15 +12,23 @@ from pa.fleet.membership import MembershipStore
 from pa.sync.compaction import SyncMetrics
 from pa.sync.engine import SyncEngine
 from pa.sync.event_log import EventLog
-from pa.sync.event_log import EventLog
+from pa.sync.infrastructure import get_event_log, get_object_store
 from pa.sync.object_store import ObjectStore
 
 router = APIRouter()
 
 
+def _membership_principal(request: Request) -> str:
+    principal_id = get_principal_id(request)
+    if principal_id.startswith("user:"):
+        return principal_id[5:]
+    return principal_id
+
+
 def _check_realm_access(request: Request, realm_id: str) -> None:
     membership: MembershipStore = request.app.state.ctx.require_service("membership")
-    if not membership.has_role(realm_id, "local"):
+    principal_id = _membership_principal(request)
+    if not membership.has_role(realm_id, principal_id):
         raise HTTPException(status_code=403, detail="No access to realm")
 
 
@@ -70,8 +79,18 @@ def sync_push(request: Request, body: dict) -> dict:
     metrics.record_pull(len(imported))
 
     if head_hash:
-        log.advance_ref(realm_id, head_hash)
-        store.rebuild_from_log(realm_id)
+        local_head = log.get_head(realm_id)
+        if local_head and local_head != head_hash:
+            if log.is_ancestor(local_head, head_hash):
+                log.advance_ref(realm_id, head_hash)
+                store.rebuild_from_log(realm_id)
+            elif log.is_ancestor(head_hash, local_head):
+                head_hash = local_head
+            else:
+                raise HTTPException(status_code=409, detail="Diverged heads; merge required")
+        else:
+            log.advance_ref(realm_id, head_hash)
+            store.rebuild_from_log(realm_id)
 
     return {"imported": len(imported), "head": head_hash}
 
@@ -84,6 +103,14 @@ async def sync_relay(request: Request, body: dict) -> dict:
     target_url = body.get("target_url", "")
     if not target_url:
         raise HTTPException(status_code=400, detail="target_url required")
+    from urllib.parse import urlparse
+
+    parsed = urlparse(target_url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise HTTPException(status_code=400, detail="Invalid target_url")
+    host = parsed.hostname or ""
+    if host in ("127.0.0.1", "localhost", "::1") or host.startswith("169.254."):
+        raise HTTPException(status_code=403, detail="Relay to local/metadata hosts is not allowed")
     import httpx
 
     headers = {}
@@ -163,15 +190,13 @@ class SyncModule(Module):
 
     def on_load(self, ctx: AppContext) -> None:
         settings = ctx.settings
-        obj_store = ObjectStore(settings.objects_dir)
-        event_log = EventLog(obj_store, settings.data_dir, settings.instance_id)
+        obj_store = get_object_store(settings)
+        event_log = get_event_log(settings)
         ctx.register_service("object_store", obj_store)
         ctx.register_service("event_log", event_log)
         ctx.register_service("sync_metrics", SyncMetrics(settings.data_dir))
 
     async def on_startup(self, app, ctx: AppContext) -> None:
-        from pa.sync.engine import SyncEngine
-
         settings = ctx.settings
         obj_store = ctx.require_service("object_store")
         event_log = ctx.require_service("event_log")
@@ -187,17 +212,23 @@ class SyncModule(Module):
                 if on_commit:
                     on_commit(commit)
                 import asyncio
+
                 try:
                     loop = asyncio.get_running_loop()
                     loop.create_task(engine.notify_commit(commit.realm_id))
                 except RuntimeError:
                     pass
+
             return original_append(event, on_commit=combined)
 
         event_log.append_event = append_with_sync  # type: ignore[method-assign]
 
+        store = get_store()
         for realm in settings.subscribed_realms:
-            await engine.anti_entropy(realm)
+            advanced = await engine.anti_entropy(realm)
+            head = event_log.get_head(realm)
+            if advanced or head:
+                store.rebuild_from_log(realm)
 
     def api_routers(self):
         return [("/api", router, ["sync"])]

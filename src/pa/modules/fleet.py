@@ -102,10 +102,12 @@ def create_join_token(request: Request) -> dict:
 @router.post("/fleet/register-remote")
 async def register_remote(request: Request, body: dict) -> dict:
     require_user(request)
-    fleet: FleetRegistry = request.app.state.ctx.require_service("fleet_registry")
     inst = FleetInstance.model_validate(body)
+    if inst.url.lower().startswith(("javascript:", "data:", "vbscript:")):
+        raise HTTPException(status_code=400, detail="Invalid instance URL scheme")
     inst.last_seen = datetime.now(UTC)
     inst.healthy = True
+    fleet: FleetRegistry = request.app.state.ctx.require_service("fleet_registry")
     fleet.upsert_instance(inst)
     peer_table: PeerTable = request.app.state.ctx.require_service("peer_table")
     for realm in request.app.state.ctx.settings.subscribed_realms:

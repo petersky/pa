@@ -37,7 +37,9 @@ def _parse_version(version: str) -> tuple[int, ...]:
     return tuple(int(p) for p in parts) if parts else (0,)
 
 
-def is_newer(current: str, latest: str) -> bool:
+def is_newer(current: str, latest: str, *, track: str | None = None) -> bool:
+    if latest == "dev" or track == "dev":
+        return True
     return _parse_version(latest) > _parse_version(current)
 
 
