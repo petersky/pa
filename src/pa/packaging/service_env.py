@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
+import json
+
 from pa.config import Settings
+
+
+def _env_list(values: list[str]) -> str:
+    return json.dumps(values)
 
 
 def service_environment(settings: Settings) -> dict[str, str]:
@@ -16,11 +22,11 @@ def service_environment(settings: Settings) -> dict[str, str]:
         "PA_ZONE": settings.zone,
     }
     if settings.subscribed_realms:
-        env["PA_SUBSCRIBED_REALMS"] = ",".join(settings.subscribed_realms)
+        env["PA_SUBSCRIBED_REALMS"] = _env_list(settings.subscribed_realms)
     if settings.peers:
-        env["PA_PEERS"] = ",".join(settings.peers)
+        env["PA_PEERS"] = _env_list(settings.peers)
     if settings.capabilities:
-        env["PA_CAPABILITIES"] = ",".join(settings.capabilities)
+        env["PA_CAPABILITIES"] = _env_list(settings.capabilities)
     if settings.sync_token:
         env["PA_SYNC_TOKEN"] = settings.sync_token
     if settings.instance_url:

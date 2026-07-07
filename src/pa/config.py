@@ -1,8 +1,11 @@
 from pathlib import Path
+from typing import Annotated
 from uuid import uuid4
 
+import json
+
 from pydantic import AliasChoices, Field, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from pa.domain.instance_config import load_instance_config, merge_config_into_settings
 
@@ -24,16 +27,18 @@ class Settings(BaseSettings):
     data_dir: Path = Field(default_factory=default_data_dir)
     host: str = "127.0.0.1"
     port: int = 8080
-    peers: list[str] = Field(default_factory=list)
+    peers: Annotated[list[str], NoDecode] = Field(default_factory=list)
 
     # Fleet / realm
     fleet_id: str = Field(default_factory=lambda: str(uuid4()))
     fleet_owner: str = "local"
     fleet_owner_url: str = ""
     instance_url: str = ""
-    subscribed_realms: list[str] = Field(default_factory=lambda: ["default"])
+    subscribed_realms: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: ["default"]
+    )
     zone: str = "default"
-    capabilities: list[str] = Field(default_factory=list)
+    capabilities: Annotated[list[str], NoDecode] = Field(default_factory=list)
     relay_enabled: bool = False
 
     # Auth (T1)
@@ -48,7 +53,7 @@ class Settings(BaseSettings):
 
     # Primary ACP agent (Cursor: `agent acp`)
     agent_command: str = "agent"
-    agent_args: list[str] = Field(default_factory=lambda: ["acp"])
+    agent_args: Annotated[list[str], NoDecode] = Field(default_factory=lambda: ["acp"])
     agent_enabled: bool = True
 
     # Developer / debug
@@ -67,11 +72,21 @@ class Settings(BaseSettings):
     update_repo: str = "petersky/pa"
     install_method: str = "uv-tool"
 
-    @field_validator("peers", "subscribed_realms", "capabilities", mode="before")
+    @field_validator("peers", "subscribed_realms", "capabilities", "agent_args", mode="before")
     @classmethod
-    def _split_comma_list(cls, value: object) -> object:
+    def _parse_env_list(cls, value: object) -> object:
         if isinstance(value, str):
-            return [part.strip() for part in value.split(",") if part.strip()]
+            text = value.strip()
+            if not text:
+                return []
+            if text.startswith("["):
+                try:
+                    parsed = json.loads(text)
+                    if isinstance(parsed, list):
+                        return parsed
+                except json.JSONDecodeError:
+                    pass
+            return [part.strip() for part in text.split(",") if part.strip()]
         return value
 
     @model_validator(mode="after")
