@@ -61,7 +61,6 @@ def _cards_context(request: Request, *, kind: CardKind | None = None, lane: Card
 
 def _items_context(request: Request, *, kind: ItemKind | None = None) -> dict:
     ctx = _cards_context(request, kind=CardKind(kind.value) if kind else None)
-    ctx["items"] = [c for c in ctx["cards"]]
     ctx["kinds"] = list(ItemKind)
     ctx["statuses"] = list(ItemStatus)
     return ctx
