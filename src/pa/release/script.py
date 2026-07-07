@@ -101,9 +101,10 @@ def main(argv: list[str] | None = None) -> int:
             notes_path=notes_path,
         )
 
-        if not args.skip_gh:
+        if not args.skip_gh and args.push:
             try:
                 publish_github_release(tag, notes_path, amend=True)
+                print(f"Updated GitHub release notes for {tag}.")
             except RuntimeError as exc:
                 print(f"warning: gh release edit failed: {exc}", file=sys.stderr)
 
@@ -144,19 +145,25 @@ def main(argv: list[str] | None = None) -> int:
     )
     print(f"{result.old_version} -> {result.new_version} ({result.tag})")
 
-    if not args.skip_gh:
-        if args.push and args.wait_ci > 0:
-            print(f"Waiting {args.wait_ci}s for CI...")
+    if not args.skip_gh and args.push:
+        if args.wait_ci > 0:
+            print(f"Waiting {args.wait_ci}s for CI to create GitHub release...")
             time.sleep(args.wait_ci)
         try:
             publish_github_release(tag, notes_path, amend=False)
+            print(f"Published release notes to GitHub for {tag}.")
         except RuntimeError as exc:
             print(f"warning: gh release publish failed: {exc}", file=sys.stderr)
+            print(
+                f"  Try manually: gh release edit {tag} --notes-file {notes_path}",
+                file=sys.stderr,
+            )
 
     print(f"\nRelease {tag} complete.")
     print(f"  Notes: {notes_path}")
     if not args.push:
-        print("  Run with --push to publish tag and trigger CI.")
+        print("  Push to publish: git push && git push origin", tag)
+        print("  Or re-run with --push to commit, tag, push, and publish notes.")
     return 0
 
 
