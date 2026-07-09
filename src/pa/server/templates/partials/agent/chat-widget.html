@@ -1,0 +1,97 @@
+{# Modular agent chat widget — embeddable on Agent page or card panes.
+   Context / data attributes:
+     session_id, create_label, show_model, show_mode, show_thinking,
+     show_system_prompts, show_queue, show_metrics, compact
+#}
+{% set sid = session_id | default('') %}
+{% set label = create_label | default('default') %}
+{% set show_model = show_model if show_model is defined else true %}
+{% set show_mode = show_mode if show_mode is defined else true %}
+{% set show_thinking = show_thinking if show_thinking is defined else true %}
+{% set show_system = show_system_prompts if show_system_prompts is defined else false %}
+{% set show_queue = show_queue if show_queue is defined else true %}
+{% set show_metrics = show_metrics if show_metrics is defined else true %}
+{% set compact = compact if compact is defined else false %}
+
+<div class="agent-chat-widget{% if compact %} is-compact{% endif %}"
+     data-agent-chat
+     data-session-id="{{ sid }}"
+     data-create-label="{{ label }}"
+     data-show-model="{{ '1' if show_model else '0' }}"
+     data-show-mode="{{ '1' if show_mode else '0' }}"
+     data-show-thinking="{{ '1' if show_thinking else '0' }}"
+     data-show-system-prompts="{{ '1' if show_system else '0' }}"
+     data-show-queue="{{ '1' if show_queue else '0' }}"
+     data-show-metrics="{{ '1' if show_metrics else '0' }}">
+
+  <div class="acw-toolbar">
+    <div class="acw-toolbar-left">
+      <span class="acw-status-dot" data-acw-status title="Session status"></span>
+      <span class="acw-title" data-acw-title>Agent</span>
+      <span class="acw-turn-timer muted" data-acw-turn-timer hidden></span>
+    </div>
+    <div class="acw-toolbar-right">
+      {% if show_model %}
+      <label class="acw-select-wrap" data-acw-model-wrap hidden>
+        <span class="sr-only">Model</span>
+        <select data-acw-model aria-label="Model"></select>
+      </label>
+      {% endif %}
+      {% if show_mode %}
+      <label class="acw-select-wrap" data-acw-mode-wrap hidden>
+        <span class="sr-only">Mode</span>
+        <select data-acw-mode aria-label="Mode"></select>
+      </label>
+      {% endif %}
+      <button type="button" class="ghost small" data-acw-toggle-system title="Show system prompts">Sys</button>
+      <button type="button" class="ghost small" data-acw-stop title="Stop turn and pause queue">Stop</button>
+      <button type="button" class="ghost small danger" data-acw-end title="End session">End</button>
+    </div>
+  </div>
+
+  {% if show_metrics %}
+  <div class="acw-metrics muted" data-acw-metrics hidden></div>
+  {% endif %}
+
+  <div class="acw-messages scroll-region" data-acw-messages>
+    <p class="muted chat-placeholder" data-acw-placeholder>Connecting to agent…</p>
+  </div>
+
+  <div class="acw-permissions" data-acw-permissions hidden></div>
+
+  {% if show_queue %}
+  <div class="acw-queue" data-acw-queue hidden>
+    <div class="acw-queue-header">
+      <strong>Queue</strong>
+      <div class="acw-queue-actions">
+        <button type="button" class="ghost small" data-acw-queue-pause>Pause</button>
+        <button type="button" class="ghost small" data-acw-queue-resume>Resume</button>
+      </div>
+    </div>
+    <ul class="acw-queue-list" data-acw-queue-list></ul>
+  </div>
+  {% endif %}
+
+  <form class="acw-composer" data-acw-form>
+    <div class="acw-working" data-acw-working hidden>
+      <span class="acw-spinner" aria-hidden="true"></span>
+      <span data-acw-working-label>Working…</span>
+    </div>
+    <label class="sr-only" for="acw-input-{{ label }}">Message</label>
+    <textarea id="acw-input-{{ label }}" data-acw-input rows="2"
+              placeholder="Message the agent…" required></textarea>
+    <div class="acw-composer-actions">
+      <div class="acw-send-group">
+        <button type="submit" class="primary" data-acw-send>Send</button>
+        <details class="acw-send-menu">
+          <summary aria-label="Send options">▾</summary>
+          <div class="acw-send-menu-body">
+            <button type="button" data-acw-action="interrupt">Interrupt</button>
+            <button type="button" data-acw-action="prepend">Prepend to queue</button>
+            <button type="button" data-acw-action="append">Append to queue</button>
+          </div>
+        </details>
+      </div>
+    </div>
+  </form>
+</div>

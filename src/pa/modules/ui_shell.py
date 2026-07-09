@@ -69,12 +69,14 @@ def _settings_context(request: Request) -> dict:
     principal = get_principal_id(request)
     user_id = principal[5:] if principal.startswith("user:") else None
     prefs = get_preferences_store(settings.data_dir, user_id=user_id).load()
+    global_prefs = get_preferences_store(settings.data_dir).load()
     kernel = request.app.state.kernel
     from pa.status.info import build_status_snapshot
 
     status = build_status_snapshot(ctx, module_count=len(kernel.registry.modules))
     return {
         "prefs": prefs,
+        "global_prefs": global_prefs,
         "settings": settings,
         "status": status,
         "themes": get_theme_catalog(),
@@ -84,10 +86,14 @@ def _settings_context(request: Request) -> dict:
 def _agent_context(request: Request) -> dict:
     ctx: AppContext = request.app.state.ctx
     agent = ctx.require_service("instance_agent")
-    sessions = ctx.store.list_sessions()
+    runtimes = agent.list_runtimes() if hasattr(agent, "list_runtimes") else []
+    live = [rt.session for rt in runtimes if not getattr(rt, "_closed", False)]
+    default = next((s for s in live if s.label == "default"), live[0] if live else None)
     return {
         "agent_connected": agent.connected,
-        "sessions": sessions[:5],
+        "agent_enabled": ctx.settings.agent_enabled,
+        "sessions": live or ctx.store.list_sessions()[:8],
+        "session_id": default.id if default else "",
     }
 
 

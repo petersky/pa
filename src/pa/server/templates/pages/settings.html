@@ -13,6 +13,25 @@
 </div>
 
 <div class="panel">
+  <div class="panel-header"><h2>Agent</h2></div>
+  <p class="muted">Permission prompts for tool calls. User preference overrides the instance default when set.</p>
+  <form class="stack settings-agent-prefs" id="pa-agent-prefs-form">
+    <label class="checkbox-row">
+      <input type="checkbox" name="user_auto_approve"
+             {% if prefs.agent_auto_approve_permissions %}checked{% endif %}>
+      <span>Auto-approve permissions for my account</span>
+    </label>
+    <label class="checkbox-row">
+      <input type="checkbox" name="global_auto_approve"
+             {% if global_prefs.agent_auto_approve_permissions %}checked{% endif %}>
+      <span>Instance default: auto-approve permissions</span>
+    </label>
+    <button type="submit" class="primary">Save agent preferences</button>
+    <p class="muted small" id="pa-agent-prefs-status" hidden></p>
+  </form>
+</div>
+
+<div class="panel">
   <div class="panel-header"><h2>Instance</h2></div>
   <dl class="settings-dl">
     <dt>PA version</dt>
@@ -101,3 +120,42 @@
 {% endset %}
 
 {{ page_layout(main=main, right=right, class='page-settings') }}
+
+<script>
+(function () {
+  var form = document.getElementById("pa-agent-prefs-form");
+  if (!form) return;
+  form.addEventListener("submit", async function (e) {
+    e.preventDefault();
+    var status = document.getElementById("pa-agent-prefs-status");
+    var headers = { "Content-Type": "application/json", Accept: "application/json" };
+    var csrf = document.querySelector('meta[name="csrf-token"]');
+    if (csrf && csrf.content) headers["X-CSRF-Token"] = csrf.content;
+    var userVal = !!form.user_auto_approve.checked;
+    var globalVal = !!form.global_auto_approve.checked;
+    try {
+      await fetch("/api/agent/preferences", {
+        method: "PUT",
+        headers: headers,
+        credentials: "same-origin",
+        body: JSON.stringify({ agent_auto_approve_permissions: userVal, scope: "user" }),
+      });
+      await fetch("/api/agent/preferences", {
+        method: "PUT",
+        headers: headers,
+        credentials: "same-origin",
+        body: JSON.stringify({ agent_auto_approve_permissions: globalVal, scope: "global" }),
+      });
+      if (status) {
+        status.hidden = false;
+        status.textContent = "Saved.";
+      }
+    } catch (err) {
+      if (status) {
+        status.hidden = false;
+        status.textContent = "Failed to save preferences.";
+      }
+    }
+  });
+})();
+</script>
