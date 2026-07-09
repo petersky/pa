@@ -148,6 +148,39 @@
     });
   }
 
+  function initAgentReconnect() {
+    document.querySelectorAll("#pa-agent-reconnect").forEach(function (btn) {
+      if (btn.dataset.bound) return;
+      btn.dataset.bound = "1";
+      btn.addEventListener("click", function () {
+        btn.disabled = true;
+        fetch("/api/agent/reconnect", {
+          method: "POST",
+          headers: csrfHeader(),
+        })
+          .then(function (resp) {
+            return resp.json().then(function (data) {
+              if (!resp.ok) throw new Error(data.detail || "Reconnect failed");
+              return data;
+            });
+          })
+          .then(function (data) {
+            if (data.connected) {
+              reloadWithCacheBust();
+              return;
+            }
+            showToast(data.error || "Agent still offline", "error");
+          })
+          .catch(function (err) {
+            showToast(err.message || "Reconnect failed", "error");
+          })
+          .finally(function () {
+            btn.disabled = false;
+          });
+      });
+    });
+  }
+
   document.body.addEventListener("htmx:configRequest", function (event) {
     var headers = csrfHeader();
     Object.keys(headers).forEach(function (key) {
@@ -160,6 +193,7 @@
       setActiveNav(window.location.pathname);
       updateTitle();
       initBoardDragDrop(event.detail.target);
+      initAgentReconnect();
     }
     if (event.detail.target && event.detail.target.classList.contains("board-column-body")) {
       initBoardDragDrop(event.detail.target.closest(".board-grid") || document);
@@ -203,6 +237,7 @@
     setActiveNav(window.location.pathname);
     updateTitle();
     initBoardDragDrop(document);
+    initAgentReconnect();
     checkServerBuild();
     window.setInterval(checkServerBuild, VERSION_POLL_MS);
   });

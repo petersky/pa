@@ -101,6 +101,16 @@ async def agent_prompt(request: Request, body: dict) -> dict:
     return {"stop_reason": stop_reason}
 
 
+@router.post("/agent/reconnect")
+async def agent_reconnect(request: Request) -> dict:
+    agent = request.app.state.ctx.require_service("instance_agent")
+    connected = await agent.reconnect()
+    return {
+        "connected": connected,
+        "error": agent.last_error,
+    }
+
+
 @router.get("/config")
 def get_config() -> dict:
     settings = get_settings()

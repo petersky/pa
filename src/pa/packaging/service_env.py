@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from pa.config import Settings
+from pa.packaging.paths import build_service_path, resolve_executable
 
 
 def _env_list(values: list[str]) -> str:
@@ -12,7 +13,9 @@ def _env_list(values: list[str]) -> str:
 
 
 def service_environment(settings: Settings) -> dict[str, str]:
+    service_path = build_service_path()
     env: dict[str, str] = {
+        "PATH": service_path,
         "PA_DATA_DIR": str(settings.data_dir),
         "PA_HOST": settings.host,
         "PA_PORT": str(settings.port),
@@ -21,6 +24,11 @@ def service_environment(settings: Settings) -> dict[str, str]:
         "PA_FLEET_ID": settings.fleet_id,
         "PA_ZONE": settings.zone,
     }
+    agent_bin = resolve_executable(settings.agent_command, path=service_path)
+    if agent_bin:
+        env["PA_AGENT_COMMAND"] = str(agent_bin)
+    if settings.agent_args:
+        env["PA_AGENT_ARGS"] = _env_list(settings.agent_args)
     if settings.subscribed_realms:
         env["PA_SUBSCRIBED_REALMS"] = _env_list(settings.subscribed_realms)
     if settings.peers:

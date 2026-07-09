@@ -226,8 +226,7 @@ class SyncModule(Module):
         store = get_store()
         for realm in settings.subscribed_realms:
             advanced = await engine.anti_entropy(realm)
-            head = event_log.get_head(realm)
-            if advanced or head:
+            if advanced:
                 store.rebuild_from_log(realm)
 
     def api_routers(self):

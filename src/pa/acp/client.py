@@ -10,6 +10,7 @@ from pa.config import Settings
 from pa.domain.models import AgentSession
 from pa.domain.store import Store
 from pa.knowledge.capture import capture_from_updates
+from pa.packaging.paths import resolve_executable
 
 
 class PAClient(Client):
@@ -58,9 +59,13 @@ class AgentConnection:
             raise RuntimeError("Agent connection disabled (PA_AGENT_ENABLED=false)")
 
         self._client = PAClient(self.store)
+        command = self.settings.agent_command
+        resolved = resolve_executable(command)
+        if resolved:
+            command = str(resolved)
         self._ctx = spawn_agent_process(
             self._client,
-            self.settings.agent_command,
+            command,
             *self.settings.agent_args,
         )
         self._conn, self._proc = await self._ctx.__aenter__()  # noqa: SIM117

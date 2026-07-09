@@ -157,9 +157,6 @@ class CardProjection:
             )
 
     def _migrate_items_to_cards(self, conn: sqlite3.Connection) -> None:
-        count = conn.execute("SELECT COUNT(*) FROM cards").fetchone()[0]
-        if count > 0:
-            return
         rows = conn.execute("SELECT * FROM items").fetchall()
         lane_map = {
             "open": "inbox",

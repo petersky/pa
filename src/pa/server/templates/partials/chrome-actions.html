@@ -20,7 +20,10 @@
     <span class="status-label">Agent</span>
   </a>
   {% else %}
-  <button type="button" class="status-btn offline" disabled title="Agent offline">
+  <button type="button"
+          class="status-btn offline"
+          id="pa-agent-reconnect"
+          title="Agent offline — click to reconnect">
     {{ icon('agent', 'icon icon-sm') }}
     <span class="status-dot"></span>
     <span class="status-label">Offline</span>
