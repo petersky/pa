@@ -60,6 +60,7 @@ class ModuleRegistry:
                 logger.exception("Failed to load module entry point %s", ep.name)
 
     def load_builtins(self) -> None:
+        from pa.modules.agent_chat import AgentChatModule
         from pa.modules.auth import AuthModule
         from pa.modules.debug import DebugModule
         from pa.modules.fleet import FleetModule
@@ -81,6 +82,7 @@ class ModuleRegistry:
             TrustModule(),
             ItemsModule(),
             InstanceModule(),
+            AgentChatModule(),
             ThemeModule(),
             DebugModule(),
             UiShellModule(),

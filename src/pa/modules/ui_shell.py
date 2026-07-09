@@ -69,12 +69,14 @@ def _settings_context(request: Request) -> dict:
     principal = get_principal_id(request)
     user_id = principal[5:] if principal.startswith("user:") else None
     prefs = get_preferences_store(settings.data_dir, user_id=user_id).load()
+    global_prefs = get_preferences_store(settings.data_dir).load()
     kernel = request.app.state.kernel
     from pa.status.info import build_status_snapshot
 
     status = build_status_snapshot(ctx, module_count=len(kernel.registry.modules))
     return {
         "prefs": prefs,
+        "global_prefs": global_prefs,
         "settings": settings,
         "status": status,
         "themes": get_theme_catalog(),

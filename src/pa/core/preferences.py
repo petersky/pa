@@ -18,6 +18,7 @@ class AppearanceMode(StrEnum):
 class UserPreferences(BaseModel):
     theme_id: str = "pa"
     appearance: AppearanceMode = AppearanceMode.SYSTEM
+    agent_auto_approve_permissions: bool = False
 
 
 class PreferencesStore:
