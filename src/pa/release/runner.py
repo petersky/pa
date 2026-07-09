@@ -39,6 +39,31 @@ def _run(cmd: list[str], *, cwd: Path | None = None) -> None:
         raise RuntimeError(f"{' '.join(cmd)}: {msg}")
 
 
+def _capture(cmd: list[str], *, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(cmd, cwd=cwd, check=False, capture_output=True, text=True)
+
+
+def commits_behind_origin_main(
+    *,
+    remote: str = "origin",
+    branch: str = "main",
+    fetch: bool = True,
+) -> int:
+    """Return how many commits HEAD is behind ``origin/main`` (0 if up to date or unknown)."""
+    ref = f"{remote}/{branch}"
+    if fetch:
+        fetched = _capture(["git", "fetch", remote, branch], cwd=ROOT)
+        if fetched.returncode != 0:
+            msg = fetched.stderr.strip() or fetched.stdout.strip() or "fetch failed"
+            raise RuntimeError(f"git fetch {remote} {branch}: {msg}")
+    counted = _capture(["git", "rev-list", "--count", f"HEAD..{ref}"], cwd=ROOT)
+    if counted.returncode != 0:
+        msg = counted.stderr.strip() or counted.stdout.strip() or "rev-list failed"
+        raise RuntimeError(f"git rev-list --count HEAD..{ref}: {msg}")
+    text = counted.stdout.strip()
+    return int(text) if text else 0
+
+
 def _update_channels_manifest(version: str, tag: str, *, channel: str | None = None) -> None:
     track = channel or track_for_version(version)
     data: dict[str, str] = {}

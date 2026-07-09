@@ -16,12 +16,37 @@ from pa.release.notes import (
 )
 from pa.release.runner import (
     amend_release_notes,
+    commits_behind_origin_main,
     create_release,
     publish_github_release,
     push_existing_release,
     resolve_version,
 )
 from pa.release.version import read_version, tag_for_version, track_for_version
+
+
+def _warn_if_behind_origin_main(*, require_up_to_date: bool) -> int:
+    """Warn when HEAD is behind origin/main. Return 1 if the release should abort."""
+    try:
+        behind = commits_behind_origin_main()
+    except RuntimeError as exc:
+        print(f"warning: could not check origin/main: {exc}", file=sys.stderr)
+        return 0
+    if behind <= 0:
+        return 0
+    noun = "commit" if behind == 1 else "commits"
+    print(
+        f"warning: current branch is behind origin/main by {behind} {noun}.",
+        file=sys.stderr,
+    )
+    print(
+        "  Integrate remote changes first (e.g. `git pull --rebase origin main`), then retry.",
+        file=sys.stderr,
+    )
+    if require_up_to_date:
+        print("error: aborting release while behind origin/main.", file=sys.stderr)
+        return 1
+    return 0
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -82,6 +107,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.publish:
+        if _warn_if_behind_origin_main(require_up_to_date=True):
+            return 1
         tag = args.tag or tag_for_version(read_version())
         if not tag.startswith("v"):
             tag = f"v{tag}"
@@ -108,6 +135,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.amend:
+        if _warn_if_behind_origin_main(require_up_to_date=do_push):
+            return 1
         tag = args.tag or latest_tag()
         if not tag:
             print("error: no tag to amend", file=sys.stderr)
@@ -152,6 +181,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.version:
         print("error: version bump required (major, minor, patch, or X.Y.Z)", file=sys.stderr)
+        return 1
+
+    if _warn_if_behind_origin_main(require_up_to_date=do_push):
         return 1
 
     old = read_version()
