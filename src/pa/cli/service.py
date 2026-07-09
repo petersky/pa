@@ -228,10 +228,74 @@ def _run_systemctl(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _unload_launchd_job() -> None:
-    result = _run_launchctl("bootout", _domain_target())
-    if result.returncode == 0:
-        time.sleep(0.5)
+def _launchctl_io_error(result: subprocess.CompletedProcess[str]) -> bool:
+    text = f"{result.stderr or ''}\n{result.stdout or ''}".lower()
+    return "input/output error" in text or "bootstrap failed: 5" in text
+
+
+def _launchd_job_loaded() -> bool:
+    result = _run_launchctl("print", _domain_target())
+    if result.returncode != 0:
+        return False
+    text = f"{result.stderr or ''}\n{result.stdout or ''}"
+    return "Could not find service" not in text
+
+
+def _unload_launchd_job(*, timeout: float = 10.0) -> None:
+    """Boot out the LaunchAgent and wait until launchd forgets it.
+
+    A short sleep is not enough: launchd often keeps a SIGTERMed job visible
+    briefly, and an immediate re-bootstrap then fails with I/O error 5.
+    """
+    target = _domain_target()
+    result = _run_launchctl("bootout", target)
+    if result.returncode != 0 and "No such process" not in (result.stderr or ""):
+        # Still try to wait it out; print may already show the job as gone.
+        pass
+
+    deadline = time.monotonic() + timeout
+    delay = 0.25
+    while time.monotonic() < deadline:
+        if not _launchd_job_loaded():
+            # Extra beat so bootstrap is less likely to hit transient error 5.
+            time.sleep(0.5)
+            return
+        time.sleep(delay)
+        delay = min(delay * 1.5, 1.5)
+        _run_launchctl("bootout", target)
+
+    if _launchd_job_loaded():
+        raise RuntimeError(f"Timed out unloading launchd job {target}")
+
+
+def _bootstrap_launchd_plist(plist: Path, *, attempts: int = 8) -> None:
+    gui_domain = f"gui/{os.getuid()}"
+    delays = (0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 6.0)
+    last: subprocess.CompletedProcess[str] | None = None
+    for attempt in range(attempts):
+        last = _run_launchctl("bootstrap", gui_domain, str(plist))
+        if last.returncode == 0:
+            return
+        # Already loaded is fine for callers that only need the job present.
+        text = f"{last.stderr or ''}\n{last.stdout or ''}".lower()
+        if "already bootstrapped" in text or "service already loaded" in text:
+            return
+        if attempt + 1 < attempts and _launchctl_io_error(last):
+            time.sleep(delays[min(attempt, len(delays) - 1)])
+            continue
+        break
+    err = ((last.stderr if last else "") or (last.stdout if last else "") or "").strip()
+    raise RuntimeError(err or "launchctl bootstrap failed")
+
+
+def _wait_launchd_running(*, timeout: float = 15.0) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        result = _run_launchctl("print", _domain_target())
+        if result.returncode == 0 and "state = running" in result.stdout:
+            return True
+        time.sleep(0.25)
+    return False
 
 
 def bootstrap(*, reload: bool = False) -> None:
@@ -239,17 +303,12 @@ def bootstrap(*, reload: bool = False) -> None:
         plist = _plist_path()
         if not plist.exists():
             raise RuntimeError(f"Plist not installed: {plist}")
-        gui_domain = f"gui/{os.getuid()}"
-        status = get_status()
-        if status.loaded:
+        if _launchd_job_loaded():
             if reload:
                 _unload_launchd_job()
             else:
                 return
-        result = _run_launchctl("bootstrap", gui_domain, str(plist))
-        if result.returncode != 0:
-            err = (result.stderr or result.stdout or "").strip()
-            raise RuntimeError(err or "launchctl bootstrap failed")
+        _bootstrap_launchd_plist(plist)
         return
 
     if _is_linux():
@@ -267,16 +326,19 @@ def start(settings: Settings | None = None) -> None:
     if _is_darwin():
         if not _plist_path().exists():
             raise RuntimeError("PA service not installed. Run: pa install --service-only")
-        status = get_status(settings)
-        if not status.loaded:
+        if not _launchd_job_loaded():
             bootstrap()
+        if _wait_launchd_running(timeout=5.0):
+            return
         result = _run_launchctl("kickstart", "-k", _domain_target())
         if result.returncode != 0:
-            bootstrap()
+            bootstrap(reload=True)
             result = _run_launchctl("kickstart", "-k", _domain_target())
         if result.returncode != 0:
             err = (result.stderr or result.stdout or "").strip()
             raise RuntimeError(err or "launchctl kickstart failed")
+        if not _wait_launchd_running():
+            raise RuntimeError("PA service did not reach running state")
         return
 
     if _is_linux():
@@ -290,9 +352,9 @@ def start(settings: Settings | None = None) -> None:
 
 def stop() -> None:
     if _is_darwin():
-        result = _run_launchctl("bootout", _domain_target())
-        if result.returncode != 0 and "No such process" not in result.stderr:
-            raise RuntimeError(result.stderr.strip() or "launchctl bootout failed")
+        if not _launchd_job_loaded():
+            return
+        _unload_launchd_job()
         return
 
     if _is_linux():
@@ -309,14 +371,22 @@ def restart(settings: Settings | None = None) -> None:
     if _is_darwin():
         if not _plist_path().exists():
             raise RuntimeError("PA service not installed. Run: pa install --service-only")
+        # Unload fully, rewrite the plist, then bootstrap. RunAtLoad starts the
+        # job; avoid kickstart -k unless the process never comes up.
+        if _launchd_job_loaded():
+            _unload_launchd_job()
         pa_bin = find_service_binary()
         if pa_bin:
             install_plist(settings, pa_bin)
-        bootstrap(reload=True)
+        _bootstrap_launchd_plist(_plist_path())
+        if _wait_launchd_running(timeout=8.0):
+            return
         result = _run_launchctl("kickstart", "-k", _domain_target())
         if result.returncode != 0:
             err = (result.stderr or result.stdout or "").strip()
             raise RuntimeError(err or "launchctl kickstart failed")
+        if not _wait_launchd_running():
+            raise RuntimeError("PA service did not reach running state after restart")
         return
 
     if _is_linux():
@@ -342,7 +412,9 @@ def get_status(settings: Settings | None = None) -> ServiceStatus:
         installed = unit_path.exists()
         if installed:
             result = _run_launchctl("print", _domain_target())
-            if result.returncode == 0:
+            if result.returncode == 0 and "Could not find service" not in (
+                f"{result.stderr or ''}\n{result.stdout or ''}"
+            ):
                 loaded = True
                 running = "state = running" in result.stdout
 
