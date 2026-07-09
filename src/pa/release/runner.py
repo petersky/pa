@@ -110,13 +110,15 @@ def create_release(
 
     set_version(new)
     _update_channels_manifest(new, tag, channel=channel)
+    # Keep the editable package version in uv.lock aligned with pyproject.toml.
+    _run(["uv", "lock"], cwd=ROOT)
 
     written_notes: Path | None = None
     if notes_content:
         written_notes = write_release_notes(tag, notes_content, path=notes_path)
 
     if commit:
-        files = ["pyproject.toml", "src/pa/__init__.py", "channels.json"]
+        files = ["pyproject.toml", "src/pa/__init__.py", "channels.json", "uv.lock"]
         if written_notes:
             files.append(str(written_notes.relative_to(ROOT)))
         _run(["git", "add", *files])
