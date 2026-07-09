@@ -29,20 +29,28 @@
 
 {% set right %}
 <div class="panel">
-  <div class="panel-header"><h2>Sessions</h2></div>
-  {% if sessions %}
+  <div class="panel-header">
+    <h2>Sessions</h2>
+    {% if agent_enabled %}
+    <button type="button" class="ghost small" data-agent-new-session title="New session">New</button>
+    {% endif %}
+  </div>
   <ul class="session-list" data-agent-session-list>
+    {% if sessions %}
     {% for s in sessions %}
-    <li class="{% if s.id == session_id %}active{% endif %}">
+    <li class="{% if s.id == session_id %}active{% endif %}"
+        data-session-id="{{ s.id }}"
+        role="button"
+        tabindex="0">
       <strong>{{ s.title or s.label or s.agent_name }}</strong>
       <span class="muted">{{ s.status }}</span>
       {% if s.model_id %}<span class="muted">{{ s.model_id }}</span>{% endif %}
     </li>
     {% endfor %}
+    {% else %}
+    <li class="muted" data-agent-session-empty>No live agent sessions yet.</li>
+    {% endif %}
   </ul>
-  {% else %}
-  <p class="muted">No live agent sessions yet.</p>
-  {% endif %}
 </div>
 <div class="panel">
   <div class="panel-header"><h2>Tips</h2></div>

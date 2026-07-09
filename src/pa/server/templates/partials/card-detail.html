@@ -38,6 +38,26 @@
     </div>
   </form>
   <p class="muted">Kind: {{ card.kind.value }} · ID: {{ card.id[:8] }}…</p>
+
+  {% if agent_enabled | default(true) %}
+  <div class="card-agent-pane">
+    <div class="panel-header"><h2>Agent</h2></div>
+    {% with
+        session_id='',
+        create_label='card:' ~ card.id,
+        card_id=card.id,
+        show_model=true,
+        show_mode=true,
+        show_thinking=false,
+        show_system_prompts=false,
+        show_queue=false,
+        show_metrics=false,
+        compact=true
+    %}
+      {% include "partials/agent/chat-widget.html" %}
+    {% endwith %}
+  </div>
+  {% endif %}
 </div>
 {% else %}
 <p class="empty">Card not found.</p>

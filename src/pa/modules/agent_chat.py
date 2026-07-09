@@ -89,6 +89,37 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
     try:
         if body.attach_default or body.label == "default":
             runtime = await mgr.attach_default(principal_id=principal_id, cwd=body.cwd)
+        elif body.label:
+            # Reuse a live/persisted session with the same label (e.g. card:{id}).
+            existing = None
+            for rt in mgr.list_runtimes():
+                if rt.session.label == body.label and not getattr(rt, "_closed", False):
+                    existing = rt
+                    break
+            if existing is None:
+                stored = mgr.store.get_session_by_label(body.label)
+                if stored and stored.status not in {"closed", "quiesced"}:
+                    runtime = await mgr.create_session(
+                        label=body.label,
+                        title=body.title or stored.title,
+                        cwd=body.cwd or stored.cwd,
+                        principal_id=principal_id or stored.principal_id,
+                        card_id=body.card_id or stored.card_id,
+                        project_id=body.project_id or stored.project_id,
+                        existing=stored,
+                        resume_external_id=stored.external_session_id,
+                    )
+                else:
+                    runtime = await mgr.create_session(
+                        label=body.label,
+                        title=body.title,
+                        cwd=body.cwd,
+                        principal_id=principal_id,
+                        card_id=body.card_id,
+                        project_id=body.project_id,
+                    )
+            else:
+                runtime = existing
         else:
             runtime = await mgr.create_session(
                 label=body.label,

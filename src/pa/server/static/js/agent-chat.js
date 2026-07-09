@@ -76,6 +76,7 @@
     this.root = root;
     this.sessionId = root.dataset.sessionId || "";
     this.createLabel = root.dataset.createLabel || "default";
+    this.cardId = root.dataset.cardId || "";
     this.showThinking = root.dataset.showThinking !== "0";
     this.showSystem = root.dataset.showSystemPrompts === "1";
     this.showQueue = root.dataset.showQueue !== "0";
@@ -102,6 +103,7 @@
       mode: root.querySelector("[data-acw-mode]"),
       modelWrap: root.querySelector("[data-acw-model-wrap]"),
       modeWrap: root.querySelector("[data-acw-mode-wrap]"),
+      config: root.querySelector("[data-acw-config]"),
     };
 
     this.es = null;
@@ -195,8 +197,10 @@
       : this.api("/sessions", {
           method: "POST",
           body: JSON.stringify({
-            attach_default: this.createLabel === "default",
+            attach_default: this.createLabel === "default" && !this.cardId,
             label: this.createLabel,
+            card_id: this.cardId || null,
+            title: this.cardId ? "Card agent" : null,
           }),
         });
 
@@ -243,6 +247,7 @@
   };
 
   AgentChatWidget.prototype.applySnapshot = function (snap) {
+    const self = this;
     const session = snap.session || {};
     if (this.els.title) {
       this.els.title.textContent = session.title || session.label || "Agent";
@@ -254,6 +259,7 @@
     this.renderTranscript(snap.transcript || []);
     this.renderQueue(snap.queue || []);
     this.renderModelsModes(snap);
+    this.renderConfigOptions(snap);
     this.renderMetrics(snap.metrics || session.metrics_json || {});
     if (this.els.permissions) {
       this.els.permissions.innerHTML = "";
@@ -262,6 +268,7 @@
     (snap.pending_permissions || []).forEach(function (req) {
       if (req && typeof req === "object") self.showPermission(req);
     });
+    refreshSessionList(this.sessionId);
   };
 
   AgentChatWidget.prototype.renderTranscript = function (events) {
@@ -331,6 +338,9 @@
       "usage_update",
       "model_changed",
       "mode_changed",
+      "config_changed",
+      "config_option_update",
+      "current_mode_update",
       "error",
       "message",
     ].forEach(function (name) {
@@ -344,6 +354,7 @@
 
   AgentChatWidget.prototype.handleEvent = function (event, replay) {
     if (!event) return;
+    const self = this;
     const seq = event.seq || 0;
     if (seq) this.lastSeq = Math.max(this.lastSeq, seq);
     const type = event.type || event.event_type;
@@ -403,10 +414,23 @@
       case "usage_update":
         if (payload.usage) this.renderMetrics({ usage: payload.usage });
         break;
+      case "model_changed":
+      case "mode_changed":
+      case "current_mode_update":
+      case "config_changed":
+      case "config_option_update":
+        if (!replay) {
+          this.api("/sessions/" + this.sessionId).then(function (snap) {
+            self.renderModelsModes(snap);
+            self.renderConfigOptions(snap);
+          }).catch(function () { /* ignore */ });
+        }
+        break;
       case "session_closed":
         this.setStatus("offline");
         this.setPlaceholder("Session ended.");
         if (this.es) this.es.close();
+        refreshSessionList(null);
         break;
       case "error":
         this.addBubble("system", payload.message || "Error", created, { system: true });
@@ -678,6 +702,91 @@
     }
   };
 
+  AgentChatWidget.prototype.renderConfigOptions = function (snap) {
+    if (!this.els.config) return;
+    const self = this;
+    const raw = snap.config_options ||
+      (snap.session && snap.session.config_json && snap.session.config_json.options) ||
+      [];
+    const options = Array.isArray(raw) ? raw : [];
+    if (!options.length) {
+      this.els.config.hidden = true;
+      this.els.config.innerHTML = "";
+      return;
+    }
+    this.els.config.hidden = false;
+    this.els.config.innerHTML = "";
+    options.forEach(function (opt) {
+      if (!opt || typeof opt !== "object") return;
+      const id = opt.id || opt.configId || opt.config_id;
+      if (!id) return;
+      const type = opt.type || opt.kind || "select";
+      const wrap = document.createElement("label");
+      wrap.className = "acw-select-wrap acw-config-item";
+      const name = opt.name || id;
+      if (type === "boolean") {
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.checked = !!(opt.currentValue != null ? opt.currentValue : opt.current_value);
+        input.addEventListener("change", function () {
+          self.putOption("config", { config_id: id, value: !!input.checked });
+        });
+        wrap.appendChild(input);
+        wrap.appendChild(document.createTextNode(" " + name));
+      } else {
+        const select = document.createElement("select");
+        select.setAttribute("aria-label", name);
+        const choices = opt.options || opt.choices || opt.values || [];
+        const current = opt.currentValue != null ? opt.currentValue : opt.current_value;
+        choices.forEach(function (choice) {
+          const value = typeof choice === "object" ? (choice.value || choice.id) : choice;
+          const label = typeof choice === "object" ? (choice.name || choice.label || value) : choice;
+          const option = document.createElement("option");
+          option.value = value;
+          option.textContent = label;
+          if (String(value) === String(current)) option.selected = true;
+          select.appendChild(option);
+        });
+        if (!choices.length && current != null) {
+          const option = document.createElement("option");
+          option.value = current;
+          option.textContent = String(current);
+          option.selected = true;
+          select.appendChild(option);
+        }
+        select.addEventListener("change", function () {
+          self.putOption("config", { config_id: id, value: select.value });
+        });
+        wrap.appendChild(document.createTextNode(name + " "));
+        wrap.appendChild(select);
+      }
+      self.els.config.appendChild(wrap);
+    });
+  };
+
+  AgentChatWidget.prototype.switchSession = function (sessionId) {
+    if (!sessionId || sessionId === this.sessionId) return;
+    if (this.es) {
+      this.es.close();
+      this.es = null;
+    }
+    this.sessionId = sessionId;
+    this.root.dataset.sessionId = sessionId;
+    this.lastSeq = 0;
+    this.streaming = {};
+    this.setPlaceholder("Loading session…");
+    const self = this;
+    this.api("/sessions/" + sessionId)
+      .then(function (snap) {
+        self.applySnapshot(snap);
+        self.connectSSE();
+      })
+      .catch(function (err) {
+        self.setPlaceholder("Failed to load session: " + err.message);
+        self.setStatus("error");
+      });
+  };
+
   AgentChatWidget.prototype.renderMetrics = function (metrics) {
     if (!this.showMetrics || !this.els.metrics) return;
     const usage = metrics.last_usage || metrics.usage || {};
@@ -765,6 +874,7 @@
       if (self.es) self.es.close();
       self.setStatus("offline");
       self.setPlaceholder("Session ended.");
+      refreshSessionList(null);
     });
   };
 
@@ -783,15 +893,108 @@
     });
   };
 
+  function csrfFetch(path, opts) {
+    opts = opts || {};
+    return fetch("/api/agent" + path, Object.assign({
+      headers: csrfHeaders(),
+      credentials: "same-origin",
+    }, opts)).then(function (res) {
+      if (!res.ok) {
+        return res.json().catch(function () { return {}; }).then(function (body) {
+          throw new Error(body.detail || res.statusText || "Request failed");
+        });
+      }
+      return res.json();
+    });
+  }
+
+  function refreshSessionList(activeId) {
+    const list = document.querySelector("[data-agent-session-list]");
+    if (!list) return;
+    csrfFetch("/sessions")
+      .then(function (sessions) {
+        list.innerHTML = "";
+        if (!sessions || !sessions.length) {
+          const empty = document.createElement("li");
+          empty.className = "muted";
+          empty.dataset.agentSessionEmpty = "1";
+          empty.textContent = "No live agent sessions yet.";
+          list.appendChild(empty);
+          return;
+        }
+        sessions.forEach(function (s) {
+          const li = document.createElement("li");
+          li.dataset.sessionId = s.id;
+          li.setAttribute("role", "button");
+          li.tabIndex = 0;
+          if (activeId && s.id === activeId) li.classList.add("active");
+          li.innerHTML =
+            "<strong>" + escapeHtml(s.title || s.label || "Agent") + "</strong>" +
+            '<span class="muted">' + escapeHtml(s.status || "") + "</span>" +
+            (s.model_id ? '<span class="muted">' + escapeHtml(s.model_id) + "</span>" : "");
+          list.appendChild(li);
+        });
+      })
+      .catch(function () { /* ignore */ });
+  }
+
+  function bindSessionSidebar(scope) {
+    const root = scope || document;
+    const list = root.querySelector("[data-agent-session-list]");
+    if (list && !list._acwBound) {
+      list._acwBound = true;
+      list.addEventListener("click", function (e) {
+        const li = e.target.closest("[data-session-id]");
+        if (!li) return;
+        const widget = document.querySelector("[data-agent-chat]");
+        if (widget && widget._acw) widget._acw.switchSession(li.dataset.sessionId);
+      });
+      list.addEventListener("keydown", function (e) {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        const li = e.target.closest("[data-session-id]");
+        if (!li) return;
+        e.preventDefault();
+        const widget = document.querySelector("[data-agent-chat]");
+        if (widget && widget._acw) widget._acw.switchSession(li.dataset.sessionId);
+      });
+    }
+    const neu = root.querySelector("[data-agent-new-session]");
+    if (neu && !neu._acwBound) {
+      neu._acwBound = true;
+      neu.addEventListener("click", function () {
+        const widget = document.querySelector("[data-agent-chat]");
+        csrfFetch("/sessions", {
+          method: "POST",
+          body: JSON.stringify({ label: "chat", title: "Chat" }),
+        })
+          .then(function (snap) {
+            const sid = (snap.session && snap.session.id) || snap.id;
+            refreshSessionList(sid);
+            if (widget && widget._acw && sid) widget._acw.switchSession(sid);
+          })
+          .catch(function (err) {
+            if (widget && widget._acw) {
+              widget._acw.addBubble("system", err.message, new Date().toISOString(), { system: true });
+            }
+          });
+      });
+    }
+  }
+
   function mountAll(scope) {
     const root = scope || document;
     root.querySelectorAll("[data-agent-chat]").forEach(function (el) {
       if (el._acw) return;
       el._acw = new AgentChatWidget(el);
     });
+    bindSessionSidebar(root);
   }
 
-  window.PAAgentChat = { mount: mountAll, AgentChatWidget: AgentChatWidget };
+  window.PAAgentChat = {
+    mount: mountAll,
+    AgentChatWidget: AgentChatWidget,
+    refreshSessionList: refreshSessionList,
+  };
 
   document.addEventListener("DOMContentLoaded", function () {
     mountAll(document);

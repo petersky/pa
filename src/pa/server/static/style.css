@@ -1018,6 +1018,39 @@ code {
   padding-left: 0.4rem;
 }
 
+.session-list li[data-session-id] {
+  cursor: pointer;
+}
+
+.session-list li[data-session-id]:hover {
+  background: color-mix(in srgb, var(--pa-accent) 8%, transparent);
+}
+
+.panel-header [data-agent-new-session] {
+  margin-left: auto;
+}
+
+.acw-config {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.acw-config-item {
+  font-size: 0.75rem;
+}
+
+.card-agent-pane {
+  margin-top: 1rem;
+  border-top: 1px solid var(--pa-border);
+  padding-top: 0.75rem;
+}
+
+.card-agent-pane .agent-chat-widget {
+  min-height: 16rem;
+}
+
 .tip-list {
   margin: 0;
   padding-left: 1.1rem;

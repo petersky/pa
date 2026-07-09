@@ -278,6 +278,7 @@ def card_detail_partial(request: Request, card_id: str, realm: str | None = None
             "card": card,
             "lanes": list(CardLane),
             "csrf_token": request.cookies.get("pa_csrf", ""),
+            "agent_enabled": request.app.state.ctx.settings.agent_enabled,
         },
     )
 
@@ -307,6 +308,7 @@ def card_detail_update(
             "card": card,
             "lanes": list(CardLane),
             "csrf_token": request.cookies.get("pa_csrf", ""),
+            "agent_enabled": settings.agent_enabled,
         },
     )
 

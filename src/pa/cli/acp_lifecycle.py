@@ -8,11 +8,30 @@ from typing import Any
 
 import httpx
 
+from pa.auth.csrf import COOKIE_NAME, HEADER_NAME
 from pa.config import Settings
 
 
 def _base_url(settings: Settings) -> str:
     return f"http://{settings.host}:{settings.port}"
+
+
+def _csrf_headers(client: httpx.Client, settings: Settings) -> dict[str, str]:
+    """Prime the double-submit CSRF cookie and return the matching header.
+
+    Browser sessions already have ``pa_csrf``; the CLI talks to localhost with a
+    fresh httpx client, so POST /api/agent/quiesce would otherwise 403.
+    """
+    token = client.cookies.get(COOKIE_NAME)
+    if not token:
+        try:
+            client.get(f"{_base_url(settings)}/api/health")
+        except httpx.HTTPError:
+            return {}
+        token = client.cookies.get(COOKIE_NAME)
+    if not token:
+        return {}
+    return {HEADER_NAME: token}
 
 
 def _supports_carriage_return() -> bool:
@@ -89,12 +108,18 @@ def quiesce_running_agent(
     line = _StatusLine()
     try:
         with httpx.Client(timeout=timeout + 30.0) as client:
+            headers = _csrf_headers(client, settings)
             start = client.post(
                 f"{_base_url(settings)}/api/agent/quiesce",
                 json={"reason": reason, "timeout": timeout, "wait": False},
+                headers=headers,
             )
             if start.status_code >= 400:
-                detail = start.json().get("detail") if start.headers.get("content-type", "").startswith("application/json") else start.text
+                detail = (
+                    start.json().get("detail")
+                    if start.headers.get("content-type", "").startswith("application/json")
+                    else start.text
+                )
                 print(f"Failed to start ACP quiesce: {detail}", file=sys.stderr)
                 return None
 

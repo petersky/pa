@@ -170,6 +170,15 @@ class AgentSessionRuntime:
         if event_type == "current_mode_update" and normalized.get("mode_id"):
             self.session.mode_id = normalized["mode_id"]
             self.store.save_session(self.session)
+        if event_type == "config_option_update":
+            options = normalized.get("config_options")
+            if options is not None:
+                cfg = dict(self.session.config_json or {})
+                cfg["options"] = options
+                self.session.config_json = cfg
+                self.store.save_session(self.session)
+                if self.connection:
+                    self.connection.config_options = options
         self._append_transcript(event_type, normalized)
 
     async def _on_permission(
