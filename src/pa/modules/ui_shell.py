@@ -86,10 +86,14 @@ def _settings_context(request: Request) -> dict:
 def _agent_context(request: Request) -> dict:
     ctx: AppContext = request.app.state.ctx
     agent = ctx.require_service("instance_agent")
-    sessions = ctx.store.list_sessions()
+    runtimes = agent.list_runtimes() if hasattr(agent, "list_runtimes") else []
+    live = [rt.session for rt in runtimes if not getattr(rt, "_closed", False)]
+    default = next((s for s in live if s.label == "default"), live[0] if live else None)
     return {
         "agent_connected": agent.connected,
-        "sessions": sessions[:5],
+        "agent_enabled": ctx.settings.agent_enabled,
+        "sessions": live or ctx.store.list_sessions()[:8],
+        "session_id": default.id if default else "",
     }
 
 

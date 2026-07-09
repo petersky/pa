@@ -2,29 +2,26 @@
 {% from "macros/icons.html" import icon %}
 
 {% set main %}
-<div class="panel panel-fill agent-chat">
-  {% if agent_connected %}
-  <div class="panel-header">
-    <h2>Instance agent</h2>
-    <span class="badge badge-ok">Online</span>
-  </div>
-  <div id="agent-messages" class="chat-messages scroll-region">
-    <p class="muted chat-placeholder">Send a message to the always-on instance agent.</p>
-  </div>
-  <form class="chat-input stack"
-        hx-post="/partials/agent/prompt"
-        hx-target="#agent-messages"
-        hx-swap="beforeend">
-    <label class="sr-only" for="agent-message">Message</label>
-    <textarea id="agent-message" name="message" rows="2" required
-              placeholder="Message the instance agent…"></textarea>
-    <button type="submit">Send</button>
-  </form>
+<div class="panel panel-fill page-agent-main">
+  {% if agent_enabled %}
+  {% with
+      session_id=session_id,
+      create_label='default',
+      show_model=true,
+      show_mode=true,
+      show_thinking=true,
+      show_system_prompts=false,
+      show_queue=true,
+      show_metrics=true,
+      compact=false
+  %}
+    {% include "partials/agent/chat-widget.html" %}
+  {% endwith %}
   {% else %}
   <div class="empty-state">
     {{ icon('agent', 'icon icon-lg') }}
-    <h2>Agent offline</h2>
-    <p class="muted">The instance agent is not connected. Enable the agent and restart PA to chat.</p>
+    <h2>Agent disabled</h2>
+    <p class="muted">Enable the agent and restart PA to chat.</p>
   </div>
   {% endif %}
 </div>
@@ -32,19 +29,28 @@
 
 {% set right %}
 <div class="panel">
-  <div class="panel-header"><h2>Session</h2></div>
+  <div class="panel-header"><h2>Sessions</h2></div>
   {% if sessions %}
-  <ul class="session-list">
+  <ul class="session-list" data-agent-session-list>
     {% for s in sessions %}
-    <li>
-      <strong>{{ s.agent_name }}</strong>
+    <li class="{% if s.id == session_id %}active{% endif %}">
+      <strong>{{ s.title or s.label or s.agent_name }}</strong>
       <span class="muted">{{ s.status }}</span>
+      {% if s.model_id %}<span class="muted">{{ s.model_id }}</span>{% endif %}
     </li>
     {% endfor %}
   </ul>
   {% else %}
-  <p class="muted">No agent sessions yet.</p>
+  <p class="muted">No live agent sessions yet.</p>
   {% endif %}
+</div>
+<div class="panel">
+  <div class="panel-header"><h2>Tips</h2></div>
+  <ul class="muted tip-list">
+    <li>Messages queue while the agent is working.</li>
+    <li>Stop pauses the queue; End closes the session.</li>
+    <li>Permission prompts appear inline unless auto-approve is on.</li>
+  </ul>
 </div>
 {% endset %}
 
