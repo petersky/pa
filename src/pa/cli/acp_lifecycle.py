@@ -108,10 +108,17 @@ def quiesce_running_agent(
                 data = resp.json()
                 final = data
                 msg = data.get("message") or "Quiescing ACP sessions…"
-                active_n = data.get("active_sessions", 0)
-                queued_n = data.get("queued_prompts", 0)
+                active_n = int(data.get("active_sessions") or 0)
+                queued_n = int(data.get("queued_prompts") or 0)
+                snap = data.get("snapshot") or {}
+                sessions = snap.get("sessions") if isinstance(snap, dict) else None
+                prompting_n = 0
+                if isinstance(sessions, list):
+                    prompting_n = sum(1 for s in sessions if s.get("prompting"))
+                elif data.get("prompting"):
+                    prompting_n = 1
                 line.update(
-                    f"{msg}  (sessions={active_n}, queued={queued_n})"
+                    f"{msg}  ({active_n} sessions, {prompting_n} prompting, {queued_n} queued)"
                 )
                 if data.get("done"):
                     break
