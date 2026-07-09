@@ -213,13 +213,12 @@
       updateTitle();
       initBoardDragDrop(target);
       initAgentReconnect();
+      if (window.PAAgentChat && typeof window.PAAgentChat.mount === "function") {
+        window.PAAgentChat.mount(target);
+      }
     }
     if (target && target.classList.contains("board-column-body")) {
       initBoardDragDrop(target.closest(".board-grid") || document);
-    }
-    if (target && target.id === "agent-messages") {
-      const placeholder = document.querySelector(".chat-placeholder");
-      if (placeholder) placeholder.remove();
     }
   });
 

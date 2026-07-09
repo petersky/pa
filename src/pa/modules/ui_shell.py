@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Form, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
 from pa.auth.middleware import get_principal_id
@@ -118,40 +118,6 @@ def page_route(request: Request, page_path: str) -> HTMLResponse:
     if not page:
         raise HTTPException(status_code=404, detail=f"Unknown page: {path}")
     return render_page(request, page)
-
-
-@router.post("/partials/agent/prompt", response_class=HTMLResponse)
-async def agent_prompt_partial(
-    request: Request,
-    message: str = Form(...),
-) -> HTMLResponse:
-    text = message.strip()
-    if not text:
-        return _templates(request).TemplateResponse(
-            request,
-            "partials/agent-message.html",
-            {"role": "system", "content": "Message is required."},
-        )
-
-    agent = request.app.state.ctx.require_service("instance_agent")
-    if not agent.connected:
-        return _templates(request).TemplateResponse(
-            request,
-            "partials/agent-message.html",
-            {"role": "system", "content": "Agent is offline."},
-        )
-
-    try:
-        stop_reason = await agent.prompt(text)
-        content = f"Turn completed ({stop_reason})."
-    except Exception:
-        content = "Something went wrong. Try again or check the server logs."
-
-    return _templates(request).TemplateResponse(
-        request,
-        "partials/agent-message.html",
-        {"role": "user", "content": text, "reply": content},
-    )
 
 
 class UiShellModule(Module):

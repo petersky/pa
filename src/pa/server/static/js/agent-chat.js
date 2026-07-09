@@ -228,6 +228,14 @@
     if (this.els.placeholder) this.els.placeholder.hidden = true;
   };
 
+  AgentChatWidget.prototype._isDuplicateUserBubble = function (text) {
+    if (!text || !this.els.messages) return false;
+    const rows = this.els.messages.querySelectorAll(".acw-msg-user .acw-bubble");
+    if (!rows.length) return false;
+    const last = rows[rows.length - 1];
+    return (last.textContent || "") === text;
+  };
+
   AgentChatWidget.prototype.setStatus = function (state) {
     if (!this.els.status) return;
     this.els.status.dataset.state = state;
@@ -247,9 +255,13 @@
     this.renderQueue(snap.queue || []);
     this.renderModelsModes(snap);
     this.renderMetrics(snap.metrics || session.metrics_json || {});
-    if (snap.pending_permissions && snap.pending_permissions.length) {
-      /* permissions will re-arrive via SSE if still pending; snapshot only has ids */
+    if (this.els.permissions) {
+      this.els.permissions.innerHTML = "";
+      this.els.permissions.hidden = true;
     }
+    (snap.pending_permissions || []).forEach(function (req) {
+      if (req && typeof req === "object") self.showPermission(req);
+    });
   };
 
   AgentChatWidget.prototype.renderTranscript = function (events) {
@@ -340,7 +352,10 @@
 
     switch (type) {
       case "user_message":
-        this.addBubble("user", payload.message || "", created, { system: payload.source === "system" });
+        // Skip duplicate if we already painted an optimistic bubble for this text.
+        if (!this._isDuplicateUserBubble(payload.message || "")) {
+          this.addBubble("user", payload.message || "", created, { system: payload.source === "system" });
+        }
         break;
       case "agent_message_chunk":
         this.appendStream("agent", payload.message_id || "agent", payload.text || "", created);
@@ -716,15 +731,18 @@
     const self = this;
     const text = (this.els.input && this.els.input.value || "").trim();
     if (!text || !this.sessionId) return;
-    const act = action || (this.prompting ? "append" : "append");
+    const act = action || "append";
     this.els.input.value = "";
+    // Optimistic user bubble; SSE user_message may also arrive — dedupe by text+recency.
+    this.addBubble("user", text, new Date().toISOString());
+    this.scrollToBottom();
     this.api("/sessions/" + this.sessionId + "/prompt", {
       method: "POST",
       body: JSON.stringify({ message: text, action: act }),
     })
       .then(function (res) {
         if (res && res.queued) self.refreshQueue();
-        if (act === "interrupt" || !res.queued) {
+        if (act === "interrupt" || !(res && res.queued)) {
           self.prompting = true;
           self.setWorking(true);
           self.setStatus("working");
@@ -778,7 +796,11 @@
   document.addEventListener("DOMContentLoaded", function () {
     mountAll(document);
   });
-  document.body && document.body.addEventListener("htmx:afterSwap", function (e) {
-    mountAll(e.target);
+  // HTMX 4 uses colon-separated event names (htmx:after:swap).
+  ["htmx:after:swap", "htmx:afterSwap"].forEach(function (evt) {
+    document.body && document.body.addEventListener(evt, function (e) {
+      const target = (e.detail && (e.detail.target || (e.detail.ctx && e.detail.ctx.target))) || e.target;
+      mountAll(target || document);
+    });
   });
 })();

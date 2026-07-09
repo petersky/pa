@@ -12,7 +12,13 @@ from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
 
-from pa.acp.client import AgentConnection, normalize_session_update, usage_to_dict
+from pa.acp.client import (
+    AgentConnection,
+    normalize_session_update,
+    permission_cancelled,
+    permission_selected,
+    usage_to_dict,
+)
 from pa.config import Settings
 from pa.core.preferences import get_preferences_store
 from pa.domain.models import AgentSession, TranscriptEvent
@@ -78,7 +84,8 @@ class AgentSessionRuntime:
         self._in_flight: QueuedPrompt | None = None
         self._drain_task: asyncio.Task[None] | None = None
         self._subscribers: list[asyncio.Queue[dict[str, Any]]] = []
-        self._pending_permissions: dict[str, asyncio.Future[dict[str, Any]]] = {}
+        self._pending_permissions: dict[str, asyncio.Future[Any]] = {}
+        self._permission_requests: dict[str, dict[str, Any]] = {}
         self._seq = self.store.next_transcript_seq(session.id) - 1
         self._transcript_buffer: list[TranscriptEvent] = []
         self._closed = False
@@ -167,7 +174,7 @@ class AgentSessionRuntime:
 
     async def _on_permission(
         self, _external_session_id: str, request: dict[str, Any]
-    ) -> dict[str, Any]:
+    ) -> Any:
         if self.manager.should_auto_approve(self.session.principal_id):
             options = request.get("options") or []
             option_id = None
@@ -181,23 +188,29 @@ class AgentSessionRuntime:
             if not option_id and options and isinstance(options[0], dict):
                 option_id = options[0].get("optionId") or options[0].get("option_id")
             if option_id:
-                response = {"outcome": {"outcome": "selected", "optionId": option_id}}
+                response = permission_selected(option_id)
                 self._append_transcript(
                     "permission_resolved",
-                    {"request_id": request.get("request_id"), "response": response, "auto": True},
+                    {
+                        "request_id": request.get("request_id"),
+                        "response": response.model_dump(mode="json", by_alias=True),
+                        "auto": True,
+                    },
                 )
                 return response
 
         request_id = str(request.get("request_id") or uuid4())
         request["request_id"] = request_id
         loop = asyncio.get_running_loop()
-        future: asyncio.Future[dict[str, Any]] = loop.create_future()
+        future: asyncio.Future[Any] = loop.create_future()
         self._pending_permissions[request_id] = future
+        self._permission_requests[request_id] = request
         self._append_transcript("permission_request", request)
         try:
             return await future
         finally:
             self._pending_permissions.pop(request_id, None)
+            self._permission_requests.pop(request_id, None)
 
     async def start(
         self,
@@ -317,6 +330,7 @@ class AgentSessionRuntime:
         cwd: str | None = None,
         action: PromptAction = "append",
         _from_queue: bool = False,
+        wait: bool = True,
     ) -> str:
         if self.manager.quiescing or self._closed:
             if _from_queue:
@@ -357,6 +371,27 @@ class AgentSessionRuntime:
             agent_env=dict(agent_env or self.agent_env),
             source="in_flight",
         )
+        if not wait and not _from_queue:
+            # Chat UI / SSE path: accept immediately and run the turn in the background.
+            if self._queue_paused:
+                self.enqueue(
+                    message,
+                    action=action,
+                    card_id=item_id,
+                    project_id=project_id,
+                    principal_id=principal_id,
+                    cwd=cwd,
+                    agent_env=agent_env,
+                )
+                return "queued"
+            self._queue.insert(0, item)
+            self._append_transcript(
+                "queue_enqueued",
+                {"id": item.id, "message": message, "action": "run", "position": 0},
+            )
+            self._flush_transcript()
+            self._start_drain()
+            return "started"
         return await self._run_prompt(item)
 
     async def _run_prompt(self, item: QueuedPrompt) -> str:
@@ -457,17 +492,32 @@ class AgentSessionRuntime:
             return False
         if allow:
             if not option_id:
-                # Fall back to first pending request option if caller omitted it.
-                option_id = "allow_once"
-            response = {"outcome": {"outcome": "selected", "optionId": option_id}}
+                pending = self._permission_requests.get(request_id) or {}
+                options = pending.get("options") or []
+                for kind in ("allow_once", "allow_always"):
+                    for opt in options:
+                        if isinstance(opt, dict) and opt.get("kind") == kind:
+                            option_id = opt.get("optionId") or opt.get("option_id")
+                            break
+                    if option_id:
+                        break
+                if not option_id and options and isinstance(options[0], dict):
+                    option_id = options[0].get("optionId") or options[0].get("option_id")
+            if not option_id:
+                return False
+            response = permission_selected(option_id)
         else:
-            response = {"outcome": {"outcome": "cancelled"}}
+            response = permission_cancelled()
         if remember and allow:
             self.manager.set_auto_approve(True, scope=scope, principal_id=principal_id)
         future.set_result(response)
         self._append_transcript(
             "permission_resolved",
-            {"request_id": request_id, "response": response, "remember": remember},
+            {
+                "request_id": request_id,
+                "response": response.model_dump(mode="json", by_alias=True),
+                "remember": remember,
+            },
         )
         self._flush_transcript()
         return True
@@ -513,7 +563,11 @@ class AgentSessionRuntime:
             "metrics": self.session.metrics_json,
             "turn_started_at": self._turn_started_at.isoformat() if self._turn_started_at else None,
             "transcript": [e.model_dump(mode="json") for e in events],
-            "pending_permissions": list(self._pending_permissions.keys()),
+            "pending_permissions": [
+                self._permission_requests[rid]
+                for rid in self._pending_permissions
+                if rid in self._permission_requests
+            ],
         }
 
     def to_session_snapshot(self) -> SessionSnapshot:
@@ -546,8 +600,9 @@ class AgentSessionRuntime:
             self._drain_task.cancel()
         for req_id, fut in list(self._pending_permissions.items()):
             if not fut.done():
-                fut.set_result({"outcome": {"outcome": "cancelled"}})
+                fut.set_result(permission_cancelled())
             self._pending_permissions.pop(req_id, None)
+            self._permission_requests.pop(req_id, None)
         self._append_transcript("session_closed", {})
         self._flush_transcript()
         if self.connection:
@@ -907,6 +962,7 @@ class AgentSessionManager:
         session_id: str | None = None,
         action: PromptAction = "append",
         _from_queue: bool = False,
+        wait: bool = True,
     ) -> str:
         if session_id:
             runtime = self._runtimes.get(session_id)
@@ -927,6 +983,7 @@ class AgentSessionManager:
             cwd=cwd,
             action=action,
             _from_queue=_from_queue,
+            wait=wait,
         )
 
     async def stop(self) -> None:

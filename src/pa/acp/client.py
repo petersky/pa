@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from acp import PROTOCOL_VERSION, spawn_agent_process, text_block
 from acp.interfaces import Client
+from acp.schema import AllowedOutcome, DeniedOutcome, RequestPermissionResponse
 
 from pa.acp.mcp_config import pa_mcp_servers
 from pa.config import Settings
@@ -21,8 +22,16 @@ from pa.packaging.paths import resolve_executable
 logger = logging.getLogger(__name__)
 
 UpdateHandler = Callable[[str, Any], Awaitable[None] | None]
-PermissionHandler = Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]]
+PermissionHandler = Callable[[str, dict[str, Any]], Awaitable[RequestPermissionResponse | dict[str, Any]]]
 WireLogger = Callable[[str, dict[str, Any]], None]
+
+
+def permission_selected(option_id: str) -> RequestPermissionResponse:
+    return RequestPermissionResponse(outcome=AllowedOutcome(outcome="selected", option_id=option_id))
+
+
+def permission_cancelled() -> RequestPermissionResponse:
+    return RequestPermissionResponse(outcome=DeniedOutcome(outcome="cancelled"))
 
 
 def _to_plain(value: Any) -> Any:
@@ -172,7 +181,7 @@ class PAClient(Client):
 
     async def request_permission(
         self, options, session_id, tool_call, **kwargs: Any
-    ):
+    ) -> RequestPermissionResponse:
         options_plain = _to_plain(options) or []
         tool_plain = _to_plain(tool_call) or {}
         request = {
@@ -186,22 +195,44 @@ class PAClient(Client):
         if self.auto_approve:
             option_id = _prefer_allow_option(options_plain)
             if option_id:
-                response = {"outcome": {"outcome": "selected", "optionId": option_id}}
-                self._wire("out", {"method": "session/request_permission", "result": response})
+                response = permission_selected(option_id)
+                self._wire(
+                    "out",
+                    {
+                        "method": "session/request_permission",
+                        "result": response.model_dump(mode="json", by_alias=True),
+                    },
+                )
                 return response
 
         if self.on_permission:
             try:
                 response = await self.on_permission(session_id, request)
                 if response:
-                    self._wire("out", {"method": "session/request_permission", "result": response})
-                    return response
+                    if isinstance(response, RequestPermissionResponse):
+                        model = response
+                    else:
+                        model = RequestPermissionResponse.model_validate(response)
+                    self._wire(
+                        "out",
+                        {
+                            "method": "session/request_permission",
+                            "result": model.model_dump(mode="json", by_alias=True),
+                        },
+                    )
+                    return model
             except Exception:
                 logger.exception("Permission handler failed")
 
         # Default: cancel if no UI response / auto-approve option.
-        response = {"outcome": {"outcome": "cancelled"}}
-        self._wire("out", {"method": "session/request_permission", "result": response})
+        response = permission_cancelled()
+        self._wire(
+            "out",
+            {
+                "method": "session/request_permission",
+                "result": response.model_dump(mode="json", by_alias=True),
+            },
+        )
         return response
 
     async def session_update(self, session_id, update, **kwargs: Any) -> None:

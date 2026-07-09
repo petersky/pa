@@ -207,16 +207,20 @@ async def session_prompt(request: Request, session_id: str, body: PromptBody) ->
         raise HTTPException(status_code=400, detail="message required")
     runtime = _runtime_or_404(request, session_id)
     principal_id = get_principal_id(request)
+    # Return immediately; transcript/SSE streams the turn. Blocking here made the
+    # old HTMX UI look like it only ever received "Turn completed".
     stop_reason = await runtime.prompt(
         message,
         item_id=body.card_id,
         principal_id=principal_id,
         project_id=body.project_id,
         action=body.action,
+        wait=False,
     )
     return {
         "stop_reason": stop_reason,
         "queued": stop_reason == "queued",
+        "started": stop_reason == "started",
         "session_id": session_id,
         "queue": [q.model_dump(mode="json") for q in runtime._queue],
     }
