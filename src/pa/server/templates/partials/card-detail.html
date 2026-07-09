@@ -9,8 +9,8 @@
   </div>
   <form class="stack"
         hx-post="/partials/cards/{{ card.id }}?realm={{ card.realm_id }}"
-        hx-target="#card-detail"
-        hx-swap="innerHTML">
+        hx-target:inherited="#card-detail"
+        hx-swap:inherited="innerHTML">
     <input type="hidden" name="csrf" value="{{ csrf_token }}">
     <label>
       Title
@@ -34,8 +34,6 @@
       <button type="submit">Save</button>
       <button type="button" class="ghost danger"
               hx-delete="/partials/cards/{{ card.id }}?realm={{ card.realm_id }}"
-              hx-target="#card-detail"
-              hx-swap="innerHTML"
               hx-confirm="Delete this card?">Delete</button>
     </div>
   </form>

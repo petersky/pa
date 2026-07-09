@@ -7,7 +7,7 @@
         hx-post="/items"
         hx-target="#home-items-list"
         hx-swap="innerHTML"
-        hx-on::after-request="if(event.detail.successful) this.reset()">
+        hx-on:htmx:after:request="if(event.detail.ctx && event.detail.ctx.response && event.detail.ctx.response.status < 400) this.reset()">
     <input type="hidden" name="csrf" value="{{ csrf_token }}">
     <label>
       Kind

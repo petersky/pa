@@ -27,7 +27,7 @@
               hx-post="/partials/cards/{{ card.id }}/move?realm={{ card.realm_id }}"
               hx-vals='{"lane": "{{ lane.value }}"}'
               hx-swap="none"
-              hx-on::after-request="if(event.detail.successful) htmx.trigger(document.body, 'boardRefresh')">
+              hx-on:htmx:after:request="if(event.detail.ctx && event.detail.ctx.response && event.detail.ctx.response.status < 400) htmx.trigger(document.body, 'boardRefresh')">
         → {{ lane.value | capitalize }}
       </button>
       {% endif %}

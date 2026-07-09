@@ -1,18 +1,32 @@
 (function () {
   var VERSION_POLL_MS = 45000;
 
+  function normalizePath(path) {
+    if (!path) return "/";
+    var clean = String(path).split("?")[0].split("#")[0];
+    if (clean.length > 1 && clean.endsWith("/")) {
+      clean = clean.slice(0, -1);
+    }
+    return clean || "/";
+  }
+
   function setActiveNav(path) {
+    var current = normalizePath(path || window.location.pathname);
     document.querySelectorAll(".nav-btn").forEach(function (btn) {
-      btn.classList.toggle("active", btn.getAttribute("href") === path);
+      btn.classList.toggle("active", normalizePath(btn.getAttribute("href")) === current);
     });
     document.querySelectorAll(".icon-btn[href]").forEach(function (btn) {
-      if (btn.getAttribute("href") === "/settings") {
-        btn.classList.toggle("active", path === "/settings");
-      }
-      if (btn.getAttribute("href") === "/agent") {
-        btn.classList.toggle("active", path === "/agent");
+      var href = normalizePath(btn.getAttribute("href"));
+      if (href === "/settings" || href === "/agent") {
+        btn.classList.toggle("active", href === current);
       }
     });
+  }
+
+  function swapTarget(event) {
+    return (event.detail && event.detail.ctx && event.detail.ctx.target) ||
+      (event.detail && event.detail.target) ||
+      null;
   }
 
   function updateTitle() {
@@ -181,35 +195,47 @@
     });
   }
 
-  document.body.addEventListener("htmx:configRequest", function (event) {
+  document.body.addEventListener("htmx:config:request", function (event) {
     var headers = csrfHeader();
+    var ctx = event.detail && event.detail.ctx;
+    var target = (ctx && ctx.request && ctx.request.headers) ||
+      (event.detail && event.detail.headers);
+    if (!target) return;
     Object.keys(headers).forEach(function (key) {
-      event.detail.headers[key] = headers[key];
+      target[key] = headers[key];
     });
   });
 
-  document.body.addEventListener("htmx:afterSwap", function (event) {
-    if (event.detail.target && event.detail.target.id === "app-view") {
+  document.body.addEventListener("htmx:after:swap", function (event) {
+    var target = swapTarget(event);
+    if (target && target.id === "app-view") {
       setActiveNav(window.location.pathname);
       updateTitle();
-      initBoardDragDrop(event.detail.target);
+      initBoardDragDrop(target);
       initAgentReconnect();
     }
-    if (event.detail.target && event.detail.target.classList.contains("board-column-body")) {
-      initBoardDragDrop(event.detail.target.closest(".board-grid") || document);
+    if (target && target.classList.contains("board-column-body")) {
+      initBoardDragDrop(target.closest(".board-grid") || document);
     }
-    if (event.detail.target && event.detail.target.id === "agent-messages") {
+    if (target && target.id === "agent-messages") {
       const placeholder = document.querySelector(".chat-placeholder");
       if (placeholder) placeholder.remove();
     }
   });
 
-  document.body.addEventListener("htmx:responseError", function (event) {
-    const xhr = event.detail.xhr;
-    let message = "Request failed";
-    if (xhr && xhr.responseText) {
+  document.body.addEventListener("htmx:after:history:update", function () {
+    setActiveNav(window.location.pathname);
+    updateTitle();
+  });
+
+  document.body.addEventListener("htmx:response:error", function (event) {
+    var ctx = event.detail && event.detail.ctx;
+    var message = "Request failed";
+    var text = ctx && ctx.text;
+    var statusText = ctx && ctx.response && ctx.response.raw && ctx.response.raw.statusText;
+    if (text) {
       try {
-        const data = JSON.parse(xhr.responseText);
+        const data = JSON.parse(text);
         message = data.detail || data.message || message;
         if (Array.isArray(message)) {
           message = message.map(function (item) {
@@ -217,8 +243,10 @@
           }).join("; ");
         }
       } catch (_err) {
-        message = xhr.statusText || message;
+        message = statusText || message;
       }
+    } else if (statusText) {
+      message = statusText;
     }
     showToast(message, "error");
   });

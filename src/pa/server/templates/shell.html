@@ -7,6 +7,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   {% if csrf_token %}<meta name="csrf-token" content="{{ csrf_token }}">{% endif %}
+  <meta name="htmx-config" content='{"noSwap":[204,304,"4xx","5xx"]}'>
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <title>{{ page.label | default('PA') }} — {{ instance_name }}</title>
@@ -28,8 +29,8 @@
   </script>
   <script src="{{ static_url('js/theme.js') }}" defer></script>
   <script src="{{ static_url('js/spa.js') }}" defer></script>
-  <script src="https://cdn.jsdelivr.net/npm/htmx.org@4.0.0-beta3"
-          integrity="sha384-bq4nTap5u8w4XlVP8JHkDioQVZBI5wUx5PxNwlbCq27H5QJ+q0CSeJcTYU+PLdCp"
+  <script src="https://cdn.jsdelivr.net/npm/htmx.org@4.0.0-beta5"
+          integrity="sha384-5dnhUXCt1hXGvYrjAnKwgNX3I8xtIJiW6eIHIbeo7oWyXv2XpWYC/rl+ZiWfuYO5"
           crossorigin="anonymous"></script>
   {% block head %}{% endblock %}
 </head>

@@ -163,5 +163,5 @@
     staticUrl,
   };
   init();
-  document.body.addEventListener("htmx:afterSwap", bindThemeToggle);
+  document.body.addEventListener("htmx:after:swap", bindThemeToggle);
 })();
