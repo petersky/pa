@@ -387,8 +387,24 @@ class AgentSession(BaseModel):
     project_id: str | None = None
     principal_id: str | None = None
     status: str = "idle"
+    cwd: str | None = None
+    title: str | None = None
+    label: str | None = None
+    model_id: str | None = None
+    mode_id: str | None = None
+    config_json: dict = Field(default_factory=dict)
+    metrics_json: dict = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class TranscriptEvent(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    session_id: str
+    seq: int
+    event_type: str
+    payload: dict = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class KnowledgeEntry(BaseModel):

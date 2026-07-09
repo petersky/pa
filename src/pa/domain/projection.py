@@ -31,6 +31,7 @@ from pa.domain.models import (
     ProjectRepo,
     ProjectStatus,
     ProjectUpdate,
+    TranscriptEvent,
     _STATUS_TO_LANE,
 )
 from pa.sync.event_log import EventLog
@@ -128,6 +129,17 @@ class CardProjection:
                     tags TEXT NOT NULL DEFAULT '[]',
                     created_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS agent_transcript_events (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    seq INTEGER NOT NULL,
+                    event_type TEXT NOT NULL,
+                    payload TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL,
+                    UNIQUE(session_id, seq)
+                );
+                CREATE INDEX IF NOT EXISTS idx_transcript_session_seq
+                    ON agent_transcript_events(session_id, seq);
                 """
             )
             self._migrate_items_to_cards(conn)
@@ -148,6 +160,37 @@ class CardProjection:
             conn.execute("ALTER TABLE agent_sessions ADD COLUMN principal_id TEXT")
         if "project_id" not in session_cols:
             conn.execute("ALTER TABLE agent_sessions ADD COLUMN project_id TEXT")
+        for col, decl in (
+            ("cwd", "TEXT"),
+            ("title", "TEXT"),
+            ("label", "TEXT"),
+            ("model_id", "TEXT"),
+            ("mode_id", "TEXT"),
+            ("config_json", "TEXT NOT NULL DEFAULT '{}'"),
+            ("metrics_json", "TEXT NOT NULL DEFAULT '{}'"),
+        ):
+            if col not in session_cols:
+                conn.execute(f"ALTER TABLE agent_sessions ADD COLUMN {col} {decl}")
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS agent_transcript_events (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                seq INTEGER NOT NULL,
+                event_type TEXT NOT NULL,
+                payload TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL,
+                UNIQUE(session_id, seq)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_transcript_session_seq
+                ON agent_transcript_events(session_id, seq)
+            """
+        )
 
         knowledge_cols = {row[1] for row in conn.execute("PRAGMA table_info(knowledge)").fetchall()}
         if knowledge_cols and "card_id" not in knowledge_cols:
@@ -694,8 +737,9 @@ class CardProjection:
                 """
                 INSERT OR REPLACE INTO agent_sessions
                 (id, agent_name, external_session_id, item_id, card_id, project_id, principal_id,
-                 status, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 status, cwd, title, label, model_id, mode_id, config_json, metrics_json,
+                 created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     session.id,
@@ -706,17 +750,30 @@ class CardProjection:
                     session.project_id,
                     session.principal_id,
                     session.status,
+                    session.cwd,
+                    session.title,
+                    session.label,
+                    session.model_id,
+                    session.mode_id,
+                    json.dumps(session.config_json or {}),
+                    json.dumps(session.metrics_json or {}),
                     session.created_at.isoformat(),
                     session.updated_at.isoformat(),
                 ),
             )
         return session
 
-    def list_sessions(self) -> list[AgentSession]:
+    def list_sessions(self, *, label: str | None = None) -> list[AgentSession]:
         with self._conn() as conn:
-            rows = conn.execute(
-                "SELECT * FROM agent_sessions ORDER BY updated_at DESC"
-            ).fetchall()
+            if label is not None:
+                rows = conn.execute(
+                    "SELECT * FROM agent_sessions WHERE label = ? ORDER BY updated_at DESC",
+                    (label,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM agent_sessions ORDER BY updated_at DESC"
+                ).fetchall()
         return [self._row_to_session(row) for row in rows]
 
     def get_session(self, session_id: str) -> AgentSession | None:
@@ -725,6 +782,68 @@ class CardProjection:
                 "SELECT * FROM agent_sessions WHERE id = ?", (session_id,)
             ).fetchone()
         return self._row_to_session(row) if row else None
+
+    def get_session_by_label(self, label: str) -> AgentSession | None:
+        with self._conn() as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM agent_sessions
+                WHERE label = ? AND status != 'closed'
+                ORDER BY updated_at DESC LIMIT 1
+                """,
+                (label,),
+            ).fetchone()
+        return self._row_to_session(row) if row else None
+
+    def next_transcript_seq(self, session_id: str) -> int:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT COALESCE(MAX(seq), 0) AS max_seq FROM agent_transcript_events WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+        return int(row["max_seq"] if row else 0) + 1
+
+    def append_transcript_events(self, events: list[TranscriptEvent]) -> list[TranscriptEvent]:
+        if not events:
+            return events
+        with self._conn() as conn:
+            conn.executemany(
+                """
+                INSERT OR REPLACE INTO agent_transcript_events
+                (id, session_id, seq, event_type, payload, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        e.id,
+                        e.session_id,
+                        e.seq,
+                        e.event_type,
+                        json.dumps(e.payload),
+                        e.created_at.isoformat(),
+                    )
+                    for e in events
+                ],
+            )
+        return events
+
+    def list_transcript_events(
+        self,
+        session_id: str,
+        *,
+        after_seq: int = 0,
+        limit: int = 500,
+    ) -> list[TranscriptEvent]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM agent_transcript_events
+                WHERE session_id = ? AND seq > ?
+                ORDER BY seq ASC LIMIT ?
+                """,
+                (session_id, after_seq, limit),
+            ).fetchall()
+        return [self._row_to_transcript(row) for row in rows]
 
     def add_knowledge(self, entry: KnowledgeEntry) -> KnowledgeEntry:
         with self._conn() as conn:
@@ -818,6 +937,18 @@ class CardProjection:
     @staticmethod
     def _row_to_session(row: sqlite3.Row) -> AgentSession:
         keys = row.keys()
+
+        def _json_col(name: str) -> dict:
+            if name not in keys or row[name] is None:
+                return {}
+            raw = row[name]
+            if isinstance(raw, dict):
+                return raw
+            try:
+                return json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                return {}
+
         return AgentSession(
             id=row["id"],
             agent_name=row["agent_name"],
@@ -827,8 +958,32 @@ class CardProjection:
             project_id=row["project_id"] if "project_id" in keys else None,
             principal_id=row["principal_id"] if "principal_id" in keys else None,
             status=row["status"],
+            cwd=row["cwd"] if "cwd" in keys else None,
+            title=row["title"] if "title" in keys else None,
+            label=row["label"] if "label" in keys else None,
+            model_id=row["model_id"] if "model_id" in keys else None,
+            mode_id=row["mode_id"] if "mode_id" in keys else None,
+            config_json=_json_col("config_json"),
+            metrics_json=_json_col("metrics_json"),
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
+        )
+
+    @staticmethod
+    def _row_to_transcript(row: sqlite3.Row) -> TranscriptEvent:
+        payload = row["payload"]
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except json.JSONDecodeError:
+                payload = {}
+        return TranscriptEvent(
+            id=row["id"],
+            session_id=row["session_id"],
+            seq=int(row["seq"]),
+            event_type=row["event_type"],
+            payload=payload or {},
+            created_at=datetime.fromisoformat(row["created_at"]),
         )
 
     @staticmethod

@@ -16,6 +16,7 @@ from pa.core.io import atomic_write_json
 class QueuedPrompt(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     message: str
+    session_id: str | None = None
     card_id: str | None = None
     project_id: str | None = None
     principal_id: str | None = None
@@ -31,10 +32,16 @@ class SessionSnapshot(BaseModel):
     agent_name: str = "instance"
     status: str = "idle"
     cwd: str | None = None
+    title: str | None = None
+    label: str | None = None
+    model_id: str | None = None
+    mode_id: str | None = None
     card_id: str | None = None
     project_id: str | None = None
     principal_id: str | None = None
     prompting: bool = False
+    queue_paused: bool = False
+    queued_prompts: list[QueuedPrompt] = Field(default_factory=list)
     in_flight: QueuedPrompt | None = None
 
 
@@ -56,7 +63,8 @@ class QuiesceSnapshot(BaseModel):
 
     @property
     def queued_count(self) -> int:
-        return len(self.queued_prompts)
+        per_session = sum(len(s.queued_prompts) for s in self.sessions)
+        return per_session + len(self.queued_prompts)
 
 
 def quiesce_path(data_dir: Path) -> Path:

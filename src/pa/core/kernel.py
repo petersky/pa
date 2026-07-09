@@ -16,7 +16,7 @@ from pa.core.registry import ModuleRegistry
 from pa.domain.store import get_store
 
 if TYPE_CHECKING:
-    from pa.instance.agent_session import InstanceAgent
+    from pa.instance.agent_session import AgentSessionManager
     from pa.network.registry import PeerRegistry
 
 logger = logging.getLogger(__name__)
@@ -109,7 +109,7 @@ class Kernel:
         for entry in reversed(self.registry.modules):
             await entry.module.on_shutdown(app, self.ctx)
 
-        agent: InstanceAgent | None = self.ctx.services.get("instance_agent")
+        agent: AgentSessionManager | None = self.ctx.services.get("instance_agent")
         if agent:
             import os
 

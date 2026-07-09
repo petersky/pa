@@ -134,12 +134,13 @@ async def agent_quiesce(request: Request, body: QuiesceRequest) -> dict:
                 snapshot=snapshot.model_dump(mode="json"),
             )
         except Exception as exc:
+            progress = agent.progress()
             _quiesce_progress = QuiesceProgress(
                 phase="error",
                 connected=agent.connected,
                 prompting=agent.prompting,
-                active_sessions=1 if agent.connected else 0,
-                queued_prompts=len(getattr(agent, "_pending_prompts", [])),
+                active_sessions=progress.active_sessions,
+                queued_prompts=progress.queued_prompts,
                 message=str(exc),
                 done=True,
                 error=str(exc),
