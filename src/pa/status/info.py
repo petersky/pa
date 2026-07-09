@@ -14,6 +14,7 @@ def build_status_snapshot(ctx: AppContext, *, module_count: int = 0) -> dict:
     svc_status = svc.get_status(settings)
     install_meta = load_install_metadata(settings.data_dir)
     pa_bin = svc.find_pa_binary()
+    service_bin = svc.find_service_binary()
     items = store.list_items()
     sessions = store.list_sessions()
     knowledge = store.list_knowledge(limit=5)
@@ -35,6 +36,7 @@ def build_status_snapshot(ctx: AppContext, *, module_count: int = 0) -> dict:
         "host": settings.host,
         "port": settings.port,
         "binary": str(pa_bin) if pa_bin else None,
+        "service_binary": str(service_bin) if service_bin else None,
         "installed_version": install_meta.version if install_meta else None,
         "install_method": install_meta.method if install_meta else None,
         "install_channel": install_meta.channel if install_meta else None,

@@ -73,13 +73,52 @@ def _domain_target() -> str:
 
 
 def find_pa_binary() -> Path | None:
-    pa = shutil.which("pa")
-    if pa:
-        return Path(pa)
-    local = Path.home() / ".local" / "bin" / "pa"
-    if local.exists():
-        return local
+    """Resolve the installed PA CLI, preferring the uv-tool install over a local venv."""
+    candidates: list[Path] = []
+
+    from pa.config import default_data_dir
+    from pa.install.metadata import load_install_metadata
+
+    meta = load_install_metadata(default_data_dir())
+    if meta and meta.pa_bin:
+        candidates.append(Path(meta.pa_bin))
+
+    candidates.append(Path.home() / ".local" / "bin" / "pa")
+
+    which = shutil.which("pa")
+    if which:
+        candidates.append(Path(which))
+
+    seen: set[Path] = set()
+    for candidate in candidates:
+        try:
+            resolved = candidate.resolve()
+        except OSError:
+            continue
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        if resolved.is_file() and os.access(resolved, os.X_OK):
+            return resolved
     return None
+
+
+def _is_dev_venv_binary(path: Path) -> bool:
+    parts = {part.lower() for part in path.parts}
+    return ".venv" in parts or "venv" in parts
+
+
+def find_service_binary() -> Path | None:
+    """Binary to embed in host service units — avoid pinning a local editable venv."""
+    preferred = find_pa_binary()
+    if preferred and not _is_dev_venv_binary(preferred):
+        return preferred
+
+    local = Path.home() / ".local" / "bin" / "pa"
+    if local.exists() and os.access(local, os.X_OK):
+        return local.resolve()
+
+    return preferred
 
 
 def _format_plist_env(env: dict[str, str]) -> str:
@@ -125,7 +164,7 @@ def install_plist(settings: Settings, pa_bin: Path | None = None) -> Path:
     if not _is_darwin():
         raise RuntimeError("launchd service management is only supported on macOS")
 
-    bin_path = pa_bin or find_pa_binary()
+    bin_path = pa_bin or find_service_binary()
     if not bin_path:
         raise RuntimeError("pa binary not found in PATH")
 
@@ -140,7 +179,7 @@ def install_systemd_unit(settings: Settings, pa_bin: Path | None = None) -> Path
     if not _is_linux():
         raise RuntimeError("systemd service management is only supported on Linux")
 
-    bin_path = pa_bin or find_pa_binary()
+    bin_path = pa_bin or find_service_binary()
     if not bin_path:
         raise RuntimeError("pa binary not found in PATH")
 
@@ -270,7 +309,7 @@ def restart(settings: Settings | None = None) -> None:
     if _is_darwin():
         if not _plist_path().exists():
             raise RuntimeError("PA service not installed. Run: pa install --service-only")
-        pa_bin = find_pa_binary()
+        pa_bin = find_service_binary()
         if pa_bin:
             install_plist(settings, pa_bin)
         bootstrap(reload=True)

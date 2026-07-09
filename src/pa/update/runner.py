@@ -75,15 +75,17 @@ def run_update(
             method=settings.install_method,
             channel=name,
             installed_at=datetime.now(UTC),
+            pa_bin=str(pa_bin) if pa_bin else None,
         ),
     )
 
     result.current = installed_version
 
-    if restart:
-        from pa.cli import service as svc
-
-        if svc.get_status(settings).installed:
-            svc.restart()
+    if svc.get_status(settings).installed:
+        service_bin = svc.find_service_binary()
+        if service_bin:
+            svc.install_service(settings, service_bin)
+        if restart:
+            svc.restart(settings)
 
     return result

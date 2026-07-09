@@ -114,10 +114,16 @@ def status() -> None:
     typer.echo(f"  Data dir:    {snap['data_dir']}")
     typer.echo(f"  Server:      {snap['server_url']}")
     typer.echo(f"  Binary:      {snap['binary'] or 'not found'}")
+    if snap.get("service_binary") and snap["service_binary"] != snap["binary"]:
+        typer.echo(f"  Service bin: {snap['service_binary']}")
     if snap["installed_version"]:
         typer.echo(f"  Installed:   {snap['installed_version']} ({snap['install_method']})")
         if snap.get("install_channel"):
             typer.echo(f"  Track:       {snap['install_channel']}")
+        if snap["installed_version"] != snap["version"]:
+            typer.echo(
+                f"  Note:       running {snap['version']}; restart service to apply {snap['installed_version']}"
+            )
     typer.echo(f"  Update:      {snap['release_track']} track")
     from pa.cli import service as svc
 
@@ -172,13 +178,15 @@ def install(
             typer.echo("Service management is not supported on this platform.", err=True)
             raise typer.Exit(1)
         settings = get_settings()
-        pa_bin = svc.find_pa_binary()
+        pa_bin = svc.find_service_binary()
         if not pa_bin:
             typer.echo("pa binary not found in PATH.", err=True)
             raise typer.Exit(1)
         path = svc.install_service(settings, pa_bin)
         svc.bootstrap()
+        record_install(channel=channel, pa_bin=pa_bin)
         typer.echo(f"Registered {svc.get_status(settings).backend} service: {path}")
+        typer.echo(f"Service binary: {pa_bin}")
         return
 
     try:

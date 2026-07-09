@@ -16,7 +16,12 @@
   <div class="panel-header"><h2>Instance</h2></div>
   <dl class="settings-dl">
     <dt>PA version</dt>
-    <dd>{{ status.version }}</dd>
+    <dd>
+      {{ status.version }}
+      {% if status.installed_version and status.installed_version != status.version %}
+      <span class="muted">(installed {{ status.installed_version }} — restart service to apply)</span>
+      {% endif %}
+    </dd>
     <dt>Name</dt>
     <dd>{{ status.instance_name }}</dd>
     <dt>Instance ID</dt>
@@ -25,8 +30,12 @@
     <dd><code>{{ status.data_dir }}</code></dd>
     <dt>Server</dt>
     <dd><code>{{ status.server_url }}</code></dd>
-    <dt>Binary</dt>
+    <dt>CLI binary</dt>
     <dd><code>{{ status.binary or 'not found' }}</code></dd>
+    {% if status.service_binary and status.service_binary != status.binary %}
+    <dt>Service binary</dt>
+    <dd><code>{{ status.service_binary }}</code></dd>
+    {% endif %}
     {% if status.installed_version %}
     <dt>Installed</dt>
     <dd>{{ status.installed_version }} ({{ status.install_method }})</dd>

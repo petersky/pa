@@ -88,8 +88,9 @@ def install_from_path(
     if not config_path.exists():
         _run([str(pa_bin), "init", "--name", name])
 
+    service_bin = svc.find_service_binary() or pa_bin
     if svc.service_supported():
-        svc.install_service(settings, pa_bin)
+        svc.install_service(settings, service_bin)
         svc.bootstrap()
         if start_service:
             svc.start()
