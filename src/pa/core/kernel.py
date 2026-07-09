@@ -66,7 +66,11 @@ class Kernel:
         from pa.network.registry import PeerRegistry
 
         agent = get_instance_agent(self.ctx.settings, self.ctx.store)
-        await agent.start()
+        import os
+
+        resume_env = os.environ.get("PA_ACP_RESUME", "1").strip().lower()
+        resume = resume_env not in {"0", "false", "no", "off"}
+        await agent.start(resume=resume)
         self.ctx.register_service("instance_agent", agent)
         self.ctx.register_service("peer_registry", PeerRegistry(self.ctx.settings))
 
@@ -107,6 +111,22 @@ class Kernel:
 
         agent: InstanceAgent | None = self.ctx.services.get("instance_agent")
         if agent:
+            import os
+
+            from pa.instance.quiesce import consume_skip_quiesce
+
+            skip = consume_skip_quiesce(self.ctx.settings.data_dir)
+            quiesce = (not skip) and os.environ.get("PA_ACP_QUIESCE", "1").strip().lower() not in {
+                "0",
+                "false",
+                "no",
+                "off",
+            }
+            if quiesce and (agent.connected or agent.prompting):
+                try:
+                    await agent.quiesce(reason="shutdown")
+                except Exception:
+                    logger.exception("ACP quiesce during shutdown failed")
             await agent.stop()
 
     def build_app(self) -> FastAPI:

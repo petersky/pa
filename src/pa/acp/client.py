@@ -53,8 +53,21 @@ class AgentConnection:
         self._proc: Any = None
         self._client: PAClient | None = None
         self.session: AgentSession | None = None
+        self.session_cwd: str | None = None
+        self._resume_supported: bool = False
+        self._init_response: Any = None
 
-    async def connect(self) -> AgentSession:
+    @property
+    def prompting(self) -> bool:
+        return bool(self.session and self.session.status == "prompting")
+
+    async def connect(
+        self,
+        *,
+        resume_external_id: str | None = None,
+        cwd: str | None = None,
+        existing_session: AgentSession | None = None,
+    ) -> AgentSession:
         if not self.settings.agent_enabled:
             raise RuntimeError("Agent connection disabled (PA_AGENT_ENABLED=false)")
 
@@ -69,16 +82,55 @@ class AgentConnection:
             *self.settings.agent_args,
         )
         self._conn, self._proc = await self._ctx.__aenter__()  # noqa: SIM117
-        await self._conn.initialize(protocol_version=PROTOCOL_VERSION)
+        self._init_response = await self._conn.initialize(protocol_version=PROTOCOL_VERSION)
+        self._resume_supported = _agent_supports_resume(self._init_response)
+
+        session_cwd = cwd or str(self.settings.data_dir)
+        self.session_cwd = session_cwd
+        mcp = pa_mcp_servers(self.settings)
+
+        resumed = False
+        if resume_external_id and self._resume_supported:
+            try:
+                await self._conn.resume_session(
+                    cwd=session_cwd,
+                    session_id=resume_external_id,
+                    mcp_servers=mcp,
+                )
+                resumed = True
+            except Exception:
+                resumed = False
+
+        if resumed:
+            if existing_session:
+                self.session = existing_session
+                self.session.external_session_id = resume_external_id
+                self.session.status = "idle"
+                self.session.updated_at = datetime.now(UTC)
+            else:
+                self.session = AgentSession(
+                    agent_name=self.agent_name,
+                    external_session_id=resume_external_id,
+                    status="idle",
+                )
+            self.store.save_session(self.session)
+            return self.session
+
         acp_session = await self._conn.new_session(
-            cwd=str(self.settings.data_dir),
-            mcp_servers=pa_mcp_servers(self.settings),
+            cwd=session_cwd,
+            mcp_servers=mcp,
         )
-        self.session = AgentSession(
-            agent_name=self.agent_name,
-            external_session_id=acp_session.session_id,
-            status="connected",
-        )
+        if existing_session:
+            self.session = existing_session
+            self.session.external_session_id = acp_session.session_id
+            self.session.status = "connected"
+            self.session.updated_at = datetime.now(UTC)
+        else:
+            self.session = AgentSession(
+                agent_name=self.agent_name,
+                external_session_id=acp_session.session_id,
+                status="connected",
+            )
         self.store.save_session(self.session)
         return self.session
 
@@ -101,6 +153,8 @@ class AgentConnection:
             self.session.project_id = project_id
         if principal_id:
             self.session.principal_id = principal_id
+        if cwd:
+            self.session_cwd = cwd
         self.session.status = "prompting"
         self.session.updated_at = datetime.now(UTC)
         self.store.save_session(self.session)
@@ -133,3 +187,24 @@ class AgentConnection:
         if self.session:
             self.session.status = "disconnected"
             self.store.save_session(self.session)
+
+
+def _agent_supports_resume(init_response: Any) -> bool:
+    caps = getattr(init_response, "agent_capabilities", None) or getattr(
+        init_response, "agentCapabilities", None
+    )
+    if caps is None and isinstance(init_response, dict):
+        caps = init_response.get("agentCapabilities") or init_response.get("agent_capabilities")
+    if caps is None:
+        return False
+    session_caps = getattr(caps, "session_capabilities", None) or getattr(
+        caps, "sessionCapabilities", None
+    )
+    if session_caps is None and isinstance(caps, dict):
+        session_caps = caps.get("sessionCapabilities") or caps.get("session_capabilities")
+    if session_caps is None:
+        return False
+    resume = getattr(session_caps, "resume", None)
+    if resume is None and isinstance(session_caps, dict):
+        resume = session_caps.get("resume")
+    return bool(resume)

@@ -20,6 +20,8 @@ class ReleaseInfo:
     url: str | None = None
     tag: str | None = None
     track: str | None = None
+    notes: str | None = None
+    name: str | None = None
 
 
 class UpdateChannel(ABC):
@@ -143,6 +145,8 @@ class GitHubTrackChannel(UpdateChannel):
             url=data.get("html_url"),
             tag=tag_name,
             track=self.track,
+            notes=(data.get("body") or "").strip() or None,
+            name=data.get("name") or None,
         )
 
     def _latest_tag_fallback(self) -> ReleaseInfo | None:

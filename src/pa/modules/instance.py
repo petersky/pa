@@ -1,13 +1,27 @@
 from __future__ import annotations
 
+import asyncio
+from typing import Any
+
 from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel, Field
 
 from pa.auth.middleware import get_principal_id
 from pa.config import get_settings
 from pa.core.contracts import Module
 from pa.core.context import AppContext
+from pa.instance.quiesce import QuiesceProgress
 
 router = APIRouter()
+
+_quiesce_task: asyncio.Task[Any] | None = None
+_quiesce_progress: QuiesceProgress | None = None
+
+
+class QuiesceRequest(BaseModel):
+    reason: str = "restart"
+    timeout: float = Field(default=300.0, ge=1.0, le=3600.0)
+    wait: bool = False
 
 
 @router.get("/health")
@@ -52,6 +66,93 @@ def list_sessions(request: Request) -> list[dict]:
     return [s.model_dump(mode="json") for s in sessions]
 
 
+@router.get("/agent/status")
+def agent_status(request: Request) -> dict:
+    agent = request.app.state.ctx.services.get("instance_agent")
+    if not agent:
+        return {
+            "connected": False,
+            "prompting": False,
+            "active_sessions": 0,
+            "queued_prompts": 0,
+            "quiescing": False,
+            "message": "Agent not started",
+        }
+    progress = agent.progress()
+    return progress.model_dump(mode="json")
+
+
+@router.get("/agent/quiesce")
+def agent_quiesce_status() -> dict:
+    global _quiesce_progress
+    if _quiesce_progress is None:
+        return QuiesceProgress(
+            phase="idle",
+            message="No quiesce in progress",
+            done=True,
+        ).model_dump(mode="json")
+    return _quiesce_progress.model_dump(mode="json")
+
+
+@router.post("/agent/quiesce")
+async def agent_quiesce(request: Request, body: QuiesceRequest) -> dict:
+    global _quiesce_task, _quiesce_progress
+    agent = request.app.state.ctx.require_service("instance_agent")
+
+    if _quiesce_task and not _quiesce_task.done():
+        return (_quiesce_progress or agent.progress()).model_dump(mode="json")
+
+    _quiesce_progress = agent.progress()
+    _quiesce_progress.phase = "starting"
+    _quiesce_progress.message = "Starting ACP quiesce…"
+
+    async def _on_progress(progress: QuiesceProgress) -> None:
+        global _quiesce_progress
+        _quiesce_progress = progress
+
+    async def _run() -> None:
+        global _quiesce_progress
+        try:
+            snapshot = await agent.quiesce(
+                reason=body.reason,
+                timeout=body.timeout,
+                on_progress=_on_progress,
+            )
+            _quiesce_progress = QuiesceProgress(
+                phase="done",
+                connected=False,
+                prompting=False,
+                active_sessions=snapshot.active_count,
+                queued_prompts=snapshot.queued_count,
+                message=(
+                    f"Quiesced {snapshot.active_count} ACP session"
+                    f"{'' if snapshot.active_count == 1 else 's'}"
+                    f", {snapshot.queued_count} queued prompt"
+                    f"{'' if snapshot.queued_count == 1 else 's'}"
+                ),
+                done=True,
+                snapshot=snapshot.model_dump(mode="json"),
+            )
+        except Exception as exc:
+            _quiesce_progress = QuiesceProgress(
+                phase="error",
+                connected=agent.connected,
+                prompting=agent.prompting,
+                active_sessions=1 if agent.connected else 0,
+                queued_prompts=len(getattr(agent, "_pending_prompts", [])),
+                message=str(exc),
+                done=True,
+                error=str(exc),
+            )
+
+    if body.wait:
+        await _run()
+        return (_quiesce_progress or agent.progress()).model_dump(mode="json")
+
+    _quiesce_task = asyncio.create_task(_run())
+    return (_quiesce_progress or agent.progress()).model_dump(mode="json")
+
+
 @router.post("/agent/prompt")
 async def agent_prompt(request: Request, body: dict) -> dict:
     message = body.get("message", "").strip()
@@ -66,6 +167,14 @@ async def agent_prompt(request: Request, body: dict) -> dict:
     realm_id = body.get("realm_id")
 
     agent = request.app.state.ctx.require_service("instance_agent")
+    if agent.quiescing and not target_instance_id:
+        stop_reason = await agent.prompt(
+            message,
+            item_id=card_id,
+            principal_id=principal_id,
+            project_id=project_id,
+        )
+        return {"stop_reason": stop_reason, "queued": stop_reason == "queued"}
     if not agent.connected and not target_instance_id:
         raise HTTPException(status_code=503, detail="Instance agent not connected")
 

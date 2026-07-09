@@ -202,24 +202,48 @@ def install(
 
 
 @app.command()
-def start() -> None:
+def start(
+    no_acp_resume: Annotated[
+        bool,
+        typer.Option("--no-acp-resume", help="Do not resume quiesced ACP sessions on startup"),
+    ] = False,
+) -> None:
     """Start the PA host service (launchd or systemd)."""
     from pa.cli import service as svc
+    from pa.cli.acp_lifecycle import mark_no_resume
 
     settings = get_settings()
+    if no_acp_resume:
+        mark_no_resume(settings)
     try:
         svc.start(settings)
         typer.echo("PA service started.")
+        if no_acp_resume:
+            typer.echo("ACP resume disabled for this start.")
     except RuntimeError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(1) from exc
 
 
 @app.command()
-def stop() -> None:
+def stop(
+    no_acp_quiesce: Annotated[
+        bool,
+        typer.Option("--no-acp-quiesce", help="Skip waiting for ACP sessions before stop"),
+    ] = False,
+) -> None:
     """Stop the PA host service."""
     from pa.cli import service as svc
+    from pa.cli.acp_lifecycle import quiesce_running_agent
+    from pa.instance.quiesce import request_skip_quiesce
 
+    settings = get_settings()
+    if not no_acp_quiesce:
+        result = quiesce_running_agent(settings, reason="stop")
+        if result is not None:
+            request_skip_quiesce(settings.data_dir)
+    else:
+        request_skip_quiesce(settings.data_dir)
     try:
         svc.stop()
         typer.echo("PA service stopped.")
@@ -229,14 +253,35 @@ def stop() -> None:
 
 
 @app.command(name="restart")
-def restart_cmd() -> None:
+def restart_cmd(
+    no_acp_quiesce: Annotated[
+        bool,
+        typer.Option("--no-acp-quiesce", help="Skip waiting for ACP sessions before restart"),
+    ] = False,
+    no_acp_resume: Annotated[
+        bool,
+        typer.Option("--no-acp-resume", help="Do not resume quiesced ACP sessions after restart"),
+    ] = False,
+) -> None:
     """Restart the PA host service."""
     from pa.cli import service as svc
+    from pa.cli.acp_lifecycle import mark_no_resume, quiesce_running_agent
+    from pa.instance.quiesce import request_skip_quiesce
 
     settings = get_settings()
+    if no_acp_quiesce:
+        request_skip_quiesce(settings.data_dir)
+    else:
+        result = quiesce_running_agent(settings, reason="restart")
+        if result is not None:
+            request_skip_quiesce(settings.data_dir)
+    if no_acp_resume:
+        mark_no_resume(settings)
     try:
         svc.restart(settings)
         typer.echo("PA service restarted.")
+        if no_acp_resume:
+            typer.echo("ACP resume disabled for this restart.")
     except RuntimeError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(1) from exc
@@ -260,40 +305,89 @@ def logs(
 @app.command()
 def update(
     check: Annotated[bool, typer.Option("--check", help="Check for updates only")] = False,
-    restart: Annotated[bool, typer.Option("--restart", help="Restart service after update")] = False,
+    restart: Annotated[
+        bool,
+        typer.Option("--restart", help="Restart service after update without prompting"),
+    ] = False,
+    yes: Annotated[
+        bool,
+        typer.Option("--yes", "-y", help="Apply update without confirmation"),
+    ] = False,
     channel: Annotated[
         str | None,
         typer.Option(help="Release track: release, beta, alpha, dev, or pypi"),
     ] = None,
 ) -> None:
     """Check for and install PA updates."""
-    from pa.update.runner import check_update, run_update
+    from pa.cli import service as svc
+    from pa.update.runner import apply_update, check_update, format_release_notes
 
     settings = get_settings()
+    result = check_update(settings, channel_name=channel)
 
-    if check:
-        result = check_update(settings, channel_name=channel)
-        typer.echo(f"Installed: {result.current}")
-        typer.echo(f"Latest:    {result.latest or 'unknown'}")
-        if result.upgrade_available:
-            typer.echo("Update available.")
-            raise typer.Exit(1)
+    typer.echo(f"Installed: {result.current}")
+    typer.echo(f"Latest:    {result.latest or 'unknown'}")
+
+    if not result.upgrade_available:
         typer.echo("Up to date.")
         return
 
+    typer.echo("Update available.")
+    typer.echo("")
+    typer.echo(format_release_notes(result.release))
+    typer.echo("")
+
+    if check:
+        raise typer.Exit(1)
+
+    if not yes and not typer.confirm(f"Apply update to {result.latest}?", default=True):
+        typer.echo("Update cancelled.")
+        raise typer.Exit(0)
+
     try:
-        result = run_update(settings, channel_name=channel, restart=restart)
+        result = apply_update(
+            settings,
+            channel_name=channel,
+            restart=False,
+            release=result.release,
+        )
     except RuntimeError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(1) from exc
 
-    if not result.upgrade_available:
-        typer.echo(f"PA {result.current} is up to date.")
+    previous = result.previous or result.current
+    typer.echo(f"Updated PA {previous} → {result.current}")
+
+    status = svc.get_status(settings)
+    if not status.installed:
         return
 
-    typer.echo(f"Updated PA {result.current} → {result.latest}")
-    if restart:
-        typer.echo("Service restarted.")
+    should_restart = restart
+    if not should_restart and not yes:
+        if status.running:
+            should_restart = typer.confirm(
+                "PA service is running. Restart it to load the new version?",
+                default=True,
+            )
+        else:
+            should_restart = typer.confirm(
+                "Restart the PA service now?",
+                default=False,
+            )
+
+    if not should_restart:
+        if status.running:
+            typer.echo("Service left running. Run: pa restart")
+        else:
+            typer.echo("Service left stopped. Run: pa start")
+        return
+
+    try:
+        svc.restart(settings)
+    except RuntimeError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1) from exc
+    typer.echo("Service restarted.")
 
 
 def _release_command(bump: str):

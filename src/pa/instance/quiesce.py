@@ -1,0 +1,124 @@
+"""ACP session quiesce snapshots and prompt queue persistence."""
+
+from __future__ import annotations
+
+import json
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+from uuid import uuid4
+
+from pydantic import BaseModel, Field
+
+from pa.core.io import atomic_write_json
+
+
+class QueuedPrompt(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    message: str
+    card_id: str | None = None
+    project_id: str | None = None
+    principal_id: str | None = None
+    cwd: str | None = None
+    agent_env: dict[str, str] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    source: str = "api"
+
+
+class SessionSnapshot(BaseModel):
+    session_id: str | None = None
+    external_session_id: str | None = None
+    agent_name: str = "instance"
+    status: str = "idle"
+    cwd: str | None = None
+    card_id: str | None = None
+    project_id: str | None = None
+    principal_id: str | None = None
+    prompting: bool = False
+    in_flight: QueuedPrompt | None = None
+
+
+class QuiesceSnapshot(BaseModel):
+    version: int = 1
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    reason: str = "restart"
+    resume: bool = True
+    sessions: list[SessionSnapshot] = Field(default_factory=list)
+    queued_prompts: list[QueuedPrompt] = Field(default_factory=list)
+
+    @property
+    def active_count(self) -> int:
+        return len(self.sessions)
+
+    @property
+    def prompting_count(self) -> int:
+        return sum(1 for s in self.sessions if s.prompting or s.status == "prompting")
+
+    @property
+    def queued_count(self) -> int:
+        return len(self.queued_prompts)
+
+
+def quiesce_path(data_dir: Path) -> Path:
+    return data_dir / "agent_quiesce.json"
+
+
+def skip_quiesce_path(data_dir: Path) -> Path:
+    return data_dir / "agent_skip_quiesce"
+
+
+def request_skip_quiesce(data_dir: Path) -> None:
+    data_dir.mkdir(parents=True, exist_ok=True)
+    skip_quiesce_path(data_dir).write_text("1\n")
+
+
+def consume_skip_quiesce(data_dir: Path) -> bool:
+    path = skip_quiesce_path(data_dir)
+    if not path.exists():
+        return False
+    try:
+        path.unlink()
+    except OSError:
+        pass
+    return True
+
+
+def load_quiesce_snapshot(data_dir: Path) -> QuiesceSnapshot | None:
+    path = quiesce_path(data_dir)
+    if not path.exists():
+        return None
+    try:
+        return QuiesceSnapshot.model_validate_json(path.read_text())
+    except (json.JSONDecodeError, ValueError):
+        return None
+
+
+def save_quiesce_snapshot(data_dir: Path, snapshot: QuiesceSnapshot) -> Path:
+    data_dir.mkdir(parents=True, exist_ok=True)
+    path = quiesce_path(data_dir)
+    atomic_write_json(path, snapshot.model_dump(mode="json"))
+    return path
+
+
+def clear_quiesce_snapshot(data_dir: Path) -> None:
+    path = quiesce_path(data_dir)
+    if path.exists():
+        path.unlink()
+
+
+def mark_snapshot_no_resume(data_dir: Path) -> None:
+    """Discard any pending quiesce snapshot so startup will not resume ACP state."""
+    clear_quiesce_snapshot(data_dir)
+
+
+class QuiesceProgress(BaseModel):
+    phase: str = "idle"
+    connected: bool = False
+    prompting: bool = False
+    quiescing: bool = False
+    active_sessions: int = 0
+    queued_prompts: int = 0
+    message: str = ""
+    done: bool = False
+    error: str | None = None
+    snapshot: dict[str, Any] | None = None
