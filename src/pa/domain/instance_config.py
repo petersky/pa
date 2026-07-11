@@ -27,6 +27,9 @@ class InstanceConfig(BaseModel):
     release_track: str = "release"
     sync_token: str = ""
     session_secret: str = ""
+    agent_provider: str = "cursor"
+    agent_command: str | None = None
+    agent_args: list[str] | None = None
 
 
 def config_path(data_dir: Path) -> Path:
@@ -81,6 +84,9 @@ def merge_config_into_settings(data_dir: Path, settings_dict: dict) -> dict:
         "release_track": loaded.release_track,
         "sync_token": loaded.sync_token,
         "session_secret": loaded.session_secret,
+        "agent_provider": loaded.agent_provider,
+        "agent_command": loaded.agent_command,
+        "agent_args": loaded.agent_args,
     }
     for key, value in mapping.items():
         if key not in settings_dict or settings_dict.get(key) in (None, "", []):

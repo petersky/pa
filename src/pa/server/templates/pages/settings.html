@@ -14,7 +14,7 @@
 
 <div class="panel">
   <div class="panel-header"><h2>Agent</h2></div>
-  <p class="muted">Permission prompts for tool calls. User preference overrides the instance default when set.</p>
+  <p class="muted">Permission prompts and default ACP provider. User preference overrides the instance default when set. Per-surface overrides apply to chat, card embeds, projects, and execution.</p>
   <form class="stack settings-agent-prefs" id="pa-agent-prefs-form">
     <label class="checkbox-row">
       <input type="checkbox" name="user_auto_approve"
@@ -26,6 +26,38 @@
              {% if global_prefs.agent_auto_approve_permissions %}checked{% endif %}>
       <span>Instance default: auto-approve permissions</span>
     </label>
+    <label>
+      <span>My ACP provider</span>
+      <select name="user_provider">
+        <option value="">Inherit instance default</option>
+        <option value="cursor" {% if prefs.agent_provider == 'cursor' %}selected{% endif %}>Cursor</option>
+        <option value="codex" {% if prefs.agent_provider == 'codex' %}selected{% endif %}>Codex</option>
+      </select>
+    </label>
+    <label>
+      <span>Instance default ACP provider</span>
+      <select name="global_provider">
+        <option value="">Use PA_AGENT_PROVIDER / config ({{ settings.agent_provider if settings is defined else 'cursor' }})</option>
+        <option value="cursor" {% if global_prefs.agent_provider == 'cursor' %}selected{% endif %}>Cursor</option>
+        <option value="codex" {% if global_prefs.agent_provider == 'codex' %}selected{% endif %}>Codex</option>
+      </select>
+    </label>
+    <fieldset class="stack">
+      <legend>Per-surface provider overrides (user)</legend>
+      {% set surfaces = [('chat.default', 'Default chat'), ('chat.card', 'Card embeds'), ('project', 'Projects'), ('execution', 'Execution router')] %}
+      {% for key, label in surfaces %}
+      <label>
+        <span>{{ label }} ({{ key }})</span>
+        <select name="surface_{{ key | replace('.', '_') }}">
+          {% set cur = (prefs.agent_surfaces or {}).get(key) %}
+          {% set cur_p = cur.provider if cur else None %}
+          <option value="">Inherit</option>
+          <option value="cursor" {% if cur_p == 'cursor' %}selected{% endif %}>Cursor</option>
+          <option value="codex" {% if cur_p == 'codex' %}selected{% endif %}>Codex</option>
+        </select>
+      </label>
+      {% endfor %}
+    </fieldset>
     <button type="submit" class="primary">Save agent preferences</button>
     <p class="muted small" id="pa-agent-prefs-status" hidden></p>
   </form>
@@ -133,18 +165,39 @@
     if (csrf && csrf.content) headers["X-CSRF-Token"] = csrf.content;
     var userVal = !!form.user_auto_approve.checked;
     var globalVal = !!form.global_auto_approve.checked;
+    var userProvider = form.user_provider.value || null;
+    var globalProvider = form.global_provider.value || null;
+    var surfaces = {};
+    ["chat_default", "chat_card", "project", "execution"].forEach(function (key) {
+      var el = form["surface_" + key];
+      if (!el) return;
+      var surfaceKey = key.replace("_", ".");
+      if (key === "chat_default") surfaceKey = "chat.default";
+      if (key === "chat_card") surfaceKey = "chat.card";
+      if (el.value) surfaces[surfaceKey] = { provider: el.value };
+      else surfaces[surfaceKey] = { provider: null };
+    });
     try {
       await fetch("/api/agent/preferences", {
         method: "PUT",
         headers: headers,
         credentials: "same-origin",
-        body: JSON.stringify({ agent_auto_approve_permissions: userVal, scope: "user" }),
+        body: JSON.stringify({
+          agent_auto_approve_permissions: userVal,
+          agent_provider: userProvider,
+          agent_surfaces: surfaces,
+          scope: "user",
+        }),
       });
       await fetch("/api/agent/preferences", {
         method: "PUT",
         headers: headers,
         credentials: "same-origin",
-        body: JSON.stringify({ agent_auto_approve_permissions: globalVal, scope: "global" }),
+        body: JSON.stringify({
+          agent_auto_approve_permissions: globalVal,
+          agent_provider: globalProvider,
+          scope: "global",
+        }),
       });
       if (status) {
         status.hidden = false;

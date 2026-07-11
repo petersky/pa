@@ -152,9 +152,17 @@ PA is designed **agent-first**: agents can direct PA and be directed by it, incl
 | Interface | Role |
 |-----------|------|
 | `pa mcp` | Tool surface for any agent session |
-| ACP (`agent acp`) | Interactive chat; PA tools via MCP bridge |
+| ACP (provider subprocess) | Interactive chat; PA tools via MCP bridge. Built-ins: Cursor (`agent acp`), Codex (`codex-acp`). See [acp/](acp/README.md). |
 | `pa` CLI | Human/script operator |
 | Web UI | Human-friendly views of cards, projects, fleet |
+
+### ACP provider selection
+
+PA resolves which ACP server to spawn per invocation:
+
+**surface → user → instance → default (`cursor`)**
+
+Surfaces are string keys (`chat.default`, `chat.card`, `project`, `execution`, …) so new agent entry points can opt into the same cascade. Manage installs with `pa agent-provider` / MCP `agent_provider_*` tools; fleet admins can target peers by `instance_id`. Capability notes live in [docs/acp/](acp/README.md).
 
 ## External integrations
 

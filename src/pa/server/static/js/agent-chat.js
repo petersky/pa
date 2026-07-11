@@ -83,6 +83,7 @@
     this.showMetrics = root.dataset.showMetrics !== "0";
     this.showModel = root.dataset.showModel !== "0";
     this.showMode = root.dataset.showMode !== "0";
+    this.preferredProvider = root.dataset.provider || "";
 
     this.els = {
       messages: root.querySelector("[data-acw-messages]"),
@@ -101,6 +102,7 @@
       queueList: root.querySelector("[data-acw-queue-list]"),
       model: root.querySelector("[data-acw-model]"),
       mode: root.querySelector("[data-acw-mode]"),
+      provider: root.querySelector("[data-acw-provider]"),
       modelWrap: root.querySelector("[data-acw-model-wrap]"),
       modeWrap: root.querySelector("[data-acw-mode-wrap]"),
       config: root.querySelector("[data-acw-config]"),
@@ -164,6 +166,12 @@
         self.putOption("mode", { mode_id: self.els.mode.value });
       });
     }
+    if (this.els.provider) {
+      this.els.provider.addEventListener("change", function () {
+        self.preferredProvider = self.els.provider.value;
+        self.recreateWithProvider(self.preferredProvider);
+      });
+    }
     if (this.els.input) {
       this.els.input.addEventListener("keydown", function (e) {
         if (e.key === "Enter" && !e.shiftKey) {
@@ -192,16 +200,18 @@
 
   AgentChatWidget.prototype.init = function () {
     const self = this;
+    const body = {
+      attach_default: this.createLabel === "default" && !this.cardId,
+      label: this.createLabel,
+      card_id: this.cardId || null,
+      title: this.cardId ? "Card agent" : null,
+    };
+    if (this.preferredProvider) body.provider = this.preferredProvider;
     const boot = this.sessionId
       ? Promise.resolve({ session: { id: this.sessionId } })
       : this.api("/sessions", {
           method: "POST",
-          body: JSON.stringify({
-            attach_default: this.createLabel === "default" && !this.cardId,
-            label: this.createLabel,
-            card_id: this.cardId || null,
-            title: this.cardId ? "Card agent" : null,
-          }),
+          body: JSON.stringify(body),
         });
 
     boot
@@ -218,6 +228,25 @@
       .catch(function (err) {
         self.setPlaceholder("Failed to start session: " + err.message);
         self.setStatus("error");
+      });
+  };
+
+  AgentChatWidget.prototype.recreateWithProvider = function (provider) {
+    const self = this;
+    const close = this.sessionId
+      ? this.api("/sessions/" + this.sessionId + "/close", { method: "POST", body: "{}" })
+      : Promise.resolve();
+    close
+      .catch(function () { /* ignore */ })
+      .then(function () {
+        self.sessionId = "";
+        self.root.dataset.sessionId = "";
+        self.preferredProvider = provider || "";
+        if (self.es) {
+          try { self.es.close(); } catch (_) {}
+          self.es = null;
+        }
+        self.init();
       });
   };
 
@@ -259,6 +288,7 @@
     this.renderTranscript(snap.transcript || []);
     this.renderQueue(snap.queue || []);
     this.renderModelsModes(snap);
+    this.renderProvider(snap);
     this.renderConfigOptions(snap);
     this.renderMetrics(snap.metrics || session.metrics_json || {});
     if (this.els.permissions) {
@@ -667,6 +697,28 @@
       self.queuePaused = !!snap.queue_paused;
       self.renderQueue(snap.queue || []);
     }).catch(function () { /* ignore */ });
+  };
+
+  AgentChatWidget.prototype.renderProvider = function (snap) {
+    if (!this.els.provider) return;
+    const current = (snap.session && snap.session.agent_name) || this.preferredProvider || "cursor";
+    if (current === "instance") return;
+    const opts = this.els.provider.options;
+    let found = false;
+    for (let i = 0; i < opts.length; i++) {
+      if (opts[i].value === current) {
+        found = true;
+        break;
+      }
+    }
+    if (!found && current) {
+      const opt = document.createElement("option");
+      opt.value = current;
+      opt.textContent = current;
+      this.els.provider.appendChild(opt);
+    }
+    this.els.provider.value = current;
+    this.preferredProvider = current;
   };
 
   AgentChatWidget.prototype.renderModelsModes = function (snap) {

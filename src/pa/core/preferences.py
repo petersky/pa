@@ -15,10 +15,22 @@ class AppearanceMode(StrEnum):
     DARK = "dark"
 
 
+class SurfaceAgentPrefs(BaseModel):
+    """Per-surface ACP overrides (provider and optional session defaults)."""
+
+    provider: str | None = None
+    model_id: str | None = None
+    mode_id: str | None = None
+    config: dict = Field(default_factory=dict)
+
+
 class UserPreferences(BaseModel):
     theme_id: str = "pa"
     appearance: AppearanceMode = AppearanceMode.SYSTEM
     agent_auto_approve_permissions: bool = False
+    # ACP provider selection (null = inherit from next cascade level)
+    agent_provider: str | None = None
+    agent_surfaces: dict[str, SurfaceAgentPrefs] = Field(default_factory=dict)
 
 
 class PreferencesStore:

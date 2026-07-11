@@ -41,6 +41,25 @@ def _fleet_context(request: Request) -> dict:
     _refresh_fleet_health(fleet)
     membership: MembershipStore = ctx.require_service("membership")
     peer_table: PeerTable = ctx.require_service("peer_table")
+    provider_status: dict[str, list] = {}
+    for inst in fleet.list_instances():
+        if not inst.healthy:
+            provider_status[inst.instance_id] = []
+            continue
+        try:
+            headers = {}
+            if settings.sync_token:
+                headers["Authorization"] = f"Bearer {settings.sync_token}"
+            with httpx.Client(timeout=5.0) as client:
+                resp = client.get(
+                    f"{inst.url.rstrip('/')}/api/agent/providers", headers=headers
+                )
+                if resp.status_code == 200:
+                    provider_status[inst.instance_id] = resp.json()
+                else:
+                    provider_status[inst.instance_id] = []
+        except httpx.HTTPError:
+            provider_status[inst.instance_id] = []
     return {
         "fleet_instances": fleet.list_instances(),
         "realms": membership.list_realms(),
@@ -49,6 +68,7 @@ def _fleet_context(request: Request) -> dict:
         "settings": settings,
         "fleet_id": settings.fleet_id,
         "zone": settings.zone,
+        "provider_status": provider_status,
     }
 
 
@@ -206,6 +226,76 @@ def accept_invite(request: Request, body: dict) -> dict:
     if not m:
         raise HTTPException(status_code=400, detail="Invalid invite")
     return m.model_dump(mode="json")
+
+
+def _fleet_instance_or_404(request: Request, instance_id: str):
+    fleet: FleetRegistry = request.app.state.ctx.require_service("fleet_registry")
+    for inst in fleet.list_instances():
+        if inst.instance_id == instance_id:
+            return inst
+    raise HTTPException(status_code=404, detail="Fleet instance not found")
+
+
+def _proxy_agent_providers(
+    request: Request,
+    instance_id: str,
+    method: str,
+    suffix: str,
+    body: dict | None = None,
+) -> dict | list:
+    require_user(request)
+    inst = _fleet_instance_or_404(request, instance_id)
+    settings = request.app.state.ctx.settings
+    headers: dict[str, str] = {}
+    if settings.sync_token:
+        headers["Authorization"] = f"Bearer {settings.sync_token}"
+    url = f"{inst.url.rstrip('/')}/api/agent/providers{suffix}"
+    try:
+        with httpx.Client(timeout=120.0) as client:
+            resp = client.request(method, url, headers=headers, json=body)
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Peer unreachable: {exc}") from exc
+    if resp.status_code >= 400:
+        raise HTTPException(status_code=resp.status_code, detail=resp.text[:500])
+    return resp.json()
+
+
+@router.get("/fleet/instances/{instance_id}/agent-providers")
+def fleet_agent_providers(request: Request, instance_id: str):
+    return _proxy_agent_providers(request, instance_id, "GET", "")
+
+
+@router.get("/fleet/instances/{instance_id}/agent-providers/{provider_id}")
+def fleet_agent_provider(request: Request, instance_id: str, provider_id: str):
+    return _proxy_agent_providers(request, instance_id, "GET", f"/{provider_id}")
+
+
+@router.post("/fleet/instances/{instance_id}/agent-providers/{provider_id}/install")
+def fleet_agent_provider_install(request: Request, instance_id: str, provider_id: str):
+    return _proxy_agent_providers(
+        request, instance_id, "POST", f"/{provider_id}/install"
+    )
+
+
+@router.post("/fleet/instances/{instance_id}/agent-providers/{provider_id}/update")
+def fleet_agent_provider_update(request: Request, instance_id: str, provider_id: str):
+    return _proxy_agent_providers(
+        request, instance_id, "POST", f"/{provider_id}/update"
+    )
+
+
+@router.post("/fleet/instances/{instance_id}/agent-providers/{provider_id}/configure")
+async def fleet_agent_provider_configure(
+    request: Request, instance_id: str, provider_id: str, body: dict
+):
+    return _proxy_agent_providers(
+        request, instance_id, "POST", f"/{provider_id}/configure", body=body
+    )
+
+
+@router.post("/fleet/instances/{instance_id}/agent-providers/{provider_id}/probe")
+def fleet_agent_provider_probe(request: Request, instance_id: str, provider_id: str):
+    return _proxy_agent_providers(request, instance_id, "POST", f"/{provider_id}/probe")
 
 
 @ui_router.get("/fleet")

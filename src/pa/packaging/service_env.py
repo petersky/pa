@@ -24,10 +24,12 @@ def service_environment(settings: Settings) -> dict[str, str]:
         "PA_FLEET_ID": settings.fleet_id,
         "PA_ZONE": settings.zone,
     }
-    agent_bin = resolve_executable(settings.agent_command, path=service_path)
-    if agent_bin:
-        env["PA_AGENT_COMMAND"] = str(agent_bin)
-    if settings.agent_args:
+    if settings.agent_provider:
+        env["PA_AGENT_PROVIDER"] = settings.agent_provider
+    if settings.agent_command:
+        agent_bin = resolve_executable(settings.agent_command, path=service_path)
+        env["PA_AGENT_COMMAND"] = str(agent_bin) if agent_bin else settings.agent_command
+    if settings.agent_args is not None:
         env["PA_AGENT_ARGS"] = _env_list(settings.agent_args)
     if settings.subscribed_realms:
         env["PA_SUBSCRIBED_REALMS"] = _env_list(settings.subscribed_realms)

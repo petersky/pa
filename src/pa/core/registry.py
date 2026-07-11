@@ -61,6 +61,7 @@ class ModuleRegistry:
 
     def load_builtins(self) -> None:
         from pa.modules.agent_chat import AgentChatModule
+        from pa.modules.agent_providers import AgentProvidersModule
         from pa.modules.auth import AuthModule
         from pa.modules.debug import DebugModule
         from pa.modules.fleet import FleetModule
@@ -83,6 +84,7 @@ class ModuleRegistry:
             ItemsModule(),
             InstanceModule(),
             AgentChatModule(),
+            AgentProvidersModule(),
             ThemeModule(),
             DebugModule(),
             UiShellModule(),

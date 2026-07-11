@@ -33,6 +33,13 @@
       <span class="acw-turn-timer muted" data-acw-turn-timer hidden></span>
     </div>
     <div class="acw-toolbar-right">
+      <label class="acw-select-wrap" data-acw-provider-wrap>
+        <span class="sr-only">Provider</span>
+        <select data-acw-provider aria-label="ACP provider">
+          <option value="cursor">Cursor</option>
+          <option value="codex">Codex</option>
+        </select>
+      </label>
       {% if show_model %}
       <label class="acw-select-wrap" data-acw-model-wrap hidden>
         <span class="sr-only">Model</span>

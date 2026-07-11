@@ -106,6 +106,20 @@ def run_doctor() -> int:
     else:
         typer.echo("  [info] No peers configured")
 
+    from pa.acp.providers.resolve import list_provider_summaries
+
+    typer.echo("  [..]   ACP providers:")
+    for st in list_provider_summaries(settings.data_dir):
+        tag = "ok" if st.get("available") else "warn"
+        ver = st.get("version") or "—"
+        auth = "auth=yes" if st.get("auth_configured") else "auth=?"
+        typer.echo(
+            f"         [{tag}]  {st.get('id')}: available={st.get('available')} "
+            f"version={ver} {auth}"
+        )
+        if not st.get("available"):
+            warnings.append(f"ACP provider not available: {st.get('id')}")
+
     from pa.domain.store import get_store
     from pa.sync.infrastructure import get_event_log, get_object_store
 

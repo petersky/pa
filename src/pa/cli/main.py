@@ -43,6 +43,10 @@ app.add_typer(project_app, name="project")
 user_app = typer.Typer(help="User management")
 app.add_typer(user_app, name="user")
 
+from pa.cli.agent_provider import agent_provider_app
+
+app.add_typer(agent_provider_app, name="agent-provider")
+
 
 @app.command()
 def version() -> None:

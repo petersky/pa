@@ -12,7 +12,7 @@
   {% if fleet_instances %}
   <table class="data-table">
     <thead>
-      <tr><th>Name</th><th>URL</th><th>Zone</th><th>Capabilities</th><th>Status</th></tr>
+      <tr><th>Name</th><th>URL</th><th>Zone</th><th>Capabilities</th><th>ACP providers</th><th>Status</th></tr>
     </thead>
     <tbody>
       {% for inst in fleet_instances %}
@@ -21,11 +21,22 @@
         <td><a href="{{ inst.url }}" target="_blank">{{ inst.url }}</a></td>
         <td>{{ inst.zone }}</td>
         <td>{{ inst.capabilities | join(', ') }}</td>
+        <td>
+          {% set providers = provider_status.get(inst.instance_id, []) %}
+          {% if providers %}
+            {% for p in providers %}
+              <span class="badge" title="{{ p.id }}">{{ p.display_name or p.id }}{% if p.available %} ✓{% else %} ·{% endif %}</span>
+            {% endfor %}
+          {% else %}
+            <span class="muted">—</span>
+          {% endif %}
+        </td>
         <td>{% if inst.healthy %}<span class="status status-active">up</span>{% else %}<span class="status status-blocked">down</span>{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
+  <p class="muted small">Manage providers: <code>pa agent-provider status --instance &lt;id&gt;</code> or MCP <code>agent_provider_*</code> tools.</p>
   {% else %}
   <p class="empty">No fleet instances registered.</p>
   {% endif %}

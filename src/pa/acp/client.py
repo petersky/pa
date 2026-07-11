@@ -13,6 +13,9 @@ from acp.interfaces import Client
 from acp.schema import AllowedOutcome, DeniedOutcome, RequestPermissionResponse
 
 from pa.acp.mcp_config import pa_mcp_servers
+from pa.acp.providers.base import AgentProviderSpec
+from pa.acp.providers.registry import DEFAULT_PROVIDER_ID, get_provider
+from pa.acp.providers.resolve import _spawn_overrides
 from pa.config import Settings
 from pa.domain.models import AgentSession
 from pa.domain.store import Store
@@ -280,8 +283,9 @@ class AgentConnection:
         self,
         settings: Settings,
         store: Store,
-        agent_name: str = "cursor",
+        agent_name: str = DEFAULT_PROVIDER_ID,
         *,
+        provider_spec: AgentProviderSpec | None = None,
         on_update: UpdateHandler | None = None,
         on_permission: PermissionHandler | None = None,
         wire_path: Path | None = None,
@@ -290,6 +294,7 @@ class AgentConnection:
         self.settings = settings
         self.store = store
         self.agent_name = agent_name
+        self.provider_spec = provider_spec
         self.on_update = on_update
         self.on_permission = on_permission
         self.wire_path = wire_path
@@ -307,6 +312,20 @@ class AgentConnection:
         self.modes: dict[str, Any] | None = None
         self.config_options: list[Any] | None = None
         self.last_usage: dict[str, Any] | None = None
+
+    def _resolved_spec(self) -> AgentProviderSpec:
+        if self.provider_spec is not None:
+            return self.provider_spec
+        provider_id = self.agent_name or DEFAULT_PROVIDER_ID
+        if provider_id in {"instance", ""}:
+            provider_id = DEFAULT_PROVIDER_ID
+        provider = get_provider(provider_id)
+        command_override, args_override = _spawn_overrides(self.settings, provider_id)
+        return provider.resolve_spawn(
+            command_override=command_override,
+            args_override=args_override,
+            data_dir=self.settings.data_dir,
+        )
 
     @property
     def prompting(self) -> bool:
@@ -349,16 +368,32 @@ class AgentConnection:
             wire_logger=self._wire_log,
             auto_approve=self.auto_approve,
         )
-        command = self.settings.agent_command
+        spec = self._resolved_spec()
+        self.agent_name = spec.id
+        command = spec.command
         resolved = resolve_executable(command)
         if resolved:
             command = str(resolved)
-        self._ctx = spawn_agent_process(
-            self._client,
-            command,
-            *self.settings.agent_args,
-        )
-        self._conn, self._proc = await self._ctx.__aenter__()  # noqa: SIM117
+        # Apply provider env for the lifetime of this connection spawn.
+        import os
+
+        prev_env: dict[str, str | None] = {}
+        for key, value in (spec.env or {}).items():
+            prev_env[key] = os.environ.get(key)
+            os.environ[key] = value
+        try:
+            self._ctx = spawn_agent_process(
+                self._client,
+                command,
+                *list(spec.args or []),
+            )
+            self._conn, self._proc = await self._ctx.__aenter__()  # noqa: SIM117
+        finally:
+            for key, old in prev_env.items():
+                if old is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = old
         self._init_response = await self._conn.initialize(protocol_version=PROTOCOL_VERSION)
         self._resume_supported = _agent_supports_resume(self._init_response)
         self._wire_log(

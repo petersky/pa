@@ -19,6 +19,14 @@ from pa.acp.client import (
     permission_selected,
     usage_to_dict,
 )
+from pa.acp.providers.registry import DEFAULT_PROVIDER_ID
+from pa.acp.providers.resolve import resolve_agent_provider
+from pa.acp.surfaces import (
+    SURFACE_CHAT_DEFAULT,
+    SURFACE_EXECUTION,
+    AgentInvocationContext,
+    surface_for_label,
+)
 from pa.config import Settings
 from pa.core.preferences import get_preferences_store
 from pa.domain.models import AgentSession, TranscriptEvent
@@ -227,12 +235,17 @@ class AgentSessionRuntime:
         resume_external_id: str | None = None,
         queued_prompts: list[QueuedPrompt] | None = None,
         queue_paused: bool = False,
+        provider_spec=None,
     ) -> AgentSession:
         wire_path = _session_dir(self.settings.data_dir, self.session_id) / "wire.jsonl"
+        provider_id = self.session.agent_name or DEFAULT_PROVIDER_ID
+        if provider_id in {"instance", ""}:
+            provider_id = DEFAULT_PROVIDER_ID
         self.connection = AgentConnection(
             self.settings,
             self.store,
-            agent_name=self.session.agent_name or "instance",
+            agent_name=provider_id,
+            provider_spec=provider_spec,
             on_update=self._on_acp_update,
             on_permission=self._on_permission,
             wire_path=wire_path,
@@ -249,6 +262,10 @@ class AgentSessionRuntime:
                 card_id=self.session.card_id,
                 project_id=self.session.project_id,
             )
+        # Persist resolved provider id on the session.
+        if self.connection and self.connection.agent_name:
+            self.session.agent_name = self.connection.agent_name
+            self.store.save_session(self.session)
         self._queue_paused = queue_paused
         if queued_prompts:
             for item in queued_prompts:
@@ -841,14 +858,53 @@ class AgentSessionManager:
         agent_env: dict[str, str] | None = None,
         resume_external_id: str | None = None,
         existing: AgentSession | None = None,
+        surface: str | None = None,
+        provider_override: str | None = None,
+        project_tool_config: dict | None = None,
     ) -> AgentSessionRuntime:
         if not self.settings.agent_enabled:
             raise RuntimeError("Agent disabled")
         if not self._accepting or self._quiescing:
             raise RuntimeError("Agent is quiescing")
 
+        surface_key = surface or surface_for_label(label, project_id=project_id)
+        ctx = AgentInvocationContext(
+            surface=surface_key,
+            principal_id=principal_id,
+            card_id=card_id,
+            project_id=project_id,
+            provider_override=provider_override,
+        )
+        # When resuming an existing session, keep its provider unless explicitly overridden.
+        if existing and existing.agent_name and existing.agent_name not in {
+            "instance",
+            "",
+        } and not provider_override:
+            provider_id = existing.agent_name
+            from pa.acp.providers.registry import get_provider
+            from pa.acp.providers.resolve import _spawn_overrides
+
+            cmd_o, args_o = _spawn_overrides(self.settings, provider_id)
+            resolved_spec = get_provider(provider_id).resolve_spawn(
+                command_override=cmd_o,
+                args_override=args_o,
+                extra_env=agent_env,
+                data_dir=self.settings.data_dir,
+            )
+            source = "session"
+        else:
+            resolved = resolve_agent_provider(
+                self.settings,
+                ctx,
+                project_tool_config=project_tool_config,
+                extra_env=agent_env,
+            )
+            provider_id = resolved.provider_id
+            resolved_spec = resolved.spec
+            source = resolved.source
+
         session = existing or AgentSession(
-            agent_name="instance",
+            agent_name=provider_id,
             status="connecting",
             cwd=cwd or str(self.settings.data_dir),
             title=title,
@@ -872,11 +928,24 @@ class AgentSessionManager:
                 session.item_id = card_id
             if project_id is not None:
                 session.project_id = project_id
+            if not provider_override and session.agent_name in {"instance", ""}:
+                session.agent_name = provider_id
+            elif provider_override or not existing:
+                session.agent_name = provider_id
+            elif source != "session":
+                # New resolution for fresh connect without resume identity mismatch
+                if not resume_external_id:
+                    session.agent_name = provider_id
+        else:
+            session.agent_name = provider_id
         self.store.save_session(session)
 
         runtime = AgentSessionRuntime(self, session, agent_env=agent_env)
         try:
-            await runtime.start(resume_external_id=resume_external_id)
+            await runtime.start(
+                resume_external_id=resume_external_id,
+                provider_spec=resolved_spec,
+            )
             self._last_error = None
         except Exception as exc:
             self._last_error = str(exc)
@@ -892,6 +961,7 @@ class AgentSessionManager:
         principal_id: str | None = None,
         cwd: str | None = None,
         agent_env: dict[str, str] | None = None,
+        provider_override: str | None = None,
     ) -> AgentSessionRuntime:
         async with self._lock:
             for rt in self._runtimes.values():
@@ -914,6 +984,8 @@ class AgentSessionManager:
                     if existing and existing.status != "closed"
                     else None
                 ),
+                surface=SURFACE_CHAT_DEFAULT,
+                provider_override=provider_override,
             )
 
     def enqueue_prompt(
@@ -972,17 +1044,33 @@ class AgentSessionManager:
         action: PromptAction = "append",
         _from_queue: bool = False,
         wait: bool = True,
+        surface: str | None = None,
+        provider_override: str | None = None,
     ) -> str:
         if session_id:
             runtime = self._runtimes.get(session_id)
             if not runtime:
                 raise RuntimeError(f"Unknown session: {session_id}")
         else:
-            runtime = await self.attach_default(
-                principal_id=principal_id,
-                cwd=cwd,
-                agent_env=agent_env,
-            )
+            if surface == SURFACE_EXECUTION:
+                runtime = await self.create_session(
+                    label="execution",
+                    title="Execution",
+                    cwd=cwd,
+                    principal_id=principal_id,
+                    project_id=project_id,
+                    card_id=item_id,
+                    agent_env=agent_env,
+                    surface=SURFACE_EXECUTION,
+                    provider_override=provider_override,
+                )
+            else:
+                runtime = await self.attach_default(
+                    principal_id=principal_id,
+                    cwd=cwd,
+                    agent_env=agent_env,
+                    provider_override=provider_override,
+                )
         return await runtime.prompt(
             message,
             item_id=item_id,

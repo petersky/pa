@@ -108,6 +108,7 @@ class ExecutionRouter:
                 project_id=project_id,
                 agent_env=self._user_env(principal_id),
                 cwd=self._user_data_dir(principal_id),
+                surface="execution",
             )
         finally:
             if card_id and lease_held:

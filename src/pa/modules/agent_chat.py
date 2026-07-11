@@ -44,6 +44,8 @@ class CreateSessionBody(BaseModel):
     card_id: str | None = None
     project_id: str | None = None
     attach_default: bool = False
+    provider: str | None = None
+    surface: str | None = None
 
 
 class PromptBody(BaseModel):
@@ -79,6 +81,8 @@ class ReorderBody(BaseModel):
 
 class PreferencesBody(BaseModel):
     agent_auto_approve_permissions: bool | None = None
+    agent_provider: str | None = None
+    agent_surfaces: dict[str, Any] | None = None
     scope: Literal["user", "global"] = "user"
 
 
@@ -86,9 +90,21 @@ class PreferencesBody(BaseModel):
 async def create_session(request: Request, body: CreateSessionBody) -> dict:
     mgr = _manager(request)
     principal_id = get_principal_id(request)
+    from pa.acp.surfaces import surface_for_label
+
+    surface = body.surface or surface_for_label(body.label, project_id=body.project_id)
+    project_tool_config = None
+    if body.project_id:
+        project = mgr.store.get_project(body.project_id)
+        if project and getattr(project, "tool_config", None):
+            project_tool_config = dict(project.tool_config)
     try:
         if body.attach_default or body.label == "default":
-            runtime = await mgr.attach_default(principal_id=principal_id, cwd=body.cwd)
+            runtime = await mgr.attach_default(
+                principal_id=principal_id,
+                cwd=body.cwd,
+                provider_override=body.provider,
+            )
         elif body.label:
             # Reuse a live/persisted session with the same label (e.g. card:{id}).
             existing = None
@@ -108,6 +124,9 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                         project_id=body.project_id or stored.project_id,
                         existing=stored,
                         resume_external_id=stored.external_session_id,
+                        surface=surface,
+                        provider_override=body.provider,
+                        project_tool_config=project_tool_config,
                     )
                 else:
                     runtime = await mgr.create_session(
@@ -117,6 +136,9 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                         principal_id=principal_id,
                         card_id=body.card_id,
                         project_id=body.project_id,
+                        surface=surface,
+                        provider_override=body.provider,
+                        project_tool_config=project_tool_config,
                     )
             else:
                 runtime = existing
@@ -128,6 +150,9 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                 principal_id=principal_id,
                 card_id=body.card_id,
                 project_id=body.project_id,
+                surface=surface,
+                provider_override=body.provider,
+                project_tool_config=project_tool_config,
             )
     except Exception as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
@@ -373,35 +398,59 @@ def get_agent_preferences(request: Request) -> dict:
             effective = bool(global_prefs.agent_auto_approve_permissions)
     else:
         effective = bool(global_prefs.agent_auto_approve_permissions)
+
+    def _provider_blob(prefs) -> dict:
+        return {
+            "agent_auto_approve_permissions": prefs.agent_auto_approve_permissions,
+            "agent_provider": prefs.agent_provider,
+            "agent_surfaces": {
+                k: v.model_dump() if hasattr(v, "model_dump") else v
+                for k, v in (prefs.agent_surfaces or {}).items()
+            },
+        }
+
+    effective_provider = settings.agent_provider
+    if global_prefs.agent_provider:
+        effective_provider = global_prefs.agent_provider
+    if user_id and user_prefs and user_prefs.agent_provider:
+        effective_provider = user_prefs.agent_provider
+
     return {
         "agent_auto_approve_permissions": effective,
-        "user": (
-            {"agent_auto_approve_permissions": user_prefs.agent_auto_approve_permissions}
-            if user_prefs
-            else None
-        ),
-        "global": {
-            "agent_auto_approve_permissions": global_prefs.agent_auto_approve_permissions
-        },
+        "agent_provider": effective_provider,
+        "instance_provider": settings.agent_provider,
+        "user": _provider_blob(user_prefs) if user_prefs else None,
+        "global": _provider_blob(global_prefs),
     }
 
 
 @router.put("/preferences")
 def put_agent_preferences(request: Request, body: PreferencesBody) -> dict:
+    from pa.core.preferences import SurfaceAgentPrefs
+
     settings = request.app.state.ctx.settings
-    updates = body.model_dump(exclude_unset=True)
-    value = updates.get("agent_auto_approve_permissions")
-    if value is None:
+    updates: dict[str, Any] = {}
+    if body.agent_auto_approve_permissions is not None:
+        updates["agent_auto_approve_permissions"] = body.agent_auto_approve_permissions
+    if "agent_provider" in body.model_fields_set:
+        updates["agent_provider"] = body.agent_provider
+    if body.agent_surfaces is not None:
+        surfaces = {}
+        for key, raw in body.agent_surfaces.items():
+            if isinstance(raw, SurfaceAgentPrefs):
+                surfaces[key] = raw
+            elif isinstance(raw, dict):
+                surfaces[key] = SurfaceAgentPrefs.model_validate(raw)
+            else:
+                surfaces[key] = SurfaceAgentPrefs(provider=str(raw) if raw else None)
+        updates["agent_surfaces"] = surfaces
+    if not updates:
         return get_agent_preferences(request)
     if body.scope == "global":
-        get_preferences_store(settings.data_dir).update(
-            agent_auto_approve_permissions=value
-        )
+        get_preferences_store(settings.data_dir).update(**updates)
     else:
         user_id = _user_id(request)
-        get_preferences_store(settings.data_dir, user_id=user_id).update(
-            agent_auto_approve_permissions=value
-        )
+        get_preferences_store(settings.data_dir, user_id=user_id).update(**updates)
     return get_agent_preferences(request)
 
 

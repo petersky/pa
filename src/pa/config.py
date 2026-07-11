@@ -56,9 +56,11 @@ class Settings(BaseSettings):
     oidc_client_id: str = ""
     oidc_client_secret: str = ""
 
-    # Primary ACP agent (Cursor: `agent acp`)
-    agent_command: str = "agent"
-    agent_args: Annotated[list[str], NoDecode] = Field(default_factory=lambda: ["acp"])
+    # Primary ACP agent provider (`cursor` | `codex` | future ids)
+    agent_provider: str = "cursor"
+    # Optional spawn overrides (None → use selected provider defaults)
+    agent_command: str | None = None
+    agent_args: Annotated[list[str] | None, NoDecode] = None
     agent_enabled: bool = True
 
     # Developer / debug
@@ -80,6 +82,8 @@ class Settings(BaseSettings):
     @field_validator("peers", "subscribed_realms", "capabilities", "agent_args", mode="before")
     @classmethod
     def _parse_env_list(cls, value: object) -> object:
+        if value is None:
+            return None
         if isinstance(value, str):
             text = value.strip()
             if not text:
