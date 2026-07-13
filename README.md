@@ -13,6 +13,8 @@ PA is an **agent-native** orchestration platform: agents and humans are co-equal
 
 See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for install, updates, launchd, and Dev Container details.
 
+For multi-host fleets (Tailscale, SSH push-install, join tokens), see [docs/MULTI_MACHINE.md](docs/MULTI_MACHINE.md) or the **Fleet** page in the UI.
+
 ## Architecture
 
 PA uses a **modular kernel**: built-in features and external plugins implement the same `Module` contract, communicate via a hook bus, and register through setuptools entry points (`pa.modules`). See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full guide.

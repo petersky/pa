@@ -1,19 +1,36 @@
+"""Fleet management, realms, membership, and remote install APIs."""
+
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
+from uuid import uuid4
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import StreamingResponse
 
 from pa.auth.middleware import get_principal_id, require_user
 from pa.config import get_settings
 from pa.core.contracts import Module
 from pa.core.context import AppContext
 from pa.core.ui.pages import PageDefinition, PageRegistry
-from pa.domain.instance_config import InstanceConfig, save_instance_config
-from pa.domain.models import FleetInstance, PeerRoute, RealmRole
+from pa.domain.models import FleetInstance, RealmRole
+from pa.fleet.join import (
+    ensure_sync_token,
+    owner_public_url,
+    readiness_warnings,
+    register_joiner_on_owner,
+    remove_peer_url,
+    unwire_instance_peers,
+)
 from pa.fleet.membership import MembershipStore
 from pa.fleet.registry import FleetRegistry
+from pa.fleet.remote_install import (
+    RemoteInstallRequest,
+    get_job_store,
+    start_install_job_background,
+)
 from pa.network.peer_table import PeerTable
 
 router = APIRouter()
@@ -60,6 +77,7 @@ def _fleet_context(request: Request) -> dict:
                     provider_status[inst.instance_id] = []
         except httpx.HTTPError:
             provider_status[inst.instance_id] = []
+    warnings = readiness_warnings(settings)
     return {
         "fleet_instances": fleet.list_instances(),
         "realms": membership.list_realms(),
@@ -69,7 +87,36 @@ def _fleet_context(request: Request) -> dict:
         "fleet_id": settings.fleet_id,
         "zone": settings.zone,
         "provider_status": provider_status,
+        "owner_url": owner_public_url(settings),
+        "readiness_warnings": warnings,
+        "has_sync_token": bool(settings.sync_token),
+        "primary_realm": settings.primary_realm
+        if hasattr(settings, "primary_realm")
+        else (settings.subscribed_realms[0] if settings.subscribed_realms else "personal"),
     }
+
+
+@router.get("/fleet/readiness")
+def fleet_readiness(request: Request) -> dict:
+    require_user(request)
+    settings = request.app.state.ctx.settings
+    return {
+        "owner_url": owner_public_url(settings),
+        "instance_url": settings.instance_url,
+        "has_sync_token": bool(settings.sync_token),
+        "host": settings.host,
+        "warnings": readiness_warnings(settings),
+        "subscribed_realms": list(settings.subscribed_realms),
+        "peers": list(settings.peers),
+    }
+
+
+@router.post("/fleet/ensure-sync-token")
+def fleet_ensure_sync_token(request: Request) -> dict:
+    require_user(request)
+    settings = request.app.state.ctx.settings
+    token = ensure_sync_token(settings)
+    return {"ok": True, "has_sync_token": bool(token)}
 
 
 @router.get("/fleet/instances")
@@ -95,15 +142,17 @@ async def fleet_join(request: Request, body: dict) -> dict:
         raise HTTPException(status_code=400, detail="Invalid or expired join token")
 
     settings = get_settings()
-    owner_url = settings.instance_url or f"http://{settings.host}:{settings.port}"
+    # Prefer live app settings when available (keeps in-memory peers/sync_token).
+    if hasattr(request.app.state, "ctx"):
+        settings = request.app.state.ctx.settings
+    owner_url = owner_public_url(settings)
     peer_table: PeerTable = request.app.state.ctx.require_service("peer_table")
     realms = list(settings.subscribed_realms)
 
-    from pa.fleet.join import register_joiner_on_owner
-
-    inst = register_joiner_on_owner(
+    inst, sync_token = register_joiner_on_owner(
         fleet,
         peer_table,
+        settings,
         joiner_id=joiner_id,
         name=name,
         url=url or owner_url,
@@ -114,9 +163,11 @@ async def fleet_join(request: Request, body: dict) -> dict:
     owner_inst = fleet.get_instance(settings.instance_id)
     return {
         "fleet_id": join.fleet_id,
-        "owner_url": owner_url.rstrip("/"),
+        "owner_url": owner_url,
         "owner_instance": owner_inst.model_dump(mode="json") if owner_inst else None,
         "subscribed_realms": realms,
+        "sync_token": sync_token,
+        "peers": [owner_url],
         "instance": inst.model_dump(mode="json"),
     }
 
@@ -125,39 +176,66 @@ async def fleet_join(request: Request, body: dict) -> dict:
 def create_join_token(request: Request) -> dict:
     require_user(request)
     fleet: FleetRegistry = request.app.state.ctx.require_service("fleet_registry")
+    settings = request.app.state.ctx.settings
+    ensure_sync_token(settings)
     principal = get_principal_id(request)
     join = fleet.create_join_token(created_by=principal)
+    owner = owner_public_url(settings)
     return {
         "token": join.token,
         "expires_at": join.expires_at.isoformat(),
         "fleet_id": join.fleet_id,
+        "owner_url": owner,
+        "join_command": (
+            f"PA_FLEET_OWNER_URL={owner} pa fleet join {join.token} "
+            f"--url http://<remote-host>:8080 --name <remote-name>"
+        ),
     }
 
 
 @router.post("/fleet/register-remote")
 async def register_remote(request: Request, body: dict) -> dict:
     require_user(request)
+    settings = request.app.state.ctx.settings
+    peer_table: PeerTable = request.app.state.ctx.require_service("peer_table")
+    fleet: FleetRegistry = request.app.state.ctx.require_service("fleet_registry")
+
+    if "instance_id" not in body or not body.get("instance_id"):
+        body = {**body, "instance_id": str(uuid4())}
     inst = FleetInstance.model_validate(body)
     if inst.url.lower().startswith(("javascript:", "data:", "vbscript:")):
         raise HTTPException(status_code=400, detail="Invalid instance URL scheme")
-    inst.last_seen = datetime.now(UTC)
-    inst.healthy = True
-    fleet: FleetRegistry = request.app.state.ctx.require_service("fleet_registry")
-    fleet.upsert_instance(inst)
-    peer_table: PeerTable = request.app.state.ctx.require_service("peer_table")
-    for realm in request.app.state.ctx.settings.subscribed_realms:
-        peer_table.add_route(
-            PeerRoute(realm_id=realm, target_url=inst.url, target_instance_id=inst.instance_id, zone=inst.zone)
-        )
-    return inst.model_dump(mode="json")
+
+    registered, sync_token = register_joiner_on_owner(
+        fleet,
+        peer_table,
+        settings,
+        joiner_id=inst.instance_id,
+        name=inst.name,
+        url=inst.url,
+        zone=inst.zone,
+        capabilities=inst.capabilities,
+        realms=list(settings.subscribed_realms),
+    )
+    data = registered.model_dump(mode="json")
+    data["sync_token_set"] = bool(sync_token)
+    return data
 
 
 @router.delete("/fleet/instances/{instance_id}")
 def remove_instance(request: Request, instance_id: str) -> dict:
     require_user(request)
+    settings = request.app.state.ctx.settings
     fleet: FleetRegistry = request.app.state.ctx.require_service("fleet_registry")
-    if not fleet.remove_instance(instance_id):
+    peer_table: PeerTable = request.app.state.ctx.require_service("peer_table")
+    if instance_id == settings.instance_id:
+        raise HTTPException(status_code=400, detail="Cannot remove the local instance")
+    inst = fleet.get_instance(instance_id)
+    if not inst:
         raise HTTPException(status_code=404, detail="Instance not found")
+    unwire_instance_peers(peer_table, instance_id=instance_id, url=inst.url)
+    remove_peer_url(settings, inst.url)
+    fleet.remove_instance(instance_id)
     return {"removed": instance_id}
 
 
@@ -178,6 +256,89 @@ async def fleet_health(request: Request) -> list[dict]:
             fleet.upsert_instance(inst)
             results.append(inst.model_dump(mode="json"))
     return results
+
+
+@router.post("/fleet/install-remote")
+async def install_remote(request: Request, body: dict) -> dict:
+    require_user(request)
+    settings = request.app.state.ctx.settings
+    fleet: FleetRegistry = request.app.state.ctx.require_service("fleet_registry")
+    store = get_job_store(settings)
+
+    host = (body.get("host") or "").strip()
+    user = (body.get("user") or "").strip()
+    instance_name = (body.get("instance_name") or body.get("name") or "").strip()
+    instance_url = (body.get("instance_url") or body.get("url") or "").strip()
+    if not host or not user or not instance_name or not instance_url:
+        raise HTTPException(
+            status_code=400,
+            detail="host, user, instance_name, and instance_url are required",
+        )
+    if not settings.instance_url and not settings.host:
+        raise HTTPException(status_code=400, detail="Owner instance_url is not configured")
+
+    warnings = readiness_warnings(settings)
+    # Allow install even with warnings, but surface them.
+    req = RemoteInstallRequest(
+        host=host,
+        user=user,
+        port=int(body.get("port") or 22),
+        identity_file=(body.get("identity_file") or "").strip(),
+        password=body.get("password") or "",
+        passphrase=body.get("passphrase") or "",
+        instance_name=instance_name,
+        instance_url=instance_url,
+        channel=(body.get("channel") or settings.release_track or "release").strip(),
+        realm=(body.get("realm") or "").strip(),
+        join_only=bool(body.get("join_only")),
+    )
+    # Clear secrets from body reference — they live only on the request object.
+    body.pop("password", None)
+    body.pop("passphrase", None)
+
+    ensure_sync_token(settings)
+    job = start_install_job_background(settings, fleet, store, req)
+    return {**job.to_public_dict(), "readiness_warnings": warnings}
+
+
+@router.get("/fleet/install-remote/{job_id}")
+def install_remote_status(request: Request, job_id: str) -> dict:
+    require_user(request)
+    store = get_job_store(request.app.state.ctx.settings)
+    job = store.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Install job not found")
+    return job.to_public_dict()
+
+
+@router.get("/fleet/install-remote/{job_id}/events")
+async def install_remote_events(request: Request, job_id: str):
+    require_user(request)
+    store = get_job_store(request.app.state.ctx.settings)
+    job = store.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Install job not found")
+
+    async def event_stream():
+        last_len = 0
+        for _ in range(600):
+            current = store.get(job_id)
+            if not current:
+                yield "event: error\ndata: missing\n\n"
+                return
+            if len(current.log_lines) > last_len:
+                for line in current.log_lines[last_len:]:
+                    yield f"data: {line}\n\n"
+                last_len = len(current.log_lines)
+            yield f"event: status\ndata: {current.status.value}\n\n"
+            if current.status.value in ("succeeded", "failed"):
+                if current.error:
+                    yield f"event: error\ndata: {current.error}\n\n"
+                yield f"event: done\ndata: {current.status.value}\n\n"
+                return
+            await asyncio.sleep(0.5)
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @router.get("/realms")
@@ -300,7 +461,6 @@ def fleet_agent_provider_probe(request: Request, instance_id: str, provider_id: 
 
 @ui_router.get("/fleet")
 def fleet_page(request: Request):
-    from fastapi.responses import HTMLResponse
     from pa.modules.ui_shell import render_page
 
     page = request.app.state.ctx.require_service("pages").get_by_path("/fleet")
@@ -327,10 +487,11 @@ class FleetModule(Module):
         from pa.sync.infrastructure import get_membership_store, get_peer_table
 
         fleet = FleetRegistry(settings.data_dir, settings.fleet_id)
+        self_url = owner_public_url(settings)
         fleet.register_self(
             settings.instance_id,
             settings.instance_name,
-            f"http://{settings.host}:{settings.port}",
+            self_url,
             zone=settings.zone,
             capabilities=settings.capabilities,
             relay_enabled=settings.relay_enabled,
@@ -345,6 +506,7 @@ class FleetModule(Module):
         for realm in settings.subscribed_realms:
             peer_table.sync_from_settings_peers(realm, settings.peers, settings.zone)
         ctx.register_service("peer_table", peer_table)
+        ctx.register_service("fleet_job_store", get_job_store(settings))
 
         pages: PageRegistry = ctx.require_service("pages")
         pages.register(

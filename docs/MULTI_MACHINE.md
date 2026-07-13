@@ -4,10 +4,10 @@ This guide covers a minimal four-machine PA setup using **Tailscale** for connec
 
 | Machine | Role | Install | Track | Realm | Peers |
 |---------|------|---------|-------|-------|-------|
-| MacBook | Interactive owner | `install-remote.sh` | `release` | `personal` | Mac mini |
-| Mac mini | Always-on personal cards | `install-remote.sh` + fleet join | `release` | `personal` | MacBook |
+| MacBook | Interactive owner | local or wizard | `release` | `personal` | Mac mini |
+| Mac mini | Always-on personal cards | SSH push-install or join | `release` | `personal` | MacBook |
 | Linux dev | PA development | `./scripts/dev.sh` / Docker | n/a (source) | `dev` | none |
-| Linux staging | Validate in-dev builds | `install-remote.sh` | `beta` / `dev` | `staging` | none |
+| Linux staging | Validate in-dev builds | curl installer | `beta` / `dev` | `staging` | none |
 
 All inter-instance URLs use Tailscale hostnames (e.g. `http://macbook:8080`), not `127.0.0.1`.
 
@@ -20,19 +20,69 @@ See also: [DEPLOYMENT.md](DEPLOYMENT.md) for host vs dev separation.
 - [Tailscale](https://tailscale.com/) on all machines that sync
 - [uv](https://docs.astral.sh/uv/) (installer bootstraps if missing)
 - Python 3.14+ (uv can install: `uv python install 3.14`)
-- Choose a shared **sync token** for home fleet machines: `openssl rand -hex 32`
+- Owner has a reachable **`PA_INSTANCE_URL`** (Tailscale hostname) and binds with **`PA_HOST=0.0.0.0`**
+- A shared sync token is created automatically on first join/install if missing (or set `PA_SYNC_TOKEN` yourself)
 
 ---
 
-## 1. MacBook (fleet owner)
+## Preferred: Fleet wizard (owner UI)
 
-Install PA on the release track with the `personal` realm:
+On the owner instance open **Fleet** in the web UI (`/fleet`):
+
+1. **Readiness** — fix any warnings (instance URL, bind host). Generate a sync token if prompted.
+2. **Install via SSH** — enter `user@host`, advertised URL (`http://mini:8080`), optional one-shot password/passphrase (never stored), and start the job. Watch the live log until health checks pass.
+3. **Add existing** — mint a join token and run `pa fleet join` on the remote, or use “Join over SSH” when PA is already installed.
+4. Confirm the new instance shows **up** and peer routes appear for your realm.
+
+SSH passwords and key passphrases are used for that install only and are not persisted in config, job files, or logs.
+
+---
+
+## Preferred: CLI push-install from the owner
+
+On the owner (MacBook):
 
 ```bash
-export PA_SYNC_TOKEN="<your-secret>"
+# Ensure owner is reachable to peers
+# config.json should have instance_url like http://macbook:8080 and host 0.0.0.0
+
+pa fleet install-remote peter@mini \
+  --name mini \
+  --url http://mini:8080 \
+  --ask-password   # optional one-shot; omit if agent/keys work
+```
+
+This creates a join token on the live owner, SSHs to the remote, runs the install script with fleet/sync env, and verifies `/api/health`.
+
+Join an already-installed remote without reinstalling:
+
+```bash
+pa fleet install-remote peter@mini \
+  --name mini \
+  --url http://mini:8080 \
+  --join-only
+```
+
+Other CLI:
+
+```bash
+pa fleet join-token          # works while the server is running
+pa fleet list                # re-probes health
+pa fleet remove <instance-id>
+pa fleet register --url http://mini:8080 --name mini
+```
+
+---
+
+## 1. MacBook (fleet owner) — first install
+
+If the owner is not installed yet:
+
+```bash
+export PA_SYNC_TOKEN="$(openssl rand -hex 32)"   # optional; auto-created on join otherwise
 export PA_INSTANCE_NAME=macbook
 export PA_REALM=personal
-export PA_INSTANCE_URL=http://macbook:8080   # Tailscale hostname
+export PA_INSTANCE_URL=http://macbook:8080
 export PA_HOST=0.0.0.0
 
 curl -fsSL https://raw.githubusercontent.com/petersky/pa/main/scripts/install-remote.sh | bash
@@ -45,40 +95,49 @@ pa doctor
 pa status
 ```
 
-Generate a fleet join token for the Mac mini:
+Join tokens (server-aware):
 
 ```bash
 pa fleet join-token
 ```
 
-Note the token and your owner URL (`http://macbook:8080`).
-
-After Mac mini is installed, add it as a peer on MacBook. Either set in `~/.pa/config.json`:
-
-```json
-"peers": ["http://mini:8080"]
-```
-
-Or export `PA_PEERS=http://mini:8080` and re-run `pa install --service-only`.
+After a remote joins, the owner automatically adds peer routes, persists the remote URL in `peers`, and ensures a sync token exists — no manual `PA_PEERS` step is required for sync. You can still set peers explicitly if you prefer.
 
 ---
 
 ## 2. Mac mini (fleet joiner)
 
-Install and join the MacBook fleet:
+### Option A — from the owner (recommended)
+
+Use the Fleet wizard **Install via SSH** or `pa fleet install-remote` above.
+
+### Option B — curl installer on the remote
 
 ```bash
-export PA_SYNC_TOKEN="<same-secret-as-macbook>"
+export PA_SYNC_TOKEN="<same-as-owner-or-omit-if-joining>"
 export PA_INSTANCE_NAME=mini
 export PA_REALM=personal
 export PA_INSTANCE_URL=http://mini:8080
 export PA_FLEET_OWNER_URL=http://macbook:8080
-export PA_FLEET_TOKEN="<token-from-macbook>"
+export PA_FLEET_TOKEN="<token-from-owner>"
 export PA_PEERS=http://macbook:8080
 export PA_HOST=0.0.0.0
 
 curl -fsSL https://raw.githubusercontent.com/petersky/pa/main/scripts/install-remote.sh | bash
 ```
+
+### Option C — PA already running on the remote
+
+On the owner: `pa fleet join-token`
+
+On the remote:
+
+```bash
+PA_FLEET_OWNER_URL=http://macbook:8080 pa fleet join <token> \
+  --url http://mini:8080 --name mini
+```
+
+Join persists `fleet_id`, owner URL, peers, realms, and sync token, then refreshes the service env automatically.
 
 Verify sync:
 
@@ -89,14 +148,6 @@ pa sync status --realm personal
 ```
 
 Create a card on MacBook → confirm it appears on Mac mini (may take a few seconds).
-
-Manual join if installer join failed:
-
-```bash
-PA_FLEET_OWNER_URL=http://macbook:8080 pa fleet join <token> \
-  --url http://mini:8080 --name mini
-pa install --service-only
-```
 
 ---
 
@@ -170,8 +221,8 @@ Channel pointers live in [`channels.json`](../channels.json) on `main`; CI updat
 | `PA_INSTANCE_URL` | Tailscale URL for this instance |
 | `PA_FLEET_OWNER_URL` | Owner URL when joining fleet |
 | `PA_FLEET_TOKEN` | One-time join token |
-| `PA_SYNC_TOKEN` | Shared secret for inter-instance API |
-| `PA_PEERS` | Comma-separated peer URLs |
+| `PA_SYNC_TOKEN` | Shared secret for inter-instance API (auto-created on join if missing) |
+| `PA_PEERS` | Comma-separated peer URLs (also updated automatically on join) |
 | `PA_REALM` / `PA_SUBSCRIBED_REALMS` | Sync namespace |
 | `PA_HOST` | Bind address (`0.0.0.0` for Tailscale) |
 | `PA_CHANNEL` / `PA_RELEASE_TRACK` | Release track |
@@ -192,9 +243,10 @@ pa sync status --realm personal
 
 | Problem | Fix |
 |---------|-----|
-| Fleet join fails | Ensure owner is running; retry `pa fleet join` with `PA_FLEET_OWNER_URL` |
-| Peers unreachable | Confirm Tailscale; use `http://hostname:port` not localhost |
-| Sync not working | Same `PA_SYNC_TOKEN`, same realm, bidirectional `PA_PEERS` |
+| Fleet join fails | Ensure owner is running; retry `pa fleet join` / wizard. Tokens from CLI work with a live server. |
+| SSH install auth failed | Use agent/keys, `--identity`, or `--ask-password` (one-shot, not stored) |
+| Peers unreachable | Confirm Tailscale; use `http://hostname:port` not localhost; set `PA_HOST=0.0.0.0` |
+| Sync not working | Same sync token (join sets this), same realm, check Fleet readiness warnings |
 | Linux service won't start | `systemctl --user status pa-server`; check `loginctl enable-linger` |
 | Wrong update track | `pa update --channel beta`; check `config.json` `release_track` |
 

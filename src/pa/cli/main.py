@@ -581,32 +581,97 @@ def user_set_password(
     typer.echo(f"Password updated for {user.username}")
 
 
+def _fleet_api_base(settings: Settings) -> str:
+    host = settings.host if settings.host not in ("0.0.0.0", "::") else "127.0.0.1"
+    return f"http://{host}:{settings.port}"
+
+
+def _fleet_api_post(settings: Settings, path: str, body: dict | None = None) -> dict | None:
+    """POST to the local running server; return JSON or None if unreachable."""
+    import httpx
+
+    from pa.auth.csrf import COOKIE_NAME, HEADER_NAME
+
+    base = _fleet_api_base(settings)
+    try:
+        with httpx.Client(timeout=5.0) as client:
+            client.get(f"{base}/api/health")
+            headers = {"Content-Type": "application/json", "Accept": "application/json"}
+            token = client.cookies.get(COOKIE_NAME)
+            if token:
+                headers[HEADER_NAME] = token
+            if settings.sync_token:
+                headers["Authorization"] = f"Bearer {settings.sync_token}"
+            resp = client.post(f"{base}{path}", json=body or {}, headers=headers)
+            if resp.status_code >= 400:
+                return None
+            return resp.json()
+    except httpx.HTTPError:
+        return None
+
+
 @fleet_app.command("list")
 def fleet_list() -> None:
-    """List instances in this fleet."""
+    """List instances in this fleet (re-probes health)."""
+    import httpx
+
     from pa.fleet.registry import FleetRegistry
 
     settings = get_settings()
     fleet = FleetRegistry(settings.data_dir, settings.fleet_id)
     for inst in fleet.list_instances():
-        status = "up" if inst.healthy else "down"
+        healthy = False
+        try:
+            with httpx.Client(timeout=5.0) as client:
+                resp = client.get(f"{inst.url.rstrip('/')}/api/health")
+                healthy = resp.status_code == 200
+        except httpx.HTTPError:
+            pass
+        inst.healthy = healthy
+        fleet.upsert_instance(inst)
+        status = "up" if healthy else "down"
         typer.echo(f"  {inst.name:<16} {inst.url:<30} zone={inst.zone} [{status}]")
 
 
 @fleet_app.command("join-token")
 def fleet_join_token() -> None:
     """Generate a one-time token to add an instance to this fleet."""
+    from pa.fleet.join import ensure_sync_token, owner_public_url, readiness_warnings
     from pa.fleet.registry import FleetRegistry
 
     settings = get_settings()
-    fleet = FleetRegistry(settings.data_dir, settings.fleet_id)
-    join = fleet.create_join_token()
-    typer.echo(f"Token: {join.token}")
-    typer.echo(f"Expires: {join.expires_at.isoformat()}")
-    owner = settings.instance_url or f"http://{settings.host}:{settings.port}"
-    typer.echo(f"Remote install:")
-    typer.echo(f"  PA_FLEET_OWNER_URL={owner} PA_FLEET_TOKEN={join.token} \\")
-    typer.echo(f"  PA_INSTANCE_URL=http://<remote-host>:8080 curl .../install-remote.sh | bash")
+    for warning in readiness_warnings(settings):
+        typer.echo(f"warning: {warning}", err=True)
+
+    ensure_sync_token(settings)
+    data = _fleet_api_post(settings, "/api/fleet/join-token")
+    if data and data.get("token"):
+        token = data["token"]
+        expires = data.get("expires_at", "")
+        owner = data.get("owner_url") or owner_public_url(settings)
+        typer.echo(f"Token: {token}")
+        if expires:
+            typer.echo(f"Expires: {expires}")
+        typer.echo("(created via running server)")
+    else:
+        fleet = FleetRegistry(settings.data_dir, settings.fleet_id)
+        join = fleet.create_join_token()
+        token = join.token
+        owner = owner_public_url(settings)
+        typer.echo(f"Token: {token}")
+        typer.echo(f"Expires: {join.expires_at.isoformat()}")
+        typer.echo("(server unreachable — wrote token to disk; live server will reload it)")
+
+    typer.echo(f"Owner URL: {owner}")
+    typer.echo("Join on remote:")
+    typer.echo(
+        f"  PA_FLEET_OWNER_URL={owner} pa fleet join {token} "
+        f"--url http://<remote-host>:8080 --name <remote-name>"
+    )
+    typer.echo("Or push-install from this host:")
+    typer.echo(
+        f"  pa fleet install-remote user@host --name <name> --url http://<host>:8080"
+    )
 
 
 @fleet_app.command("join")
@@ -623,7 +688,8 @@ def fleet_join(
     import httpx
 
     from pa.domain.instance_config import load_instance_config
-    from pa.fleet.join import apply_join_response, join_fleet
+    from pa.fleet.join import apply_join_response, join_fleet, refresh_service_env
+    from pa.config import reset_settings as _reset
 
     settings = get_settings()
     config = load_instance_config(settings.data_dir)
@@ -662,10 +728,179 @@ def fleet_join(
         fleet_id=result["fleet_id"],
         owner_url=result.get("owner_url", owner_url),
         subscribed_realms=result.get("subscribed_realms"),
+        sync_token=result.get("sync_token"),
+        peers=result.get("peers"),
     )
+    _reset()
+    settings = get_settings()
+    if refresh_service_env(settings):
+        typer.echo("Service env refreshed.")
     typer.echo(f"Joined fleet {result['fleet_id']}")
     typer.echo(f"  Owner: {result.get('owner_url', owner_url)}")
-    typer.echo("Re-run pa install --service-only to refresh service env.")
+
+
+@fleet_app.command("remove")
+def fleet_remove(
+    instance_id: Annotated[str, typer.Argument(help="Fleet instance ID to remove")],
+) -> None:
+    """Remove an instance from the local fleet registry and peer routes."""
+    import httpx
+
+    from pa.auth.csrf import COOKIE_NAME, HEADER_NAME
+    from pa.fleet.join import remove_peer_url, unwire_instance_peers
+    from pa.fleet.registry import FleetRegistry
+    from pa.network.peer_table import PeerTable
+
+    settings = get_settings()
+    if instance_id == settings.instance_id:
+        typer.echo("Cannot remove the local instance.", err=True)
+        raise typer.Exit(1)
+
+    base = _fleet_api_base(settings)
+    try:
+        with httpx.Client(timeout=5.0) as client:
+            client.get(f"{base}/api/health")
+            headers: dict[str, str] = {"Accept": "application/json"}
+            csrf = client.cookies.get(COOKIE_NAME)
+            if csrf:
+                headers[HEADER_NAME] = csrf
+            if settings.sync_token:
+                headers["Authorization"] = f"Bearer {settings.sync_token}"
+            resp = client.delete(f"{base}/api/fleet/instances/{instance_id}", headers=headers)
+            if resp.status_code < 400:
+                typer.echo(f"Removed {instance_id}")
+                return
+    except httpx.HTTPError:
+        pass
+
+    fleet = FleetRegistry(settings.data_dir, settings.fleet_id)
+    inst = fleet.get_instance(instance_id)
+    if not inst:
+        typer.echo(f"Instance not found: {instance_id}", err=True)
+        raise typer.Exit(1)
+    peer_table = PeerTable(settings.data_dir)
+    unwire_instance_peers(peer_table, instance_id=instance_id, url=inst.url)
+    remove_peer_url(settings, inst.url)
+    fleet.remove_instance(instance_id)
+    typer.echo(f"Removed {instance_id}")
+
+
+@fleet_app.command("register")
+def fleet_register(
+    url: Annotated[str, typer.Option(help="Remote instance URL")],
+    name: Annotated[str, typer.Option(help="Instance name")] = "remote",
+    instance_id: Annotated[str | None, typer.Option("--id", help="Instance ID")] = None,
+    zone: Annotated[str, typer.Option(help="Zone")] = "default",
+) -> None:
+    """Manually register a remote instance (no join token)."""
+    from uuid import uuid4
+
+    from pa.fleet.join import register_joiner_on_owner
+    from pa.fleet.registry import FleetRegistry
+    from pa.network.peer_table import PeerTable
+
+    settings = get_settings()
+    body = {
+        "instance_id": instance_id or str(uuid4()),
+        "name": name,
+        "url": url.rstrip("/"),
+        "zone": zone,
+        "capabilities": [],
+    }
+    data = _fleet_api_post(settings, "/api/fleet/register-remote", body)
+    if data:
+        typer.echo(f"Registered {data.get('name')} ({data.get('instance_id')}) via server")
+        return
+
+    fleet = FleetRegistry(settings.data_dir, settings.fleet_id)
+    peer_table = PeerTable(settings.data_dir)
+    inst, _ = register_joiner_on_owner(
+        fleet,
+        peer_table,
+        settings,
+        joiner_id=body["instance_id"],
+        name=name,
+        url=url,
+        zone=zone,
+        realms=list(settings.subscribed_realms),
+    )
+    typer.echo(f"Registered {inst.name} ({inst.instance_id})")
+
+
+@fleet_app.command("install-remote")
+def fleet_install_remote(
+    target: Annotated[str, typer.Argument(help="SSH target user@host")],
+    name: Annotated[str, typer.Option(help="Remote instance name")],
+    url: Annotated[str, typer.Option(help="Remote advertised URL (Tailscale)")],
+    port: Annotated[int, typer.Option(help="SSH port")] = 22,
+    identity: Annotated[str | None, typer.Option("--identity", "-i", help="SSH identity file")] = None,
+    password: Annotated[
+        bool,
+        typer.Option("--ask-password", help="Prompt for SSH password (not stored)"),
+    ] = False,
+    passphrase: Annotated[
+        bool,
+        typer.Option("--ask-passphrase", help="Prompt for key passphrase (not stored)"),
+    ] = False,
+    channel: Annotated[str, typer.Option(help="Release track")] = "release",
+    realm: Annotated[str, typer.Option(help="Realm to subscribe")] = "",
+    join_only: Annotated[
+        bool,
+        typer.Option("--join-only", help="Only run fleet join on an existing install"),
+    ] = False,
+) -> None:
+    """Push-install PA on a remote host over SSH and join this fleet."""
+    import asyncio
+    import getpass
+
+    from pa.fleet.join import readiness_warnings
+    from pa.fleet.registry import FleetRegistry
+    from pa.fleet.remote_install import (
+        RemoteInstallRequest,
+        get_job_store,
+        run_install_job,
+    )
+
+    settings = get_settings()
+    for warning in readiness_warnings(settings):
+        typer.echo(f"warning: {warning}", err=True)
+
+    if "@" in target:
+        user, host = target.split("@", 1)
+    else:
+        typer.echo("Target must be user@host", err=True)
+        raise typer.Exit(1)
+
+    pw = getpass.getpass("SSH password: ") if password else ""
+    pp = getpass.getpass("Key passphrase: ") if passphrase else ""
+
+    req = RemoteInstallRequest(
+        host=host,
+        user=user,
+        port=port,
+        identity_file=identity or "",
+        password=pw,
+        passphrase=pp,
+        instance_name=name,
+        instance_url=url,
+        channel=channel,
+        realm=realm,
+        join_only=join_only,
+    )
+    fleet = FleetRegistry(settings.data_dir, settings.fleet_id)
+    store = get_job_store(settings)
+    job = store.create(req)
+
+    async def _run():
+        return await run_install_job(settings, fleet, store, job, req)
+
+    result = asyncio.run(_run())
+    for line in result.log_lines:
+        typer.echo(line)
+    if result.status.value != "succeeded":
+        typer.echo(result.error or "Remote install failed", err=True)
+        raise typer.Exit(1)
+    typer.echo(f"OK — {name} at {url}")
 
 
 @realm_app.command("list")

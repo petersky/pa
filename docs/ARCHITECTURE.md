@@ -121,7 +121,11 @@ Configure with:
 - `PA_SYNC_TOKEN` — bearer token for instance-to-instance auth (T1)
 - `PA_PEERS` — comma-separated peer URLs
 
-CLI: `pa fleet list`, `pa realm list`, `pa peers`, `pa sync status`, `pa login`
+CLI: `pa fleet list`, `pa fleet join-token`, `pa fleet join`, `pa fleet install-remote`, `pa fleet remove`, `pa realm list`, `pa peers`, `pa sync status`, `pa login`
+
+Web UI: `/fleet` guided wizard (SSH push-install, join tokens, register/remove, realm invites).
+
+See [MULTI_MACHINE.md](MULTI_MACHINE.md) for Tailscale fleet onboarding.
 
 ## Projects
 

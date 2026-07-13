@@ -1,73 +1,181 @@
 {% from "macros/layout.html" import page_layout %}
 
 {% set main %}
-<div class="panel">
+<div class="panel" id="pa-fleet-root"
+     data-owner-url="{{ owner_url }}"
+     data-local-id="{{ settings.instance_id }}"
+     data-primary-realm="{{ primary_realm }}">
   <div class="panel-header">
     <h2>Fleet — {{ fleet_id }}</h2>
-    <button class="ghost" hx-get="/fleet" hx-target="#app-view" hx-push-url="true" hx-swap="innerHTML">Refresh health</button>
+    <button class="ghost" type="button" id="pa-fleet-refresh"
+            hx-get="/fleet" hx-target="#app-view" hx-push-url="true" hx-swap="innerHTML">Refresh</button>
   </div>
-  <p class="muted">Zone: {{ zone }} · Manage instances from this UI or via <code>pa fleet</code>.</p>
+  <p class="muted">Zone: {{ zone }} · Owner URL: <code>{{ owner_url }}</code></p>
 
-  <h3>Instances</h3>
-  {% if fleet_instances %}
-  <table class="data-table">
-    <thead>
-      <tr><th>Name</th><th>URL</th><th>Zone</th><th>Capabilities</th><th>ACP providers</th><th>Status</th></tr>
-    </thead>
-    <tbody>
-      {% for inst in fleet_instances %}
-      <tr>
-        <td>{{ inst.name }}</td>
-        <td><a href="{{ inst.url }}" target="_blank">{{ inst.url }}</a></td>
-        <td>{{ inst.zone }}</td>
-        <td>{{ inst.capabilities | join(', ') }}</td>
-        <td>
-          {% set providers = provider_status.get(inst.instance_id, []) %}
-          {% if providers %}
-            {% for p in providers %}
-              <span class="badge" title="{{ p.id }}">{{ p.display_name or p.id }}{% if p.available %} ✓{% else %} ·{% endif %}</span>
-            {% endfor %}
-          {% else %}
-            <span class="muted">—</span>
-          {% endif %}
-        </td>
-        <td>{% if inst.healthy %}<span class="status status-active">up</span>{% else %}<span class="status status-blocked">down</span>{% endif %}</td>
-      </tr>
+  <section class="stack" id="pa-fleet-readiness">
+    <h3>Readiness</h3>
+    {% if readiness_warnings %}
+    <ul class="item-list">
+      {% for w in readiness_warnings %}
+      <li class="item"><span class="status status-blocked">!</span> {{ w }}</li>
       {% endfor %}
-    </tbody>
-  </table>
-  <p class="muted small">Manage providers: <code>pa agent-provider status --instance &lt;id&gt;</code> or MCP <code>agent_provider_*</code> tools.</p>
-  {% else %}
-  <p class="empty">No fleet instances registered.</p>
-  {% endif %}
+    </ul>
+    {% else %}
+    <p class="muted">Ready for fleet join and sync.</p>
+    {% endif %}
+    <div class="form-actions">
+      {% if not has_sync_token %}
+      <button type="button" class="primary" id="pa-fleet-ensure-token">Generate sync token</button>
+      {% else %}
+      <span class="badge badge-ok">Sync token set</span>
+      {% endif %}
+      <span class="muted small" id="pa-fleet-readiness-status"></span>
+    </div>
+  </section>
 
-  <h3>Realms</h3>
-  <ul class="item-list">
-    {% for realm in realms %}
-    <li class="item"><h3>{{ realm.name or realm.id }}</h3><span class="badge">{{ realm.id }}</span></li>
-    {% endfor %}
-  </ul>
+  <section class="stack" style="margin-top:1.5rem">
+    <h3>Add a machine</h3>
+    <div class="form-actions" id="pa-fleet-path-tabs">
+      <button type="button" class="ghost active" data-fleet-path="ssh">Install via SSH</button>
+      <button type="button" class="ghost" data-fleet-path="existing">Add existing</button>
+      <button type="button" class="ghost" data-fleet-path="advanced">Advanced</button>
+    </div>
 
-  <h3>Peer routes</h3>
-  {% if peer_routes %}
-  <ul class="item-list">
-    {% for route in peer_routes %}
-    <li class="item">
-      <span class="badge">{{ route.realm_id }}</span>
-      {{ route.target_url }}
-      <span class="muted">({{ route.mode.value }}{% if route.zone %}, {{ route.zone }}{% endif %})</span>
-    </li>
-    {% endfor %}
-  </ul>
-  {% else %}
-  <p class="muted">Configure <code>PA_PEERS</code> or register remote instances.</p>
-  {% endif %}
+    <div class="stack" data-fleet-panel="ssh">
+      <p class="muted">Push-install PA on a remote host and join this fleet. Passwords are used once and never stored.</p>
+      <form class="stack" id="pa-fleet-ssh-form">
+        <label>SSH host <input name="host" required placeholder="mini.tailnet.ts.net"></label>
+        <label>SSH user <input name="user" required placeholder="{{ settings.instance_name }}"></label>
+        <label>SSH port <input name="port" type="number" value="22"></label>
+        <label>Identity file (optional) <input name="identity_file" placeholder="~/.ssh/id_ed25519"></label>
+        <label>SSH password (optional, one-shot) <input name="password" type="password" autocomplete="off"></label>
+        <label>Key passphrase (optional, one-shot) <input name="passphrase" type="password" autocomplete="off"></label>
+        <label>Instance name <input name="instance_name" required placeholder="mini"></label>
+        <label>Advertised URL <input name="instance_url" required placeholder="http://mini:8080"></label>
+        <label>Channel
+          <select name="channel">
+            <option value="release" selected>release</option>
+            <option value="beta">beta</option>
+            <option value="dev">dev</option>
+          </select>
+        </label>
+        <label>Realm <input name="realm" value="{{ primary_realm }}"></label>
+        <div class="form-actions">
+          <button type="submit" class="primary">Install &amp; join</button>
+        </div>
+      </form>
+      <pre class="panel-inset" id="pa-fleet-ssh-log" hidden></pre>
+      <p class="muted small" id="pa-fleet-ssh-status"></p>
+    </div>
 
-  <h3>Add instance</h3>
-  <p class="muted">Generate a join token: <code>pa fleet join-token</code>, then on the remote host (Tailscale):</p>
-  <pre>PA_FLEET_OWNER_URL={{ settings.instance_url or ('http://' ~ settings.host ~ ':' ~ settings.port) }} \
-PA_FLEET_TOKEN=&lt;token&gt; PA_INSTANCE_URL=http://mini:8080 \
-curl -fsSL https://raw.githubusercontent.com/petersky/pa/main/scripts/install-remote.sh | bash</pre>
+    <div class="stack" data-fleet-panel="existing" hidden>
+      <p class="muted">Generate a join token for a host that already has PA running, or run join over SSH.</p>
+      <div class="form-actions">
+        <button type="button" class="primary" id="pa-fleet-mint-token">Generate join token</button>
+      </div>
+      <pre class="panel-inset" id="pa-fleet-token-out" hidden></pre>
+      <form class="stack" id="pa-fleet-ssh-join-form" style="margin-top:1rem">
+        <h4>Or run join over SSH</h4>
+        <label>SSH host <input name="host" required></label>
+        <label>SSH user <input name="user" required></label>
+        <label>SSH port <input name="port" type="number" value="22"></label>
+        <label>Identity file <input name="identity_file"></label>
+        <label>SSH password (one-shot) <input name="password" type="password" autocomplete="off"></label>
+        <label>Instance name <input name="instance_name" required></label>
+        <label>Advertised URL <input name="instance_url" required placeholder="http://mini:8080"></label>
+        <div class="form-actions">
+          <button type="submit" class="primary">Join over SSH</button>
+        </div>
+      </form>
+      <pre class="panel-inset" id="pa-fleet-ssh-join-log" hidden></pre>
+    </div>
+
+    <div class="stack" data-fleet-panel="advanced" hidden>
+      <p class="muted">Manually register a peer without a join token (advanced).</p>
+      <form class="stack" id="pa-fleet-register-form">
+        <label>Name <input name="name" required placeholder="mini"></label>
+        <label>URL <input name="url" required placeholder="http://mini:8080"></label>
+        <label>Instance ID (optional) <input name="instance_id" placeholder="auto-generated"></label>
+        <label>Zone <input name="zone" value="{{ zone }}"></label>
+        <div class="form-actions">
+          <button type="submit" class="primary">Register remote</button>
+        </div>
+      </form>
+      <p class="muted small" id="pa-fleet-register-status"></p>
+    </div>
+  </section>
+
+  <section style="margin-top:1.5rem">
+    <h3>Instances</h3>
+    {% if fleet_instances %}
+    <table class="data-table">
+      <thead>
+        <tr><th>Name</th><th>URL</th><th>Zone</th><th>Capabilities</th><th>ACP providers</th><th>Status</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for inst in fleet_instances %}
+        <tr>
+          <td>{{ inst.name }}</td>
+          <td><a href="{{ inst.url }}" target="_blank" rel="noopener">{{ inst.url }}</a></td>
+          <td>{{ inst.zone }}</td>
+          <td>{{ inst.capabilities | join(', ') }}</td>
+          <td>
+            {% set providers = provider_status.get(inst.instance_id, []) %}
+            {% if providers %}
+              {% for p in providers %}
+                <span class="badge" title="{{ p.id }}">{{ p.display_name or p.id }}{% if p.available %} ✓{% else %} ·{% endif %}</span>
+              {% endfor %}
+            {% else %}
+              <span class="muted">—</span>
+            {% endif %}
+          </td>
+          <td>{% if inst.healthy %}<span class="status status-active">up</span>{% else %}<span class="status status-blocked">down</span>{% endif %}</td>
+          <td>
+            {% if inst.instance_id != settings.instance_id %}
+            <button type="button" class="ghost danger small" data-fleet-remove="{{ inst.instance_id }}">Remove</button>
+            {% else %}
+            <span class="muted small">local</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="empty">No fleet instances registered.</p>
+    {% endif %}
+  </section>
+
+  <section style="margin-top:1.5rem">
+    <h3>Realms</h3>
+    <ul class="item-list">
+      {% for realm in realms %}
+      <li class="item">
+        <h3>{{ realm.name or realm.id }}</h3>
+        <span class="badge">{{ realm.id }}</span>
+        <button type="button" class="ghost small" data-fleet-invite="{{ realm.id }}">Invite</button>
+      </li>
+      {% endfor %}
+    </ul>
+    <pre class="panel-inset" id="pa-fleet-invite-out" hidden></pre>
+  </section>
+
+  <section style="margin-top:1.5rem">
+    <h3>Peer routes</h3>
+    {% if peer_routes %}
+    <ul class="item-list">
+      {% for route in peer_routes %}
+      <li class="item">
+        <span class="badge">{{ route.realm_id }}</span>
+        {{ route.target_url }}
+        <span class="muted">({{ route.mode.value }}{% if route.zone %}, {{ route.zone }}{% endif %})</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted">No peer routes yet — join or register a remote instance.</p>
+    {% endif %}
+  </section>
 </div>
 {% endset %}
 
