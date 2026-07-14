@@ -215,15 +215,16 @@ def start(
     """Start the PA host service (launchd or systemd)."""
     from pa.cli import service as svc
     from pa.cli.acp_lifecycle import mark_no_resume
+    from pa.cli.startup import print_service_ready
 
     settings = get_settings()
     if no_acp_resume:
         mark_no_resume(settings)
     try:
         svc.start(settings)
-        typer.echo("PA service started.")
+        print_service_ready(settings, action="started")
         if no_acp_resume:
-            typer.echo("ACP resume disabled for this start.")
+            typer.echo("  ACP:         resume disabled for this start")
     except RuntimeError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(1) from exc
@@ -270,6 +271,7 @@ def restart_cmd(
     """Restart the PA host service."""
     from pa.cli import service as svc
     from pa.cli.acp_lifecycle import mark_no_resume, quiesce_running_agent
+    from pa.cli.startup import print_service_ready
     from pa.instance.quiesce import request_skip_quiesce
 
     settings = get_settings()
@@ -283,9 +285,9 @@ def restart_cmd(
         mark_no_resume(settings)
     try:
         svc.restart(settings)
-        typer.echo("PA service restarted.")
+        print_service_ready(settings, action="restarted")
         if no_acp_resume:
-            typer.echo("ACP resume disabled for this restart.")
+            typer.echo("  ACP:         resume disabled for this restart")
     except RuntimeError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(1) from exc
