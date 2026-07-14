@@ -211,7 +211,9 @@
 
   document.addEventListener("submit", function (e) {
     var form = e.target;
-    if (!form || !form.id) return;
+    if (!form) return;
+    // Allow forms identified by id or data-fleet-fix (inline readiness fixes).
+    if (!form.id && !form.getAttribute("data-fleet-fix")) return;
 
     if (form.id === "pa-fleet-ssh-form") {
       e.preventDefault();
@@ -267,11 +269,18 @@
       return;
     }
 
-    if (form.id === "pa-fleet-readiness-form" || form.getAttribute("data-fleet-fix") === "instance_url") {
+    if (
+      form.id === "pa-fleet-readiness-form" ||
+      form.id === "pa-fleet-fix-instance-url" ||
+      form.getAttribute("data-fleet-fix") === "instance_url"
+    ) {
       e.preventDefault();
       var readyStatus = $("#pa-fleet-readiness-status");
       var readyBody = formToObject(form);
-      if (form.getAttribute("data-fleet-fix") === "instance_url") {
+      if (
+        form.id === "pa-fleet-fix-instance-url" ||
+        form.getAttribute("data-fleet-fix") === "instance_url"
+      ) {
         readyBody = { instance_url: readyBody.instance_url || "" };
       }
       if (readyStatus) readyStatus.textContent = "Saving…";

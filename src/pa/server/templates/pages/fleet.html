@@ -23,7 +23,7 @@
           <strong>{{ issue.message }}</strong>
           <p class="muted small" style="margin:0.35rem 0 0.5rem">{{ issue.fix }}</p>
           {% if issue.action == 'set_instance_url' %}
-          <form class="stack" data-fleet-fix="instance_url" style="max-width:28rem">
+          <form class="stack" id="pa-fleet-fix-instance-url" data-fleet-fix="instance_url" style="max-width:28rem">
             <label>Advertised URL
               <input name="instance_url" required
                      value="{{ settings.instance_url }}"
