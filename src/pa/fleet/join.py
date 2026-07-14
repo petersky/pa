@@ -25,30 +25,122 @@ def owner_public_url(settings: Settings) -> str:
     return f"http://{host}:{settings.port}"
 
 
-def readiness_warnings(settings: Settings) -> list[str]:
-    """Human-readable issues that block reliable fleet sync."""
-    warnings: list[str] = []
+def readiness_issues(settings: Settings) -> list[dict]:
+    """Structured readiness problems with fix hints and UI actions."""
+    issues: list[dict] = []
     url = (settings.instance_url or "").rstrip("/")
     if not url:
-        warnings.append(
-            "PA_INSTANCE_URL is not set — peers cannot reliably reach this host. "
-            "Set a Tailscale or LAN URL (e.g. http://macbook:8080)."
+        issues.append(
+            {
+                "id": "missing_instance_url",
+                "message": "Advertised URL is not set — peers cannot reliably reach this host.",
+                "fix": (
+                    "Set a Tailscale or LAN URL that other machines can open "
+                    "(e.g. http://macbook:8080). Use your Tailscale hostname, not localhost."
+                ),
+                "action": "set_instance_url",
+            }
         )
     else:
         parsed = urlparse(url)
         host = (parsed.hostname or "").lower()
         if host in ("127.0.0.1", "localhost", "::1"):
-            warnings.append(
-                f"instance_url is {url} (loopback) — remote peers cannot reach it. "
-                "Use a Tailscale or LAN hostname."
+            issues.append(
+                {
+                    "id": "loopback_instance_url",
+                    "message": f"Advertised URL is {url} (loopback) — remote peers cannot reach it.",
+                    "fix": (
+                        "Replace it with a Tailscale or LAN hostname URL "
+                        "(e.g. http://macbook:8080)."
+                    ),
+                    "action": "set_instance_url",
+                }
             )
     if settings.host in ("127.0.0.1", "localhost"):
-        warnings.append(
-            f"PA_HOST={settings.host} — bind 0.0.0.0 so peers can connect."
+        issues.append(
+            {
+                "id": "loopback_bind",
+                "message": f"Server is bound to {settings.host} — only this machine can connect.",
+                "fix": (
+                    "Bind to 0.0.0.0 so Tailscale/LAN peers can reach PA. "
+                    "Saving this updates config and restarts the service so the new bind takes effect."
+                ),
+                "action": "set_bind_all",
+            }
         )
     if not settings.sync_token:
-        warnings.append("No sync token yet — one will be generated on first join/install.")
-    return warnings
+        issues.append(
+            {
+                "id": "missing_sync_token",
+                "message": "No sync token yet — peers need a shared secret for sync APIs.",
+                "fix": "Generate a sync token here (or it will be created automatically on first join/install).",
+                "action": "ensure_sync_token",
+            }
+        )
+    return issues
+
+
+def readiness_warnings(settings: Settings) -> list[str]:
+    """Human-readable warning strings (CLI / legacy)."""
+    return [f"{i['message']} {i['fix']}" for i in readiness_issues(settings)]
+
+
+def apply_reachability_settings(
+    settings: Settings,
+    *,
+    instance_url: str | None = None,
+    host: str | None = None,
+) -> dict:
+    """Persist reachability settings and update in-memory Settings.
+
+    Returns ``{"restart_required": bool, "service_refreshed": bool}``.
+    """
+    updates: dict = {}
+    restart_required = False
+
+    if instance_url is not None:
+        url = instance_url.strip().rstrip("/")
+        if url:
+            parsed = urlparse(url)
+            if parsed.scheme not in ("http", "https") or not parsed.netloc:
+                raise ValueError("instance_url must be an http(s) URL like http://macbook:8080")
+            if (parsed.hostname or "").lower() in ("127.0.0.1", "localhost", "::1"):
+                raise ValueError(
+                    "instance_url cannot be localhost/127.0.0.1 — use a Tailscale or LAN hostname"
+                )
+        updates["instance_url"] = url
+        settings.instance_url = url
+
+    if host is not None:
+        bind = host.strip()
+        if not bind:
+            raise ValueError("host cannot be empty")
+        if bind.lower() in ("localhost",):
+            bind = "127.0.0.1"
+        allowed = {"0.0.0.0", "127.0.0.1", "::", "::1"}
+        # Allow hostname-like binds and IPv4/IPv6 literals; reject junk schemes.
+        if "://" in bind or " " in bind:
+            raise ValueError("host must be a bind address like 0.0.0.0 or 127.0.0.1")
+        if bind not in allowed and not all(c.isalnum() or c in ".-:[]" for c in bind):
+            raise ValueError(f"invalid bind host: {bind}")
+        if bind != settings.host:
+            restart_required = True
+        updates["host"] = bind
+        settings.host = bind
+
+    if updates:
+        update_instance_config(settings.data_dir, **updates)
+
+    service_refreshed = refresh_service_env(settings)
+    return {
+        "restart_required": restart_required,
+        "service_refreshed": service_refreshed,
+        "instance_url": settings.instance_url,
+        "host": settings.host,
+        "owner_url": owner_public_url(settings),
+        "warnings": readiness_warnings(settings),
+        "issues": readiness_issues(settings),
+    }
 
 
 def ensure_sync_token(settings: Settings) -> str:

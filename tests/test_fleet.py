@@ -11,8 +11,10 @@ from pa.config import Settings
 from pa.domain.instance_config import load_instance_config, update_instance_config
 from pa.fleet.join import (
     apply_join_response,
+    apply_reachability_settings,
     ensure_sync_token,
     owner_public_url,
+    readiness_issues,
     readiness_warnings,
     register_joiner_on_owner,
     remove_peer_url,
@@ -103,8 +105,40 @@ class FleetJoinWiringTests(unittest.TestCase):
             instance_url="http://127.0.0.1:8080",
             host="127.0.0.1",
         )
+        issues = readiness_issues(settings)
+        ids = {i["id"] for i in issues}
+        self.assertIn("loopback_instance_url", ids)
+        self.assertIn("loopback_bind", ids)
+        for issue in issues:
+            self.assertTrue(issue["fix"])
+            self.assertIn(issue["action"], {"set_instance_url", "set_bind_all", "ensure_sync_token"})
         warnings = readiness_warnings(settings)
         self.assertTrue(any("loopback" in w.lower() or "127.0.0.1" in w for w in warnings))
+
+    def test_apply_reachability_settings_persists(self) -> None:
+        settings = Settings(
+            data_dir=self.data_dir,
+            instance_url="",
+            host="127.0.0.1",
+        )
+        result = apply_reachability_settings(
+            settings,
+            instance_url="http://macbook:8080",
+            host="0.0.0.0",
+        )
+        self.assertEqual(settings.instance_url, "http://macbook:8080")
+        self.assertEqual(settings.host, "0.0.0.0")
+        self.assertTrue(result["restart_required"])
+        cfg = load_instance_config(self.data_dir)
+        self.assertEqual(cfg.instance_url, "http://macbook:8080")
+        self.assertEqual(cfg.host, "0.0.0.0")
+        self.assertFalse(any(i["id"] == "missing_instance_url" for i in readiness_issues(settings)))
+        self.assertFalse(any(i["id"] == "loopback_bind" for i in readiness_issues(settings)))
+
+    def test_apply_reachability_rejects_loopback_url(self) -> None:
+        settings = Settings(data_dir=self.data_dir, instance_url="", host="0.0.0.0")
+        with self.assertRaises(ValueError):
+            apply_reachability_settings(settings, instance_url="http://127.0.0.1:8080")
 
     def test_ensure_sync_token_persists(self) -> None:
         token = ensure_sync_token(self.settings)

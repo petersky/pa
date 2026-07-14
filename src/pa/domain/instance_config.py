@@ -19,6 +19,7 @@ class InstanceConfig(BaseModel):
     fleet_owner: str = "local"
     fleet_owner_url: str = ""
     instance_url: str = ""
+    host: str = ""
     subscribed_realms: list[str] = Field(default_factory=lambda: ["default"])
     zone: str = "default"
     capabilities: list[str] = Field(default_factory=list)
@@ -88,6 +89,8 @@ def merge_config_into_settings(data_dir: Path, settings_dict: dict) -> dict:
         "agent_command": loaded.agent_command,
         "agent_args": loaded.agent_args,
     }
+    if loaded.host:
+        mapping["host"] = loaded.host
     for key, value in mapping.items():
         if key not in settings_dict or settings_dict.get(key) in (None, "", []):
             settings_dict[key] = value

@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from pa.auth.middleware import get_principal_id, require_user
@@ -17,8 +17,10 @@ from pa.core.context import AppContext
 from pa.core.ui.pages import PageDefinition, PageRegistry
 from pa.domain.models import FleetInstance, RealmRole
 from pa.fleet.join import (
+    apply_reachability_settings,
     ensure_sync_token,
     owner_public_url,
+    readiness_issues,
     readiness_warnings,
     register_joiner_on_owner,
     remove_peer_url,
@@ -78,6 +80,7 @@ def _fleet_context(request: Request) -> dict:
         except httpx.HTTPError:
             provider_status[inst.instance_id] = []
     warnings = readiness_warnings(settings)
+    issues = readiness_issues(settings)
     return {
         "fleet_instances": fleet.list_instances(),
         "realms": membership.list_realms(),
@@ -89,6 +92,7 @@ def _fleet_context(request: Request) -> dict:
         "provider_status": provider_status,
         "owner_url": owner_public_url(settings),
         "readiness_warnings": warnings,
+        "readiness_issues": issues,
         "has_sync_token": bool(settings.sync_token),
         "primary_realm": settings.primary_realm
         if hasattr(settings, "primary_realm")
@@ -106,8 +110,73 @@ def fleet_readiness(request: Request) -> dict:
         "has_sync_token": bool(settings.sync_token),
         "host": settings.host,
         "warnings": readiness_warnings(settings),
+        "issues": readiness_issues(settings),
         "subscribed_realms": list(settings.subscribed_realms),
         "peers": list(settings.peers),
+    }
+
+
+@router.post("/fleet/readiness")
+async def fleet_update_readiness(
+    request: Request,
+    body: dict,
+    background_tasks: BackgroundTasks,
+) -> dict:
+    """Update advertised URL and/or bind host from the Fleet UI."""
+    require_user(request)
+    settings = request.app.state.ctx.settings
+    fleet: FleetRegistry = request.app.state.ctx.require_service("fleet_registry")
+
+    kwargs: dict = {}
+    if "instance_url" in body:
+        kwargs["instance_url"] = body.get("instance_url") or ""
+    if "host" in body:
+        kwargs["host"] = body.get("host")
+    if body.get("bind_all"):
+        kwargs["host"] = "0.0.0.0"
+
+    if not kwargs:
+        raise HTTPException(status_code=400, detail="Provide instance_url and/or host")
+
+    try:
+        result = apply_reachability_settings(settings, **kwargs)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    fleet.register_self(
+        settings.instance_id,
+        settings.instance_name,
+        owner_public_url(settings),
+        zone=settings.zone,
+        capabilities=list(settings.capabilities),
+        relay_enabled=settings.relay_enabled,
+    )
+
+    restart_started = False
+    if result["restart_required"]:
+
+        def _restart() -> None:
+            try:
+                from pa.cli import service as svc
+
+                svc.restart(settings)
+            except Exception:
+                pass
+
+        background_tasks.add_task(_restart)
+        restart_started = True
+
+    return {
+        "ok": True,
+        "restart_required": result["restart_required"],
+        "restart_started": restart_started,
+        "service_refreshed": result["service_refreshed"],
+        "instance_url": result["instance_url"],
+        "host": result["host"],
+        "owner_url": result["owner_url"],
+        "warnings": result["warnings"],
+        "issues": result["issues"],
+        "has_sync_token": bool(settings.sync_token),
     }
 
 

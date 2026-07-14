@@ -14,23 +14,67 @@
 
   <section class="stack" id="pa-fleet-readiness">
     <h3>Readiness</h3>
-    {% if readiness_warnings %}
-    <ul class="item-list">
-      {% for w in readiness_warnings %}
-      <li class="item"><span class="status status-blocked">!</span> {{ w }}</li>
+    {% if readiness_issues %}
+    <ul class="item-list" id="pa-fleet-issue-list">
+      {% for issue in readiness_issues %}
+      <li class="item" data-issue-id="{{ issue.id }}">
+        <div>
+          <span class="status status-blocked">!</span>
+          <strong>{{ issue.message }}</strong>
+          <p class="muted small" style="margin:0.35rem 0 0.5rem">{{ issue.fix }}</p>
+          {% if issue.action == 'set_instance_url' %}
+          <form class="stack" data-fleet-fix="instance_url" style="max-width:28rem">
+            <label>Advertised URL
+              <input name="instance_url" required
+                     value="{{ settings.instance_url }}"
+                     placeholder="http://macbook:8080">
+            </label>
+            <div class="form-actions">
+              <button type="submit" class="primary small">Save URL</button>
+            </div>
+          </form>
+          {% elif issue.action == 'set_bind_all' %}
+          <div class="form-actions">
+            <button type="button" class="primary small" data-fleet-fix-bind>Bind 0.0.0.0 &amp; restart</button>
+          </div>
+          {% elif issue.action == 'ensure_sync_token' %}
+          <div class="form-actions">
+            <button type="button" class="primary small" data-fleet-ensure-token>Generate sync token</button>
+          </div>
+          {% endif %}
+        </div>
+      </li>
       {% endfor %}
     </ul>
     {% else %}
     <p class="muted">Ready for fleet join and sync.</p>
     {% endif %}
-    <div class="form-actions">
-      {% if not has_sync_token %}
-      <button type="button" class="primary" id="pa-fleet-ensure-token">Generate sync token</button>
-      {% else %}
-      <span class="badge badge-ok">Sync token set</span>
-      {% endif %}
-      <span class="muted small" id="pa-fleet-readiness-status"></span>
-    </div>
+
+    <details class="panel-inset" {% if readiness_issues %}open{% endif %}>
+      <summary>Reachability settings</summary>
+      <form class="stack" id="pa-fleet-readiness-form" style="margin-top:0.75rem;max-width:28rem">
+        <label>Advertised URL (Tailscale/LAN)
+          <input name="instance_url" value="{{ settings.instance_url }}"
+                 placeholder="http://macbook:8080">
+        </label>
+        <label>Bind host
+          <select name="host">
+            <option value="0.0.0.0" {% if settings.host == '0.0.0.0' %}selected{% endif %}>0.0.0.0 (peers can connect)</option>
+            <option value="127.0.0.1" {% if settings.host in ('127.0.0.1', 'localhost') %}selected{% endif %}>127.0.0.1 (local only)</option>
+          </select>
+        </label>
+        <p class="muted small">Changing bind host rewrites the service unit and restarts PA so peers can connect.</p>
+        <div class="form-actions">
+          <button type="submit" class="primary">Save reachability</button>
+          {% if not has_sync_token and not readiness_issues %}
+          <button type="button" class="ghost" data-fleet-ensure-token>Generate sync token</button>
+          {% elif has_sync_token %}
+          <span class="badge badge-ok">Sync token set</span>
+          {% endif %}
+        </div>
+      </form>
+    </details>
+    <p class="muted small" id="pa-fleet-readiness-status"></p>
   </section>
 
   <section class="stack" style="margin-top:1.5rem">

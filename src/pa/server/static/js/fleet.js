@@ -110,16 +110,33 @@
       return;
     }
 
-    if (e.target.closest("#pa-fleet-ensure-token")) {
+    if (e.target.closest("[data-fleet-ensure-token]") || e.target.closest("#pa-fleet-ensure-token")) {
       var status = $("#pa-fleet-readiness-status");
       api("/api/fleet/ensure-sync-token", { method: "POST", body: {} })
         .then(function () {
           if (status) status.textContent = "Sync token ready.";
-          var btn = $("#pa-fleet-ensure-token");
-          if (btn) btn.hidden = true;
+          setTimeout(refreshFleetPage, 400);
         })
         .catch(function (err) {
           if (status) status.textContent = err.message;
+        });
+      return;
+    }
+
+    if (e.target.closest("[data-fleet-fix-bind]")) {
+      var bindStatus = $("#pa-fleet-readiness-status");
+      if (bindStatus) bindStatus.textContent = "Binding 0.0.0.0 and restarting…";
+      api("/api/fleet/readiness", { method: "POST", body: { bind_all: true } })
+        .then(function (data) {
+          if (bindStatus) {
+            bindStatus.textContent = data.restart_started
+              ? "Saved. Restarting service so peers can connect…"
+              : "Saved bind host 0.0.0.0. Restart PA if peers still cannot connect.";
+          }
+          setTimeout(refreshFleetPage, data.restart_started ? 2500 : 600);
+        })
+        .catch(function (err) {
+          if (bindStatus) bindStatus.textContent = err.message;
         });
       return;
     }
@@ -246,6 +263,31 @@
         })
         .catch(function (err) {
           if (regStatus) regStatus.textContent = err.message;
+        });
+      return;
+    }
+
+    if (form.id === "pa-fleet-readiness-form" || form.getAttribute("data-fleet-fix") === "instance_url") {
+      e.preventDefault();
+      var readyStatus = $("#pa-fleet-readiness-status");
+      var readyBody = formToObject(form);
+      if (form.getAttribute("data-fleet-fix") === "instance_url") {
+        readyBody = { instance_url: readyBody.instance_url || "" };
+      }
+      if (readyStatus) readyStatus.textContent = "Saving…";
+      api("/api/fleet/readiness", { method: "POST", body: readyBody })
+        .then(function (data) {
+          var msg = "Saved.";
+          if (data.restart_started) {
+            msg = "Saved. Restarting service so the new bind address takes effect…";
+          } else if (data.restart_required) {
+            msg = "Saved. Restart PA (pa restart) for the bind change to take effect.";
+          }
+          if (readyStatus) readyStatus.textContent = msg;
+          setTimeout(refreshFleetPage, data.restart_started ? 2500 : 600);
+        })
+        .catch(function (err) {
+          if (readyStatus) readyStatus.textContent = err.message;
         });
     }
   });
