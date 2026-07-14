@@ -73,10 +73,15 @@
   }
 
   function refreshFleetPage() {
+    var section = "";
+    try {
+      section = new URL(window.location.href).searchParams.get("section") || "";
+    } catch (e) {}
+    var url = "/fleet" + (section ? "?section=" + encodeURIComponent(section) : "");
     if (window.htmx) {
-      htmx.ajax("GET", "/fleet", { target: "#app-view", swap: "innerHTML", pushUrl: true });
+      htmx.ajax("GET", url, { target: "#app-view", swap: "innerHTML", pushUrl: true });
     } else {
-      location.reload();
+      location.href = url;
     }
   }
 
@@ -106,6 +111,12 @@
   }
 
   document.addEventListener("click", function (e) {
+    if (e.target.closest("#pa-fleet-refresh")) {
+      e.preventDefault();
+      refreshFleetPage();
+      return;
+    }
+
     var pathBtn = e.target.closest("[data-fleet-path]");
     if (pathBtn && $("#pa-fleet-root")) {
       showPanel(pathBtn.getAttribute("data-fleet-path"));

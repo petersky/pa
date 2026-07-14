@@ -1,33 +1,7 @@
 {% from "macros/layout.html" import page_layout %}
 {% from "macros/icons.html" import icon %}
 
-{% set main %}
-<div class="panel panel-fill page-agent-main">
-  {% if agent_enabled %}
-  {% with
-      session_id=session_id,
-      create_label='default',
-      show_model=true,
-      show_mode=true,
-      show_thinking=true,
-      show_system_prompts=false,
-      show_queue=true,
-      show_metrics=true,
-      compact=false
-  %}
-    {% include "partials/agent/chat-widget.html" %}
-  {% endwith %}
-  {% else %}
-  <div class="empty-state">
-    {{ icon('agent', 'icon icon-lg') }}
-    <h2>Agent disabled</h2>
-    <p class="muted">Enable the agent and restart PA to chat.</p>
-  </div>
-  {% endif %}
-</div>
-{% endset %}
-
-{% set right %}
+{% set left %}
 <div class="panel">
   <div class="panel-header">
     <h2>Sessions</h2>
@@ -62,4 +36,30 @@
 </div>
 {% endset %}
 
-{{ page_layout(main=main, right=right, class='page-agent') }}
+{% set main %}
+<div class="panel panel-fill page-agent-main">
+  {% if agent_enabled %}
+  {% with
+      session_id=session_id,
+      create_label='default',
+      show_model=true,
+      show_mode=true,
+      show_thinking=true,
+      show_system_prompts=false,
+      show_queue=true,
+      show_metrics=true,
+      compact=false
+  %}
+    {% include "partials/agent/chat-widget.html" %}
+  {% endwith %}
+  {% else %}
+  <div class="empty-state">
+    {{ icon('agent', 'icon icon-lg') }}
+    <h2>Agent disabled</h2>
+    <p class="muted">Enable the agent and restart PA to chat.</p>
+  </div>
+  {% endif %}
+</div>
+{% endset %}
+
+{{ page_layout(left=left, main=main, class='page-agent') }}

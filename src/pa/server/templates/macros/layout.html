@@ -1,7 +1,9 @@
 {# Three-column page layout: optional left sidebar, main panel, optional right sidebar #}
 
 {% macro page_layout(left=None, main=None, right=None, class='') %}
-<div class="page-layout {{ class }}">
+<div class="page-layout {{ class }}"
+     {% if left %}data-has-left="1"{% endif %}
+     {% if right %}data-has-right="1"{% endif %}>
   {% if left %}
   <aside class="page-sidebar page-sidebar-left">
     {{ left }}
@@ -11,11 +13,28 @@
     {{ main }}
   </section>
   {% if right %}
-  <aside class="page-sidebar page-sidebar-right">
+  <div class="sidebar-resize-handle"
+       data-resize-side="right"
+       role="separator"
+       aria-orientation="vertical"
+       aria-label="Resize right panel"
+       tabindex="0"></div>
+  <aside class="page-sidebar page-sidebar-right" data-resizable-sidebar="right">
     {{ right }}
   </aside>
   {% endif %}
 </div>
+{% endmacro %}
+
+{% macro section_nav(items, active='') %}
+{# items: list of (id, label) tuples #}
+<nav class="section-nav" aria-label="Page sections">
+  {% for sid, label in items %}
+  <button type="button"
+          class="section-nav-link{% if sid == active %} active{% endif %}"
+          data-section-link="{{ sid }}">{{ label }}</button>
+  {% endfor %}
+</nav>
 {% endmacro %}
 
 {% macro panel(title=None, class='') %}

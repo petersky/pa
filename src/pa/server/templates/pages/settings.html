@@ -1,157 +1,171 @@
-{% from "macros/layout.html" import page_layout %}
+{% from "macros/layout.html" import page_layout, section_nav %}
+
+{% set left %}
+<div class="panel">
+  <div class="panel-header"><h2>Settings</h2></div>
+  {{ section_nav([
+    ('appearance', 'Appearance'),
+    ('agent', 'Agent'),
+    ('instance', 'Instance'),
+  ], active='appearance') }}
+</div>
+{% endset %}
 
 {% set main %}
-<div class="panel">
-  <div class="panel-header"><h2>Appearance</h2></div>
-  <p class="muted">Use the theme icon in the header to cycle: system → light → dark.</p>
-  <dl class="settings-dl">
-    <dt>Current mode</dt>
-    <dd>{{ prefs.appearance.value }}</dd>
-    <dt>Theme</dt>
-    <dd>{{ prefs.theme_id }}</dd>
-  </dl>
-</div>
+<section data-section="appearance">
+  <div class="panel">
+    <div class="panel-header"><h2>Appearance</h2></div>
+    <p class="muted">Use the theme icon in the header to cycle: system → light → dark. Or pick a theme below.</p>
+    <dl class="settings-dl">
+      <dt>Current mode</dt>
+      <dd>{{ prefs.appearance.value }}</dd>
+      <dt>Theme</dt>
+      <dd>{{ prefs.theme_id }}</dd>
+    </dl>
+  </div>
+  <div class="panel">
+    <div class="panel-header"><h2>Themes</h2></div>
+    <ul class="theme-list theme-picker">
+      {% for t in themes %}
+      <li>
+        <button type="button"
+                class="theme-card{% if t.id == prefs.theme_id %} active{% endif %}"
+                data-theme-id="{{ t.id }}"
+                onclick="PATheme.setThemeId('{{ t.id }}', this)">
+          <strong>{{ t.name }}</strong>
+          <span class="muted">{{ t.description }}</span>
+        </button>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+</section>
 
-<div class="panel">
-  <div class="panel-header"><h2>Agent</h2></div>
-  <p class="muted">Permission prompts and default ACP provider. User preference overrides the instance default when set. Per-surface overrides apply to chat, card embeds, projects, and execution.</p>
-  <form class="stack settings-agent-prefs" id="pa-agent-prefs-form">
-    <label class="checkbox-row">
-      <input type="checkbox" name="user_auto_approve"
-             {% if prefs.agent_auto_approve_permissions %}checked{% endif %}>
-      <span>Auto-approve permissions for my account</span>
-    </label>
-    <label class="checkbox-row">
-      <input type="checkbox" name="global_auto_approve"
-             {% if global_prefs.agent_auto_approve_permissions %}checked{% endif %}>
-      <span>Instance default: auto-approve permissions</span>
-    </label>
-    <label>
-      <span>My ACP provider</span>
-      <select name="user_provider">
-        <option value="">Inherit instance default</option>
-        <option value="cursor" {% if prefs.agent_provider == 'cursor' %}selected{% endif %}>Cursor</option>
-        <option value="codex" {% if prefs.agent_provider == 'codex' %}selected{% endif %}>Codex</option>
-      </select>
-    </label>
-    <label>
-      <span>Instance default ACP provider</span>
-      <select name="global_provider">
-        <option value="">Use PA_AGENT_PROVIDER / config ({{ settings.agent_provider if settings is defined else 'cursor' }})</option>
-        <option value="cursor" {% if global_prefs.agent_provider == 'cursor' %}selected{% endif %}>Cursor</option>
-        <option value="codex" {% if global_prefs.agent_provider == 'codex' %}selected{% endif %}>Codex</option>
-      </select>
-    </label>
-    <fieldset class="stack">
-      <legend>Per-surface provider overrides (user)</legend>
-      {% set surfaces = [('chat.default', 'Default chat'), ('chat.card', 'Card embeds'), ('project', 'Projects'), ('execution', 'Execution router')] %}
-      {% for key, label in surfaces %}
+<section class="stack hidden" data-section="agent" hidden>
+  <div class="panel">
+    <div class="panel-header"><h2>Agent</h2></div>
+    <p class="muted">Permission prompts and default ACP provider. User preference overrides the instance default when set. Per-surface overrides apply to chat, card embeds, projects, and execution.</p>
+    <form class="stack settings-agent-prefs" id="pa-agent-prefs-form">
+      <label class="checkbox-row">
+        <input type="checkbox" name="user_auto_approve"
+               {% if prefs.agent_auto_approve_permissions %}checked{% endif %}>
+        <span>Auto-approve permissions for my account</span>
+      </label>
+      <label class="checkbox-row">
+        <input type="checkbox" name="global_auto_approve"
+               {% if global_prefs.agent_auto_approve_permissions %}checked{% endif %}>
+        <span>Instance default: auto-approve permissions</span>
+      </label>
       <label>
-        <span>{{ label }} ({{ key }})</span>
-        <select name="surface_{{ key | replace('.', '_') }}">
-          {% set cur = (prefs.agent_surfaces or {}).get(key) %}
-          {% set cur_p = cur.provider if cur else None %}
-          <option value="">Inherit</option>
-          <option value="cursor" {% if cur_p == 'cursor' %}selected{% endif %}>Cursor</option>
-          <option value="codex" {% if cur_p == 'codex' %}selected{% endif %}>Codex</option>
+        <span>My ACP provider</span>
+        <select name="user_provider">
+          <option value="">Inherit instance default</option>
+          <option value="cursor" {% if prefs.agent_provider == 'cursor' %}selected{% endif %}>Cursor</option>
+          <option value="codex" {% if prefs.agent_provider == 'codex' %}selected{% endif %}>Codex</option>
         </select>
       </label>
-      {% endfor %}
-    </fieldset>
-    <button type="submit" class="primary">Save agent preferences</button>
-    <p class="muted small" id="pa-agent-prefs-status" hidden></p>
-  </form>
-</div>
+      <label>
+        <span>Instance default ACP provider</span>
+        <select name="global_provider">
+          <option value="">Use PA_AGENT_PROVIDER / config ({{ settings.agent_provider if settings is defined else 'cursor' }})</option>
+          <option value="cursor" {% if global_prefs.agent_provider == 'cursor' %}selected{% endif %}>Cursor</option>
+          <option value="codex" {% if global_prefs.agent_provider == 'codex' %}selected{% endif %}>Codex</option>
+        </select>
+      </label>
+      <fieldset class="stack">
+        <legend>Per-surface provider overrides (user)</legend>
+        {% set surfaces = [('chat.default', 'Default chat'), ('chat.card', 'Card embeds'), ('project', 'Projects'), ('execution', 'Execution router')] %}
+        {% for key, label in surfaces %}
+        <label>
+          <span>{{ label }} ({{ key }})</span>
+          <select name="surface_{{ key | replace('.', '_') }}">
+            {% set cur = (prefs.agent_surfaces or {}).get(key) %}
+            {% set cur_p = cur.provider if cur else None %}
+            <option value="">Inherit</option>
+            <option value="cursor" {% if cur_p == 'cursor' %}selected{% endif %}>Cursor</option>
+            <option value="codex" {% if cur_p == 'codex' %}selected{% endif %}>Codex</option>
+          </select>
+        </label>
+        {% endfor %}
+      </fieldset>
+      <button type="submit" class="primary">Save agent preferences</button>
+      <p class="muted small" id="pa-agent-prefs-status" hidden></p>
+    </form>
+  </div>
+</section>
 
-<div class="panel">
-  <div class="panel-header"><h2>Instance</h2></div>
-  <dl class="settings-dl">
-    <dt>PA version</dt>
-    <dd>
-      {{ status.version }}
-      {% if status.installed_version and status.installed_version != status.version %}
-      <span class="muted">(installed {{ status.installed_version }} — restart service to apply)</span>
+<section class="hidden" data-section="instance" hidden>
+  <div class="panel">
+    <div class="panel-header"><h2>Instance</h2></div>
+    <dl class="settings-dl">
+      <dt>PA version</dt>
+      <dd>
+        {{ status.version }}
+        {% if status.installed_version and status.installed_version != status.version %}
+        <span class="muted">(installed {{ status.installed_version }} — restart service to apply)</span>
+        {% endif %}
+      </dd>
+      <dt>Name</dt>
+      <dd>{{ status.instance_name }}</dd>
+      <dt>Instance ID</dt>
+      <dd><code>{{ status.instance_id }}</code></dd>
+      <dt>Data directory</dt>
+      <dd><code>{{ status.data_dir }}</code></dd>
+      <dt>Server</dt>
+      <dd><code>{{ status.server_url }}</code></dd>
+      <dt>CLI binary</dt>
+      <dd><code>{{ status.binary or 'not found' }}</code></dd>
+      {% if status.service_binary and status.service_binary != status.binary %}
+      <dt>Service binary</dt>
+      <dd><code>{{ status.service_binary }}</code></dd>
       {% endif %}
-    </dd>
-    <dt>Name</dt>
-    <dd>{{ status.instance_name }}</dd>
-    <dt>Instance ID</dt>
-    <dd><code>{{ status.instance_id }}</code></dd>
-    <dt>Data directory</dt>
-    <dd><code>{{ status.data_dir }}</code></dd>
-    <dt>Server</dt>
-    <dd><code>{{ status.server_url }}</code></dd>
-    <dt>CLI binary</dt>
-    <dd><code>{{ status.binary or 'not found' }}</code></dd>
-    {% if status.service_binary and status.service_binary != status.binary %}
-    <dt>Service binary</dt>
-    <dd><code>{{ status.service_binary }}</code></dd>
-    {% endif %}
-    {% if status.installed_version %}
-    <dt>Installed</dt>
-    <dd>{{ status.installed_version }} ({{ status.install_method }})</dd>
-    {% if status.install_channel %}
-    <dt>Track</dt>
-    <dd>{{ status.install_channel }}</dd>
-    {% endif %}
-    {% endif %}
-    <dt>Update channel</dt>
-    <dd>{{ status.release_track }}</dd>
-    <dt>Service</dt>
-    <dd>
-      <span class="status status-{{ status.service.state }}">{{ status.service.state }}</span>
-      {% if status.service.backend != 'none' %}({{ status.service.backend }}){% endif %}
-    </dd>
-    {% if status.service.installed %}
-    <dt>Unit</dt>
-    <dd><code class="unit-path">{{ status.service.unit_path }}</code></dd>
-    {% endif %}
-    <dt>Debug</dt>
-    <dd>{{ 'on' if status.debug else 'off' }}</dd>
-    <dt>Agent</dt>
-    <dd>{{ 'enabled' if status.agent_enabled else 'disabled' }}</dd>
-    <dt>Fleet</dt>
-    <dd><code>{{ status.fleet_id }}</code></dd>
-    <dt>Realms</dt>
-    <dd>{{ status.realms | join(', ') }}</dd>
-    <dt>Zone</dt>
-    <dd>{{ status.zone }}</dd>
-    <dt>Peers</dt>
-    <dd>{{ status.peer_count }}</dd>
-    <dt>Modules</dt>
-    <dd>{{ status.module_count }}</dd>
-    <dt>Items</dt>
-    <dd>{{ status.item_count }}</dd>
-    <dt>Sessions</dt>
-    <dd>{{ status.session_count }}</dd>
-    <dt>Knowledge</dt>
-    <dd>{{ status.knowledge_count }} recent entries</dd>
-    <dt>Build</dt>
-    <dd><code>{{ status.build_id }}</code></dd>
-  </dl>
-</div>
+      {% if status.installed_version %}
+      <dt>Installed</dt>
+      <dd>{{ status.installed_version }} ({{ status.install_method }})</dd>
+      {% if status.install_channel %}
+      <dt>Track</dt>
+      <dd>{{ status.install_channel }}</dd>
+      {% endif %}
+      {% endif %}
+      <dt>Update channel</dt>
+      <dd>{{ status.release_track }}</dd>
+      <dt>Service</dt>
+      <dd>
+        <span class="status status-{{ status.service.state }}">{{ status.service.state }}</span>
+        {% if status.service.backend != 'none' %}({{ status.service.backend }}){% endif %}
+      </dd>
+      {% if status.service.installed %}
+      <dt>Unit</dt>
+      <dd><code class="unit-path">{{ status.service.unit_path }}</code></dd>
+      {% endif %}
+      <dt>Debug</dt>
+      <dd>{{ 'on' if status.debug else 'off' }}</dd>
+      <dt>Agent</dt>
+      <dd>{{ 'enabled' if status.agent_enabled else 'disabled' }}</dd>
+      <dt>Fleet</dt>
+      <dd><code>{{ status.fleet_id }}</code></dd>
+      <dt>Realms</dt>
+      <dd>{{ status.realms | join(', ') }}</dd>
+      <dt>Zone</dt>
+      <dd>{{ status.zone }}</dd>
+      <dt>Peers</dt>
+      <dd>{{ status.peer_count }}</dd>
+      <dt>Modules</dt>
+      <dd>{{ status.module_count }}</dd>
+      <dt>Items</dt>
+      <dd>{{ status.item_count }}</dd>
+      <dt>Sessions</dt>
+      <dd>{{ status.session_count }}</dd>
+      <dt>Knowledge</dt>
+      <dd>{{ status.knowledge_count }} recent entries</dd>
+      <dt>Build</dt>
+      <dd><code>{{ status.build_id }}</code></dd>
+    </dl>
+  </div>
+</section>
 {% endset %}
 
-{% set right %}
-<div class="panel">
-  <div class="panel-header"><h2>Themes</h2></div>
-  <ul class="theme-list theme-picker">
-    {% for t in themes %}
-    <li>
-      <button type="button"
-              class="theme-card{% if t.id == prefs.theme_id %} active{% endif %}"
-              data-theme-id="{{ t.id }}"
-              onclick="PATheme.setThemeId('{{ t.id }}', this)">
-        <strong>{{ t.name }}</strong>
-        <span class="muted">{{ t.description }}</span>
-      </button>
-    </li>
-    {% endfor %}
-  </ul>
-</div>
-{% endset %}
-
-{{ page_layout(main=main, right=right, class='page-settings') }}
+{{ page_layout(left=left, main=main, class='page-settings') }}
 
 <script>
 (function () {
