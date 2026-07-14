@@ -158,8 +158,8 @@ def get_settings() -> Settings:
             kwargs["session_secret"] = ensure_session_secret(data_dir)
         _settings = Settings(**kwargs)
         _settings.ensure_dirs()
-        if _settings.sync_token:
-            _settings.auth_required = True
+        # sync_token protects /api/sync/* peer traffic; it must not force UI login.
+        # Set PA_AUTH_REQUIRED=true explicitly when browser/API user auth is desired.
     return _settings
 
 

@@ -50,6 +50,11 @@ def _is_sync_path(path: str) -> bool:
     return path in SYNC_PATHS
 
 
+def _sync_auth_required(settings: Settings) -> bool:
+    """Peer sync endpoints require a bearer when a sync token (or auth_required) is set."""
+    return bool(settings.sync_token) or settings.auth_required
+
+
 def _needs_csrf(request: Request) -> bool:
     if request.method not in ("POST", "PUT", "PATCH", "DELETE"):
         return False
@@ -99,7 +104,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     request.state.principal_id = f"user:{user.id}"
 
         if (
-            self.settings.auth_required
+            _sync_auth_required(self.settings)
             and _is_sync_path(path)
             and not is_public
             and not request.state.instance_authenticated
@@ -110,6 +115,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             )
 
         if not request.state.principal_id:
+            # UI/API user login is controlled by auth_required alone — not by sync_token.
             needs_user_auth = (
                 self.settings.auth_required
                 and path.startswith("/api/")
