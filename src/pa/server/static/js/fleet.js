@@ -47,7 +47,9 @@
 
   function showPanel(name) {
     $all("[data-fleet-panel]").forEach(function (el) {
-      el.hidden = el.getAttribute("data-fleet-panel") !== name;
+      var show = el.getAttribute("data-fleet-panel") === name;
+      el.hidden = !show;
+      el.classList.toggle("hidden", !show);
     });
     $all("[data-fleet-path]").forEach(function (btn) {
       btn.classList.toggle("active", btn.getAttribute("data-fleet-path") === name);

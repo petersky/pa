@@ -241,7 +241,7 @@ async def join_fleet(
         headers["Authorization"] = f"Bearer {sync_token}"
 
     payload = {
-        "token": token,
+        "token": token.strip(),
         "instance_id": instance_id,
         "name": name,
         "url": url.rstrip("/"),
@@ -254,7 +254,19 @@ async def join_fleet(
             json=payload,
             headers=headers,
         )
-        resp.raise_for_status()
+        if resp.status_code >= 400:
+            detail = ""
+            try:
+                data = resp.json()
+                detail = data.get("detail") or ""
+                if isinstance(detail, list):
+                    detail = "; ".join(str(x) for x in detail)
+            except Exception:
+                detail = (resp.text or "")[:300]
+            msg = f"Fleet join failed ({resp.status_code})"
+            if detail:
+                msg = f"{msg}: {detail}"
+            raise httpx.HTTPStatusError(msg, request=resp.request, response=resp)
         return resp.json()
 
 

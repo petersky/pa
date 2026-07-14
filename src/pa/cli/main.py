@@ -721,6 +721,23 @@ def fleet_join(
 
     try:
         result = asyncio.run(_join())
+    except httpx.HTTPStatusError as exc:
+        # Prefer our enriched message when present.
+        detail = str(exc)
+        if exc.response is not None and "Fleet join failed" not in detail:
+            try:
+                body = exc.response.json()
+                if body.get("detail"):
+                    detail = f"Fleet join failed: {body['detail']}"
+            except Exception:
+                pass
+        typer.echo(detail, err=True)
+        if "Invalid or expired" in detail:
+            typer.echo(
+                "Mint a fresh token on the owner: pa fleet join-token  (or Fleet → Add existing).",
+                err=True,
+            )
+        raise typer.Exit(1) from exc
     except httpx.HTTPError as exc:
         typer.echo(f"Fleet join failed: {exc}", err=True)
         raise typer.Exit(1) from exc

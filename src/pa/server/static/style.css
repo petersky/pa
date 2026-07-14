@@ -292,6 +292,11 @@ a:hover { color: var(--pa-accent-hover); }
   gap: 0.5rem;
 }
 
+/* Author display rules (e.g. .stack) beat the UA [hidden] stylesheet. */
+[hidden] {
+  display: none !important;
+}
+
 label {
   display: flex;
   flex-direction: column;
