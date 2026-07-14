@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -167,6 +168,52 @@ def push_existing_release(tag: str) -> None:
         tag = f"v{tag}"
     _run(["git", "push"])
     _run(["git", "push", "origin", tag])
+
+
+def github_release_exists(tag: str) -> bool:
+    """Return True if a GitHub release for the tag already exists."""
+    result = subprocess.run(
+        ["gh", "release", "view", tag],
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0
+
+
+def wait_for_github_release(
+    tag: str,
+    *,
+    timeout: float,
+    initial_delay: float = 2.0,
+    max_delay: float = 15.0,
+) -> bool:
+    """Poll until CI creates the GitHub release.
+
+    Uses exponential backoff between checks. Returns True if the release
+    appears before ``timeout`` seconds elapse, otherwise False.
+    """
+    if timeout <= 0:
+        return github_release_exists(tag)
+
+    deadline = time.monotonic() + timeout
+    delay = initial_delay
+
+    if github_release_exists(tag):
+        return True
+
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        sleep_for = min(delay, remaining)
+        print(
+            f"  GitHub release not ready yet; retrying in {sleep_for:.0f}s "
+            f"({max(0, remaining - sleep_for):.0f}s left)..."
+        )
+        time.sleep(sleep_for)
+        if github_release_exists(tag):
+            return True
+        delay = min(delay * 2, max_delay)
 
 
 def publish_github_release(tag: str, notes_path: Path, *, amend: bool = False) -> None:

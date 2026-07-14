@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import sys
-import time
 from pathlib import Path
 
 from pa.release.notes import (
@@ -21,6 +20,7 @@ from pa.release.runner import (
     publish_github_release,
     push_existing_release,
     resolve_version,
+    wait_for_github_release,
 )
 from pa.release.version import read_version, tag_for_version, track_for_version
 
@@ -78,13 +78,41 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--notes-file", type=Path, help="Override release notes path")
     parser.add_argument("-m", "--message", help="Commit/tag message")
     parser.add_argument("--skip-gh", action="store_true", help="Skip gh release create/edit")
-    parser.add_argument("--wait-ci", type=int, default=30, help="Seconds to wait for CI before gh edit")
+    parser.add_argument(
+        "--wait-ci",
+        type=int,
+        default=120,
+        help="Max seconds to poll for CI GitHub release before publishing notes (0 to skip)",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Print plan without executing")
     return parser.parse_args(argv)
 
 
 def _tag_version(tag: str) -> str:
     return tag[1:] if tag.startswith("v") else tag
+
+
+def _wait_then_publish(tag: str, notes_path: Path, *, wait_ci: int) -> None:
+    """Wait (with backoff) for CI's GitHub release, then publish notes."""
+    if wait_ci > 0:
+        print(f"Polling for CI to create GitHub release {tag} (up to {wait_ci}s)...")
+        if wait_for_github_release(tag, timeout=wait_ci):
+            print(f"GitHub release {tag} is ready.")
+        else:
+            print(
+                f"warning: GitHub release {tag} not found after {wait_ci}s; "
+                "proceeding anyway (will create if needed).",
+                file=sys.stderr,
+            )
+    try:
+        publish_github_release(tag, notes_path, amend=False)
+        print(f"Published release notes to GitHub for {tag}.")
+    except RuntimeError as exc:
+        print(f"warning: gh release publish failed: {exc}", file=sys.stderr)
+        print(
+            f"  Try manually: gh release edit {tag} --notes-file {notes_path}",
+            file=sys.stderr,
+        )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -119,18 +147,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Publishing {tag}...")
         push_existing_release(tag)
         if not args.skip_gh:
-            if args.wait_ci > 0:
-                print(f"Waiting {args.wait_ci}s for CI to create GitHub release...")
-                time.sleep(args.wait_ci)
-            try:
-                publish_github_release(tag, notes_path, amend=False)
-                print(f"Published release notes to GitHub for {tag}.")
-            except RuntimeError as exc:
-                print(f"warning: gh release publish failed: {exc}", file=sys.stderr)
-                print(
-                    f"  Try manually: gh release edit {tag} --notes-file {notes_path}",
-                    file=sys.stderr,
-                )
+            _wait_then_publish(tag, notes_path, wait_ci=args.wait_ci)
         print(f"Done. Published {tag}")
         return 0
 
@@ -217,18 +234,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"{result.old_version} -> {result.new_version} ({result.tag})")
 
     if not args.skip_gh and do_push:
-        if args.wait_ci > 0:
-            print(f"Waiting {args.wait_ci}s for CI to create GitHub release...")
-            time.sleep(args.wait_ci)
-        try:
-            publish_github_release(tag, notes_path, amend=False)
-            print(f"Published release notes to GitHub for {tag}.")
-        except RuntimeError as exc:
-            print(f"warning: gh release publish failed: {exc}", file=sys.stderr)
-            print(
-                f"  Try manually: gh release edit {tag} --notes-file {notes_path}",
-                file=sys.stderr,
-            )
+        _wait_then_publish(tag, notes_path, wait_ci=args.wait_ci)
 
     print(f"\nRelease {tag} complete.")
     print(f"  Notes: {notes_path}")
