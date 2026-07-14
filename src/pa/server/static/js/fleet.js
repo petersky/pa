@@ -85,6 +85,124 @@
     }
   }
 
+  function escapeHtml(text) {
+    return String(text == null ? "" : text)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function providersHtml(providers) {
+    if (!providers || !providers.length) {
+      return '<span class="muted">—</span>';
+    }
+    return providers
+      .map(function (p) {
+        var label = escapeHtml(p.display_name || p.id || "?");
+        var mark = p.available ? " ✓" : " ·";
+        var title = escapeHtml(p.id || "");
+        return (
+          '<span class="badge" title="' + title + '">' + label + mark + "</span>"
+        );
+      })
+      .join(" ");
+  }
+
+  function healthHtml(healthy) {
+    if (healthy) {
+      return '<span class="status status-active">up</span>';
+    }
+    return '<span class="status status-blocked">down</span>';
+  }
+
+  function setLiveBanner(text) {
+    var el = $("#pa-fleet-live-status");
+    if (el) el.textContent = text || "";
+  }
+
+  function resetLivePlaceholders() {
+    $all("#pa-fleet-instances [data-fleet-health]").forEach(function (el) {
+      el.innerHTML = '<span class="muted small">Checking…</span>';
+    });
+    $all("#pa-fleet-instances [data-fleet-providers]").forEach(function (el) {
+      el.innerHTML = '<span class="muted small">Checking…</span>';
+    });
+    setLiveBanner("Checking instance health…");
+  }
+
+  function applyLiveStatus(rows) {
+    var byId = {};
+    (rows || []).forEach(function (row) {
+      if (row && row.instance_id) byId[row.instance_id] = row;
+    });
+    $all("#pa-fleet-instances tr[data-fleet-instance]").forEach(function (tr) {
+      var row = byId[tr.getAttribute("data-fleet-instance")];
+      if (!row) return;
+      var healthEl = $("[data-fleet-health]", tr);
+      var providersEl = $("[data-fleet-providers]", tr);
+      if (healthEl) healthEl.innerHTML = healthHtml(!!row.healthy);
+      if (providersEl) providersEl.innerHTML = providersHtml(row.providers || []);
+    });
+  }
+
+  var liveStatusSeq = 0;
+
+  async function loadLiveStatus() {
+    var root = $("#pa-fleet-root");
+    var table = $("#pa-fleet-instances");
+    if (!root || !table) return;
+
+    var seq = ++liveStatusSeq;
+    resetLivePlaceholders();
+    try {
+      var rows = await api("/api/fleet/health");
+      if (seq !== liveStatusSeq) return;
+      applyLiveStatus(rows);
+      var up = (rows || []).filter(function (r) {
+        return r.healthy;
+      }).length;
+      var total = (rows || []).length;
+      setLiveBanner(
+        total
+          ? "Checked " +
+              total +
+              " instance" +
+              (total === 1 ? "" : "s") +
+              " · " +
+              up +
+              " up"
+          : ""
+      );
+    } catch (err) {
+      if (seq !== liveStatusSeq) return;
+      $all("#pa-fleet-instances [data-fleet-health]").forEach(function (el) {
+        el.innerHTML = '<span class="status status-blocked">?</span>';
+      });
+      $all("#pa-fleet-instances [data-fleet-providers]").forEach(function (el) {
+        el.innerHTML = '<span class="muted">—</span>';
+      });
+      setLiveBanner(err.message || "Health check failed");
+    }
+  }
+
+  function maybeLoadLiveStatus() {
+    if ($("#pa-fleet-root")) loadLiveStatus();
+  }
+
+  document.addEventListener("DOMContentLoaded", maybeLoadLiveStatus);
+  document.body.addEventListener("htmx:afterSwap", function (evt) {
+    var target = evt.target;
+    if (
+      target &&
+      (target.id === "app-view" ||
+        target.id === "pa-fleet-root" ||
+        (target.querySelector && target.querySelector("#pa-fleet-root")))
+    ) {
+      maybeLoadLiveStatus();
+    }
+  });
+
   async function pollJob(jobId, logEl, statusEl) {
     while (true) {
       var job = await api("/api/fleet/install-remote/" + encodeURIComponent(jobId));
@@ -113,7 +231,11 @@
   document.addEventListener("click", function (e) {
     if (e.target.closest("#pa-fleet-refresh")) {
       e.preventDefault();
-      refreshFleetPage();
+      if ($("#pa-fleet-instances")) {
+        loadLiveStatus();
+      } else {
+        refreshFleetPage();
+      }
       return;
     }
 

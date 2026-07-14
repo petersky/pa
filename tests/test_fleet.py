@@ -317,5 +317,146 @@ class RemoteInstallJobMockTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("once", blob)
 
 
+class FleetPageLazyLoadTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.data_dir = Path(self._tmp.name)
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def test_fleet_context_does_not_probe_peers(self) -> None:
+        from pa.domain.models import FleetInstance
+        from pa.fleet.membership import MembershipStore
+        from pa.modules.fleet import _fleet_context
+
+        settings = Settings(
+            data_dir=self.data_dir,
+            instance_id="local-1",
+            instance_name="owner",
+            instance_url="http://macbook:8080",
+            host="0.0.0.0",
+            subscribed_realms=["personal"],
+            sync_token="secret",
+            peers=["http://mini:8080"],
+        )
+        fleet = FleetRegistry(settings.data_dir, settings.fleet_id)
+        fleet.register_self(
+            settings.instance_id,
+            settings.instance_name,
+            settings.instance_url,
+            zone=settings.zone,
+        )
+        fleet.upsert_instance(
+            FleetInstance(
+                instance_id="remote-1",
+                name="mini",
+                url="http://mini:8080",
+                zone=settings.zone,
+            )
+        )
+        membership = MembershipStore(settings.data_dir)
+        peer_table = PeerTable(settings.data_dir)
+
+        ctx = MagicMock()
+        ctx.settings = settings
+        ctx.require_service = MagicMock(
+            side_effect=lambda name: {
+                "fleet_registry": fleet,
+                "membership": membership,
+                "peer_table": peer_table,
+            }[name]
+        )
+        request = MagicMock()
+        request.app.state.ctx = ctx
+
+        with (
+            patch("pa.modules.fleet.httpx.Client") as sync_client,
+            patch("pa.modules.fleet.httpx.AsyncClient") as async_client,
+        ):
+            data = _fleet_context(request)
+
+        sync_client.assert_not_called()
+        async_client.assert_not_called()
+        self.assertEqual(len(data["fleet_instances"]), 2)
+        self.assertNotIn("provider_status", data)
+        self.assertTrue(data["has_sync_token"])
+
+
+class FleetHealthParallelTests(unittest.IsolatedAsyncioTestCase):
+    async def test_health_probes_in_parallel_and_includes_providers(self) -> None:
+        from pa.domain.models import FleetInstance
+        from pa.modules.fleet import fleet_health
+
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp)
+            settings = Settings(
+                data_dir=data_dir,
+                instance_id="local-1",
+                instance_name="owner",
+                instance_url="http://macbook:8080",
+                sync_token="secret",
+            )
+            fleet = FleetRegistry(data_dir, settings.fleet_id)
+            fleet.upsert_instance(
+                FleetInstance(
+                    instance_id="a",
+                    name="a",
+                    url="http://a:8080",
+                )
+            )
+            fleet.upsert_instance(
+                FleetInstance(
+                    instance_id="b",
+                    name="b",
+                    url="http://b:8080",
+                )
+            )
+
+            ctx = MagicMock()
+            ctx.settings = settings
+            ctx.require_service = MagicMock(return_value=fleet)
+            request = MagicMock()
+            request.app.state.ctx = ctx
+
+            class FakeResp:
+                def __init__(self, status_code: int, payload=None):
+                    self.status_code = status_code
+                    self._payload = payload if payload is not None else {}
+
+                def json(self):
+                    return self._payload
+
+            async def fake_get(url, headers=None):
+                if url.endswith("/api/health"):
+                    return FakeResp(200)
+                if url.endswith("/api/agent/providers"):
+                    host = "a" if "://a:" in url else "b"
+                    return FakeResp(
+                        200,
+                        [{"id": host, "display_name": host.upper(), "available": True}],
+                    )
+                return FakeResp(404)
+
+            mock_client = MagicMock()
+            mock_client.get = AsyncMock(side_effect=fake_get)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+
+            with (
+                patch("pa.modules.fleet.require_user", return_value=object()),
+                patch("pa.modules.fleet.httpx.AsyncClient", return_value=mock_client),
+            ):
+                results = await fleet_health(request)
+
+            by_id = {row["instance_id"]: row for row in results}
+            self.assertTrue(by_id["a"]["healthy"])
+            self.assertTrue(by_id["b"]["healthy"])
+            self.assertEqual(by_id["a"]["providers"][0]["id"], "a")
+            self.assertEqual(by_id["b"]["providers"][0]["id"], "b")
+            # health + providers for each instance
+            self.assertEqual(mock_client.get.await_count, 4)
+
+
 if __name__ == "__main__":
     unittest.main()

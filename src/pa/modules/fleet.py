@@ -39,46 +39,17 @@ router = APIRouter()
 ui_router = APIRouter()
 
 
-def _refresh_fleet_health(fleet: FleetRegistry) -> None:
-    for inst in fleet.list_instances():
-        healthy = False
-        try:
-            with httpx.Client(timeout=5.0) as client:
-                resp = client.get(f"{inst.url.rstrip('/')}/api/health")
-                healthy = resp.status_code == 200
-        except httpx.HTTPError:
-            pass
-        inst.healthy = healthy
-        inst.last_seen = datetime.now(UTC)
-        fleet.upsert_instance(inst)
-
-
 def _fleet_context(request: Request) -> dict:
+    """Build Fleet page context from local state only (no peer probes).
+
+    Live health and ACP provider status are loaded asynchronously via
+    ``GET /api/fleet/health`` so the page shell stays fast.
+    """
     ctx = request.app.state.ctx
     settings = ctx.settings
     fleet: FleetRegistry = ctx.require_service("fleet_registry")
-    _refresh_fleet_health(fleet)
     membership: MembershipStore = ctx.require_service("membership")
     peer_table: PeerTable = ctx.require_service("peer_table")
-    provider_status: dict[str, list] = {}
-    for inst in fleet.list_instances():
-        if not inst.healthy:
-            provider_status[inst.instance_id] = []
-            continue
-        try:
-            headers = {}
-            if settings.sync_token:
-                headers["Authorization"] = f"Bearer {settings.sync_token}"
-            with httpx.Client(timeout=5.0) as client:
-                resp = client.get(
-                    f"{inst.url.rstrip('/')}/api/agent/providers", headers=headers
-                )
-                if resp.status_code == 200:
-                    provider_status[inst.instance_id] = resp.json()
-                else:
-                    provider_status[inst.instance_id] = []
-        except httpx.HTTPError:
-            provider_status[inst.instance_id] = []
     warnings = readiness_warnings(settings)
     issues = readiness_issues(settings)
     return {
@@ -89,7 +60,6 @@ def _fleet_context(request: Request) -> dict:
         "settings": settings,
         "fleet_id": settings.fleet_id,
         "zone": settings.zone,
-        "provider_status": provider_status,
         "owner_url": owner_public_url(settings),
         "readiness_warnings": warnings,
         "readiness_issues": issues,
@@ -310,21 +280,54 @@ def remove_instance(request: Request, instance_id: str) -> dict:
 
 @router.get("/fleet/health")
 async def fleet_health(request: Request) -> list[dict]:
-    fleet: FleetRegistry = request.app.state.ctx.require_service("fleet_registry")
-    results = []
+    """Probe all fleet instances in parallel; include ACP providers when up."""
+    require_user(request)
+    ctx = request.app.state.ctx
+    settings = ctx.settings
+    fleet: FleetRegistry = ctx.require_service("fleet_registry")
+    instances = list(fleet.list_instances())
+    if not instances:
+        return []
+
+    headers: dict[str, str] = {}
+    if settings.sync_token:
+        headers["Authorization"] = f"Bearer {settings.sync_token}"
+
     async with httpx.AsyncClient(timeout=5.0) as client:
-        for inst in fleet.list_instances():
+
+        async def check_one(inst: FleetInstance) -> dict:
             healthy = False
+            providers: list = []
             try:
                 resp = await client.get(f"{inst.url.rstrip('/')}/api/health")
                 healthy = resp.status_code == 200
             except httpx.HTTPError:
                 pass
-            inst.healthy = healthy
-            inst.last_seen = datetime.now(UTC)
-            fleet.upsert_instance(inst)
-            results.append(inst.model_dump(mode="json"))
-    return results
+            if healthy:
+                try:
+                    resp = await client.get(
+                        f"{inst.url.rstrip('/')}/api/agent/providers",
+                        headers=headers,
+                    )
+                    if resp.status_code == 200:
+                        payload = resp.json()
+                        providers = payload if isinstance(payload, list) else []
+                except httpx.HTTPError:
+                    pass
+            data = inst.model_dump(mode="json")
+            data["healthy"] = healthy
+            data["providers"] = providers
+            return data
+
+        results = await asyncio.gather(*(check_one(inst) for inst in instances))
+
+    now = datetime.now(UTC)
+    for inst, live in zip(instances, results, strict=True):
+        inst.healthy = bool(live.get("healthy"))
+        inst.last_seen = now
+        fleet.upsert_instance(inst)
+        live["last_seen"] = now.isoformat()
+    return list(results)
 
 
 @router.post("/fleet/install-remote")

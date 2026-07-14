@@ -28,28 +28,23 @@
 
     <h3>Instances</h3>
     {% if fleet_instances %}
-    <table class="data-table">
+    <table class="data-table" id="pa-fleet-instances">
       <thead>
         <tr><th>Name</th><th>URL</th><th>Zone</th><th>Capabilities</th><th>ACP providers</th><th>Status</th><th></th></tr>
       </thead>
       <tbody>
         {% for inst in fleet_instances %}
-        <tr>
+        <tr data-fleet-instance="{{ inst.instance_id }}">
           <td>{{ inst.name }}</td>
           <td><a href="{{ inst.url }}" target="_blank" rel="noopener">{{ inst.url }}</a></td>
           <td>{{ inst.zone }}</td>
           <td>{{ inst.capabilities | join(', ') }}</td>
-          <td>
-            {% set providers = provider_status.get(inst.instance_id, []) %}
-            {% if providers %}
-              {% for p in providers %}
-                <span class="badge" title="{{ p.id }}">{{ p.display_name or p.id }}{% if p.available %} ✓{% else %} ·{% endif %}</span>
-              {% endfor %}
-            {% else %}
-              <span class="muted">—</span>
-            {% endif %}
+          <td data-fleet-providers>
+            <span class="muted small">Checking…</span>
           </td>
-          <td>{% if inst.healthy %}<span class="status status-active">up</span>{% else %}<span class="status status-blocked">down</span>{% endif %}</td>
+          <td data-fleet-health>
+            <span class="muted small">Checking…</span>
+          </td>
           <td>
             {% if inst.instance_id != settings.instance_id %}
             <button type="button" class="ghost danger small" data-fleet-remove="{{ inst.instance_id }}">Remove</button>
@@ -61,6 +56,7 @@
         {% endfor %}
       </tbody>
     </table>
+    <p class="muted small" id="pa-fleet-live-status" aria-live="polite">Checking instance health…</p>
     {% else %}
     <p class="empty">No fleet instances registered.</p>
     {% endif %}
