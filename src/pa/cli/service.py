@@ -171,7 +171,9 @@ def install_plist(settings: Settings, pa_bin: Path | None = None) -> Path:
     agents_dir = _launch_agents_dir()
     agents_dir.mkdir(parents=True, exist_ok=True)
     dest = _plist_path()
-    dest.write_bytes(render_plist(settings, bin_path))
+    content = render_plist(settings, bin_path)
+    if not dest.exists() or dest.read_bytes() != content:
+        dest.write_bytes(content)
     return dest
 
 
