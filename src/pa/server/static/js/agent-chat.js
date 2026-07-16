@@ -98,6 +98,9 @@
       attach: root.querySelector("[data-acw-attach]"),
       fileInput: root.querySelector("[data-acw-file-input]"),
       send: root.querySelector("[data-acw-send]"),
+      stop: root.querySelector("[data-acw-stop]"),
+      systemToggle: root.querySelector("[data-acw-toggle-system]"),
+      rawToggle: root.querySelector("[data-acw-toggle-raw]"),
       working: root.querySelector("[data-acw-working]"),
       workingLabel: root.querySelector("[data-acw-working-label]"),
       turnTimer: root.querySelector("[data-acw-turn-timer]"),
@@ -123,6 +126,7 @@
     this.turnTimerId = null;
     this.queuePaused = false;
     this.prompting = false;
+    this.rawText = false;
     this.pendingImages = [];
 
     this._bind();
@@ -147,17 +151,24 @@
         if (details) details.open = false;
       });
     });
-    const stop = this.root.querySelector("[data-acw-stop]");
-    if (stop) stop.addEventListener("click", function () { self.cancel(); });
+    if (this.els.stop) this.els.stop.addEventListener("click", function () { self.cancel(); });
     const end = this.root.querySelector("[data-acw-end]");
     if (end) end.addEventListener("click", function () { self.closeSession(); });
-    const toggleSys = this.root.querySelector("[data-acw-toggle-system]");
-    if (toggleSys) {
-      toggleSys.addEventListener("click", function () {
-        self.showSystem = !self.showSystem;
+    const restart = this.root.querySelector("[data-acw-restart]");
+    if (restart) restart.addEventListener("click", function () { self.restartSession(); });
+    if (this.els.systemToggle) {
+      this.els.systemToggle.checked = this.showSystem;
+      this.root.classList.toggle("show-system", this.showSystem);
+      this.els.systemToggle.addEventListener("change", function () {
+        self.showSystem = self.els.systemToggle.checked;
         self.root.dataset.showSystemPrompts = self.showSystem ? "1" : "0";
         self.root.classList.toggle("show-system", self.showSystem);
-        toggleSys.classList.toggle("active", self.showSystem);
+      });
+    }
+    if (this.els.rawToggle) {
+      this.els.rawToggle.addEventListener("change", function () {
+        self.rawText = self.els.rawToggle.checked;
+        self.rerenderMarkdownBubbles();
       });
     }
     const qp = this.root.querySelector("[data-acw-queue-pause]");
@@ -412,11 +423,13 @@
     if (this.els.title) {
       this.els.title.textContent = session.title || session.label || "Agent";
     }
-    this.setStatus(snap.prompting ? "working" : snap.connected ? "online" : "offline");
-    this.prompting = !!snap.prompting;
     this.queuePaused = !!snap.queue_paused;
-    this.setWorking(this.prompting, snap.turn_started_at);
     this.renderTranscript(snap.transcript || []);
+    // Transcript replay includes historical turn-completed events. Apply the live
+    // snapshot state afterward so replay cannot reset an active turn's timer.
+    this.prompting = !!snap.prompting;
+    this.setWorking(this.prompting, snap.turn_started_at);
+    this.setStatus(this.prompting ? "working" : snap.connected ? "online" : "offline");
     this.renderQueue(snap.queue || []);
     this.renderModelsModes(snap);
     this.renderProvider(snap);
@@ -435,6 +448,11 @@
   AgentChatWidget.prototype.renderTranscript = function (events) {
     const self = this;
     if (!this.els.messages) return;
+    Object.keys(this.toolTimers).forEach(function (id) {
+      const timer = self.toolTimers[id];
+      if (timer && timer.interval) clearInterval(timer.interval);
+    });
+    this.toolTimers = {};
     // Keep placeholder node; clear the rest
     Array.from(this.els.messages.children).forEach(function (child) {
       if (!child.hasAttribute("data-acw-placeholder")) child.remove();
@@ -635,7 +653,8 @@
     }
     const content = text || imageSummary(images);
     if (role === "agent" || role === "thought") {
-      bubble.insertAdjacentHTML("beforeend", renderMarkdown(content));
+      bubble.dataset.markdown = content;
+      this.renderMarkdownBubble(bubble);
     } else {
       bubble.appendChild(document.createTextNode(content));
     }
@@ -651,10 +670,26 @@
     return { row: row, bubble: bubble };
   };
 
+  AgentChatWidget.prototype.renderMarkdownBubble = function (bubble) {
+    const content = bubble.dataset.markdown || "";
+    if (this.rawText) {
+      bubble.textContent = content;
+    } else {
+      bubble.innerHTML = renderMarkdown(content);
+    }
+  };
+
+  AgentChatWidget.prototype.rerenderMarkdownBubbles = function () {
+    const self = this;
+    this.root.querySelectorAll(".acw-bubble-agent, .acw-bubble-thought").forEach(function (bubble) {
+      self.renderMarkdownBubble(bubble);
+    });
+  };
+
   AgentChatWidget.prototype.appendStream = function (role, key, chunk, ts) {
     this.clearPlaceholder();
     this.prompting = true;
-    this.setWorking(true);
+    if (!this.turnStartedAt) this.setWorking(true, ts);
     this.setStatus("working");
     const id = role + ":" + key;
     let stream = this.streaming[id];
@@ -665,7 +700,8 @@
       this.streaming[id] = stream;
     }
     stream.text += chunk || "";
-    stream.bubble.innerHTML = renderMarkdown(stream.text);
+    stream.bubble.dataset.markdown = stream.text;
+    this.renderMarkdownBubble(stream.bubble);
   };
 
   AgentChatWidget.prototype.finalizeStreams = function (ts) {
@@ -698,13 +734,15 @@
         '<span class="acw-tool-status muted"></span>' +
         "</div>";
       this.els.messages.appendChild(el);
-      this.toolTimers[id] = { started: Date.now(), interval: null };
+      const eventTime = ts ? new Date(ts).getTime() : Date.now();
+      this.toolTimers[id] = { started: eventTime, interval: null };
       const timerEl = el.querySelector(".acw-tool-timer");
-      const started = Date.now();
-      this.toolTimers[id].started = started;
-      this.toolTimers[id].interval = setInterval(function () {
+      const started = this.toolTimers[id].started;
+      const tick = function () {
         if (timerEl) timerEl.textContent = formatElapsed(Date.now() - started);
-      }, 500);
+      };
+      tick();
+      this.toolTimers[id].interval = setInterval(tick, 500);
     }
     const title = el.querySelector(".acw-tool-title");
     const status = el.querySelector(".acw-tool-status");
@@ -714,8 +752,10 @@
       const t = this.toolTimers[id];
       if (t && t.interval) {
         clearInterval(t.interval);
+        t.interval = null;
         const timerEl = el.querySelector(".acw-tool-timer");
-        if (timerEl && t.started) timerEl.textContent = formatElapsed(Date.now() - t.started);
+        const ended = ts ? new Date(ts).getTime() : Date.now();
+        if (timerEl && t.started) timerEl.textContent = formatElapsed(ended - t.started);
       }
     }
   };
@@ -922,6 +962,18 @@
       this.els.config.innerHTML = "";
       return;
     }
+    const optionKinds = options.flatMap(function (opt) {
+      if (!opt) return [];
+      return [opt.id || opt.configId || opt.config_id, opt.name]
+        .filter(Boolean)
+        .map(function (value) { return String(value).toLowerCase().replace(/[_-]/g, ""); });
+    });
+    if (this.els.modelWrap && optionKinds.some(function (id) { return id === "model" || id === "modelid"; })) {
+      this.els.modelWrap.hidden = true;
+    }
+    if (this.els.modeWrap && optionKinds.some(function (id) { return id === "mode" || id === "modeid"; })) {
+      this.els.modeWrap.hidden = true;
+    }
     this.els.config.hidden = false;
     this.els.config.innerHTML = "";
     options.forEach(function (opt) {
@@ -1018,6 +1070,8 @@
   AgentChatWidget.prototype.setWorking = function (on, startedAt) {
     const self = this;
     if (this.els.working) this.els.working.hidden = !on;
+    if (this.els.stop) this.els.stop.disabled = !on;
+    if (this.els.send) this.els.send.textContent = on ? "Queue" : "Send";
     if (!on) {
       if (this.turnTimerId) clearInterval(this.turnTimerId);
       this.turnTimerId = null;
@@ -1025,7 +1079,11 @@
       if (this.els.turnTimer) this.els.turnTimer.hidden = true;
       return;
     }
-    this.turnStartedAt = startedAt ? new Date(startedAt).getTime() : Date.now();
+    if (startedAt) {
+      this.turnStartedAt = new Date(startedAt).getTime();
+    } else if (!this.turnStartedAt) {
+      this.turnStartedAt = Date.now();
+    }
     if (this.els.turnTimer) this.els.turnTimer.hidden = false;
     if (this.turnTimerId) clearInterval(this.turnTimerId);
     const tick = function () {
@@ -1099,10 +1157,36 @@
     if (!this.sessionId) return;
     this.api("/sessions/" + this.sessionId + "/close", { method: "POST", body: "{}" }).then(function () {
       if (self.es) self.es.close();
+      self.setWorking(false);
       self.setStatus("offline");
       self.setPlaceholder("Session ended.");
       refreshSessionList(null);
     });
+  };
+
+  AgentChatWidget.prototype.restartSession = function () {
+    const self = this;
+    if (!this.sessionId) return;
+    this.api("/sessions/" + this.sessionId + "/close", { method: "POST", body: "{}" })
+      .then(function () {
+        if (self.es) self.es.close();
+        self.es = null;
+        self.sessionId = "";
+        self.root.dataset.sessionId = "";
+        self.lastSeq = 0;
+        self.streaming = {};
+        Object.keys(self.toolTimers).forEach(function (id) {
+          const timer = self.toolTimers[id];
+          if (timer && timer.interval) clearInterval(timer.interval);
+        });
+        self.toolTimers = {};
+        self.setWorking(false);
+        self.setPlaceholder("Restarting session…");
+        self.init();
+      })
+      .catch(function (err) {
+        self.addBubble("system", err.message, new Date().toISOString(), { system: true, forceVisible: true });
+      });
   };
 
   AgentChatWidget.prototype.queueControl = function (action) {

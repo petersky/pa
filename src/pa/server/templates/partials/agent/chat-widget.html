@@ -34,28 +34,39 @@
     </div>
     <div class="acw-toolbar-right">
       <label class="acw-select-wrap" data-acw-provider-wrap>
-        <span class="sr-only">Provider</span>
+        <span>Provider</span>
         <select data-acw-provider aria-label="ACP provider">
           <option value="cursor">Cursor</option>
           <option value="codex">Codex</option>
         </select>
       </label>
-      {% if show_model %}
-      <label class="acw-select-wrap" data-acw-model-wrap hidden>
-        <span class="sr-only">Model</span>
-        <select data-acw-model aria-label="Model"></select>
-      </label>
-      {% endif %}
-      {% if show_mode %}
-      <label class="acw-select-wrap" data-acw-mode-wrap hidden>
-        <span class="sr-only">Mode</span>
-        <select data-acw-mode aria-label="Mode"></select>
-      </label>
-      {% endif %}
-      <div class="acw-config" data-acw-config hidden></div>
-      <button type="button" class="ghost small" data-acw-toggle-system title="Show system prompts">Sys</button>
-      <button type="button" class="ghost small" data-acw-stop title="Stop turn and pause queue">Stop</button>
-      <button type="button" class="ghost small danger" data-acw-end title="End session">End</button>
+      <details class="acw-menu acw-settings-menu">
+        <summary>Agent settings…</summary>
+        <div class="acw-menu-body acw-settings-body">
+          {% if show_model %}
+          <label class="acw-select-wrap" data-acw-model-wrap hidden>
+            <span>Model</span>
+            <select data-acw-model aria-label="Model"></select>
+          </label>
+          {% endif %}
+          {% if show_mode %}
+          <label class="acw-select-wrap" data-acw-mode-wrap hidden>
+            <span>Mode</span>
+            <select data-acw-mode aria-label="Mode"></select>
+          </label>
+          {% endif %}
+          <div class="acw-config" data-acw-config hidden></div>
+        </div>
+      </details>
+      <details class="acw-menu acw-session-menu">
+        <summary>Session…</summary>
+        <div class="acw-menu-body">
+          <label><input type="checkbox" data-acw-toggle-system> Show system messages</label>
+          <label><input type="checkbox" data-acw-toggle-raw> Raw text</label>
+          <button type="button" class="ghost" data-acw-restart>Restart session</button>
+          <button type="button" class="ghost danger" data-acw-end>End session</button>
+        </div>
+      </details>
     </div>
   </div>
 
@@ -98,6 +109,8 @@
       <button type="button" class="ghost acw-attach" data-acw-attach
               aria-label="Attach images" title="Attach images">📎 Attach</button>
       <div class="acw-send-group">
+        <button type="button" class="ghost" data-acw-stop
+                title="Stop the current turn and pause the queue" disabled>Stop</button>
         <button type="submit" class="primary" data-acw-send>Send</button>
         <details class="acw-send-menu">
           <summary aria-label="Send options">▾</summary>

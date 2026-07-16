@@ -103,6 +103,14 @@ class ChatWidgetTemplateTests(unittest.TestCase):
         self.assertIn("data-acw-file-input", html)
         self.assertIn("data-acw-attach", html)
         self.assertIn("multiple hidden", html)
+        self.assertIn("Agent settings…", html)
+        self.assertIn("Session…", html)
+        self.assertIn("data-acw-toggle-system", html)
+        self.assertIn("data-acw-toggle-raw", html)
+        self.assertIn("data-acw-restart", html)
+        self.assertIn("data-acw-end", html)
+        self.assertIn("data-acw-stop", html)
+        self.assertIn("disabled>Stop", html)
 
 
 if __name__ == "__main__":
