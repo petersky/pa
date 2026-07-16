@@ -24,7 +24,7 @@ def probe_acp_initialize(spec: AgentProviderSpec, *, timeout: float = 25.0) -> d
 async def _probe_async(spec: AgentProviderSpec, *, timeout: float) -> dict[str, Any]:
     from acp import PROTOCOL_VERSION, spawn_agent_process
 
-    from pa.acp.client import PAClient
+    from pa.acp.client import ACP_STDIO_BUFFER_LIMIT_BYTES, PAClient
     from pa.packaging.paths import resolve_executable
 
     class _ProbeStore:
@@ -39,7 +39,12 @@ async def _probe_async(spec: AgentProviderSpec, *, timeout: float) -> dict[str, 
         if resolved:
             command = str(resolved)
         client = PAClient(store=_ProbeStore())  # type: ignore[arg-type]
-        ctx = spawn_agent_process(client, command, *list(spec.args or []))
+        ctx = spawn_agent_process(
+            client,
+            command,
+            *list(spec.args or []),
+            transport_kwargs={"limit": ACP_STDIO_BUFFER_LIMIT_BYTES},
+        )
         try:
             conn, _proc = await asyncio.wait_for(ctx.__aenter__(), timeout=timeout)
             init = await asyncio.wait_for(

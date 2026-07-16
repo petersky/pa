@@ -365,6 +365,7 @@
       "cancelled",
       "session_started",
       "session_closed",
+      "connection_lost",
       "usage_update",
       "model_changed",
       "mode_changed",
@@ -462,6 +463,20 @@
         if (this.es) this.es.close();
         refreshSessionList(null);
         break;
+      case "connection_lost":
+        this.finalizeStreams(created);
+        this.setWorking(false);
+        this.prompting = false;
+        this.setStatus("offline");
+        // Always visible (not gated by "show system prompts").
+        this.addBubble(
+          "system",
+          payload.message ||
+            "Connection to the agent was lost. You may want to retry the prompt.",
+          created,
+          { forceVisible: true }
+        );
+        break;
       case "error":
         this.addBubble("system", payload.message || "Error", created, { system: true });
         break;
@@ -476,7 +491,7 @@
     this.clearPlaceholder();
     const row = document.createElement("div");
     row.className = "acw-msg acw-msg-" + role + (opts.system ? " is-system" : "");
-    if (opts.system && !this.showSystem) row.hidden = true;
+    if (opts.system && !this.showSystem && !opts.forceVisible) row.hidden = true;
     const bubble = document.createElement("div");
     bubble.className = "acw-bubble acw-bubble-" + role;
     if (role === "agent" || role === "thought") {

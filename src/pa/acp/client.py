@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import inspect
 import json
 import logging
@@ -23,6 +24,16 @@ from pa.knowledge.capture import capture_from_updates
 from pa.packaging.paths import resolve_executable
 
 logger = logging.getLogger(__name__)
+
+# asyncio.StreamReader defaults to 64KiB; ACP NDJSON frames (tool results, file
+# contents, images) routinely exceed that and kill the receive loop with
+# LimitOverrunError. Match agent-client-protocol's run_agent default.
+try:
+    from acp.core import DEFAULT_STDIO_BUFFER_LIMIT_BYTES as _ACP_STDIO_LIMIT
+except ImportError:  # pragma: no cover
+    _ACP_STDIO_LIMIT = 50 * 1024 * 1024
+
+ACP_STDIO_BUFFER_LIMIT_BYTES = int(_ACP_STDIO_LIMIT)
 
 UpdateHandler = Callable[[str, Any], Awaitable[None] | None]
 PermissionHandler = Callable[[str, dict[str, Any]], Awaitable[RequestPermissionResponse | dict[str, Any]]]
@@ -331,10 +342,20 @@ class AgentConnection:
     def prompting(self) -> bool:
         return bool(self.session and self.session.status == "prompting")
 
+    def _transport_alive(self) -> bool:
+        """True when the ACP JSON-RPC transport has not closed/disconnected."""
+        conn = self._conn
+        if not conn:
+            return False
+        inner = getattr(conn, "_conn", conn)
+        if getattr(inner, "_closed", False) or getattr(inner, "_disconnected", False):
+            return False
+        return True
+
     @property
     def connected(self) -> bool:
         return bool(
-            self._conn
+            self._transport_alive()
             and self.session
             and self.session.status not in {"disconnected", "closed", "quiesced"}
         )
@@ -386,6 +407,7 @@ class AgentConnection:
                 self._client,
                 command,
                 *list(spec.args or []),
+                transport_kwargs={"limit": ACP_STDIO_BUFFER_LIMIT_BYTES},
             )
             self._conn, self._proc = await self._ctx.__aenter__()  # noqa: SIM117
         finally:
@@ -542,11 +564,20 @@ class AgentConnection:
                 },
             },
         )
-        response = await self._conn.prompt(
-            session_id=self.session.external_session_id,
-            prompt=[text_block(message)],
-            message_id=message_id,
-        )
+        try:
+            response = await self._conn.prompt(
+                session_id=self.session.external_session_id,
+                prompt=[text_block(message)],
+                message_id=message_id,
+            )
+        except ConnectionError:
+            await self._mark_transport_dead()
+            raise
+        except Exception:
+            # LimitOverrunError surfaces as ValueError from asyncio.readline.
+            if not self._transport_alive():
+                await self._mark_transport_dead()
+            raise
 
         updates = self._client.drain_updates() if self._client else []
         capture_from_updates(
@@ -577,6 +608,22 @@ class AgentConnection:
         self.session.updated_at = datetime.now(UTC)
         self.store.save_session(self.session)
         return stop_reason
+
+    async def _mark_transport_dead(self) -> None:
+        """Drop a dead ACP transport without blocking on a hung subprocess exit."""
+        ctx = self._ctx
+        self._ctx = None
+        self._conn = None
+        self._proc = None
+        if self.session and self.session.status not in {"closed", "quiesced"}:
+            self.session.status = "disconnected"
+            self.session.updated_at = datetime.now(UTC)
+            self.store.save_session(self.session)
+        if ctx is not None:
+            try:
+                await asyncio.wait_for(ctx.__aexit__(None, None, None), timeout=2.0)
+            except Exception:
+                logger.debug("ACP transport cleanup after death failed", exc_info=True)
 
     async def cancel(self) -> None:
         if not self._conn or not self.session or not self.session.external_session_id:
