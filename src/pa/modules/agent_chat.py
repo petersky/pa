@@ -203,9 +203,12 @@ async def session_events(request: Request, session_id: str) -> StreamingResponse
             pass
 
     async def event_stream():
-        # Replay persisted transcript first
+        # Local cursor — do not reassign outer after_seq (UnboundLocalError).
+        cursor = after_seq
+        # Flush buffered events so replay sees everything written so far.
+        runtime._flush_transcript()
         for te in runtime.store.list_transcript_events(
-            session_id, after_seq=after_seq, limit=2000
+            session_id, after_seq=cursor, limit=2000
         ):
             payload = {
                 "id": te.id,
@@ -216,7 +219,7 @@ async def session_events(request: Request, session_id: str) -> StreamingResponse
                 "created_at": te.created_at.isoformat(),
             }
             yield _sse(te.seq, payload)
-            after_seq = max(after_seq, te.seq)
+            cursor = max(cursor, te.seq)
 
         queue = runtime.subscribe()
         try:
@@ -229,9 +232,9 @@ async def session_events(request: Request, session_id: str) -> StreamingResponse
                     yield ": keepalive\n\n"
                     continue
                 seq = int(event.get("seq") or 0)
-                if seq and seq <= after_seq:
+                if seq and seq <= cursor:
                     continue
-                after_seq = max(after_seq, seq)
+                cursor = max(cursor, seq)
                 yield _sse(seq or None, event)
         finally:
             runtime.unsubscribe(queue)
