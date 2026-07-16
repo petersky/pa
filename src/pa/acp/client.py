@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable
 from uuid import uuid4
 
-from acp import PROTOCOL_VERSION, spawn_agent_process, text_block
+from acp import PROTOCOL_VERSION, text_block
 from acp.interfaces import Client
 from acp.schema import AllowedOutcome, DeniedOutcome, RequestPermissionResponse
 
@@ -16,6 +16,7 @@ from pa.acp.mcp_config import pa_mcp_servers
 from pa.acp.providers.base import AgentProviderSpec
 from pa.acp.providers.registry import DEFAULT_PROVIDER_ID, get_provider
 from pa.acp.providers.resolve import _spawn_overrides
+from pa.acp.transport import spawn_agent
 from pa.config import Settings
 from pa.domain.models import AgentSession
 from pa.domain.store import Store
@@ -382,7 +383,7 @@ class AgentConnection:
             prev_env[key] = os.environ.get(key)
             os.environ[key] = value
         try:
-            self._ctx = spawn_agent_process(
+            self._ctx = spawn_agent(
                 self._client,
                 command,
                 *list(spec.args or []),
