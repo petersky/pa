@@ -2,20 +2,63 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from pa.core.io import atomic_write_json
+
+
+MAX_PROMPT_IMAGES = 4
+MAX_IMAGE_BYTES = 10 * 1024 * 1024
+MAX_TOTAL_IMAGE_BYTES = 20 * 1024 * 1024
+SUPPORTED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
+
+
+class ImageAttachment(BaseModel):
+    name: str = Field(default="image", max_length=255)
+    mime_type: str
+    data: str
+
+    @field_validator("mime_type")
+    @classmethod
+    def validate_mime_type(cls, value: str) -> str:
+        normalized = value.lower().strip()
+        if normalized not in SUPPORTED_IMAGE_TYPES:
+            raise ValueError("unsupported image type")
+        return normalized
+
+    @field_validator("data")
+    @classmethod
+    def validate_data(cls, value: str) -> str:
+        try:
+            decoded = base64.b64decode(value, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise ValueError("invalid base64 image data") from exc
+        if not decoded:
+            raise ValueError("image is empty")
+        if len(decoded) > MAX_IMAGE_BYTES:
+            raise ValueError("image exceeds 10 MB limit")
+        return value
+
+    @property
+    def decoded_size(self) -> int:
+        return len(base64.b64decode(self.data))
+
+    def public_dict(self) -> dict[str, str]:
+        return {"name": self.name, "mime_type": self.mime_type}
 
 
 class QueuedPrompt(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     message: str
+    images: list[ImageAttachment] = Field(default_factory=list, max_length=MAX_PROMPT_IMAGES)
     session_id: str | None = None
     card_id: str | None = None
     project_id: str | None = None
@@ -24,6 +67,17 @@ class QueuedPrompt(BaseModel):
     agent_env: dict[str, str] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     source: str = "api"
+
+    @model_validator(mode="after")
+    def validate_total_image_size(self) -> QueuedPrompt:
+        if sum(image.decoded_size for image in self.images) > MAX_TOTAL_IMAGE_BYTES:
+            raise ValueError("images exceed 20 MB combined limit")
+        return self
+
+    def public_dict(self) -> dict[str, Any]:
+        data = self.model_dump(mode="json", exclude={"images"})
+        data["images"] = [image.public_dict() for image in self.images]
+        return data
 
 
 class SessionSnapshot(BaseModel):

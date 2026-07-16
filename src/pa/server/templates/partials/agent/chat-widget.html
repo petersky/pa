@@ -89,8 +89,14 @@
     </div>
     <label class="sr-only" for="acw-input-{{ label | replace(':', '-') }}">Message</label>
     <textarea id="acw-input-{{ label | replace(':', '-') }}" data-acw-input rows="2"
-              placeholder="Message the agent…" required></textarea>
+              placeholder="Message the agent or drop images here…"></textarea>
+    <div class="acw-attachments" data-acw-attachments hidden></div>
+    <input type="file" data-acw-file-input
+           accept="image/png,image/jpeg,image/gif,image/webp"
+           multiple hidden>
     <div class="acw-composer-actions">
+      <button type="button" class="ghost acw-attach" data-acw-attach
+              aria-label="Attach images" title="Attach images">📎 Attach</button>
       <div class="acw-send-group">
         <button type="submit" class="primary" data-acw-send>Send</button>
         <details class="acw-send-menu">

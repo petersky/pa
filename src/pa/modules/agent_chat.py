@@ -8,12 +8,13 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from pa.auth.middleware import get_principal_id
 from pa.core.contracts import Module
 from pa.core.context import AppContext
 from pa.core.preferences import get_preferences_store
+from pa.instance.quiesce import ImageAttachment, MAX_TOTAL_IMAGE_BYTES
 
 router = APIRouter(prefix="/agent")
 
@@ -49,10 +50,17 @@ class CreateSessionBody(BaseModel):
 
 
 class PromptBody(BaseModel):
-    message: str
+    message: str = ""
+    images: list[ImageAttachment] = Field(default_factory=list, max_length=4)
     action: Literal["append", "prepend", "interrupt"] = "append"
     card_id: str | None = None
     project_id: str | None = None
+
+    @model_validator(mode="after")
+    def validate_total_image_size(self) -> PromptBody:
+        if sum(image.decoded_size for image in self.images) > MAX_TOTAL_IMAGE_BYTES:
+            raise ValueError("images exceed 20 MB combined limit")
+        return self
 
 
 class PermissionBody(BaseModel):
@@ -262,14 +270,15 @@ def _sse(event_id: int | None, data: dict[str, Any]) -> str:
 @router.post("/sessions/{session_id}/prompt")
 async def session_prompt(request: Request, session_id: str, body: PromptBody) -> dict:
     message = body.message.strip()
-    if not message:
-        raise HTTPException(status_code=400, detail="message required")
+    if not message and not body.images:
+        raise HTTPException(status_code=400, detail="message or image required")
     runtime = _runtime_or_404(request, session_id)
     principal_id = get_principal_id(request)
     # Return immediately; transcript/SSE streams the turn. Blocking here made the
     # old HTMX UI look like it only ever received "Turn completed".
     stop_reason = await runtime.prompt(
         message,
+        images=body.images,
         item_id=body.card_id,
         principal_id=principal_id,
         project_id=body.project_id,
@@ -281,7 +290,7 @@ async def session_prompt(request: Request, session_id: str, body: PromptBody) ->
         "queued": stop_reason == "queued",
         "started": stop_reason == "started",
         "session_id": session_id,
-        "queue": [q.model_dump(mode="json") for q in runtime._queue],
+        "queue": [q.public_dict() for q in runtime._queue],
     }
 
 
@@ -370,7 +379,7 @@ async def queue_resume(request: Request, session_id: str) -> dict:
 async def queue_reorder(request: Request, session_id: str, body: ReorderBody) -> dict:
     runtime = _runtime_or_404(request, session_id)
     queue = runtime.reorder_queue(body.prompt_ids)
-    return {"queue": [q.model_dump(mode="json") for q in queue]}
+    return {"queue": [q.public_dict() for q in queue]}
 
 
 @router.delete("/sessions/{session_id}/queue/{prompt_id}")
