@@ -245,7 +245,7 @@ pa sync status --realm personal
 |---------|-----|
 | Fleet join fails | Ensure owner is running; retry `pa fleet join` / wizard. Tokens from CLI work with a live server. |
 | SSH install auth failed | Use agent/keys, `--identity`, or `--ask-password` (one-shot, not stored) |
-| Peers unreachable | Confirm Tailscale; use `http://hostname:port` not localhost; set `PA_HOST=0.0.0.0` |
+| Peers unreachable | Confirm Tailscale; use `http://hostname:port` not localhost; `pa config set host 0.0.0.0` then `pa restart` |
 | Sync not working | Same sync token (join sets this), same realm, check Fleet readiness warnings |
 | Linux service won't start | `systemctl --user status pa-server`; check `loginctl enable-linger` |
 | Wrong update track | `pa update --channel beta`; check `config.json` `release_track` |
