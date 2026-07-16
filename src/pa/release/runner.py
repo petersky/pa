@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import subprocess
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from pa.release.notes import notes_path_for_tag, write_release_notes
@@ -24,6 +24,14 @@ from pa.release.version import (
 )
 
 
+class ReleaseError(RuntimeError):
+    """User-facing release failure with optional recovery hints."""
+
+    def __init__(self, message: str, *, hints: list[str] | None = None) -> None:
+        super().__init__(message)
+        self.hints = list(hints or [])
+
+
 @dataclass
 class ReleaseResult:
     old_version: str
@@ -31,6 +39,18 @@ class ReleaseResult:
     tag: str
     track: str
     notes_path: Path | None = None
+
+
+@dataclass
+class ExistingTag:
+    name: str
+    local_target: str | None = None
+    remote_target: str | None = None
+    locations: list[str] = field(default_factory=list)
+
+    @property
+    def exists(self) -> bool:
+        return bool(self.locations)
 
 
 def _run(cmd: list[str], *, cwd: Path | None = None) -> None:
@@ -42,6 +62,132 @@ def _run(cmd: list[str], *, cwd: Path | None = None) -> None:
 
 def _capture(cmd: list[str], *, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(cmd, cwd=cwd, check=False, capture_output=True, text=True)
+
+
+def _normalize_tag(tag: str) -> str:
+    return tag if tag.startswith("v") else f"v{tag}"
+
+
+def local_tag_target(tag: str) -> str | None:
+    """Return the commit (or object) a local tag points at, or None if missing."""
+    tag = _normalize_tag(tag)
+    result = _capture(["git", "rev-parse", "--verify", "--quiet", f"refs/tags/{tag}^{{}}"], cwd=ROOT)
+    if result.returncode == 0 and result.stdout.strip():
+        return result.stdout.strip()
+    # Lightweight tags (or missing peeled object) fall back to the tag object itself.
+    result = _capture(["git", "rev-parse", "--verify", "--quiet", f"refs/tags/{tag}"], cwd=ROOT)
+    text = result.stdout.strip()
+    return text or None
+
+
+def remote_tag_target(tag: str, *, remote: str = "origin") -> str | None:
+    """Return the commit a remote tag points at, or None if missing / unreachable."""
+    tag = _normalize_tag(tag)
+    result = _capture(["git", "ls-remote", "--tags", remote, f"refs/tags/{tag}"], cwd=ROOT)
+    if result.returncode != 0:
+        return None
+    peeled: str | None = None
+    direct: str | None = None
+    for line in result.stdout.splitlines():
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        sha, ref = parts[0], parts[1]
+        if ref == f"refs/tags/{tag}^{{}}":
+            peeled = sha
+        elif ref == f"refs/tags/{tag}":
+            direct = sha
+    return peeled or direct
+
+
+def find_existing_tag(tag: str, *, check_remote: bool = True, remote: str = "origin") -> ExistingTag:
+    """Locate a tag locally and optionally on the remote."""
+    tag = _normalize_tag(tag)
+    local = local_tag_target(tag)
+    remote_target = remote_tag_target(tag, remote=remote) if check_remote else None
+    locations: list[str] = []
+    if local:
+        locations.append("local")
+    if remote_target:
+        locations.append(remote)
+    return ExistingTag(
+        name=tag,
+        local_target=local,
+        remote_target=remote_target,
+        locations=locations,
+    )
+
+
+def _short_commit(sha: str | None) -> str:
+    if not sha:
+        return "unknown"
+    return sha[:12]
+
+
+def _subject_for_commit(sha: str) -> str | None:
+    result = _capture(["git", "log", "-1", "--pretty=%s", sha], cwd=ROOT)
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
+
+
+def ensure_tag_available(tag: str, *, check_remote: bool = True) -> None:
+    """Abort early if the release tag already exists locally or on origin."""
+    existing = find_existing_tag(tag, check_remote=check_remote)
+    if not existing.exists:
+        return
+
+    tag = existing.name
+    where = " and ".join(existing.locations)
+    details: list[str] = []
+    if existing.local_target:
+        subject = _subject_for_commit(existing.local_target)
+        detail = f"local -> {_short_commit(existing.local_target)}"
+        if subject:
+            detail += f" ({subject})"
+        details.append(detail)
+    if existing.remote_target:
+        details.append(f"origin -> {_short_commit(existing.remote_target)}")
+
+    message = f"tag {tag} already exists ({where})"
+    if details:
+        message += ": " + "; ".join(details)
+
+    version = tag[1:] if tag.startswith("v") else tag
+    try:
+        next_patch = bump_patch(version)
+        next_example = f"./scripts/release.sh {next_patch}"
+    except ValueError:
+        next_example = "./scripts/release.sh <next-version>"
+
+    on_remote = bool(existing.remote_target)
+    hints: list[str] = []
+    if existing.local_target and not on_remote:
+        hints.append(
+            f"If {tag} is a leftover local tag you want to replace:\n"
+            f"    git tag -d {tag}\n"
+            f"    ./scripts/release.sh <bump>"
+        )
+    hints.append(
+        f"If {tag} was already released, bump to the next version instead:\n"
+        f"    {next_example}   # or: minor / major / explicit semver"
+    )
+    hints.append(
+        f"If the existing tag is correct and you only need to push/publish notes:\n"
+        f"    ./scripts/release.sh --publish --tag {tag}"
+    )
+    if existing.local_target and not on_remote:
+        hints.append(
+            f"If a release commit already exists but tagging failed mid-run:\n"
+            f"    git tag -d {tag} && git tag -a {tag} -m 'Release {tag}'\n"
+            f"    ./scripts/release.sh --publish --tag {tag}"
+        )
+    elif on_remote:
+        hints.append(
+            f"Do not delete/reuse {tag}: it already exists on origin. "
+            "Prefer bumping to the next version (option above)."
+        )
+    raise ReleaseError(message, hints=hints)
 
 
 def commits_behind_origin_main(
@@ -103,11 +249,15 @@ def create_release(
     message: str | None = None,
     notes_content: str | None = None,
     notes_path: Path | None = None,
+    check_tag: bool = True,
 ) -> ReleaseResult:
     old = read_version()
     new = resolve_version(bump)
     tag = tag_for_version(new)
     track = channel or track_for_version(new)
+
+    if check_tag:
+        ensure_tag_available(tag)
 
     print(f"==> Bumping version {old} -> {new}...", flush=True)
     set_version(new)
@@ -132,7 +282,18 @@ def create_release(
         print("==> Skipping commit (--no-commit).", flush=True)
 
     print(f"==> Creating annotated tag {tag}...", flush=True)
-    _run(["git", "tag", "-a", tag, "-m", message or f"Release {tag}"])
+    try:
+        _run(["git", "tag", "-a", tag, "-m", message or f"Release {tag}"])
+    except RuntimeError as exc:
+        err = str(exc)
+        if "already exists" in err:
+            # Convert late failures (e.g. race after preflight) into actionable advice.
+            try:
+                ensure_tag_available(tag)
+            except ReleaseError:
+                raise
+            raise ReleaseError(err) from exc
+        raise
 
     if push:
         print("==> Pushing commit to origin...", flush=True)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import traceback
 from pathlib import Path
 
 from pa.release.notes import (
@@ -16,9 +17,11 @@ from pa.release.notes import (
     write_release_notes,
 )
 from pa.release.runner import (
+    ReleaseError,
     amend_release_notes,
     commits_behind_origin_main,
     create_release,
+    ensure_tag_available,
     publish_github_release,
     push_existing_release,
     resolve_version,
@@ -29,6 +32,22 @@ from pa.release.version import read_version, tag_for_version, track_for_version
 
 def _log(msg: str) -> None:
     print(msg, flush=True)
+
+
+def _print_failure(exc: BaseException) -> None:
+    """Print a user-facing error (and recovery hints) instead of a raw traceback."""
+    print(f"error: {exc}", file=sys.stderr)
+    hints = getattr(exc, "hints", None)
+    if hints:
+        print("\nRecommended options:", file=sys.stderr)
+        for i, hint in enumerate(hints, start=1):
+            indented = hint.replace("\n", "\n    ")
+            print(f"  {i}. {indented}", file=sys.stderr)
+    if isinstance(exc, ReleaseError):
+        return
+    # Unexpected failures: keep a short traceback for debugging.
+    print("\nDetails:", file=sys.stderr)
+    traceback.print_exception(type(exc), exc, exc.__traceback__, file=sys.stderr)
 
 
 def _warn_if_behind_origin_main(*, require_up_to_date: bool) -> int:
@@ -133,7 +152,7 @@ def _wait_then_publish(tag: str, notes_path: Path, *, wait_ci: int) -> None:
         )
 
 
-def main(argv: list[str] | None = None) -> int:
+def _run(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     do_push = not args.no_push
     agent_timeout = None if args.no_agent else resolve_agent_timeout(args.agent_timeout)
@@ -235,6 +254,10 @@ def main(argv: list[str] | None = None) -> int:
     prev = latest_tag()
 
     _log(f"Releasing {old} -> {tag} (track: {channel})...")
+    _log(f"==> Checking that tag {tag} is available...")
+    ensure_tag_available(tag)
+    _log(f"  Tag {tag} is free.")
+
     content = generate_release_notes(
         version=new,
         tag=tag,
@@ -257,6 +280,7 @@ def main(argv: list[str] | None = None) -> int:
         message=args.message,
         notes_content=content,
         notes_path=notes_path,
+        check_tag=False,  # already verified above
     )
     _log(f"  Version bump complete: {result.old_version} -> {result.new_version} ({result.tag})")
 
@@ -271,6 +295,17 @@ def main(argv: list[str] | None = None) -> int:
         _log("  Skipped push (--no-push). Publish later:")
         _log(f"    ./scripts/release.sh --publish --tag {tag}")
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    try:
+        return _run(argv)
+    except ReleaseError as exc:
+        _print_failure(exc)
+        return 1
+    except RuntimeError as exc:
+        _print_failure(exc)
+        return 1
 
 
 if __name__ == "__main__":
