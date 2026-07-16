@@ -1,6 +1,6 @@
 [project]
 name = "pa"
-version = "0.1.18"
+version = "0.1.19"
 description = "Human–agent orchestration: goals, tasks, knowledge, and distributed coordination"
 readme = "README.md"
 requires-python = ">=3.14"
