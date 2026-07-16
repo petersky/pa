@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable
 from uuid import uuid4
 
-from acp import PROTOCOL_VERSION, spawn_agent_process, text_block
+from acp import PROTOCOL_VERSION, image_block, spawn_agent_process, text_block
 from acp.interfaces import Client
 from acp.schema import AllowedOutcome, DeniedOutcome, RequestPermissionResponse
 
@@ -20,6 +20,7 @@ from pa.acp.providers.resolve import _spawn_overrides
 from pa.config import Settings
 from pa.domain.models import AgentSession
 from pa.domain.store import Store
+from pa.instance.quiesce import ImageAttachment
 from pa.knowledge.capture import capture_from_updates
 from pa.packaging.paths import resolve_executable
 
@@ -531,6 +532,7 @@ class AgentConnection:
         message: str,
         item_id: str | None = None,
         *,
+        images: list[ImageAttachment] | None = None,
         principal_id: str | None = None,
         project_id: str | None = None,
         cwd: str | None = None,
@@ -565,9 +567,15 @@ class AgentConnection:
             },
         )
         try:
+            prompt = []
+            if message:
+                prompt.append(text_block(message))
+            prompt.extend(
+                image_block(image.data, image.mime_type) for image in images or []
+            )
             response = await self._conn.prompt(
                 session_id=self.session.external_session_id,
-                prompt=[text_block(message)],
+                prompt=prompt,
                 message_id=message_id,
             )
         except ConnectionError:
