@@ -9,10 +9,12 @@ import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 
-from pa.release.version import ROOT, read_version, tag_for_version
+from pa.release.version import ROOT, tag_for_version
 
 TEMPLATE_PATH = ROOT / "docs" / "RELEASE_NOTES_TEMPLATE.md"
 RELEASES_DIR = ROOT / "releases"
+
+DEFAULT_AGENT_TIMEOUT = 300
 
 
 def releases_dir() -> Path:
@@ -108,36 +110,64 @@ Template to complete:
 """
 
 
+def resolve_agent_timeout(timeout: float | None = None) -> float:
+    """Resolve agent timeout in seconds (CLI/arg > env > default)."""
+    if timeout is not None:
+        return float(timeout)
+    env = os.environ.get("PA_RELEASE_AGENT_TIMEOUT")
+    if env:
+        try:
+            return float(env)
+        except ValueError as exc:
+            raise RuntimeError(
+                f"Invalid PA_RELEASE_AGENT_TIMEOUT={env!r}; expected seconds"
+            ) from exc
+    return float(DEFAULT_AGENT_TIMEOUT)
+
+
 def invoke_agent(
     prompt: str,
     *,
     agent_cmd: str | None = None,
     agent_args: str | None = None,
+    timeout: float | None = None,
 ) -> str:
     """Run a configurable agent to generate release notes."""
     cmd = agent_cmd or os.environ.get("PA_RELEASE_AGENT", "agent")
-    args_str = agent_args if agent_args is not None else os.environ.get("PA_RELEASE_AGENT_ARGS", "--print")
+    # --trust is required for headless Cursor agent; without it, --print hangs
+    # waiting for an interactive workspace-trust prompt that never arrives.
+    args_str = (
+        agent_args
+        if agent_args is not None
+        else os.environ.get("PA_RELEASE_AGENT_ARGS", "--print --trust")
+    )
     args = shlex.split(args_str)
+    timeout_s = resolve_agent_timeout(timeout)
 
     use_stdin = os.environ.get("PA_RELEASE_AGENT_USE_STDIN", "").lower() in {"1", "true", "yes"}
-
+    argv = [cmd, *args] if use_stdin else [cmd, *args, prompt]
+    run_kwargs: dict = {
+        "cwd": ROOT,
+        "check": False,
+        "capture_output": True,
+        "text": True,
+        "timeout": timeout_s,
+    }
     if use_stdin:
-        result = subprocess.run(
-            [cmd, *args],
-            input=prompt,
-            cwd=ROOT,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-    else:
-        result = subprocess.run(
-            [cmd, *args, prompt],
-            cwd=ROOT,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
+        run_kwargs["input"] = prompt
+
+    print(
+        f"  Running: {cmd} {' '.join(args)}  (timeout {timeout_s:.0f}s)",
+        flush=True,
+    )
+    try:
+        result = subprocess.run(argv, **run_kwargs)
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"{cmd} timed out after {timeout_s:.0f}s while generating release notes. "
+            "Retry with --no-agent, or raise the limit via --agent-timeout / "
+            "PA_RELEASE_AGENT_TIMEOUT."
+        ) from exc
 
     if result.returncode != 0:
         msg = result.stderr.strip() or result.stdout.strip() or "agent failed"
@@ -168,10 +198,16 @@ def generate_release_notes(
     use_agent: bool = True,
     agent_cmd: str | None = None,
     agent_args: str | None = None,
+    agent_timeout: float | None = None,
 ) -> str:
     tag = tag or tag_for_version(version)
     prev = since_tag or previous_tag()
+    since_label = prev or "the beginning of history"
+    print(f"==> Gathering changelog since {since_label}...", flush=True)
     changelog = changelog_since(prev)
+    commit_lines = [line for line in changelog.splitlines() if line.startswith("- ")]
+    print(f"  Found {len(commit_lines)} commit(s).", flush=True)
+
     prefilled = render_template(
         version=version,
         tag=tag,
@@ -180,9 +216,23 @@ def generate_release_notes(
         template_path=template_path,
     )
     if not use_agent:
+        print("==> Skipping agent; using prefilled template.", flush=True)
         return prefilled
+
+    timeout_s = resolve_agent_timeout(agent_timeout)
+    print(
+        f"==> Generating release notes via agent (up to {timeout_s:.0f}s)...",
+        flush=True,
+    )
     prompt = build_agent_prompt(prefilled)
-    return invoke_agent(prompt, agent_cmd=agent_cmd, agent_args=agent_args)
+    notes = invoke_agent(
+        prompt,
+        agent_cmd=agent_cmd,
+        agent_args=agent_args,
+        timeout=timeout_s,
+    )
+    print("  Agent finished.", flush=True)
+    return notes
 
 
 def write_release_notes(tag: str, content: str, *, path: Path | None = None) -> Path:

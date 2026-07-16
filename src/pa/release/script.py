@@ -7,10 +7,12 @@ import sys
 from pathlib import Path
 
 from pa.release.notes import (
+    DEFAULT_AGENT_TIMEOUT,
     generate_release_notes,
     latest_tag,
     notes_path_for_tag,
     previous_tag,
+    resolve_agent_timeout,
     write_release_notes,
 )
 from pa.release.runner import (
@@ -25,14 +27,20 @@ from pa.release.runner import (
 from pa.release.version import read_version, tag_for_version, track_for_version
 
 
+def _log(msg: str) -> None:
+    print(msg, flush=True)
+
+
 def _warn_if_behind_origin_main(*, require_up_to_date: bool) -> int:
     """Warn when HEAD is behind origin/main. Return 1 if the release should abort."""
+    _log("==> Checking branch is up to date with origin/main...")
     try:
         behind = commits_behind_origin_main()
     except RuntimeError as exc:
         print(f"warning: could not check origin/main: {exc}", file=sys.stderr)
         return 0
     if behind <= 0:
+        _log("  Branch is up to date with origin/main.")
         return 0
     noun = "commit" if behind == 1 else "commits"
     print(
@@ -69,6 +77,16 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--agent", dest="agent_cmd", help="Agent command")
     parser.add_argument("--agent-args", dest="agent_args", help="Agent arguments")
     parser.add_argument(
+        "--agent-timeout",
+        type=float,
+        default=None,
+        metavar="SECONDS",
+        help=(
+            f"Max seconds to wait for the notes agent "
+            f"(default: {DEFAULT_AGENT_TIMEOUT}, or PA_RELEASE_AGENT_TIMEOUT)"
+        ),
+    )
+    parser.add_argument(
         "--no-push",
         action="store_true",
         help="Skip pushing commit and tag to origin (default: push)",
@@ -95,9 +113,9 @@ def _tag_version(tag: str) -> str:
 def _wait_then_publish(tag: str, notes_path: Path, *, wait_ci: int) -> None:
     """Wait (with backoff) for CI's GitHub release, then publish notes."""
     if wait_ci > 0:
-        print(f"Polling for CI to create GitHub release {tag} (up to {wait_ci}s)...")
+        _log(f"==> Polling for CI to create GitHub release {tag} (up to {wait_ci}s)...")
         if wait_for_github_release(tag, timeout=wait_ci):
-            print(f"GitHub release {tag} is ready.")
+            _log(f"  GitHub release {tag} is ready.")
         else:
             print(
                 f"warning: GitHub release {tag} not found after {wait_ci}s; "
@@ -106,7 +124,7 @@ def _wait_then_publish(tag: str, notes_path: Path, *, wait_ci: int) -> None:
             )
     try:
         publish_github_release(tag, notes_path, amend=False)
-        print(f"Published release notes to GitHub for {tag}.")
+        _log(f"  Published release notes to GitHub for {tag}.")
     except RuntimeError as exc:
         print(f"warning: gh release publish failed: {exc}", file=sys.stderr)
         print(
@@ -118,6 +136,7 @@ def _wait_then_publish(tag: str, notes_path: Path, *, wait_ci: int) -> None:
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     do_push = not args.no_push
+    agent_timeout = None if args.no_agent else resolve_agent_timeout(args.agent_timeout)
 
     if args.dry_run:
         if args.publish:
@@ -144,11 +163,13 @@ def main(argv: list[str] | None = None) -> int:
         if not notes_path.exists():
             print(f"error: release notes not found: {notes_path}", file=sys.stderr)
             return 1
-        print(f"Publishing {tag}...")
+        _log(f"Publishing {tag}...")
         push_existing_release(tag)
         if not args.skip_gh:
             _wait_then_publish(tag, notes_path, wait_ci=args.wait_ci)
-        print(f"Done. Published {tag}")
+        else:
+            _log("==> Skipping GitHub release publish (--skip-gh).")
+        _log(f"Done. Published {tag}")
         return 0
 
     if args.amend:
@@ -163,7 +184,7 @@ def main(argv: list[str] | None = None) -> int:
         version = _tag_version(tag)
         channel = args.channel or track_for_version(version)
         prev = previous_tag(tag)
-        print(f"Amending release notes for {tag}...")
+        _log(f"Amending release notes for {tag} (track: {channel})...")
 
         content = generate_release_notes(
             version=version,
@@ -173,9 +194,11 @@ def main(argv: list[str] | None = None) -> int:
             use_agent=not args.no_agent,
             agent_cmd=args.agent_cmd,
             agent_args=args.agent_args,
+            agent_timeout=agent_timeout,
         )
+        _log(f"==> Writing release notes to {args.notes_file or notes_path_for_tag(tag)}...")
         notes_path = write_release_notes(tag, content, path=args.notes_file)
-        print(f"Wrote {notes_path}")
+        _log(f"  Wrote {notes_path}")
 
         amend_release_notes(
             tag,
@@ -189,11 +212,13 @@ def main(argv: list[str] | None = None) -> int:
         if not args.skip_gh and do_push:
             try:
                 publish_github_release(tag, notes_path, amend=True)
-                print(f"Updated GitHub release notes for {tag}.")
+                _log(f"  Updated GitHub release notes for {tag}.")
             except RuntimeError as exc:
                 print(f"warning: gh release edit failed: {exc}", file=sys.stderr)
+        elif args.skip_gh:
+            _log("==> Skipping GitHub release publish (--skip-gh).")
 
-        print(f"Done. Amended {tag}")
+        _log(f"Done. Amended {tag}")
         return 0
 
     if not args.version:
@@ -209,7 +234,7 @@ def main(argv: list[str] | None = None) -> int:
     channel = args.channel or track_for_version(new)
     prev = latest_tag()
 
-    print(f"Releasing {tag} (track: {channel})...")
+    _log(f"Releasing {old} -> {tag} (track: {channel})...")
     content = generate_release_notes(
         version=new,
         tag=tag,
@@ -218,9 +243,11 @@ def main(argv: list[str] | None = None) -> int:
         use_agent=not args.no_agent,
         agent_cmd=args.agent_cmd,
         agent_args=args.agent_args,
+        agent_timeout=agent_timeout,
     )
+    _log(f"==> Writing release notes to {args.notes_file or notes_path_for_tag(tag)}...")
     notes_path = write_release_notes(tag, content, path=args.notes_file)
-    print(f"Wrote {notes_path}")
+    _log(f"  Wrote {notes_path}")
 
     result = create_release(
         args.version,
@@ -231,16 +258,18 @@ def main(argv: list[str] | None = None) -> int:
         notes_content=content,
         notes_path=notes_path,
     )
-    print(f"{result.old_version} -> {result.new_version} ({result.tag})")
+    _log(f"  Version bump complete: {result.old_version} -> {result.new_version} ({result.tag})")
 
     if not args.skip_gh and do_push:
         _wait_then_publish(tag, notes_path, wait_ci=args.wait_ci)
+    elif args.skip_gh:
+        _log("==> Skipping GitHub release publish (--skip-gh).")
 
-    print(f"\nRelease {tag} complete.")
-    print(f"  Notes: {notes_path}")
+    _log(f"\nRelease {tag} complete.")
+    _log(f"  Notes: {notes_path}")
     if not do_push:
-        print("  Skipped push (--no-push). Publish later:")
-        print(f"    ./scripts/release.sh --publish --tag {tag}")
+        _log("  Skipped push (--no-push). Publish later:")
+        _log(f"    ./scripts/release.sh --publish --tag {tag}")
     return 0
 
 

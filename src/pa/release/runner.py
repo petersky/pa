@@ -109,9 +109,11 @@ def create_release(
     tag = tag_for_version(new)
     track = channel or track_for_version(new)
 
+    print(f"==> Bumping version {old} -> {new}...", flush=True)
     set_version(new)
     _update_channels_manifest(new, tag, channel=channel)
     # Keep the editable package version in uv.lock aligned with pyproject.toml.
+    print("==> Updating uv.lock...", flush=True)
     _run(["uv", "lock"], cwd=ROOT)
 
     written_notes: Path | None = None
@@ -122,15 +124,23 @@ def create_release(
         files = ["pyproject.toml", "src/pa/__init__.py", "channels.json", "uv.lock"]
         if written_notes:
             files.append(str(written_notes.relative_to(ROOT)))
+        print(f"==> Committing release ({', '.join(files)})...", flush=True)
         _run(["git", "add", *files])
         commit_msg = message or f"Release {tag}"
         _run(["git", "commit", "-m", commit_msg])
+    else:
+        print("==> Skipping commit (--no-commit).", flush=True)
 
+    print(f"==> Creating annotated tag {tag}...", flush=True)
     _run(["git", "tag", "-a", tag, "-m", message or f"Release {tag}"])
 
     if push:
+        print("==> Pushing commit to origin...", flush=True)
         _run(["git", "push"])
+        print(f"==> Pushing tag {tag} to origin...", flush=True)
         _run(["git", "push", "origin", tag])
+    else:
+        print("==> Skipping push (--no-push).", flush=True)
 
     return ReleaseResult(
         old_version=old,
@@ -155,10 +165,17 @@ def amend_release_notes(
         tag = f"v{tag}"
     written = write_release_notes(tag, notes_content, path=notes_path)
     if commit:
-        _run(["git", "add", str(written.relative_to(ROOT))])
+        rel = str(written.relative_to(ROOT))
+        print(f"==> Committing amended notes ({rel})...", flush=True)
+        _run(["git", "add", rel])
         _run(["git", "commit", "-m", message or f"Amend release notes for {tag}"])
+    else:
+        print("==> Skipping commit (--no-commit).", flush=True)
     if push:
+        print("==> Pushing amended notes to origin...", flush=True)
         _run(["git", "push"])
+    else:
+        print("==> Skipping push (--no-push).", flush=True)
     return written
 
 
@@ -166,7 +183,9 @@ def push_existing_release(tag: str) -> None:
     """Push main and an existing local tag to origin."""
     if not tag.startswith("v"):
         tag = f"v{tag}"
+    print("==> Pushing commit to origin...", flush=True)
     _run(["git", "push"])
+    print(f"==> Pushing tag {tag} to origin...", flush=True)
     _run(["git", "push", "origin", tag])
 
 
@@ -208,7 +227,8 @@ def wait_for_github_release(
         sleep_for = min(delay, remaining)
         print(
             f"  GitHub release not ready yet; retrying in {sleep_for:.0f}s "
-            f"({max(0, remaining - sleep_for):.0f}s left)..."
+            f"({max(0, remaining - sleep_for):.0f}s left)...",
+            flush=True,
         )
         time.sleep(sleep_for)
         if github_release_exists(tag):
@@ -219,6 +239,7 @@ def wait_for_github_release(
 def publish_github_release(tag: str, notes_path: Path, *, amend: bool = False) -> None:
     """Create or update GitHub release with notes file."""
     if amend:
+        print(f"==> Updating GitHub release notes for {tag}...", flush=True)
         _run(
             [
                 "gh",
@@ -232,6 +253,7 @@ def publish_github_release(tag: str, notes_path: Path, *, amend: bool = False) -
         return
 
     # Release may be created by CI on tag push; try edit first, then create.
+    print(f"==> Publishing GitHub release notes for {tag}...", flush=True)
     edit = subprocess.run(
         ["gh", "release", "edit", tag, "--notes-file", str(notes_path)],
         capture_output=True,
@@ -239,6 +261,7 @@ def publish_github_release(tag: str, notes_path: Path, *, amend: bool = False) -
     )
     if edit.returncode == 0:
         return
+    print(f"  Release not found yet; creating GitHub release {tag}...", flush=True)
     _run(
         [
             "gh",

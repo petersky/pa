@@ -10,7 +10,8 @@
 #
 # Environment:
 #   PA_RELEASE_AGENT          Agent command (default: agent)
-#   PA_RELEASE_AGENT_ARGS     Agent args (default: --print)
+#   PA_RELEASE_AGENT_ARGS     Agent args (default: --print --trust)
+#   PA_RELEASE_AGENT_TIMEOUT  Agent timeout in seconds (default: 300)
 #   PA_RELEASE_AGENT_USE_STDIN  Pass prompt on stdin if set to 1
 #
 set -euo pipefail

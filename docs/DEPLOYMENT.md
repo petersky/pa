@@ -288,7 +288,8 @@ Configure the notes agent:
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `PA_RELEASE_AGENT` | `agent` | Agent command |
-| `PA_RELEASE_AGENT_ARGS` | `--print` | Agent arguments |
+| `PA_RELEASE_AGENT_ARGS` | `--print --trust` | Agent arguments (`--trust` required for headless Cursor agent) |
+| `PA_RELEASE_AGENT_TIMEOUT` | `300` | Max seconds to wait for the notes agent (`--agent-timeout` overrides) |
 | `PA_RELEASE_AGENT_USE_STDIN` | — | Set to `1` to pass prompt on stdin |
 
 Release notes template: [`docs/RELEASE_NOTES_TEMPLATE.md`](RELEASE_NOTES_TEMPLATE.md)  
