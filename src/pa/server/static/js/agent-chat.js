@@ -4,6 +4,10 @@
 
   const MARKED_URL = "https://cdn.jsdelivr.net/npm/marked@15.0.7/marked.min.js";
   const PURIFY_URL = "https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.min.js";
+  const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+  const MAX_IMAGES = 4;
+  const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+  const MAX_TOTAL_IMAGE_BYTES = 20 * 1024 * 1024;
 
   let libsPromise = null;
 
@@ -90,6 +94,9 @@
       placeholder: root.querySelector("[data-acw-placeholder]"),
       form: root.querySelector("[data-acw-form]"),
       input: root.querySelector("[data-acw-input]"),
+      attachments: root.querySelector("[data-acw-attachments]"),
+      attach: root.querySelector("[data-acw-attach]"),
+      fileInput: root.querySelector("[data-acw-file-input]"),
       send: root.querySelector("[data-acw-send]"),
       working: root.querySelector("[data-acw-working]"),
       workingLabel: root.querySelector("[data-acw-working-label]"),
@@ -116,6 +123,7 @@
     this.turnTimerId = null;
     this.queuePaused = false;
     this.prompting = false;
+    this.pendingImages = [];
 
     this._bind();
     ensureMarkdown().then(function () {
@@ -178,6 +186,31 @@
           e.preventDefault();
           self.send(self.prompting ? "append" : "append");
         }
+      });
+      ["dragenter", "dragover"].forEach(function (name) {
+        self.els.input.addEventListener(name, function (e) {
+          if (!self._hasImageFiles(e.dataTransfer)) return;
+          e.preventDefault();
+          self.els.input.classList.add("is-image-drop-target");
+        });
+      });
+      this.els.input.addEventListener("dragleave", function () {
+        self.els.input.classList.remove("is-image-drop-target");
+      });
+      this.els.input.addEventListener("drop", function (e) {
+        if (!self._hasImageFiles(e.dataTransfer)) return;
+        e.preventDefault();
+        self.els.input.classList.remove("is-image-drop-target");
+        self.addImageFiles(e.dataTransfer.files);
+      });
+    }
+    if (this.els.attach && this.els.fileInput) {
+      this.els.attach.addEventListener("click", function () {
+        self.els.fileInput.click();
+      });
+      this.els.fileInput.addEventListener("change", function () {
+        self.addImageFiles(self.els.fileInput.files);
+        self.els.fileInput.value = "";
       });
     }
   };
@@ -260,6 +293,104 @@
   AgentChatWidget.prototype.clearPlaceholder = function () {
     if (this.els.placeholder) this.els.placeholder.hidden = true;
   };
+
+  AgentChatWidget.prototype._hasImageFiles = function (dataTransfer) {
+    if (!dataTransfer || !dataTransfer.items) return false;
+    return Array.from(dataTransfer.items).some(function (item) {
+      return item.kind === "file" && IMAGE_TYPES.indexOf(item.type) !== -1;
+    });
+  };
+
+  AgentChatWidget.prototype.addImageFiles = function (fileList) {
+    const self = this;
+    const files = Array.from(fileList || []);
+    files.forEach(function (file) {
+      if (IMAGE_TYPES.indexOf(file.type) === -1) {
+        self.addBubble("system", file.name + " is not a supported image.", new Date().toISOString(), { system: true, forceVisible: true });
+        return;
+      }
+      if (file.size > MAX_IMAGE_BYTES) {
+        self.addBubble("system", file.name + " exceeds the 10 MB image limit.", new Date().toISOString(), { system: true, forceVisible: true });
+        return;
+      }
+      if (self.pendingImages.length >= MAX_IMAGES) {
+        self.addBubble("system", "You can attach up to 4 images.", new Date().toISOString(), { system: true, forceVisible: true });
+        return;
+      }
+      const total = self.pendingImages.reduce(function (sum, image) { return sum + image.size; }, 0);
+      if (total + file.size > MAX_TOTAL_IMAGE_BYTES) {
+        self.addBubble("system", "Attached images cannot exceed 20 MB combined.", new Date().toISOString(), { system: true, forceVisible: true });
+        return;
+      }
+
+      const image = {
+        name: file.name,
+        mime_type: file.type,
+        size: file.size,
+        data: null,
+        preview: URL.createObjectURL(file),
+      };
+      self.pendingImages.push(image);
+      self.renderPendingImages();
+
+      const reader = new FileReader();
+      reader.onload = function () {
+        const result = String(reader.result || "");
+        image.data = result.slice(result.indexOf(",") + 1);
+      };
+      reader.onerror = function () {
+        self.removePendingImage(self.pendingImages.indexOf(image));
+        self.addBubble("system", "Could not read " + file.name + ".", new Date().toISOString(), { system: true, forceVisible: true });
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  AgentChatWidget.prototype.removePendingImage = function (index) {
+    if (index < 0 || index >= this.pendingImages.length) return;
+    const removed = this.pendingImages.splice(index, 1)[0];
+    if (removed.preview) URL.revokeObjectURL(removed.preview);
+    this.renderPendingImages();
+  };
+
+  AgentChatWidget.prototype.clearPendingImages = function () {
+    this.pendingImages.forEach(function (image) {
+      if (image.preview) URL.revokeObjectURL(image.preview);
+    });
+    this.pendingImages = [];
+    this.renderPendingImages();
+  };
+
+  AgentChatWidget.prototype.renderPendingImages = function () {
+    if (!this.els.attachments) return;
+    const self = this;
+    this.els.attachments.innerHTML = "";
+    this.els.attachments.hidden = !this.pendingImages.length;
+    this.pendingImages.forEach(function (image, index) {
+      const item = document.createElement("div");
+      item.className = "acw-attachment";
+      const preview = document.createElement("img");
+      preview.src = image.preview;
+      preview.alt = image.name;
+      const name = document.createElement("span");
+      name.textContent = image.name;
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "ghost small";
+      remove.setAttribute("aria-label", "Remove " + image.name);
+      remove.textContent = "×";
+      remove.addEventListener("click", function () { self.removePendingImage(index); });
+      item.appendChild(preview);
+      item.appendChild(name);
+      item.appendChild(remove);
+      self.els.attachments.appendChild(item);
+    });
+  };
+
+  function imageSummary(images) {
+    if (!images || !images.length) return "";
+    return images.length === 1 ? "Attached image: " + images[0].name : "Attached " + images.length + " images";
+  }
 
   AgentChatWidget.prototype._isDuplicateUserBubble = function (text) {
     if (!text || !this.els.messages) return false;
@@ -393,9 +524,13 @@
 
     switch (type) {
       case "user_message":
+        const userText = payload.message || imageSummary(payload.images);
         // Skip duplicate if we already painted an optimistic bubble for this text.
-        if (!this._isDuplicateUserBubble(payload.message || "")) {
-          this.addBubble("user", payload.message || "", created, { system: payload.source === "system" });
+        if (!this._isDuplicateUserBubble(userText)) {
+          this.addBubble("user", payload.message || "", created, {
+            system: payload.source === "system",
+            images: payload.images || [],
+          });
         }
         break;
       case "agent_message_chunk":
@@ -479,10 +614,30 @@
     if (opts.system && !this.showSystem) row.hidden = true;
     const bubble = document.createElement("div");
     bubble.className = "acw-bubble acw-bubble-" + role;
+    const images = opts.images || [];
+    if (images.length) {
+      const gallery = document.createElement("div");
+      gallery.className = "acw-message-images";
+      images.forEach(function (image) {
+        if (image.preview) {
+          const preview = document.createElement("img");
+          preview.src = image.preview;
+          preview.alt = image.name || "Attached image";
+          gallery.appendChild(preview);
+        } else {
+          const attachment = document.createElement("span");
+          attachment.className = "acw-message-image-name";
+          attachment.textContent = image.name || "Attached image";
+          gallery.appendChild(attachment);
+        }
+      });
+      bubble.appendChild(gallery);
+    }
+    const content = text || imageSummary(images);
     if (role === "agent" || role === "thought") {
-      bubble.innerHTML = renderMarkdown(text);
+      bubble.insertAdjacentHTML("beforeend", renderMarkdown(content));
     } else {
-      bubble.textContent = text;
+      bubble.appendChild(document.createTextNode(content));
     }
     row.appendChild(bubble);
     if (ts) {
@@ -658,9 +813,10 @@
       const li = document.createElement("li");
       li.draggable = true;
       li.dataset.id = item.id;
+      const queueText = item.message || imageSummary(item.images);
       li.innerHTML =
         '<span class="acw-queue-text">' +
-        escapeHtml(item.message) +
+        escapeHtml(queueText) +
         '</span><button type="button" class="ghost small" data-remove>✕</button>';
       li.querySelector("[data-remove]").addEventListener("click", function () {
         self.api("/sessions/" + self.sessionId + "/queue/" + item.id, { method: "DELETE" }).then(function () {
@@ -891,15 +1047,34 @@
   AgentChatWidget.prototype.send = function (action) {
     const self = this;
     const text = (this.els.input && this.els.input.value || "").trim();
-    if (!text || !this.sessionId) return;
+    if ((!text && !this.pendingImages.length) || !this.sessionId) return;
+    if (this.pendingImages.some(function (image) { return !image.data; })) {
+      this.addBubble("system", "Please wait for the images to finish loading.", new Date().toISOString(), { system: true, forceVisible: true });
+      return;
+    }
     const act = action || "append";
+    const images = this.pendingImages.map(function (image) {
+      return {
+        name: image.name,
+        mime_type: image.mime_type,
+        data: image.data,
+        preview: "data:" + image.mime_type + ";base64," + image.data,
+      };
+    });
     this.els.input.value = "";
+    this.clearPendingImages();
     // Optimistic user bubble; SSE user_message may also arrive — dedupe by text+recency.
-    this.addBubble("user", text, new Date().toISOString());
+    this.addBubble("user", text, new Date().toISOString(), { images: images });
     this.scrollToBottom();
     this.api("/sessions/" + this.sessionId + "/prompt", {
       method: "POST",
-      body: JSON.stringify({ message: text, action: act }),
+      body: JSON.stringify({
+        message: text,
+        images: images.map(function (image) {
+          return { name: image.name, mime_type: image.mime_type, data: image.data };
+        }),
+        action: act,
+      }),
     })
       .then(function (res) {
         if (res && res.queued) self.refreshQueue();

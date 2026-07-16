@@ -32,6 +32,7 @@ from pa.core.preferences import get_preferences_store
 from pa.domain.models import AgentSession, TranscriptEvent
 from pa.domain.store import Store
 from pa.instance.quiesce import (
+    ImageAttachment,
     QueuedPrompt,
     QuiesceProgress,
     QuiesceSnapshot,
@@ -314,6 +315,7 @@ class AgentSessionRuntime:
         self,
         message: str,
         *,
+        images: list[ImageAttachment] | None = None,
         action: PromptAction = "append",
         card_id: str | None = None,
         project_id: str | None = None,
@@ -324,6 +326,7 @@ class AgentSessionRuntime:
     ) -> QueuedPrompt:
         item = QueuedPrompt(
             message=message,
+            images=list(images or []),
             session_id=self.session_id,
             card_id=card_id or self.session.card_id,
             project_id=project_id or self.session.project_id,
@@ -350,6 +353,7 @@ class AgentSessionRuntime:
         message: str,
         item_id: str | None = None,
         *,
+        images: list[ImageAttachment] | None = None,
         principal_id: str | None = None,
         project_id: str | None = None,
         agent_env: dict[str, str] | None = None,
@@ -363,6 +367,7 @@ class AgentSessionRuntime:
                 raise RuntimeError("Session is quiescing or closed")
             item = self.enqueue(
                 message,
+                images=images,
                 action=action,
                 card_id=item_id,
                 project_id=project_id,
@@ -378,6 +383,7 @@ class AgentSessionRuntime:
             else:
                 self.enqueue(
                     message,
+                    images=images,
                     action=action,
                     card_id=item_id,
                     project_id=project_id,
@@ -389,6 +395,7 @@ class AgentSessionRuntime:
 
         item = QueuedPrompt(
             message=message,
+            images=list(images or []),
             session_id=self.session_id,
             card_id=item_id or self.session.card_id,
             project_id=project_id or self.session.project_id,
@@ -402,6 +409,7 @@ class AgentSessionRuntime:
             if self._queue_paused:
                 self.enqueue(
                     message,
+                    images=images,
                     action=action,
                     card_id=item_id,
                     project_id=project_id,
@@ -431,13 +439,19 @@ class AgentSessionRuntime:
             self._turn_started_at = datetime.now(UTC)
             self._append_transcript(
                 "user_message",
-                {"id": item.id, "message": item.message, "source": item.source},
+                {
+                    "id": item.id,
+                    "message": item.message,
+                    "source": item.source,
+                    "images": [image.public_dict() for image in item.images],
+                },
             )
             self._flush_transcript()
             try:
                 with _agent_env_overlay(env):
                     stop_reason = await self.connection.prompt(
                         item.message,
+                        images=item.images,
                         item_id=item.card_id,
                         principal_id=item.principal_id,
                         project_id=item.project_id,
@@ -581,7 +595,7 @@ class AgentSessionRuntime:
             "connected": self.connected,
             "prompting": self.prompting,
             "queue_paused": self._queue_paused,
-            "queue": [q.model_dump(mode="json") for q in self._queue],
+            "queue": [q.public_dict() for q in self._queue],
             "in_flight": self._in_flight.model_dump(mode="json") if self._in_flight else None,
             "models": conn.models if conn else None,
             "modes": conn.modes if conn else None,
@@ -992,6 +1006,7 @@ class AgentSessionManager:
         self,
         message: str,
         *,
+        images: list[ImageAttachment] | None = None,
         card_id: str | None = None,
         project_id: str | None = None,
         principal_id: str | None = None,
@@ -1012,6 +1027,7 @@ class AgentSessionManager:
         if runtime is None:
             item = QueuedPrompt(
                 message=message,
+                images=list(images or []),
                 session_id=session_id,
                 card_id=card_id,
                 project_id=project_id,
@@ -1023,6 +1039,7 @@ class AgentSessionManager:
             return item
         return runtime.enqueue(
             message,
+            images=images,
             card_id=card_id,
             project_id=project_id,
             principal_id=principal_id,
@@ -1036,6 +1053,7 @@ class AgentSessionManager:
         message: str,
         item_id: str | None = None,
         *,
+        images: list[ImageAttachment] | None = None,
         principal_id: str | None = None,
         project_id: str | None = None,
         agent_env: dict[str, str] | None = None,
@@ -1073,6 +1091,7 @@ class AgentSessionManager:
                 )
         return await runtime.prompt(
             message,
+            images=images,
             item_id=item_id,
             principal_id=principal_id,
             project_id=project_id,
