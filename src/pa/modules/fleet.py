@@ -4,18 +4,28 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
+from typing import Any, AsyncIterator
+from urllib.parse import quote
 from uuid import uuid4
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
+from pydantic import BaseModel, Field
 
+from pa.agent.context import augment_message_with_context
 from pa.auth.middleware import get_principal_id, require_user
 from pa.config import get_settings
 from pa.core.contracts import Module
 from pa.core.context import AppContext
 from pa.core.ui.pages import PageDefinition, PageRegistry
-from pa.domain.models import FleetInstance, RealmRole
+from pa.domain.models import (
+    CardLane,
+    CardUpdate,
+    FleetInstance,
+    KnowledgeEntry,
+    RealmRole,
+)
 from pa.fleet.join import (
     apply_reachability_settings,
     ensure_sync_token,
@@ -39,6 +49,21 @@ router = APIRouter()
 ui_router = APIRouter()
 
 
+class RemoteAgentStartBody(BaseModel):
+    """Start a standalone or card-linked session on a fleet instance."""
+
+    card_id: str | None = None
+    project_id: str | None = None
+    title: str | None = None
+    message: str = ""
+    provider: str | None = None
+    model_id: str | None = None
+    mode_id: str | None = None
+    effort: str | None = None
+    cwd: str | None = None
+    config: dict[str, str | bool] = Field(default_factory=dict)
+
+
 def _fleet_context(request: Request) -> dict:
     """Build Fleet page context from local state only (no peer probes).
 
@@ -52,6 +77,11 @@ def _fleet_context(request: Request) -> dict:
     peer_table: PeerTable = ctx.require_service("peer_table")
     warnings = readiness_warnings(settings)
     issues = readiness_issues(settings)
+    primary_realm = (
+        settings.primary_realm
+        if hasattr(settings, "primary_realm")
+        else (settings.subscribed_realms[0] if settings.subscribed_realms else "personal")
+    )
     return {
         "fleet_instances": fleet.list_instances(),
         "realms": membership.list_realms(),
@@ -64,9 +94,9 @@ def _fleet_context(request: Request) -> dict:
         "readiness_warnings": warnings,
         "readiness_issues": issues,
         "has_sync_token": bool(settings.sync_token),
-        "primary_realm": settings.primary_realm
-        if hasattr(settings, "primary_realm")
-        else (settings.subscribed_realms[0] if settings.subscribed_realms else "personal"),
+        "primary_realm": primary_realm,
+        "cards": ctx.store.list_cards(realm_id=primary_realm),
+        "projects": ctx.store.list_projects(realm_id=primary_realm),
     }
 
 
@@ -467,6 +497,271 @@ def _fleet_instance_or_404(request: Request, instance_id: str):
         if inst.instance_id == instance_id:
             return inst
     raise HTTPException(status_code=404, detail="Fleet instance not found")
+
+
+def _peer_headers(request: Request) -> dict[str, str]:
+    settings = request.app.state.ctx.settings
+    headers = {"Accept": "application/json"}
+    if settings.sync_token:
+        headers["Authorization"] = f"Bearer {settings.sync_token}"
+    return headers
+
+
+def _agent_path(path: str) -> str:
+    parts = path.strip("/").split("/")
+    if not path.strip("/") or any(part in {"", ".", ".."} for part in parts):
+        raise HTTPException(status_code=400, detail="Invalid agent proxy path")
+    return "/".join(quote(part, safe="-._~") for part in parts)
+
+
+async def _peer_agent_json(
+    request: Request,
+    instance_id: str,
+    method: str,
+    path: str,
+    *,
+    body: dict[str, Any] | None = None,
+    timeout: float = 120.0,
+) -> dict | list:
+    inst = _fleet_instance_or_404(request, instance_id)
+    url = f"{inst.url.rstrip('/')}/api/agent/{_agent_path(path)}"
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.request(
+                method,
+                url,
+                headers=_peer_headers(request),
+                json=body,
+            )
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Peer unreachable: {exc}") from exc
+    if resp.status_code >= 400:
+        try:
+            detail = resp.json().get("detail")
+        except (ValueError, AttributeError):
+            detail = resp.text[:500]
+        raise HTTPException(status_code=resp.status_code, detail=detail or "Peer request failed")
+    return resp.json()
+
+
+def _project_working_directory(
+    project,
+    *,
+    instance_id: str,
+    instance_name: str,
+) -> str | None:
+    if not project:
+        return None
+    tool_config = project.tool_config or {}
+    paths_by_instance = tool_config.get("repo_paths_by_instance") or {}
+    mapped_path = paths_by_instance.get(instance_id) or paths_by_instance.get(instance_name)
+    if mapped_path:
+        return str(mapped_path)
+
+    development_instance = tool_config.get("development_instance")
+    if development_instance not in {instance_id, instance_name}:
+        return None
+    for repo in project.repos or []:
+        path = repo.get("path") if isinstance(repo, dict) else getattr(repo, "path", None)
+        if path:
+            return str(path)
+    return None
+
+
+@router.post("/fleet/instances/{instance_id}/agent/start")
+async def start_remote_agent_work(
+    request: Request,
+    instance_id: str,
+    body: RemoteAgentStartBody,
+) -> dict:
+    """Create a remote session, optionally dispatching a local card into it."""
+    require_user(request)
+    ctx = request.app.state.ctx
+    settings = ctx.settings
+    store = ctx.store
+    realm_id = settings.primary_realm
+    card = store.get_card(body.card_id, realm_id=realm_id) if body.card_id else None
+    if body.card_id and not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+    project_id = body.project_id or (card.project_id if card else None)
+    project = store.get_project(project_id, realm_id=realm_id) if project_id else None
+    inst = _fleet_instance_or_404(request, instance_id)
+
+    session_body: dict[str, Any] = {
+        "label": f"card:{card.id}" if card else None,
+        "title": body.title or (card.title if card else "Remote agent session"),
+        "cwd": body.cwd
+        or _project_working_directory(
+            project,
+            instance_id=instance_id,
+            instance_name=inst.name,
+        ),
+        "card_id": card.id if card else None,
+        "project_id": project_id,
+        "provider": body.provider,
+        "model_id": body.model_id,
+        "mode_id": body.mode_id,
+        "effort": body.effort,
+        "config": body.config,
+        "surface": "execution",
+    }
+    session_body = {key: value for key, value in session_body.items() if value not in (None, "")}
+    snapshot = await _peer_agent_json(
+        request,
+        instance_id,
+        "POST",
+        "sessions",
+        body=session_body,
+    )
+    if not isinstance(snapshot, dict):
+        raise HTTPException(status_code=502, detail="Peer returned an invalid session")
+    session = snapshot.get("session") or snapshot
+    session_id = session.get("id") if isinstance(session, dict) else None
+    if not session_id:
+        raise HTTPException(status_code=502, detail="Peer did not return a session id")
+
+    message = body.message.strip()
+    if card and not message:
+        message = "Work on this card autonomously. Report progress, blockers, and the final result."
+    prompt_result = None
+    prompt_error = None
+    if message:
+        if card or project_id:
+            message = augment_message_with_context(
+                store,
+                message,
+                card_id=card.id if card else None,
+                project_id=project_id,
+                realm_id=realm_id,
+            )
+        try:
+            prompt_result = await _peer_agent_json(
+                request,
+                instance_id,
+                "POST",
+                f"sessions/{session_id}/prompt",
+                body={
+                    "message": message,
+                    "card_id": card.id if card else None,
+                    "project_id": project_id,
+                },
+            )
+        except HTTPException as exc:
+            # The remote session already exists. Preserve its identity and audit trail so
+            # the operator can open it and retry instead of losing track of an orphan.
+            prompt_error = str(exc.detail)
+
+    updated_card = None
+    if card:
+        updated_card = store.update_card(
+            card.id,
+            CardUpdate(
+                lane=CardLane.ACTIVE,
+                preferred_instance=instance_id,
+            ),
+            realm_id=realm_id,
+            principal_id=get_principal_id(request),
+            instance_id=settings.instance_id,
+        )
+    store.add_knowledge(
+        KnowledgeEntry(
+            session_id=session_id,
+            item_id=card.id if card else None,
+            card_id=card.id if card else None,
+            summary=(
+                f"Dispatched {card.title!r} to {inst.name} in session {session_id}."
+                if card
+                else f"Started remote session {session_id} on {inst.name}."
+            )
+            + (f" Initial prompt failed: {prompt_error}" if prompt_error else ""),
+            source="remote_dispatch",
+            tags=[
+                "remote-operations",
+                f"instance:{instance_id}",
+                *(["prompt-error"] if prompt_error else []),
+            ],
+        )
+    )
+    return {
+        "instance": inst.model_dump(mode="json"),
+        "session": snapshot,
+        "prompt": prompt_result,
+        "prompt_error": prompt_error,
+        "card": updated_card.model_dump(mode="json") if updated_card else None,
+    }
+
+
+@router.api_route(
+    "/fleet/instances/{instance_id}/agent/{agent_path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+)
+async def fleet_agent_proxy(
+    request: Request,
+    instance_id: str,
+    agent_path: str,
+) -> Response:
+    """Relay the authenticated agent REST/SSE surface through the local PA origin."""
+    require_user(request)
+    inst = _fleet_instance_or_404(request, instance_id)
+    proxied_path = _agent_path(agent_path)
+    target = f"{inst.url.rstrip('/')}/api/agent/{proxied_path}"
+    headers = _peer_headers(request)
+    for name in ("accept", "content-type", "last-event-id"):
+        value = request.headers.get(name)
+        if value:
+            headers[name] = value
+    # Session event streams are intentionally unbounded; every other proxied
+    # response must retain a finite read timeout so a stalled peer cannot pin a
+    # request forever while the controller buffers its body.
+    read_timeout = None if proxied_path.endswith("/events") else 120.0
+    client = httpx.AsyncClient(timeout=httpx.Timeout(120.0, read=read_timeout))
+    try:
+        upstream_request = client.build_request(
+            request.method,
+            target,
+            params=list(request.query_params.multi_items()),
+            headers=headers,
+            content=await request.body(),
+        )
+        upstream = await client.send(upstream_request, stream=True)
+    except httpx.HTTPError as exc:
+        await client.aclose()
+        raise HTTPException(status_code=502, detail=f"Peer unreachable: {exc}") from exc
+
+    response_headers = {
+        name: value
+        for name, value in upstream.headers.items()
+        if name.lower() in {"content-type", "cache-control", "content-disposition"}
+    }
+    content_type = upstream.headers.get("content-type", "")
+    if content_type.startswith("text/event-stream"):
+
+        async def relay() -> AsyncIterator[bytes]:
+            try:
+                async for chunk in upstream.aiter_raw():
+                    yield chunk
+            finally:
+                await upstream.aclose()
+                await client.aclose()
+
+        return StreamingResponse(
+            relay(),
+            status_code=upstream.status_code,
+            headers=response_headers,
+        )
+
+    try:
+        content = await upstream.aread()
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Peer response failed: {exc}") from exc
+    finally:
+        await upstream.aclose()
+        await client.aclose()
+    return Response(
+        content=content,
+        status_code=upstream.status_code,
+        headers=response_headers,
+    )
 
 
 def _proxy_agent_providers(

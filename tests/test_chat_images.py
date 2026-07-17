@@ -116,6 +116,8 @@ class ChatWidgetTemplateTests(unittest.TestCase):
         self.assertIn("data-acw-tool-flyout", html)
         self.assertIn("data-acw-plan-toggle", html)
         self.assertIn("data-acw-plan-flyout", html)
+        self.assertIn('data-api-base="/api/agent"', html)
+        self.assertIn('data-auto-start="1"', html)
 
     def test_agent_page_starts_new_sessions_from_a_configuration_dialog(self) -> None:
         template_root = Path(__file__).parents[1] / "src" / "pa" / "server" / "templates"
@@ -132,6 +134,30 @@ class ChatWidgetTemplateTests(unittest.TestCase):
         self.assertIn("newSessionSnapshotForProvider", script)
         self.assertIn('provider.addEventListener("change"', script)
         self.assertGreaterEqual(script.count("self.applyOptionSnapshot(snap);"), 2)
+
+    def test_fleet_page_exposes_remote_operations_console(self) -> None:
+        root = Path(__file__).parents[1] / "src" / "pa" / "server"
+        template = (root / "templates" / "pages" / "fleet.html").read_text()
+        fleet_script = (root / "static" / "js" / "fleet.js").read_text()
+        chat_script = (root / "static" / "js" / "agent-chat.js").read_text()
+
+        self.assertIn("Remote operations", template)
+        self.assertIn("pa-remote-start-form", template)
+        self.assertIn("pa-remote-session-list", template)
+        self.assertIn("pa-remote-history-list", template)
+        self.assertIn("auto_start=false", template)
+        self.assertIn("watchRemoteSessions", fleet_script)
+        self.assertIn("new Notification", fleet_script)
+        self.assertIn("var selectedProvider = select.value;", fleet_script)
+        self.assertIn("select.value = selectedProvider;", fleet_script)
+        self.assertIn("function remoteNotificationsActive()", fleet_script)
+        self.assertIn("function handleRemoteOperationsHidden()", fleet_script)
+        self.assertIn("function refreshRemoteWatchers(instanceId)", fleet_script)
+        self.assertIn("var generation = ++remoteLoadGeneration;", fleet_script)
+        self.assertIn("instanceId !== remoteInstanceId", fleet_script)
+        self.assertIn("var dispatchInstanceId = remoteInstanceId;", fleet_script)
+        self.assertNotIn("setTimeout(loadRemoteOperations", fleet_script)
+        self.assertIn("setApiBase", chat_script)
 
 
 if __name__ == "__main__":

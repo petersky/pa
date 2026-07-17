@@ -5,6 +5,7 @@
   <div class="panel-header"><h2>Fleet</h2></div>
   {{ section_nav([
     ('overview', 'Overview'),
+    ('operations', 'Operations'),
     ('readiness', 'Readiness'),
     ('add', 'Add machine'),
     ('realms', 'Realms'),
@@ -60,6 +61,111 @@
     {% else %}
     <p class="empty">No fleet instances registered.</p>
     {% endif %}
+  </section>
+
+  <section class="stack hidden" data-section="operations" hidden>
+    <div class="panel-header">
+      <div>
+        <h2>Remote operations</h2>
+        <p class="muted small">Start, monitor, interact with, and audit agent work on another PA instance.</p>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="ghost small" id="pa-remote-notifications">Enable notifications</button>
+        <button type="button" class="ghost small" id="pa-remote-refresh">Refresh</button>
+      </div>
+    </div>
+
+    <label class="pa-remote-instance-select">Instance
+      <select id="pa-remote-instance">
+        <option value="">Choose a remote instance…</option>
+        {% for inst in fleet_instances if inst.instance_id != settings.instance_id %}
+        <option value="{{ inst.instance_id }}" data-instance-name="{{ inst.name }}">{{ inst.name }} · {{ inst.url }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <p class="muted small" id="pa-remote-status" aria-live="polite">Choose an instance to load its sessions.</p>
+
+    <div class="pa-remote-operations-grid">
+      <div class="stack pa-remote-operations-sidebar">
+        <details class="panel-inset" open>
+          <summary>Start remote work</summary>
+          <form class="stack" id="pa-remote-start-form" style="margin-top:0.75rem">
+            <label>Card
+              <select name="card_id">
+                <option value="">Standalone session</option>
+                {% for card in cards if card.lane.value != 'done' %}
+                <option value="{{ card.id }}" data-project-id="{{ card.project_id or '' }}">{{ card.title }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label>Provider
+              <select name="provider" data-remote-provider>
+                <option value="">Instance default</option>
+              </select>
+            </label>
+            <label>Model <input name="model_id" placeholder="Provider default" autocomplete="off"></label>
+            <label>Mode <input name="mode_id" placeholder="Provider default" autocomplete="off"></label>
+            <label>Effort
+              <select name="effort">
+                <option value="">Provider default</option>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+                <option value="xhigh">Extra high</option>
+              </select>
+            </label>
+            <label>Working directory <input name="cwd" placeholder="Project repository or instance default" autocomplete="off"></label>
+            <label>Initial instruction
+              <textarea name="message" rows="4" placeholder="For a card, PA supplies the card and project context automatically."></textarea>
+            </label>
+            <div class="form-actions">
+              <button type="submit" class="primary" data-remote-start>Start on selected instance</button>
+            </div>
+          </form>
+        </details>
+
+        <div>
+          <h3>Live sessions</h3>
+          <ul class="item-list compact" id="pa-remote-session-list">
+            <li class="muted">Choose an instance.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Audit history</h3>
+          <ul class="item-list compact" id="pa-remote-history-list">
+            <li class="muted">Choose an instance.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="pa-remote-workspace">
+        <div class="panel-inset pa-remote-audit" id="pa-remote-audit" hidden>
+          <div class="panel-header">
+            <h3>Session audit</h3>
+            <button type="button" class="ghost small" data-remote-audit-close>Close</button>
+          </div>
+          <div id="pa-remote-audit-body"></div>
+        </div>
+        <div id="pa-remote-chat" hidden>
+          {% with
+              session_id='',
+              create_label='remote-operations',
+              card_id='',
+              api_base='',
+              auto_start=false,
+              show_model=true,
+              show_mode=true,
+              show_thinking=true,
+              show_system_prompts=false,
+              show_queue=true,
+              show_metrics=true,
+              compact=false
+          %}
+            {% include "partials/agent/chat-widget.html" %}
+          {% endwith %}
+        </div>
+      </div>
+    </div>
   </section>
 
   <section class="stack hidden" data-section="readiness" hidden>

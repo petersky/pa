@@ -11,9 +11,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi import HTTPException
 
 from pa.acp.client import normalize_session_update
+from pa.domain.models import AgentSession, TranscriptEvent
 from pa.modules.agent_chat import (
     CreateSessionBody,
     create_session,
+    get_agent_session_history,
+    list_agent_session_history,
     list_agent_sessions,
     session_events,
 )
@@ -154,6 +157,7 @@ class AgentChatSseTests(unittest.TestCase):
         runtime.connected = True
         runtime.prompting = False
         runtime._queue = []
+        runtime._seq = 12
         runtime.session.id = "sess-codex"
         runtime.session.title = "Codex session"
         runtime.session.label = None
@@ -171,6 +175,40 @@ class AgentChatSseTests(unittest.TestCase):
             sessions = list_agent_sessions(request)
 
         self.assertEqual(sessions[0]["agent_name"], "codex")
+        self.assertEqual(sessions[0]["last_seq"], 12)
+
+    def test_persisted_history_includes_closed_session_transcript(self) -> None:
+        session = AgentSession(
+            id="sess-closed",
+            agent_name="codex",
+            status="closed",
+            title="Remote audit",
+            card_id="card-1",
+        )
+        event = TranscriptEvent(
+            session_id=session.id,
+            seq=4,
+            event_type="turn_completed",
+            payload={"stop_reason": "end_turn"},
+        )
+        manager = MagicMock()
+        manager.store.list_sessions.return_value = [session]
+        manager.store.get_session.return_value = session
+        manager.store.list_transcript_events.return_value = [event]
+        manager.get.return_value = None
+        request = MagicMock()
+        request.app.state.ctx.settings.instance_id = "mini-1"
+        request.app.state.ctx.settings.instance_name = "macmini"
+
+        with patch("pa.modules.agent_chat._manager", return_value=manager):
+            rows = list_agent_session_history(request, card_id="card-1")
+            audit = get_agent_session_history(request, session.id)
+
+        self.assertEqual(rows[0]["id"], session.id)
+        self.assertFalse(rows[0]["live"])
+        self.assertEqual(rows[0]["instance_name"], "macmini")
+        self.assertEqual(audit["events"][0]["event_type"], "turn_completed")
+        self.assertEqual(audit["instance"]["id"], "mini-1")
 
     def test_codex_message_phase_is_preserved(self) -> None:
         update = {

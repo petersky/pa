@@ -1,7 +1,7 @@
 {# Modular agent chat widget — embeddable on Agent page or card panes.
    Context / data attributes:
      session_id, create_label, card_id, show_model, show_mode, show_thinking,
-     show_system_prompts, show_queue, show_metrics, compact
+     show_system_prompts, show_queue, show_metrics, compact, api_base, auto_start
 #}
 {% set sid = session_id | default('') %}
 {% set label = create_label | default('default') %}
@@ -14,12 +14,16 @@
 {% set show_metrics = show_metrics if show_metrics is defined else true %}
 {% set compact = compact if compact is defined else false %}
 {% set show_sidebar_toggle = show_sidebar_toggle if show_sidebar_toggle is defined else false %}
+{% set api_base = api_base | default('/api/agent') %}
+{% set auto_start = auto_start if auto_start is defined else true %}
 
 <div class="agent-chat-widget{% if compact %} is-compact{% endif %}"
      data-agent-chat
      data-session-id="{{ sid }}"
      data-create-label="{{ label }}"
      data-card-id="{{ cid }}"
+     data-api-base="{{ api_base }}"
+     data-auto-start="{{ '1' if auto_start else '0' }}"
      data-show-model="{{ '1' if show_model else '0' }}"
      data-show-mode="{{ '1' if show_mode else '0' }}"
      data-show-thinking="{{ '1' if show_thinking else '0' }}"

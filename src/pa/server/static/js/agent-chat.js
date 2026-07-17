@@ -81,6 +81,8 @@
     this.sessionId = root.dataset.sessionId || "";
     this.createLabel = root.dataset.createLabel || "default";
     this.cardId = root.dataset.cardId || "";
+    this.apiBase = (root.dataset.apiBase || "/api/agent").replace(/\/$/, "");
+    this.autoStart = root.dataset.autoStart !== "0";
     this.showThinking = root.dataset.showThinking !== "0";
     this.showSystem = root.dataset.showSystemPrompts === "1";
     this.showQueue = root.dataset.showQueue !== "0";
@@ -164,7 +166,11 @@
     ensureMarkdown().then(function () {
       /* markdown ready */
     });
-    this.init();
+    if (this.autoStart) this.init();
+    else {
+      this.setPlaceholder("Select or start a remote session.");
+      this.setStatus("offline");
+    }
   }
 
   AgentChatWidget.prototype._bind = function () {
@@ -285,7 +291,7 @@
 
   AgentChatWidget.prototype.api = function (path, opts) {
     opts = opts || {};
-    return fetch("/api/agent" + path, Object.assign({
+    return fetch(this.apiBase + path, Object.assign({
       headers: csrfHeaders(),
       credentials: "same-origin",
     }, opts)).then(function (res) {
@@ -335,7 +341,7 @@
 
   AgentChatWidget.prototype.browserApi = function (path, opts) {
     opts = opts || {};
-    return fetch("/api/agent/sessions/" + this.sessionId + "/browser" + path, Object.assign({
+    return fetch(this.apiBase + "/sessions/" + this.sessionId + "/browser" + path, Object.assign({
       headers: csrfHeaders(), credentials: "same-origin",
     }, opts)).then(function (res) {
       if (!res.ok) return res.json().catch(function () { return {}; }).then(function (body) { throw new Error(body.detail || "Browser request failed"); });
@@ -414,7 +420,7 @@
 
   AgentChatWidget.prototype.refreshBrowser = function () {
     if (!this.browserAttached || !this.els.browserImage) return;
-    this.els.browserImage.src = "/api/agent/sessions/" + this.sessionId + "/browser/screenshot?t=" + Date.now();
+    this.els.browserImage.src = this.apiBase + "/sessions/" + this.sessionId + "/browser/screenshot?t=" + Date.now();
   };
 
   AgentChatWidget.prototype.startBrowserRefresh = function () {
@@ -641,7 +647,7 @@
       this.es = null;
     }
     if (!this.sessionId) return;
-    const url = "/api/agent/sessions/" + this.sessionId + "/events?after=" + this.lastSeq;
+    const url = this.apiBase + "/sessions/" + this.sessionId + "/events?after=" + this.lastSeq;
     const es = new EventSource(url);
     this.es = es;
 
@@ -1308,6 +1314,26 @@
         self.setPlaceholder("Failed to load session: " + err.message);
         self.setStatus("error");
       });
+  };
+
+  AgentChatWidget.prototype.setApiBase = function (apiBase) {
+    const next = String(apiBase || "/api/agent").replace(/\/$/, "");
+    if (next === this.apiBase) return;
+    if (this.es) {
+      this.es.close();
+      this.es = null;
+    }
+    this.stopBrowserRefresh();
+    this.apiBase = next;
+    this.sessionId = "";
+    this.root.dataset.apiBase = next;
+    this.root.dataset.sessionId = "";
+    this.lastSeq = 0;
+    this.streaming = {};
+    this.lastSnapshot = null;
+    this.setTurnActive(false);
+    this.setStatus("offline");
+    this.setPlaceholder("Select or start a remote session.");
   };
 
   AgentChatWidget.prototype.renderMetrics = function (metrics) {
