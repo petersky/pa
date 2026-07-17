@@ -112,10 +112,19 @@
       queueList: root.querySelector("[data-acw-queue-list]"),
       model: root.querySelector("[data-acw-model]"),
       mode: root.querySelector("[data-acw-mode]"),
-      provider: root.querySelector("[data-acw-provider]"),
       modelWrap: root.querySelector("[data-acw-model-wrap]"),
       modeWrap: root.querySelector("[data-acw-mode-wrap]"),
       config: root.querySelector("[data-acw-config]"),
+      toolToggle: root.querySelector("[data-acw-tool-toggle]"),
+      toolFlyout: root.querySelector("[data-acw-tool-flyout]"),
+      toolActivity: root.querySelector("[data-acw-tool-activity]"),
+      toolEmpty: root.querySelector("[data-acw-tool-empty]"),
+      toolCount: root.querySelector("[data-acw-tool-count]"),
+      planToggle: root.querySelector("[data-acw-plan-toggle]"),
+      planFlyout: root.querySelector("[data-acw-plan-flyout]"),
+      planList: root.querySelector("[data-acw-plan-list]"),
+      planDetail: root.querySelector("[data-acw-plan-detail]"),
+      planCount: root.querySelector("[data-acw-plan-count]"),
       browserToggle: root.querySelector("[data-acw-browser-toggle]"),
       browser: root.querySelector("[data-acw-browser]"),
       browserUrl: root.querySelector("[data-acw-browser-url]"),
@@ -135,6 +144,10 @@
     this.toolTimers = {};
     this.currentActivity = null;
     this.activityStreams = {};
+    this.activityCount = 0;
+    this.activeToolIds = {};
+    this.plans = [];
+    this.lastSnapshot = null;
     this.turnStartedAt = null;
     this.turnTimerId = null;
     this.queuePaused = false;
@@ -195,20 +208,29 @@
     if (qr) qr.addEventListener("click", function () { self.queueControl("resume"); });
     if (this.els.model) {
       this.els.model.addEventListener("change", function () {
-        self.putOption("model", { model_id: self.els.model.value });
+        const selected = self.els.model.value;
+        self.els.model.disabled = true;
+        self.putOption("model", { model_id: selected })
+          .then(function (result) { self.els.model.value = result.model_id || selected; })
+          .catch(function () { /* putOption restored the server value */ })
+          .finally(function () { self.els.model.disabled = false; });
       });
     }
     if (this.els.mode) {
       this.els.mode.addEventListener("change", function () {
-        self.putOption("mode", { mode_id: self.els.mode.value });
+        const selected = self.els.mode.value;
+        self.els.mode.disabled = true;
+        self.putOption("mode", { mode_id: selected })
+          .then(function (result) { self.els.mode.value = result.mode_id || selected; })
+          .catch(function () { /* putOption restored the server value */ })
+          .finally(function () { self.els.mode.disabled = false; });
       });
     }
-    if (this.els.provider) {
-      this.els.provider.addEventListener("change", function () {
-        self.preferredProvider = self.els.provider.value;
-        self.recreateWithProvider(self.preferredProvider);
-      });
-    }
+    if (this.els.toolToggle) this.els.toolToggle.addEventListener("click", function () { self.toggleFlyout("tool"); });
+    if (this.els.planToggle) this.els.planToggle.addEventListener("click", function () { self.toggleFlyout("plan"); });
+    this.root.querySelectorAll("[data-acw-flyout-close]").forEach(function (button) {
+      button.addEventListener("click", function () { self.closeFlyouts(); });
+    });
     if (this.els.input) {
       this.els.input.addEventListener("keydown", function (e) {
         if (e.key === "Enter" && !e.shiftKey) {
@@ -406,23 +428,23 @@
     this.browserRefreshId = null;
   };
 
-  AgentChatWidget.prototype.recreateWithProvider = function (provider) {
-    const self = this;
-    const close = this.sessionId
-      ? this.api("/sessions/" + this.sessionId + "/close", { method: "POST", body: "{}" })
-      : Promise.resolve();
-    close
-      .catch(function () { /* ignore */ })
-      .then(function () {
-        self.sessionId = "";
-        self.root.dataset.sessionId = "";
-        self.preferredProvider = provider || "";
-        if (self.es) {
-          try { self.es.close(); } catch (_) {}
-          self.es = null;
-        }
-        self.init();
-      });
+  AgentChatWidget.prototype.toggleFlyout = function (kind) {
+    const target = kind === "plan" ? this.els.planFlyout : this.els.toolFlyout;
+    const other = kind === "plan" ? this.els.toolFlyout : this.els.planFlyout;
+    const toggle = kind === "plan" ? this.els.planToggle : this.els.toolToggle;
+    const otherToggle = kind === "plan" ? this.els.toolToggle : this.els.planToggle;
+    const open = !!(target && target.hidden);
+    if (target) target.hidden = !open;
+    if (other) other.hidden = true;
+    if (toggle) toggle.setAttribute("aria-expanded", open ? "true" : "false");
+    if (otherToggle) otherToggle.setAttribute("aria-expanded", "false");
+  };
+
+  AgentChatWidget.prototype.closeFlyouts = function () {
+    if (this.els.toolFlyout) this.els.toolFlyout.hidden = true;
+    if (this.els.planFlyout) this.els.planFlyout.hidden = true;
+    if (this.els.toolToggle) this.els.toolToggle.setAttribute("aria-expanded", "false");
+    if (this.els.planToggle) this.els.planToggle.setAttribute("aria-expanded", "false");
   };
 
   AgentChatWidget.prototype.setPlaceholder = function (text) {
@@ -550,6 +572,7 @@
 
   AgentChatWidget.prototype.applySnapshot = function (snap) {
     const self = this;
+    this.lastSnapshot = snap;
     const session = snap.session || {};
     if (this.els.title) {
       this.els.title.textContent = session.title || session.label || "Agent";
@@ -562,7 +585,6 @@
     this.setStatus(this.prompting ? "working" : snap.connected ? "online" : "offline");
     this.renderQueue(snap.queue || []);
     this.renderModelsModes(snap);
-    this.renderProvider(snap);
     this.renderConfigOptions(snap);
     this.renderMetrics(snap.metrics || session.metrics_json || {});
     if (this.els.permissions) {
@@ -575,6 +597,12 @@
     refreshSessionList(this.sessionId);
   };
 
+  AgentChatWidget.prototype.applyOptionSnapshot = function (snap) {
+    this.lastSnapshot = snap;
+    this.renderModelsModes(snap);
+    this.renderConfigOptions(snap);
+  };
+
   AgentChatWidget.prototype.renderTranscript = function (events) {
     const self = this;
     if (!this.els.messages) return;
@@ -583,6 +611,7 @@
       if (timer && timer.interval) clearInterval(timer.interval);
     });
     this.toolTimers = {};
+    this.resetArtifacts();
     // Keep placeholder node; clear the rest
     Array.from(this.els.messages.children).forEach(function (child) {
       if (!child.hasAttribute("data-acw-placeholder")) child.remove();
@@ -665,6 +694,7 @@
 
   AgentChatWidget.prototype.handleEvent = function (event, replay) {
     if (!event) return;
+    const shouldFollow = !replay && this.isNearBottom();
     const self = this;
     const seq = event.seq || 0;
     if (seq) this.lastSeq = Math.max(this.lastSeq, seq);
@@ -742,8 +772,7 @@
       case "config_option_update":
         if (!replay) {
           this.api("/sessions/" + this.sessionId).then(function (snap) {
-            self.renderModelsModes(snap);
-            self.renderConfigOptions(snap);
+            self.applyOptionSnapshot(snap);
           }).catch(function () { /* ignore */ });
         }
         break;
@@ -771,7 +800,7 @@
       default:
         break;
     }
-    if (!replay) this.scrollToBottom();
+    if (!replay && shouldFollow) this.scrollToBottom();
   };
 
   AgentChatWidget.prototype.addBubble = function (role, text, ts, opts) {
@@ -867,22 +896,17 @@
   };
 
   AgentChatWidget.prototype.ensureActivity = function () {
-    if (this.currentActivity && this.currentActivity.isConnected) return this.currentActivity;
-    const details = document.createElement("details");
-    details.className = "acw-activity";
-    details.open = true;
-    details.innerHTML = '<summary><span>Activity</span><span class="acw-activity-count muted">0 updates</span></summary><div class="acw-activity-body"></div>';
-    details.dataset.count = "0";
-    this.els.messages.appendChild(details);
-    this.currentActivity = details;
-    return details;
+    this.currentActivity = this.els.toolActivity;
+    if (this.els.toolEmpty) this.els.toolEmpty.hidden = true;
+    return this.currentActivity;
   };
 
   AgentChatWidget.prototype.bumpActivityCount = function (activity) {
-    const count = Number(activity.dataset.count || "0") + 1;
-    activity.dataset.count = String(count);
-    const label = activity.querySelector(".acw-activity-count");
-    if (label) label.textContent = count + (count === 1 ? " update" : " updates");
+    this.activityCount += 1;
+    if (this.els.toolCount) {
+      this.els.toolCount.hidden = false;
+      this.els.toolCount.textContent = String(this.activityCount);
+    }
   };
 
   AgentChatWidget.prototype.appendActivityProgress = function (key, chunk) {
@@ -893,7 +917,7 @@
     if (!stream) {
       const el = document.createElement("div");
       el.className = "acw-progress-update";
-      activity.querySelector(".acw-activity-body").appendChild(el);
+      activity.appendChild(el);
       stream = { text: "", el: el };
       this.activityStreams[id] = stream;
       this.bumpActivityCount(activity);
@@ -903,15 +927,16 @@
   };
 
   AgentChatWidget.prototype.finalizeActivity = function () {
-    if (this.currentActivity) this.currentActivity.open = false;
     this.currentActivity = null;
     this.activityStreams = {};
+    this.activeToolIds = {};
+    this.updateToolAnimation();
   };
 
   AgentChatWidget.prototype.upsertTool = function (payload, ts) {
     this.clearPlaceholder();
     const id = payload.tool_call_id || "tool";
-    let el = this.els.messages.querySelector('[data-tool-id="' + id + '"]');
+    let el = this.els.toolActivity && this.els.toolActivity.querySelector('[data-tool-id="' + id + '"]');
     if (!el) {
       el = document.createElement("div");
       el.className = "acw-tool";
@@ -923,7 +948,7 @@
         '<span class="acw-tool-status muted"></span>' +
         "</div>";
       const activity = this.ensureActivity();
-      activity.querySelector(".acw-activity-body").appendChild(el);
+      activity.appendChild(el);
       this.bumpActivityCount(activity);
       const eventTime = ts ? new Date(ts).getTime() : Date.now();
       this.toolTimers[id] = { started: eventTime, interval: null };
@@ -939,7 +964,10 @@
     const status = el.querySelector(".acw-tool-status");
     if (title) title.textContent = payload.title || payload.kind || "Tool";
     if (status) status.textContent = payload.status || "";
-    if (payload.status && payload.status !== "in_progress" && payload.status !== "pending") {
+    if (!payload.status || payload.status === "in_progress" || payload.status === "pending") {
+      this.activeToolIds[id] = true;
+    } else {
+      delete this.activeToolIds[id];
       const t = this.toolTimers[id];
       if (t && t.interval) {
         clearInterval(t.interval);
@@ -949,12 +977,53 @@
         if (timerEl && t.started) timerEl.textContent = formatElapsed(ended - t.started);
       }
     }
+    this.updateToolAnimation();
   };
 
-  AgentChatWidget.prototype.renderPlan = function (payload) {
+  AgentChatWidget.prototype.updateToolAnimation = function () {
+    if (!this.els.toolToggle) return;
+    this.els.toolToggle.classList.toggle("is-active", Object.keys(this.activeToolIds).length > 0);
+  };
+
+  AgentChatWidget.prototype.resetArtifacts = function () {
+    this.currentActivity = null;
+    this.activityStreams = {};
+    this.activityCount = 0;
+    this.activeToolIds = {};
+    this.plans = [];
+    if (this.els.toolActivity) {
+      Array.from(this.els.toolActivity.children).forEach(function (child) {
+        if (!child.hasAttribute("data-acw-tool-empty")) child.remove();
+      });
+    }
+    if (this.els.toolEmpty) this.els.toolEmpty.hidden = false;
+    if (this.els.toolCount) {
+      this.els.toolCount.hidden = true;
+      this.els.toolCount.textContent = "0";
+    }
+    if (this.els.planCount) {
+      this.els.planCount.hidden = true;
+      this.els.planCount.textContent = "0";
+    }
+    if (this.els.planList) this.els.planList.innerHTML = "";
+    if (this.els.planDetail) this.els.planDetail.innerHTML = '<p class="muted">No plans yet.</p>';
+    this.updateToolAnimation();
+  };
+
+  AgentChatWidget.prototype.selectPlan = function (index) {
+    const plan = this.plans[index];
+    if (!plan || !this.els.planDetail) return;
+    this.els.planDetail.innerHTML = plan.html;
+    if (this.els.planList) {
+      this.els.planList.querySelectorAll("button").forEach(function (button, buttonIndex) {
+        button.classList.toggle("active", buttonIndex === index);
+      });
+    }
+  };
+
+  AgentChatWidget.prototype.renderPlan = function (payload, created) {
     this.clearPlaceholder();
-    const el = document.createElement("div");
-    el.className = "acw-plan";
+    const self = this;
     const entries = payload.entries || [];
     const md = entries
       .map(function (e) {
@@ -963,8 +1032,27 @@
         return "- [" + status + "] " + content;
       })
       .join("\n");
-    el.innerHTML = renderMarkdown(md || "_Empty plan_");
-    this.els.messages.appendChild(el);
+    const index = this.plans.length;
+    this.plans.push({
+      html: renderMarkdown(md || "_Empty plan_"),
+      created: created,
+    });
+    if (this.els.planList) {
+      const item = document.createElement("li");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "ghost";
+      button.innerHTML = "<strong>Plan " + (index + 1) + "</strong>" +
+        (created ? '<span class="muted">' + escapeHtml(new Date(created).toLocaleTimeString()) + "</span>" : "");
+      button.addEventListener("click", function () { self.selectPlan(index); });
+      item.appendChild(button);
+      this.els.planList.appendChild(item);
+    }
+    if (this.els.planCount) {
+      this.els.planCount.hidden = false;
+      this.els.planCount.textContent = String(this.plans.length);
+    }
+    this.selectPlan(index);
   };
 
   AgentChatWidget.prototype.showPermission = function (payload) {
@@ -1086,28 +1174,6 @@
     }).catch(function () { /* ignore */ });
   };
 
-  AgentChatWidget.prototype.renderProvider = function (snap) {
-    if (!this.els.provider) return;
-    const current = (snap.session && snap.session.agent_name) || this.preferredProvider || "cursor";
-    if (current === "instance") return;
-    const opts = this.els.provider.options;
-    let found = false;
-    for (let i = 0; i < opts.length; i++) {
-      if (opts[i].value === current) {
-        found = true;
-        break;
-      }
-    }
-    if (!found && current) {
-      const opt = document.createElement("option");
-      opt.value = current;
-      opt.textContent = current;
-      this.els.provider.appendChild(opt);
-    }
-    this.els.provider.value = current;
-    this.preferredProvider = current;
-  };
-
   AgentChatWidget.prototype.renderModelsModes = function (snap) {
     if (this.showModel && this.els.model && this.els.modelWrap) {
       const models = (snap.models && (snap.models.availableModels || snap.models.available_models)) || [];
@@ -1148,6 +1214,7 @@
       (snap.session && snap.session.config_json && snap.session.config_json.options) ||
       [];
     const options = Array.isArray(raw) ? raw : [];
+    const configValues = (snap.session && snap.session.config_json && snap.session.config_json.values) || {};
     if (!options.length) {
       this.els.config.hidden = true;
       this.els.config.innerHTML = "";
@@ -1178,9 +1245,12 @@
       if (type === "boolean") {
         const input = document.createElement("input");
         input.type = "checkbox";
-        input.checked = !!(opt.currentValue != null ? opt.currentValue : opt.current_value);
+        const current = Object.prototype.hasOwnProperty.call(configValues, id)
+          ? configValues[id]
+          : (opt.currentValue != null ? opt.currentValue : opt.current_value);
+        input.checked = !!current;
         input.addEventListener("change", function () {
-          self.putOption("config", { config_id: id, value: !!input.checked });
+          self.putOption("config", { config_id: id, value: !!input.checked }).catch(function () {});
         });
         wrap.appendChild(input);
         wrap.appendChild(document.createTextNode(" " + name));
@@ -1188,7 +1258,9 @@
         const select = document.createElement("select");
         select.setAttribute("aria-label", name);
         const choices = opt.options || opt.choices || opt.values || [];
-        const current = opt.currentValue != null ? opt.currentValue : opt.current_value;
+        const current = Object.prototype.hasOwnProperty.call(configValues, id)
+          ? configValues[id]
+          : (opt.currentValue != null ? opt.currentValue : opt.current_value);
         choices.forEach(function (choice) {
           const value = typeof choice === "object" ? (choice.value || choice.id) : choice;
           const label = typeof choice === "object" ? (choice.name || choice.label || value) : choice;
@@ -1206,7 +1278,7 @@
           select.appendChild(option);
         }
         select.addEventListener("change", function () {
-          self.putOption("config", { config_id: id, value: select.value });
+          self.putOption("config", { config_id: id, value: select.value }).catch(function () {});
         });
         wrap.appendChild(document.createTextNode(name + " "));
         wrap.appendChild(select);
@@ -1306,6 +1378,12 @@
     if (this.els.messages) this.els.messages.scrollTop = this.els.messages.scrollHeight;
   };
 
+  AgentChatWidget.prototype.isNearBottom = function () {
+    if (!this.els.messages) return true;
+    const distance = this.els.messages.scrollHeight - this.els.messages.scrollTop - this.els.messages.clientHeight;
+    return distance <= 48;
+  };
+
   AgentChatWidget.prototype.send = function (action) {
     const self = this;
     const text = (this.els.input && this.els.input.value || "").trim();
@@ -1396,10 +1474,17 @@
   };
 
   AgentChatWidget.prototype.putOption = function (kind, body) {
-    if (!this.sessionId) return;
-    this.api("/sessions/" + this.sessionId + "/" + kind, {
+    const self = this;
+    if (!this.sessionId) return Promise.reject(new Error("No active session"));
+    return this.api("/sessions/" + this.sessionId + "/" + kind, {
       method: "PUT",
       body: JSON.stringify(body),
+    }).catch(function (err) {
+      self.addBubble("system", "Could not update agent setting: " + err.message, new Date().toISOString(), { system: true, forceVisible: true });
+      return self.api("/sessions/" + self.sessionId).then(function (snap) {
+        self.applyOptionSnapshot(snap);
+        throw err;
+      });
     });
   };
 
@@ -1448,6 +1533,79 @@
       .catch(function () { /* ignore */ });
   }
 
+  function populateDatalist(list, values, idKeys) {
+    if (!list) return;
+    list.innerHTML = "";
+    (values || []).forEach(function (item) {
+      const value = typeof item === "object"
+        ? idKeys.map(function (key) { return item[key]; }).find(Boolean)
+        : item;
+      if (!value) return;
+      const option = document.createElement("option");
+      option.value = value;
+      list.appendChild(option);
+    });
+  }
+
+  function populateNewSessionOptions(dialog, snap) {
+    const models = snap && snap.models && (snap.models.availableModels || snap.models.available_models);
+    const modes = snap && snap.modes && (snap.modes.availableModes || snap.modes.available_modes);
+    populateDatalist(dialog.querySelector("[data-agent-new-models]"), models, ["modelId", "model_id", "id"]);
+    populateDatalist(dialog.querySelector("[data-agent-new-modes]"), modes, ["id", "modeId", "mode_id"]);
+  }
+
+  function newSessionSnapshotForProvider(widget, providerId) {
+    const snap = widget && widget._acw && widget._acw.lastSnapshot;
+    const activeProvider = snap && snap.session && snap.session.agent_name;
+    if (providerId && providerId === activeProvider) return Promise.resolve(snap);
+    if (!providerId) return Promise.resolve(null);
+    return csrfFetch("/sessions").then(function (sessions) {
+      const match = (sessions || []).find(function (session) {
+        return session && session.agent_name === providerId;
+      });
+      if (!match || !match.id) return null;
+      return csrfFetch("/sessions/" + encodeURIComponent(match.id));
+    });
+  }
+
+  function refreshNewSessionOptions(dialog, widget) {
+    const provider = dialog.querySelector("[data-agent-new-provider]");
+    const providerId = provider ? provider.value : "";
+    const requestId = Number(dialog._acwOptionsRequest || 0) + 1;
+    dialog._acwOptionsRequest = requestId;
+    // Never leave another provider's suggestions visible while lookup is pending.
+    populateNewSessionOptions(dialog, null);
+    return newSessionSnapshotForProvider(widget, providerId)
+      .then(function (snap) {
+        if (dialog._acwOptionsRequest === requestId) populateNewSessionOptions(dialog, snap);
+      })
+      .catch(function () {
+        if (dialog._acwOptionsRequest === requestId) populateNewSessionOptions(dialog, null);
+      });
+  }
+
+  function prepareNewSessionDialog(dialog, widget) {
+    const provider = dialog.querySelector("[data-agent-new-provider]");
+    const snap = widget && widget._acw && widget._acw.lastSnapshot;
+    const activeProvider = snap && snap.session && snap.session.agent_name;
+    populateNewSessionOptions(dialog, snap);
+    return csrfFetch("/providers")
+      .then(function (providers) {
+        if (!provider) return;
+        provider.innerHTML = '<option value="">Instance default</option>';
+        (providers || []).forEach(function (item) {
+          if (!item || !item.id || item.available === false) return;
+          const option = document.createElement("option");
+          option.value = item.id;
+          option.textContent = item.display_name || item.id;
+          if (item.id === activeProvider) option.selected = true;
+          provider.appendChild(option);
+        });
+        return refreshNewSessionOptions(dialog, widget);
+      })
+      .catch(function () { /* the instance default remains available */ });
+  }
+
   function bindSessionSidebar(scope) {
     const root = scope || document;
     const list = root.querySelector("[data-agent-session-list]");
@@ -1473,18 +1631,61 @@
       neu._acwBound = true;
       neu.addEventListener("click", function () {
         const widget = document.querySelector("[data-agent-chat]");
-        csrfFetch("/sessions", {
-          method: "POST",
-          body: JSON.stringify({ label: "chat", title: "Chat" }),
-        })
+        const dialog = document.querySelector("[data-agent-new-dialog]");
+        if (!dialog) return;
+        const error = dialog.querySelector("[data-agent-new-error]");
+        if (error) error.hidden = true;
+        prepareNewSessionDialog(dialog, widget);
+        if (typeof dialog.showModal === "function") dialog.showModal();
+        else dialog.setAttribute("open", "");
+      });
+    }
+    const dialog = root.querySelector("[data-agent-new-dialog]");
+    if (dialog && !dialog._acwBound) {
+      dialog._acwBound = true;
+      const provider = dialog.querySelector("[data-agent-new-provider]");
+      if (provider) {
+        provider.addEventListener("change", function () {
+          refreshNewSessionOptions(dialog, document.querySelector("[data-agent-chat]"));
+        });
+      }
+      dialog.querySelectorAll("[data-agent-new-cancel]").forEach(function (button) {
+        button.addEventListener("click", function () { dialog.close(); });
+      });
+      const form = dialog.querySelector("[data-agent-new-form]");
+      if (form) form.addEventListener("submit", function (event) {
+        event.preventDefault();
+        const data = new FormData(form);
+        const body = {};
+        ["title", "provider", "model_id", "mode_id", "effort", "cwd"].forEach(function (key) {
+          const value = String(data.get(key) || "").trim();
+          if (value) body[key] = value;
+        });
+        const submit = dialog.querySelector("[data-agent-new-submit]");
+        const error = dialog.querySelector("[data-agent-new-error]");
+        if (submit) {
+          submit.disabled = true;
+          submit.textContent = "Starting…";
+        }
+        if (error) error.hidden = true;
+        csrfFetch("/sessions", { method: "POST", body: JSON.stringify(body) })
           .then(function (snap) {
             const sid = (snap.session && snap.session.id) || snap.id;
+            dialog.close();
             refreshSessionList(sid);
+            const widget = document.querySelector("[data-agent-chat]");
             if (widget && widget._acw && sid) widget._acw.switchSession(sid);
           })
           .catch(function (err) {
-            if (widget && widget._acw) {
-              widget._acw.addBubble("system", err.message, new Date().toISOString(), { system: true });
+            if (error) {
+              error.textContent = err.message;
+              error.hidden = false;
+            }
+          })
+          .finally(function () {
+            if (submit) {
+              submit.disabled = false;
+              submit.textContent = "Start session";
             }
           });
       });

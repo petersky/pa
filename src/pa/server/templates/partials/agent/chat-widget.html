@@ -38,27 +38,9 @@
     </div>
     <div class="acw-toolbar-right">
       <button type="button" class="ghost small" data-acw-browser-toggle title="Attach a browser to this session">Attach Browser</button>
-      {% if compact %}
-      <label class="acw-select-wrap" data-acw-provider-wrap>
-        <span>Provider</span>
-        <select data-acw-provider aria-label="ACP provider">
-          <option value="cursor">Cursor</option>
-          <option value="codex">Codex</option>
-        </select>
-      </label>
-      {% endif %}
       <details class="acw-menu acw-settings-menu">
         <summary>Agent settings…</summary>
         <div class="acw-menu-body acw-settings-body">
-          {% if not compact %}
-          <label class="acw-select-wrap" data-acw-provider-wrap>
-            <span>Provider</span>
-            <select data-acw-provider aria-label="ACP provider">
-              <option value="cursor">Cursor</option>
-              <option value="codex">Codex</option>
-            </select>
-          </label>
-          {% endif %}
           {% if show_model %}
           <label class="acw-select-wrap" data-acw-model-wrap hidden>
             <span>Model</span>
@@ -107,8 +89,38 @@
     </div>
   </section>
 
-  <div class="acw-messages scroll-region" data-acw-messages>
-    <p class="muted chat-placeholder" data-acw-placeholder>Connecting to agent…</p>
+  <div class="acw-chat-stage">
+    <nav class="acw-activity-rail" aria-label="Session artifacts">
+      <button type="button" class="ghost acw-rail-button" data-acw-tool-toggle
+              aria-label="Tool activity" title="Tool activity" aria-expanded="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5-5l2.1 2.1-2.4 2.4-2.1-2.1a4 4 0 0 0 5 5l7.1 7.1-2.6 2.6-7.1-7.1a4 4 0 0 0-5 5l2.1-2.1 2.4 2.4-2.1 2.1a4 4 0 0 0 5-5l7.1 7.1a2 2 0 0 0 2.8-2.8Z"/></svg>
+        <span class="acw-rail-badge" data-acw-tool-count hidden>0</span>
+      </button>
+      <button type="button" class="ghost acw-rail-button" data-acw-plan-toggle
+              aria-label="Session plans" title="Session plans" aria-expanded="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm2 5h2V6H7v2Zm4 0h6V6h-6v2Zm-4 5h2v-2H7v2Zm4 0h6v-2h-6v2Zm-4 5h2v-2H7v2Zm4 0h6v-2h-6v2Z"/></svg>
+        <span class="acw-rail-badge" data-acw-plan-count hidden>0</span>
+      </button>
+    </nav>
+
+    <aside class="acw-flyout" data-acw-tool-flyout hidden aria-label="Tool activity">
+      <header><strong>Tool activity</strong><button type="button" class="ghost small" data-acw-flyout-close aria-label="Close tool activity">×</button></header>
+      <div class="acw-flyout-body acw-tool-activity" data-acw-tool-activity>
+        <p class="muted" data-acw-tool-empty>No tool activity yet.</p>
+      </div>
+    </aside>
+
+    <aside class="acw-flyout" data-acw-plan-flyout hidden aria-label="Session plans">
+      <header><strong>Plans</strong><button type="button" class="ghost small" data-acw-flyout-close aria-label="Close plans">×</button></header>
+      <div class="acw-plan-browser">
+        <ol class="acw-plan-list" data-acw-plan-list></ol>
+        <div class="acw-plan-detail" data-acw-plan-detail><p class="muted">No plans yet.</p></div>
+      </div>
+    </aside>
+
+    <div class="acw-messages scroll-region" data-acw-messages>
+      <p class="muted chat-placeholder" data-acw-placeholder>Connecting to agent…</p>
+    </div>
   </div>
 
   <div class="acw-permissions" data-acw-permissions hidden></div>

@@ -26,6 +26,56 @@
     {% endif %}
   </ul>
 </div>
+<dialog class="agent-new-session-dialog" data-agent-new-dialog>
+  <form method="dialog" data-agent-new-form>
+    <header>
+      <div>
+        <h2>New agent session</h2>
+        <p class="muted">Choose the runtime before PA starts the session.</p>
+      </div>
+      <button type="button" class="ghost" data-agent-new-cancel aria-label="Close">×</button>
+    </header>
+    <label>
+      <span>Title</span>
+      <input name="title" value="Chat" autocomplete="off">
+    </label>
+    <label>
+      <span>Provider</span>
+      <select name="provider" data-agent-new-provider>
+        <option value="">Instance default</option>
+      </select>
+    </label>
+    <label>
+      <span>Model</span>
+      <input name="model_id" list="agent-new-models" placeholder="Provider default" autocomplete="off">
+      <datalist id="agent-new-models" data-agent-new-models></datalist>
+    </label>
+    <label>
+      <span>Mode</span>
+      <input name="mode_id" list="agent-new-modes" placeholder="Provider default" autocomplete="off">
+      <datalist id="agent-new-modes" data-agent-new-modes></datalist>
+    </label>
+    <label>
+      <span>Effort</span>
+      <select name="effort">
+        <option value="">Provider default</option>
+        <option value="low">Low</option>
+        <option value="medium">Medium</option>
+        <option value="high">High</option>
+        <option value="xhigh">Extra high</option>
+      </select>
+    </label>
+    <label>
+      <span>Working directory</span>
+      <input name="cwd" placeholder="Instance default" autocomplete="off">
+    </label>
+    <p class="agent-new-session-error" data-agent-new-error hidden></p>
+    <div class="form-actions">
+      <button type="button" class="ghost" data-agent-new-cancel>Cancel</button>
+      <button type="submit" class="primary" data-agent-new-submit>Start session</button>
+    </div>
+  </form>
+</dialog>
 <details class="panel agent-tips-panel">
   <summary class="panel-header"><h2>Tips</h2></summary>
   <ul class="muted tip-list">

@@ -8,8 +8,15 @@ import unittest
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from fastapi import HTTPException
+
 from pa.acp.client import normalize_session_update
-from pa.modules.agent_chat import session_events
+from pa.modules.agent_chat import (
+    CreateSessionBody,
+    create_session,
+    list_agent_sessions,
+    session_events,
+)
 
 
 class _FakeStore:
@@ -43,6 +50,128 @@ class _FakeRuntime:
 
 
 class AgentChatSseTests(unittest.TestCase):
+    def test_new_session_applies_provider_and_initial_options(self) -> None:
+        runtime = MagicMock()
+        runtime.connection.config_options = [
+            {"id": "reasoningEffort", "name": "Reasoning effort"}
+        ]
+        runtime.set_model = AsyncMock()
+        runtime.set_mode = AsyncMock()
+        runtime.set_config = AsyncMock()
+        runtime.snapshot.return_value = {"session": {"id": "sess-new"}}
+
+        manager = MagicMock()
+        manager.create_session = AsyncMock(return_value=runtime)
+        request = MagicMock()
+
+        body = CreateSessionBody(
+            title="Focused work",
+            cwd="/tmp/project",
+            provider="codex",
+            model_id="gpt-test",
+            mode_id="code",
+            effort="high",
+        )
+
+        async def run() -> dict:
+            with (
+                patch("pa.modules.agent_chat._manager", return_value=manager),
+                patch("pa.modules.agent_chat.get_principal_id", return_value="user:local"),
+            ):
+                return await create_session(request, body)
+
+        result = asyncio.run(run())
+
+        self.assertEqual(result["session"]["id"], "sess-new")
+        manager.create_session.assert_awaited_once()
+        create_kwargs = manager.create_session.await_args.kwargs
+        self.assertEqual(create_kwargs["provider_override"], "codex")
+        self.assertEqual(create_kwargs["cwd"], "/tmp/project")
+        runtime.set_model.assert_awaited_once_with("gpt-test")
+        runtime.set_mode.assert_awaited_once_with("code")
+        runtime.set_config.assert_awaited_once_with("reasoningEffort", "high")
+
+    def test_labeled_session_is_cleaned_up_when_initial_options_fail(self) -> None:
+        runtime = MagicMock()
+        runtime.session_id = "sess-labeled"
+        runtime.set_model = AsyncMock(side_effect=RuntimeError("invalid model"))
+        runtime.close = AsyncMock()
+
+        manager = MagicMock()
+        manager.list_runtimes.return_value = []
+        manager.store.get_session_by_label.return_value = None
+        manager.create_session = AsyncMock(return_value=runtime)
+        manager._runtimes = {runtime.session_id: runtime}
+        request = MagicMock()
+        body = CreateSessionBody(label="card:123", model_id="invalid")
+
+        async def run() -> None:
+            with (
+                patch("pa.modules.agent_chat._manager", return_value=manager),
+                patch("pa.modules.agent_chat.get_principal_id", return_value="user:local"),
+            ):
+                await create_session(request, body)
+
+        with self.assertRaises(HTTPException) as raised:
+            asyncio.run(run())
+
+        self.assertEqual(raised.exception.status_code, 503)
+        runtime.close.assert_awaited_once()
+        self.assertNotIn(runtime.session_id, manager._runtimes)
+
+    def test_reused_labeled_session_survives_initial_option_failure(self) -> None:
+        runtime = MagicMock()
+        runtime.session_id = "sess-existing"
+        runtime._closed = False
+        runtime.session.label = "card:123"
+        runtime.set_model = AsyncMock(side_effect=RuntimeError("invalid model"))
+        runtime.close = AsyncMock()
+
+        manager = MagicMock()
+        manager.list_runtimes.return_value = [runtime]
+        manager.create_session = AsyncMock()
+        manager._runtimes = {runtime.session_id: runtime}
+        request = MagicMock()
+        body = CreateSessionBody(label="card:123", model_id="invalid")
+
+        async def run() -> None:
+            with (
+                patch("pa.modules.agent_chat._manager", return_value=manager),
+                patch("pa.modules.agent_chat.get_principal_id", return_value="user:local"),
+            ):
+                await create_session(request, body)
+
+        with self.assertRaises(HTTPException):
+            asyncio.run(run())
+
+        manager.create_session.assert_not_awaited()
+        runtime.close.assert_not_awaited()
+        self.assertIn(runtime.session_id, manager._runtimes)
+
+    def test_session_list_exposes_provider_for_option_lookup(self) -> None:
+        runtime = MagicMock()
+        runtime._closed = False
+        runtime.connected = True
+        runtime.prompting = False
+        runtime._queue = []
+        runtime.session.id = "sess-codex"
+        runtime.session.title = "Codex session"
+        runtime.session.label = None
+        runtime.session.agent_name = "codex"
+        runtime.session.status = "idle"
+        runtime.session.model_id = "gpt-test"
+        runtime.session.mode_id = "code"
+        runtime.session.updated_at.isoformat.return_value = "2026-07-17T00:00:00Z"
+
+        manager = MagicMock()
+        manager.list_runtimes.return_value = [runtime]
+        request = MagicMock()
+
+        with patch("pa.modules.agent_chat._manager", return_value=manager):
+            sessions = list_agent_sessions(request)
+
+        self.assertEqual(sessions[0]["agent_name"], "codex")
+
     def test_codex_message_phase_is_preserved(self) -> None:
         update = {
             "sessionUpdate": "agent_message_chunk",
