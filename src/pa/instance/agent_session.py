@@ -27,6 +27,7 @@ from pa.acp.surfaces import (
     AgentInvocationContext,
     surface_for_label,
 )
+from pa.browser.manager import BrowserManager
 from pa.config import Settings
 from pa.core.preferences import get_preferences_store
 from pa.domain.models import AgentSession, TranscriptEvent
@@ -238,6 +239,12 @@ class AgentSessionRuntime:
         queue_paused: bool = False,
         provider_spec=None,
     ) -> AgentSession:
+        browser_config = dict((self.session.config_json or {}).get("browser") or {})
+        if browser_config.get("attached"):
+            attachment = await self.manager.browser.attach(
+                self.session_id, url=str(browser_config.get("url") or "about:blank")
+            )
+            self.agent_env.update(attachment.environment())
         wire_path = _session_dir(self.settings.data_dir, self.session_id) / "wire.jsonl"
         provider_id = self.session.agent_name or DEFAULT_PROVIDER_ID
         if provider_id in {"instance", ""}:
@@ -285,6 +292,48 @@ class AgentSessionRuntime:
         self._flush_transcript()
         self._start_drain()
         return self.session
+
+    async def set_browser_attached(
+        self, attached: bool, *, url: str = "about:blank"
+    ) -> dict:
+        if self.prompting:
+            raise RuntimeError("Wait for the current turn to finish before changing the browser attachment")
+        external_id = self.session.external_session_id
+        if self.connection:
+            await self.connection.disconnect()
+            self.connection = None
+        config = dict(self.session.config_json or {})
+        if attached:
+            attachment = await self.manager.browser.attach(self.session_id, url=url)
+            self.agent_env.update(attachment.environment())
+            state = await attachment.state()
+            config["browser"] = {
+                "attached": True,
+                "attachment_id": attachment.id,
+                "url": state.get("url") or url,
+            }
+        else:
+            await self.manager.browser.detach(self.session_id)
+            for key in (
+                "PA_BROWSER_CDP_URL",
+                "PA_BROWSER_TARGET_ID",
+                "PA_BROWSER_ATTACHMENT_ID",
+            ):
+                self.agent_env.pop(key, None)
+            config["browser"] = {"attached": False}
+            state = {"attached": False}
+        self.session.config_json = config
+        self.store.save_session(self.session)
+        await self.start(resume_external_id=external_id)
+        self._append_transcript("browser_attachment_changed", state)
+        self._flush_transcript()
+        return state
+
+    async def browser_state(self) -> dict:
+        attachment = self.manager.browser.get(self.session_id)
+        if not attachment:
+            return {"attached": False}
+        return await attachment.state()
 
     def _start_drain(self) -> None:
         if self._drain_task and not self._drain_task.done():
@@ -666,6 +715,7 @@ class AgentSessionManager:
         self._resume_on_start = True
         self._default_label = "default"
         self._lock = asyncio.Lock()
+        self.browser = BrowserManager(settings.data_dir)
 
     # Compatibility aliases used by existing call sites
     @property
@@ -1110,6 +1160,7 @@ class AgentSessionManager:
             except Exception:
                 logger.exception("Error disconnecting session %s", runtime.session_id)
         self._runtimes.clear()
+        await self.browser.close()
 
     async def quiesce(
         self,

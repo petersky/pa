@@ -33,6 +33,7 @@
       <span class="acw-turn-timer muted" data-acw-turn-timer hidden></span>
     </div>
     <div class="acw-toolbar-right">
+      <button type="button" class="ghost small" data-acw-browser-toggle title="Attach a browser to this session">Attach Browser</button>
       <label class="acw-select-wrap" data-acw-provider-wrap>
         <span class="sr-only">Provider</span>
         <select data-acw-provider aria-label="ACP provider">
@@ -62,6 +63,19 @@
   {% if show_metrics %}
   <div class="acw-metrics muted" data-acw-metrics hidden></div>
   {% endif %}
+
+  <section class="acw-browser" data-acw-browser hidden aria-label="Attached browser">
+    <div class="acw-browser-toolbar">
+      <input type="url" data-acw-browser-url aria-label="Browser URL" placeholder="https://example.com">
+      <button type="button" class="primary small" data-acw-browser-go>Go</button>
+      <button type="button" class="ghost small" data-acw-browser-refresh title="Refresh browser preview">Refresh</button>
+      <button type="button" class="ghost small danger" data-acw-browser-detach>Detach</button>
+    </div>
+    <div class="acw-browser-viewport" data-acw-browser-viewport>
+      <img data-acw-browser-image alt="Attached browser viewport">
+      <span class="muted" data-acw-browser-empty>Browser preview loading…</span>
+    </div>
+  </section>
 
   <div class="acw-messages scroll-region" data-acw-messages>
     <p class="muted chat-placeholder" data-acw-placeholder>Connecting to agent…</p>

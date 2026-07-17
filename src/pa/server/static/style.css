@@ -813,6 +813,40 @@ code {
   font-size: 0.75rem;
 }
 
+.acw-browser {
+  border: 1px solid var(--pa-border);
+  border-radius: 0.55rem;
+  background: var(--pa-panel, var(--pa-bg));
+  overflow: hidden;
+  margin: 0.5rem 0;
+}
+
+.acw-browser-toolbar {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  padding: 0.45rem;
+  border-bottom: 1px solid var(--pa-border);
+}
+
+.acw-browser-toolbar input { flex: 1; min-width: 8rem; }
+
+.acw-browser-viewport {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 220px;
+  max-height: 55vh;
+  overflow: auto;
+  background: #fff;
+}
+
+.acw-browser-viewport img {
+  display: block;
+  max-width: 100%;
+  cursor: crosshair;
+}
+
 .acw-messages {
   flex: 1;
   display: flex;
