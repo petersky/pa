@@ -111,6 +111,22 @@ class ChatWidgetTemplateTests(unittest.TestCase):
         self.assertIn("data-acw-end", html)
         self.assertIn("data-acw-stop", html)
         self.assertIn("disabled>Stop", html)
+        self.assertNotIn("data-acw-provider", html)
+        self.assertIn("data-acw-tool-toggle", html)
+        self.assertIn("data-acw-tool-flyout", html)
+        self.assertIn("data-acw-plan-toggle", html)
+        self.assertIn("data-acw-plan-flyout", html)
+
+    def test_agent_page_starts_new_sessions_from_a_configuration_dialog(self) -> None:
+        template_root = Path(__file__).parents[1] / "src" / "pa" / "server" / "templates"
+        source = (template_root / "pages" / "agent.html").read_text()
+
+        self.assertIn("data-agent-new-dialog", source)
+        self.assertIn('name="provider"', source)
+        self.assertIn('name="model_id"', source)
+        self.assertIn('name="mode_id"', source)
+        self.assertIn('name="effort"', source)
+        self.assertIn('name="cwd"', source)
 
 
 if __name__ == "__main__":

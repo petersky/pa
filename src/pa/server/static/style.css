@@ -775,9 +775,7 @@ code {
   flex: 1;
 }
 
-.agent-chat-widget.is-compact .acw-toolbar-right > :not([data-acw-provider-wrap]) {
-  display: none;
-}
+.agent-chat-widget.is-compact .acw-toolbar-right { display: none; }
 
 .acw-toolbar {
   display: flex;
@@ -913,7 +911,103 @@ code {
   cursor: crosshair;
 }
 
+.acw-chat-stage {
+  position: relative;
+  flex: 1;
+  min-height: 12rem;
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.acw-activity-rail {
+  grid-column: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.25rem;
+  border-right: 1px solid var(--pa-border);
+}
+
+.acw-rail-button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0.35rem;
+  color: var(--pa-text-muted);
+}
+
+.acw-rail-button svg {
+  width: 1.05rem;
+  height: 1.05rem;
+  fill: currentColor;
+}
+
+.acw-rail-button[aria-expanded="true"] {
+  color: var(--pa-accent);
+  background: var(--pa-accent-subtle);
+}
+
+.acw-rail-button.is-active svg {
+  color: var(--pa-accent);
+  animation: acw-tool-active 0.9s ease-in-out infinite;
+}
+
+@keyframes acw-tool-active {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.15); opacity: 0.55; }
+}
+
+.acw-rail-badge {
+  position: absolute;
+  top: -0.2rem;
+  right: -0.2rem;
+  display: grid;
+  place-items: center;
+  min-width: 1rem;
+  height: 1rem;
+  padding: 0 0.2rem;
+  border-radius: 999px;
+  background: var(--pa-accent);
+  color: #fff;
+  font-size: 0.62rem;
+  line-height: 1;
+}
+
+.acw-flyout {
+  position: absolute;
+  z-index: 15;
+  left: 2.75rem;
+  top: 0;
+  bottom: 0;
+  width: min(26rem, calc(100% - 3rem));
+  overflow: auto;
+  border: 1px solid var(--pa-border);
+  border-left: 0;
+  border-radius: 0 8px 8px 0;
+  background: var(--pa-surface-raised);
+  box-shadow: var(--pa-shadow);
+}
+
+.acw-flyout > header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.55rem 0.65rem;
+  border-bottom: 1px solid var(--pa-border);
+  background: var(--pa-surface-raised);
+}
+
+.acw-flyout-body { padding: 0.6rem; }
+
 .acw-messages {
+  grid-column: 2;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -1013,32 +1107,14 @@ code {
   font-size: 0.8rem;
 }
 
-.acw-activity {
-  width: min(100%, 56rem);
-  margin-inline: auto;
-  border: 1px solid var(--pa-chat-tool-border);
-  border-radius: var(--pa-chat-radius);
-  background: var(--pa-chat-tool-bg);
-  font-size: 0.8rem;
-}
-
-.acw-activity > summary {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.75rem;
-  cursor: pointer;
-  padding: 0.45rem 0.6rem;
-  font-weight: 600;
-}
-
-.acw-activity-body {
+.acw-tool-activity {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
-  padding: 0 0.55rem 0.55rem;
+  font-size: 0.8rem;
 }
 
-.acw-activity .acw-tool {
+.acw-tool-activity .acw-tool {
   width: 100%;
   background: var(--pa-surface-raised);
 }
@@ -1066,11 +1142,35 @@ code {
 
 .acw-tool-title { font-weight: 600; }
 
-.acw-plan {
-  align-self: flex-start;
-  max-width: 92%;
-  border-left: 2px solid var(--pa-accent);
-  padding: 0.25rem 0.6rem;
+.acw-plan-browser {
+  display: grid;
+  grid-template-columns: minmax(7rem, 0.38fr) minmax(0, 1fr);
+  min-height: calc(100% - 3rem);
+}
+
+.acw-plan-list {
+  list-style: none;
+  margin: 0;
+  padding: 0.4rem;
+  border-right: 1px solid var(--pa-border);
+}
+
+.acw-plan-list button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  padding: 0.45rem;
+  text-align: left;
+}
+
+.acw-plan-list button.active {
+  color: var(--pa-accent);
+  background: var(--pa-accent-subtle);
+}
+
+.acw-plan-detail {
+  padding: 0.65rem;
   font-size: 0.85rem;
 }
 
@@ -1345,6 +1445,56 @@ code {
 
 .panel-header [data-agent-new-session] {
   margin-left: auto;
+}
+
+.agent-new-session-dialog {
+  width: min(32rem, calc(100vw - 2rem));
+  padding: 0;
+  border: 1px solid var(--pa-border);
+  border-radius: 10px;
+  color: var(--pa-text);
+  background: var(--pa-surface-raised);
+  box-shadow: var(--pa-shadow);
+}
+
+.agent-new-session-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(2px);
+}
+
+.agent-new-session-dialog form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+}
+
+.agent-new-session-dialog header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.agent-new-session-dialog h2,
+.agent-new-session-dialog p { margin: 0; }
+
+.agent-new-session-dialog label {
+  display: grid;
+  grid-template-columns: 8rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.agent-new-session-dialog .form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.agent-new-session-error {
+  color: var(--pa-danger);
+  font-size: 0.85rem;
 }
 
 .acw-config {

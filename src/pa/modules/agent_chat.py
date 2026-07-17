@@ -47,6 +47,45 @@ class CreateSessionBody(BaseModel):
     attach_default: bool = False
     provider: str | None = None
     surface: str | None = None
+    model_id: str | None = None
+    mode_id: str | None = None
+    effort: str | None = None
+    config: dict[str, str | bool] = Field(default_factory=dict)
+
+
+def _config_option_id(runtime, requested: str) -> str:
+    """Resolve friendly new-session fields to provider config option ids."""
+    aliases = {
+        "effort": {"effort", "reasoningeffort", "reasoninglevel", "thinkinglevel"},
+    }
+    wanted = aliases.get(requested, {requested.lower().replace("_", "").replace("-", "")})
+    connection = getattr(runtime, "connection", None)
+    options = getattr(connection, "config_options", None) or []
+    for option in options:
+        if not isinstance(option, dict):
+            continue
+        option_id = option.get("id") or option.get("configId") or option.get("config_id")
+        name = option.get("name")
+        normalized = {
+            str(value).lower().replace("_", "").replace("-", "").replace(" ", "")
+            for value in (option_id, name)
+            if value
+        }
+        if normalized & wanted and option_id:
+            return str(option_id)
+    return "reasoning_effort" if requested == "effort" else requested
+
+
+async def _apply_initial_options(runtime, body: CreateSessionBody) -> None:
+    if body.model_id:
+        await runtime.set_model(body.model_id)
+    if body.mode_id:
+        await runtime.set_mode(body.mode_id)
+    config = dict(body.config)
+    if body.effort:
+        config[_config_option_id(runtime, "effort")] = body.effort
+    for config_id, value in config.items():
+        await runtime.set_config(config_id, value)
 
 
 class PromptBody(BaseModel):
@@ -162,6 +201,13 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                 provider_override=body.provider,
                 project_tool_config=project_tool_config,
             )
+        try:
+            await _apply_initial_options(runtime, body)
+        except Exception:
+            if body.label is None and not body.attach_default:
+                await runtime.close()
+                mgr._runtimes.pop(runtime.session_id, None)
+            raise
     except Exception as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return runtime.snapshot()
