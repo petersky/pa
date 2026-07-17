@@ -5,6 +5,69 @@
   line-height: 1.45;
 }
 
+.pa-remote-instance-select {
+  display: grid;
+  grid-template-columns: 7rem minmax(0, 30rem);
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.pa-remote-operations-grid {
+  display: grid;
+  grid-template-columns: minmax(18rem, 0.34fr) minmax(0, 1fr);
+  gap: 1rem;
+  min-height: 36rem;
+}
+
+.pa-remote-operations-sidebar {
+  align-content: start;
+  min-width: 0;
+}
+
+.pa-remote-workspace,
+.pa-remote-workspace .agent-chat-widget {
+  min-width: 0;
+  min-height: 36rem;
+}
+
+.pa-remote-session-button {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  text-align: left;
+}
+
+.pa-remote-session-button span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pa-remote-audit-events {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  max-height: 34rem;
+  overflow: auto;
+}
+
+.pa-remote-audit-event {
+  border-left: 2px solid var(--pa-border);
+  padding: 0.35rem 0.55rem;
+}
+
+.pa-remote-audit-event pre {
+  margin: 0.35rem 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 900px) {
+  .pa-remote-operations-grid { grid-template-columns: 1fr; }
+  .pa-remote-instance-select { grid-template-columns: 1fr; }
+}
+
 html {
   font-size: 15px;
 }

@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
+
 from pa.config import Settings
 from pa.domain.instance_config import load_instance_config, update_instance_config
+from pa.domain.models import Card, CardLane, FleetInstance, Project, ProjectRepo
 from pa.fleet.join import (
     apply_join_response,
     apply_reachability_settings,
@@ -456,6 +460,257 @@ class FleetHealthParallelTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(by_id["b"]["providers"][0]["id"], "b")
             # health + providers for each instance
             self.assertEqual(mock_client.get.await_count, 4)
+
+
+class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
+    async def test_card_dispatch_returns_remote_session_and_records_audit(self) -> None:
+        from pa.modules.fleet import RemoteAgentStartBody, start_remote_agent_work
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                data_dir=Path(tmp),
+                instance_id="controller-1",
+                instance_name="controller",
+                primary_realm="default",
+                sync_token="secret",
+            )
+            fleet = FleetRegistry(settings.data_dir, settings.fleet_id)
+            fleet.upsert_instance(
+                FleetInstance(
+                    instance_id="mini-1",
+                    name="macmini",
+                    url="http://mini:8080",
+                )
+            )
+            card = Card(
+                id="card-1",
+                title="Implement remote control",
+                body="Build and validate the fleet operations console.",
+                project_id="project-1",
+            )
+            project = Project(
+                id="project-1",
+                title="PA Core",
+                repos=[
+                    ProjectRepo(
+                        url="https://github.com/petersky/pa.git",
+                        path="/Users/petersky/repos/petersky/pa",
+                    )
+                ],
+                agent_prompt="Use one worktree per card.",
+                tool_config={"development_instance": "macmini"},
+            )
+            updated = card.model_copy(
+                update={
+                    "lane": CardLane.ACTIVE,
+                    "preferred_instance": "mini-1",
+                }
+            )
+            store = MagicMock()
+            store.get_card.return_value = card
+            store.get_project.return_value = project
+            store.update_card.return_value = updated
+
+            ctx = MagicMock()
+            ctx.settings = settings
+            ctx.store = store
+            ctx.require_service.return_value = fleet
+            request = MagicMock()
+            request.app.state.ctx = ctx
+
+            peer = AsyncMock(
+                side_effect=[
+                    {"session": {"id": "remote-session", "title": card.title}},
+                    {"started": True, "queued": False},
+                ]
+            )
+            with (
+                patch("pa.modules.fleet.require_user", return_value=object()),
+                patch("pa.modules.fleet.get_principal_id", return_value="user:local"),
+                patch("pa.modules.fleet._peer_agent_json", peer),
+            ):
+                result = await start_remote_agent_work(
+                    request,
+                    "mini-1",
+                    RemoteAgentStartBody(card_id=card.id, provider="codex"),
+                )
+
+            self.assertEqual(result["session"]["session"]["id"], "remote-session")
+            create_call = peer.await_args_list[0]
+            self.assertEqual(create_call.args[3], "sessions")
+            self.assertEqual(
+                create_call.kwargs["body"]["cwd"],
+                "/Users/petersky/repos/petersky/pa",
+            )
+            self.assertEqual(create_call.kwargs["body"]["label"], "card:card-1")
+            prompt_call = peer.await_args_list[1]
+            self.assertIn("# Card: Implement remote control", prompt_call.kwargs["body"]["message"])
+            store.update_card.assert_called_once()
+            store.add_knowledge.assert_called_once()
+
+    async def test_dispatch_preserves_session_when_initial_prompt_fails(self) -> None:
+        from fastapi import HTTPException
+
+        from pa.modules.fleet import RemoteAgentStartBody, start_remote_agent_work
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                data_dir=Path(tmp),
+                instance_id="controller-1",
+                instance_name="controller",
+                sync_token="secret",
+            )
+            fleet = FleetRegistry(settings.data_dir, settings.fleet_id)
+            fleet.upsert_instance(
+                FleetInstance(
+                    instance_id="mini-1",
+                    name="macmini",
+                    url="http://mini:8080",
+                )
+            )
+            store = MagicMock()
+            ctx = MagicMock(settings=settings, store=store)
+            ctx.require_service.return_value = fleet
+            request = MagicMock()
+            request.app.state.ctx = ctx
+            peer = AsyncMock(
+                side_effect=[
+                    {"session": {"id": "remote-session", "title": "Remote smoke"}},
+                    HTTPException(status_code=503, detail="provider unavailable"),
+                ]
+            )
+
+            with (
+                patch("pa.modules.fleet.require_user", return_value=object()),
+                patch("pa.modules.fleet._peer_agent_json", peer),
+            ):
+                result = await start_remote_agent_work(
+                    request,
+                    "mini-1",
+                    RemoteAgentStartBody(title="Remote smoke", message="Start work"),
+                )
+
+            self.assertEqual(result["session"]["session"]["id"], "remote-session")
+            self.assertEqual(result["prompt_error"], "provider unavailable")
+            entry = store.add_knowledge.call_args.args[0]
+            self.assertIn("Initial prompt failed", entry.summary)
+            self.assertIn("prompt-error", entry.tags)
+
+    async def test_card_dispatch_does_not_reuse_another_hosts_repo_path(self) -> None:
+        from pa.modules.fleet import _project_working_directory
+
+        project = Project(
+            id="project-1",
+            title="PA Core",
+            repos=[
+                ProjectRepo(
+                    url="https://github.com/petersky/pa.git",
+                    path="/Users/petersky/repos/petersky/pa",
+                )
+            ],
+            tool_config={"development_instance": "macmini"},
+        )
+
+        self.assertIsNone(
+            _project_working_directory(
+                project,
+                instance_id="linux-1",
+                instance_name="monica",
+            )
+        )
+
+    async def test_card_dispatch_prefers_instance_repo_path_mapping(self) -> None:
+        from pa.modules.fleet import _project_working_directory
+
+        project = Project(
+            id="project-1",
+            title="PA Core",
+            repos=[
+                ProjectRepo(
+                    url="https://github.com/petersky/pa.git",
+                    path="/Users/petersky/repos/petersky/pa",
+                )
+            ],
+            tool_config={
+                "development_instance": "macmini",
+                "repo_paths_by_instance": {"monica": "/srv/pa"},
+            },
+        )
+
+        self.assertEqual(
+            _project_working_directory(
+                project,
+                instance_id="linux-1",
+                instance_name="monica",
+            ),
+            "/srv/pa",
+        )
+
+    async def test_agent_proxy_rejects_path_traversal(self) -> None:
+        from pa.modules.fleet import _agent_path
+
+        with self.assertRaises(Exception):
+            _agent_path("sessions/../config")
+
+    async def test_agent_proxy_relays_query_json_and_fleet_auth(self) -> None:
+        from pa.modules.fleet import fleet_agent_proxy
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), sync_token="fleet-secret")
+            fleet = FleetRegistry(settings.data_dir, settings.fleet_id)
+            fleet.upsert_instance(
+                FleetInstance(
+                    instance_id="mini-1",
+                    name="macmini",
+                    url="http://mini:8080",
+                )
+            )
+            ctx = MagicMock(settings=settings)
+            ctx.require_service.return_value = fleet
+            request = MagicMock()
+            request.app.state.ctx = ctx
+            request.method = "GET"
+            request.query_params.multi_items.return_value = [("card_id", "card-1")]
+            request.headers.get.side_effect = lambda name: {
+                "accept": "application/json"
+            }.get(name)
+            request.body = AsyncMock(return_value=b"")
+            seen = {}
+
+            async def upstream_handler(upstream_request: httpx.Request) -> httpx.Response:
+                seen["url"] = str(upstream_request.url)
+                seen["authorization"] = upstream_request.headers.get("authorization")
+                return httpx.Response(
+                    200,
+                    json=[{"id": "remote-session", "title": "Remote work"}],
+                )
+
+            upstream_client = httpx.AsyncClient(
+                transport=httpx.MockTransport(upstream_handler)
+            )
+            with (
+                patch("pa.modules.fleet.require_user", return_value=object()),
+                patch(
+                    "pa.modules.fleet.httpx.AsyncClient",
+                    return_value=upstream_client,
+                ),
+            ):
+                response = await fleet_agent_proxy(
+                    request,
+                    "mini-1",
+                    "sessions",
+                )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(
+                json.loads(response.body),
+                [{"id": "remote-session", "title": "Remote work"}],
+            )
+            self.assertEqual(
+                seen["url"],
+                "http://mini:8080/api/agent/sessions?card_id=card-1",
+            )
+            self.assertEqual(seen["authorization"], "Bearer fleet-secret")
 
 
 if __name__ == "__main__":

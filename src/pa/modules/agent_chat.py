@@ -241,11 +241,73 @@ def list_agent_sessions(request: Request) -> list[dict]:
             "model_id": rt.session.model_id,
             "mode_id": rt.session.mode_id,
             "queue_length": len(rt._queue),
+            "last_seq": rt._seq,
             "updated_at": rt.session.updated_at.isoformat(),
         }
         for rt in mgr.list_runtimes()
         if not rt._closed
     ]
+
+
+@router.get("/history")
+def list_agent_session_history(
+    request: Request,
+    card_id: str | None = None,
+    project_id: str | None = None,
+    limit: int = 100,
+) -> list[dict]:
+    """List persisted sessions, including sessions that are no longer live."""
+    mgr = _manager(request)
+    settings = request.app.state.ctx.settings
+    sessions = mgr.store.list_sessions()
+    if card_id:
+        sessions = [session for session in sessions if session.card_id == card_id]
+    if project_id:
+        sessions = [session for session in sessions if session.project_id == project_id]
+    return [
+        {
+            **session.model_dump(mode="json"),
+            "instance_id": settings.instance_id,
+            "instance_name": settings.instance_name,
+            "live": bool(
+                (runtime := mgr.get(session.id))
+                and not getattr(runtime, "_closed", False)
+            ),
+        }
+        for session in sessions[: max(1, min(limit, 500))]
+    ]
+
+
+@router.get("/history/{session_id}")
+def get_agent_session_history(
+    request: Request,
+    session_id: str,
+    after_seq: int = 0,
+    limit: int = 2000,
+) -> dict:
+    """Return durable metadata and transcript events for a live or closed session."""
+    mgr = _manager(request)
+    session = mgr.store.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    runtime = mgr.get(session_id)
+    if runtime and not getattr(runtime, "_closed", False):
+        runtime._flush_transcript()
+    events = mgr.store.list_transcript_events(
+        session_id,
+        after_seq=max(0, after_seq),
+        limit=max(1, min(limit, 5000)),
+    )
+    settings = request.app.state.ctx.settings
+    return {
+        "session": session.model_dump(mode="json"),
+        "instance": {
+            "id": settings.instance_id,
+            "name": settings.instance_name,
+        },
+        "live": bool(runtime and not getattr(runtime, "_closed", False)),
+        "events": [event.model_dump(mode="json") for event in events],
+    }
 
 
 @router.get("/sessions/{session_id}")
