@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from pa.browser.cdp import CdpError, CdpPage, validate_browser_url
-from pa.browser.manager import BrowserAttachment, _browser_executable
+from pa.browser.manager import BrowserAttachment, BrowserManager, _browser_executable
 
 
 class BrowserUrlTests(unittest.TestCase):
@@ -35,5 +35,44 @@ class BrowserAttachmentTests(unittest.IsolatedAsyncioTestCase):
             profile_dir=Path("/tmp/profile"),
         )
         with patch.object(CdpPage, "metadata", AsyncMock(return_value={"target_id": "target-1", "title": "PA", "url": "https://example.com"})):
-            self.assertEqual((await attachment.state())["url"], "https://example.com")
+            state = await attachment.state()
+            self.assertEqual(state["url"], "https://example.com")
+            self.assertEqual(state["width"], 1440)
         self.assertEqual(attachment.environment()["PA_BROWSER_TARGET_ID"], "target-1")
+
+    async def test_resize_updates_attachment_attributes(self):
+        process = AsyncMock()
+        process.returncode = None
+        attachment = BrowserAttachment(
+            id="attachment-1",
+            session_id="session-1",
+            endpoint="http://127.0.0.1:9222",
+            target_id="target-1",
+            process=process,
+            profile_dir=Path("/tmp/profile"),
+        )
+        with patch.object(CdpPage, "resize", AsyncMock()) as resize:
+            await attachment.resize(1920, 1080, device_scale_factor=2)
+        resize.assert_awaited_once_with(1920, 1080, device_scale_factor=2)
+        self.assertEqual((attachment.width, attachment.height), (1920, 1080))
+        self.assertEqual(attachment.device_scale_factor, 2)
+
+
+class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_existing_browser_can_be_resized(self):
+        manager = BrowserManager(Path("/tmp/pa-browser-test"))
+        process = AsyncMock()
+        process.returncode = None
+        attachment = BrowserAttachment(
+            id="attachment-1",
+            session_id="session-1",
+            endpoint="http://127.0.0.1:9222",
+            target_id="target-1",
+            process=process,
+            profile_dir=Path("/tmp/profile"),
+        )
+        manager._attachments["session-1"] = attachment
+        with patch.object(attachment, "resize", AsyncMock()) as resize:
+            result = await manager.attach("session-1", width=1600, height=1000)
+        self.assertIs(result, attachment)
+        resize.assert_awaited_once_with(1600, 1000, device_scale_factor=1)

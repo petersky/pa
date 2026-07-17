@@ -242,7 +242,11 @@ class AgentSessionRuntime:
         browser_config = dict((self.session.config_json or {}).get("browser") or {})
         if browser_config.get("attached"):
             attachment = await self.manager.browser.attach(
-                self.session_id, url=str(browser_config.get("url") or "about:blank")
+                self.session_id,
+                url=str(browser_config.get("url") or "about:blank"),
+                width=browser_config.get("width"),
+                height=browser_config.get("height"),
+                device_scale_factor=float(browser_config.get("device_scale_factor") or 1),
             )
             self.agent_env.update(attachment.environment())
         wire_path = _session_dir(self.settings.data_dir, self.session_id) / "wire.jsonl"
@@ -294,7 +298,13 @@ class AgentSessionRuntime:
         return self.session
 
     async def set_browser_attached(
-        self, attached: bool, *, url: str = "about:blank"
+        self,
+        attached: bool,
+        *,
+        url: str = "about:blank",
+        width: int | None = None,
+        height: int | None = None,
+        device_scale_factor: float = 1,
     ) -> dict:
         if self.prompting:
             raise RuntimeError("Wait for the current turn to finish before changing the browser attachment")
@@ -304,13 +314,22 @@ class AgentSessionRuntime:
             self.connection = None
         config = dict(self.session.config_json or {})
         if attached:
-            attachment = await self.manager.browser.attach(self.session_id, url=url)
+            attachment = await self.manager.browser.attach(
+                self.session_id,
+                url=url,
+                width=width,
+                height=height,
+                device_scale_factor=device_scale_factor,
+            )
             self.agent_env.update(attachment.environment())
             state = await attachment.state()
             config["browser"] = {
                 "attached": True,
                 "attachment_id": attachment.id,
                 "url": state.get("url") or url,
+                "width": attachment.width,
+                "height": attachment.height,
+                "device_scale_factor": attachment.device_scale_factor,
             }
         else:
             await self.manager.browser.detach(self.session_id)
