@@ -133,6 +133,8 @@
     this.lastSeq = 0;
     this.streaming = {};
     this.toolTimers = {};
+    this.currentActivity = null;
+    this.activityStreams = {};
     this.turnStartedAt = null;
     this.turnTimerId = null;
     this.queuePaused = false;
@@ -682,7 +684,11 @@
         }
         break;
       case "agent_message_chunk":
-        this.appendStream("agent", payload.message_id || "agent", payload.text || "", created);
+        if (payload.phase === "commentary") {
+          this.appendActivityProgress(payload.message_id || "progress", payload.text || "", created);
+        } else {
+          this.appendStream("agent", payload.message_id || "agent", payload.text || "", created);
+        }
         break;
       case "agent_thought_chunk":
         if (this.showThinking) {
@@ -704,6 +710,7 @@
         break;
       case "turn_completed":
         this.finalizeStreams(created);
+        this.finalizeActivity();
         this.setWorking(false);
         this.prompting = false;
         this.setStatus("online");
@@ -719,6 +726,7 @@
         break;
       case "cancelled":
         this.finalizeStreams(created);
+        this.finalizeActivity();
         this.setWorking(false);
         this.prompting = false;
         this.queuePaused = !!payload.pause_queue;
@@ -751,6 +759,7 @@
         break;
       case "connection_lost":
         this.finalizeStreams(created);
+        this.finalizeActivity();
         this.setWorking(false);
         this.prompting = false;
         this.setStatus("offline");
@@ -860,6 +869,51 @@
     this.streaming = {};
   };
 
+  AgentChatWidget.prototype.ensureActivity = function () {
+    if (this.currentActivity && this.currentActivity.isConnected) return this.currentActivity;
+    const details = document.createElement("details");
+    details.className = "acw-activity";
+    details.open = true;
+    details.innerHTML = '<summary><span>Activity</span><span class="acw-activity-count muted">0 updates</span></summary><div class="acw-activity-body"></div>';
+    details.dataset.count = "0";
+    this.els.messages.appendChild(details);
+    this.currentActivity = details;
+    return details;
+  };
+
+  AgentChatWidget.prototype.bumpActivityCount = function (activity) {
+    const count = Number(activity.dataset.count || "0") + 1;
+    activity.dataset.count = String(count);
+    const label = activity.querySelector(".acw-activity-count");
+    if (label) label.textContent = count + (count === 1 ? " update" : " updates");
+  };
+
+  AgentChatWidget.prototype.appendActivityProgress = function (key, chunk) {
+    this.clearPlaceholder();
+    this.prompting = true;
+    if (!this.turnStartedAt) this.setWorking(true);
+    this.setStatus("working");
+    const activity = this.ensureActivity();
+    const id = "progress:" + key;
+    let stream = this.activityStreams[id];
+    if (!stream) {
+      const el = document.createElement("div");
+      el.className = "acw-progress-update";
+      activity.querySelector(".acw-activity-body").appendChild(el);
+      stream = { text: "", el: el };
+      this.activityStreams[id] = stream;
+      this.bumpActivityCount(activity);
+    }
+    stream.text += chunk || "";
+    stream.el.textContent = stream.text;
+  };
+
+  AgentChatWidget.prototype.finalizeActivity = function () {
+    if (this.currentActivity) this.currentActivity.open = false;
+    this.currentActivity = null;
+    this.activityStreams = {};
+  };
+
   AgentChatWidget.prototype.upsertTool = function (payload, ts) {
     this.clearPlaceholder();
     const id = payload.tool_call_id || "tool";
@@ -874,7 +928,9 @@
         '<span class="acw-tool-timer muted"></span>' +
         '<span class="acw-tool-status muted"></span>' +
         "</div>";
-      this.els.messages.appendChild(el);
+      const activity = this.ensureActivity();
+      activity.querySelector(".acw-activity-body").appendChild(el);
+      this.bumpActivityCount(activity);
       const eventTime = ts ? new Date(ts).getTime() : Date.now();
       this.toolTimers[id] = { started: eventTime, interval: null };
       const timerEl = el.querySelector(".acw-tool-timer");
@@ -1431,6 +1487,26 @@
           });
       });
     }
+    root.querySelectorAll("[data-agent-sidebar-toggle]").forEach(function (toggle) {
+      if (toggle._acwBound) return;
+      toggle._acwBound = true;
+      toggle.addEventListener("click", function () {
+        const layout = toggle.closest(".page-agent") || document.querySelector(".page-agent");
+        if (!layout) return;
+        const collapsed = layout.classList.toggle("is-sidebar-collapsed");
+        toggle.textContent = collapsed ? "Show sessions" : "Hide sessions";
+        toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+        try { localStorage.setItem("pa-agent-sidebar-collapsed", collapsed ? "1" : "0"); } catch (_) {}
+      });
+      let saved = false;
+      try { saved = localStorage.getItem("pa-agent-sidebar-collapsed") === "1"; } catch (_) {}
+      if (saved) {
+        const layout = toggle.closest(".page-agent") || document.querySelector(".page-agent");
+        if (layout) layout.classList.add("is-sidebar-collapsed");
+        toggle.textContent = "Show sessions";
+        toggle.setAttribute("aria-expanded", "false");
+      }
+    });
   }
 
   function mountAll(scope) {

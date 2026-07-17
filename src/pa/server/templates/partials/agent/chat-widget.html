@@ -13,6 +13,7 @@
 {% set show_queue = show_queue if show_queue is defined else true %}
 {% set show_metrics = show_metrics if show_metrics is defined else true %}
 {% set compact = compact if compact is defined else false %}
+{% set show_sidebar_toggle = show_sidebar_toggle if show_sidebar_toggle is defined else false %}
 
 <div class="agent-chat-widget{% if compact %} is-compact{% endif %}"
      data-agent-chat
@@ -28,12 +29,16 @@
 
   <div class="acw-toolbar">
     <div class="acw-toolbar-left">
+      {% if show_sidebar_toggle %}
+      <button type="button" class="ghost small acw-sidebar-toggle" data-agent-sidebar-toggle aria-expanded="true">Hide sessions</button>
+      {% endif %}
       <span class="acw-status-dot" data-acw-status title="Session status"></span>
       <span class="acw-title" data-acw-title>Agent</span>
       <span class="acw-turn-timer muted" data-acw-turn-timer hidden></span>
     </div>
     <div class="acw-toolbar-right">
       <button type="button" class="ghost small" data-acw-browser-toggle title="Attach a browser to this session">Attach Browser</button>
+      {% if compact %}
       <label class="acw-select-wrap" data-acw-provider-wrap>
         <span>Provider</span>
         <select data-acw-provider aria-label="ACP provider">
@@ -41,9 +46,19 @@
           <option value="codex">Codex</option>
         </select>
       </label>
+      {% endif %}
       <details class="acw-menu acw-settings-menu">
         <summary>Agent settings…</summary>
         <div class="acw-menu-body acw-settings-body">
+          {% if not compact %}
+          <label class="acw-select-wrap" data-acw-provider-wrap>
+            <span>Provider</span>
+            <select data-acw-provider aria-label="ACP provider">
+              <option value="cursor">Cursor</option>
+              <option value="codex">Codex</option>
+            </select>
+          </label>
+          {% endif %}
           {% if show_model %}
           <label class="acw-select-wrap" data-acw-model-wrap hidden>
             <span>Model</span>
