@@ -70,7 +70,13 @@ def _page(request: Request, session_id: str) -> CdpPage:
 
 @router.get("/screenshot")
 async def browser_screenshot(request: Request, session_id: str) -> Response:
-    return Response(await _page(request, session_id).screenshot(), media_type="image/png")
+    try:
+        image = await _page(request, session_id).screenshot()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Attached browser is unavailable") from exc
+    return Response(image, media_type="image/png")
 
 
 @router.post("/navigate")

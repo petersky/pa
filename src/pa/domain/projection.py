@@ -45,7 +45,8 @@ class CardProjection:
 
     @contextmanager
     def _conn(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn.execute("PRAGMA busy_timeout = 30000")
         conn.row_factory = sqlite3.Row
         try:
             yield conn

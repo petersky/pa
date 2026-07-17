@@ -127,14 +127,14 @@ class AgentSessionRuntime:
             self._subscribers.remove(queue)
 
     def _emit_live(self, event: dict[str, Any]) -> None:
-        dead: list[asyncio.Queue[dict[str, Any]]] = []
         for sub in self._subscribers:
             try:
                 sub.put_nowait(event)
             except asyncio.QueueFull:
-                dead.append(sub)
-        for sub in dead:
-            self.unsubscribe(sub)
+                # Favor current state over stale output deltas. The persisted
+                # transcript remains lossless and can fill gaps on reconnect.
+                sub.get_nowait()
+                sub.put_nowait(event)
 
     def _append_transcript(self, event_type: str, payload: dict[str, Any]) -> dict[str, Any]:
         self._seq += 1
