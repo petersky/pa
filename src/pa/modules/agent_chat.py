@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
@@ -17,6 +18,7 @@ from pa.core.preferences import get_preferences_store
 from pa.instance.quiesce import ImageAttachment, MAX_TOTAL_IMAGE_BYTES
 
 router = APIRouter(prefix="/agent")
+logger = logging.getLogger(__name__)
 
 
 def _user_id(request: Request) -> str | None:
@@ -137,6 +139,7 @@ class PreferencesBody(BaseModel):
 async def create_session(request: Request, body: CreateSessionBody) -> dict:
     mgr = _manager(request)
     principal_id = get_principal_id(request)
+    created_runtime = False
     from pa.acp.surfaces import surface_for_label
 
     surface = body.surface or surface_for_label(body.label, project_id=body.project_id)
@@ -175,6 +178,7 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                         provider_override=body.provider,
                         project_tool_config=project_tool_config,
                     )
+                    created_runtime = True
                 else:
                     runtime = await mgr.create_session(
                         label=body.label,
@@ -187,6 +191,7 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                         provider_override=body.provider,
                         project_tool_config=project_tool_config,
                     )
+                    created_runtime = True
             else:
                 runtime = existing
         else:
@@ -201,12 +206,20 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                 provider_override=body.provider,
                 project_tool_config=project_tool_config,
             )
+            created_runtime = True
         try:
             await _apply_initial_options(runtime, body)
         except Exception:
-            if body.label is None and not body.attach_default:
-                await runtime.close()
-                mgr._runtimes.pop(runtime.session_id, None)
+            if created_runtime:
+                try:
+                    await runtime.close()
+                except Exception:
+                    logger.exception(
+                        "Failed to close session %s after initial option failure",
+                        runtime.session_id,
+                    )
+                finally:
+                    mgr._runtimes.pop(runtime.session_id, None)
             raise
     except Exception as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
@@ -221,6 +234,7 @@ def list_agent_sessions(request: Request) -> list[dict]:
             "id": rt.session.id,
             "title": rt.session.title,
             "label": rt.session.label,
+            "agent_name": rt.session.agent_name,
             "status": rt.session.status,
             "connected": rt.connected,
             "prompting": rt.prompting,

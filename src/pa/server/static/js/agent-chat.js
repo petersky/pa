@@ -597,6 +597,12 @@
     refreshSessionList(this.sessionId);
   };
 
+  AgentChatWidget.prototype.applyOptionSnapshot = function (snap) {
+    this.lastSnapshot = snap;
+    this.renderModelsModes(snap);
+    this.renderConfigOptions(snap);
+  };
+
   AgentChatWidget.prototype.renderTranscript = function (events) {
     const self = this;
     if (!this.els.messages) return;
@@ -766,8 +772,7 @@
       case "config_option_update":
         if (!replay) {
           this.api("/sessions/" + this.sessionId).then(function (snap) {
-            self.renderModelsModes(snap);
-            self.renderConfigOptions(snap);
+            self.applyOptionSnapshot(snap);
           }).catch(function () { /* ignore */ });
         }
         break;
@@ -1477,8 +1482,7 @@
     }).catch(function (err) {
       self.addBubble("system", "Could not update agent setting: " + err.message, new Date().toISOString(), { system: true, forceVisible: true });
       return self.api("/sessions/" + self.sessionId).then(function (snap) {
-        self.renderModelsModes(snap);
-        self.renderConfigOptions(snap);
+        self.applyOptionSnapshot(snap);
         throw err;
       });
     });
@@ -1543,14 +1547,48 @@
     });
   }
 
-  function prepareNewSessionDialog(dialog, widget) {
-    const provider = dialog.querySelector("[data-agent-new-provider]");
-    const snap = widget && widget._acw && widget._acw.lastSnapshot;
-    const activeProvider = snap && snap.session && snap.session.agent_name;
+  function populateNewSessionOptions(dialog, snap) {
     const models = snap && snap.models && (snap.models.availableModels || snap.models.available_models);
     const modes = snap && snap.modes && (snap.modes.availableModes || snap.modes.available_modes);
     populateDatalist(dialog.querySelector("[data-agent-new-models]"), models, ["modelId", "model_id", "id"]);
     populateDatalist(dialog.querySelector("[data-agent-new-modes]"), modes, ["id", "modeId", "mode_id"]);
+  }
+
+  function newSessionSnapshotForProvider(widget, providerId) {
+    const snap = widget && widget._acw && widget._acw.lastSnapshot;
+    const activeProvider = snap && snap.session && snap.session.agent_name;
+    if (providerId && providerId === activeProvider) return Promise.resolve(snap);
+    if (!providerId) return Promise.resolve(null);
+    return csrfFetch("/sessions").then(function (sessions) {
+      const match = (sessions || []).find(function (session) {
+        return session && session.agent_name === providerId;
+      });
+      if (!match || !match.id) return null;
+      return csrfFetch("/sessions/" + encodeURIComponent(match.id));
+    });
+  }
+
+  function refreshNewSessionOptions(dialog, widget) {
+    const provider = dialog.querySelector("[data-agent-new-provider]");
+    const providerId = provider ? provider.value : "";
+    const requestId = Number(dialog._acwOptionsRequest || 0) + 1;
+    dialog._acwOptionsRequest = requestId;
+    // Never leave another provider's suggestions visible while lookup is pending.
+    populateNewSessionOptions(dialog, null);
+    return newSessionSnapshotForProvider(widget, providerId)
+      .then(function (snap) {
+        if (dialog._acwOptionsRequest === requestId) populateNewSessionOptions(dialog, snap);
+      })
+      .catch(function () {
+        if (dialog._acwOptionsRequest === requestId) populateNewSessionOptions(dialog, null);
+      });
+  }
+
+  function prepareNewSessionDialog(dialog, widget) {
+    const provider = dialog.querySelector("[data-agent-new-provider]");
+    const snap = widget && widget._acw && widget._acw.lastSnapshot;
+    const activeProvider = snap && snap.session && snap.session.agent_name;
+    populateNewSessionOptions(dialog, snap);
     return csrfFetch("/providers")
       .then(function (providers) {
         if (!provider) return;
@@ -1563,6 +1601,7 @@
           if (item.id === activeProvider) option.selected = true;
           provider.appendChild(option);
         });
+        return refreshNewSessionOptions(dialog, widget);
       })
       .catch(function () { /* the instance default remains available */ });
   }
@@ -1604,6 +1643,12 @@
     const dialog = root.querySelector("[data-agent-new-dialog]");
     if (dialog && !dialog._acwBound) {
       dialog._acwBound = true;
+      const provider = dialog.querySelector("[data-agent-new-provider]");
+      if (provider) {
+        provider.addEventListener("change", function () {
+          refreshNewSessionOptions(dialog, document.querySelector("[data-agent-chat]"));
+        });
+      }
       dialog.querySelectorAll("[data-agent-new-cancel]").forEach(function (button) {
         button.addEventListener("click", function () { dialog.close(); });
       });

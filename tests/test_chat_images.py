@@ -128,6 +128,11 @@ class ChatWidgetTemplateTests(unittest.TestCase):
         self.assertIn('name="effort"', source)
         self.assertIn('name="cwd"', source)
 
+        script = (template_root.parent / "static" / "js" / "agent-chat.js").read_text()
+        self.assertIn("newSessionSnapshotForProvider", script)
+        self.assertIn('provider.addEventListener("change"', script)
+        self.assertGreaterEqual(script.count("self.applyOptionSnapshot(snap);"), 2)
+
 
 if __name__ == "__main__":
     unittest.main()
