@@ -497,16 +497,22 @@ class AgentSessionRuntime:
             )
             self._flush_transcript()
             try:
-                with _agent_env_overlay(env):
-                    stop_reason = await self.connection.prompt(
-                        item.message,
-                        images=item.images,
-                        item_id=item.card_id,
-                        principal_id=item.principal_id,
-                        project_id=item.project_id,
-                        cwd=item.cwd,
-                    )
-                usage = self.connection.last_usage
+                try:
+                    with _agent_env_overlay(env):
+                        stop_reason = await self.connection.prompt(
+                            item.message,
+                            images=item.images,
+                            item_id=item.card_id,
+                            principal_id=item.principal_id,
+                            project_id=item.project_id,
+                            cwd=item.cwd,
+                        )
+                except Exception as exc:
+                    if self._is_connection_loss(exc):
+                        self._notify_connection_lost(item, exc)
+                        return "connection_lost"
+                    raise
+                usage = self.connection.last_usage if self.connection else None
                 if usage:
                     metrics = dict(self.session.metrics_json or {})
                     metrics["last_usage"] = usage
@@ -525,6 +531,25 @@ class AgentSessionRuntime:
             finally:
                 self._in_flight = None
                 self._turn_started_at = None
+
+    def _is_connection_loss(self, exc: BaseException) -> bool:
+        if isinstance(exc, ConnectionError):
+            return True
+        msg = str(exc).lower()
+        return (
+            "connection closed" in msg
+            or "not connected to agent" in msg
+            or "separator is not found" in msg
+            or "chunk exceed the limit" in msg
+        )
+
+    def _notify_connection_lost(self, item: QueuedPrompt, exc: BaseException) -> None:
+        logger.warning("ACP connection lost for session %s during prompt %s: %s", self.session_id, item.id, exc)
+        self._append_transcript(
+            "connection_lost",
+            {"message": "Connection to the agent was lost while handling this prompt. It may or may not have reached the agent — if you don't see a response, you may want to retry.", "queued_prompt_id": item.id, "detail": str(exc)},
+        )
+        self._flush_transcript()
 
     async def cancel(self, *, pause_queue: bool = True) -> None:
         if pause_queue:

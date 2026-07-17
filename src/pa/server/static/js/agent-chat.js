@@ -605,6 +605,7 @@
       "session_started",
       "session_closed",
       "browser_attachment_changed",
+      "connection_lost",
       "usage_update",
       "model_changed",
       "mode_changed",
@@ -709,6 +710,13 @@
       case "browser_attachment_changed":
         this.applyBrowserState(payload);
         if (payload.attached) this.refreshBrowser();
+        break;
+      case "connection_lost":
+        this.finalizeStreams(created);
+        this.setWorking(false);
+        this.prompting = false;
+        this.setStatus("offline");
+        this.addBubble("system", payload.message || "Connection to the agent was lost. You may want to retry the prompt.", created, { forceVisible: true });
         break;
       case "error":
         this.addBubble("system", payload.message || "Error", created, { system: true });

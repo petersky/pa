@@ -333,10 +333,21 @@ class AgentConnection:
     def prompting(self) -> bool:
         return bool(self.session and self.session.status == "prompting")
 
+    def _transport_alive(self) -> bool:
+        """True when the ACP JSON-RPC transport has not closed/disconnected."""
+        conn = self._conn
+        if not conn:
+            return False
+        inner = getattr(conn, "_conn", conn)
+        return not (
+            getattr(inner, "_closed", False)
+            or getattr(inner, "_disconnected", False)
+        )
+
     @property
     def connected(self) -> bool:
         return bool(
-            self._conn
+            self._transport_alive()
             and self.session
             and self.session.status not in {"disconnected", "closed", "quiesced"}
         )
@@ -551,11 +562,19 @@ class AgentConnection:
         prompt.extend(
             image_block(image.data, image.mime_type) for image in images or []
         )
-        response = await self._conn.prompt(
-            session_id=self.session.external_session_id,
-            prompt=prompt,
-            message_id=message_id,
-        )
+        try:
+            response = await self._conn.prompt(
+                session_id=self.session.external_session_id,
+                prompt=prompt,
+                message_id=message_id,
+            )
+        except ConnectionError:
+            await self._mark_transport_dead()
+            raise
+        except Exception:
+            if not self._transport_alive():
+                await self._mark_transport_dead()
+            raise
 
         updates = self._client.drain_updates() if self._client else []
         capture_from_updates(
@@ -586,6 +605,22 @@ class AgentConnection:
         self.session.updated_at = datetime.now(UTC)
         self.store.save_session(self.session)
         return stop_reason
+
+    async def _mark_transport_dead(self) -> None:
+        """Drop a dead ACP transport without blocking on a hung subprocess exit."""
+        ctx = self._ctx
+        self._ctx = None
+        self._conn = None
+        self._proc = None
+        if self.session and self.session.status not in {"closed", "quiesced"}:
+            self.session.status = "disconnected"
+            self.session.updated_at = datetime.now(UTC)
+            self.store.save_session(self.session)
+        if ctx is not None:
+            try:
+                await asyncio.wait_for(ctx.__aexit__(None, None, None), timeout=2.0)
+            except Exception:
+                logger.debug("ACP transport cleanup after death failed", exc_info=True)
 
     async def cancel(self) -> None:
         if not self._conn or not self.session or not self.session.external_session_id:
