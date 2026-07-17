@@ -113,6 +113,14 @@
       modelWrap: root.querySelector("[data-acw-model-wrap]"),
       modeWrap: root.querySelector("[data-acw-mode-wrap]"),
       config: root.querySelector("[data-acw-config]"),
+      browserToggle: root.querySelector("[data-acw-browser-toggle]"),
+      browser: root.querySelector("[data-acw-browser]"),
+      browserUrl: root.querySelector("[data-acw-browser-url]"),
+      browserGo: root.querySelector("[data-acw-browser-go]"),
+      browserRefresh: root.querySelector("[data-acw-browser-refresh]"),
+      browserDetach: root.querySelector("[data-acw-browser-detach]"),
+      browserViewport: root.querySelector("[data-acw-browser-viewport]"),
+      browserImage: root.querySelector("[data-acw-browser-image]"),
     };
 
     this.es = null;
@@ -124,6 +132,8 @@
     this.queuePaused = false;
     this.prompting = false;
     this.pendingImages = [];
+    this.browserAttached = false;
+    this.browserRefreshId = null;
 
     this._bind();
     ensureMarkdown().then(function () {
@@ -213,6 +223,18 @@
         self.els.fileInput.value = "";
       });
     }
+    if (this.els.browserToggle) this.els.browserToggle.addEventListener("click", function () { self.attachBrowser(); });
+    if (this.els.browserGo) this.els.browserGo.addEventListener("click", function () { self.navigateBrowser(); });
+    if (this.els.browserRefresh) this.els.browserRefresh.addEventListener("click", function () { self.refreshBrowser(); });
+    if (this.els.browserDetach) this.els.browserDetach.addEventListener("click", function () { self.detachBrowser(); });
+    if (this.els.browserUrl) this.els.browserUrl.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); self.navigateBrowser(); } });
+    if (this.els.browserImage) this.els.browserImage.addEventListener("click", function (e) {
+      if (!self.browserAttached) return;
+      const rect = self.els.browserImage.getBoundingClientRect();
+      const x = (e.clientX - rect.left) * (self.els.browserImage.naturalWidth / rect.width);
+      const y = (e.clientY - rect.top) * (self.els.browserImage.naturalHeight / rect.height);
+      self.browserApi("/click", { method: "POST", body: JSON.stringify({ x: x, y: y }) }).then(function () { setTimeout(function () { self.refreshBrowser(); }, 250); });
+    });
   };
 
   AgentChatWidget.prototype.api = function (path, opts) {
@@ -257,11 +279,79 @@
       .then(function (snap) {
         self.applySnapshot(snap);
         self.connectSSE();
+        self.refreshBrowserState();
       })
       .catch(function (err) {
         self.setPlaceholder("Failed to start session: " + err.message);
         self.setStatus("error");
       });
+  };
+
+  AgentChatWidget.prototype.browserApi = function (path, opts) {
+    opts = opts || {};
+    return fetch("/api/agent/sessions/" + this.sessionId + "/browser" + path, Object.assign({
+      headers: csrfHeaders(), credentials: "same-origin",
+    }, opts)).then(function (res) {
+      if (!res.ok) return res.json().catch(function () { return {}; }).then(function (body) { throw new Error(body.detail || "Browser request failed"); });
+      return res.json();
+    });
+  };
+
+  AgentChatWidget.prototype.applyBrowserState = function (state) {
+    this.browserAttached = !!(state && state.attached);
+    if (this.els.browser) this.els.browser.hidden = !this.browserAttached;
+    if (this.els.browserToggle) {
+      this.els.browserToggle.textContent = this.browserAttached ? "Browser Attached" : "Attach Browser";
+      this.els.browserToggle.classList.toggle("active", this.browserAttached);
+      this.els.browserToggle.disabled = this.prompting;
+    }
+    if (this.browserAttached && this.els.browserUrl && state.url) this.els.browserUrl.value = state.url;
+    if (this.browserAttached) this.startBrowserRefresh(); else this.stopBrowserRefresh();
+  };
+
+  AgentChatWidget.prototype.refreshBrowserState = function () {
+    const self = this;
+    if (!this.sessionId) return;
+    this.browserApi("").then(function (state) { self.applyBrowserState(state); if (state.attached) self.refreshBrowser(); }).catch(function () {});
+  };
+
+  AgentChatWidget.prototype.attachBrowser = function () {
+    const self = this;
+    if (this.browserAttached) { this.refreshBrowser(); return; }
+    const url = (this.els.browserUrl && this.els.browserUrl.value) || "about:blank";
+    if (this.els.browserToggle) this.els.browserToggle.disabled = true;
+    this.browserApi("/attach", { method: "POST", body: JSON.stringify({ url: url }) })
+      .then(function (state) { self.applyBrowserState(state); self.refreshBrowser(); self.addBubble("system", "Browser attached to this agent session.", new Date().toISOString(), { system: true, forceVisible: true }); })
+      .catch(function (err) { self.addBubble("system", err.message, new Date().toISOString(), { system: true, forceVisible: true }); })
+      .finally(function () { if (self.els.browserToggle) self.els.browserToggle.disabled = self.prompting; });
+  };
+
+  AgentChatWidget.prototype.detachBrowser = function () {
+    const self = this;
+    this.browserApi("/detach", { method: "POST", body: "{}" }).then(function (state) { self.applyBrowserState(state); });
+  };
+
+  AgentChatWidget.prototype.navigateBrowser = function () {
+    const self = this;
+    let url = (this.els.browserUrl && this.els.browserUrl.value.trim()) || "about:blank";
+    if (url !== "about:blank" && !/^[a-z][a-z0-9+.-]*:/i.test(url)) url = "https://" + url;
+    this.browserApi("/navigate", { method: "POST", body: JSON.stringify({ url: url }) }).then(function (state) { self.applyBrowserState(state); setTimeout(function () { self.refreshBrowser(); }, 500); });
+  };
+
+  AgentChatWidget.prototype.refreshBrowser = function () {
+    if (!this.browserAttached || !this.els.browserImage) return;
+    this.els.browserImage.src = "/api/agent/sessions/" + this.sessionId + "/browser/screenshot?t=" + Date.now();
+  };
+
+  AgentChatWidget.prototype.startBrowserRefresh = function () {
+    const self = this;
+    if (this.browserRefreshId) return;
+    this.browserRefreshId = setInterval(function () { if (!document.hidden) self.refreshBrowser(); }, 1500);
+  };
+
+  AgentChatWidget.prototype.stopBrowserRefresh = function () {
+    if (this.browserRefreshId) clearInterval(this.browserRefreshId);
+    this.browserRefreshId = null;
   };
 
   AgentChatWidget.prototype.recreateWithProvider = function (provider) {
@@ -496,6 +586,7 @@
       "cancelled",
       "session_started",
       "session_closed",
+      "browser_attachment_changed",
       "usage_update",
       "model_changed",
       "mode_changed",
@@ -596,6 +687,10 @@
         this.setPlaceholder("Session ended.");
         if (this.es) this.es.close();
         refreshSessionList(null);
+        break;
+      case "browser_attachment_changed":
+        this.applyBrowserState(payload);
+        if (payload.attached) this.refreshBrowser();
         break;
       case "error":
         this.addBubble("system", payload.message || "Error", created, { system: true });

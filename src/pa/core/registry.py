@@ -63,6 +63,7 @@ class ModuleRegistry:
         from pa.modules.agent_chat import AgentChatModule
         from pa.modules.agent_providers import AgentProvidersModule
         from pa.modules.auth import AuthModule
+        from pa.modules.browser import BrowserModule
         from pa.modules.debug import DebugModule
         from pa.modules.fleet import FleetModule
         from pa.modules.integrations import IntegrationsModule
@@ -84,6 +85,7 @@ class ModuleRegistry:
             ItemsModule(),
             InstanceModule(),
             AgentChatModule(),
+            BrowserModule(),
             AgentProvidersModule(),
             ThemeModule(),
             DebugModule(),
