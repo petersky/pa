@@ -221,15 +221,26 @@
   async function loadRemoteProviders(instanceId) {
     var select = $("[data-remote-provider]");
     if (!select) return;
-    select.innerHTML = '<option value="">Instance default</option>';
+    var selectedProvider = select.value;
     var providers = await api(remoteApiBase(instanceId) + "/providers");
+    if (instanceId !== remoteInstanceId) return;
+
+    var options = document.createDocumentFragment();
+    var defaultOption = document.createElement("option");
+    defaultOption.value = "";
+    defaultOption.textContent = "Instance default";
+    options.appendChild(defaultOption);
     (providers || []).forEach(function (provider) {
       if (!provider || !provider.id || provider.available === false) return;
       var option = document.createElement("option");
       option.value = provider.id;
       option.textContent = provider.display_name || provider.id;
-      select.appendChild(option);
+      options.appendChild(option);
     });
+    select.replaceChildren(options);
+    if (selectedProvider && $all("option", select).some(function (option) {
+      return option.value === selectedProvider;
+    })) select.value = selectedProvider;
   }
 
   async function loadRemoteOperations() {

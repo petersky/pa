@@ -703,13 +703,18 @@ async def fleet_agent_proxy(
     """Relay the authenticated agent REST/SSE surface through the local PA origin."""
     require_user(request)
     inst = _fleet_instance_or_404(request, instance_id)
-    target = f"{inst.url.rstrip('/')}/api/agent/{_agent_path(agent_path)}"
+    proxied_path = _agent_path(agent_path)
+    target = f"{inst.url.rstrip('/')}/api/agent/{proxied_path}"
     headers = _peer_headers(request)
     for name in ("accept", "content-type", "last-event-id"):
         value = request.headers.get(name)
         if value:
             headers[name] = value
-    client = httpx.AsyncClient(timeout=httpx.Timeout(120.0, read=None))
+    # Session event streams are intentionally unbounded; every other proxied
+    # response must retain a finite read timeout so a stalled peer cannot pin a
+    # request forever while the controller buffers its body.
+    read_timeout = None if proxied_path.endswith("/events") else 120.0
+    client = httpx.AsyncClient(timeout=httpx.Timeout(120.0, read=read_timeout))
     try:
         upstream_request = client.build_request(
             request.method,
@@ -745,9 +750,13 @@ async def fleet_agent_proxy(
             headers=response_headers,
         )
 
-    content = await upstream.aread()
-    await upstream.aclose()
-    await client.aclose()
+    try:
+        content = await upstream.aread()
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Peer response failed: {exc}") from exc
+    finally:
+        await upstream.aclose()
+        await client.aclose()
     return Response(
         content=content,
         status_code=upstream.status_code,

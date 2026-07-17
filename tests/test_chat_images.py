@@ -148,6 +148,8 @@ class ChatWidgetTemplateTests(unittest.TestCase):
         self.assertIn("auto_start=false", template)
         self.assertIn("watchRemoteSessions", fleet_script)
         self.assertIn("new Notification", fleet_script)
+        self.assertIn("var selectedProvider = select.value;", fleet_script)
+        self.assertIn("select.value = selectedProvider;", fleet_script)
         self.assertIn("setApiBase", chat_script)
 
 
