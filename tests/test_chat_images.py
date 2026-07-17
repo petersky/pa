@@ -150,6 +150,13 @@ class ChatWidgetTemplateTests(unittest.TestCase):
         self.assertIn("new Notification", fleet_script)
         self.assertIn("var selectedProvider = select.value;", fleet_script)
         self.assertIn("select.value = selectedProvider;", fleet_script)
+        self.assertIn("function remoteNotificationsActive()", fleet_script)
+        self.assertIn("function handleRemoteOperationsHidden()", fleet_script)
+        self.assertIn("function refreshRemoteWatchers(instanceId)", fleet_script)
+        self.assertIn("var generation = ++remoteLoadGeneration;", fleet_script)
+        self.assertIn("instanceId !== remoteInstanceId", fleet_script)
+        self.assertIn("var dispatchInstanceId = remoteInstanceId;", fleet_script)
+        self.assertNotIn("setTimeout(loadRemoteOperations", fleet_script)
         self.assertIn("setApiBase", chat_script)
 
 

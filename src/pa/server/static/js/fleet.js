@@ -95,6 +95,8 @@
 
   var remoteInstanceId = "";
   var remoteWatchers = {};
+  var remoteLoadGeneration = 0;
+  var remoteAuditGeneration = 0;
 
   function remoteApiBase(instanceId) {
     return "/api/fleet/instances/" + encodeURIComponent(instanceId) + "/agent";
@@ -108,14 +110,19 @@
     }
   }
 
+  function remoteNotificationsActive() {
+    return remoteNotificationsEnabled() &&
+      typeof Notification !== "undefined" &&
+      Notification.permission === "granted";
+  }
+
   function updateRemoteNotificationButton() {
     var button = $("#pa-remote-notifications");
     if (!button) return;
-    var allowed = typeof Notification !== "undefined" && Notification.permission === "granted";
-    button.textContent = remoteNotificationsEnabled() && allowed
+    button.textContent = remoteNotificationsActive()
       ? "Notifications enabled"
       : "Enable notifications";
-    button.classList.toggle("active", remoteNotificationsEnabled() && allowed);
+    button.classList.toggle("active", remoteNotificationsActive());
   }
 
   async function enableRemoteNotifications() {
@@ -128,8 +135,7 @@
   }
 
   function notifyRemoteSession(session, type, payload) {
-    if (!remoteNotificationsEnabled()) return;
-    if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+    if (!remoteNotificationsActive()) return;
     var labels = {
       turn_completed: "Work completed",
       permission_request: "Permission needed",
@@ -154,6 +160,50 @@
     });
   }
 
+  function handleRemoteOperationsHidden() {
+    remoteLoadGeneration += 1;
+    remoteAuditGeneration += 1;
+    // Opted-in notifications intentionally outlive the Fleet view. Without
+    // that explicit permission, navigation owns and closes every watcher.
+    if (remoteNotificationsActive()) {
+      if (remoteInstanceId) refreshRemoteWatchers(remoteInstanceId);
+      return;
+    }
+    remoteInstanceId = "";
+    clearRemoteWatchers();
+  }
+
+  function scheduleRemoteSessionRefresh(instanceId) {
+    setTimeout(function () {
+      if (instanceId !== remoteInstanceId) return;
+      if ($("#pa-remote-instance")) {
+        loadRemoteOperations();
+      } else if (remoteNotificationsActive()) {
+        refreshRemoteWatchers(instanceId);
+      } else {
+        remoteInstanceId = "";
+        clearRemoteWatchers();
+      }
+    }, 250);
+  }
+
+  async function refreshRemoteWatchers(instanceId) {
+    var generation = ++remoteLoadGeneration;
+    try {
+      var sessions = await api(remoteApiBase(instanceId) + "/sessions");
+      if (
+        generation !== remoteLoadGeneration ||
+        instanceId !== remoteInstanceId ||
+        !remoteNotificationsActive() ||
+        $("#pa-remote-instance")
+      ) return;
+      watchRemoteSessions(instanceId, sessions || []);
+    } catch (err) {
+      // Existing EventSources retain their own reconnect behavior. A failed
+      // reconciliation should not silently disable opted-in notifications.
+    }
+  }
+
   function watchRemoteSessions(instanceId, sessions) {
     var desired = {};
     (sessions || []).forEach(function (session) {
@@ -172,7 +222,7 @@
           var data = {};
           try { data = JSON.parse(event.data || "{}"); } catch (e) {}
           notifyRemoteSession(session, type, data.payload || {});
-          if (type !== "permission_request") setTimeout(loadRemoteOperations, 250);
+          if (type !== "permission_request") scheduleRemoteSessionRefresh(instanceId);
         });
       });
       remoteWatchers[key] = source;
@@ -218,13 +268,19 @@
     }).join("");
   }
 
-  async function loadRemoteProviders(instanceId) {
+  async function loadRemoteProviders(instanceId, generation) {
     var select = $("[data-remote-provider]");
     if (!select) return;
-    var selectedProvider = select.value;
     var providers = await api(remoteApiBase(instanceId) + "/providers");
-    if (instanceId !== remoteInstanceId) return;
+    if (
+      generation !== remoteLoadGeneration ||
+      instanceId !== remoteInstanceId ||
+      !select.isConnected
+    ) return;
 
+    // Read the selection after the request so a choice made while providers
+    // were loading wins over the refresh that initiated the request.
+    var selectedProvider = select.value;
     var options = document.createDocumentFragment();
     var defaultOption = document.createElement("option");
     defaultOption.value = "";
@@ -244,15 +300,22 @@
   }
 
   async function loadRemoteOperations() {
+    var instanceSelect = $("#pa-remote-instance");
+    if (!instanceSelect) {
+      handleRemoteOperationsHidden();
+      return;
+    }
     var status = $("#pa-remote-status");
-    if (!remoteInstanceId) {
+    var instanceId = remoteInstanceId;
+    var generation = ++remoteLoadGeneration;
+    if (!instanceId) {
       if (status) status.textContent = "Choose an instance to load its sessions.";
       clearRemoteWatchers();
       return;
     }
     if (status) status.textContent = "Loading remote sessions…";
     try {
-      var base = remoteApiBase(remoteInstanceId);
+      var base = remoteApiBase(instanceId);
       var warnings = [];
       var results = await Promise.all([
         api(base + "/sessions"),
@@ -260,20 +323,30 @@
           warnings.push("Audit history requires a newer PA on the peer.");
           return [];
         }),
-        loadRemoteProviders(remoteInstanceId).catch(function () {
+        loadRemoteProviders(instanceId, generation).catch(function () {
           warnings.push("Provider discovery is unavailable.");
           return null;
         }),
       ]);
+      if (
+        generation !== remoteLoadGeneration ||
+        instanceId !== remoteInstanceId ||
+        !instanceSelect.isConnected
+      ) return;
       var sessions = results[0] || [];
       renderRemoteSessions(sessions);
       renderRemoteHistory(results[1] || [], sessions);
-      watchRemoteSessions(remoteInstanceId, sessions);
+      watchRemoteSessions(instanceId, sessions);
       if (status) {
         status.textContent = sessions.length + " live session" + (sessions.length === 1 ? "" : "s") +
           " on the selected instance." + (warnings.length ? " " + warnings.join(" ") : "");
       }
     } catch (err) {
+      if (
+        generation !== remoteLoadGeneration ||
+        instanceId !== remoteInstanceId ||
+        !instanceSelect.isConnected
+      ) return;
       clearRemoteWatchers();
       if (status) status.textContent = err.message;
     }
@@ -295,6 +368,8 @@
 
   async function showRemoteAudit(sessionId) {
     if (!remoteInstanceId || !sessionId) return;
+    var instanceId = remoteInstanceId;
+    var generation = ++remoteAuditGeneration;
     var chat = $("#pa-remote-chat");
     var audit = $("#pa-remote-audit");
     var body = $("#pa-remote-audit-body");
@@ -302,13 +377,19 @@
     if (audit) audit.hidden = false;
     if (body) body.innerHTML = '<p class="muted">Loading audit history…</p>';
     try {
-      var data = await api(remoteApiBase(remoteInstanceId) + "/history/" + encodeURIComponent(sessionId));
+      var data = await api(remoteApiBase(instanceId) + "/history/" + encodeURIComponent(sessionId));
+      if (
+        generation !== remoteAuditGeneration ||
+        instanceId !== remoteInstanceId ||
+        !body ||
+        !body.isConnected
+      ) return;
       var session = data.session || {};
       var events = data.events || [];
       if (body) {
         body.innerHTML = '<p><strong>' + escapeHtml(session.title || session.label || session.id) +
           '</strong> <span class="badge">' + escapeHtml(session.status || "unknown") + '</span></p>' +
-          '<p class="muted small">' + escapeHtml((data.instance && data.instance.name) || remoteInstanceId) +
+          '<p class="muted small">' + escapeHtml((data.instance && data.instance.name) || instanceId) +
           " · " + events.length + " transcript events</p>" +
           '<div class="pa-remote-audit-events">' + events.map(function (event) {
             var payload = "";
@@ -320,13 +401,22 @@
           }).join("") + "</div>";
       }
     } catch (err) {
+      if (
+        generation !== remoteAuditGeneration ||
+        instanceId !== remoteInstanceId ||
+        !body ||
+        !body.isConnected
+      ) return;
       if (body) body.innerHTML = '<p class="status status-blocked">' + escapeHtml(err.message) + "</p>";
     }
   }
 
   function maybeLoadRemoteOperations() {
     var select = $("#pa-remote-instance");
-    if (!select) return;
+    if (!select) {
+      handleRemoteOperationsHidden();
+      return;
+    }
     updateRemoteNotificationButton();
     var saved = "";
     try { saved = localStorage.getItem("pa-remote-instance") || ""; } catch (e) {}
@@ -335,8 +425,14 @@
     } else if (select.options.length === 2) {
       select.selectedIndex = 1;
     }
-    remoteInstanceId = select.value || "";
+    var nextInstanceId = select.value || "";
+    if (nextInstanceId !== remoteInstanceId) {
+      remoteAuditGeneration += 1;
+      clearRemoteWatchers();
+    }
+    remoteInstanceId = nextInstanceId;
     if (remoteInstanceId) loadRemoteOperations();
+    else clearRemoteWatchers();
   }
 
   function providersHtml(providers) {
@@ -456,6 +552,7 @@
   document.addEventListener("change", function (e) {
     if (!e.target || e.target.id !== "pa-remote-instance") return;
     remoteInstanceId = e.target.value || "";
+    remoteAuditGeneration += 1;
     try { localStorage.setItem("pa-remote-instance", remoteInstanceId); } catch (err) {}
     clearRemoteWatchers();
     var chat = $("#pa-remote-chat");
@@ -652,6 +749,8 @@
         if (remoteStatus) remoteStatus.textContent = "Choose a remote instance first.";
         return;
       }
+      var dispatchInstanceId = remoteInstanceId;
+      var remoteInstanceSelect = $("#pa-remote-instance");
       var remoteBody = formToObject(form);
       var cardSelect = form.elements.card_id;
       if (cardSelect && cardSelect.selectedOptions.length) {
@@ -663,24 +762,40 @@
       });
       var submit = form.querySelector("[data-remote-start]");
       if (submit) submit.disabled = true;
+      if (remoteInstanceSelect) remoteInstanceSelect.disabled = true;
       if (remoteStatus) remoteStatus.textContent = "Starting remote session…";
-      api(remoteApiBase(remoteInstanceId) + "/start", {
+      api(remoteApiBase(dispatchInstanceId) + "/start", {
         method: "POST",
         body: remoteBody,
       }).then(function (result) {
         var snapshot = result.session || {};
         var session = snapshot.session || snapshot;
         if (!session.id) throw new Error("Remote instance did not return a session id.");
+        if (
+          dispatchInstanceId !== remoteInstanceId ||
+          !form.isConnected
+        ) return;
         if (remoteStatus) {
           remoteStatus.textContent = result.prompt_error
             ? "Remote session " + session.id + " started, but its initial prompt failed: " + result.prompt_error
             : "Remote work started in session " + session.id + ".";
         }
-        return loadRemoteOperations().then(function () { selectRemoteSession(session.id); });
+        return loadRemoteOperations().then(function () {
+          if (dispatchInstanceId === remoteInstanceId && form.isConnected) {
+            selectRemoteSession(session.id);
+          }
+        });
       }).catch(function (err) {
-        if (remoteStatus) remoteStatus.textContent = err.message;
+        if (
+          dispatchInstanceId === remoteInstanceId &&
+          form.isConnected &&
+          remoteStatus
+        ) remoteStatus.textContent = err.message;
       }).finally(function () {
-        if (submit) submit.disabled = false;
+        if (submit && submit.isConnected) submit.disabled = false;
+        if (remoteInstanceSelect && remoteInstanceSelect.isConnected) {
+          remoteInstanceSelect.disabled = false;
+        }
       });
       return;
     }
