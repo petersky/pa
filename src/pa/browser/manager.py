@@ -63,7 +63,12 @@ class BrowserAttachment:
         }
 
     async def state(self) -> dict:
-        metadata = await self.page.metadata()
+        page = self.page
+        metadata = await page.metadata()
+        viewport = await page.viewport()
+        self.width = int(viewport["width"])
+        self.height = int(viewport["height"])
+        self.device_scale_factor = float(viewport["device_scale_factor"])
         return {
             "attached": True,
             "id": self.id,

@@ -354,6 +354,39 @@ class AgentSessionRuntime:
             return {"attached": False}
         return await attachment.state()
 
+    async def resize_browser(
+        self,
+        width: int,
+        height: int,
+        *,
+        device_scale_factor: float = 1,
+    ) -> dict:
+        attachment = self.manager.browser.get(self.session_id)
+        if not attachment:
+            raise RuntimeError("No browser is attached")
+        await attachment.resize(
+            width,
+            height,
+            device_scale_factor=device_scale_factor,
+        )
+        state = await attachment.state()
+        config = dict(self.session.config_json or {})
+        browser_config = dict(config.get("browser") or {})
+        browser_config.update(
+            attached=True,
+            attachment_id=attachment.id,
+            url=state.get("url") or browser_config.get("url") or "about:blank",
+            width=attachment.width,
+            height=attachment.height,
+            device_scale_factor=attachment.device_scale_factor,
+        )
+        config["browser"] = browser_config
+        self.session.config_json = config
+        self.store.save_session(self.session)
+        self._append_transcript("browser_attachment_changed", state)
+        self._flush_transcript()
+        return state
+
     def _start_drain(self) -> None:
         if self._drain_task and not self._drain_task.done():
             return

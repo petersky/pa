@@ -104,6 +104,17 @@ class CdpPage:
             },
         )
 
+    async def viewport(self) -> dict[str, int | float]:
+        viewport = await self.evaluate(
+            "({width: window.innerWidth, height: window.innerHeight, "
+            "device_scale_factor: window.devicePixelRatio})"
+        )
+        return {
+            "width": int(viewport["width"]),
+            "height": int(viewport["height"]),
+            "device_scale_factor": float(viewport["device_scale_factor"]),
+        }
+
     async def metadata(self) -> dict[str, Any]:
         target = await page_target(self.endpoint, self.target_id)
         self.target_id = str(target["id"])

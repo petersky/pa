@@ -347,7 +347,7 @@
   AgentChatWidget.prototype.refreshBrowserState = function () {
     const self = this;
     if (!this.sessionId) return;
-    this.browserApi("").then(function (state) { self.applyBrowserState(state); if (state.attached) self.refreshBrowser(); }).catch(function () {});
+    this.browserApi("").then(function (state) { self.applyBrowserState(state); if (state.attached && self.browserVisible) self.refreshBrowser(); }).catch(function () {});
   };
 
   AgentChatWidget.prototype.attachBrowser = function () {

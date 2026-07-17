@@ -107,15 +107,14 @@ async def browser_navigate(request: Request, session_id: str, body: NavigateBody
 
 @router.post("/resize")
 async def browser_resize(request: Request, session_id: str, body: ResizeBody) -> dict:
-    attachment = _runtime(request, session_id).manager.browser.get(session_id)
-    if not attachment:
-        raise HTTPException(status_code=409, detail="No browser is attached")
-    await attachment.resize(
-        body.width,
-        body.height,
-        device_scale_factor=body.device_scale_factor,
-    )
-    return await attachment.state()
+    try:
+        return await _runtime(request, session_id).resize_browser(
+            body.width,
+            body.height,
+            device_scale_factor=body.device_scale_factor,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.post("/click")
@@ -294,7 +293,9 @@ class BrowserModule(Module):
             await controller.manager.detach(controller.session_key)
             controller.attachment = None
             controller.attributes = {}
-            return json.dumps({"attached": False, "detached": True})
+            state = await controller.state()
+            state["detached"] = True
+            return json.dumps(state)
 
         @mcp.tool()
         async def browser_snapshot() -> str:
