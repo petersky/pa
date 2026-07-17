@@ -91,6 +91,9 @@ def normalize_session_update(update: Any) -> dict[str, Any]:
         if update_type in {"agent_message_chunk", "agent_thought_chunk", "user_message_chunk"}:
             payload["text"] = _content_text(plain.get("content"))
             payload["message_id"] = plain.get("messageId") or plain.get("message_id")
+            meta = plain.get("_meta") or {}
+            codex_meta = meta.get("codex") or {} if isinstance(meta, dict) else {}
+            payload["phase"] = codex_meta.get("phase") if isinstance(codex_meta, dict) else None
         elif update_type in {"tool_call", "tool_call_update"}:
             payload["tool_call_id"] = plain.get("toolCallId") or plain.get("tool_call_id")
             payload["title"] = plain.get("title")

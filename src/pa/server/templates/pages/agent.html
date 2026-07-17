@@ -2,7 +2,7 @@
 {% from "macros/icons.html" import icon %}
 
 {% set left %}
-<div class="panel">
+<div class="panel agent-sessions-panel">
   <div class="panel-header">
     <h2>Sessions</h2>
     {% if agent_enabled %}
@@ -26,15 +26,15 @@
     {% endif %}
   </ul>
 </div>
-<div class="panel">
-  <div class="panel-header"><h2>Tips</h2></div>
+<details class="panel agent-tips-panel">
+  <summary class="panel-header"><h2>Tips</h2></summary>
   <ul class="muted tip-list">
     <li>Messages queue while the agent is working.</li>
     <li>Stop pauses the active turn and queue.</li>
     <li>Session actions and display options are in the Session menu.</li>
     <li>Permission prompts appear inline unless auto-approve is on.</li>
   </ul>
-</div>
+</details>
 {% endset %}
 
 {% set main %}
@@ -49,7 +49,8 @@
       show_system_prompts=false,
       show_queue=true,
       show_metrics=true,
-      compact=false
+      compact=false,
+      show_sidebar_toggle=true
   %}
     {% include "partials/agent/chat-widget.html" %}
   {% endwith %}

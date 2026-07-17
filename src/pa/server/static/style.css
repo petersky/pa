@@ -759,6 +759,14 @@ code {
   min-height: 100%;
 }
 
+.page-agent.is-sidebar-collapsed .page-sidebar-left { display: none; }
+
+.agent-tips-panel > summary {
+  cursor: pointer;
+  list-style: none;
+}
+.agent-tips-panel > summary::-webkit-details-marker { display: none; }
+
 .agent-chat-widget {
   display: flex;
   flex-direction: column;
@@ -911,14 +919,16 @@ code {
   flex-direction: column;
   gap: 0.55rem;
   min-height: 12rem;
-  padding: 0.25rem 0;
+  padding: 0.25rem 1rem;
 }
 
 .acw-msg {
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
-  max-width: 92%;
+  width: min(100%, 56rem);
+  max-width: 100%;
+  margin-inline: auto;
 }
 
 .acw-msg-user,
@@ -980,6 +990,9 @@ code {
   font-style: italic;
 }
 
+.acw-msg-thought strong,
+.acw-bubble-thought strong { font-weight: 400; }
+
 .acw-bubble-system {
   background: var(--pa-surface);
   border: 1px solid var(--pa-border);
@@ -998,6 +1011,51 @@ code {
   padding: 0.4rem 0.55rem;
   background: var(--pa-chat-tool-bg);
   font-size: 0.8rem;
+}
+
+.acw-activity {
+  width: min(100%, 56rem);
+  margin-inline: auto;
+  border: 1px solid var(--pa-chat-tool-border);
+  border-radius: var(--pa-chat-radius);
+  background: var(--pa-chat-tool-bg);
+  font-size: 0.8rem;
+}
+
+.acw-activity > summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  cursor: pointer;
+  padding: 0.45rem 0.6rem;
+  font-weight: 600;
+}
+
+.acw-activity-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0 0.55rem 0.55rem;
+}
+
+.acw-activity .acw-tool {
+  width: 100%;
+  background: var(--pa-surface-raised);
+}
+
+.acw-progress-update {
+  padding: 0.35rem 0.45rem;
+  border-left: 2px solid var(--pa-accent);
+  color: var(--pa-text-muted);
+  white-space: pre-wrap;
+}
+
+.acw-composer,
+.acw-working,
+.acw-queue,
+.acw-permissions {
+  width: min(100%, 56rem);
+  margin-inline: auto;
 }
 
 .acw-tool-header {
@@ -1276,6 +1334,9 @@ code {
 .session-list li[data-session-id] span {
   line-height: 1.2;
   font-size: 0.75rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .session-list li[data-session-id]:hover {

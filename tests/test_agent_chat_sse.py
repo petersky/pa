@@ -8,6 +8,7 @@ import unittest
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from pa.acp.client import normalize_session_update
 from pa.modules.agent_chat import session_events
 
 
@@ -42,6 +43,19 @@ class _FakeRuntime:
 
 
 class AgentChatSseTests(unittest.TestCase):
+    def test_codex_message_phase_is_preserved(self) -> None:
+        update = {
+            "sessionUpdate": "agent_message_chunk",
+            "messageId": "message-1",
+            "content": {"type": "text", "text": "Still working"},
+            "_meta": {"codex": {"phase": "commentary"}},
+        }
+
+        normalized = normalize_session_update(update)
+
+        self.assertEqual(normalized["phase"], "commentary")
+        self.assertEqual(normalized["text"], "Still working")
+
     def test_events_stream_replays_without_unbound_error(self) -> None:
         """Previously crashed with UnboundLocalError on after_seq before subscribe."""
         te = MagicMock()
