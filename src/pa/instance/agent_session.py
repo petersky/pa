@@ -123,7 +123,11 @@ class AgentSessionRuntime:
 
     @property
     def prompting(self) -> bool:
-        return bool(self.connection and self.connection.prompting) or self._prompt_lock.locked()
+        # The in-flight item is the runtime's authoritative turn lifecycle.
+        # Connection status and the prompt lock can remain active briefly while
+        # terminal events are flushed, which must not make a refreshed UI
+        # resurrect a completed turn.
+        return self._in_flight is not None
 
     @property
     def queue_paused(self) -> bool:
@@ -573,6 +577,7 @@ class AgentSessionRuntime:
                         )
                 except Exception as exc:
                     if self._is_connection_loss(exc):
+                        self._finish_turn_state()
                         self._notify_connection_lost(item, exc)
                         return "connection_lost"
                     raise
@@ -582,6 +587,10 @@ class AgentSessionRuntime:
                     metrics["last_usage"] = usage
                     self.session.metrics_json = metrics
                     self._save_session_preserving_external_browser()
+                # Clear snapshot-visible turn state before publishing the
+                # terminal event. A page refresh after turn_completed must see
+                # prompting=false and no per-turn start time.
+                self._finish_turn_state()
                 self._append_transcript(
                     "turn_completed",
                     {
@@ -593,8 +602,11 @@ class AgentSessionRuntime:
                 self._flush_transcript()
                 return stop_reason
             finally:
-                self._in_flight = None
-                self._turn_started_at = None
+                self._finish_turn_state()
+
+    def _finish_turn_state(self) -> None:
+        self._in_flight = None
+        self._turn_started_at = None
 
     def _is_connection_loss(self, exc: BaseException) -> bool:
         if isinstance(exc, ConnectionError):

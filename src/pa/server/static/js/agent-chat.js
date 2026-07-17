@@ -685,7 +685,7 @@
         // A live user_message is emitted when the runtime actually begins a
         // turn (including a prompt drained from the queue). Transcript replay
         // is reconciled against the authoritative snapshot in applySnapshot.
-        if (!replay) this.setTurnActive(true, created);
+        if (!replay) this.setTurnActive(true, created, true);
         break;
       case "agent_message_chunk":
         if (payload.phase === "commentary") {
@@ -1289,7 +1289,12 @@
     this.turnTimerId = setInterval(tick, 500);
   };
 
-  AgentChatWidget.prototype.setTurnActive = function (on, startedAt) {
+  AgentChatWidget.prototype.setTurnActive = function (on, startedAt, restartTimer) {
+    if (on && restartTimer) {
+      if (this.turnTimerId) clearInterval(this.turnTimerId);
+      this.turnTimerId = null;
+      this.turnStartedAt = null;
+    }
     this.turnActive = !!on;
     this.prompting = this.turnActive;
     this.setWorking(this.turnActive, startedAt);
