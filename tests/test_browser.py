@@ -115,6 +115,26 @@ class BrowserSessionRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(runtime.session.config_json["other"], "kept")
         runtime.store.save_session.assert_called_once_with(runtime.session)
 
+    def test_save_merges_external_browser_with_in_memory_options(self):
+        runtime = AgentSessionRuntime.__new__(AgentSessionRuntime)
+        persisted = SimpleNamespace(
+            config_json={"browser": {"attached": True, "width": 1920}}
+        )
+        runtime.session = SimpleNamespace(
+            id="session-1",
+            config_json={"browser": {"attached": True, "width": 800}, "options": ["new"]},
+        )
+        runtime.store = SimpleNamespace(
+            get_session=MagicMock(return_value=persisted),
+            save_session=MagicMock(),
+        )
+
+        runtime._save_session_preserving_external_browser()
+
+        self.assertEqual(runtime.session.config_json["browser"]["width"], 1920)
+        self.assertEqual(runtime.session.config_json["options"], ["new"])
+        runtime.store.save_session.assert_called_once_with(runtime.session)
+
 
 class McpBrowserControllerTests(unittest.IsolatedAsyncioTestCase):
     async def test_session_state_reads_live_viewport_and_persists_resize(self):
@@ -146,3 +166,16 @@ class McpBrowserControllerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(session.config_json["browser"]["width"], 1920)
         self.assertEqual(session.config_json["browser"]["url"], "https://example.com")
         store.save_session.assert_called_once_with(session)
+
+    async def test_default_attach_persistence_preserves_saved_url(self):
+        session = SimpleNamespace(config_json={"browser": {"url": "https://saved.example"}})
+        store = SimpleNamespace(
+            get_session=MagicMock(return_value=session),
+            save_session=MagicMock(),
+        )
+        controller = McpBrowserController(Path("/tmp/pa-browser-test"), store)
+        controller.attributes = {"width": 1440, "height": 900, "device_scale_factor": 1}
+        with patch.dict(os.environ, {"PA_BROWSER_SESSION_ID": "session-1"}, clear=False):
+            controller.persist_session_attributes(url=None)
+
+        self.assertEqual(session.config_json["browser"]["url"], "https://saved.example")

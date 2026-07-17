@@ -141,6 +141,7 @@
     this.pendingImages = [];
     this.browserAttached = false;
     this.browserVisible = false;
+    this.browserDeviceScaleFactor = 1;
     this.browserRefreshId = null;
 
     this._bind();
@@ -250,8 +251,9 @@
     if (this.els.browserImage) this.els.browserImage.addEventListener("click", function (e) {
       if (!self.browserAttached) return;
       const rect = self.els.browserImage.getBoundingClientRect();
-      const x = (e.clientX - rect.left) * (self.els.browserImage.naturalWidth / rect.width);
-      const y = (e.clientY - rect.top) * (self.els.browserImage.naturalHeight / rect.height);
+      const scale = self.browserDeviceScaleFactor || 1;
+      const x = (e.clientX - rect.left) * (self.els.browserImage.naturalWidth / rect.width) / scale;
+      const y = (e.clientY - rect.top) * (self.els.browserImage.naturalHeight / rect.height) / scale;
       self.browserApi("/click", { method: "POST", body: JSON.stringify({ x: x, y: y }) }).then(function () { setTimeout(function () { self.refreshBrowser(); }, 250); });
     });
   };
@@ -330,6 +332,7 @@
     if (this.browserAttached && this.els.browserUrl && state.url) this.els.browserUrl.value = state.url;
     if (this.browserAttached && this.els.browserWidth && state.width) this.els.browserWidth.value = state.width;
     if (this.browserAttached && this.els.browserHeight && state.height) this.els.browserHeight.value = state.height;
+    if (this.browserAttached && state.device_scale_factor) this.browserDeviceScaleFactor = state.device_scale_factor;
     if (this.browserAttached && this.browserVisible) this.startBrowserRefresh(); else this.stopBrowserRefresh();
   };
 

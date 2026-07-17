@@ -272,7 +272,9 @@ class BrowserModule(Module):
                 "height": height,
                 "device_scale_factor": device_scale_factor,
             }
-            controller.persist_session_attributes(url=url)
+            controller.persist_session_attributes(
+                url=None if url == "about:blank" else url
+            )
             return json.dumps(await controller.state())
 
         @mcp.tool()
@@ -285,6 +287,8 @@ class BrowserModule(Module):
             """Open a URL in PA's browser, starting a default headless browser if needed."""
             page = await controller.ensure_page()
             await page.navigate(url)
+            state = await controller.state()
+            controller.persist_session_attributes(url=state.get("url") or url)
             return json.dumps(await page.metadata())
 
         @mcp.tool()

@@ -87,6 +87,7 @@ class AgentSessionRuntime:
         self.store = manager.store
         self.session = session
         self.agent_env = dict(agent_env or {})
+        self.agent_env.setdefault("PA_BROWSER_SESSION_ID", session.id)
         self.connection: AgentConnection | None = None
         self._prompt_lock = asyncio.Lock()
         self._queue: list[QueuedPrompt] = []
@@ -100,6 +101,17 @@ class AgentSessionRuntime:
         self._transcript_buffer: list[TranscriptEvent] = []
         self._closed = False
         self._turn_started_at: datetime | None = None
+
+    def _save_session_preserving_external_browser(self) -> None:
+        persisted = self.store.get_session(self.session_id)
+        persisted_browser = dict(
+            ((persisted.config_json or {}).get("browser") or {}) if persisted else {}
+        )
+        if persisted_browser:
+            config = dict(self.session.config_json or {})
+            config["browser"] = persisted_browser
+            self.session.config_json = config
+        self.store.save_session(self.session)
 
     @property
     def session_id(self) -> str:
@@ -176,17 +188,17 @@ class AgentSessionRuntime:
             metrics = dict(self.session.metrics_json or {})
             metrics["usage"] = normalized["usage"]
             self.session.metrics_json = metrics
-            self.store.save_session(self.session)
+            self._save_session_preserving_external_browser()
         if event_type == "current_mode_update" and normalized.get("mode_id"):
             self.session.mode_id = normalized["mode_id"]
-            self.store.save_session(self.session)
+            self._save_session_preserving_external_browser()
         if event_type == "config_option_update":
             options = normalized.get("config_options")
             if options is not None:
                 cfg = dict(self.session.config_json or {})
                 cfg["options"] = options
                 self.session.config_json = cfg
-                self.store.save_session(self.session)
+                self._save_session_preserving_external_browser()
                 if self.connection:
                     self.connection.config_options = options
         self._append_transcript(event_type, normalized)
@@ -277,7 +289,7 @@ class AgentSessionRuntime:
         # Persist resolved provider id on the session.
         if self.connection and self.connection.agent_name:
             self.session.agent_name = self.connection.agent_name
-            self.store.save_session(self.session)
+            self._save_session_preserving_external_browser()
         self._queue_paused = queue_paused
         if queued_prompts:
             for item in queued_prompts:
@@ -337,7 +349,6 @@ class AgentSessionRuntime:
                 "PA_BROWSER_CDP_URL",
                 "PA_BROWSER_TARGET_ID",
                 "PA_BROWSER_ATTACHMENT_ID",
-                "PA_BROWSER_SESSION_ID",
             ):
                 self.agent_env.pop(key, None)
             config["browser"] = {"attached": False}
@@ -570,7 +581,7 @@ class AgentSessionRuntime:
                     metrics = dict(self.session.metrics_json or {})
                     metrics["last_usage"] = usage
                     self.session.metrics_json = metrics
-                    self.store.save_session(self.session)
+                    self._save_session_preserving_external_browser()
                 self._append_transcript(
                     "turn_completed",
                     {
@@ -777,7 +788,7 @@ class AgentSessionRuntime:
             self.connection = None
         self.session.status = "closed"
         self.session.updated_at = datetime.now(UTC)
-        self.store.save_session(self.session)
+        self._save_session_preserving_external_browser()
 
 
 class AgentSessionManager:
