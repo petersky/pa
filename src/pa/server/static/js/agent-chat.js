@@ -120,6 +120,9 @@
       browser: root.querySelector("[data-acw-browser]"),
       browserUrl: root.querySelector("[data-acw-browser-url]"),
       browserGo: root.querySelector("[data-acw-browser-go]"),
+      browserWidth: root.querySelector("[data-acw-browser-width]"),
+      browserHeight: root.querySelector("[data-acw-browser-height]"),
+      browserResize: root.querySelector("[data-acw-browser-resize]"),
       browserRefresh: root.querySelector("[data-acw-browser-refresh]"),
       browserDetach: root.querySelector("[data-acw-browser-detach]"),
       browserViewport: root.querySelector("[data-acw-browser-viewport]"),
@@ -137,6 +140,8 @@
     this.rawText = false;
     this.pendingImages = [];
     this.browserAttached = false;
+    this.browserVisible = false;
+    this.browserDeviceScaleFactor = 1;
     this.browserRefreshId = null;
 
     this._bind();
@@ -234,16 +239,21 @@
         self.els.fileInput.value = "";
       });
     }
-    if (this.els.browserToggle) this.els.browserToggle.addEventListener("click", function () { self.attachBrowser(); });
+    if (this.els.browserToggle) this.els.browserToggle.addEventListener("click", function () {
+      if (self.browserAttached) self.setBrowserVisible(!self.browserVisible);
+      else self.attachBrowser();
+    });
     if (this.els.browserGo) this.els.browserGo.addEventListener("click", function () { self.navigateBrowser(); });
     if (this.els.browserRefresh) this.els.browserRefresh.addEventListener("click", function () { self.refreshBrowser(); });
+    if (this.els.browserResize) this.els.browserResize.addEventListener("click", function () { self.resizeBrowser(); });
     if (this.els.browserDetach) this.els.browserDetach.addEventListener("click", function () { self.detachBrowser(); });
     if (this.els.browserUrl) this.els.browserUrl.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); self.navigateBrowser(); } });
     if (this.els.browserImage) this.els.browserImage.addEventListener("click", function (e) {
       if (!self.browserAttached) return;
       const rect = self.els.browserImage.getBoundingClientRect();
-      const x = (e.clientX - rect.left) * (self.els.browserImage.naturalWidth / rect.width);
-      const y = (e.clientY - rect.top) * (self.els.browserImage.naturalHeight / rect.height);
+      const scale = self.browserDeviceScaleFactor || 1;
+      const x = (e.clientX - rect.left) * (self.els.browserImage.naturalWidth / rect.width) / scale;
+      const y = (e.clientY - rect.top) * (self.els.browserImage.naturalHeight / rect.height) / scale;
       self.browserApi("/click", { method: "POST", body: JSON.stringify({ x: x, y: y }) }).then(function () { setTimeout(function () { self.refreshBrowser(); }, 250); });
     });
   };
@@ -310,20 +320,37 @@
 
   AgentChatWidget.prototype.applyBrowserState = function (state) {
     this.browserAttached = !!(state && state.attached);
-    if (this.els.browser) this.els.browser.hidden = !this.browserAttached;
+    if (!this.browserAttached) this.browserVisible = false;
+    if (this.els.browser) this.els.browser.hidden = !(this.browserAttached && this.browserVisible);
     if (this.els.browserToggle) {
-      this.els.browserToggle.textContent = this.browserAttached ? "Browser Attached" : "Attach Browser";
+      this.els.browserToggle.textContent = this.browserAttached
+        ? (this.browserVisible ? "Hide Browser" : "Show Browser")
+        : "Attach Browser";
       this.els.browserToggle.classList.toggle("active", this.browserAttached);
       this.els.browserToggle.disabled = this.prompting;
     }
     if (this.browserAttached && this.els.browserUrl && state.url) this.els.browserUrl.value = state.url;
-    if (this.browserAttached) this.startBrowserRefresh(); else this.stopBrowserRefresh();
+    if (this.browserAttached && this.els.browserWidth && state.width) this.els.browserWidth.value = state.width;
+    if (this.browserAttached && this.els.browserHeight && state.height) this.els.browserHeight.value = state.height;
+    if (this.browserAttached && state.device_scale_factor) this.browserDeviceScaleFactor = state.device_scale_factor;
+    if (this.browserAttached && this.browserVisible) this.startBrowserRefresh(); else this.stopBrowserRefresh();
+  };
+
+  AgentChatWidget.prototype.setBrowserVisible = function (visible) {
+    this.browserVisible = !!visible;
+    this.applyBrowserState({
+      attached: this.browserAttached,
+      url: this.els.browserUrl && this.els.browserUrl.value,
+      width: this.els.browserWidth && this.els.browserWidth.value,
+      height: this.els.browserHeight && this.els.browserHeight.value,
+    });
+    if (this.browserVisible) this.refreshBrowser();
   };
 
   AgentChatWidget.prototype.refreshBrowserState = function () {
     const self = this;
     if (!this.sessionId) return;
-    this.browserApi("").then(function (state) { self.applyBrowserState(state); if (state.attached) self.refreshBrowser(); }).catch(function () {});
+    this.browserApi("").then(function (state) { self.applyBrowserState(state); if (state.attached && self.browserVisible) self.refreshBrowser(); }).catch(function () {});
   };
 
   AgentChatWidget.prototype.attachBrowser = function () {
@@ -331,8 +358,10 @@
     if (this.browserAttached) { this.refreshBrowser(); return; }
     const url = (this.els.browserUrl && this.els.browserUrl.value) || "about:blank";
     if (this.els.browserToggle) this.els.browserToggle.disabled = true;
-    this.browserApi("/attach", { method: "POST", body: JSON.stringify({ url: url }) })
-      .then(function (state) { self.applyBrowserState(state); self.refreshBrowser(); self.addBubble("system", "Browser attached to this agent session.", new Date().toISOString(), { system: true, forceVisible: true }); })
+    const width = parseInt((this.els.browserWidth && this.els.browserWidth.value) || "1440", 10);
+    const height = parseInt((this.els.browserHeight && this.els.browserHeight.value) || "900", 10);
+    this.browserApi("/attach", { method: "POST", body: JSON.stringify({ url: url, width: width, height: height }) })
+      .then(function (state) { self.browserVisible = true; self.applyBrowserState(state); self.refreshBrowser(); self.addBubble("system", "Headless browser attached to this agent session.", new Date().toISOString(), { system: true, forceVisible: true }); })
       .catch(function (err) { self.addBubble("system", err.message, new Date().toISOString(), { system: true, forceVisible: true }); })
       .finally(function () { if (self.els.browserToggle) self.els.browserToggle.disabled = self.prompting; });
   };
@@ -347,6 +376,15 @@
     let url = (this.els.browserUrl && this.els.browserUrl.value.trim()) || "about:blank";
     if (url !== "about:blank" && !/^[a-z][a-z0-9+.-]*:/i.test(url)) url = "https://" + url;
     this.browserApi("/navigate", { method: "POST", body: JSON.stringify({ url: url }) }).then(function (state) { self.applyBrowserState(state); setTimeout(function () { self.refreshBrowser(); }, 500); });
+  };
+
+  AgentChatWidget.prototype.resizeBrowser = function () {
+    const self = this;
+    const width = parseInt((this.els.browserWidth && this.els.browserWidth.value) || "1440", 10);
+    const height = parseInt((this.els.browserHeight && this.els.browserHeight.value) || "900", 10);
+    this.browserApi("/resize", { method: "POST", body: JSON.stringify({ width: width, height: height }) })
+      .then(function (state) { self.applyBrowserState(state); self.refreshBrowser(); })
+      .catch(function (err) { self.addBubble("system", err.message, new Date().toISOString(), { system: true, forceVisible: true }); });
   };
 
   AgentChatWidget.prototype.refreshBrowser = function () {

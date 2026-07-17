@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import atexit
 import json
 import os
+from pathlib import Path
+from uuid import uuid4
+
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from pa.browser.cdp import CdpPage
+from pa.browser.manager import BrowserAttachment, BrowserManager
 from pa.core.context import AppContext
 from pa.core.contracts import Module
 
@@ -25,6 +30,15 @@ def _runtime(request: Request, session_id: str):
 
 class AttachBody(BaseModel):
     url: str = "about:blank"
+    width: int | None = Field(default=None, ge=320, le=7680)
+    height: int | None = Field(default=None, ge=240, le=4320)
+    device_scale_factor: float = Field(default=1, ge=0.25, le=4)
+
+
+class ResizeBody(BaseModel):
+    width: int = Field(ge=320, le=7680)
+    height: int = Field(ge=240, le=4320)
+    device_scale_factor: float = Field(default=1, ge=0.25, le=4)
 
 
 class NavigateBody(BaseModel):
@@ -43,7 +57,13 @@ class TypeBody(BaseModel):
 @router.post("/attach")
 async def attach_browser(request: Request, session_id: str, body: AttachBody) -> dict:
     try:
-        return await _runtime(request, session_id).set_browser_attached(True, url=body.url)
+        return await _runtime(request, session_id).set_browser_attached(
+            True,
+            url=body.url,
+            width=body.width,
+            height=body.height,
+            device_scale_factor=body.device_scale_factor,
+        )
     except Exception as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
@@ -85,6 +105,18 @@ async def browser_navigate(request: Request, session_id: str, body: NavigateBody
     return await _runtime(request, session_id).browser_state()
 
 
+@router.post("/resize")
+async def browser_resize(request: Request, session_id: str, body: ResizeBody) -> dict:
+    try:
+        return await _runtime(request, session_id).resize_browser(
+            body.width,
+            body.height,
+            device_scale_factor=body.device_scale_factor,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 @router.post("/click")
 async def browser_click(request: Request, session_id: str, body: ClickBody) -> dict:
     await _page(request, session_id).command("Input.dispatchMouseEvent", {"type": "mousePressed", "x": body.x, "y": body.y, "button": "left", "clickCount": 1})
@@ -98,11 +130,94 @@ async def browser_type(request: Request, session_id: str, body: TypeBody) -> dic
     return {"ok": True}
 
 
-def _mcp_page() -> CdpPage:
-    endpoint = os.environ.get("PA_BROWSER_CDP_URL")
-    if not endpoint:
-        raise RuntimeError("No PA browser is attached to this agent session")
-    return CdpPage(endpoint, os.environ.get("PA_BROWSER_TARGET_ID"))
+class McpBrowserController:
+    """Use a session-attached browser or own an agent-started headless browser."""
+
+    def __init__(self, data_dir: Path, store=None) -> None:
+        self.manager = BrowserManager(data_dir / "mcp-browser")
+        self.store = store
+        self.attachment: BrowserAttachment | None = None
+        self.session_key = str(uuid4())
+        self.attributes: dict[str, int | float] = {}
+        atexit.register(self.close)
+
+    def close(self) -> None:
+        if self.attachment and self.attachment.process.returncode is None:
+            self.attachment.process.terminate()
+
+    def page(self) -> CdpPage | None:
+        endpoint = os.environ.get("PA_BROWSER_CDP_URL")
+        if endpoint:
+            return CdpPage(endpoint, os.environ.get("PA_BROWSER_TARGET_ID"))
+        if self.attachment and self.attachment.process.returncode is None:
+            return self.attachment.page
+        return None
+
+    async def ensure_page(
+        self,
+        *,
+        url: str = "about:blank",
+        width: int = 1440,
+        height: int = 900,
+        device_scale_factor: float = 1,
+    ) -> CdpPage:
+        page = self.page()
+        if page:
+            return page
+        self.attachment = await self.manager.attach(
+            self.session_key,
+            url=url,
+            width=width,
+            height=height,
+            device_scale_factor=device_scale_factor,
+        )
+        self.attributes = {
+            "width": width,
+            "height": height,
+            "device_scale_factor": device_scale_factor,
+        }
+        return self.attachment.page
+
+    async def state(self) -> dict:
+        page = self.page()
+        if not page:
+            return {"attached": False}
+        state = {"attached": True, **await page.metadata()}
+        if self.attachment:
+            state.update(
+                width=self.attachment.width,
+                height=self.attachment.height,
+                device_scale_factor=self.attachment.device_scale_factor,
+                owner="agent",
+            )
+        else:
+            state["owner"] = "session"
+            viewport = await page.viewport()
+            self.attributes = viewport
+            state.update(viewport)
+        return state
+
+    def persist_session_attributes(self, *, url: str | None = None) -> None:
+        session_id = os.environ.get("PA_BROWSER_SESSION_ID")
+        if not session_id or not self.store or not self.attributes:
+            return
+        session = self.store.get_session(session_id)
+        if not session:
+            return
+        config = dict(session.config_json or {})
+        browser_config = dict(config.get("browser") or {})
+        browser_config.update(
+            attached=True,
+            attachment_id=os.environ.get("PA_BROWSER_ATTACHMENT_ID"),
+            width=self.attributes["width"],
+            height=self.attributes["height"],
+            device_scale_factor=self.attributes["device_scale_factor"],
+        )
+        if url:
+            browser_config["url"] = url
+        config["browser"] = browser_config
+        session.config_json = config
+        self.store.save_session(session)
 
 
 _SNAPSHOT_JS = """(() => {
@@ -133,36 +248,110 @@ class BrowserModule(Module):
         return [("/api", router, ["browser"])]
 
     def register_mcp(self, mcp, ctx: AppContext) -> None:
+        controller = McpBrowserController(ctx.settings.data_dir, ctx.store)
+
+        @mcp.tool()
+        async def browser_attach(
+            url: str = "about:blank",
+            width: int = 1440,
+            height: int = 900,
+            device_scale_factor: float = 1,
+        ) -> str:
+            """Attach or start PA's headless browser. The agent may call this without user action."""
+            page = await controller.ensure_page(
+                url=url,
+                width=width,
+                height=height,
+                device_scale_factor=device_scale_factor,
+            )
+            await page.resize(width, height, device_scale_factor=device_scale_factor)
+            if url != "about:blank":
+                await page.navigate(url)
+            controller.attributes = {
+                "width": width,
+                "height": height,
+                "device_scale_factor": device_scale_factor,
+            }
+            controller.persist_session_attributes(
+                url=None if url == "about:blank" else url
+            )
+            return json.dumps(await controller.state())
+
+        @mcp.tool()
+        async def browser_state() -> str:
+            """Return whether a PA browser is available and its current attributes."""
+            return json.dumps(await controller.state())
+
         @mcp.tool()
         async def browser_open(url: str) -> str:
-            """Navigate the attached browser to an absolute URL."""
-            await _mcp_page().navigate(url)
-            return json.dumps(await _mcp_page().metadata())
+            """Open a URL in PA's browser, starting a default headless browser if needed."""
+            page = await controller.ensure_page()
+            await page.navigate(url)
+            state = await controller.state()
+            controller.persist_session_attributes(url=state.get("url") or url)
+            return json.dumps(await page.metadata())
+
+        @mcp.tool()
+        async def browser_resize(
+            width: int,
+            height: int,
+            device_scale_factor: float = 1,
+        ) -> str:
+            """Set PA's browser viewport width, height, and device scale factor."""
+            page = await controller.ensure_page(
+                width=width,
+                height=height,
+                device_scale_factor=device_scale_factor,
+            )
+            await page.resize(width, height, device_scale_factor=device_scale_factor)
+            if controller.attachment:
+                controller.attachment.width = width
+                controller.attachment.height = height
+                controller.attachment.device_scale_factor = device_scale_factor
+            controller.attributes = {
+                "width": width,
+                "height": height,
+                "device_scale_factor": device_scale_factor,
+            }
+            controller.persist_session_attributes()
+            return json.dumps(await controller.state())
+
+        @mcp.tool()
+        async def browser_detach() -> str:
+            """Stop a browser started by the agent. Session-attached browsers remain user-owned."""
+            if not controller.attachment:
+                return json.dumps({"attached": bool(controller.page()), "detached": False, "owner": "session"})
+            await controller.manager.detach(controller.session_key)
+            controller.attachment = None
+            controller.attributes = {}
+            state = await controller.state()
+            state["detached"] = True
+            return json.dumps(state)
 
         @mcp.tool()
         async def browser_snapshot() -> str:
             """Return a compact snapshot of visible, interactive page content."""
-            page = _mcp_page()
+            page = await controller.ensure_page()
             return json.dumps({"page": await page.metadata(), "elements": await page.evaluate(_SNAPSHOT_JS)}, ensure_ascii=False)
 
         @mcp.tool()
         async def browser_click(selector: str) -> str:
             """Click the first element matching a CSS selector."""
             expression = f"""(() => {{ const el = document.querySelector({json.dumps(selector)}); if (!el) throw new Error('Element not found'); el.click(); return true; }})()"""
-            await _mcp_page().evaluate(expression)
+            await (await controller.ensure_page()).evaluate(expression)
             return "clicked"
 
         @mcp.tool()
         async def browser_type(selector: str, text: str, clear: bool = True) -> str:
             """Focus an input matched by CSS selector and enter text."""
             expression = f"""(() => {{ const el = document.querySelector({json.dumps(selector)}); if (!el) throw new Error('Element not found'); el.focus(); if ({json.dumps(clear)}) el.value = ''; el.value += {json.dumps(text)}; el.dispatchEvent(new Event('input', {{bubbles:true}})); el.dispatchEvent(new Event('change', {{bubbles:true}})); return true; }})()"""
-            await _mcp_page().evaluate(expression)
+            await (await controller.ensure_page()).evaluate(expression)
             return "typed"
 
         @mcp.tool()
         async def browser_back() -> str:
             """Navigate the attached browser back one history entry."""
-            await _mcp_page().evaluate("history.back(); true")
+            await (await controller.ensure_page()).evaluate("history.back(); true")
             return "navigating back"
 
         @mcp.tool()
@@ -170,4 +359,4 @@ class BrowserModule(Module):
             """Capture the current attached browser viewport as a PNG image."""
             from mcp.server.fastmcp import Image
 
-            return Image(data=await _mcp_page().screenshot(), format="png")
+            return Image(data=await (await controller.ensure_page()).screenshot(), format="png")

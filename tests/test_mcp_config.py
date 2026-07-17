@@ -11,6 +11,7 @@ class PaMcpServersTests(unittest.TestCase):
             "PA_BROWSER_CDP_URL": "http://127.0.0.1:9222",
             "PA_BROWSER_TARGET_ID": "target-1",
             "PA_BROWSER_ATTACHMENT_ID": "attachment-1",
+            "PA_BROWSER_SESSION_ID": "session-1",
         }
 
         with patch.dict(os.environ, browser_env, clear=False):
@@ -26,3 +27,12 @@ class PaMcpServersTests(unittest.TestCase):
             server = pa_mcp_servers(Mock())[0]
 
         self.assertEqual(server.env, [])
+
+    def test_forwards_session_id_without_attached_browser(self):
+        with patch.dict(os.environ, {"PA_BROWSER_SESSION_ID": "session-1"}, clear=True):
+            server = pa_mcp_servers(Mock())[0]
+
+        self.assertEqual(
+            {item.name: item.value for item in server.env},
+            {"PA_BROWSER_SESSION_ID": "session-1"},
+        )

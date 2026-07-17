@@ -89,6 +89,32 @@ class CdpPage:
 
         return base64.b64decode(result["data"])
 
+    async def resize(self, width: int, height: int, *, device_scale_factor: float = 1) -> None:
+        if not 320 <= width <= 7680 or not 240 <= height <= 4320:
+            raise CdpError("Browser dimensions must be between 320x240 and 7680x4320")
+        if not 0.25 <= device_scale_factor <= 4:
+            raise CdpError("Browser device scale factor must be between 0.25 and 4")
+        await self.command(
+            "Emulation.setDeviceMetricsOverride",
+            {
+                "width": width,
+                "height": height,
+                "deviceScaleFactor": device_scale_factor,
+                "mobile": False,
+            },
+        )
+
+    async def viewport(self) -> dict[str, int | float]:
+        viewport = await self.evaluate(
+            "({width: window.innerWidth, height: window.innerHeight, "
+            "device_scale_factor: window.devicePixelRatio})"
+        )
+        return {
+            "width": int(viewport["width"]),
+            "height": int(viewport["height"]),
+            "device_scale_factor": float(viewport["device_scale_factor"]),
+        }
+
     async def metadata(self) -> dict[str, Any]:
         target = await page_target(self.endpoint, self.target_id)
         self.target_id = str(target["id"])

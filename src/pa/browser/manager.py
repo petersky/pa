@@ -47,6 +47,9 @@ class BrowserAttachment:
     target_id: str
     process: asyncio.subprocess.Process
     profile_dir: Path
+    width: int = 1440
+    height: int = 900
+    device_scale_factor: float = 1
 
     @property
     def page(self) -> CdpPage:
@@ -57,11 +60,30 @@ class BrowserAttachment:
             "PA_BROWSER_CDP_URL": self.endpoint,
             "PA_BROWSER_TARGET_ID": self.target_id,
             "PA_BROWSER_ATTACHMENT_ID": self.id,
+            "PA_BROWSER_SESSION_ID": self.session_id,
         }
 
     async def state(self) -> dict:
-        metadata = await self.page.metadata()
-        return {"attached": True, "id": self.id, **metadata}
+        page = self.page
+        metadata = await page.metadata()
+        viewport = await page.viewport()
+        self.width = int(viewport["width"])
+        self.height = int(viewport["height"])
+        self.device_scale_factor = float(viewport["device_scale_factor"])
+        return {
+            "attached": True,
+            "id": self.id,
+            "width": self.width,
+            "height": self.height,
+            "device_scale_factor": self.device_scale_factor,
+            **metadata,
+        }
+
+    async def resize(self, width: int, height: int, *, device_scale_factor: float = 1) -> None:
+        await self.page.resize(width, height, device_scale_factor=device_scale_factor)
+        self.width = width
+        self.height = height
+        self.device_scale_factor = device_scale_factor
 
 
 class BrowserManager:
@@ -76,10 +98,30 @@ class BrowserManager:
             return attachment
         return None
 
-    async def attach(self, session_id: str, *, url: str = "about:blank") -> BrowserAttachment:
+    async def attach(
+        self,
+        session_id: str,
+        *,
+        url: str = "about:blank",
+        width: int | None = None,
+        height: int | None = None,
+        device_scale_factor: float = 1,
+    ) -> BrowserAttachment:
         async with self._lock:
+            width = width or int(os.environ.get("PA_BROWSER_WIDTH", "1440"))
+            height = height or int(os.environ.get("PA_BROWSER_HEIGHT", "900"))
+            if not 320 <= width <= 7680 or not 240 <= height <= 4320:
+                raise ValueError("Browser dimensions must be between 320x240 and 7680x4320")
+            if not 0.25 <= device_scale_factor <= 4:
+                raise ValueError("Browser device scale factor must be between 0.25 and 4")
             existing = self.get(session_id)
             if existing:
+                if (width, height, device_scale_factor) != (
+                    existing.width,
+                    existing.height,
+                    existing.device_scale_factor,
+                ):
+                    await existing.resize(width, height, device_scale_factor=device_scale_factor)
                 if url and url != "about:blank":
                     await existing.page.navigate(url)
                 return existing
@@ -100,6 +142,7 @@ class BrowserManager:
                 "--disable-default-apps",
                 "--disable-sync",
                 "--no-first-run",
+                f"--window-size={width},{height}",
                 "--remote-debugging-address=127.0.0.1",
                 f"--remote-debugging-port={port}",
                 f"--user-data-dir={profile_dir}",
@@ -133,7 +176,11 @@ class BrowserManager:
                 target_id=str(target["id"]),
                 process=process,
                 profile_dir=profile_dir,
+                width=width,
+                height=height,
+                device_scale_factor=device_scale_factor,
             )
+            await attachment.resize(width, height, device_scale_factor=device_scale_factor)
             self._attachments[session_id] = attachment
             return attachment
 

@@ -19,6 +19,7 @@ def pa_mcp_servers(settings: Settings) -> list[McpServerStdio]:
             "PA_BROWSER_CDP_URL",
             "PA_BROWSER_TARGET_ID",
             "PA_BROWSER_ATTACHMENT_ID",
+            "PA_BROWSER_SESSION_ID",
         )
         if (value := os.environ.get(name))
     ]

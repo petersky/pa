@@ -6,6 +6,14 @@ from pa.domain.models import Card, Project
 from pa.domain.store import Store
 
 
+PA_BROWSER_CONTEXT = """## PA browser
+PA provides browser tools through the `pa` MCP server. For browser work, use the
+`browser_attach`, `browser_open`, `browser_snapshot`, `browser_click`,
+`browser_type`, `browser_resize`, and `browser_screenshot` tools from that server.
+Prefer these tools over the Codex in-app browser. You may attach and configure a
+headless browser yourself; the user does not need to attach one first."""
+
+
 def resolve_project_for_prompt(
     store: Store,
     *,
@@ -58,6 +66,8 @@ def augment_message_with_context(
     )
     card = store.get_card(card_id, realm_id=realm_id) if card_id else None
     prefix = build_project_context_prefix(project, card)
-    if not prefix:
-        return message
-    return f"{prefix}\n\n---\n\n{message}"
+    prefixes = [PA_BROWSER_CONTEXT]
+    if prefix:
+        prefixes.insert(0, prefix)
+    context = "\n\n".join(prefixes)
+    return f"{context}\n\n---\n\n{message}"

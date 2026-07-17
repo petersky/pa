@@ -883,6 +883,10 @@ code {
 }
 
 .acw-browser-toolbar input { flex: 1; min-width: 8rem; }
+.acw-browser-toolbar .acw-browser-size {
+  flex: 0 0 5.25rem;
+  min-width: 0;
+}
 
 .acw-browser-viewport {
   position: relative;
@@ -897,6 +901,7 @@ code {
 .acw-browser-viewport img {
   display: block;
   max-width: 100%;
+  height: auto;
   cursor: crosshair;
 }
 
