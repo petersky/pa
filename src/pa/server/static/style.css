@@ -747,6 +747,8 @@ code {
   --pa-chat-user-bg: var(--pa-accent);
   --pa-chat-user-fg: var(--pa-bg);
   --pa-chat-thought-fg: var(--pa-muted);
+  --pa-chat-thought-bg: var(--pa-surface);
+  --pa-chat-tool-bg: var(--pa-surface);
   --pa-chat-tool-border: var(--pa-border);
   --pa-chat-radius: 8px;
 }
@@ -765,7 +767,7 @@ code {
   flex: 1;
 }
 
-.agent-chat-widget.is-compact .acw-toolbar-right .ghost:not([data-acw-stop]) {
+.agent-chat-widget.is-compact .acw-toolbar-right > :not([data-acw-provider-wrap]) {
   display: none;
 }
 
@@ -808,6 +810,57 @@ code {
   font-size: 0.8rem;
   max-width: 10rem;
 }
+
+.acw-select-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  color: var(--pa-text-muted);
+}
+
+.acw-menu {
+  position: relative;
+}
+
+.acw-menu > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid var(--pa-border);
+  border-radius: 6px;
+  background: var(--pa-surface-raised);
+  font-size: 0.8rem;
+}
+
+.acw-menu > summary::-webkit-details-marker { display: none; }
+
+.acw-menu-body {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.3rem);
+  z-index: 20;
+  min-width: 13rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.6rem;
+  border: 1px solid var(--pa-border);
+  border-radius: 7px;
+  background: var(--pa-surface-raised);
+  box-shadow: var(--pa-shadow);
+}
+
+.acw-menu-body > label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.acw-settings-body { min-width: 16rem; }
+.acw-settings-body .acw-select-wrap { justify-content: space-between; }
 
 .acw-metrics {
   font-size: 0.75rem;
@@ -915,10 +968,11 @@ code {
 
 .acw-bubble-thought,
 .acw-msg-thought .acw-bubble {
-  background: transparent;
-  border: 1px dashed var(--pa-border);
+  background: var(--pa-chat-thought-bg);
+  border: 1px solid var(--pa-border);
   color: var(--pa-chat-thought-fg);
   font-size: 0.8rem;
+  font-style: italic;
 }
 
 .acw-bubble-system {
@@ -937,7 +991,7 @@ code {
   border: 1px solid var(--pa-chat-tool-border);
   border-radius: var(--pa-chat-radius);
   padding: 0.4rem 0.55rem;
-  background: var(--pa-surface);
+  background: var(--pa-chat-tool-bg);
   font-size: 0.8rem;
 }
 
@@ -1104,10 +1158,17 @@ code {
   align-items: stretch;
 }
 
+.acw-send-group > [data-acw-stop] { margin-right: 0.35rem; }
+
 .acw-send-group > .primary {
   border-top-right-radius: 0;
   border-bottom-right-radius: 0;
+  background: var(--pa-accent);
+  border-color: var(--pa-accent);
+  color: #fff;
 }
+
+.acw-send-group > .primary:hover:not(:disabled) { color: #fff; }
 
 .acw-send-menu {
   position: relative;
@@ -1120,7 +1181,9 @@ code {
   border: 1px solid var(--pa-border);
   border-left: 0;
   border-radius: 0 6px 6px 0;
-  background: var(--pa-surface-raised);
+  background: var(--pa-accent);
+  color: #fff;
+  border-color: var(--pa-accent);
   height: 100%;
   display: flex;
   align-items: center;
@@ -1181,11 +1244,33 @@ code {
 
 .session-list li.active {
   border-left: 2px solid var(--pa-accent);
-  padding-left: 0.4rem;
+  padding-left: 0.55rem;
 }
 
 .session-list li[data-session-id] {
   cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  padding: 0.55rem 0.45rem;
+  overflow: hidden;
+}
+
+.session-list li[data-session-id] strong,
+.session-list li[data-session-id] span {
+  display: block;
+  width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.session-list li[data-session-id] strong {
+  line-height: 1.25;
+}
+
+.session-list li[data-session-id] span {
+  line-height: 1.2;
+  font-size: 0.75rem;
 }
 
 .session-list li[data-session-id]:hover {
@@ -1198,13 +1283,14 @@ code {
 
 .acw-config {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 0.35rem;
-  align-items: center;
+  align-items: stretch;
 }
 
 .acw-config-item {
   font-size: 0.75rem;
+  justify-content: space-between;
 }
 
 .card-agent-pane {
