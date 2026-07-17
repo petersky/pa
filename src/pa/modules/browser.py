@@ -133,8 +133,9 @@ async def browser_type(request: Request, session_id: str, body: TypeBody) -> dic
 class McpBrowserController:
     """Use a session-attached browser or own an agent-started headless browser."""
 
-    def __init__(self, data_dir: Path) -> None:
+    def __init__(self, data_dir: Path, store=None) -> None:
         self.manager = BrowserManager(data_dir / "mcp-browser")
+        self.store = store
         self.attachment: BrowserAttachment | None = None
         self.session_key = str(uuid4())
         self.attributes: dict[str, int | float] = {}
@@ -191,8 +192,32 @@ class McpBrowserController:
             )
         else:
             state["owner"] = "session"
-            state.update(self.attributes)
+            viewport = await page.viewport()
+            self.attributes = viewport
+            state.update(viewport)
         return state
+
+    def persist_session_attributes(self, *, url: str | None = None) -> None:
+        session_id = os.environ.get("PA_BROWSER_SESSION_ID")
+        if not session_id or not self.store or not self.attributes:
+            return
+        session = self.store.get_session(session_id)
+        if not session:
+            return
+        config = dict(session.config_json or {})
+        browser_config = dict(config.get("browser") or {})
+        browser_config.update(
+            attached=True,
+            attachment_id=os.environ.get("PA_BROWSER_ATTACHMENT_ID"),
+            width=self.attributes["width"],
+            height=self.attributes["height"],
+            device_scale_factor=self.attributes["device_scale_factor"],
+        )
+        if url:
+            browser_config["url"] = url
+        config["browser"] = browser_config
+        session.config_json = config
+        self.store.save_session(session)
 
 
 _SNAPSHOT_JS = """(() => {
@@ -223,7 +248,7 @@ class BrowserModule(Module):
         return [("/api", router, ["browser"])]
 
     def register_mcp(self, mcp, ctx: AppContext) -> None:
-        controller = McpBrowserController(ctx.settings.data_dir)
+        controller = McpBrowserController(ctx.settings.data_dir, ctx.store)
 
         @mcp.tool()
         async def browser_attach(
@@ -247,6 +272,7 @@ class BrowserModule(Module):
                 "height": height,
                 "device_scale_factor": device_scale_factor,
             }
+            controller.persist_session_attributes(url=url)
             return json.dumps(await controller.state())
 
         @mcp.tool()
@@ -283,6 +309,7 @@ class BrowserModule(Module):
                 "height": height,
                 "device_scale_factor": device_scale_factor,
             }
+            controller.persist_session_attributes()
             return json.dumps(await controller.state())
 
         @mcp.tool()

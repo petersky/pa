@@ -337,6 +337,7 @@ class AgentSessionRuntime:
                 "PA_BROWSER_CDP_URL",
                 "PA_BROWSER_TARGET_ID",
                 "PA_BROWSER_ATTACHMENT_ID",
+                "PA_BROWSER_SESSION_ID",
             ):
                 self.agent_env.pop(key, None)
             config["browser"] = {"attached": False}

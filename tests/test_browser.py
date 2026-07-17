@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from pa.browser.cdp import CdpError, CdpPage, validate_browser_url
 from pa.browser.manager import BrowserAttachment, BrowserManager, _browser_executable
 from pa.instance.agent_session import AgentSessionRuntime
+from pa.modules.browser import McpBrowserController
 
 
 class BrowserUrlTests(unittest.TestCase):
@@ -45,6 +46,7 @@ class BrowserAttachmentTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((state["width"], state["height"]), (1600, 1000))
             self.assertEqual(state["device_scale_factor"], 2)
         self.assertEqual(attachment.environment()["PA_BROWSER_TARGET_ID"], "target-1")
+        self.assertEqual(attachment.environment()["PA_BROWSER_SESSION_ID"], "session-1")
 
     async def test_resize_updates_attachment_attributes(self):
         process = AsyncMock()
@@ -112,3 +114,35 @@ class BrowserSessionRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(runtime.session.config_json["browser"]["device_scale_factor"], 2)
         self.assertEqual(runtime.session.config_json["other"], "kept")
         runtime.store.save_session.assert_called_once_with(runtime.session)
+
+
+class McpBrowserControllerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_session_state_reads_live_viewport_and_persists_resize(self):
+        session = SimpleNamespace(config_json={"browser": {"url": "https://old.example"}})
+        store = SimpleNamespace(
+            get_session=MagicMock(return_value=session),
+            save_session=MagicMock(),
+        )
+        controller = McpBrowserController(Path("/tmp/pa-browser-test"), store)
+        page = SimpleNamespace(
+            metadata=AsyncMock(return_value={"url": "https://example.com"}),
+            viewport=AsyncMock(return_value={"width": 1920, "height": 1080, "device_scale_factor": 2}),
+        )
+        browser_env = {
+            "PA_BROWSER_CDP_URL": "http://127.0.0.1:9222",
+            "PA_BROWSER_TARGET_ID": "target-1",
+            "PA_BROWSER_ATTACHMENT_ID": "attachment-1",
+            "PA_BROWSER_SESSION_ID": "session-1",
+        }
+        with (
+            patch.dict(os.environ, browser_env, clear=False),
+            patch.object(controller, "page", return_value=page),
+        ):
+            state = await controller.state()
+            controller.persist_session_attributes(url=state["url"])
+
+        self.assertEqual(state["width"], 1920)
+        self.assertEqual(state["height"], 1080)
+        self.assertEqual(session.config_json["browser"]["width"], 1920)
+        self.assertEqual(session.config_json["browser"]["url"], "https://example.com")
+        store.save_session.assert_called_once_with(session)

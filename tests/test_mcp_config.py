@@ -11,6 +11,7 @@ class PaMcpServersTests(unittest.TestCase):
             "PA_BROWSER_CDP_URL": "http://127.0.0.1:9222",
             "PA_BROWSER_TARGET_ID": "target-1",
             "PA_BROWSER_ATTACHMENT_ID": "attachment-1",
+            "PA_BROWSER_SESSION_ID": "session-1",
         }
 
         with patch.dict(os.environ, browser_env, clear=False):

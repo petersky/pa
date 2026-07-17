@@ -60,6 +60,7 @@ class BrowserAttachment:
             "PA_BROWSER_CDP_URL": self.endpoint,
             "PA_BROWSER_TARGET_ID": self.target_id,
             "PA_BROWSER_ATTACHMENT_ID": self.id,
+            "PA_BROWSER_SESSION_ID": self.session_id,
         }
 
     async def state(self) -> dict:
