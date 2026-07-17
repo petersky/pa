@@ -139,6 +139,7 @@
     this.turnTimerId = null;
     this.queuePaused = false;
     this.prompting = false;
+    this.turnActive = false;
     this.rawText = false;
     this.pendingImages = [];
     this.browserAttached = false;
@@ -557,8 +558,7 @@
     this.renderTranscript(snap.transcript || []);
     // Transcript replay includes historical turn-completed events. Apply the live
     // snapshot state afterward so replay cannot reset an active turn's timer.
-    this.prompting = !!snap.prompting;
-    this.setWorking(this.prompting, snap.turn_started_at);
+    this.setTurnActive(!!snap.prompting, snap.turn_started_at);
     this.setStatus(this.prompting ? "working" : snap.connected ? "online" : "offline");
     this.renderQueue(snap.queue || []);
     this.renderModelsModes(snap);
@@ -682,6 +682,10 @@
             images: payload.images || [],
           });
         }
+        // A live user_message is emitted when the runtime actually begins a
+        // turn (including a prompt drained from the queue). Transcript replay
+        // is reconciled against the authoritative snapshot in applySnapshot.
+        if (!replay) this.setTurnActive(true, created);
         break;
       case "agent_message_chunk":
         if (payload.phase === "commentary") {
@@ -711,9 +715,7 @@
       case "turn_completed":
         this.finalizeStreams(created);
         this.finalizeActivity();
-        this.setWorking(false);
-        this.prompting = false;
-        this.setStatus("online");
+        this.setTurnActive(false);
         if (payload.usage) this.renderMetrics({ last_usage: payload.usage });
         break;
       case "queue_enqueued":
@@ -727,10 +729,8 @@
       case "cancelled":
         this.finalizeStreams(created);
         this.finalizeActivity();
-        this.setWorking(false);
-        this.prompting = false;
+        this.setTurnActive(false);
         this.queuePaused = !!payload.pause_queue;
-        this.setStatus("online");
         break;
       case "usage_update":
         if (payload.usage) this.renderMetrics({ usage: payload.usage });
@@ -748,6 +748,7 @@
         }
         break;
       case "session_closed":
+        this.setTurnActive(false);
         this.setStatus("offline");
         this.setPlaceholder("Session ended.");
         if (this.es) this.es.close();
@@ -760,8 +761,7 @@
       case "connection_lost":
         this.finalizeStreams(created);
         this.finalizeActivity();
-        this.setWorking(false);
-        this.prompting = false;
+        this.setTurnActive(false);
         this.setStatus("offline");
         this.addBubble("system", payload.message || "Connection to the agent was lost. You may want to retry the prompt.", created, { forceVisible: true });
         break;
@@ -838,9 +838,6 @@
 
   AgentChatWidget.prototype.appendStream = function (role, key, chunk, ts) {
     this.clearPlaceholder();
-    this.prompting = true;
-    if (!this.turnStartedAt) this.setWorking(true, ts);
-    this.setStatus("working");
     const id = role + ":" + key;
     let stream = this.streaming[id];
     if (!stream) {
@@ -890,9 +887,6 @@
 
   AgentChatWidget.prototype.appendActivityProgress = function (key, chunk) {
     this.clearPlaceholder();
-    this.prompting = true;
-    if (!this.turnStartedAt) this.setWorking(true);
-    this.setStatus("working");
     const activity = this.ensureActivity();
     const id = "progress:" + key;
     let stream = this.activityStreams[id];
@@ -1295,6 +1289,14 @@
     this.turnTimerId = setInterval(tick, 500);
   };
 
+  AgentChatWidget.prototype.setTurnActive = function (on, startedAt) {
+    this.turnActive = !!on;
+    this.prompting = this.turnActive;
+    this.setWorking(this.turnActive, startedAt);
+    this.setStatus(this.turnActive ? "working" : "online");
+    if (this.els.browserToggle) this.els.browserToggle.disabled = this.turnActive;
+  };
+
   AgentChatWidget.prototype.scrollToBottom = function () {
     if (this.els.messages) this.els.messages.scrollTop = this.els.messages.scrollHeight;
   };
@@ -1333,11 +1335,6 @@
     })
       .then(function (res) {
         if (res && res.queued) self.refreshQueue();
-        if (act === "interrupt" || !(res && res.queued)) {
-          self.prompting = true;
-          self.setWorking(true);
-          self.setStatus("working");
-        }
       })
       .catch(function (err) {
         self.addBubble("system", err.message, new Date().toISOString(), { system: true });
@@ -1354,7 +1351,7 @@
     if (!this.sessionId) return;
     this.api("/sessions/" + this.sessionId + "/close", { method: "POST", body: "{}" }).then(function () {
       if (self.es) self.es.close();
-      self.setWorking(false);
+      self.setTurnActive(false);
       self.setStatus("offline");
       self.setPlaceholder("Session ended.");
       refreshSessionList(null);
@@ -1377,7 +1374,7 @@
           if (timer && timer.interval) clearInterval(timer.interval);
         });
         self.toolTimers = {};
-        self.setWorking(false);
+        self.setTurnActive(false);
         self.setPlaceholder("Restarting session…");
         self.init();
       })
