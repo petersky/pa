@@ -355,8 +355,8 @@ async def run_update_job(
                 store.event(job, UpdatePhase.QUIESCING, message)
 
             if job.phase == UpdatePhase.QUIESCING:
-                # Persist this checkpoint before the non-idempotent peer request.
-                # Recovery from INSTALLING verifies the outcome and never resends it.
+                # Persist before dispatch. The operation id makes a retry from this
+                # ambiguous crash boundary idempotent on the peer.
                 job.install_deadline = datetime.now(UTC) + timedelta(
                     seconds=job.install_timeout
                 )
@@ -365,6 +365,8 @@ async def run_update_job(
                     UpdatePhase.INSTALLING,
                     f"Requesting installation of PA {job.expected_version}",
                 )
+
+            if job.phase == UpdatePhase.INSTALLING:
                 try:
                     result = await _peer_json(
                         client,
@@ -398,7 +400,7 @@ async def run_update_job(
                         )
                 except httpx.TransportError:
                     # The service may close the response after accepting and restarting.
-                    # The durable INSTALLING checkpoint makes recovery verification-only.
+                    # A recovery retry uses the same operation id and target.
                     pass
                 store.event(
                     job,
@@ -406,12 +408,6 @@ async def run_update_job(
                     "Update accepted; waiting for installation to complete",
                 )
 
-        if job.phase == UpdatePhase.INSTALLING:
-            store.event(
-                job,
-                UpdatePhase.WAITING_INSTALL,
-                "Controller recovered after dispatch; waiting without resending",
-            )
         if job.phase == UpdatePhase.WAITING_INSTALL:
             if not job.install_deadline:
                 job.install_deadline = datetime.now(UTC) + timedelta(

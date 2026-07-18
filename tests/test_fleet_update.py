@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import tempfile
 import threading
 from datetime import UTC, datetime, timedelta
@@ -11,6 +12,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
+import pa.modules.fleet as fleet_module
 
 from pa.config import Settings
 from pa.fleet.registry import FleetRegistry
@@ -27,7 +29,7 @@ from pa.install.metadata import (
     load_install_metadata,
     save_install_metadata,
 )
-from pa.modules.fleet import _require_instance, fleet_instance_update_events
+from pa.modules.fleet import _require_instance, fleet_instance_update_events, peer_update
 from pa.update.channels import (
     GitHubTrackChannel,
     ReleaseInfo,
@@ -499,6 +501,8 @@ class FleetUpdateWorkflowTests(unittest.IsolatedAsyncioTestCase):
             responses.append({"done": True})
         if phase in {UpdatePhase.PREFLIGHT, UpdatePhase.QUIESCING}:
             responses.append({"target_version": "0.2.6"})
+        if phase == UpdatePhase.INSTALLING:
+            responses.append({"target_version": "0.2.6"})
         responses.append({"instance_id": "peer-1", "version": "0.2.6"})
         remaining = iter(responses)
 
@@ -531,7 +535,9 @@ class FleetUpdateWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(any(url.endswith("/api/agent/quiesce") for url in urls))
         self.assertEqual(sum(url.endswith("/api/fleet/peer-update") for url in urls), 1)
 
-    async def test_resume_after_install_dispatch_is_verification_only(self) -> None:
+    async def test_resume_from_ambiguous_installing_retries_idempotent_dispatch(
+        self,
+    ) -> None:
         for phase in (
             UpdatePhase.INSTALLING,
             UpdatePhase.RESTARTING,
@@ -544,8 +550,11 @@ class FleetUpdateWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(
                     any(url.endswith("/api/agent/quiesce") for url in urls)
                 )
-                self.assertFalse(
-                    any(url.endswith("/api/fleet/peer-update") for url in urls)
+                dispatch_count = sum(
+                    url.endswith("/api/fleet/peer-update") for url in urls
+                )
+                self.assertEqual(
+                    dispatch_count, 1 if phase == UpdatePhase.INSTALLING else 0
                 )
 
     async def test_legacy_recovery_without_expected_version_fails_safely(self) -> None:
@@ -565,6 +574,101 @@ class FleetUpdateWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.phase, UpdatePhase.FAILED)
         self.assertIn("durable expected version", result.error)
         peer.assert_not_awaited()
+
+
+class PeerUpdateIdempotencyTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.settings = Settings(data_dir=Path(self.tmp.name))
+        self.request = MagicMock()
+        self.request.state.instance_authenticated = True
+        self.request.app.state.ctx.settings = self.settings
+        self.release = ReleaseInfo(
+            version="0.2.6", install_spec="pa==0.2.6", tag="v0.2.6"
+        )
+        self.body = {
+            "operation_id": "job-123",
+            "channel": "release",
+            "target_version": "0.2.6",
+        }
+        fleet_module._peer_update_task = None
+        fleet_module._peer_update_task_operation_id = None
+
+    async def asyncTearDown(self) -> None:
+        task = fleet_module._peer_update_task
+        if task and not task.done():
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+        fleet_module._peer_update_task = None
+        fleet_module._peer_update_task_operation_id = None
+        self.tmp.cleanup()
+
+    def _persist_installing(self) -> None:
+        fleet_module._write_peer_operation(
+            self.settings,
+            "job-123",
+            {
+                "status": "installing",
+                "target_version": "0.2.6",
+                "target_identity": "v0.2.6",
+                "channel": "release",
+                "error": None,
+            },
+        )
+
+    async def test_active_installing_replay_returns_without_duplicate_task(self) -> None:
+        self._persist_installing()
+        blocker = asyncio.Event()
+        active = asyncio.create_task(blocker.wait())
+        fleet_module._peer_update_task = active
+        fleet_module._peer_update_task_operation_id = "job-123"
+        with patch("pa.update.channels.resolve_release") as resolve:
+            result = await peer_update(self.request, self.body)
+        self.assertEqual(result["status"], "installing")
+        self.assertIs(fleet_module._peer_update_task, active)
+        resolve.assert_not_called()
+
+    async def test_stale_installing_record_resumes_local_work(self) -> None:
+        from pa.update.runner import UpdateResult
+
+        self._persist_installing()
+        update_result = UpdateResult(
+            current="0.2.6",
+            latest="0.2.6",
+            upgrade_available=True,
+            release=self.release,
+        )
+        with (
+            patch("pa.update.channels.resolve_release", return_value=self.release),
+            patch("pa.modules.fleet._peer_has_exact_release", return_value=False),
+            patch("pa.update.runner.apply_update", return_value=update_result) as apply,
+            patch("pa.cli.service.restart"),
+            patch("pa.instance.quiesce.request_skip_quiesce"),
+        ):
+            await peer_update(self.request, self.body)
+            await fleet_module._peer_update_task
+        apply.assert_called_once()
+        operation = fleet_module._read_peer_operation(self.settings, "job-123")
+        self.assertEqual(operation["status"], "restarting")
+
+    async def test_stale_installing_exact_target_resumes_restart_without_reinstall(
+        self,
+    ) -> None:
+        self._persist_installing()
+        with (
+            patch("pa.update.channels.resolve_release", return_value=self.release),
+            patch("pa.modules.fleet._peer_has_exact_release", return_value=True),
+            patch("pa.update.runner.apply_update") as apply,
+            patch("pa.cli.service.restart") as restart,
+            patch("pa.instance.quiesce.request_skip_quiesce"),
+        ):
+            await peer_update(self.request, self.body)
+            await fleet_module._peer_update_task
+        apply.assert_not_called()
+        restart.assert_called_once()
+        operation = fleet_module._read_peer_operation(self.settings, "job-123")
+        self.assertEqual(operation["status"], "restarting")
 
 
 class FleetUpdateSSETests(unittest.IsolatedAsyncioTestCase):

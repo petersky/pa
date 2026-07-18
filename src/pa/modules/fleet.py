@@ -58,6 +58,7 @@ from pa.network.peer_table import PeerTable
 router = APIRouter()
 ui_router = APIRouter()
 _peer_update_task: asyncio.Task[Any] | None = None
+_peer_update_task_operation_id: str | None = None
 
 
 def _peer_operation_path(settings, operation_id: str):
@@ -77,6 +78,33 @@ def _write_peer_operation(settings, operation_id: str, payload: dict) -> None:
     path = _peer_operation_path(settings, operation_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_json(path, {"operation_id": operation_id, **payload})
+
+
+def _peer_has_exact_release(settings, channel: str, release) -> bool:
+    """Check durable install provenance before treating a no-op as failure."""
+    from pa.install.metadata import load_install_metadata
+    from pa.update.channels import compare_versions
+    from pa.update.registry import ReleaseTrack, normalize_track
+
+    metadata = load_install_metadata(settings.data_dir)
+    if normalize_track(channel) == ReleaseTrack.DEV:
+        expected_revision = release.revision or release.tag
+        return bool(
+            metadata
+            and normalize_track(metadata.channel) == ReleaseTrack.DEV
+            and expected_revision
+            and metadata.source_revision == expected_revision
+        )
+    versions = [__import__("pa").__version__]
+    if metadata:
+        versions.append(metadata.version)
+    for version in versions:
+        try:
+            if compare_versions(version, release.version) == 0:
+                return True
+        except ValueError:
+            continue
+    return False
 
 
 class RemoteAgentStartBody(BaseModel):
@@ -586,7 +614,7 @@ def _require_instance(request: Request) -> None:
 @router.post("/fleet/peer-update")
 async def peer_update(request: Request, body: dict) -> dict:
     """Authenticated peer-side install trigger; the controller owns durable state."""
-    global _peer_update_task
+    global _peer_update_task, _peer_update_task_operation_id
     _require_instance(request)
     settings = request.app.state.ctx.settings
     channel = (body.get("channel") or settings.release_track or "release").strip()
@@ -600,6 +628,25 @@ async def peer_update(request: Request, body: dict) -> dict:
             status_code=400,
             detail="target_version is required for a fleet peer update",
         )
+
+    existing = _read_peer_operation(settings, operation_id)
+    if existing:
+        if existing.get("target_version") != target_version or (
+            target_identity
+            and existing.get("target_identity") != target_identity
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="Operation id already belongs to a different update target",
+            )
+        if _peer_update_task and not _peer_update_task.done():
+            if _peer_update_task_operation_id == operation_id:
+                return {"accepted": True, **existing}
+            raise HTTPException(
+                status_code=409, detail="A fleet update is already running on this peer"
+            )
+        if existing.get("status") not in {"installing", "installed"}:
+            return {"accepted": True, **existing}
 
     from pa.update.channels import resolve_release
     from pa.update.runner import apply_update
@@ -617,7 +664,6 @@ async def peer_update(request: Request, body: dict) -> dict:
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    existing = _read_peer_operation(settings, operation_id)
     if existing:
         if existing.get("target_version") != release.version or existing.get(
             "target_identity"
@@ -626,34 +672,42 @@ async def peer_update(request: Request, body: dict) -> dict:
                 status_code=409,
                 detail="Operation id already belongs to a different update target",
             )
-        return {"accepted": True, **existing}
     if _peer_update_task and not _peer_update_task.done():
         raise HTTPException(
             status_code=409, detail="A fleet update is already running on this peer"
         )
 
-    operation = {
+    operation = existing or {
         "status": "installing",
         "target_version": release.version,
         "target_identity": release.revision or release.tag or release.version,
         "channel": channel,
         "error": None,
     }
-    _write_peer_operation(settings, operation_id, operation)
+    if not existing:
+        _write_peer_operation(settings, operation_id, operation)
 
     async def _install_and_restart() -> None:
         await asyncio.sleep(0.25)
         try:
-            result = await asyncio.to_thread(
-                apply_update,
-                settings,
-                channel_name=channel,
-                restart=False,
-                release=release,
-            )
-            if not result.upgrade_available:
+            exact_target = _peer_has_exact_release(settings, channel, release)
+            if not exact_target:
+                result = await asyncio.to_thread(
+                    apply_update,
+                    settings,
+                    channel_name=channel,
+                    restart=False,
+                    release=release,
+                )
+                exact_target = result.upgrade_available or _peer_has_exact_release(
+                    settings, channel, release
+                )
+                installed_version = result.current
+            else:
+                installed_version = release.version
+            if not exact_target:
                 raise RuntimeError(
-                    "Installer completed without changing the installed PA target"
+                    "Installer completed without reaching the requested PA target"
                 )
             _write_peer_operation(
                 settings,
@@ -661,7 +715,7 @@ async def peer_update(request: Request, body: dict) -> dict:
                 {
                     **operation,
                     "status": "installed",
-                    "installed_version": result.current,
+                    "installed_version": installed_version,
                 },
             )
             _write_peer_operation(
@@ -683,6 +737,7 @@ async def peer_update(request: Request, body: dict) -> dict:
             return
 
     _peer_update_task = asyncio.create_task(_install_and_restart())
+    _peer_update_task_operation_id = operation_id
     return {
         "accepted": True,
         "current_version": __import__("pa").__version__,
