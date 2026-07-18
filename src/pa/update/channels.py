@@ -2,17 +2,15 @@
 
 from __future__ import annotations
 
-import os
 import re
-import shutil
 import subprocess
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from pathlib import Path
 from urllib.parse import quote
 
 import httpx
 
+from pa.packaging.uv import resolve_uv_binary
 from pa.update.registry import ReleaseTrack, normalize_track
 
 
@@ -267,27 +265,6 @@ def _uv_tool_install(spec: str) -> None:
     )
     if result.returncode != 0:
         raise RuntimeError(f"uv tool install failed for {spec}")
-
-
-def resolve_uv_binary() -> str:
-    """Find uv in interactive shells and sparse launchd/systemd environments."""
-    configured = os.environ.get("PA_UV_BIN", "").strip()
-    candidates = [
-        configured,
-        shutil.which("uv") or "",
-        str(Path.home() / ".local" / "bin" / "uv"),
-        str(Path.home() / ".cargo" / "bin" / "uv"),
-        "/opt/homebrew/bin/uv",
-        "/usr/local/bin/uv",
-        "/usr/bin/uv",
-    ]
-    for candidate in candidates:
-        if candidate and Path(candidate).is_file() and os.access(candidate, os.X_OK):
-            return candidate
-    raise RuntimeError(
-        "uv was not found; install uv or set PA_UV_BIN to its absolute path "
-        "for the PA service environment"
-    )
 
 
 def get_channel(name: str, *, repo: str = "petersky/pa") -> UpdateChannel:

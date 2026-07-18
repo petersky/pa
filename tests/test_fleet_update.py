@@ -30,12 +30,12 @@ from pa.install.metadata import (
     save_install_metadata,
 )
 from pa.modules.fleet import _require_instance, fleet_instance_update_events, peer_update
+from pa.packaging.uv import resolve_uv_binary
 from pa.update.channels import (
     GitHubTrackChannel,
     ReleaseInfo,
     compare_versions,
     resolve_release,
-    resolve_uv_binary,
 )
 
 
@@ -751,24 +751,73 @@ class DisposablePeerIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
 
 class UvResolutionTests(unittest.TestCase):
-    def test_service_environment_resolves_home_local_uv(self) -> None:
+    def test_noninteractive_path_resolves_local_uv(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            uv = Path(tmp) / ".local" / "bin" / "uv"
+            for shaped_home in (
+                Path(tmp) / "Users" / "alice",
+                Path(tmp) / "home" / "alice",
+            ):
+                with self.subTest(home=shaped_home):
+                    uv = shaped_home / ".local" / "bin" / "uv"
+                    uv.parent.mkdir(parents=True)
+                    uv.write_text("#!/bin/sh\n")
+                    uv.chmod(0o755)
+                    with (
+                        patch.dict(
+                            "os.environ", {"HOME": str(shaped_home)}, clear=True
+                        ),
+                        patch("pa.packaging.uv.Path.home", return_value=shaped_home),
+                        patch("pa.packaging.uv.shutil.which", return_value=None),
+                    ):
+                        self.assertEqual(resolve_uv_binary(), str(uv.resolve()))
+
+    def test_running_uv_tool_install_resolves_uv_when_home_is_unrelated(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            install_home = Path(tmp) / "Users" / "alice"
+            uv = install_home / ".local" / "bin" / "uv"
             uv.parent.mkdir(parents=True)
             uv.write_text("#!/bin/sh\n")
             uv.chmod(0o755)
+            python = (
+                install_home
+                / ".local"
+                / "share"
+                / "uv"
+                / "tools"
+                / "pa"
+                / "bin"
+                / "python"
+            )
             with (
-                patch.dict("os.environ", {"HOME": tmp}, clear=True),
-                patch("pa.update.channels.Path.home", return_value=Path(tmp)),
-                patch("pa.update.channels.shutil.which", return_value=None),
+                patch.dict("os.environ", {}, clear=True),
+                patch("pa.packaging.uv.sys.executable", str(python)),
+                patch(
+                    "pa.packaging.uv.Path.home", return_value=Path(tmp) / "wrong-home"
+                ),
+                patch("pa.packaging.uv.shutil.which", return_value=None),
             ):
-                self.assertEqual(resolve_uv_binary(), str(uv))
+                self.assertEqual(resolve_uv_binary(), str(uv.resolve()))
+
+    def test_normal_path_resolution(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            uv = Path(tmp) / "bin" / "uv"
+            uv.parent.mkdir()
+            uv.write_text("#!/bin/sh\n")
+            uv.chmod(0o755)
+            with (
+                patch.dict("os.environ", {}, clear=True),
+                patch("pa.packaging.uv.Path.home", return_value=Path(tmp) / "home"),
+                patch("pa.packaging.uv.sys.executable", "/runtime/python"),
+                patch("pa.packaging.uv.sys.argv", ["pa"]),
+                patch("pa.packaging.uv.shutil.which", return_value=str(uv)),
+            ):
+                self.assertEqual(resolve_uv_binary(), str(uv.resolve()))
 
     def test_missing_uv_has_actionable_error(self) -> None:
         with (
             patch.dict("os.environ", {}, clear=True),
-            patch("pa.update.channels.Path.is_file", return_value=False),
-            patch("pa.update.channels.shutil.which", return_value=None),
+            patch("pa.packaging.uv.Path.is_file", return_value=False),
+            patch("pa.packaging.uv.shutil.which", return_value=None),
         ):
             with self.assertRaisesRegex(RuntimeError, "PA_UV_BIN"):
                 resolve_uv_binary()
