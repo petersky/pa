@@ -25,11 +25,23 @@ from pa.modules.agent_chat import (
 class _FakeStore:
     def __init__(self, events: list[Any] | None = None) -> None:
         self._events = list(events or [])
+        self.after_calls: list[int] = []
 
     def list_transcript_events(
         self, session_id: str, *, after_seq: int = 0, limit: int = 500
     ) -> list[Any]:
+        self.after_calls.append(after_seq)
         return [e for e in self._events if e.seq > after_seq][:limit]
+
+    def list_transcript_events_before(
+        self, session_id: str, *, before_seq: int | None = None, limit: int = 500
+    ) -> list[Any]:
+        events = [
+            event
+            for event in self._events
+            if before_seq is None or event.seq < before_seq
+        ]
+        return events[-limit:]
 
 
 class _FakeRuntime:
@@ -38,12 +50,15 @@ class _FakeRuntime:
         self.store = _FakeStore()
         self._subscribers: list[asyncio.Queue] = []
         self._flushed = False
+        self.queued_on_subscribe: list[dict[str, Any]] = []
 
     def _flush_transcript(self) -> None:
         self._flushed = True
 
     def subscribe(self) -> asyncio.Queue:
         q: asyncio.Queue = asyncio.Queue()
+        for event in self.queued_on_subscribe:
+            q.put_nowait(event)
         self._subscribers.append(q)
         return q
 
@@ -194,7 +209,7 @@ class AgentChatSseTests(unittest.TestCase):
         manager = MagicMock()
         manager.store.list_sessions.return_value = [session]
         manager.store.get_session.return_value = session
-        manager.store.list_transcript_events.return_value = [event]
+        manager.store.list_transcript_events_before.return_value = [event]
         manager.get.return_value = None
         request = MagicMock()
         request.app.state.ctx.settings.instance_id = "mini-1"
@@ -209,6 +224,52 @@ class AgentChatSseTests(unittest.TestCase):
         self.assertEqual(rows[0]["instance_name"], "macmini")
         self.assertEqual(audit["events"][0]["event_type"], "turn_completed")
         self.assertEqual(audit["instance"]["id"], "mini-1")
+
+    def test_live_and_closed_history_use_same_newest_backward_pages(self) -> None:
+        session = AgentSession(id="sess-long", agent_name="codex")
+        events = [
+            TranscriptEvent(
+                session_id=session.id,
+                seq=seq,
+                event_type="message",
+                payload={"text": str(seq)},
+            )
+            for seq in range(1, 6002)
+        ]
+        store = _FakeStore(events)
+
+        for live in (False, True):
+            with self.subTest(live=live):
+                manager = MagicMock()
+                manager.store = store
+                manager.store.get_session = MagicMock(return_value=session)
+                runtime = _FakeRuntime() if live else None
+                if runtime:
+                    runtime.store = store
+                manager.get.return_value = runtime
+                request = MagicMock()
+                request.app.state.ctx.settings.instance_id = "mini-1"
+                request.app.state.ctx.settings.instance_name = "macmini"
+
+                with patch("pa.modules.agent_chat._manager", return_value=manager):
+                    newest = get_agent_session_history(request, session.id)
+                    older = get_agent_session_history(
+                        request,
+                        session.id,
+                        before_seq=5002,
+                    )
+
+                self.assertEqual(
+                    [event["seq"] for event in newest["events"]],
+                    list(range(5002, 6002)),
+                )
+                self.assertTrue(newest["page"]["has_older"])
+                self.assertEqual(
+                    [event["seq"] for event in older["events"]],
+                    list(range(4002, 5002)),
+                )
+                self.assertTrue(older["page"]["has_older"])
+                self.assertEqual(newest["live"], live)
 
     def test_codex_message_phase_is_preserved(self) -> None:
         update = {
@@ -311,6 +372,124 @@ class AgentChatSseTests(unittest.TestCase):
             if line.startswith("data:")
         )
         self.assertEqual(data["payload"]["text"], "thinking…")
+
+    def test_paginated_catchup_is_complete_ordered_and_deduplicates_live_overlap(
+        self,
+    ) -> None:
+        events = [
+            TranscriptEvent(
+                session_id="sess-long",
+                seq=seq,
+                event_type="message",
+                payload={"text": str(seq)},
+            )
+            for seq in range(1, 5506)
+        ]
+        runtime = _FakeRuntime()
+        runtime.store = _FakeStore(events)
+        runtime.queued_on_subscribe = [
+            {
+                "id": events[-1].id,
+                "seq": 5505,
+                "type": "message",
+                "session_id": "sess-long",
+                "payload": {"text": "5505"},
+                "created_at": events[-1].created_at.isoformat(),
+            },
+            {
+                "id": "live-5506",
+                "seq": 5506,
+                "type": "message",
+                "session_id": "sess-long",
+                "payload": {"text": "5506"},
+                "created_at": events[-1].created_at.isoformat(),
+            },
+        ]
+        request = MagicMock()
+        request.headers = {}
+        request.query_params = {"after": "0"}
+        request.is_disconnected = AsyncMock(return_value=False)
+
+        async def run() -> list[int]:
+            with patch("pa.modules.agent_chat._runtime_or_404", return_value=runtime):
+                response = await session_events(request, "sess-long")
+                sequences: list[int] = []
+                try:
+                    async for chunk in response.body_iterator:
+                        text = chunk if isinstance(chunk, str) else chunk.decode()
+                        for line in text.splitlines():
+                            if line.startswith("data:"):
+                                sequences.append(json.loads(line[5:].strip())["seq"])
+                        if sequences and sequences[-1] == 5506:
+                            break
+                finally:
+                    await response.body_iterator.aclose()
+                return sequences
+
+        sequences = asyncio.run(run())
+
+        self.assertEqual(sequences, list(range(1, 5507)))
+        self.assertEqual(len(sequences), len(set(sequences)))
+        self.assertEqual(runtime.store.after_calls, [0, 1000, 2000, 3000, 4000, 5000])
+        self.assertEqual(runtime._subscribers, [])
+
+    def test_live_queue_gap_is_filled_from_durable_events(self) -> None:
+        events = [
+            TranscriptEvent(
+                session_id="sess-busy",
+                seq=seq,
+                event_type="message",
+                payload={"text": str(seq)},
+            )
+            for seq in range(1, 601)
+        ]
+
+        class _GrowingStore(_FakeStore):
+            def list_transcript_events(
+                self, session_id: str, *, after_seq: int = 0, limit: int = 500
+            ) -> list[Any]:
+                self.after_calls.append(after_seq)
+                visible = self._events[:3] if len(self.after_calls) == 1 else self._events
+                return [event for event in visible if event.seq > after_seq][:limit]
+
+        runtime = _FakeRuntime()
+        runtime.store = _GrowingStore(events)
+        runtime.queued_on_subscribe = [
+            {
+                "id": events[-1].id,
+                "seq": 600,
+                "type": "message",
+                "session_id": "sess-busy",
+                "payload": {"text": "600"},
+                "created_at": events[-1].created_at.isoformat(),
+            }
+        ]
+        request = MagicMock()
+        request.headers = {}
+        request.query_params = {}
+        request.is_disconnected = AsyncMock(return_value=False)
+
+        async def run() -> list[int]:
+            with patch("pa.modules.agent_chat._runtime_or_404", return_value=runtime):
+                response = await session_events(request, "sess-busy")
+                sequences: list[int] = []
+                try:
+                    async for chunk in response.body_iterator:
+                        text = chunk if isinstance(chunk, str) else chunk.decode()
+                        for line in text.splitlines():
+                            if line.startswith("data:"):
+                                sequences.append(json.loads(line[5:].strip())["seq"])
+                        if sequences and sequences[-1] == 600:
+                            break
+                finally:
+                    await response.body_iterator.aclose()
+                return sequences
+
+        sequences = asyncio.run(run())
+
+        self.assertEqual(sequences, list(range(1, 601)))
+        self.assertEqual(runtime.store.after_calls, [0, 3])
+        self.assertEqual(runtime._subscribers, [])
 
     def test_cursor_assignment_pattern_does_not_unbind(self) -> None:
         """Guard the Python scoping bug that killed the SSE generator."""

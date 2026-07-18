@@ -846,6 +846,33 @@ class CardProjection:
             ).fetchall()
         return [self._row_to_transcript(row) for row in rows]
 
+    def list_transcript_events_before(
+        self,
+        session_id: str,
+        *,
+        before_seq: int | None = None,
+        limit: int = 500,
+    ) -> list[TranscriptEvent]:
+        """Return the newest events before a cursor, ordered chronologically."""
+        params: list[str | int] = [session_id]
+        cursor_clause = ""
+        if before_seq is not None:
+            cursor_clause = "AND seq < ?"
+            params.append(before_seq)
+        params.append(limit)
+        with self._conn() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT * FROM (
+                    SELECT * FROM agent_transcript_events
+                    WHERE session_id = ? {cursor_clause}
+                    ORDER BY seq DESC LIMIT ?
+                ) ORDER BY seq ASC
+                """,
+                params,
+            ).fetchall()
+        return [self._row_to_transcript(row) for row in rows]
+
     def add_knowledge(self, entry: KnowledgeEntry) -> KnowledgeEntry:
         with self._conn() as conn:
             conn.execute(

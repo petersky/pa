@@ -97,6 +97,8 @@
   var remoteWatchers = {};
   var remoteLoadGeneration = 0;
   var remoteAuditGeneration = 0;
+  var remoteAuditSessionId = "";
+  var remoteAuditEvents = [];
 
   function remoteApiBase(instanceId) {
     return "/api/fleet/instances/" + encodeURIComponent(instanceId) + "/agent";
@@ -366,6 +368,24 @@
     widgetRoot._acw.switchSession(sessionId);
   }
 
+  function remoteAuditEventHtml(event) {
+    var payload = "";
+    try { payload = JSON.stringify(event.payload || {}, null, 2).slice(0, 4000); } catch (e) {}
+    return '<details class="pa-remote-audit-event"><summary><strong>' +
+      escapeHtml(event.event_type) + '</strong> <span class="muted small">#' +
+      escapeHtml(event.seq) + " · " + escapeHtml(event.created_at || "") +
+      "</span></summary><pre>" + escapeHtml(payload) + "</pre></details>";
+  }
+
+  function renderRemoteAuditEvents(container, events, hasOlder) {
+    if (!container) return;
+    container.innerHTML = (hasOlder
+      ? '<button type="button" class="ghost small" data-remote-audit-older>Load older events</button>'
+      : "") + events.map(remoteAuditEventHtml).join("");
+    var count = $("[data-remote-audit-count]");
+    if (count) count.textContent = events.length + " loaded transcript events";
+  }
+
   async function showRemoteAudit(sessionId) {
     if (!remoteInstanceId || !sessionId) return;
     var instanceId = remoteInstanceId;
@@ -386,19 +406,19 @@
       ) return;
       var session = data.session || {};
       var events = data.events || [];
+      remoteAuditSessionId = sessionId;
+      remoteAuditEvents = events;
       if (body) {
         body.innerHTML = '<p><strong>' + escapeHtml(session.title || session.label || session.id) +
           '</strong> <span class="badge">' + escapeHtml(session.status || "unknown") + '</span></p>' +
           '<p class="muted small">' + escapeHtml((data.instance && data.instance.name) || instanceId) +
-          " · " + events.length + " transcript events</p>" +
-          '<div class="pa-remote-audit-events">' + events.map(function (event) {
-            var payload = "";
-            try { payload = JSON.stringify(event.payload || {}, null, 2).slice(0, 4000); } catch (e) {}
-            return '<details class="pa-remote-audit-event"><summary><strong>' +
-              escapeHtml(event.event_type) + '</strong> <span class="muted small">#' +
-              escapeHtml(event.seq) + " · " + escapeHtml(event.created_at || "") +
-              "</span></summary><pre>" + escapeHtml(payload) + "</pre></details>";
-          }).join("") + "</div>";
+          ' · <span data-remote-audit-count></span></p>' +
+          '<div class="pa-remote-audit-events"></div>';
+        renderRemoteAuditEvents(
+          $(".pa-remote-audit-events", body),
+          events,
+          !!(data.page && data.page.has_older)
+        );
       }
     } catch (err) {
       if (
@@ -408,6 +428,53 @@
         !body.isConnected
       ) return;
       if (body) body.innerHTML = '<p class="status status-blocked">' + escapeHtml(err.message) + "</p>";
+    }
+  }
+
+  async function loadOlderRemoteAudit(button) {
+    if (!remoteInstanceId || !remoteAuditSessionId || !remoteAuditEvents.length) return;
+    var instanceId = remoteInstanceId;
+    var sessionId = remoteAuditSessionId;
+    var generation = remoteAuditGeneration;
+    var container = button && button.closest(".pa-remote-audit-events");
+    if (!container) return;
+    var oldest = remoteAuditEvents.reduce(function (result, event) {
+      var seq = Number(event && event.seq || 0);
+      return seq && (!result || seq < result) ? seq : result;
+    }, 0);
+    if (!oldest) return;
+    button.disabled = true;
+    button.textContent = "Loading…";
+    try {
+      var data = await api(
+        remoteApiBase(instanceId) + "/history/" + encodeURIComponent(sessionId) +
+        "?before_seq=" + encodeURIComponent(oldest) + "&limit=1000"
+      );
+      if (
+        generation !== remoteAuditGeneration ||
+        instanceId !== remoteInstanceId ||
+        sessionId !== remoteAuditSessionId ||
+        !container.isConnected
+      ) return;
+      var keys = {};
+      remoteAuditEvents = (data.events || []).concat(remoteAuditEvents).filter(function (event) {
+        var key = String(event && (event.seq || event.id) || "");
+        if (key && keys[key]) return false;
+        if (key) keys[key] = true;
+        return true;
+      });
+      remoteAuditEvents.sort(function (a, b) { return Number(a.seq || 0) - Number(b.seq || 0); });
+      var oldHeight = container.scrollHeight;
+      var oldTop = container.scrollTop;
+      renderRemoteAuditEvents(
+        container,
+        remoteAuditEvents,
+        !!(data.page && data.page.has_older)
+      );
+      container.scrollTop = oldTop + Math.max(0, container.scrollHeight - oldHeight);
+    } catch (err) {
+      button.disabled = false;
+      button.textContent = "Load older events";
     }
   }
 
@@ -612,6 +679,12 @@
     var remoteAudit = e.target.closest("[data-remote-audit]");
     if (remoteAudit) {
       showRemoteAudit(remoteAudit.getAttribute("data-remote-audit"));
+      return;
+    }
+
+    var olderAudit = e.target.closest("[data-remote-audit-older]");
+    if (olderAudit) {
+      loadOlderRemoteAudit(olderAudit);
       return;
     }
 

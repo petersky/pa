@@ -2,10 +2,61 @@ import asyncio
 import unittest
 from unittest.mock import MagicMock, Mock
 
+from pa.domain.models import AgentSession, TranscriptEvent
 from pa.instance.agent_session import AgentSessionRuntime
 
 
+class _TranscriptStore:
+    def __init__(self, events: list[TranscriptEvent]) -> None:
+        self.events = events
+
+    def list_transcript_events(
+        self, session_id: str, *, after_seq: int = 0, limit: int = 500
+    ) -> list[TranscriptEvent]:
+        return [event for event in self.events if event.seq > after_seq][:limit]
+
+    def list_transcript_events_before(
+        self, session_id: str, *, before_seq: int | None = None, limit: int = 500
+    ) -> list[TranscriptEvent]:
+        eligible = [
+            event
+            for event in self.events
+            if before_seq is None or event.seq < before_seq
+        ]
+        return eligible[-limit:]
+
+
 class AgentSessionLiveEventTests(unittest.TestCase):
+    def test_snapshot_restores_bounded_newest_transcript_window(self) -> None:
+        events = [
+            TranscriptEvent(
+                session_id="session-long",
+                seq=seq,
+                event_type="agent_message_chunk",
+                payload={"text": str(seq)},
+            )
+            for seq in range(1, 6002)
+        ]
+        runtime = AgentSessionRuntime.__new__(AgentSessionRuntime)
+        runtime.store = _TranscriptStore(events)
+        runtime.session = AgentSession(id="session-long", agent_name="codex")
+        runtime.connection = None
+        runtime._transcript_buffer = []
+        runtime._queue_paused = False
+        runtime._queue = []
+        runtime._in_flight = None
+        runtime._turn_started_at = None
+        runtime._permission_requests = {}
+        runtime._pending_permissions = {}
+
+        snapshot = runtime.snapshot()
+
+        restored = snapshot["transcript"]
+        self.assertEqual(len(restored), 1000)
+        self.assertEqual(restored[0]["seq"], 5002)
+        self.assertEqual(restored[-1]["seq"], 6001)
+        self.assertTrue(snapshot["transcript_page"]["has_older"])
+
     def test_prompting_tracks_in_flight_turn_not_connection_or_lock_cleanup(
         self,
     ) -> None:

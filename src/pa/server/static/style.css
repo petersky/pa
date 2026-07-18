@@ -1079,6 +1079,11 @@ code {
   padding: 0.25rem 1rem;
 }
 
+.acw-load-older {
+  align-self: center;
+  flex: 0 0 auto;
+}
+
 .acw-msg {
   display: flex;
   flex-direction: column;

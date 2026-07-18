@@ -15,6 +15,7 @@ from pa.auth.middleware import get_principal_id
 from pa.core.contracts import Module
 from pa.core.context import AppContext
 from pa.core.preferences import get_preferences_store
+from pa.instance.agent_session import TRANSCRIPT_WINDOW_LIMIT
 from pa.instance.quiesce import ImageAttachment, MAX_TOTAL_IMAGE_BYTES
 
 router = APIRouter(prefix="/agent")
@@ -282,10 +283,16 @@ def list_agent_session_history(
 def get_agent_session_history(
     request: Request,
     session_id: str,
-    after_seq: int = 0,
-    limit: int = 2000,
+    after_seq: int | None = None,
+    before_seq: int | None = None,
+    limit: int = TRANSCRIPT_WINDOW_LIMIT,
 ) -> dict:
     """Return durable metadata and transcript events for a live or closed session."""
+    if after_seq is not None and before_seq is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="Use either after_seq or before_seq, not both",
+        )
     mgr = _manager(request)
     session = mgr.store.get_session(session_id)
     if not session:
@@ -293,11 +300,38 @@ def get_agent_session_history(
     runtime = mgr.get(session_id)
     if runtime and not getattr(runtime, "_closed", False):
         runtime._flush_transcript()
-    events = mgr.store.list_transcript_events(
-        session_id,
-        after_seq=max(0, after_seq),
-        limit=max(1, min(limit, 5000)),
-    )
+    page_limit = max(1, min(limit, 5000))
+    if after_seq is not None:
+        events = mgr.store.list_transcript_events(
+            session_id,
+            after_seq=max(0, after_seq),
+            limit=page_limit + 1,
+        )
+        has_more = len(events) > page_limit
+        events = events[:page_limit]
+        page = {
+            "oldest_seq": events[0].seq if events else None,
+            "newest_seq": events[-1].seq if events else None,
+            "has_older": False,
+            "has_newer": has_more,
+            "limit": page_limit,
+        }
+    else:
+        cursor = max(1, before_seq) if before_seq is not None else None
+        events = mgr.store.list_transcript_events_before(
+            session_id,
+            before_seq=cursor,
+            limit=page_limit + 1,
+        )
+        has_older = len(events) > page_limit
+        events = events[-page_limit:]
+        page = {
+            "oldest_seq": events[0].seq if events else None,
+            "newest_seq": events[-1].seq if events else None,
+            "has_older": has_older,
+            "has_newer": before_seq is not None,
+            "limit": page_limit,
+        }
     settings = request.app.state.ctx.settings
     return {
         "session": session.model_dump(mode="json"),
@@ -307,6 +341,7 @@ def get_agent_session_history(
         },
         "live": bool(runtime and not getattr(runtime, "_closed", False)),
         "events": [event.model_dump(mode="json") for event in events],
+        "page": page,
     }
 
 
@@ -335,24 +370,35 @@ async def session_events(request: Request, session_id: str) -> StreamingResponse
     async def event_stream():
         # Local cursor — do not reassign outer after_seq (UnboundLocalError).
         cursor = after_seq
-        # Flush buffered events so replay sees everything written so far.
-        runtime._flush_transcript()
-        for te in runtime.store.list_transcript_events(
-            session_id, after_seq=cursor, limit=2000
-        ):
-            payload = {
-                "id": te.id,
-                "seq": te.seq,
-                "type": te.event_type,
-                "session_id": te.session_id,
-                "payload": te.payload,
-                "created_at": te.created_at.isoformat(),
-            }
-            yield _sse(te.seq, payload)
-            cursor = max(cursor, te.seq)
-
+        # Subscribe first so events created while durable catch-up is paging are
+        # queued. Durable replay remains authoritative; queued overlap is skipped.
         queue = runtime.subscribe()
         try:
+            runtime._flush_transcript()
+            while True:
+                page = runtime.store.list_transcript_events(
+                    session_id,
+                    after_seq=cursor,
+                    limit=TRANSCRIPT_WINDOW_LIMIT,
+                )
+                if not page:
+                    break
+                for te in page:
+                    if te.seq <= cursor:
+                        continue
+                    payload = {
+                        "id": te.id,
+                        "seq": te.seq,
+                        "type": te.event_type,
+                        "session_id": te.session_id,
+                        "payload": te.payload,
+                        "created_at": te.created_at.isoformat(),
+                    }
+                    yield _sse(te.seq, payload)
+                    cursor = te.seq
+                if len(page) < TRANSCRIPT_WINDOW_LIMIT:
+                    break
+
             while True:
                 if await request.is_disconnected():
                     break
@@ -364,6 +410,37 @@ async def session_events(request: Request, session_id: str) -> StreamingResponse
                 seq = int(event.get("seq") or 0)
                 if seq and seq <= cursor:
                     continue
+                if seq and seq > cursor + 1:
+                    # A busy catch-up can overflow the bounded subscriber queue.
+                    # Flush and fill any sequence gap from durable storage before
+                    # emitting the retained live event.
+                    runtime._flush_transcript()
+                    while cursor < seq - 1:
+                        gap_page = runtime.store.list_transcript_events(
+                            session_id,
+                            after_seq=cursor,
+                            limit=TRANSCRIPT_WINDOW_LIMIT,
+                        )
+                        if not gap_page:
+                            break
+                        previous_cursor = cursor
+                        for te in gap_page:
+                            if te.seq <= cursor:
+                                continue
+                            payload = {
+                                "id": te.id,
+                                "seq": te.seq,
+                                "type": te.event_type,
+                                "session_id": te.session_id,
+                                "payload": te.payload,
+                                "created_at": te.created_at.isoformat(),
+                            }
+                            yield _sse(te.seq, payload)
+                            cursor = te.seq
+                        if cursor == previous_cursor:
+                            break
+                    if seq <= cursor:
+                        continue
                 cursor = max(cursor, seq)
                 yield _sse(seq or None, event)
         finally:
