@@ -344,6 +344,7 @@ def get_agent_session_history(
         page = {
             "oldest_seq": events[0].seq if events else None,
             "newest_seq": events[-1].seq if events else None,
+            "next_before_seq": None,
             "has_older": False,
             "has_newer": has_more,
             "limit": page_limit,
@@ -360,6 +361,7 @@ def get_agent_session_history(
         page = {
             "oldest_seq": events[0].seq if events else None,
             "newest_seq": events[-1].seq if events else None,
+            "next_before_seq": events[0].seq if has_older and events else None,
             "has_older": has_older,
             "has_newer": before_seq is not None,
             "limit": page_limit,

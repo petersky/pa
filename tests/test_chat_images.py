@@ -110,6 +110,7 @@ class ChatWidgetTemplateTests(unittest.TestCase):
         self.assertIn("data-acw-settings-apply disabled", html)
         self.assertIn("data-acw-settings-reset disabled", html)
         self.assertIn('role="status" aria-live="polite"', html)
+        self.assertIn("data-acw-load-older-status", html)
         self.assertIn("Session…", html)
         self.assertIn("data-acw-toggle-system", html)
         self.assertIn("data-acw-toggle-raw", html)
@@ -179,6 +180,139 @@ assert.strictEqual(window.PAAgentChat.anchoredScrollTop(75, 400, 650), 325);
             text=True,
         )
 
+    @unittest.skipUnless(shutil.which("node"), "node is required for chat UI behavior tests")
+    def test_user_markdown_is_sanitized_and_preserves_supported_formatting(self) -> None:
+        script_path = (
+            Path(__file__).parents[1]
+            / "src"
+            / "pa"
+            / "server"
+            / "static"
+            / "js"
+            / "agent-chat.js"
+        )
+        program = r"""
+const fs = require("fs");
+const vm = require("vm");
+const assert = require("assert");
+global.window = {
+  marked: { parse: function (raw, options) {
+    assert.strictEqual(options.breaks, true);
+    assert.ok(raw.includes("**bold**"));
+    return '<p>line<br>two <strong>bold</strong> <em>em</em> <code>x</code></p>' +
+      '<ul><li>item</li></ul><pre><code>block</code></pre>' +
+      '<a href="javascript:alert(1)" onclick="alert(1)">bad</a><script>alert(1)</script>';
+  } },
+  DOMPurify: { sanitize: function (html, config) {
+    assert.ok(config.FORBID_TAGS.includes("form"));
+    assert.ok(config.FORBID_ATTR.includes("style"));
+    return html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+      .replace(/\s+onclick="[^"]*"/gi, "")
+      .replace(/javascript:[^"]*/gi, "");
+  } }
+};
+global.document = {
+  addEventListener: function () {}, querySelector: function () { return null; },
+  querySelectorAll: function () { return []; }, body: null
+};
+vm.runInThisContext(fs.readFileSync(process.argv[1], "utf8"));
+const html = window.PAAgentChat.renderMarkdown("line\ntwo **bold** *em* `x`\n\n- item\n\n```\nblock\n```");
+assert.ok(html.includes("<br>"));
+assert.ok(html.includes("<strong>bold</strong>"));
+assert.ok(html.includes("<em>em</em>"));
+assert.ok(html.includes("<ul>"));
+assert.ok(html.includes("<pre><code>"));
+assert.ok(!html.includes("<script"));
+assert.ok(!html.includes("onclick"));
+assert.ok(!html.includes("javascript:"));
+"""
+        subprocess.run(
+            [shutil.which("node"), "-e", program, str(script_path)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+    @unittest.skipUnless(shutil.which("node"), "node is required for chat UI behavior tests")
+    def test_older_paging_retries_exhausts_and_keeps_concurrent_live_events(self) -> None:
+        script_path = (
+            Path(__file__).parents[1]
+            / "src"
+            / "pa"
+            / "server"
+            / "static"
+            / "js"
+            / "agent-chat.js"
+        )
+        program = r"""
+const fs = require("fs");
+const vm = require("vm");
+const assert = require("assert");
+global.window = {};
+global.document = {
+  addEventListener: function () {}, querySelector: function () { return null; },
+  querySelectorAll: function () { return []; }, body: null
+};
+vm.runInThisContext(fs.readFileSync(process.argv[1], "utf8"));
+const Widget = window.PAAgentChat.AgentChatWidget;
+const widget = Object.create(Widget.prototype);
+widget.sessionId = "session-1";
+widget.hasOlder = true;
+widget.olderCursor = 30;
+widget.olderError = "";
+widget.loadingOlder = false;
+widget.prompting = false;
+widget.turnStartedAt = null;
+widget.transcriptEvents = [{ seq: 30 }, { seq: 31 }];
+widget.els = {
+  messages: { scrollHeight: 100, scrollTop: 25 },
+  loadOlder: { hidden: false, disabled: false, textContent: "", setAttribute: function () {} },
+  loadOlderStatus: { hidden: true, textContent: "" },
+  status: { dataset: { state: "online" } }
+};
+widget.setTurnActive = function () {};
+widget.setStatus = function () {};
+let renderCalls = 0;
+widget.renderTranscript = function (events) {
+  renderCalls += 1;
+  this.transcriptEvents = events;
+  this.els.messages.scrollHeight = 140;
+};
+let rejectRequest;
+widget.api = function (path) {
+  assert.ok(path.includes("before_seq=30"));
+  return new Promise(function (_, reject) { rejectRequest = reject; });
+};
+widget.loadOlderTranscript();
+assert.strictEqual(widget.loadingOlder, true);
+rejectRequest(new Error("offline"));
+setImmediate(function () {
+  assert.strictEqual(widget.loadingOlder, false);
+  assert.ok(widget.olderError.includes("offline"));
+  assert.strictEqual(widget.els.loadOlder.textContent, "Retry loading older messages");
+  widget.api = function () {
+    return Promise.resolve({ events: [{ seq: 10 }, { seq: 20 }], page: {
+      has_older: false, oldest_seq: 10, next_before_seq: null
+    } });
+  };
+  widget.transcriptEvents.push({ seq: 32 }); // concurrent SSE arrival
+  widget.loadOlderTranscript();
+  setImmediate(function () {
+    assert.strictEqual(renderCalls, 1);
+    assert.deepStrictEqual(widget.transcriptEvents.map(function (e) { return e.seq; }), [10, 20, 30, 31, 32]);
+    assert.strictEqual(widget.hasOlder, false);
+    assert.strictEqual(widget.els.loadOlder.hidden, true);
+    assert.strictEqual(widget.els.messages.scrollTop, 65);
+  });
+});
+"""
+        subprocess.run(
+            [shutil.which("node"), "-e", program, str(script_path)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
     def test_agent_page_starts_new_sessions_from_a_configuration_dialog(self) -> None:
         template_root = Path(__file__).parents[1] / "src" / "pa" / "server" / "templates"
         source = (template_root / "pages" / "agent.html").read_text()
@@ -196,6 +330,8 @@ assert.strictEqual(window.PAAgentChat.anchoredScrollTop(75, 400, 650), 325);
         self.assertIn('name="cwd"', source)
 
         script = (template_root.parent / "static" / "js" / "agent-chat.js").read_text()
+        self.assertIn('role === "user" || role === "agent"', script)
+        self.assertIn('!child.hasAttribute("data-acw-load-older-status")', script)
         self.assertIn("newSessionSnapshotForProvider", script)
         self.assertIn('provider.addEventListener("change"', script)
         self.assertIn("populateSelect", script)
