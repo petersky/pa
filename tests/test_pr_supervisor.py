@@ -27,6 +27,7 @@ from pa.pr_supervisor.github import (
 )
 from pa.pr_supervisor.models import (
     GitHubCapability,
+    LeaseGrant,
     PRCheck,
     PRPolicy,
     PRSnapshot,
@@ -228,6 +229,14 @@ class PRSupervisorStoreTests(unittest.TestCase):
         stale.updated_at = terminal.updated_at - timedelta(seconds=1)
         result = self.store.upsert_watch(stale, preserve_lease=True)
         self.assertEqual(result.status, PRWatchStatus.MERGED)
+
+    def test_terminal_replica_supersedes_newer_active_lease_state(self) -> None:
+        active = self.store.get_watch("watch-1")
+        retired = watch()
+        retired.status = PRWatchStatus.RETIRED
+        retired.updated_at = active.updated_at - timedelta(seconds=10)
+        result = self.store.upsert_watch(retired, preserve_lease=True)
+        self.assertEqual(result.status, PRWatchStatus.RETIRED)
 
 
 class GateAndSecurityTests(unittest.TestCase):
@@ -548,13 +557,83 @@ class PRSupervisorServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(update.args[0], "card-1")
         self.assertEqual(update.args[1].lane, CardLane.DONE)
         self.assertEqual(current.state["merge_commit_sha"], "c" * 40)
+        self.assertEqual(current.state["card_lane"], "done")
         self.assertEqual(len(self.dispatcher.calls), 1)
+
+    async def test_stale_terminal_fence_does_not_complete_card(self) -> None:
+        merged = snapshot(state="merged", merge_commit_sha="c" * 40)
+        service = await self.make_service([merged])
+        self.domain.update_card.reset_mock()
+        service.store.set_terminal = MagicMock(
+            side_effect=StaleFenceError("lost lease")
+        )
+        with self.assertRaises(StaleFenceError):
+            await service._handle_merged(
+                self.store.get_watch("watch-1"),
+                merged,
+                LeaseGrant(
+                    acquired=True,
+                    owner_instance_id="instance-a",
+                    fence_token=1,
+                    expires_at=utcnow() + timedelta(seconds=30),
+                ),
+            )
+        self.domain.update_card.assert_not_called()
+
+    async def test_retire_and_refresh_replicate_watch_state(self) -> None:
+        service = await self.make_service([snapshot()])
+        service._replicate = AsyncMock()
+        refreshed = await service.refresh_watch("watch-1")
+        self.assertIsNotNone(refreshed)
+        retired = await service.retire_watch("watch-1")
+        self.assertEqual(retired.status, PRWatchStatus.RETIRED)
+        self.assertEqual(service._replicate.await_count, 2)
+
+    async def test_migration_applies_repository_policy_override(self) -> None:
+        card = SimpleNamespace(
+            id="card-migration",
+            lane=CardLane.ACTIVE,
+            body="Track https://github.com/owner/repo/pull/17",
+            realm_id="default",
+            project_id="project-1",
+            created_by_instance="origin",
+        )
+        self.domain.list_cards.return_value = [card]
+        self.domain.get_project.return_value = SimpleNamespace(
+            tool_config={
+                "pr_policy": {"integration_branch": "main"},
+                "pr_repository_policies": {
+                    "owner/repo": {
+                        "integration_branch": "release",
+                        "required_checks": ["release-ci"],
+                    }
+                },
+            }
+        )
+        service = PRSupervisor(
+            self.settings,
+            self.domain,
+            supervisor_store=self.store,
+            github_client=_FakeGitHub([snapshot()]),
+            dispatcher=self.dispatcher,
+        )
+        service._replicate = AsyncMock()
+        self.assertEqual(await service.migrate_discoverable_associations(), 1)
+        migrated = self.store.find_watch("default", "owner/repo", 17)
+        self.assertEqual(migrated.policy.integration_branch, "release")
+        self.assertEqual(migrated.policy.required_checks, ["release-ci"])
 
     async def test_check_run_webhook_schedules_matching_watch(self) -> None:
         service = await self.make_service([snapshot()])
         current = self.store.get_watch("watch-1")
         current.next_poll_at = utcnow() + timedelta(hours=1)
         self.store.upsert_watch(current, preserve_lease=False)
+        second = watch()
+        second.id = "watch-2"
+        second.realm_id = "other-realm"
+        second.next_poll_at = utcnow() + timedelta(hours=1)
+        self.store.upsert_watch(second)
+        service._replicate = AsyncMock()
         count = await service.handle_webhook(
             "check_run",
             "delivery-1",
@@ -563,11 +642,36 @@ class PRSupervisorServiceTests(unittest.IsolatedAsyncioTestCase):
                 "check_run": {"pull_requests": [{"number": 17}]},
             },
         )
-        self.assertEqual(count, 1)
-        self.assertTrue(self.store.list_due())
+        self.assertEqual(count, 2)
+        self.assertEqual(
+            {item.id for item in self.store.list_due()},
+            {"watch-1", "watch-2"},
+        )
+        for watch_id in ("watch-1", "watch-2"):
+            events = self.store.list_events(watch_id)
+            self.assertTrue(
+                any(event.event_type == "webhook_received" for event in events)
+            )
+        self.assertEqual(service._replicate.await_count, 2)
 
 
 class ExecutorWakeReplacementTests(unittest.IsolatedAsyncioTestCase):
+    async def test_ambiguous_remote_failure_never_falls_back_locally(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="instance-b")
+            store = PRSupervisorStore(Path(tmp) / "supervisor.db")
+            dispatcher = ExecutorDispatcher(settings, MagicMock(), store)
+            dispatcher._instance_url = MagicMock(return_value="http://instance-a")
+            dispatcher._remote_dispatch = AsyncMock(
+                side_effect=httpx.ReadTimeout("response lost")
+            )
+            dispatcher.dispatch_local = AsyncMock(return_value="queued")
+            target = watch()
+            target.originating_instance_id = "instance-a"
+            with self.assertRaises(httpx.ReadTimeout):
+                await dispatcher.dispatch(target, "event-1", "fix it")
+            dispatcher.dispatch_local.assert_not_awaited()
+
     async def test_closed_or_missing_session_starts_one_replacement_and_dedupes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(
@@ -683,6 +787,27 @@ class PRSupervisorApiAndMcpTests(unittest.TestCase):
                 session_history.json()["pr_watches"][0]["id"], watch_id
             )
 
+            incoming = dict(created.json())
+            incoming["id"] = "worker-local-id"
+            lease = client.post(
+                "/api/pr-supervisor/watches/worker-local-id/lease",
+                headers=headers,
+                json={
+                    "watch": incoming,
+                    "instance_id": "worker-a",
+                    "capability": {
+                        "instance_id": "worker-a",
+                        "authenticated": True,
+                    },
+                },
+            )
+            self.assertEqual(lease.status_code, 200, lease.text)
+            self.assertTrue(lease.json()["acquired"])
+            canonical = app.state.ctx.require_service(
+                "pr_supervisor_store"
+            ).get_watch(watch_id)
+            self.assertEqual(canonical.owner_instance_id, "worker-a")
+
             unsigned = client.post(
                 "/api/pr-supervisor/webhook/github",
                 content=b"{}",
@@ -696,10 +821,12 @@ class PRSupervisorApiAndMcpTests(unittest.TestCase):
         class FakeMcp:
             def __init__(self) -> None:
                 self.names: set[str] = set()
+                self.functions: dict[str, object] = {}
 
             def tool(self):
                 def register(fn):
                     self.names.add(fn.__name__)
+                    self.functions[fn.__name__] = fn
                     return fn
 
                 return register
@@ -717,3 +844,23 @@ class PRSupervisorApiAndMcpTests(unittest.TestCase):
             "github_integration_capability",
         }
         self.assertTrue(expected.issubset(mcp.names))
+        project = SimpleNamespace(
+            tool_config={
+                "pr_policy": {
+                    "integration_branch": "release",
+                    "required_checks": ["release-ci"],
+                }
+            }
+        )
+        kernel.ctx.store.get_project = MagicMock(return_value=project)
+
+        def update_project(project_id, update, **kwargs):
+            return SimpleNamespace(tool_config=update.tool_config)
+
+        kernel.ctx.store.update_project = MagicMock(side_effect=update_project)
+        result = mcp.functions["set_project_pr_policy"](
+            "project-1", auto_notify=False
+        )
+        self.assertEqual(result["policy"]["integration_branch"], "release")
+        self.assertEqual(result["policy"]["required_checks"], ["release-ci"])
+        self.assertFalse(result["policy"]["auto_notify"])

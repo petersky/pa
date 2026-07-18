@@ -13,7 +13,7 @@ from pa.core.context import AppContext
 from pa.core.ui.pages import PageDefinition, PageRegistry
 from pa.domain.models import ProjectUpdate
 from pa.pr_supervisor.github import GitHubAPIError, verify_webhook_signature
-from pa.pr_supervisor.models import GitHubCapability, PRPolicy, PRWatch, PRWatchStatus
+from pa.pr_supervisor.models import GitHubCapability, PRPolicy, PRWatch
 from pa.pr_supervisor.service import PRSupervisor
 from pa.pr_supervisor.store import PRSupervisorStore
 
@@ -142,16 +142,16 @@ def get_watch(request: Request, watch_id: str) -> dict[str, Any]:
 
 
 @router.post("/pr-supervisor/watches/{watch_id}/refresh")
-def refresh_watch(request: Request, watch_id: str) -> dict[str, Any]:
-    count = _store(request).schedule_now(watch_id=watch_id)
-    if not count:
+async def refresh_watch(request: Request, watch_id: str) -> dict[str, Any]:
+    watch = await _service(request).refresh_watch(watch_id)
+    if not watch:
         raise HTTPException(status_code=404, detail="Active PR watch not found")
     return {"scheduled": True, "watch_id": watch_id}
 
 
 @router.delete("/pr-supervisor/watches/{watch_id}")
-def retire_watch(request: Request, watch_id: str) -> dict[str, Any]:
-    watch = _store(request).set_terminal(watch_id, PRWatchStatus.RETIRED)
+async def retire_watch(request: Request, watch_id: str) -> dict[str, Any]:
+    watch = await _service(request).retire_watch(watch_id)
     if not watch:
         raise HTTPException(status_code=404, detail="PR watch not found")
     return watch.model_dump(mode="json")
@@ -285,14 +285,16 @@ def ingest_replica(request: Request, body: dict[str, Any]) -> dict[str, Any]:
 def acquire_lease(
     request: Request, watch_id: str, body: dict[str, Any]
 ) -> dict[str, Any]:
+    canonical_id = watch_id
     if body.get("watch"):
-        _store(request).upsert_watch(
+        stored = _store(request).upsert_watch(
             PRWatch.model_validate(body["watch"]), preserve_lease=True
         )
+        canonical_id = stored.id
     capability = GitHubCapability.model_validate(body.get("capability") or {})
     _store(request).save_capability(capability)
     grant = _store(request).try_acquire_lease(
-        watch_id,
+        canonical_id,
         str(body.get("instance_id") or ""),
         ttl_seconds=min(max(int(body.get("ttl_seconds") or 45), 10), 300),
         capability=capability,
@@ -520,17 +522,23 @@ class PRSupervisorModule(Module):
             return watch.model_dump(mode="json")
 
         @mcp.tool()
-        def refresh_pr_watch(watch_id: str) -> dict[str, Any]:
+        async def refresh_pr_watch(watch_id: str) -> dict[str, Any]:
             """Schedule an immediate refresh for an active PR watch."""
+            service = ctx.services.get("pr_supervisor") or PRSupervisor(
+                ctx.settings, ctx.store, supervisor_store=store
+            )
             return {
                 "watch_id": watch_id,
-                "scheduled": bool(store.schedule_now(watch_id=watch_id)),
+                "scheduled": bool(await service.refresh_watch(watch_id)),
             }
 
         @mcp.tool()
-        def retire_pr_watch(watch_id: str) -> dict[str, Any] | None:
+        async def retire_pr_watch(watch_id: str) -> dict[str, Any] | None:
             """Retire a PR watch without deleting its audit history."""
-            watch = store.set_terminal(watch_id, PRWatchStatus.RETIRED)
+            service = ctx.services.get("pr_supervisor") or PRSupervisor(
+                ctx.settings, ctx.store, supervisor_store=store
+            )
+            watch = await service.retire_watch(watch_id)
             return watch.model_dump(mode="json") if watch else None
 
         @mcp.tool()
@@ -605,17 +613,34 @@ class PRSupervisorModule(Module):
             project = ctx.store.get_project(project_id, realm_id=realm)
             if not project:
                 return None
-            policy = PRPolicy(
-                ready_by_default=ready_by_default,
-                auto_notify=auto_notify,
-                agent_merge_on_green=agent_merge_on_green,
-            )
             config = dict(project.tool_config or {})
             if repository:
                 policies = dict(config.get("pr_repository_policies") or {})
+                policy_data = dict(
+                    policies.get(repository)
+                    or config.get("pr_policy")
+                    or {}
+                )
+                policy_data.update(
+                    {
+                        "ready_by_default": ready_by_default,
+                        "auto_notify": auto_notify,
+                        "agent_merge_on_green": agent_merge_on_green,
+                    }
+                )
+                policy = PRPolicy.model_validate(policy_data)
                 policies[repository] = policy.model_dump(mode="json")
                 config["pr_repository_policies"] = policies
             else:
+                policy_data = dict(config.get("pr_policy") or {})
+                policy_data.update(
+                    {
+                        "ready_by_default": ready_by_default,
+                        "auto_notify": auto_notify,
+                        "agent_merge_on_green": agent_merge_on_green,
+                    }
+                )
+                policy = PRPolicy.model_validate(policy_data)
                 config["pr_policy"] = policy.model_dump(mode="json")
             updated = ctx.store.update_project(
                 project_id,

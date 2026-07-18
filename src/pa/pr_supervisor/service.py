@@ -71,13 +71,26 @@ class ExecutorDispatcher:
                         url, watch, event_key, prompt
                     )
                     return str(result.get("state") or "queued")
-                except (httpx.HTTPError, RuntimeError) as exc:
+                except (httpx.ConnectError, RuntimeError) as exc:
                     logger.warning(
                         "PR supervisor remote executor unavailable watch=%s target=%s: %s",
                         watch.id,
                         target,
                         exc,
                     )
+                except httpx.HTTPError as exc:
+                    # A read/protocol failure after the request left this instance is
+                    # ambiguous: the destination may already have queued the prompt.
+                    # Retrying the same event key remotely is safe; falling back to a
+                    # different instance here is not.
+                    logger.warning(
+                        "PR supervisor remote dispatch outcome unknown watch=%s "
+                        "target=%s: %s",
+                        watch.id,
+                        target,
+                        exc,
+                    )
+                    raise
         return await self.dispatch_local(watch, event_key, prompt)
 
     async def _remote_dispatch(
@@ -312,6 +325,7 @@ class PRSupervisor:
 
     async def run_once(self) -> None:
         capability = await self.refresh_capability()
+        await self._reconcile_merged_cards()
         due = self.store.list_due()
         if not due:
             return
@@ -375,6 +389,25 @@ class PRSupervisor:
         if replicate:
             await self._replicate(stored)
         return stored
+
+    async def refresh_watch(self, watch_id: str) -> PRWatch | None:
+        if not self.store.schedule_now(watch_id=watch_id):
+            return None
+        watch = self.store.get_watch(watch_id)
+        await self._replicate(watch)
+        return watch
+
+    async def retire_watch(self, watch_id: str) -> PRWatch | None:
+        watch = self.store.set_terminal(watch_id, PRWatchStatus.RETIRED)
+        if not watch:
+            return None
+        self._audit(
+            watch,
+            "watch_retired",
+            f"{watch.id}:retired:{watch.updated_at.isoformat()}",
+        )
+        await self._replicate(watch)
+        return watch
 
     async def _process_watch(self, watch: PRWatch, grant: LeaseGrant) -> None:
         now = utcnow()
@@ -550,14 +583,7 @@ class PRSupervisor:
     ) -> None:
         state = self._safe_snapshot(snapshot)
         state["supervisor_state"] = "retired_after_merge"
-        if watch.card_id:
-            self.domain_store.update_card(
-                watch.card_id,
-                CardUpdate(lane=CardLane.DONE),
-                realm_id=watch.realm_id,
-                principal_id="instance:pr-supervisor",
-                instance_id=self.settings.instance_id,
-            )
+        state["card_lane"] = "pending" if watch.card_id else None
         gate = evaluate_gate(snapshot, watch.policy, stable_head=True)
         event_key = (
             f"{watch.id}:{snapshot.head_sha}:merged:"
@@ -570,7 +596,7 @@ class PRSupervisor:
             head_sha=snapshot.head_sha,
             payload={
                 "merge_commit_sha": snapshot.merge_commit_sha,
-                "card_lane": "done" if watch.card_id else None,
+                "card_lane": "pending" if watch.card_id else None,
             },
         )
         terminal = self.store.set_terminal(
@@ -582,6 +608,7 @@ class PRSupervisor:
         )
         self.store.increment_metric("merged_watches")
         await self._replicate(terminal)
+        await self._complete_merged_card(terminal)
         prompt = build_executor_prompt(
             watch, snapshot, gate, green=False, merged=True
         )
@@ -589,6 +616,48 @@ class PRSupervisor:
             await self.dispatcher.dispatch(watch, event_key, prompt)
         except Exception:
             logger.exception("Could not notify executor after merge watch=%s", watch.id)
+
+    async def _reconcile_merged_cards(self) -> None:
+        for watch in self.store.list_watches(include_retired=True):
+            if (
+                watch.status == PRWatchStatus.MERGED
+                and watch.card_id
+                and watch.state.get("card_lane") != "done"
+            ):
+                await self._complete_merged_card(watch)
+
+    async def _complete_merged_card(self, watch: PRWatch | None) -> None:
+        if not watch or not watch.card_id or watch.state.get("card_lane") == "done":
+            return
+        try:
+            self.domain_store.update_card(
+                watch.card_id,
+                CardUpdate(lane=CardLane.DONE),
+                realm_id=watch.realm_id,
+                principal_id="instance:pr-supervisor",
+                instance_id=self.settings.instance_id,
+            )
+        except Exception as exc:
+            self._audit(
+                watch,
+                "card_completion_failed",
+                f"{watch.id}:card-completion:{watch.updated_at.isoformat()}",
+                payload={"error": str(exc)[:1000]},
+            )
+            self.store.increment_metric("card_completion_errors")
+            return
+        state = dict(watch.state)
+        state["card_lane"] = "done"
+        completed = self.store.set_terminal(
+            watch.id, PRWatchStatus.MERGED, state=state
+        )
+        self._audit(
+            completed or watch,
+            "card_completed",
+            f"{watch.id}:card-completed",
+            payload={"card_id": watch.card_id, "lane": "done"},
+        )
+        await self._replicate(completed)
 
     def _predict_stable(
         self, watch: PRWatch, snapshot: PRSnapshot, now
@@ -804,11 +873,21 @@ class PRSupervisor:
                     if card.project_id
                     else None
                 )
-                policy_data = (
+                policy_data = dict(
                     (project.tool_config or {}).get("pr_policy", {})
                     if project
                     else {}
                 )
+                if project:
+                    repository_policies = (
+                        (project.tool_config or {}).get(
+                            "pr_repository_policies"
+                        )
+                        or {}
+                    )
+                    policy_data.update(
+                        repository_policies.get(repository, {})
+                    )
                 await self.register_watch(
                     PRWatch(
                         realm_id=card.realm_id,
@@ -856,13 +935,10 @@ class PRSupervisor:
         }
         if event_name not in supported:
             return 0
-        count = self.store.schedule_now(
-            repository=repository, pr_number=number
-        )
-        watch = self.store.find_watch(
-            self.settings.primary_realm, repository, number
-        )
-        if watch:
+        watches = self.store.find_watches(repository, number)
+        count = 0
+        for watch in watches:
+            count += self.store.schedule_now(watch_id=watch.id)
             self._audit(
                 watch,
                 "webhook_received",
@@ -870,6 +946,7 @@ class PRSupervisor:
                 source="github_webhook",
                 payload={"event": event_name, "action": payload.get("action")},
             )
+            await self._replicate(self.store.get_watch(watch.id))
         self.store.increment_metric("webhooks")
         return count
 

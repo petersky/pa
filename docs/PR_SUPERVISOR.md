@@ -29,6 +29,11 @@ lease from the authority before polling or changing watch state:
 - replica updates preserve newer and terminal authority state;
 - executor dispatch uses a fleet-stable event key and an atomic destination claim.
 
+An explicit connection failure may fail over to a replacement executor. An
+ambiguous response failure never falls back to a second instance because the
+origin may already have queued the prompt; PA retries the same idempotent event
+at the intended destination instead.
+
 If the worker owner disappears, another eligible authenticated instance claims
 the expired lease. If the fleet authority or every eligible credential is
 unavailable, the watch becomes visibly blocked with an actionable reason. PA
@@ -81,7 +86,9 @@ Invalid, unsigned, or oversized deliveries are rejected.
 Webhooks schedule an immediate observation. Bounded polling remains enabled as
 the reliable fallback, with exponential backoff, jitter, and policy-controlled
 minimum/maximum intervals. A webhook is an invalidation hint, not trusted state;
-the supervisor always re-reads GitHub.
+the supervisor always re-reads GitHub. Every realm watch associated with that
+same repository and PR is independently audited and the invalidation is
+replicated across the fleet.
 
 ## Gate and executor behavior
 
@@ -125,7 +132,9 @@ head before merging. The service never bypasses branch protection and never
 merges an ambiguous/pending PR itself. After GitHub reports the merge, PA records
 the merge commit, moves the card to Done, notifies the executor, and retires
 active polling. Worktree cleanup remains the executor's responsibility under the
-project repository rules.
+project repository rules. The fenced terminal watch update happens before card
+completion; a failed card projection update is durably visible and retried by
+the always-on supervisor.
 
 ## Policy and controls
 
