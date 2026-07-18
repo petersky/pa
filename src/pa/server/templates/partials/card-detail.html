@@ -39,6 +39,30 @@
   </form>
   <p class="muted">Kind: {{ card.kind.value }} · ID: {{ card.id[:8] }}…</p>
 
+  {% if pr_watches %}
+  <div class="panel-inset">
+    <div class="panel-header">
+      <h3>Pull request supervision</h3>
+      <a class="text-btn" href="/pull-requests?realm={{ card.realm_id }}&watch={{ pr_watches[0].id }}">History</a>
+    </div>
+    {% for watch in pr_watches %}
+    <div class="item">
+      <a href="{{ watch.pr_url }}" target="_blank" rel="noopener">
+        {{ watch.repository }}#{{ watch.pr_number }}
+      </a>
+      <span class="badge">{{ watch.status.value }}</span>
+      {% if watch.state.get('supervisor_state') %}
+      <p class="muted">{{ watch.state.get('supervisor_state') }}</p>
+      {% endif %}
+      {% if watch.last_error %}<p class="danger">{{ watch.last_error }}</p>{% endif %}
+      <p class="muted">
+        Head {{ (watch.head_sha or 'unknown')[:12] }} · owner {{ watch.owner_instance_id or 'unassigned' }}
+      </p>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   {% if agent_enabled | default(true) %}
   <div class="card-agent-pane">
     <div class="panel-header"><h2>Agent</h2></div>

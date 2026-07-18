@@ -70,6 +70,7 @@ class ModuleRegistry:
         from pa.modules.instance import InstanceModule
         from pa.modules.items import ItemsModule
         from pa.modules.projects import ProjectsModule
+        from pa.modules.pr_supervisor import PRSupervisorModule
         from pa.modules.sync import SyncModule
         from pa.modules.theme import ThemeModule
         from pa.modules.trust import TrustModule
@@ -81,6 +82,7 @@ class ModuleRegistry:
             SyncModule(),
             IntegrationsModule(),
             ProjectsModule(),
+            PRSupervisorModule(),
             TrustModule(),
             ItemsModule(),
             InstanceModule(),

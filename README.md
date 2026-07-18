@@ -15,6 +15,9 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for install, updates, launchd, and 
 
 For multi-host fleets (Tailscale, SSH push-install, join tokens), see [docs/MULTI_MACHINE.md](docs/MULTI_MACHINE.md) or the **Fleet** page in the UI.
 
+For durable, fleet-wide GitHub PR lifecycle monitoring and agent-driven merge,
+see [docs/PR_SUPERVISOR.md](docs/PR_SUPERVISOR.md).
+
 ## Architecture
 
 PA uses a **modular kernel**: built-in features and external plugins implement the same `Module` contract, communicate via a hook bus, and register through setuptools entry points (`pa.modules`). See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full guide.
@@ -120,6 +123,8 @@ Environment variables (prefix `PA_`):
 | `PA_DEBUG` | `false` | Debug logging, hook history, dev tools |
 | `PA_DEV_TOOLS` | `false` | In-browser developer panel (auto-on with debug) |
 | `PA_LOG_LEVEL` | `INFO` | Log level (`DEBUG`, `INFO`, …) |
+| `PA_GITHUB_TOKEN` | — | Instance-local GitHub token used by the PR supervisor |
+| `PA_GITHUB_WEBHOOK_SECRET` | — | Instance-local secret for HMAC-SHA256 webhook verification |
 | `PA_RELEASE_TRACK` | `release` | Update track: `release`, `beta`, `alpha`, `dev`, or `pypi` |
 | `PA_UPDATE_CHANNEL` | *(alias)* | Legacy alias for `PA_RELEASE_TRACK` |
 | `PA_UPDATE_REPO` | `petersky/pa` | GitHub repo for release checks |

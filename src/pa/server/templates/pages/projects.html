@@ -41,6 +41,33 @@
     {% if project.repos %}
     <p class="muted">Repos: {% for r in project.repos %}{{ r.url }}{% if not loop.last %}, {% endif %}{% endfor %}</p>
     {% endif %}
+    {% set pr_policy = (project.tool_config or {}).get('pr_policy', {}) %}
+    <details class="panel-inset">
+      <summary>Pull request policy</summary>
+      <form class="stack"
+            hx-post="/partials/projects/{{ project.id }}/pr-policy"
+            hx-target="#app-view"
+            hx-swap="innerHTML">
+        <input type="hidden" name="realm" value="{{ active_realm }}">
+        <input type="hidden" name="csrf" value="{{ csrf_token }}">
+        <label>
+          <input type="checkbox" name="ready_by_default"
+                 {% if pr_policy.get('ready_by_default', true) %}checked{% endif %}>
+          Open associated PRs ready for review by default
+        </label>
+        <label>
+          <input type="checkbox" name="auto_notify"
+                 {% if pr_policy.get('auto_notify', true) %}checked{% endif %}>
+          Wake an executor when action is required
+        </label>
+        <label>
+          <input type="checkbox" name="agent_merge_on_green"
+                 {% if pr_policy.get('agent_merge_on_green', true) %}checked{% endif %}>
+          Ask the executor to revalidate and merge a stable green PR
+        </label>
+        <button type="submit">Save PR policy</button>
+      </form>
+    </details>
     <h4>Cards ({{ cards | length }})</h4>
     {% include "partials/cards.html" %}
   </div>

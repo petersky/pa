@@ -19,6 +19,12 @@
       <strong>{{ s.title or s.label or s.agent_name }}</strong>
       <span class="muted">{{ s.status }}</span>
       {% if s.model_id %}<span class="muted">{{ s.model_id }}</span>{% endif %}
+      {% for watch in pr_watches_by_session.get(s.id, []) %}
+      <a class="badge" href="/pull-requests?watch={{ watch.id }}"
+         title="{{ watch.repository }}#{{ watch.pr_number }} PR supervision">
+        PR #{{ watch.pr_number }} · {{ watch.status.value }}
+      </a>
+      {% endfor %}
     </li>
     {% endfor %}
     {% else %}

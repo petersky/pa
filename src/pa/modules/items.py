@@ -37,6 +37,19 @@ def _active_project(request: Request) -> str | None:
     return request.query_params.get("project")
 
 
+def _pr_watch_context(request: Request, card_id: str) -> dict:
+    store = request.app.state.ctx.services.get("pr_supervisor_store")
+    if not store:
+        return {"pr_watches": [], "pr_watch_events": {}}
+    watches = store.list_watches(card_id=card_id, include_retired=True)
+    return {
+        "pr_watches": watches,
+        "pr_watch_events": {
+            watch.id: store.list_events(watch.id, limit=20) for watch in watches
+        },
+    }
+
+
 def _cards_context(request: Request, *, kind: CardKind | None = None, lane: CardLane | None = None) -> dict:
     store = get_store()
     realm = _active_realm(request)
@@ -279,6 +292,7 @@ def card_detail_partial(request: Request, card_id: str, realm: str | None = None
             "lanes": list(CardLane),
             "csrf_token": request.cookies.get("pa_csrf", ""),
             "agent_enabled": request.app.state.ctx.settings.agent_enabled,
+            **_pr_watch_context(request, card_id),
         },
     )
 
@@ -309,6 +323,7 @@ def card_detail_update(
             "lanes": list(CardLane),
             "csrf_token": request.cookies.get("pa_csrf", ""),
             "agent_enabled": settings.agent_enabled,
+            **_pr_watch_context(request, card_id),
         },
     )
 
