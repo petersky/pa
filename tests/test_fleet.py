@@ -31,6 +31,7 @@ from pa.fleet.remote_install import (
     build_remote_env,
 )
 from pa.network.peer_table import PeerTable
+from pa.modules.fleet import fleet_agent_provider_login_start
 
 
 class FleetRegistryReloadTests(unittest.TestCase):
@@ -67,6 +68,29 @@ class FleetRegistryReloadTests(unittest.TestCase):
         c2 = FleetRegistry(self.data_dir, "fleet-a")
         c2._tokens.clear()
         self.assertIsNotNone(c2.consume_join_token(t2))
+
+    def test_codex_login_start_proxies_consent_only_to_target(self) -> None:
+        request = MagicMock()
+        with patch(
+            "pa.modules.fleet._proxy_agent_providers",
+            return_value={"job_id": "remote-job", "state": "pending"},
+        ) as proxy:
+            result = __import__("asyncio").run(
+                fleet_agent_provider_login_start(
+                    request,
+                    "peer-1",
+                    "codex",
+                    {"consent": True, "timeout_seconds": 600},
+                )
+            )
+        self.assertEqual(result["job_id"], "remote-job")
+        proxy.assert_called_once_with(
+            request,
+            "peer-1",
+            "POST",
+            "/codex/login-jobs",
+            body={"consent": True, "timeout_seconds": 600},
+        )
 
 
 class FleetJoinWiringTests(unittest.TestCase):

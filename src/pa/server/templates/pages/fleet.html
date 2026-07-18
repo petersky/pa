@@ -61,6 +61,16 @@
       </tbody>
     </table>
     <p class="muted small" id="pa-fleet-live-status" aria-live="polite">Checking instance health…</p>
+    <div class="panel-inset stack" id="pa-codex-login-panel" hidden>
+      <div class="panel-header"><h3>Sign in with ChatGPT</h3></div>
+      <p class="muted small">This starts Codex device authentication on the selected instance as the PA service user. Credentials stay on that instance.</p>
+      <p id="pa-codex-login-instance"></p>
+      <p id="pa-codex-login-instructions" aria-live="polite"></p>
+      <div class="form-actions">
+        <button type="button" class="primary" id="pa-codex-login-confirm">Start sign-in</button>
+        <button type="button" class="ghost" id="pa-codex-login-cancel">Close</button>
+      </div>
+    </div>
     <div class="panel-inset stack" id="pa-fleet-update-panel" hidden>
       <div class="panel-header"><h3>Fleet update</h3></div>
       <form class="stack" id="pa-fleet-update-form">

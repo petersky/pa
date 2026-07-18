@@ -6,9 +6,23 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+from fastapi import HTTPException
 
 from pa.acp.providers.base import ProviderConfigureBody
-from pa.acp.providers.registry import DEFAULT_PROVIDER_ID, get_provider, list_provider_ids
+from pa.acp.providers.codex import _codex_auth_status
+from pa.acp.providers.codex_auth import (
+    CodexLoginJob,
+    CodexLoginJobStore,
+    LoginState,
+    redact_login_output,
+)
+from pa.acp.providers.registry import (
+    DEFAULT_PROVIDER_ID,
+    get_provider,
+    list_provider_ids,
+)
 from pa.acp.providers.resolve import resolve_agent_provider, resolve_provider_id
 from pa.acp.surfaces import (
     SURFACE_CHAT_CARD,
@@ -18,6 +32,7 @@ from pa.acp.surfaces import (
 )
 from pa.config import Settings
 from pa.core.preferences import SurfaceAgentPrefs, get_preferences_store
+from pa.modules.agent_providers import LoginBody, start_provider_login
 
 
 class AcpProviderTests(unittest.TestCase):
@@ -136,10 +151,125 @@ class AcpProviderTests(unittest.TestCase):
             ),
         )
         self.assertEqual(status.id, "codex")
-        meta = json.loads((self.data_dir / "agent_providers" / "codex.json").read_text())
+        meta = json.loads(
+            (self.data_dir / "agent_providers" / "codex.json").read_text()
+        )
         self.assertEqual(meta["env"]["NO_BROWSER"], "1")
         creds = json.loads((self.data_dir / "integrations" / "codex.json").read_text())
         self.assertEqual(creds["CODEX_API_KEY"], "sk-test")
+
+    def test_codex_status_recognizes_chatgpt_login(self) -> None:
+        completed = __import__("subprocess").CompletedProcess(
+            ["codex", "login", "status"], 0, "Logged in using ChatGPT\n", ""
+        )
+        with patch("pa.acp.providers.codex.subprocess.run", return_value=completed):
+            configured, method, message, error = _codex_auth_status(
+                "/usr/bin/codex", creds={}, env={}
+            )
+        self.assertTrue(configured)
+        self.assertEqual(method, "chatgpt_oauth")
+        self.assertIn("ChatGPT", message)
+        self.assertIsNone(error)
+
+    def test_codex_status_prefers_target_api_key_without_exposing_it(self) -> None:
+        secret = "sk-test-never-return"
+        configured, method, message, error = _codex_auth_status(
+            None, creds={"CODEX_API_KEY": secret}, env={}
+        )
+        self.assertTrue(configured)
+        self.assertEqual(method, "api_key")
+        self.assertNotIn(secret, message)
+        self.assertIsNone(error)
+
+    def test_codex_status_handles_timeout(self) -> None:
+        import subprocess
+
+        with patch(
+            "pa.acp.providers.codex.subprocess.run",
+            side_effect=subprocess.TimeoutExpired(["codex", "login", "status"], 10),
+        ):
+            configured, method, message, error = _codex_auth_status(
+                "/usr/bin/codex", creds={}, env={}
+            )
+        self.assertFalse(configured)
+        self.assertEqual(method, "unknown")
+        self.assertIn("timed out", message)
+        self.assertIn("timed out", error or "")
+
+    def test_codex_status_handles_logout_and_malformed_credentials(self) -> None:
+        import subprocess
+
+        logged_out = subprocess.CompletedProcess(
+            ["codex", "login", "status"], 1, "Not logged in\n", ""
+        )
+        malformed_secret = "refresh_token=must-not-leak"
+        malformed = subprocess.CompletedProcess(
+            ["codex", "login", "status"], 1, "", malformed_secret
+        )
+        with patch(
+            "pa.acp.providers.codex.subprocess.run",
+            side_effect=[logged_out, malformed],
+        ):
+            logged_out_status = _codex_auth_status("/usr/bin/codex", creds={}, env={})
+            malformed_status = _codex_auth_status("/usr/bin/codex", creds={}, env={})
+        self.assertEqual(logged_out_status[:2], (False, "none"))
+        self.assertEqual(malformed_status[:2], (False, "unknown"))
+        self.assertNotIn(malformed_secret, " ".join(str(v) for v in malformed_status))
+
+    def test_login_output_redacts_credentials_but_keeps_device_instructions(
+        self,
+    ) -> None:
+        self.assertEqual(
+            redact_login_output("access_token=very-secret"),
+            "[credential output redacted]",
+        )
+        self.assertIn(
+            "[redacted]",
+            redact_login_output("Bearer abcdefghijklmnopqrstuvwxyz0123456789"),
+        )
+        instructions = redact_login_output(
+            "Open https://auth.openai.com/device and enter ABCD-EFGH"
+        )
+        self.assertIn("https://auth.openai.com/device", instructions)
+        self.assertIn("ABCD-EFGH", instructions)
+
+    def test_login_store_marks_active_snapshot_interrupted_on_restart(self) -> None:
+        directory = self.data_dir / "agent_provider_jobs" / "codex"
+        directory.mkdir(parents=True)
+        job = CodexLoginJob(
+            job_id="job-1",
+            state=LoginState.WAITING_FOR_USER,
+            created_at="2026-01-01T00:00:00+00:00",
+            updated_at="2026-01-01T00:00:00+00:00",
+            expires_at="2026-01-01T00:10:00+00:00",
+            timeout_seconds=600,
+        )
+        (directory / "job-1.json").write_text(job.model_dump_json())
+        loaded = CodexLoginJobStore(self.data_dir).get("job-1")
+        self.assertIsNotNone(loaded)
+        self.assertEqual(loaded.state, LoginState.INTERRUPTED)
+
+    def test_login_api_requires_explicit_consent_without_starting_process(self) -> None:
+        request = MagicMock()
+        request.app.state.ctx.settings.data_dir = self.data_dir
+        with (
+            patch("pa.modules.agent_providers.resolve_codex_cli") as resolve,
+            self.assertRaises(HTTPException) as raised,
+        ):
+            start_provider_login(request, "codex", LoginBody(consent=False))
+        self.assertEqual(raised.exception.status_code, 400)
+        resolve.assert_not_called()
+
+    def test_login_api_missing_cli_is_actionable(self) -> None:
+        request = MagicMock()
+        request.app.state.ctx.settings.data_dir = self.data_dir
+        with (
+            patch("pa.modules.agent_providers.resolve_codex_cli", return_value=None),
+            self.assertRaises(HTTPException) as raised,
+        ):
+            start_provider_login(request, "codex", LoginBody(consent=True))
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertIn("not installed", str(raised.exception.detail))
 
     def test_unknown_provider_raises(self) -> None:
         with self.assertRaises(KeyError):

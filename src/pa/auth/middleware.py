@@ -64,8 +64,17 @@ def _is_sync_path(path: str) -> bool:
 def _is_fleet_instance_route(request: Request) -> bool:
     if (request.method, request.url.path) in FLEET_INSTANCE_ROUTES:
         return True
-    return request.method == "GET" and bool(
-        re.fullmatch(r"/api/fleet/peer-update/[A-Za-z0-9-]{1,80}", request.url.path)
+    if request.method == "GET" and re.fullmatch(
+        r"/api/fleet/peer-update/[A-Za-z0-9-]{1,80}", request.url.path
+    ):
+        return True
+    # Fleet provider operations are target-local and already proxied with the
+    # shared instance credential. Keep the path character set deliberately narrow.
+    return request.method in {"GET", "POST"} and bool(
+        re.fullmatch(
+            r"/api/agent/providers(?:/[A-Za-z0-9_-]{1,80}(?:/(?:install|update|configure|probe|codex-cli/install|login-jobs(?:/[A-Za-z0-9-]{1,80}(?:/(?:events|cancel))?)?))?)?",
+            request.url.path,
+        )
     )
 
 

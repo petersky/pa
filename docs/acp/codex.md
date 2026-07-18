@@ -1,9 +1,10 @@
 # Codex ACP (`codex-acp`)
 
 **Provider id:** `codex`  
-**Last verified:** 2026-07-11 (from [agentclientprotocol/codex-acp](https://github.com/agentclientprotocol/codex-acp) README)  
+**Last verified:** 2026-07-17 (Codex CLI 0.144.5 and official Codex authentication guidance)
 **Package:** `@agentclientprotocol/codex-acp`  
 **Upstream:** [OpenAI Codex](https://github.com/openai/codex)
+**Official auth guidance:** [Codex authentication](https://learn.chatgpt.com/docs/auth)
 
 ## Spawn
 
@@ -16,16 +17,44 @@ Optional: `CODEX_PATH` to use a specific Codex binary instead of the bundled dep
 
 ```bash
 pa agent-provider install --provider codex   # npm install -g @agentclientprotocol/codex-acp
+pa agent-provider install-codex-cli          # npm install -g @openai/codex
 pa agent-provider configure --provider codex --api-key "$CODEX_API_KEY" --no-browser
 ```
 
 ## Auth
 
-Advertised during ACP initialize. Methods (upstream):
+`codex-acp` and the official Codex CLI are separate dependencies. The adapter runs ACP;
+the CLI owns ChatGPT/device authentication and the target user's Codex credential store.
+Installing or probing `codex-acp` never starts a login.
 
-- ChatGPT login (browser). Use `NO_BROWSER=1` on headless / remote PA hosts (PA configure `--no-browser` sets this).
+Supported authentication methods:
+
+- ChatGPT OAuth. For headless and remote hosts, explicitly start device auth:
+
+  ```bash
+  pa agent-provider login --provider codex --consent [--instance INSTANCE_ID]
+  pa agent-provider login-status JOB_ID [--instance INSTANCE_ID]
+  pa agent-provider login-cancel JOB_ID [--instance INSTANCE_ID]
+  ```
+
+  PA launches `codex login --device-auth` as the same OS user running PA. The
+  verification URL and one-time code are safe to show to the controller. Tokens
+  remain in that target user's Codex credential store and are never returned or
+  copied to the controller.
 - API key: `CODEX_API_KEY` or `OPENAI_API_KEY` (PA stores keys in `~/.pa/integrations/codex.json` on the target host only).
+- Codex access token, when configured for trusted enterprise automation.
 - Custom OpenAI-compatible gateway when the client opts into gateway auth.
+
+`ProviderStatus.auth_method` is one of `none`, `chatgpt_oauth`, `api_key`,
+`access_token`, or `unknown`. PA prefers explicit target-process credentials and
+otherwise runs the bounded, read-only `codex login status`. Status output and
+credential-file contents are never returned. Missing CLI, status timeout, invalid
+credentials, and unknown future CLI responses are reported actionably.
+
+Device login jobs last 10 minutes by default (configurable from 1–30 minutes),
+can be cancelled, persist only redacted public events, and become `interrupted`
+after a PA restart. Refresh/reconnect using the job id; start a new job after an
+interruption or timeout. Only one active Codex login job is allowed per instance.
 
 ## Capabilities (known)
 
@@ -64,13 +93,19 @@ Treat resume as best-effort: PA uses initialize session capabilities; on failure
 pa agent-provider status --provider codex
 pa agent-provider install --provider codex --instance <fleet-instance-id>
 pa agent-provider configure --provider codex --api-key sk-... --no-browser
+pa agent-provider login --provider codex --consent --instance <fleet-instance-id>
 pa agent-provider probe --provider codex
 ```
 
-MCP tools: `agent_provider_install`, `agent_provider_configure`, `agent_provider_probe` with optional `instance_id`.
+MCP tools include `agent_provider_install`, `agent_provider_configure`,
+`agent_provider_probe`, `agent_provider_login_start`,
+`agent_provider_login_status`, and `agent_provider_login_cancel`, with optional
+`instance_id`. Login start requires `consent=true`.
 
 ## Limitations
 
 - Requires Node.js/`npm` or `npx` on the PA host for install/run.
-- Browser ChatGPT auth is unsuitable for most fleet/service hosts—prefer API key + `NO_BROWSER`.
+- Device auth requires the official `@openai/codex` CLI on the target service user's PATH.
+- OS keyring availability depends on how the PA service user/session is configured;
+  Codex may use `~/.codex/auth.json` when configured for file storage. Treat it as a secret.
 - Do not sync API keys via realm sync; configure each host (or use fleet proxy configure which writes only on the peer).

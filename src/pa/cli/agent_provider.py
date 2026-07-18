@@ -9,6 +9,8 @@ import httpx
 import typer
 
 from pa.acp.providers.base import ProviderConfigureBody
+from pa.acp.providers.codex_auth import get_codex_login_store, resolve_codex_cli
+from pa.acp.providers.codex import install_codex_cli
 from pa.acp.providers.registry import get_provider, list_providers
 from pa.acp.providers.resolve import list_provider_summaries
 from pa.config import get_settings
@@ -67,8 +69,10 @@ def status_cmd(
     if instance:
         data = _remote(instance, "GET", f"/api/agent/providers/{provider}")
     else:
-        data = get_provider(provider).status(get_settings().data_dir).model_dump(
-            mode="json"
+        data = (
+            get_provider(provider)
+            .status(get_settings().data_dir)
+            .model_dump(mode="json")
         )
     typer.echo(json.dumps(data, indent=2))
 
@@ -82,8 +86,10 @@ def install_cmd(
     if instance:
         data = _remote(instance, "POST", f"/api/agent/providers/{provider}/install")
     else:
-        data = get_provider(provider).install(get_settings().data_dir).model_dump(
-            mode="json"
+        data = (
+            get_provider(provider)
+            .install(get_settings().data_dir)
+            .model_dump(mode="json")
         )
     typer.echo(json.dumps(data, indent=2))
     if isinstance(data, dict) and not data.get("ok", True):
@@ -99,8 +105,10 @@ def update_cmd(
     if instance:
         data = _remote(instance, "POST", f"/api/agent/providers/{provider}/update")
     else:
-        data = get_provider(provider).update(get_settings().data_dir).model_dump(
-            mode="json"
+        data = (
+            get_provider(provider)
+            .update(get_settings().data_dir)
+            .model_dump(mode="json")
         )
     typer.echo(json.dumps(data, indent=2))
     if isinstance(data, dict) and not data.get("ok", True):
@@ -157,6 +165,88 @@ def probe_cmd(
     typer.echo(json.dumps(data, indent=2))
     if isinstance(data, dict) and not data.get("ok", False):
         raise typer.Exit(1)
+
+
+@agent_provider_app.command("login")
+def login_cmd(
+    provider: Annotated[str, typer.Option("--provider", "-p")] = "codex",
+    instance: Annotated[Optional[str], typer.Option("--instance")] = None,
+    consent: Annotated[
+        bool, typer.Option("--consent", help="Confirm starting ChatGPT device sign-in")
+    ] = False,
+    timeout_seconds: Annotated[int, typer.Option("--timeout")] = 600,
+) -> None:
+    """Explicitly start a bounded Codex ChatGPT device-login job."""
+    if provider != "codex" or not consent:
+        raise typer.BadParameter(
+            "Codex device login requires --provider codex --consent"
+        )
+    body = {"consent": True, "timeout_seconds": timeout_seconds}
+    if instance:
+        data = _remote(
+            instance, "POST", f"/api/agent/providers/{provider}/login-jobs", body
+        )
+    else:
+        codex = resolve_codex_cli()
+        if not codex:
+            raise typer.BadParameter("Codex CLI is not installed on this instance")
+        store = get_codex_login_store(get_settings().data_dir)
+        if store.latest_active():
+            raise typer.BadParameter("A Codex login is already active")
+        job = store.create(timeout_seconds=timeout_seconds)
+        store.start(job, codex)
+        data = job.public_dict()
+    typer.echo(json.dumps(data, indent=2))
+
+
+@agent_provider_app.command("install-codex-cli")
+def install_codex_cli_cmd(
+    instance: Annotated[Optional[str], typer.Option("--instance")] = None,
+) -> None:
+    """Install the official Codex CLI separately from codex-acp."""
+    if instance:
+        data = _remote(instance, "POST", "/api/agent/providers/codex/codex-cli/install")
+    else:
+        data = install_codex_cli().model_dump(mode="json")
+    typer.echo(json.dumps(data, indent=2))
+    if isinstance(data, dict) and not data.get("ok", False):
+        raise typer.Exit(1)
+
+
+@agent_provider_app.command("login-status")
+def login_status_cmd(
+    job_id: Annotated[str, typer.Argument()],
+    instance: Annotated[Optional[str], typer.Option("--instance")] = None,
+) -> None:
+    """Show a Codex login job (verification instructions, never credentials)."""
+    if instance:
+        data = _remote(
+            instance, "GET", f"/api/agent/providers/codex/login-jobs/{job_id}"
+        )
+    else:
+        job = get_codex_login_store(get_settings().data_dir).get(job_id)
+        if not job:
+            raise typer.BadParameter("Login job not found")
+        data = job.public_dict()
+    typer.echo(json.dumps(data, indent=2))
+
+
+@agent_provider_app.command("login-cancel")
+def login_cancel_cmd(
+    job_id: Annotated[str, typer.Argument()],
+    instance: Annotated[Optional[str], typer.Option("--instance")] = None,
+) -> None:
+    """Cancel a Codex login job."""
+    if instance:
+        data = _remote(
+            instance, "POST", f"/api/agent/providers/codex/login-jobs/{job_id}/cancel"
+        )
+    else:
+        job = get_codex_login_store(get_settings().data_dir).cancel(job_id)
+        if not job:
+            raise typer.BadParameter("Login job not found")
+        data = job.public_dict()
+    typer.echo(json.dumps(data, indent=2))
 
 
 @agent_provider_app.command("ids")

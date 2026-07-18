@@ -632,8 +632,7 @@ async def peer_update(request: Request, body: dict) -> dict:
     existing = _read_peer_operation(settings, operation_id)
     if existing:
         if existing.get("target_version") != target_version or (
-            target_identity
-            and existing.get("target_identity") != target_identity
+            target_identity and existing.get("target_identity") != target_identity
         ):
             raise HTTPException(
                 status_code=409,
@@ -1240,6 +1239,62 @@ async def fleet_agent_provider_configure(
 @router.post("/fleet/instances/{instance_id}/agent-providers/{provider_id}/probe")
 def fleet_agent_provider_probe(request: Request, instance_id: str, provider_id: str):
     return _proxy_agent_providers(request, instance_id, "POST", f"/{provider_id}/probe")
+
+
+@router.post("/fleet/instances/{instance_id}/agent-providers/{provider_id}/login-jobs")
+async def fleet_agent_provider_login_start(
+    request: Request, instance_id: str, provider_id: str, body: dict
+):
+    return _proxy_agent_providers(
+        request, instance_id, "POST", f"/{provider_id}/login-jobs", body=body
+    )
+
+
+@router.post(
+    "/fleet/instances/{instance_id}/agent-providers/{provider_id}/codex-cli/install"
+)
+def fleet_agent_provider_codex_cli_install(
+    request: Request, instance_id: str, provider_id: str
+):
+    return _proxy_agent_providers(
+        request, instance_id, "POST", f"/{provider_id}/codex-cli/install"
+    )
+
+
+@router.get(
+    "/fleet/instances/{instance_id}/agent-providers/{provider_id}/login-jobs/{job_id}"
+)
+def fleet_agent_provider_login_status(
+    request: Request, instance_id: str, provider_id: str, job_id: str
+):
+    return _proxy_agent_providers(
+        request, instance_id, "GET", f"/{provider_id}/login-jobs/{job_id}"
+    )
+
+
+@router.get(
+    "/fleet/instances/{instance_id}/agent-providers/{provider_id}/login-jobs/{job_id}/events"
+)
+def fleet_agent_provider_login_events(
+    request: Request, instance_id: str, provider_id: str, job_id: str, after: int = 0
+):
+    return _proxy_agent_providers(
+        request,
+        instance_id,
+        "GET",
+        f"/{provider_id}/login-jobs/{job_id}/events?after={after}",
+    )
+
+
+@router.post(
+    "/fleet/instances/{instance_id}/agent-providers/{provider_id}/login-jobs/{job_id}/cancel"
+)
+def fleet_agent_provider_login_cancel(
+    request: Request, instance_id: str, provider_id: str, job_id: str
+):
+    return _proxy_agent_providers(
+        request, instance_id, "POST", f"/{provider_id}/login-jobs/{job_id}/cancel"
+    )
 
 
 @ui_router.get("/fleet")
