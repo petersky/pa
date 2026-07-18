@@ -153,6 +153,24 @@ class PRSupervisorStoreTests(unittest.TestCase):
         self.assertEqual(stored.fence_token, 9)
         self.assertEqual(stored.owner_instance_id, "always-on-mini")
 
+    def test_older_replica_state_still_advances_fence_baseline(self) -> None:
+        local = self.store.get_watch("watch-1")
+        local.fence_token = 4
+        local.owner_instance_id = "newer-state-owner"
+        local.updated_at = utcnow() + timedelta(seconds=10)
+        self.store.upsert_watch(local, preserve_lease=False)
+
+        replica = local.model_copy(deep=True)
+        replica.fence_token = 9
+        replica.owner_instance_id = "higher-fence-owner"
+        replica.lease_expires_at = utcnow() + timedelta(seconds=90)
+        replica.updated_at = utcnow() - timedelta(seconds=10)
+        stored = self.store.upsert_watch(replica, preserve_lease=True)
+
+        self.assertEqual(stored.fence_token, 9)
+        self.assertEqual(stored.owner_instance_id, "higher-fence-owner")
+        self.assertEqual(stored.status, local.status)
+
     def test_multi_instance_lease_failover_and_fencing(self) -> None:
         now = utcnow()
         first = self.store.try_acquire_lease(

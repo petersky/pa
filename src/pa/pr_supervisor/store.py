@@ -151,7 +151,7 @@ class PRSupervisorStore:
                 ).fetchone()
             existing = self._row_to_watch(row) if row else None
             if existing:
-                if preserve_lease and (
+                skip_replica_state = preserve_lease and (
                     existing.updated_at > watch.updated_at
                     or (
                         existing.status
@@ -163,8 +163,20 @@ class PRSupervisorStore:
                         and watch.status
                         in {PRWatchStatus.ACTIVE, PRWatchStatus.BLOCKED}
                     )
-                ):
-                    return existing
+                )
+                if skip_replica_state:
+                    if watch.fence_token <= existing.fence_token:
+                        return existing
+                    # The replica's state is stale, but its fence generation is
+                    # independently monotonic and must still advance the next
+                    # authority's baseline.
+                    replica_owner = watch.owner_instance_id
+                    replica_fence = watch.fence_token
+                    replica_expiry = watch.lease_expires_at
+                    watch = existing.model_copy(deep=True)
+                    watch.owner_instance_id = replica_owner
+                    watch.fence_token = replica_fence
+                    watch.lease_expires_at = replica_expiry
                 watch.id = existing.id
                 watch.created_at = existing.created_at
                 if preserve_lease:
