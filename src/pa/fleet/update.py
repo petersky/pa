@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import fcntl
+import hashlib
 import json
-import time
-from datetime import UTC, datetime
+import time  # noqa: F401 - retained for compatibility with workflow clock mocks
+from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
@@ -27,6 +30,7 @@ class UpdatePhase(StrEnum):
     QUIESCING = "quiescing"
     INSTALLING = "installing"
     RESTARTING = "restarting"
+    WAITING_INSTALL = "waiting_install"
     VERIFYING = "verifying"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
@@ -41,6 +45,7 @@ class FleetUpdateRequest(BaseModel):
     quiesce_timeout: float = Field(default=300.0, ge=1.0, le=3600.0)
     force: bool = False
     health_timeout: float = Field(default=180.0, ge=10.0, le=1800.0)
+    install_timeout: float = Field(default=900.0, ge=10.0, le=7200.0)
 
     @field_validator("target_version")
     @classmethod
@@ -58,6 +63,7 @@ class FleetUpdateJob(BaseModel):
     quiesce_timeout: float = 300.0
     force: bool = False
     health_timeout: float = 180.0
+    install_timeout: float = 900.0
     phase: UpdatePhase = UpdatePhase.PENDING
     current_version: str | None = None
     current_identity: str | None = None
@@ -72,6 +78,9 @@ class FleetUpdateJob(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     completed_at: datetime | None = None
+    install_deadline: datetime | None = None
+    health_deadline: datetime | None = None
+    initial_process_id: int | None = None
 
     def public_dict(self) -> dict[str, Any]:
         return self.model_dump(mode="json")
@@ -82,7 +91,9 @@ class FleetUpdateJobStore:
 
     def __init__(self, data_dir: Path) -> None:
         self.directory = data_dir / "fleet_update_jobs"
+        self.lock_directory = self.directory / ".locks"
         self.directory.mkdir(parents=True, exist_ok=True)
+        self.lock_directory.mkdir(parents=True, exist_ok=True)
         self._jobs: dict[str, FleetUpdateJob] = {}
         self._tasks: dict[str, asyncio.Task[Any]] = {}
         self._load()
@@ -103,25 +114,43 @@ class FleetUpdateJobStore:
             job.next_event_seq = max(job.next_event_seq, next_seq)
             self._jobs[job.job_id] = job
 
+    def _reload_jobs(self) -> None:
+        self._jobs.clear()
+        self._load()
+
+    @contextmanager
+    def _instance_lock(self, instance_id: str):
+        digest = hashlib.sha256(instance_id.encode()).hexdigest()
+        path = self.lock_directory / f"{digest}.lock"
+        with path.open("a+") as handle:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
     def create(
         self, instance: Any, request: FleetUpdateRequest, default_channel: str
     ) -> FleetUpdateJob:
-        active = self.active_for_instance(instance.instance_id)
-        if active:
-            raise RuntimeError(active.job_id)
-        job = FleetUpdateJob(
-            instance_id=instance.instance_id,
-            instance_name=instance.name,
-            instance_url=instance.url.rstrip("/"),
-            channel=request.channel or default_channel,
-            target_version=request.target_version,
-            quiesce_timeout=request.quiesce_timeout,
-            force=request.force,
-            health_timeout=request.health_timeout,
-        )
-        self._jobs[job.job_id] = job
-        self.persist(job)
-        return job
+        with self._instance_lock(instance.instance_id):
+            self._reload_jobs()
+            active = self.active_for_instance(instance.instance_id)
+            if active:
+                raise RuntimeError(active.job_id)
+            job = FleetUpdateJob(
+                instance_id=instance.instance_id,
+                instance_name=instance.name,
+                instance_url=instance.url.rstrip("/"),
+                channel=request.channel or default_channel,
+                target_version=request.target_version,
+                quiesce_timeout=request.quiesce_timeout,
+                force=request.force,
+                health_timeout=request.health_timeout,
+                install_timeout=request.install_timeout,
+            )
+            self._jobs[job.job_id] = job
+            self.persist(job)
+            return job
 
     def get(self, job_id: str) -> FleetUpdateJob | None:
         return self._jobs.get(job_id)
@@ -197,6 +226,10 @@ async def run_update_job(
                         "Peer identity did not match the registered fleet instance"
                     )
                 job.current_version = str(status.get("version") or "") or None
+                process_id = status.get("process_id")
+                job.initial_process_id = (
+                    int(process_id) if isinstance(process_id, int | str) else None
+                )
                 job.current_identity = str(status.get("install_revision") or "") or None
                 if not job.current_version:
                     raise RuntimeError("Peer did not report its current version")
@@ -318,6 +351,9 @@ async def run_update_job(
             if job.phase == UpdatePhase.QUIESCING:
                 # Persist this checkpoint before the non-idempotent peer request.
                 # Recovery from INSTALLING verifies the outcome and never resends it.
+                job.install_deadline = datetime.now(UTC) + timedelta(
+                    seconds=job.install_timeout
+                )
                 store.event(
                     job,
                     UpdatePhase.INSTALLING,
@@ -333,6 +369,7 @@ async def run_update_job(
                             "channel": job.channel,
                             "target_version": job.expected_version,
                             "target_identity": job.expected_identity,
+                            "operation_id": job.job_id,
                         },
                     )
                     accepted_version = str(result.get("target_version") or "") or None
@@ -359,23 +396,69 @@ async def run_update_job(
                     pass
                 store.event(
                     job,
-                    UpdatePhase.RESTARTING,
-                    "Update request sent; waiting for the peer service to restart",
+                    UpdatePhase.WAITING_INSTALL,
+                    "Update accepted; waiting for installation to complete",
                 )
 
         if job.phase == UpdatePhase.INSTALLING:
             store.event(
                 job,
-                UpdatePhase.RESTARTING,
-                "Controller recovered after update dispatch; verifying without resending",
+                UpdatePhase.WAITING_INSTALL,
+                "Controller recovered after dispatch; waiting without resending",
             )
+        if job.phase == UpdatePhase.WAITING_INSTALL:
+            if not job.install_deadline:
+                job.install_deadline = datetime.now(UTC) + timedelta(
+                    seconds=job.install_timeout
+                )
+                store.persist(job)
+            last_install_error = "peer has not reported install completion"
+            while datetime.now(UTC) < job.install_deadline:
+                try:
+                    async with httpx.AsyncClient(timeout=5.0) as client:
+                        operation = await _peer_json(
+                            client,
+                            "GET",
+                            f"{base}/api/fleet/peer-update/{job.job_id}",
+                            settings,
+                        )
+                    operation_status = str(operation.get("status") or "")
+                    if operation_status == "failed":
+                        raise RuntimeError(
+                            f"Peer installation failed: {operation.get('error') or 'unknown error'}"
+                        )
+                    if operation_status in {"installed", "restarting", "completed"}:
+                        job.health_deadline = datetime.now(UTC) + timedelta(
+                            seconds=job.health_timeout
+                        )
+                        store.event(
+                            job,
+                            UpdatePhase.RESTARTING,
+                            "Installation complete; waiting for restarted peer health",
+                        )
+                        break
+                    last_install_error = (
+                        f"peer install status is {operation_status or 'unknown'}"
+                    )
+                except httpx.HTTPError as exc:
+                    last_install_error = str(exc)
+                await asyncio.sleep(2)
+            if job.phase == UpdatePhase.WAITING_INSTALL:
+                raise RuntimeError(
+                    f"Peer installation timed out after {job.install_timeout:g}s: "
+                    f"{last_install_error}"
+                )
         elif job.phase not in {UpdatePhase.RESTARTING, UpdatePhase.VERIFYING}:
             raise RuntimeError(f"Cannot resume update from phase {job.phase.value}")
 
         await asyncio.sleep(1)
-        deadline = time.monotonic() + job.health_timeout
+        if not job.health_deadline:
+            job.health_deadline = datetime.now(UTC) + timedelta(
+                seconds=job.health_timeout
+            )
+            store.persist(job)
         last_error = "peer did not become healthy"
-        while time.monotonic() < deadline:
+        while datetime.now(UTC) < job.health_deadline:
             try:
                 async with httpx.AsyncClient(timeout=5.0) as client:
                     status = await _peer_json(
@@ -383,6 +466,11 @@ async def run_update_job(
                     )
                 if status.get("instance_id") != job.instance_id:
                     last_error = "peer identity changed after restart"
+                elif (
+                    job.initial_process_id is not None
+                    and status.get("process_id") == job.initial_process_id
+                ):
+                    last_error = "peer is healthy but has not restarted yet"
                 else:
                     job.verified_version = str(status.get("version") or "") or None
                     job.verified_identity = (
@@ -440,8 +528,7 @@ async def run_update_job(
                                 f"reports {job.verified_version or 'no version'}"
                             )
                     if not verified:
-                        await asyncio.sleep(2)
-                        continue
+                        raise RuntimeError(f"Version verification failed: {last_error}")
                     job.completed_at = datetime.now(UTC)
                     store.event(
                         job,
@@ -454,7 +541,10 @@ async def run_update_job(
             await asyncio.sleep(2)
         if job.verified_version:
             raise RuntimeError(f"Version verification failed: {last_error}")
-        raise RuntimeError(f"Peer health verification timed out: {last_error}")
+        raise RuntimeError(
+            f"Peer health verification timed out after {job.health_timeout:g}s: "
+            f"{last_error}"
+        )
     except Exception as exc:
         job.error = str(exc)
         job.completed_at = datetime.now(UTC)

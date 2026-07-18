@@ -45,6 +45,7 @@ class SyncTokenAuthSeparationTests(unittest.TestCase):
                 Route("/api/agent/quiesce", _ok, methods=["GET", "POST"]),
                 Route("/api/fleet/peer-update-check", _ok, methods=["GET"]),
                 Route("/api/fleet/peer-update", _ok, methods=["POST"]),
+                Route("/api/fleet/peer-update/{operation_id}", _ok, methods=["GET"]),
                 Route("/api/config", _ok, methods=["GET"]),
                 Route("/api/agent/prompt", _ok, methods=["POST"]),
             ]
@@ -112,6 +113,7 @@ class SyncTokenAuthSeparationTests(unittest.TestCase):
             ("POST", "/api/agent/quiesce"),
             ("GET", "/api/fleet/peer-update-check"),
             ("POST", "/api/fleet/peer-update"),
+            ("GET", "/api/fleet/peer-update/job-123"),
         ]
         for method, path in routes:
             with self.subTest(method=method, path=path):

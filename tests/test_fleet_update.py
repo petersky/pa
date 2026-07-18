@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import tempfile
+import threading
+from datetime import UTC, datetime, timedelta
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -51,6 +53,47 @@ class FleetUpdateStoreTests(unittest.TestCase):
         first = store.create(self.instance, FleetUpdateRequest(), "release")
         with self.assertRaisesRegex(RuntimeError, first.job_id):
             store.create(self.instance, FleetUpdateRequest(), "release")
+
+    def test_two_stores_atomically_exclude_same_instance(self) -> None:
+        stores = [
+            FleetUpdateJobStore(self.data_dir),
+            FleetUpdateJobStore(self.data_dir),
+        ]
+        barrier = threading.Barrier(2)
+        outcomes = []
+
+        def create(store):
+            barrier.wait()
+            try:
+                outcomes.append(
+                    (
+                        "created",
+                        store.create(
+                            self.instance, FleetUpdateRequest(), "release"
+                        ).job_id,
+                    )
+                )
+            except RuntimeError as exc:
+                outcomes.append(("blocked", str(exc)))
+
+        threads = [threading.Thread(target=create, args=(store,)) for store in stores]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        self.assertEqual(
+            sorted(result for result, _ in outcomes), ["blocked", "created"]
+        )
+        self.assertEqual(outcomes[0][1], outcomes[1][1])
+
+    def test_terminal_persisted_job_releases_cross_store_exclusion(self) -> None:
+        first_store = FleetUpdateJobStore(self.data_dir)
+        first = first_store.create(self.instance, FleetUpdateRequest(), "release")
+        first_store.event(first, UpdatePhase.FAILED, "terminal")
+        second = FleetUpdateJobStore(self.data_dir).create(
+            self.instance, FleetUpdateRequest(), "release"
+        )
+        self.assertNotEqual(first.job_id, second.job_id)
 
     def test_persists_audit_without_token_or_credentials(self) -> None:
         store = FleetUpdateJobStore(self.data_dir)
@@ -119,7 +162,15 @@ class FleetUpdateStoreTests(unittest.TestCase):
 
 
 class FleetUpdateWorkflowTests(unittest.IsolatedAsyncioTestCase):
-    async def _run(self, responses, *, force=False, target="0.2.6", channel="release"):
+    async def _run(
+        self,
+        responses,
+        *,
+        force=False,
+        target="0.2.6",
+        channel="release",
+        install_statuses=None,
+    ):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         settings = Settings(data_dir=Path(tmp.name), sync_token="fleet-secret")
@@ -137,12 +188,62 @@ class FleetUpdateWorkflowTests(unittest.IsolatedAsyncioTestCase):
             ),
             channel,
         )
+        remaining = iter(responses)
+        operation_statuses = iter(install_statuses or [{"status": "installed"}])
+
+        async def peer(_client, method, url, _settings, **_kwargs):
+            if method == "GET" and "/api/fleet/peer-update/" in url:
+                return next(operation_statuses)
+            value = next(remaining)
+            if isinstance(value, Exception):
+                raise value
+            return value
+
         with (
-            patch("pa.fleet.update._peer_json", AsyncMock(side_effect=responses)),
+            patch("pa.fleet.update._peer_json", AsyncMock(side_effect=peer)),
             patch("pa.fleet.update.asyncio.sleep", AsyncMock()),
             patch("pa.fleet.update.time.monotonic", side_effect=[0, 1, 20]),
         ):
             return await run_update_job(settings, store, job)
+
+    async def test_slow_install_does_not_consume_health_timeout(self) -> None:
+        job = await self._run(
+            [
+                {"instance_id": "peer-1", "version": "0.2.5"},
+                {"done": True},
+                {"target_version": "0.2.6"},
+                {"instance_id": "peer-1", "version": "0.2.6"},
+            ],
+            install_statuses=[
+                {"status": "installing"},
+                {"status": "installing"},
+                {"status": "installed"},
+            ],
+        )
+        self.assertEqual(job.phase, UpdatePhase.SUCCEEDED)
+        self.assertIsNotNone(job.install_deadline)
+        self.assertIsNotNone(job.health_deadline)
+
+    async def test_expired_install_deadline_is_distinct_from_health_timeout(
+        self,
+    ) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        settings = Settings(data_dir=Path(tmp.name), sync_token="fleet-secret")
+        store = FleetUpdateJobStore(Path(tmp.name))
+        instance = SimpleNamespace(instance_id="peer-1", name="mini", url="http://mini")
+        job = store.create(
+            instance, FleetUpdateRequest(target_version="0.2.6"), "release"
+        )
+        job.phase = UpdatePhase.WAITING_INSTALL
+        job.expected_version = "0.2.6"
+        job.install_deadline = datetime.now(UTC) - timedelta(seconds=1)
+        store.persist(job)
+        with patch("pa.fleet.update.asyncio.sleep", AsyncMock()):
+            result = await run_update_job(settings, store, job)
+        self.assertEqual(result.phase, UpdatePhase.FAILED)
+        self.assertIn("installation timed out", result.error)
+        self.assertNotIn("health verification", result.error)
 
     async def test_explicit_valid_upgrade_verifies_reported_version(self) -> None:
         job = await self._run(
@@ -375,7 +476,14 @@ class FleetUpdateWorkflowTests(unittest.IsolatedAsyncioTestCase):
         if phase in {UpdatePhase.PREFLIGHT, UpdatePhase.QUIESCING}:
             responses.append({"target_version": "0.2.6"})
         responses.append({"instance_id": "peer-1", "version": "0.2.6"})
-        peer = AsyncMock(side_effect=responses)
+        remaining = iter(responses)
+
+        async def peer_response(_client, method, url, _settings, **_kwargs):
+            if method == "GET" and "/api/fleet/peer-update/" in url:
+                return {"status": "installed"}
+            return next(remaining)
+
+        peer = AsyncMock(side_effect=peer_response)
         with (
             patch("pa.fleet.update._peer_json", peer),
             patch("pa.fleet.update.asyncio.sleep", AsyncMock()),

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 from pa import __version__
 from pa.cli import service as svc
 from pa.core.context import AppContext
@@ -31,6 +33,7 @@ def build_status_snapshot(ctx: AppContext, *, module_count: int = 0) -> dict:
         "build_id": f"{__version__}+{asset_version}",
         "instance_name": settings.instance_name,
         "instance_id": settings.instance_id,
+        "process_id": os.getpid(),
         "data_dir": str(settings.data_dir),
         "server_url": f"http://{settings.host}:{settings.port}",
         "host": settings.host,

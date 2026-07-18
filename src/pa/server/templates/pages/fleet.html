@@ -71,6 +71,7 @@
         </label>
         <label>Target version (optional) <input name="target_version" placeholder="latest on channel"></label>
         <label>Quiesce timeout (seconds) <input name="quiesce_timeout" type="number" min="1" max="3600" value="300"></label>
+        <label>Install timeout (seconds) <input name="install_timeout" type="number" min="10" max="7200" value="900"></label>
         <label><input name="force" type="checkbox"> Continue if agent drain times out</label>
         <div class="form-actions"><button class="primary" type="submit">Confirm update</button><button class="ghost" type="button" data-fleet-update-cancel>Cancel</button></div>
       </form>

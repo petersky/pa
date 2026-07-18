@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hmac
+import re
 
 from fastapi import HTTPException, Request
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -61,7 +62,11 @@ def _is_sync_path(path: str) -> bool:
 
 
 def _is_fleet_instance_route(request: Request) -> bool:
-    return (request.method, request.url.path) in FLEET_INSTANCE_ROUTES
+    if (request.method, request.url.path) in FLEET_INSTANCE_ROUTES:
+        return True
+    return request.method == "GET" and bool(
+        re.fullmatch(r"/api/fleet/peer-update/[A-Za-z0-9-]{1,80}", request.url.path)
+    )
 
 
 def _sync_auth_required(settings: Settings) -> bool:

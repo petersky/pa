@@ -495,7 +495,29 @@
         availableEl.textContent = row.available_version || "—";
         availableEl.classList.toggle("status-active", !!row.upgrade_available);
       }
+      tr.dataset.updateChannel = row.update_channel || "release";
+      tr.dataset.currentVersion = row.current_version || "";
+      tr.dataset.availableVersion = row.available_version || "";
     });
+  }
+
+  var fleetUpdateName = "";
+
+  async function refreshFleetUpdateCheck() {
+    var form = $("#pa-fleet-update-form");
+    var confirmText = $("#pa-fleet-update-confirm");
+    if (!form || !form.elements.instance_id.value) return null;
+    var channel = form.elements.channel.value;
+    if (confirmText) confirmText.textContent = "Checking " + channel + " availability…";
+    var data = await api(
+      "/api/fleet/instances/" + encodeURIComponent(form.elements.instance_id.value) +
+      "/update-check?channel=" + encodeURIComponent(channel)
+    );
+    if (confirmText) confirmText.textContent =
+      "Update " + fleetUpdateName + " on " + data.channel + " from " +
+      (data.current_version || "unknown") + " to " +
+      (data.available_version || "unknown") + "? Active agent sessions will be drained and PA will restart.";
+    return data;
   }
 
   function watchFleetUpdate(instanceId, jobId) {
@@ -753,11 +775,15 @@
       var updateForm = $("#pa-fleet-update-form");
       if (!panel || !updateForm) return;
       updateForm.elements.instance_id.value = updateBtn.getAttribute("data-fleet-update") || "";
-      var name = updateBtn.getAttribute("data-instance-name") || "this instance";
-      var confirmText = $("#pa-fleet-update-confirm");
-      if (confirmText) confirmText.textContent = "Update " + name + "? Active agent sessions will be drained and the PA service will restart.";
+      fleetUpdateName = updateBtn.getAttribute("data-instance-name") || "this instance";
+      var row = updateBtn.closest("tr[data-fleet-instance]");
+      updateForm.elements.channel.value = (row && row.dataset.updateChannel) || "release";
       panel.hidden = false;
       panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      refreshFleetUpdateCheck().catch(function (err) {
+        var confirmText = $("#pa-fleet-update-confirm");
+        if (confirmText) confirmText.textContent = err.message;
+      });
       return;
     }
 
@@ -797,6 +823,14 @@
     }
   });
 
+  document.addEventListener("change", function (e) {
+    if (!e.target.matches("#pa-fleet-update-form [name=channel]")) return;
+    refreshFleetUpdateCheck().catch(function (err) {
+      var confirmText = $("#pa-fleet-update-confirm");
+      if (confirmText) confirmText.textContent = err.message;
+    });
+  });
+
   document.addEventListener("submit", function (e) {
     var form = e.target;
     if (!form) return;
@@ -809,15 +843,19 @@
       var updateInstanceId = updateBody.instance_id;
       delete updateBody.instance_id;
       updateBody.quiesce_timeout = parseFloat(updateBody.quiesce_timeout || "300");
+      updateBody.install_timeout = parseFloat(updateBody.install_timeout || "900");
       updateBody.force = !!form.elements.force.checked;
       if (!updateBody.target_version) delete updateBody.target_version;
       var updateStatus = $("#pa-fleet-update-status");
       var updateLog = $("#pa-fleet-update-log");
-      if (updateStatus) updateStatus.textContent = "Starting persistent update job…";
+      if (updateStatus) updateStatus.textContent = "Rechecking selected channel…";
       if (updateLog) updateLog.textContent = "";
-      api("/api/fleet/instances/" + encodeURIComponent(updateInstanceId) + "/update", {
-        method: "POST",
-        body: updateBody,
+      refreshFleetUpdateCheck().then(function () {
+        if (updateStatus) updateStatus.textContent = "Starting persistent update job…";
+        return api("/api/fleet/instances/" + encodeURIComponent(updateInstanceId) + "/update", {
+          method: "POST",
+          body: updateBody,
+        });
       }).then(function (job) {
         watchFleetUpdate(updateInstanceId, job.job_id);
       }).catch(function (err) {
