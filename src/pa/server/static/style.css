@@ -930,6 +930,9 @@ code {
 
 .acw-settings-body { min-width: 16rem; }
 .acw-settings-body .acw-select-wrap { justify-content: space-between; }
+.acw-settings-actions { display: flex; justify-content: flex-end; gap: 0.4rem; }
+.acw-settings-status { margin: 0; white-space: normal; }
+.acw-settings-status.is-error { color: var(--pa-danger); }
 
 .acw-metrics {
   font-size: 0.75rem;
@@ -1553,6 +1556,9 @@ code {
   align-items: center;
   gap: 0.65rem;
 }
+.agent-new-session-dialog label small { grid-column: 2; }
+.agent-new-related { border-top: 1px solid var(--pa-border); padding-top: 0.65rem; }
+.agent-session-runtime, .agent-session-config { overflow-wrap: anywhere; }
 
 .agent-new-session-dialog .form-actions {
   display: flex;

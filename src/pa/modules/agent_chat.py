@@ -252,6 +252,7 @@ def list_agent_sessions(request: Request) -> list[dict]:
             "prompting": rt.prompting,
             "model_id": rt.session.model_id,
             "mode_id": rt.session.mode_id,
+            "config_json": rt.session.config_json,
             "queue_length": len(rt._queue),
             "last_seq": rt._seq,
             "updated_at": rt.session.updated_at.isoformat(),

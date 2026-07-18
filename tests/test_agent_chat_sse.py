@@ -180,6 +180,9 @@ class AgentChatSseTests(unittest.TestCase):
         runtime.session.status = "idle"
         runtime.session.model_id = "gpt-test"
         runtime.session.mode_id = "code"
+        runtime.session.config_json = {
+            "values": {"reasoningEffort": "high", "approvalPolicy": "on-request"}
+        }
         runtime.session.updated_at.isoformat.return_value = "2026-07-17T00:00:00Z"
 
         manager = MagicMock()
@@ -190,6 +193,11 @@ class AgentChatSseTests(unittest.TestCase):
             sessions = list_agent_sessions(request)
 
         self.assertEqual(sessions[0]["agent_name"], "codex")
+        self.assertEqual(sessions[0]["model_id"], "gpt-test")
+        self.assertEqual(sessions[0]["mode_id"], "code")
+        self.assertEqual(
+            sessions[0]["config_json"]["values"]["reasoningEffort"], "high"
+        )
         self.assertEqual(sessions[0]["last_seq"], 12)
 
     def test_persisted_history_includes_closed_session_transcript(self) -> None:
