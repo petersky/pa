@@ -111,7 +111,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--no-push",
         action="store_true",
-        help="Skip pushing commit and tag to origin (default: push)",
+        help="Skip pushing the release branch or tag to origin (default: push)",
     )
     parser.add_argument("--no-commit", action="store_true", help="Skip git commit")
     parser.add_argument("--no-agent", action="store_true", help="Skip agent; use prefilled template")
@@ -155,10 +155,8 @@ def _wait_then_publish(tag: str, notes_path: Path, *, wait_ci: int) -> None:
         )
 
 
-def _notes_path_from_merged_main(tag: str, preferred: Path) -> tuple[Path, Path | None]:
-    """Use local notes when available, otherwise materialize merged notes temporarily."""
-    if preferred.exists():
-        return preferred, None
+def _notes_path_from_merged_main(tag: str) -> tuple[Path, Path]:
+    """Materialize release notes from origin/main so publish never uses stale local files."""
     temporary = tempfile.NamedTemporaryFile(
         mode="w", encoding="utf-8", suffix=".md", prefix=f"{tag}-", delete=False
     )
@@ -193,19 +191,25 @@ def _run(argv: list[str] | None = None) -> int:
         tag = args.tag or tag_for_version(read_version())
         if not tag.startswith("v"):
             tag = f"v{tag}"
-        notes_path = args.notes_file or notes_path_for_tag(tag)
         _log(f"Publishing {tag}...")
-        tag_merged_release(tag)
-        notes_path, temporary_notes = _notes_path_from_merged_main(tag, notes_path)
+        tag_merged_release(tag, message=args.message, push=do_push)
+        if args.notes_file:
+            notes_path = args.notes_file
+            temporary_notes = None
+        else:
+            notes_path, temporary_notes = _notes_path_from_merged_main(tag)
         try:
             if not args.skip_gh:
-                _wait_then_publish(tag, notes_path, wait_ci=args.wait_ci)
+                if do_push:
+                    _wait_then_publish(tag, notes_path, wait_ci=args.wait_ci)
+                else:
+                    _log("==> Skipping GitHub release publish (--no-push).")
             else:
                 _log("==> Skipping GitHub release publish (--skip-gh).")
         finally:
             if temporary_notes:
                 temporary_notes.unlink(missing_ok=True)
-        _log(f"Done. Published {tag}")
+        _log(f"Done. Published {tag}" if do_push else f"Done. Tagged {tag} locally (--no-push).")
         return 0
 
     if args.amend:

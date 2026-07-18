@@ -4,9 +4,19 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      track:
+        description: "Track to update (release, beta, alpha, dev)"
+        required: true
+        default: release
+      ref:
+        description: "Git ref (tag or branch)"
+        required: true
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   release:
@@ -45,3 +55,131 @@ jobs:
           prerelease: ${{ steps.meta.outputs.prerelease == 'true' }}
           files: dist/*
           generate_release_notes: true
+
+  update-channels:
+    if: github.event_name == 'push'
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Update channels.json
+        id: channels
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          LOWER="${TAG,,}"
+          python3 <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          tag = os.environ["TAG"]
+          lower = tag.lower()
+          path = Path("channels.json")
+          data = json.loads(path.read_text()) if path.exists() else {}
+
+          if "-beta." in lower:
+              track = "beta"
+          elif "-alpha." in lower:
+              track = "alpha"
+          elif "-rc." in lower:
+              track = "beta"
+          else:
+              track = "release"
+
+          if data.get(track) == tag:
+              print(f"channels.json already has {track}={tag}")
+              with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+                  fh.write("changed=false\n")
+                  fh.write(f"track={track}\n")
+              raise SystemExit(0)
+
+          data[track] = tag
+          data.setdefault("dev", "main")
+          path.write_text(json.dumps(data, indent=2) + "\n")
+          print(json.dumps(data, indent=2))
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write("changed=true\n")
+              fh.write(f"track={track}\n")
+          PY
+        env:
+          TAG: ${{ github.ref_name }}
+
+      - name: Open channels PR
+        if: steps.channels.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          TRACK: ${{ steps.channels.outputs.track }}
+        run: |
+          BRANCH="chore/channels-${TAG}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git switch -c "${BRANCH}"
+          git add channels.json
+          git commit -m "chore: update channels.json for ${TAG}"
+          git push -u origin "${BRANCH}"
+          gh pr create \
+            --base main \
+            --head "${BRANCH}" \
+            --title "chore: update channels.json for ${TAG}" \
+            --body "Point the \`${TRACK}\` channel at \`${TAG}\` now that the tag exists."
+
+  update-channels-manual:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Update channels.json
+        id: channels
+        run: |
+          python3 <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          track = os.environ["TRACK"]
+          ref = os.environ["REF"]
+          path = Path("channels.json")
+          data = json.loads(path.read_text()) if path.exists() else {}
+          if data.get(track) == ref:
+              print(f"channels.json already has {track}={ref}")
+              with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+                  fh.write("changed=false\n")
+              raise SystemExit(0)
+
+          data[track] = ref
+          path.write_text(json.dumps(data, indent=2) + "\n")
+          print(json.dumps(data, indent=2))
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write("changed=true\n")
+          PY
+        env:
+          TRACK: ${{ github.event.inputs.track }}
+          REF: ${{ github.event.inputs.ref }}
+
+      - name: Open channels PR
+        if: steps.channels.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TRACK: ${{ github.event.inputs.track }}
+          REF: ${{ github.event.inputs.ref }}
+        run: |
+          BRANCH="chore/channels-${TRACK}-${REF}"
+          BRANCH="${BRANCH//\//-}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git switch -c "${BRANCH}"
+          git add channels.json
+          git commit -m "chore: set channels.json ${TRACK}=${REF}"
+          git push -u origin "${BRANCH}"
+          gh pr create \
+            --base main \
+            --head "${BRANCH}" \
+            --title "chore: set channels.json ${TRACK}=${REF}" \
+            --body "Set the \`${TRACK}\` channel to \`${REF}\`."

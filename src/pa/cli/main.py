@@ -402,36 +402,52 @@ def _release_command(bump: str):
     def command(
         no_push: Annotated[
             bool,
-            typer.Option("--no-push", help="Skip pushing commit and tag to origin"),
+            typer.Option("--no-push", help="Skip pushing the release branch to origin"),
         ] = False,
         no_commit: Annotated[
             bool,
-            typer.Option("--no-commit", help="Skip git commit (still creates tag)"),
+            typer.Option("--no-commit", help="Skip git commit"),
         ] = False,
         message: Annotated[
             str | None,
-            typer.Option("-m", "--message", help="Commit/tag message"),
+            typer.Option("-m", "--message", help="Commit message"),
         ] = None,
     ) -> None:
-        from pa.release.runner import create_release
+        from pa.release.runner import (
+            ReleaseError,
+            create_release,
+            ensure_release_branch,
+            ensure_tag_available,
+            resolve_version,
+        )
+        from pa.release.version import tag_for_version
 
         try:
+            tag = tag_for_version(resolve_version(bump))
+            ensure_tag_available(tag)
+            branch = ensure_release_branch(tag)
             result = create_release(
                 bump,
                 commit=not no_commit,
                 push=not no_push,
                 message=message,
+                check_tag=False,
             )
-        except (RuntimeError, ValueError) as exc:
+        except (ReleaseError, RuntimeError, ValueError) as exc:
             typer.echo(str(exc), err=True)
+            hints = getattr(exc, "hints", None)
+            if hints:
+                typer.echo("\nRecommended options:", err=True)
+                for i, hint in enumerate(hints, start=1):
+                    typer.echo(f"  {i}. {hint}", err=True)
             raise typer.Exit(1) from exc
 
-        typer.echo(f"Bumped {result.old_version} → {result.new_version}")
-        typer.echo(f"Tag: {result.tag} ({result.track} track)")
+        typer.echo(f"Prepared {result.old_version} → {result.new_version} on {branch}")
+        typer.echo(f"Tag will be {result.tag} ({result.track} track) after merge + publish")
         if no_push:
-            typer.echo("Local only (--no-push). Re-run without --no-push to publish.")
+            typer.echo(f"Local only (--no-push). Push later: git push -u origin {branch}")
         else:
-            typer.echo("Pushed to origin.")
+            typer.echo(f"Pushed {branch}. Open a PR, merge, then: ./scripts/release.sh --publish --tag {result.tag}")
 
     return command
 
@@ -439,7 +455,7 @@ def _release_command(bump: str):
 for _bump in ("patch", "minor", "major", "alpha", "beta", "rc"):
     release_app.command(
         _bump,
-        help=f"Bump {_bump} version and create git tag",
+        help=f"Bump {_bump} version on a release/* PR branch (tag via --publish after merge)",
     )(_release_command(_bump))
 
 
