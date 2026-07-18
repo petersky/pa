@@ -187,13 +187,21 @@ def login_cmd(
             instance, "POST", f"/api/agent/providers/{provider}/login-jobs", body
         )
     else:
-        codex = resolve_codex_cli()
+        configured_path = (
+            get_provider("codex")
+            .resolve_spawn(data_dir=get_settings().data_dir)
+            .env.get("CODEX_PATH")
+        )
+        codex = resolve_codex_cli(configured_path)
         if not codex:
             raise typer.BadParameter("Codex CLI is not installed on this instance")
         store = get_codex_login_store(get_settings().data_dir)
         if store.latest_active():
             raise typer.BadParameter("A Codex login is already active")
-        job = store.create(timeout_seconds=timeout_seconds)
+        try:
+            job = store.create(timeout_seconds=timeout_seconds)
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc)) from exc
         store.start(job, codex)
         data = job.public_dict()
     typer.echo(json.dumps(data, indent=2))

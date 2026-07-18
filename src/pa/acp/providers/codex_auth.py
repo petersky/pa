@@ -31,8 +31,8 @@ MAX_LOGIN_TIMEOUT_S = 1800
 
 _URL_RE = re.compile(r"https://[^\s<>]+", re.IGNORECASE)
 _CODE_RE = re.compile(r"(?<![A-Z0-9])([A-Z0-9]{4}(?:-[A-Z0-9]{4})+)(?![A-Z0-9])")
-_SECRET_RE = re.compile(
-    r"(?i)(access[_ -]?token|refresh[_ -]?token|id[_ -]?token|api[_ -]?key|authorization)"
+_SECRET_VALUE_RE = re.compile(
+    r"(?i)\b(access[_ -]?token|refresh[_ -]?token|id[_ -]?token|api[_ -]?key|authorization)\b(\s*[:=]\s*)(?:bearer\s+)?\S+"
 )
 _BEARER_RE = re.compile(r"(?i)bearer\s+[A-Za-z0-9._~+/=-]+")
 
@@ -128,6 +128,8 @@ class CodexLoginJobStore:
             timeout_seconds=timeout_seconds,
         )
         with self._lock:
+            if any(not existing.terminal for existing in self._jobs.values()):
+                raise ValueError("A Codex login is already active")
             self._jobs[job.job_id] = job
             self._event(job, "created", "Device authentication requested by the user.")
             self._persist(job)
@@ -192,14 +194,19 @@ class CodexLoginJobStore:
             return
         with self._lock:
             self._processes[job_id] = proc
+            cancelled_before_registration = job.state == LoginState.CANCELLED
+        if cancelled_before_registration:
+            _terminate_process(proc)
 
         deadline = time.monotonic() + job.timeout_seconds
+        selector: selectors.BaseSelector | None = None
         try:
             assert proc.stdout is not None
             selector = selectors.DefaultSelector()
             selector.register(proc.stdout, selectors.EVENT_READ)
             while proc.poll() is None:
                 if job.state == LoginState.CANCELLED:
+                    _terminate_process(proc)
                     break
                 if time.monotonic() >= deadline:
                     _terminate_process(proc)
@@ -217,6 +224,8 @@ class CodexLoginJobStore:
             for line in proc.stdout:
                 self._consume_line(job, line)
             if job.state == LoginState.CANCELLED:
+                _terminate_process(proc)
+                proc.wait(timeout=5)
                 return
             returncode = proc.wait(timeout=5)
             if returncode == 0:
@@ -239,6 +248,8 @@ class CodexLoginJobStore:
                 f"Codex login process error: {type(exc).__name__}",
             )
         finally:
+            if selector is not None:
+                selector.close()
             with self._lock:
                 self._processes.pop(job_id, None)
 
@@ -297,7 +308,10 @@ def get_codex_login_store(data_dir: Path) -> CodexLoginJobStore:
         return _stores[key]
 
 
-def resolve_codex_cli() -> str | None:
+def resolve_codex_cli(configured_path: str | None = None) -> str | None:
+    if configured_path:
+        resolved = resolve_executable(configured_path)
+        return str(resolved) if resolved else None
     resolved = resolve_executable("codex") or shutil.which("codex")
     return str(resolved) if resolved else None
 
@@ -307,8 +321,9 @@ def redact_login_output(text: str) -> str:
     clean = text.strip().replace("\x1b", "")
     if not clean:
         return ""
-    if _SECRET_RE.search(clean):
-        return "[credential output redacted]"
+    clean = _SECRET_VALUE_RE.sub(
+        lambda match: f"{match.group(1)}{match.group(2)}[redacted]", clean
+    )
     clean = _BEARER_RE.sub("Bearer [redacted]", clean)
     # Codex device codes are short and hyphenated. Hide long opaque blobs.
     clean = re.sub(

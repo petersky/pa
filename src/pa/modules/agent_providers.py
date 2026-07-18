@@ -115,7 +115,12 @@ def start_provider_login(request: Request, provider_id: str, body: LoginBody) ->
         raise HTTPException(
             status_code=400, detail="Explicit consent is required to start sign-in"
         )
-    codex = resolve_codex_cli()
+    configured_path = (
+        get_provider("codex")
+        .resolve_spawn(data_dir=_data_dir(request))
+        .env.get("CODEX_PATH")
+    )
+    codex = resolve_codex_cli(configured_path)
     if not codex:
         raise HTTPException(
             status_code=409, detail="Codex CLI is not installed on this instance"
@@ -130,7 +135,10 @@ def start_provider_login(request: Request, provider_id: str, body: LoginBody) ->
                 "job_id": active.job_id,
             },
         )
-    job = store.create(timeout_seconds=body.timeout_seconds)
+    try:
+        job = store.create(timeout_seconds=body.timeout_seconds)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     store.start(job, codex)
     return job.public_dict()
 
@@ -341,13 +349,21 @@ class AgentProvidersModule(Module):
                 )
             if provider_id != "codex" or not consent:
                 raise ValueError("Codex device login requires explicit consent")
-            codex = resolve_codex_cli()
+            configured_path = (
+                get_provider("codex")
+                .resolve_spawn(data_dir=settings.data_dir)
+                .env.get("CODEX_PATH")
+            )
+            codex = resolve_codex_cli(configured_path)
             if not codex:
                 raise ValueError("Codex CLI is not installed on this instance")
             store = get_codex_login_store(settings.data_dir)
             if store.latest_active():
                 raise ValueError("A Codex login is already active")
-            job = store.create(timeout_seconds=timeout_seconds)
+            try:
+                job = store.create(timeout_seconds=timeout_seconds)
+            except ValueError as exc:
+                raise ValueError(str(exc)) from exc
             store.start(job, codex)
             return job.public_dict()
 

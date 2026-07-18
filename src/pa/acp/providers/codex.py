@@ -99,7 +99,7 @@ class CodexProvider:
         direct = resolve_executable(_DEFAULT_COMMAND) or shutil.which(_DEFAULT_COMMAND)
         meta = load_metadata(data_dir, self.id)
         creds = load_credentials(data_dir, self.id)
-        codex_cli = resolve_codex_cli()
+        codex_cli = resolve_codex_cli(spec.env.get("CODEX_PATH"))
         auth = _codex_auth_status(codex_cli, creds=creds, env=spec.env)
         login_job = get_codex_login_store(data_dir).latest_active()
         version = None

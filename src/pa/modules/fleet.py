@@ -402,6 +402,7 @@ async def fleet_health(request: Request) -> list[dict]:
                     resp = await client.get(
                         f"{inst.url.rstrip('/')}/api/agent/providers",
                         headers=headers,
+                        timeout=15.0,
                     )
                     if resp.status_code == 200:
                         payload = resp.json()

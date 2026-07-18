@@ -472,7 +472,7 @@ class FleetHealthParallelTests(unittest.IsolatedAsyncioTestCase):
                 def json(self):
                     return self._payload
 
-            async def fake_get(url, headers=None):
+            async def fake_get(url, headers=None, timeout=None):
                 if url.endswith("/api/health"):
                     return FakeResp(200)
                 if url.endswith("/api/agent/providers"):
@@ -512,6 +512,15 @@ class FleetHealthParallelTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(by_id["b"]["providers"][0]["id"], "b")
             self.assertEqual(by_id["a"]["current_version"], "0.2.5")
             self.assertEqual(by_id["b"]["available_version"], "0.2.6")
+            provider_calls = [
+                call
+                for call in mock_client.get.await_args_list
+                if call.args[0].endswith("/api/agent/providers")
+            ]
+            self.assertTrue(provider_calls)
+            self.assertTrue(
+                all(call.kwargs["timeout"] == 15.0 for call in provider_calls)
+            )
             self.assertEqual(by_id["a"]["update_channel"], "beta")
             # health + providers + status + update check for each instance
             self.assertEqual(mock_client.get.await_count, 8)

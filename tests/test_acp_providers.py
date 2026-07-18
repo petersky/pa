@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import json
 import tempfile
+import threading
+import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -220,8 +223,7 @@ class AcpProviderTests(unittest.TestCase):
         self,
     ) -> None:
         self.assertEqual(
-            redact_login_output("access_token=very-secret"),
-            "[credential output redacted]",
+            redact_login_output("access_token=very-secret"), "access_token=[redacted]"
         )
         self.assertIn(
             "[redacted]",
@@ -232,6 +234,105 @@ class AcpProviderTests(unittest.TestCase):
         )
         self.assertIn("https://auth.openai.com/device", instructions)
         self.assertIn("ABCD-EFGH", instructions)
+        authorization_instructions = redact_login_output(
+            "Open the authorization page https://auth.openai.com/device and enter ABCD-EFGH"
+        )
+        self.assertIn("https://auth.openai.com/device", authorization_instructions)
+        self.assertIn("ABCD-EFGH", authorization_instructions)
+
+    def test_login_store_atomically_allows_only_one_active_job(self) -> None:
+        store = CodexLoginJobStore(self.data_dir)
+        barrier = threading.Barrier(2)
+
+        def create_job():
+            barrier.wait()
+            try:
+                return store.create()
+            except ValueError:
+                return None
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            jobs = list(executor.map(lambda _: create_job(), range(2)))
+        self.assertEqual(sum(job is not None for job in jobs), 1)
+
+    def test_cancel_before_process_registration_still_terminates_and_reaps(
+        self,
+    ) -> None:
+        store = CodexLoginJobStore(self.data_dir)
+        job = store.create()
+        constructing = threading.Event()
+        release = threading.Event()
+        reaped = threading.Event()
+
+        class FakeStdout:
+            def readline(self):
+                return ""
+
+            def __iter__(self):
+                return iter(())
+
+        class FakeProcess:
+            stdout = FakeStdout()
+            pid = 12345
+            returncode = None
+
+            def poll(self):
+                return self.returncode
+
+            def wait(self, timeout=None):
+                reaped.set()
+                return self.returncode
+
+        class FakeSelector:
+            def register(self, *args):
+                return None
+
+            def select(self, timeout=None):
+                return []
+
+            def close(self):
+                return None
+
+        process = FakeProcess()
+
+        def construct(*args, **kwargs):
+            constructing.set()
+            release.wait(timeout=2)
+            return process
+
+        def terminate(proc):
+            proc.returncode = -15
+            proc.wait(timeout=3)
+
+        with (
+            patch(
+                "pa.acp.providers.codex_auth.subprocess.Popen", side_effect=construct
+            ),
+            patch(
+                "pa.acp.providers.codex_auth.selectors.DefaultSelector", FakeSelector
+            ),
+            patch(
+                "pa.acp.providers.codex_auth._terminate_process", side_effect=terminate
+            ) as terminate_mock,
+        ):
+            store.start(job, "/custom/codex")
+            self.assertTrue(constructing.wait(timeout=2))
+            store.cancel(job.job_id)
+            release.set()
+            self.assertTrue(reaped.wait(timeout=2))
+            deadline = time.monotonic() + 2
+            while job.job_id in store._processes and time.monotonic() < deadline:
+                time.sleep(0.01)
+        terminate_mock.assert_called()
+        self.assertEqual(job.state, LoginState.CANCELLED)
+
+    def test_resolve_codex_cli_honors_configured_executable(self) -> None:
+        from pa.acp.providers.codex_auth import resolve_codex_cli
+
+        configured = self.data_dir / "custom-codex"
+        configured.write_text("#!/bin/sh\n")
+        configured.chmod(0o700)
+        self.assertEqual(resolve_codex_cli(str(configured)), str(configured))
 
     def test_login_store_marks_active_snapshot_interrupted_on_restart(self) -> None:
         directory = self.data_dir / "agent_provider_jobs" / "codex"
