@@ -92,6 +92,18 @@ pa config remove peers http://macbook:8080
 pa config edit          # interactive TUI
 ```
 
+To run a fully isolated development or secondary instance, set `PA_DATA_DIR`.
+PA loads and updates `config.json`, the database, identity, peer and agent settings,
+and all other instance state from that directory without reading or modifying
+`~/.pa`:
+
+```bash
+PA_DATA_DIR=.dev/pa-data pa init --name development
+PA_DATA_DIR=.dev/pa-data pa serve --port 8081
+```
+
+Keep `PA_DATA_DIR` set to the same path for every command targeting that instance.
+
 Environment variables (prefix `PA_`):
 
 | Variable | Default | Description |
