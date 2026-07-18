@@ -18,6 +18,7 @@ class InstanceConfig(BaseModel):
     fleet_id: str = Field(default_factory=lambda: str(uuid4()))
     fleet_owner: str = "local"
     fleet_owner_url: str = ""
+    pr_supervisor_authority_url: str = ""
     instance_url: str = ""
     host: str = ""
     subscribed_realms: list[str] = Field(default_factory=lambda: ["default"])
@@ -77,6 +78,7 @@ def merge_config_into_settings(data_dir: Path, settings_dict: dict) -> dict:
         "fleet_id": loaded.fleet_id,
         "fleet_owner": loaded.fleet_owner,
         "fleet_owner_url": loaded.fleet_owner_url,
+        "pr_supervisor_authority_url": loaded.pr_supervisor_authority_url,
         "instance_url": loaded.instance_url,
         "subscribed_realms": loaded.subscribed_realms,
         "zone": loaded.zone,

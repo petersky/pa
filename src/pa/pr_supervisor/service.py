@@ -67,9 +67,7 @@ class ExecutorDispatcher:
             url = self._instance_url(target)
             if url:
                 try:
-                    result = await self._remote_dispatch(
-                        url, watch, event_key, prompt
-                    )
+                    result = await self._remote_dispatch(url, watch, event_key, prompt)
                     return str(result.get("state") or "queued")
                 except (httpx.ConnectError, RuntimeError) as exc:
                     logger.warning(
@@ -120,9 +118,7 @@ class ExecutorDispatcher:
             if owns:
                 await client.aclose()
 
-    async def dispatch_local(
-        self, watch: PRWatch, event_key: str, prompt: str
-    ) -> str:
+    async def dispatch_local(self, watch: PRWatch, event_key: str, prompt: str) -> str:
         if not self.store.claim_dispatch(
             event_key,
             watch.id,
@@ -140,9 +136,7 @@ class ExecutorDispatcher:
             session = None
             if watch.originating_session_id:
                 runtime = self.agent.get(watch.originating_session_id)
-                session = self.domain_store.get_session(
-                    watch.originating_session_id
-                )
+                session = self.domain_store.get_session(watch.originating_session_id)
             if runtime is None and watch.card_id:
                 for candidate in self.agent.list_runtimes():
                     if candidate.session.card_id == watch.card_id:
@@ -269,6 +263,8 @@ class PRSupervisor:
         self._stopping = False
         self._capability: GitHubCapability | None = None
         self._capability_checked_at = None
+        self._authority_last_success_at = None
+        self._authority_last_error: str | None = None
 
     @property
     def capability(self) -> GitHubCapability:
@@ -281,9 +277,7 @@ class PRSupervisor:
         await self.refresh_capability(force=True)
         await self.migrate_discoverable_associations()
         if not self._task or self._task.done():
-            self._task = asyncio.create_task(
-                self._run_loop(), name="pa-pr-supervisor"
-            )
+            self._task = asyncio.create_task(self._run_loop(), name="pa-pr-supervisor")
 
     async def stop(self) -> None:
         self._stopping = True
@@ -535,7 +529,10 @@ class PRSupervisor:
                     watch,
                     "poll_error",
                     f"{watch.id}:error:{watch.poll_attempt + 1}:{uuid4()}",
-                    payload={"error": message[:1000], "next_poll_at": delay.isoformat()},
+                    payload={
+                        "error": message[:1000],
+                        "next_poll_at": delay.isoformat(),
+                    },
                 )
                 await self._replicate(errored)
             except StaleFenceError:
@@ -562,9 +559,7 @@ class PRSupervisor:
             fingerprint=gate.fingerprint,
             payload={"reasons": gate.reasons},
         )
-        prompt = build_executor_prompt(
-            watch, snapshot, gate, green=green
-        )
+        prompt = build_executor_prompt(watch, snapshot, gate, green=green)
         try:
             state = await self.dispatcher.dispatch(watch, event_key, prompt)
             logger.info(
@@ -613,9 +608,7 @@ class PRSupervisor:
         self.store.increment_metric("merged_watches")
         await self._replicate(terminal)
         await self._complete_merged_card(terminal)
-        prompt = build_executor_prompt(
-            watch, snapshot, gate, green=False, merged=True
-        )
+        prompt = build_executor_prompt(watch, snapshot, gate, green=False, merged=True)
         try:
             await self.dispatcher.dispatch(watch, event_key, prompt)
         except Exception:
@@ -652,9 +645,7 @@ class PRSupervisor:
             return
         state = dict(watch.state)
         state["card_lane"] = "done"
-        completed = self.store.set_terminal(
-            watch.id, PRWatchStatus.MERGED, state=state
-        )
+        completed = self.store.set_terminal(watch.id, PRWatchStatus.MERGED, state=state)
         self._audit(
             completed or watch,
             "card_completed",
@@ -663,9 +654,7 @@ class PRSupervisor:
         )
         await self._replicate(completed)
 
-    def _predict_stable(
-        self, watch: PRWatch, snapshot: PRSnapshot, now
-    ) -> bool:
+    def _predict_stable(self, watch: PRWatch, snapshot: PRSnapshot, now) -> bool:
         if watch.head_sha != snapshot.head_sha:
             since = now
             observations = 1
@@ -738,6 +727,8 @@ class PRSupervisor:
                 },
             )
             grant = LeaseGrant.model_validate(result)
+            self._authority_last_success_at = utcnow()
+            self._authority_last_error = None
             if grant.acquired:
                 watch.owner_instance_id = grant.owner_instance_id
                 watch.fence_token = grant.fence_token
@@ -745,6 +736,7 @@ class PRSupervisor:
                 self.store.upsert_watch(watch, preserve_lease=False)
             return grant
         except (httpx.HTTPError, RuntimeError, ValueError) as exc:
+            self._authority_last_error = str(exc)[:500]
             self.store.mark_error(
                 watch.id,
                 f"Fleet lease authority unavailable: {exc}",
@@ -754,9 +746,7 @@ class PRSupervisor:
             )
             return LeaseGrant(acquired=False, reason="authority_unavailable")
 
-    async def _heartbeat_authority(
-        self, capability: GitHubCapability
-    ) -> None:
+    async def _heartbeat_authority(self, capability: GitHubCapability) -> None:
         authority = self._authority_url()
         if not authority:
             return
@@ -765,12 +755,13 @@ class PRSupervisor:
                 f"{authority}/api/pr-supervisor/instances/heartbeat",
                 capability.model_dump(mode="json"),
             )
-        except (httpx.HTTPError, RuntimeError):
+            self._authority_last_success_at = utcnow()
+            self._authority_last_error = None
+        except httpx.HTTPError, RuntimeError:
+            self._authority_last_error = "capability heartbeat failed"
             logger.warning("PR supervisor capability heartbeat failed")
 
-    async def _eligible_capabilities(
-        self, repository: str
-    ) -> list[GitHubCapability]:
+    async def _eligible_capabilities(self, repository: str) -> list[GitHubCapability]:
         authority = self._authority_url()
         if authority:
             try:
@@ -786,7 +777,7 @@ class PRSupervisor:
                     for capability in capabilities
                     if capability.supports(repository)
                 ]
-            except (httpx.HTTPError, RuntimeError, ValueError):
+            except httpx.HTTPError, RuntimeError, ValueError:
                 return []
         return [
             capability
@@ -805,9 +796,7 @@ class PRSupervisor:
         payload = {"watch": watch.model_dump(mode="json")}
         results = await asyncio.gather(
             *(
-                self._post_json(
-                    f"{url}/api/pr-supervisor/replicas", payload
-                )
+                self._post_json(f"{url}/api/pr-supervisor/replicas", payload)
                 for url in urls
             ),
             return_exceptions=True,
@@ -844,20 +833,54 @@ class PRSupervisor:
         if authority:
             urls.add(authority)
         local = (self.settings.instance_url or "").rstrip("/")
-        return {
-            url.rstrip("/")
-            for url in urls
-            if url and url.rstrip("/") != local
-        }
+        return {url.rstrip("/") for url in urls if url and url.rstrip("/") != local}
 
     def _authority_url(self) -> str | None:
-        authority = (self.settings.fleet_owner_url or "").rstrip("/")
+        authority = (
+            self.settings.pr_supervisor_authority_url
+            or self.settings.fleet_owner_url
+            or ""
+        ).rstrip("/")
         if not authority:
             return None
         local = (self.settings.instance_url or "").rstrip("/")
         if local and authority == local:
             return None
         return authority
+
+    def authority_health(self) -> dict[str, Any]:
+        """Secret-free control-plane state for operators and fleet health."""
+        configured = (
+            self.settings.pr_supervisor_authority_url
+            or self.settings.fleet_owner_url
+            or self.settings.instance_url
+            or ""
+        ).rstrip("/")
+        remote = self._authority_url()
+        watches = self.store.list_watches(include_retired=False)
+        owned = [w for w in watches if w.owner_instance_id == self.settings.instance_id]
+        if remote and self._authority_last_error:
+            state = "authority_unreachable"
+        elif remote and not self._authority_last_success_at:
+            state = "authority_unverified"
+        else:
+            state = "ready"
+        return {
+            "state": state,
+            "role": "worker" if remote else "lease_authority",
+            "authority_url": configured or None,
+            "explicit_authority": bool(self.settings.pr_supervisor_authority_url),
+            "lease_ttl_seconds": self.LEASE_TTL_SECONDS,
+            "last_authority_success_at": (
+                self._authority_last_success_at.isoformat()
+                if self._authority_last_success_at
+                else None
+            ),
+            "last_authority_error": self._authority_last_error,
+            "active_watches": len(watches),
+            "locally_owned_watches": len(owned),
+            "max_fence_token": max((w.fence_token for w in watches), default=0),
+        }
 
     async def _post_json(self, url: str, payload: dict[str, Any]) -> dict[str, Any]:
         headers: dict[str, str] = {}
@@ -907,20 +930,13 @@ class PRSupervisor:
                     else None
                 )
                 policy_data = dict(
-                    (project.tool_config or {}).get("pr_policy", {})
-                    if project
-                    else {}
+                    (project.tool_config or {}).get("pr_policy", {}) if project else {}
                 )
                 if project:
-                    repository_policies = (
-                        (project.tool_config or {}).get(
-                            "pr_repository_policies"
-                        )
-                        or {}
-                    )
-                    policy_data.update(
-                        repository_policies.get(repository, {})
-                    )
+                    repository_policies = (project.tool_config or {}).get(
+                        "pr_repository_policies"
+                    ) or {}
+                    policy_data.update(repository_policies.get(repository, {}))
                 await self.register_watch(
                     PRWatch(
                         realm_id=card.realm_id,
@@ -942,9 +958,7 @@ class PRSupervisor:
     async def handle_webhook(
         self, event_name: str, delivery_id: str, payload: dict[str, Any]
     ) -> int:
-        repository = str(
-            (payload.get("repository") or {}).get("full_name") or ""
-        )
+        repository = str((payload.get("repository") or {}).get("full_name") or "")
         pr = payload.get("pull_request") or {}
         candidates = (
             (payload.get("check_run") or {}).get("pull_requests")

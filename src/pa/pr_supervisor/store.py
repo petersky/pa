@@ -168,9 +168,13 @@ class PRSupervisorStore:
                 watch.id = existing.id
                 watch.created_at = existing.created_at
                 if preserve_lease:
-                    watch.owner_instance_id = existing.owner_instance_id
-                    watch.fence_token = existing.fence_token
-                    watch.lease_expires_at = existing.lease_expires_at
+                    # Replicas form the next authority's durable fence baseline.
+                    # Never decrease a token; carry owner/expiry from whichever
+                    # record owns the greatest observed fencing generation.
+                    if existing.fence_token >= watch.fence_token:
+                        watch.owner_instance_id = existing.owner_instance_id
+                        watch.fence_token = existing.fence_token
+                        watch.lease_expires_at = existing.lease_expires_at
                 if not watch.head_sha:
                     watch.head_sha = existing.head_sha
                 if not watch.state:
@@ -403,9 +407,7 @@ class PRSupervisorStore:
             expires_at=expires,
         )
 
-    def release_lease(
-        self, watch_id: str, instance_id: str, fence_token: int
-    ) -> bool:
+    def release_lease(self, watch_id: str, instance_id: str, fence_token: int) -> bool:
         with self._conn(immediate=True) as conn:
             cursor = conn.execute(
                 """
@@ -718,8 +720,7 @@ class PRSupervisorStore:
                 (cutoff.isoformat(),),
             ).fetchall()
         return [
-            GitHubCapability.model_validate_json(row["capability_json"])
-            for row in rows
+            GitHubCapability.model_validate_json(row["capability_json"]) for row in rows
         ]
 
     def increment_metric(self, name: str, amount: int = 1) -> None:
@@ -768,9 +769,7 @@ class PRSupervisorStore:
             originating_agent=row["originating_agent"],
             executor_cwd=row["executor_cwd"],
             policy=json.loads(row["policy_json"] or "{}"),
-            required_capabilities=json.loads(
-                row["required_capabilities_json"] or "[]"
-            ),
+            required_capabilities=json.loads(row["required_capabilities_json"] or "[]"),
             status=row["status"],
             owner_instance_id=row["owner_instance_id"],
             fence_token=row["fence_token"],

@@ -57,6 +57,7 @@ class DataDirIsolationTests(unittest.TestCase):
             peers=["https://isolated.invalid"],
             sync_token="isolated-token",
             session_secret="isolated-secret",
+            pr_supervisor_authority_url="https://always-on-mini.invalid",
         )
         save_instance_config(self.isolated_data_dir, isolated_config)
 
@@ -69,6 +70,10 @@ class DataDirIsolationTests(unittest.TestCase):
         self.assertEqual(settings.fleet_id, "isolated-fleet")
         self.assertEqual(settings.peers, ["https://isolated.invalid"])
         self.assertEqual(settings.sync_token, "isolated-token")
+        self.assertEqual(
+            settings.pr_supervisor_authority_url,
+            "https://always-on-mini.invalid",
+        )
         self.assert_production_config_unchanged()
 
     def test_get_settings_does_not_mutate_default_config(self) -> None:

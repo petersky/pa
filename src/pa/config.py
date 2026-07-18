@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     fleet_id: str = Field(default_factory=lambda: str(uuid4()))
     fleet_owner: str = "local"
     fleet_owner_url: str = ""
+    # Single fenced PR-supervisor lease authority. Empty follows fleet_owner_url.
+    pr_supervisor_authority_url: str = ""
     instance_url: str = ""
     subscribed_realms: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["default"]

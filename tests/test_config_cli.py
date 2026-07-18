@@ -54,10 +54,20 @@ class ConfigEditTests(unittest.TestCase):
             set_config_value(self.data_dir, "instance_url", "http://127.0.0.1:8080")
 
     def test_set_instance_url_ok(self) -> None:
-        result = set_config_value(
-            self.data_dir, "instance_url", "http://mini:8080/"
-        )
+        result = set_config_value(self.data_dir, "instance_url", "http://mini:8080/")
         self.assertEqual(result.after, "http://mini:8080")
+
+    def test_set_pr_supervisor_authority_validates_url(self) -> None:
+        result = set_config_value(
+            self.data_dir,
+            "pr_supervisor_authority_url",
+            "http://always-on-mini:8080/",
+        )
+        self.assertEqual(result.after, "http://always-on-mini:8080")
+        with self.assertRaises(ConfigError):
+            set_config_value(
+                self.data_dir, "pr_supervisor_authority_url", "always-on-mini"
+            )
 
     def test_set_release_track(self) -> None:
         result = set_config_value(self.data_dir, "release_track", "beta")
@@ -128,7 +138,9 @@ class ConfigCliTests(unittest.TestCase):
         from pa.cli.main import app
 
         with patch("pa.cli.config_cmd._data_dir", return_value=self.data_dir):
-            with patch("pa.domain.config_edit.refresh_after_mutate", return_value=False):
+            with patch(
+                "pa.domain.config_edit.refresh_after_mutate", return_value=False
+            ):
                 set_result = self.runner.invoke(
                     app, ["config", "set", "host", "0.0.0.0"]
                 )

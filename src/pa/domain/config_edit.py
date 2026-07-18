@@ -65,6 +65,7 @@ SERVICE_KEYS = frozenset(
         "sync_token",
         "instance_url",
         "fleet_owner_url",
+        "pr_supervisor_authority_url",
         "relay_enabled",
     }
 )
@@ -104,6 +105,11 @@ FIELD_SPECS: dict[str, FieldSpec] = {
         "fleet_owner_url",
         "optional_str",
         "Owner base URL (set when joining a fleet)",
+    ),
+    "pr_supervisor_authority_url": FieldSpec(
+        "pr_supervisor_authority_url",
+        "optional_str",
+        "Single fenced PR-supervisor lease authority URL (empty follows fleet owner)",
     ),
     "instance_url": FieldSpec(
         "instance_url",
@@ -317,7 +323,9 @@ def _validate_agent_provider(value: str) -> str:
         get_provider(key)
     except Exception as exc:
         known = ", ".join(list_provider_ids())
-        raise ConfigError(f"Unknown agent_provider '{value}'. Choose from: {known}") from exc
+        raise ConfigError(
+            f"Unknown agent_provider '{value}'. Choose from: {known}"
+        ) from exc
     return key
 
 
@@ -351,9 +359,18 @@ def validate_field_value(key: str, value: Any) -> Any:
             raise ConfigError("fleet_owner_url must be a string")
         return _validate_http_url(value, field="fleet_owner_url")
 
+    if key == "pr_supervisor_authority_url":
+        if value is None:
+            return ""
+        if not isinstance(value, str):
+            raise ConfigError("pr_supervisor_authority_url must be a string")
+        return _validate_http_url(value, field="pr_supervisor_authority_url")
+
     if key == "peers":
         assert isinstance(value, list)
-        return [_validate_http_url(p, field="peers item", allow_empty=False) for p in value]
+        return [
+            _validate_http_url(p, field="peers item", allow_empty=False) for p in value
+        ]
 
     if key == "release_track":
         if not isinstance(value, str):
@@ -374,7 +391,9 @@ def validate_field_value(key: str, value: Any) -> Any:
             raise ConfigError("subscribed_realms must contain at least one realm")
         return value
 
-    if key in ("instance_name", "fleet_id", "fleet_owner", "zone") and isinstance(value, str):
+    if key in ("instance_name", "fleet_id", "fleet_owner", "zone") and isinstance(
+        value, str
+    ):
         if not value.strip():
             raise ConfigError(f"{key} cannot be empty")
         return value.strip()
@@ -409,7 +428,9 @@ class MutateResult:
     service_keys_changed: bool
 
 
-def _apply_validated(data_dir: Path, key: str, value: Any, *, op: MutateOp) -> MutateResult:
+def _apply_validated(
+    data_dir: Path, key: str, value: Any, *, op: MutateOp
+) -> MutateResult:
     spec = get_field_spec(key)
     if not spec.editable:
         raise ConfigError(f"{key} is read-only")
@@ -523,6 +544,7 @@ def refresh_after_mutate(data_dir: Path, result: MutateResult) -> bool:
         settings.capabilities = list(cfg.capabilities)
         settings.sync_token = cfg.sync_token
         settings.fleet_owner_url = cfg.fleet_owner_url
+        settings.pr_supervisor_authority_url = cfg.pr_supervisor_authority_url
         settings.relay_enabled = cfg.relay_enabled
         return refresh_service_env(settings)
     except Exception:
