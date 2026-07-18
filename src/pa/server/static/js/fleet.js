@@ -40,7 +40,9 @@
     }
     if (!resp.ok) {
       var detail = (data && data.detail) || resp.statusText || "Request failed";
-      throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+      var error = new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+      error.detail = detail;
+      throw error;
     }
     return data;
   }
@@ -502,7 +504,7 @@
     else clearRemoteWatchers();
   }
 
-  function providersHtml(providers) {
+  function providersHtml(providers, instanceId) {
     if (!providers || !providers.length) {
       return '<span class="muted">—</span>';
     }
@@ -511,9 +513,29 @@
         var label = escapeHtml(p.display_name || p.id || "?");
         var mark = p.available ? " ✓" : " ·";
         var title = escapeHtml(p.id || "");
-        return (
-          '<span class="badge" title="' + title + '">' + label + mark + "</span>"
-        );
+        var install = p.installed ? "installed" : "not installed";
+        var auth = p.auth_configured ? (p.auth_method || "authenticated") :
+          (p.auth_method === "unknown" ? "auth unknown" : "not signed in");
+        var probe = p.last_probe && p.last_probe.ok ? "probe ready" : "not probed";
+        var detail = escapeHtml(install + " · " + auth + " · " + probe +
+          (p.auth_status ? " · " + p.auth_status : ""));
+        var login = "";
+        if (p.id === "codex" && p.login_in_progress) {
+          var activeJob = p.meta && p.meta.active_login_job_id;
+          login = activeJob ?
+            ' <button type="button" class="ghost small" data-codex-login-resume="' +
+              escapeHtml(instanceId || "") + '" data-login-job="' +
+              escapeHtml(activeJob) + '">Resume sign-in</button>' :
+            ' <span class="muted small">login in progress</span>';
+        } else if (p.id === "codex" && p.codex_cli_installed && !p.auth_configured) {
+          login = ' <button type="button" class="ghost small" data-codex-login="' +
+            escapeHtml(instanceId || "") + '">Sign in with ChatGPT</button>';
+        } else if (p.id === "codex" && !p.codex_cli_installed) {
+          login = ' <button type="button" class="ghost small" data-codex-cli-install="' +
+            escapeHtml(instanceId || "") + '">Install Codex CLI</button>';
+        }
+        return '<span class="badge" title="' + detail + ' (' + title + ')">' +
+          label + mark + " · " + escapeHtml(auth) + "</span>" + login;
       })
       .join(" ");
   }
@@ -528,6 +550,37 @@
   function setLiveBanner(text) {
     var el = $("#pa-fleet-live-status");
     if (el) el.textContent = text || "";
+  }
+
+  var codexLoginInstance = "";
+  var codexLoginJob = "";
+  var codexLoginStartSequence = 0;
+
+  function codexLoginBase(instanceId) {
+    return "/api/fleet/instances/" + encodeURIComponent(instanceId) +
+      "/agent-providers/codex/login-jobs";
+  }
+
+  async function watchCodexLogin(instanceId, jobId) {
+    var instructions = $("#pa-codex-login-instructions");
+    while (codexLoginJob === jobId) {
+      var job = await api(codexLoginBase(instanceId) + "/" + encodeURIComponent(jobId));
+      var parts = [];
+      if (job.verification_url) {
+        parts.push('<a href="' + escapeHtml(job.verification_url) +
+          '" target="_blank" rel="noopener">Open verification page</a>');
+      }
+      if (job.user_code) parts.push("Code: <code>" + escapeHtml(job.user_code) + "</code>");
+      parts.push("Status: " + escapeHtml(job.state || "unknown"));
+      if (job.error) parts.push(escapeHtml(job.error));
+      if (instructions) instructions.innerHTML = parts.join(" · ");
+      if (["succeeded", "failed", "cancelled", "timed_out", "interrupted"].indexOf(job.state) >= 0) {
+        codexLoginJob = "";
+        loadLiveStatus();
+        return;
+      }
+      await new Promise(function (resolve) { setTimeout(resolve, 1000); });
+    }
   }
 
   function resetLivePlaceholders() {
@@ -556,7 +609,7 @@
       var currentEl = $("[data-fleet-current-version]", tr);
       var availableEl = $("[data-fleet-available-version]", tr);
       if (healthEl) healthEl.innerHTML = healthHtml(!!row.healthy);
-      if (providersEl) providersEl.innerHTML = providersHtml(row.providers || []);
+      if (providersEl) providersEl.innerHTML = providersHtml(row.providers || [], row.instance_id);
       if (currentEl) currentEl.textContent = row.current_version || "—";
       if (availableEl) {
         availableEl.textContent = row.available_version || "—";
@@ -718,6 +771,94 @@
   }
 
   document.addEventListener("click", function (e) {
+    var cliInstallButton = e.target.closest("[data-codex-cli-install]");
+    if (cliInstallButton) {
+      var cliInstance = cliInstallButton.getAttribute("data-codex-cli-install") || "";
+      if (!window.confirm("Install the official @openai/codex CLI on instance " + cliInstance + "?")) return;
+      cliInstallButton.disabled = true;
+      api(codexLoginBase(cliInstance).replace(/\/login-jobs$/, "/codex-cli/install"), {
+        method: "POST"
+      }).then(function (result) {
+        if (!result.ok) throw new Error(result.message || "Codex CLI install failed");
+        loadLiveStatus();
+      }).catch(function (err) {
+        window.alert(err.message);
+      }).finally(function () { cliInstallButton.disabled = false; });
+      return;
+    }
+    var resumeButton = e.target.closest("[data-codex-login-resume]");
+    if (resumeButton) {
+      codexLoginInstance = resumeButton.getAttribute("data-codex-login-resume") || "";
+      codexLoginJob = resumeButton.getAttribute("data-login-job") || "";
+      codexLoginStartSequence += 1;
+      var resumePanel = $("#pa-codex-login-panel");
+      var resumeInstance = $("#pa-codex-login-instance");
+      var resumeInstructions = $("#pa-codex-login-instructions");
+      if (resumePanel) resumePanel.hidden = false;
+      if (resumeInstance) resumeInstance.textContent = "Target instance: " + codexLoginInstance;
+      if (resumeInstructions) resumeInstructions.textContent = "Restoring device authentication…";
+      watchCodexLogin(codexLoginInstance, codexLoginJob).catch(function (err) {
+        if (resumeInstructions) resumeInstructions.textContent = err.message;
+      });
+      return;
+    }
+    var loginButton = e.target.closest("[data-codex-login]");
+    if (loginButton) {
+      var nextLoginInstance = loginButton.getAttribute("data-codex-login") || "";
+      if (codexLoginInstance && codexLoginInstance !== nextLoginInstance) {
+        codexLoginJob = "";
+        codexLoginStartSequence += 1;
+      }
+      codexLoginInstance = nextLoginInstance;
+      var panel = $("#pa-codex-login-panel");
+      var instance = $("#pa-codex-login-instance");
+      var instructions = $("#pa-codex-login-instructions");
+      if (panel) panel.hidden = false;
+      if (instance) instance.textContent = "Target instance: " + codexLoginInstance;
+      if (instructions) instructions.textContent = "No login has started. Confirm to continue.";
+      return;
+    }
+    if (e.target.closest("#pa-codex-login-confirm")) {
+      var confirmButton = $("#pa-codex-login-confirm");
+      var loginInstructions = $("#pa-codex-login-instructions");
+      if (!codexLoginInstance || !confirmButton) return;
+      var startInstance = codexLoginInstance;
+      var startSequence = ++codexLoginStartSequence;
+      confirmButton.disabled = true;
+      if (loginInstructions) loginInstructions.textContent = "Starting device authentication…";
+      api(codexLoginBase(startInstance), {
+        method: "POST", body: { consent: true, timeout_seconds: 600 }
+      }).then(function (job) {
+        if (startSequence !== codexLoginStartSequence) {
+          return api(codexLoginBase(startInstance) + "/" +
+            encodeURIComponent(job.job_id) + "/cancel", { method: "POST" });
+        }
+        codexLoginJob = job.job_id;
+        return watchCodexLogin(startInstance, job.job_id);
+      }).catch(function (err) {
+        if (err.detail && err.detail.job_id) {
+          if (startSequence !== codexLoginStartSequence) return;
+          codexLoginJob = err.detail.job_id;
+          if (loginInstructions) loginInstructions.textContent =
+            "An existing login is active; restoring it…";
+          return watchCodexLogin(startInstance, codexLoginJob);
+        }
+        if (loginInstructions) loginInstructions.textContent = err.message;
+      }).finally(function () { confirmButton.disabled = false; });
+      return;
+    }
+    if (e.target.closest("#pa-codex-login-cancel")) {
+      var loginPanel = $("#pa-codex-login-panel");
+      codexLoginStartSequence += 1;
+      if (codexLoginJob && codexLoginInstance) {
+        api(codexLoginBase(codexLoginInstance) + "/" + encodeURIComponent(codexLoginJob) + "/cancel", {
+          method: "POST"
+        }).catch(function () {});
+      }
+      codexLoginJob = "";
+      if (loginPanel) loginPanel.hidden = true;
+      return;
+    }
     if (e.target.closest("#pa-remote-refresh")) {
       e.preventDefault();
       loadRemoteOperations();

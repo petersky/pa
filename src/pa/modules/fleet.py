@@ -402,6 +402,7 @@ async def fleet_health(request: Request) -> list[dict]:
                     resp = await client.get(
                         f"{inst.url.rstrip('/')}/api/agent/providers",
                         headers=headers,
+                        timeout=15.0,
                     )
                     if resp.status_code == 200:
                         payload = resp.json()
@@ -632,8 +633,7 @@ async def peer_update(request: Request, body: dict) -> dict:
     existing = _read_peer_operation(settings, operation_id)
     if existing:
         if existing.get("target_version") != target_version or (
-            target_identity
-            and existing.get("target_identity") != target_identity
+            target_identity and existing.get("target_identity") != target_identity
         ):
             raise HTTPException(
                 status_code=409,
@@ -1200,7 +1200,14 @@ def _proxy_agent_providers(
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail=f"Peer unreachable: {exc}") from exc
     if resp.status_code >= 400:
-        raise HTTPException(status_code=resp.status_code, detail=resp.text[:500])
+        try:
+            payload = resp.json()
+            detail = (
+                payload.get("detail", payload) if isinstance(payload, dict) else payload
+            )
+        except ValueError:
+            detail = resp.text[:500]
+        raise HTTPException(status_code=resp.status_code, detail=detail)
     return resp.json()
 
 
@@ -1240,6 +1247,62 @@ async def fleet_agent_provider_configure(
 @router.post("/fleet/instances/{instance_id}/agent-providers/{provider_id}/probe")
 def fleet_agent_provider_probe(request: Request, instance_id: str, provider_id: str):
     return _proxy_agent_providers(request, instance_id, "POST", f"/{provider_id}/probe")
+
+
+@router.post("/fleet/instances/{instance_id}/agent-providers/{provider_id}/login-jobs")
+async def fleet_agent_provider_login_start(
+    request: Request, instance_id: str, provider_id: str, body: dict
+):
+    return _proxy_agent_providers(
+        request, instance_id, "POST", f"/{provider_id}/login-jobs", body=body
+    )
+
+
+@router.post(
+    "/fleet/instances/{instance_id}/agent-providers/{provider_id}/codex-cli/install"
+)
+def fleet_agent_provider_codex_cli_install(
+    request: Request, instance_id: str, provider_id: str
+):
+    return _proxy_agent_providers(
+        request, instance_id, "POST", f"/{provider_id}/codex-cli/install"
+    )
+
+
+@router.get(
+    "/fleet/instances/{instance_id}/agent-providers/{provider_id}/login-jobs/{job_id}"
+)
+def fleet_agent_provider_login_status(
+    request: Request, instance_id: str, provider_id: str, job_id: str
+):
+    return _proxy_agent_providers(
+        request, instance_id, "GET", f"/{provider_id}/login-jobs/{job_id}"
+    )
+
+
+@router.get(
+    "/fleet/instances/{instance_id}/agent-providers/{provider_id}/login-jobs/{job_id}/events"
+)
+def fleet_agent_provider_login_events(
+    request: Request, instance_id: str, provider_id: str, job_id: str, after: int = 0
+):
+    return _proxy_agent_providers(
+        request,
+        instance_id,
+        "GET",
+        f"/{provider_id}/login-jobs/{job_id}/events?after={after}",
+    )
+
+
+@router.post(
+    "/fleet/instances/{instance_id}/agent-providers/{provider_id}/login-jobs/{job_id}/cancel"
+)
+def fleet_agent_provider_login_cancel(
+    request: Request, instance_id: str, provider_id: str, job_id: str
+):
+    return _proxy_agent_providers(
+        request, instance_id, "POST", f"/{provider_id}/login-jobs/{job_id}/cancel"
+    )
 
 
 @ui_router.get("/fleet")

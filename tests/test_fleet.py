@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
+from fastapi import HTTPException
 
 from pa.config import Settings
 from pa.domain.instance_config import load_instance_config, update_instance_config
@@ -31,6 +32,7 @@ from pa.fleet.remote_install import (
     build_remote_env,
 )
 from pa.network.peer_table import PeerTable
+from pa.modules.fleet import _proxy_agent_providers, fleet_agent_provider_login_start
 
 
 class FleetRegistryReloadTests(unittest.TestCase):
@@ -67,6 +69,59 @@ class FleetRegistryReloadTests(unittest.TestCase):
         c2 = FleetRegistry(self.data_dir, "fleet-a")
         c2._tokens.clear()
         self.assertIsNotNone(c2.consume_join_token(t2))
+
+    def test_codex_login_start_proxies_consent_only_to_target(self) -> None:
+        request = MagicMock()
+        with patch(
+            "pa.modules.fleet._proxy_agent_providers",
+            return_value={"job_id": "remote-job", "state": "pending"},
+        ) as proxy:
+            result = __import__("asyncio").run(
+                fleet_agent_provider_login_start(
+                    request,
+                    "peer-1",
+                    "codex",
+                    {"consent": True, "timeout_seconds": 600},
+                )
+            )
+        self.assertEqual(result["job_id"], "remote-job")
+        proxy.assert_called_once_with(
+            request,
+            "peer-1",
+            "POST",
+            "/codex/login-jobs",
+            body={"consent": True, "timeout_seconds": 600},
+        )
+
+    def test_provider_proxy_preserves_structured_active_login_detail(self) -> None:
+        settings = Settings(data_dir=self.data_dir, sync_token="shared")
+        fleet = FleetRegistry(self.data_dir, settings.fleet_id)
+        fleet.upsert_instance(
+            FleetInstance(instance_id="peer-1", name="peer", url="http://peer:8080")
+        )
+        ctx = MagicMock()
+        ctx.settings = settings
+        ctx.require_service.return_value = fleet
+        request = MagicMock()
+        request.app.state.ctx = ctx
+        response = MagicMock()
+        response.status_code = 409
+        response.json.return_value = {
+            "detail": {"message": "A Codex login is already active", "job_id": "job-1"}
+        }
+        client = MagicMock()
+        client.__enter__.return_value = client
+        client.request.return_value = response
+        with (
+            patch("pa.modules.fleet.require_user"),
+            patch("pa.modules.fleet.httpx.Client", return_value=client),
+            self.assertRaises(HTTPException) as raised,
+        ):
+            _proxy_agent_providers(
+                request, "peer-1", "POST", "/codex/login-jobs", body={"consent": True}
+            )
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertEqual(raised.exception.detail["job_id"], "job-1")
 
 
 class FleetJoinWiringTests(unittest.TestCase):
@@ -448,7 +503,7 @@ class FleetHealthParallelTests(unittest.IsolatedAsyncioTestCase):
                 def json(self):
                     return self._payload
 
-            async def fake_get(url, headers=None):
+            async def fake_get(url, headers=None, timeout=None):
                 if url.endswith("/api/health"):
                     return FakeResp(200)
                 if url.endswith("/api/agent/providers"):
@@ -488,6 +543,15 @@ class FleetHealthParallelTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(by_id["b"]["providers"][0]["id"], "b")
             self.assertEqual(by_id["a"]["current_version"], "0.2.5")
             self.assertEqual(by_id["b"]["available_version"], "0.2.6")
+            provider_calls = [
+                call
+                for call in mock_client.get.await_args_list
+                if call.args[0].endswith("/api/agent/providers")
+            ]
+            self.assertTrue(provider_calls)
+            self.assertTrue(
+                all(call.kwargs["timeout"] == 15.0 for call in provider_calls)
+            )
             self.assertEqual(by_id["a"]["update_channel"], "beta")
             # health + providers + status + update check for each instance
             self.assertEqual(mock_client.get.await_count, 8)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -23,11 +24,13 @@ from pa.acp.providers.metadata import (
     save_credentials,
     save_metadata,
 )
+from pa.acp.providers.codex_auth import get_codex_login_store, resolve_codex_cli
 from pa.packaging.paths import resolve_executable
 
 logger = logging.getLogger(__name__)
 
 NPM_PACKAGE = "@agentclientprotocol/codex-acp"
+CODEX_CLI_NPM_PACKAGE = "@openai/codex"
 _DEFAULT_COMMAND = "codex-acp"
 _NPX_ARGS = ["-y", NPM_PACKAGE]
 
@@ -62,7 +65,9 @@ class CodexProvider:
             if args_override is not None:
                 spec.args = list(args_override)
         else:
-            resolved = resolve_executable(_DEFAULT_COMMAND) or shutil.which(_DEFAULT_COMMAND)
+            resolved = resolve_executable(_DEFAULT_COMMAND) or shutil.which(
+                _DEFAULT_COMMAND
+            )
             if resolved:
                 spec.command = str(resolved)
                 spec.args = list(args_override) if args_override is not None else []
@@ -93,12 +98,9 @@ class CodexProvider:
         direct = resolve_executable(_DEFAULT_COMMAND) or shutil.which(_DEFAULT_COMMAND)
         meta = load_metadata(data_dir, self.id)
         creds = load_credentials(data_dir, self.id)
-        auth = bool(
-            creds.get("CODEX_API_KEY")
-            or creds.get("OPENAI_API_KEY")
-            or spec.env.get("CODEX_API_KEY")
-            or spec.env.get("OPENAI_API_KEY")
-        )
+        codex_cli = resolve_codex_cli(spec.env.get("CODEX_PATH"))
+        auth = _codex_auth_status(codex_cli, creds=creds, env=spec.env)
+        login_job = get_codex_login_store(data_dir).latest_active()
         version = None
         if direct:
             version = _run_version([str(direct), "--version"])
@@ -107,15 +109,32 @@ class CodexProvider:
         return ProviderStatus(
             id=self.id,
             display_name=self.display_name,
-            installed=bool(direct) or bool(meta and meta.install_method in {"npm", "npx"}),
+            installed=bool(direct)
+            or bool(meta and meta.install_method in {"npm", "npx"}),
             available=bool(direct) or bool(shutil.which("npx")),
             command=spec.command,
             resolved_path=str(direct) if direct else None,
             version=version or (meta.version if meta else None),
-            auth_configured=auth,
-            install_method=meta.install_method if meta else ("npm" if direct else "npx"),
+            auth_configured=auth[0],
+            auth_method=auth[1],
+            auth_status=auth[2],
+            auth_error=auth[3],
+            login_in_progress=login_job is not None,
+            codex_cli_installed=codex_cli is not None,
+            codex_cli_path=codex_cli,
+            codex_cli_version=_run_version([codex_cli, "--version"])
+            if codex_cli
+            else None,
+            install_method=meta.install_method
+            if meta
+            else ("npm" if direct else "npx"),
             last_probe=meta.last_probe if meta else None,
-            meta={"args": spec.args, "npm_package": NPM_PACKAGE},
+            meta={
+                "args": spec.args,
+                "npm_package": NPM_PACKAGE,
+                "codex_cli_required_for_login": True,
+                "active_login_job_id": login_job.job_id if login_job else None,
+            },
         )
 
     def install(self, data_dir: Path) -> ProviderInstallResult:
@@ -156,7 +175,11 @@ class CodexProvider:
             detail = (proc.stdout or "")[-400:]
             err = (proc.stderr or "")[-400:]
             resolved = shutil.which(_DEFAULT_COMMAND)
-            version = _run_version([resolved or _DEFAULT_COMMAND, "--version"]) if ok else None
+            version = (
+                _run_version([resolved or _DEFAULT_COMMAND, "--version"])
+                if ok
+                else None
+            )
             if ok:
                 save_metadata(
                     data_dir,
@@ -171,7 +194,9 @@ class CodexProvider:
             return ProviderInstallResult(
                 id=self.id,
                 ok=ok,
-                message=("Installed " + NPM_PACKAGE) if ok else f"Install failed: {err or detail}",
+                message=("Installed " + NPM_PACKAGE)
+                if ok
+                else f"Install failed: {err or detail}",
                 version=version,
                 command=str(resolved) if resolved else _DEFAULT_COMMAND,
                 detail={"stdout_tail": detail, "stderr_tail": err},
@@ -197,7 +222,11 @@ class CodexProvider:
             )
             ok = proc.returncode == 0
             resolved = shutil.which(_DEFAULT_COMMAND)
-            version = _run_version([resolved or _DEFAULT_COMMAND, "--version"]) if ok else None
+            version = (
+                _run_version([resolved or _DEFAULT_COMMAND, "--version"])
+                if ok
+                else None
+            )
             if ok:
                 save_metadata(
                     data_dir,
@@ -220,9 +249,7 @@ class CodexProvider:
         except (OSError, subprocess.TimeoutExpired) as exc:
             return ProviderInstallResult(id=self.id, ok=False, message=str(exc))
 
-    def configure(
-        self, data_dir: Path, body: ProviderConfigureBody
-    ) -> ProviderStatus:
+    def configure(self, data_dir: Path, body: ProviderConfigureBody) -> ProviderStatus:
         meta = load_metadata(data_dir, self.id) or ProviderMetadata(provider_id=self.id)
         env = dict(meta.env)
         env.update(body.env)
@@ -263,5 +290,128 @@ def _run_version(cmd: list[str]) -> str | None:
         )
         text = (proc.stdout or proc.stderr or "").strip()
         return text.splitlines()[0][:120] if text else None
-    except (OSError, subprocess.TimeoutExpired):
+    except OSError, subprocess.TimeoutExpired:
         return None
+
+
+def install_codex_cli() -> ProviderInstallResult:
+    """Install the official CLI separately from the ACP adapter."""
+    npm = shutil.which("npm")
+    if not npm:
+        return ProviderInstallResult(
+            id="codex-cli",
+            ok=False,
+            message="npm not found — install Node.js, then install @openai/codex",
+        )
+    try:
+        proc = subprocess.run(
+            [npm, "install", "--global", CODEX_CLI_NPM_PACKAGE],
+            capture_output=True,
+            text=True,
+            timeout=300,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return ProviderInstallResult(
+            id="codex-cli", ok=False, message="Codex CLI install timed out"
+        )
+    except OSError as exc:
+        return ProviderInstallResult(
+            id="codex-cli",
+            ok=False,
+            message=f"Unable to start npm: {type(exc).__name__}",
+        )
+    resolved = resolve_codex_cli()
+    if proc.returncode != 0:
+        return ProviderInstallResult(
+            id="codex-cli",
+            ok=False,
+            message=f"Codex CLI install failed (npm exit {proc.returncode}); inspect npm logs on the target",
+        )
+    return ProviderInstallResult(
+        id="codex-cli",
+        ok=resolved is not None,
+        message="Installed official Codex CLI"
+        if resolved
+        else "npm completed but codex is not on the PA service PATH",
+        command=resolved,
+        version=_run_version([resolved, "--version"]) if resolved else None,
+    )
+
+
+def _codex_auth_status(
+    codex_cli: str | None, *, creds: dict[str, str], env: dict[str, str]
+) -> tuple[bool, str, str, str | None]:
+    """Return configured, method, actionable status, error without credential values."""
+    # Only provider-scoped configuration counts here. An unrelated key inherited
+    # by the PA service must not mask Codex CLI's own ChatGPT login state.
+    combined = {**env, **creds}
+    if combined.get("CODEX_ACCESS_TOKEN"):
+        return (
+            True,
+            "access_token",
+            "Access token configured for the target PA process.",
+            None,
+        )
+    if combined.get("CODEX_API_KEY") or combined.get("OPENAI_API_KEY"):
+        return True, "api_key", "API key configured for the target PA process.", None
+    if not codex_cli:
+        return (
+            False,
+            "none",
+            "Codex CLI is not installed; install it before ChatGPT sign-in.",
+            "codex CLI not found",
+        )
+    try:
+        proc = subprocess.run(
+            [codex_cli, "login", "status"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return (
+            False,
+            "unknown",
+            "Codex login status timed out; retry status on the target.",
+            "codex login status timed out",
+        )
+    except OSError as exc:
+        return (
+            False,
+            "unknown",
+            "Unable to run Codex login status on the target.",
+            f"codex login status failed: {type(exc).__name__}",
+        )
+    output = "\n".join((proc.stdout or "", proc.stderr or "")).strip()
+    normalized = re.sub(r"\s+", " ", output).lower()
+    if proc.returncode == 0:
+        if "chatgpt" in normalized:
+            return True, "chatgpt_oauth", "Signed in with ChatGPT on the target.", None
+        if "access token" in normalized:
+            return (
+                True,
+                "access_token",
+                "Signed in with a Codex access token on the target.",
+                None,
+            )
+        if "api key" in normalized or "api_key" in normalized:
+            return True, "api_key", "Signed in with an API key on the target.", None
+        if "not logged in" in normalized or "not authenticated" in normalized:
+            return False, "none", "Not signed in to Codex on the target.", None
+        return (
+            False,
+            "unknown",
+            "Codex status succeeded, but its authentication method is unknown; sign in again if needed.",
+            None,
+        )
+    if "not logged in" in normalized or "not authenticated" in normalized:
+        return False, "none", "Not signed in to Codex on the target.", None
+    # Never relay command output: future CLI versions could include sensitive detail.
+    return (
+        False,
+        "unknown",
+        "Codex could not validate the stored login; sign in again or log out on the target.",
+        f"codex login status exited {proc.returncode}",
+    )

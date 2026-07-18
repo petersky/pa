@@ -8,6 +8,8 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from pa.acp.providers.base import ProviderConfigureBody
+from pa.acp.providers.codex_auth import get_codex_login_store, resolve_codex_cli
+from pa.acp.providers.codex import install_codex_cli
 from pa.acp.providers.registry import get_provider
 from pa.acp.providers.resolve import list_provider_summaries
 from pa.core.contracts import Module
@@ -29,6 +31,11 @@ class InstanceProviderBody(BaseModel):
     """Set the instance-default ACP provider (persisted to config.json)."""
 
     provider: str
+
+
+class LoginBody(BaseModel):
+    consent: bool = False
+    timeout_seconds: int = Field(default=600, ge=60, le=1800)
 
 
 def _data_dir(request: Request):
@@ -97,6 +104,94 @@ def probe_provider(request: Request, provider_id: str) -> dict:
     return provider.probe(_data_dir(request))
 
 
+@router.post("/{provider_id}/login-jobs", status_code=202)
+def start_provider_login(request: Request, provider_id: str, body: LoginBody) -> dict:
+    """Start device auth only after explicit user consent."""
+    if provider_id != "codex":
+        raise HTTPException(
+            status_code=400, detail="Device login is supported only for Codex"
+        )
+    if not body.consent:
+        raise HTTPException(
+            status_code=400, detail="Explicit consent is required to start sign-in"
+        )
+    configured_path = (
+        get_provider("codex")
+        .resolve_spawn(data_dir=_data_dir(request))
+        .env.get("CODEX_PATH")
+    )
+    codex = resolve_codex_cli(configured_path)
+    if not codex:
+        raise HTTPException(
+            status_code=409, detail="Codex CLI is not installed on this instance"
+        )
+    store = get_codex_login_store(_data_dir(request))
+    active = store.latest_active()
+    if active:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "A Codex login is already active",
+                "job_id": active.job_id,
+            },
+        )
+    try:
+        job = store.create(timeout_seconds=body.timeout_seconds)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    store.start(job, codex)
+    return job.public_dict()
+
+
+@router.post("/{provider_id}/codex-cli/install")
+def install_provider_codex_cli(provider_id: str) -> dict:
+    if provider_id != "codex":
+        raise HTTPException(
+            status_code=400, detail="Codex CLI applies only to the Codex provider"
+        )
+    return install_codex_cli().model_dump(mode="json")
+
+
+@router.get("/{provider_id}/login-jobs/{job_id}")
+def get_provider_login(request: Request, provider_id: str, job_id: str) -> dict:
+    if provider_id != "codex":
+        raise HTTPException(status_code=404, detail="Login job not found")
+    job = get_codex_login_store(_data_dir(request)).get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Login job not found")
+    return job.public_dict()
+
+
+@router.get("/{provider_id}/login-jobs/{job_id}/events")
+def get_provider_login_events(
+    request: Request, provider_id: str, job_id: str, after: int = 0
+) -> dict:
+    if provider_id != "codex":
+        raise HTTPException(status_code=404, detail="Login job not found")
+    job = get_codex_login_store(_data_dir(request)).get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Login job not found")
+    return {
+        "job_id": job.job_id,
+        "state": job.state.value,
+        "events": [
+            event.model_dump(mode="json")
+            for event in job.events
+            if event.sequence > after
+        ],
+    }
+
+
+@router.post("/{provider_id}/login-jobs/{job_id}/cancel")
+def cancel_provider_login(request: Request, provider_id: str, job_id: str) -> dict:
+    if provider_id != "codex":
+        raise HTTPException(status_code=404, detail="Login job not found")
+    job = get_codex_login_store(_data_dir(request)).cancel(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Login job not found")
+    return job.public_dict()
+
+
 @router.put("/default")
 def set_default_provider(request: Request, body: InstanceProviderBody) -> dict:
     try:
@@ -147,8 +242,10 @@ class AgentProvidersModule(Module):
                     "GET",
                     f"/api/agent/providers/{provider_id}",
                 )
-            return get_provider(provider_id).status(settings.data_dir).model_dump(
-                mode="json"
+            return (
+                get_provider(provider_id)
+                .status(settings.data_dir)
+                .model_dump(mode="json")
             )
 
         @mcp.tool()
@@ -163,8 +260,10 @@ class AgentProvidersModule(Module):
                     "POST",
                     f"/api/agent/providers/{provider_id}/install",
                 )
-            return get_provider(provider_id).install(settings.data_dir).model_dump(
-                mode="json"
+            return (
+                get_provider(provider_id)
+                .install(settings.data_dir)
+                .model_dump(mode="json")
             )
 
         @mcp.tool()
@@ -179,8 +278,10 @@ class AgentProvidersModule(Module):
                     "POST",
                     f"/api/agent/providers/{provider_id}/update",
                 )
-            return get_provider(provider_id).update(settings.data_dir).model_dump(
-                mode="json"
+            return (
+                get_provider(provider_id)
+                .update(settings.data_dir)
+                .model_dump(mode="json")
             )
 
         @mcp.tool()
@@ -229,6 +330,77 @@ class AgentProvidersModule(Module):
                 )
             return get_provider(provider_id).probe(settings.data_dir)
 
+        @mcp.tool()
+        def agent_provider_login_start(
+            provider_id: str,
+            consent: bool,
+            timeout_seconds: int = 600,
+            instance_id: str | None = None,
+        ) -> dict:
+            """Explicitly start a bounded Codex device-login job on a target instance."""
+            body = {"consent": consent, "timeout_seconds": timeout_seconds}
+            if instance_id:
+                return _fleet_proxy(
+                    ctx,
+                    instance_id,
+                    "POST",
+                    f"/api/agent/providers/{provider_id}/login-jobs",
+                    json_body=body,
+                )
+            if provider_id != "codex" or not consent:
+                raise ValueError("Codex device login requires explicit consent")
+            configured_path = (
+                get_provider("codex")
+                .resolve_spawn(data_dir=settings.data_dir)
+                .env.get("CODEX_PATH")
+            )
+            codex = resolve_codex_cli(configured_path)
+            if not codex:
+                raise ValueError("Codex CLI is not installed on this instance")
+            store = get_codex_login_store(settings.data_dir)
+            if store.latest_active():
+                raise ValueError("A Codex login is already active")
+            try:
+                job = store.create(timeout_seconds=timeout_seconds)
+            except ValueError as exc:
+                raise ValueError(str(exc)) from exc
+            store.start(job, codex)
+            return job.public_dict()
+
+        @mcp.tool()
+        def agent_provider_login_status(
+            provider_id: str, job_id: str, instance_id: str | None = None
+        ) -> dict:
+            """Read a device-login job without returning credentials."""
+            if instance_id:
+                return _fleet_proxy(
+                    ctx,
+                    instance_id,
+                    "GET",
+                    f"/api/agent/providers/{provider_id}/login-jobs/{job_id}",
+                )
+            job = get_codex_login_store(settings.data_dir).get(job_id)
+            if provider_id != "codex" or not job:
+                raise ValueError("Login job not found")
+            return job.public_dict()
+
+        @mcp.tool()
+        def agent_provider_login_cancel(
+            provider_id: str, job_id: str, instance_id: str | None = None
+        ) -> dict:
+            """Cancel an active device-login job."""
+            if instance_id:
+                return _fleet_proxy(
+                    ctx,
+                    instance_id,
+                    "POST",
+                    f"/api/agent/providers/{provider_id}/login-jobs/{job_id}/cancel",
+                )
+            job = get_codex_login_store(settings.data_dir).cancel(job_id)
+            if provider_id != "codex" or not job:
+                raise ValueError("Login job not found")
+            return job.public_dict()
+
 
 def _fleet_proxy(
     ctx: AppContext,
@@ -257,5 +429,7 @@ def _fleet_proxy(
     with httpx.Client(timeout=120.0) as client:
         resp = client.request(method, url, headers=headers, json=json_body)
         if resp.status_code >= 400:
-            raise RuntimeError(f"{method} {path} → {resp.status_code}: {resp.text[:300]}")
+            raise RuntimeError(
+                f"{method} {path} → {resp.status_code}: {resp.text[:300]}"
+            )
         return resp.json()

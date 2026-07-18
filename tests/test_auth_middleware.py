@@ -48,6 +48,18 @@ class SyncTokenAuthSeparationTests(unittest.TestCase):
                 Route("/api/fleet/peer-update/{operation_id}", _ok, methods=["GET"]),
                 Route("/api/config", _ok, methods=["GET"]),
                 Route("/api/agent/prompt", _ok, methods=["POST"]),
+                Route("/api/agent/providers", _ok, methods=["GET"]),
+                Route("/api/agent/providers/codex", _ok, methods=["GET"]),
+                Route(
+                    "/api/agent/providers/codex/login-jobs",
+                    _ok,
+                    methods=["POST"],
+                ),
+                Route(
+                    "/api/agent/providers/codex/login-jobs/{job_id}",
+                    _ok,
+                    methods=["GET"],
+                ),
             ]
         )
         app.add_middleware(
@@ -138,6 +150,19 @@ class SyncTokenAuthSeparationTests(unittest.TestCase):
             headers={"Authorization": f"Bearer {user.cli_token}"},
         )
         self.assertEqual(response.status_code, 200, response.text)
+
+    def test_hardened_peer_accepts_sync_token_for_provider_login_proxy(self) -> None:
+        self.settings.auth_required = True
+        headers = {"Authorization": "Bearer shared-secret"}
+        for method, path in [
+            ("GET", "/api/agent/providers"),
+            ("GET", "/api/agent/providers/codex"),
+            ("POST", "/api/agent/providers/codex/login-jobs"),
+            ("GET", "/api/agent/providers/codex/login-jobs/job-123"),
+        ]:
+            with self.subTest(method=method, path=path):
+                response = self.client.request(method, path, headers=headers, json={})
+                self.assertEqual(response.status_code, 200, response.text)
 
 
 if __name__ == "__main__":

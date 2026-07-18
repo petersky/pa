@@ -38,6 +38,13 @@ class ProviderStatus(BaseModel):
     resolved_path: str | None = None
     version: str | None = None
     auth_configured: bool = False
+    auth_method: str = "none"
+    auth_status: str | None = None
+    auth_error: str | None = None
+    login_in_progress: bool = False
+    codex_cli_installed: bool | None = None
+    codex_cli_path: str | None = None
+    codex_cli_version: str | None = None
     install_method: str | None = None
     last_probe: dict[str, Any] | None = None
     error: str | None = None
