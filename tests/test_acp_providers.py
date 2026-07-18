@@ -234,6 +234,22 @@ class AcpProviderTests(unittest.TestCase):
         self.assertIn("unknown", message)
         self.assertIsNone(error)
 
+    def test_unscoped_process_api_key_does_not_mask_chatgpt_login(self) -> None:
+        import subprocess
+
+        chatgpt = subprocess.CompletedProcess(
+            ["codex", "login", "status"], 0, "Logged in using ChatGPT\n", ""
+        )
+        with (
+            patch.dict("os.environ", {"OPENAI_API_KEY": "unrelated-service-key"}),
+            patch("pa.acp.providers.codex.subprocess.run", return_value=chatgpt),
+        ):
+            configured, method, _, _ = _codex_auth_status(
+                "/usr/bin/codex", creds={}, env={}
+            )
+        self.assertTrue(configured)
+        self.assertEqual(method, "chatgpt_oauth")
+
     def test_login_output_redacts_credentials_but_keeps_device_instructions(
         self,
     ) -> None:
@@ -349,6 +365,23 @@ class AcpProviderTests(unittest.TestCase):
             store._run(job.job_id, "/custom/codex")
         popen.assert_not_called()
         self.assertEqual(job.state, LoginState.CANCELLED)
+
+    def test_sigkill_fallback_reaps_login_process(self) -> None:
+        import subprocess
+
+        from pa.acp.providers.codex_auth import _terminate_process
+
+        process = MagicMock()
+        process.pid = 12345
+        process.poll.return_value = None
+        process.wait.side_effect = [
+            subprocess.TimeoutExpired(["codex"], 3),
+            -9,
+        ]
+        with patch("pa.acp.providers.codex_auth.os.killpg") as killpg:
+            _terminate_process(process)
+        self.assertEqual(process.wait.call_count, 2)
+        self.assertEqual(killpg.call_count, 2)
 
     def test_resolve_codex_cli_honors_configured_executable(self) -> None:
         from pa.acp.providers.codex_auth import resolve_codex_cli

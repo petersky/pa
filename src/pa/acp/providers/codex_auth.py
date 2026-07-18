@@ -343,5 +343,8 @@ def _terminate_process(proc: subprocess.Popen[str]) -> None:
     except OSError, subprocess.TimeoutExpired:
         try:
             os.killpg(proc.pid, signal.SIGKILL)
+            proc.wait(timeout=3)
         except OSError:
+            pass
+        except subprocess.TimeoutExpired:
             pass

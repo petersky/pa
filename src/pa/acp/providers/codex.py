@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import re
 import shutil
 import subprocess
@@ -344,7 +343,9 @@ def _codex_auth_status(
     codex_cli: str | None, *, creds: dict[str, str], env: dict[str, str]
 ) -> tuple[bool, str, str, str | None]:
     """Return configured, method, actionable status, error without credential values."""
-    combined = {**os.environ, **env, **creds}
+    # Only provider-scoped configuration counts here. An unrelated key inherited
+    # by the PA service must not mask Codex CLI's own ChatGPT login state.
+    combined = {**env, **creds}
     if combined.get("CODEX_ACCESS_TOKEN"):
         return (
             True,
