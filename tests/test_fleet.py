@@ -123,6 +123,16 @@ class FleetRegistryReloadTests(unittest.TestCase):
         self.assertEqual(raised.exception.status_code, 409)
         self.assertEqual(raised.exception.detail["job_id"], "job-1")
 
+    def test_device_login_ui_supports_local_proxy_resume_and_success_refresh(self) -> None:
+        source = Path("src/pa/server/static/js/fleet.js").read_text()
+        self.assertIn('return "/api/agent/providers/codex/login-jobs"', source)
+        self.assertIn('data-codex-login-resume="', source)
+        self.assertIn("Use any browser to finish signing in", source)
+        self.assertIn(
+            'if (job.state === "succeeded") setTimeout(loadLiveStatus, 1000)',
+            source,
+        )
+
 
 class FleetJoinWiringTests(unittest.TestCase):
     def setUp(self) -> None:

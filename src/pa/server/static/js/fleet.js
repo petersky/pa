@@ -557,6 +557,7 @@
   var codexLoginStartSequence = 0;
 
   function codexLoginBase(instanceId) {
+    if (!instanceId) return "/api/agent/providers/codex/login-jobs";
     return "/api/fleet/instances/" + encodeURIComponent(instanceId) +
       "/agent-providers/codex/login-jobs";
   }
@@ -566,6 +567,9 @@
     while (codexLoginJob === jobId) {
       var job = await api(codexLoginBase(instanceId) + "/" + encodeURIComponent(jobId));
       var parts = [];
+      if (job.verification_url || job.user_code) {
+        parts.push("Use any browser to finish signing in; credentials stay on the target instance.");
+      }
       if (job.verification_url) {
         parts.push('<a href="' + escapeHtml(job.verification_url) +
           '" target="_blank" rel="noopener">Open verification page</a>');
@@ -577,6 +581,7 @@
       if (["succeeded", "failed", "cancelled", "timed_out", "interrupted"].indexOf(job.state) >= 0) {
         codexLoginJob = "";
         loadLiveStatus();
+        if (job.state === "succeeded") setTimeout(loadLiveStatus, 1000);
         return;
       }
       await new Promise(function (resolve) { setTimeout(resolve, 1000); });
