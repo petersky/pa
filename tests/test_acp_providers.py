@@ -8,6 +8,7 @@ import threading
 import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -19,6 +20,8 @@ from pa.acp.providers.codex_auth import (
     CodexLoginJob,
     CodexLoginJobStore,
     LoginState,
+    MAX_EVENTS,
+    normalize_terminal_output,
     redact_login_output,
 )
 from pa.acp.providers.registry import (
@@ -271,6 +274,88 @@ class AcpProviderTests(unittest.TestCase):
         self.assertIn("https://auth.openai.com/device", authorization_instructions)
         self.assertIn("ABCD-EFGH", authorization_instructions)
 
+    def test_terminal_normalization_and_parser_handle_ansi_chunk_boundaries(self) -> None:
+        store = CodexLoginJobStore(self.data_dir)
+        job = store.create()
+        job.state = LoginState.RUNNING
+        capture = "\x1b[90mOpen https://auth.openai.com/device\x1b[0m\r\nenter ABCD-"
+        store._consume_output(job, capture, capture)
+        capture += "EFGH\x1b[94m\x1b[0m"
+        store._consume_output(job, capture, "EFGH\x1b[94m\x1b[0m")
+        self.assertEqual(job.verification_url, "https://auth.openai.com/device")
+        self.assertEqual(job.user_code, "ABCD-EFGH")
+        self.assertEqual(job.state, LoginState.WAITING_FOR_USER)
+        self.assertNotIn("[90m", normalize_terminal_output(capture))
+
+    @unittest.skipIf(__import__("os").name == "nt", "Unix PTY capture")
+    def test_login_uses_pty_to_surface_unterminated_device_instructions(self) -> None:
+        script = self.data_dir / "fake-codex"
+        script.write_text(
+            "#!/bin/sh\nprintf '\\033[90mOpen https://auth.openai.com/device\\033[0m enter ABCD-EFGH'\n"
+        )
+        script.chmod(0o700)
+        store = CodexLoginJobStore(self.data_dir)
+        job = store.create()
+        store.start(job, str(script))
+        deadline = time.monotonic() + 3
+        while not job.terminal and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertEqual(job.state, LoginState.SUCCEEDED)
+        self.assertEqual(job.verification_url, "https://auth.openai.com/device")
+        self.assertEqual(job.user_code, "ABCD-EFGH")
+
+    @unittest.skipIf(__import__("os").name == "nt", "Unix process-group cleanup")
+    def test_login_with_no_output_fails_actionably_and_reaps(self) -> None:
+        script = self.data_dir / "silent-codex"
+        script.write_text("#!/bin/sh\nsleep 5\n")
+        script.chmod(0o700)
+        store = CodexLoginJobStore(self.data_dir)
+        job = store.create()
+        with patch("pa.acp.providers.codex_auth.NO_OUTPUT_TIMEOUT_S", 0.1):
+            store.start(job, str(script))
+            deadline = time.monotonic() + 3
+            while (
+                not job.terminal or job.job_id in store._processes
+            ) and time.monotonic() < deadline:
+                time.sleep(0.01)
+        self.assertEqual(job.state, LoginState.FAILED)
+        self.assertIn("no device-login instructions", job.error or "")
+        self.assertNotIn(job.job_id, store._processes)
+
+    @unittest.skipIf(__import__("os").name == "nt", "Unix process-group cleanup")
+    def test_login_with_non_actionable_output_times_out_and_reaps(self) -> None:
+        script = self.data_dir / "spinner-codex"
+        script.write_text("#!/bin/sh\nprintf 'Starting device login'\nsleep 5\n")
+        script.chmod(0o700)
+        store = CodexLoginJobStore(self.data_dir)
+        job = store.create()
+        with (
+            patch("pa.acp.providers.codex_auth.NO_OUTPUT_TIMEOUT_S", 5),
+            patch("pa.acp.providers.codex_auth.NO_INSTRUCTIONS_TIMEOUT_S", 0.1),
+        ):
+            store.start(job, str(script))
+            deadline = time.monotonic() + 3
+            while (
+                not job.terminal or job.job_id in store._processes
+            ) and time.monotonic() < deadline:
+                time.sleep(0.01)
+        self.assertEqual(job.state, LoginState.FAILED)
+        self.assertIn("verification URL and code", job.error or "")
+        self.assertNotIn(job.job_id, store._processes)
+
+    def test_persisted_events_are_bounded_and_never_store_cli_output(self) -> None:
+        secret = "access_token=never-persist-this"
+        store = CodexLoginJobStore(self.data_dir)
+        job = store.create()
+        capture = "Open https://auth.openai.com/device and enter ABCD-EFGH " + secret
+        for _ in range(MAX_EVENTS + 20):
+            store._consume_output(job, capture, secret)
+            store._event(job, "progress", secret)
+        store._persist(job)
+        persisted = (store.directory / f"{job.job_id}.json").read_text()
+        self.assertLessEqual(len(job.events), MAX_EVENTS)
+        self.assertNotIn("never-persist-this", persisted)
+
     def test_login_store_atomically_allows_only_one_active_job(self) -> None:
         store = CodexLoginJobStore(self.data_dir)
         barrier = threading.Barrier(2)
@@ -453,6 +538,26 @@ class AcpProviderTests(unittest.TestCase):
         (directory / "job-1.json").write_text(job.model_dump_json())
         loaded = CodexLoginJobStore(self.data_dir).get("job-1")
         self.assertIsNotNone(loaded)
+        self.assertEqual(loaded.state, LoginState.INTERRUPTED)
+
+    def test_restart_recovery_cleans_recorded_login_process_group(self) -> None:
+        directory = self.data_dir / "agent_provider_jobs" / "codex"
+        directory.mkdir(parents=True)
+        now = datetime.now(UTC)
+        job = CodexLoginJob(
+            job_id="job-orphan",
+            state=LoginState.RUNNING,
+            created_at=now.isoformat(),
+            updated_at=now.isoformat(),
+            expires_at=(now + timedelta(minutes=10)).isoformat(),
+            timeout_seconds=600,
+            owner_pid=999_999_999,
+            process_pid=4242,
+        )
+        (directory / "job-orphan.json").write_text(job.model_dump_json())
+        with patch("pa.acp.providers.codex_auth._terminate_orphan_group") as cleanup:
+            loaded = CodexLoginJobStore(self.data_dir).get(job.job_id)
+        cleanup.assert_called_once_with(4242)
         self.assertEqual(loaded.state, LoginState.INTERRUPTED)
 
     def test_login_api_requires_explicit_consent_without_starting_process(self) -> None:

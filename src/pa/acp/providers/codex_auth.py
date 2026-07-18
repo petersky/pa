@@ -29,9 +29,21 @@ from pa.packaging.paths import resolve_executable
 DEFAULT_LOGIN_TIMEOUT_S = 600
 MIN_LOGIN_TIMEOUT_S = 60
 MAX_LOGIN_TIMEOUT_S = 1800
+NO_OUTPUT_TIMEOUT_S = 30
+NO_INSTRUCTIONS_TIMEOUT_S = 90
+MAX_CAPTURE_CHARS = 16_384
+MAX_EVENT_CHARS = 500
+MAX_EVENTS = 200
 
-_URL_RE = re.compile(r"https://[^\s<>]+", re.IGNORECASE)
-_CODE_RE = re.compile(r"(?<![A-Z0-9])([A-Z0-9]{4}(?:-[A-Z0-9]{4})+)(?![A-Z0-9])")
+_URL_RE = re.compile(r"https://[^\s<>\]\[\"']{1,2048}", re.IGNORECASE)
+_CODE_RE = re.compile(
+    r"(?i)(?:code(?:\s+is)?|enter|use)\s*[:\-]?\s*"
+    r"([A-Z0-9]{4}(?:[ -][A-Z0-9]{4}){1,4})|"
+    r"(?<![A-Z0-9])([A-Z0-9]{4}(?:-[A-Z0-9]{4}){1,4})(?![A-Z0-9])"
+)
+_ANSI_CSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+_ANSI_OSC_RE = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
+_ANSI_SINGLE_RE = re.compile(r"\x1b[@-_]")
 _SECRET_VALUE_RE = re.compile(
     r"(?i)\b(access[_ -]?token|refresh[_ -]?token|id[_ -]?token|api[_ -]?key|authorization)\b(\s*[:=]\s*)(?:bearer\s+)?\S+"
 )
@@ -74,6 +86,7 @@ class CodexLoginJob(BaseModel):
     expires_at: str
     timeout_seconds: int
     owner_pid: int = 0
+    process_pid: int = 0
     verification_url: str | None = None
     user_code: str | None = None
     error: str | None = None
@@ -95,7 +108,7 @@ class CodexLoginJobStore:
         self.directory.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
         self._jobs: dict[str, CodexLoginJob] = {}
-        self._processes: dict[str, subprocess.Popen[str]] = {}
+        self._processes: dict[str, subprocess.Popen[Any]] = {}
         self._lease_path = self.directory / ".login.lock"
         self._load()
 
@@ -106,6 +119,7 @@ class CodexLoginJobStore:
             except OSError, ValueError:
                 continue
             if not job.terminal and (_is_expired(job) or not _pid_alive(job.owner_pid)):
+                _terminate_orphan_group(job.process_pid)
                 job.state = LoginState.INTERRUPTED
                 job.error = (
                     "PA restarted while this login was active; start a new login."
@@ -192,36 +206,56 @@ class CodexLoginJobStore:
                 "Codex device authentication started on the target instance.",
             )
             self._persist(job)
+        master_fd: int | None = None
+        slave_fd: int | None = None
         try:
             process_options: dict[str, Any] = {"start_new_session": True}
+            stdio: dict[str, Any]
             if os.name == "nt":
                 process_options = {
                     "creationflags": subprocess.CREATE_NEW_PROCESS_GROUP,
                 }
+                stdio = {
+                    "stdin": subprocess.DEVNULL,
+                    "stdout": subprocess.PIPE,
+                    "stderr": subprocess.STDOUT,
+                }
+            else:
+                master_fd, slave_fd = os.openpty()
+                _configure_pty(slave_fd)
+                stdio = {"stdin": slave_fd, "stdout": slave_fd, "stderr": slave_fd}
             proc = subprocess.Popen(
                 [codex, "login", "--device-auth"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
                 env=os.environ.copy(),
+                **stdio,
                 **process_options,
             )
         except OSError as exc:
+            _close_fd(master_fd)
+            _close_fd(slave_fd)
             self._finish(job, LoginState.FAILED, f"Unable to start Codex CLI: {exc}")
             return
+        if slave_fd is not None:
+            _close_fd(slave_fd)
+            slave_fd = None
         with self._lock:
             self._processes[job_id] = proc
+            job.process_pid = proc.pid
+            self._persist(job)
             cancelled_before_registration = job.state == LoginState.CANCELLED
         if cancelled_before_registration:
             _terminate_process(proc)
 
-        deadline = time.monotonic() + job.timeout_seconds
+        started_at = time.monotonic()
+        deadline = started_at + job.timeout_seconds
+        last_output_at: float | None = None
+        capture = ""
         selector: selectors.BaseSelector | None = None
         try:
-            assert proc.stdout is not None
-            selector = selectors.DefaultSelector()
-            selector.register(proc.stdout, selectors.EVENT_READ)
+            if master_fd is not None:
+                os.set_blocking(master_fd, False)
+                selector = selectors.DefaultSelector()
+                selector.register(master_fd, selectors.EVENT_READ)
             while proc.poll() is None:
                 self._refresh_cancelled(job)
                 if job.state == LoginState.CANCELLED:
@@ -235,13 +269,37 @@ class CodexLoginJobStore:
                         "Codex login timed out; start a new login to retry.",
                     )
                     return
-                ready = selector.select(timeout=0.25)
-                if ready:
-                    line = proc.stdout.readline()
-                    if line:
-                        self._consume_line(job, line)
-            for line in proc.stdout:
-                self._consume_line(job, line)
+                now = time.monotonic()
+                if last_output_at is None and now - started_at >= NO_OUTPUT_TIMEOUT_S:
+                    _terminate_process(proc)
+                    self._finish(
+                        job,
+                        LoginState.FAILED,
+                        "Codex produced no device-login instructions. Verify the target Codex CLI and retry.",
+                    )
+                    return
+                if (
+                    not (job.verification_url and job.user_code)
+                    and now - started_at >= NO_INSTRUCTIONS_TIMEOUT_S
+                ):
+                    _terminate_process(proc)
+                    self._finish(
+                        job,
+                        LoginState.FAILED,
+                        "Codex did not provide a verification URL and code. Update the target Codex CLI or retry.",
+                    )
+                    return
+                chunk = self._read_ready(proc, master_fd, selector, timeout=0.25)
+                if chunk:
+                    last_output_at = time.monotonic()
+                    capture = (capture + chunk)[-MAX_CAPTURE_CHARS:]
+                    self._consume_output(job, capture, chunk)
+            while True:
+                chunk = self._read_ready(proc, master_fd, selector, timeout=0)
+                if not chunk:
+                    break
+                capture = (capture + chunk)[-MAX_CAPTURE_CHARS:]
+                self._consume_output(job, capture, chunk)
             if job.state == LoginState.CANCELLED:
                 _terminate_process(proc)
                 proc.wait(timeout=5)
@@ -272,25 +330,54 @@ class CodexLoginJobStore:
         finally:
             if selector is not None:
                 selector.close()
+            _close_fd(master_fd)
             with self._lock:
                 self._processes.pop(job_id, None)
 
-    def _consume_line(self, job: CodexLoginJob, line: str) -> None:
-        clean = redact_login_output(line)
-        if not clean:
+    def _read_ready(
+        self,
+        proc: subprocess.Popen[Any],
+        master_fd: int | None,
+        selector: selectors.BaseSelector | None,
+        *,
+        timeout: float,
+    ) -> str:
+        if master_fd is not None:
+            if selector is not None and not selector.select(timeout=timeout):
+                return ""
+            try:
+                return os.read(master_fd, 4096).decode("utf-8", errors="replace")
+            except (BlockingIOError, OSError):
+                return ""
+        if proc.stdout is None:
+            return ""
+        line = proc.stdout.readline()
+        if isinstance(line, bytes):
+            return line.decode("utf-8", errors="replace")
+        return line
+
+    def _consume_output(self, job: CodexLoginJob, capture: str, _chunk: str) -> None:
+        clean_capture = normalize_terminal_output(capture)
+        if not clean_capture:
             return
-        url = _URL_RE.search(clean)
-        code = _CODE_RE.search(clean)
+        url = _URL_RE.search(clean_capture)
+        code = _CODE_RE.search(clean_capture)
         with self._lock:
+            had_url = bool(job.verification_url)
+            had_code = bool(job.user_code)
             if url:
-                job.verification_url = url.group(0).rstrip(".,)")
+                job.verification_url = url.group(0).rstrip(".,):;")
             if code:
-                job.user_code = code.group(1)
-            if (url or code) and job.state == LoginState.RUNNING:
+                job.user_code = (code.group(1) or code.group(2)).replace(" ", "-").upper()
+            actionable = job.verification_url or job.user_code
+            if actionable and job.state == LoginState.RUNNING:
                 job.state = LoginState.WAITING_FOR_USER
-            self._event(
-                job, "instruction" if (url or code) else "progress", clean[:500]
-            )
+            if bool(job.verification_url) != had_url or bool(job.user_code) != had_code:
+                self._event(
+                    job,
+                    "instruction",
+                    "Device-login instructions are ready for the user.",
+                )
             self._persist(job)
 
     def _finish(self, job: CodexLoginJob, state: LoginState, message: str) -> None:
@@ -310,10 +397,10 @@ class CodexLoginJobStore:
                 sequence=(job.events[-1].sequence + 1 if job.events else 1),
                 timestamp=job.updated_at,
                 type=event_type,
-                message=redact_login_output(message)[:500],
+                message=redact_login_output(message)[:MAX_EVENT_CHARS],
             )
         )
-        job.events = job.events[-200:]
+        job.events = job.events[-MAX_EVENTS:]
 
     def _persist(self, job: CodexLoginJob) -> None:
         atomic_write_json(self.directory / f"{job.job_id}.json", job.public_dict())
@@ -327,6 +414,7 @@ class CodexLoginJobStore:
             if not disk_job.terminal and (
                 _is_expired(disk_job) or not _pid_alive(disk_job.owner_pid)
             ):
+                _terminate_orphan_group(disk_job.process_pid)
                 disk_job.state = LoginState.INTERRUPTED
                 disk_job.error = "Login lease expired; start a new login."
                 self._event(disk_job, "interrupted", disk_job.error)
@@ -368,7 +456,7 @@ def resolve_codex_cli(configured_path: str | None = None) -> str | None:
 
 def redact_login_output(text: str) -> str:
     """Allow device URL/code, but suppress anything resembling credential output."""
-    clean = text.strip().replace("\x1b", "")
+    clean = normalize_terminal_output(text)
     if not clean:
         return ""
     clean = _SECRET_VALUE_RE.sub(
@@ -382,7 +470,53 @@ def redact_login_output(text: str) -> str:
     return clean
 
 
-def _terminate_process(proc: subprocess.Popen[str]) -> None:
+def normalize_terminal_output(text: str) -> str:
+    """Render terminal output as stable plain text before parsing or persistence."""
+    clean = _ANSI_OSC_RE.sub("", text)
+    clean = _ANSI_CSI_RE.sub("", clean)
+    clean = _ANSI_SINGLE_RE.sub("", clean)
+    clean = clean.replace("\r\n", "\n").replace("\r", "\n")
+    # Apply backspaces so rewritten terminal text cannot confuse the parser.
+    while "\b" in clean:
+        clean = re.sub(r"[^\n]\b", "", clean).replace("\b", "")
+    clean = "".join(char for char in clean if char in "\n\t" or ord(char) >= 32)
+    return "\n".join(line.rstrip() for line in clean.splitlines()).strip()
+
+
+def _configure_pty(fd: int) -> None:
+    """Use a wide terminal to keep the public URL and code from wrapping."""
+    try:
+        import fcntl
+        import struct
+        import termios
+
+        fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 240, 0, 0))
+    except (ImportError, OSError):
+        pass
+
+
+def _close_fd(fd: int | None) -> None:
+    if fd is None:
+        return
+    try:
+        os.close(fd)
+    except OSError:
+        pass
+
+
+def _terminate_orphan_group(pid: int) -> None:
+    """Best-effort cleanup for a device-login process left by a dead PA owner."""
+    if os.name == "nt" or pid <= 0 or not _pid_alive(pid):
+        return
+    try:
+        # Login children are session leaders; never signal PA's own process group.
+        if os.getpgid(pid) == pid and pid != os.getpgrp():
+            os.killpg(pid, signal.SIGTERM)
+    except OSError:
+        pass
+
+
+def _terminate_process(proc: subprocess.Popen[Any]) -> None:
     if proc.poll() is not None:
         return
     if os.name == "nt":

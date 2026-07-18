@@ -40,7 +40,10 @@ Supported authentication methods:
   PA launches `codex login --device-auth` as the same OS user running PA. The
   verification URL and one-time code are safe to show to the controller. Tokens
   remain in that target user's Codex credential store and are never returned or
-  copied to the controller.
+  copied to the controller. On Unix, PA gives Codex a bounded pseudo-terminal so
+  current CLIs flush their interactive instructions immediately; terminal control
+  sequences are normalized before the URL and code are parsed. The prompt can be
+  completed in any browser—the browser does not need to run on the target.
 - API key: `CODEX_API_KEY` or `OPENAI_API_KEY` (PA stores keys in `~/.pa/integrations/codex.json` on the target host only).
 - Codex access token, when configured for trusted enterprise automation.
 - Custom OpenAI-compatible gateway when the client opts into gateway auth.
@@ -54,7 +57,13 @@ credentials, and unknown future CLI responses are reported actionably.
 Device login jobs last 10 minutes by default (configurable from 1–30 minutes),
 can be cancelled, persist only redacted public events, and become `interrupted`
 after a PA restart. Refresh/reconnect using the job id; start a new job after an
-interruption or timeout. Only one active Codex login job is allowed per instance.
+interruption or timeout. PA also stops login process groups on cancellation,
+timeout, and restart recovery. A silent CLI fails after 30 seconds; output that
+does not yield both an actionable HTTPS URL and device code fails after 90 seconds.
+Captured terminal data, public event counts, event messages, URLs, and codes are
+bounded, and raw CLI output is not persisted. Only one active Codex login job is
+allowed per instance. The Fleet UI resumes an existing local or proxied job and
+refreshes provider authentication after success.
 
 ## Capabilities (known)
 
