@@ -14,6 +14,7 @@ import signal
 import subprocess
 import threading
 import time
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
@@ -94,6 +95,7 @@ class CodexLoginJobStore:
         self._lock = threading.RLock()
         self._jobs: dict[str, CodexLoginJob] = {}
         self._processes: dict[str, subprocess.Popen[str]] = {}
+        self._lease_path = self.directory / ".login.lock"
         self._load()
 
     def _load(self) -> None:
@@ -102,7 +104,7 @@ class CodexLoginJobStore:
                 job = CodexLoginJob.model_validate_json(path.read_text())
             except OSError, ValueError:
                 continue
-            if not job.terminal:
+            if not job.terminal and _is_expired(job):
                 job.state = LoginState.INTERRUPTED
                 job.error = (
                     "PA restarted while this login was active; start a new login."
@@ -128,19 +130,25 @@ class CodexLoginJobStore:
             timeout_seconds=timeout_seconds,
         )
         with self._lock:
-            if any(not existing.terminal for existing in self._jobs.values()):
-                raise ValueError("A Codex login is already active")
-            self._jobs[job.job_id] = job
-            self._event(job, "created", "Device authentication requested by the user.")
-            self._persist(job)
+            with _file_lock(self._lease_path):
+                self._reload_from_disk()
+                if any(not existing.terminal for existing in self._jobs.values()):
+                    raise ValueError("A Codex login is already active")
+                self._jobs[job.job_id] = job
+                self._event(
+                    job, "created", "Device authentication requested by the user."
+                )
+                self._persist(job)
         return job
 
     def get(self, job_id: str) -> CodexLoginJob | None:
         with self._lock:
+            self._reload_from_disk()
             return self._jobs.get(job_id)
 
     def latest_active(self) -> CodexLoginJob | None:
         with self._lock:
+            self._reload_from_disk()
             active = [job for job in self._jobs.values() if not job.terminal]
             return max(active, key=lambda item: item.created_at) if active else None
 
@@ -155,6 +163,7 @@ class CodexLoginJobStore:
 
     def cancel(self, job_id: str) -> CodexLoginJob | None:
         with self._lock:
+            self._reload_from_disk()
             job = self._jobs.get(job_id)
             if not job or job.terminal:
                 return job
@@ -182,14 +191,19 @@ class CodexLoginJobStore:
             )
             self._persist(job)
         try:
+            process_options: dict[str, Any] = {"start_new_session": True}
+            if os.name == "nt":
+                process_options = {
+                    "creationflags": subprocess.CREATE_NEW_PROCESS_GROUP,
+                }
             proc = subprocess.Popen(
                 [codex, "login", "--device-auth"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
                 bufsize=1,
-                start_new_session=True,
                 env=os.environ.copy(),
+                **process_options,
             )
         except OSError as exc:
             self._finish(job, LoginState.FAILED, f"Unable to start Codex CLI: {exc}")
@@ -207,6 +221,7 @@ class CodexLoginJobStore:
             selector = selectors.DefaultSelector()
             selector.register(proc.stdout, selectors.EVENT_READ)
             while proc.poll() is None:
+                self._refresh_cancelled(job)
                 if job.state == LoginState.CANCELLED:
                     _terminate_process(proc)
                     break
@@ -297,6 +312,31 @@ class CodexLoginJobStore:
     def _persist(self, job: CodexLoginJob) -> None:
         atomic_write_json(self.directory / f"{job.job_id}.json", job.public_dict())
 
+    def _reload_from_disk(self) -> None:
+        for path in self.directory.glob("*.json"):
+            try:
+                disk_job = CodexLoginJob.model_validate_json(path.read_text())
+            except OSError, ValueError:
+                continue
+            if not disk_job.terminal and _is_expired(disk_job):
+                disk_job.state = LoginState.INTERRUPTED
+                disk_job.error = "Login lease expired; start a new login."
+                self._event(disk_job, "interrupted", disk_job.error)
+                self._persist(disk_job)
+            current = self._jobs.get(disk_job.job_id)
+            if current is None or disk_job.updated_at > current.updated_at:
+                self._jobs[disk_job.job_id] = disk_job
+
+    def _refresh_cancelled(self, job: CodexLoginJob) -> None:
+        path = self.directory / f"{job.job_id}.json"
+        try:
+            disk_job = CodexLoginJob.model_validate_json(path.read_text())
+        except OSError, ValueError:
+            return
+        if disk_job.state == LoginState.CANCELLED:
+            job.state = LoginState.CANCELLED
+            job.error = disk_job.error
+
 
 _stores: dict[str, CodexLoginJobStore] = {}
 _stores_lock = threading.Lock()
@@ -337,6 +377,17 @@ def redact_login_output(text: str) -> str:
 def _terminate_process(proc: subprocess.Popen[str]) -> None:
     if proc.poll() is not None:
         return
+    if os.name == "nt":
+        try:
+            proc.terminate()
+            proc.wait(timeout=3)
+        except OSError, subprocess.TimeoutExpired:
+            try:
+                proc.kill()
+                proc.wait(timeout=3)
+            except OSError, subprocess.TimeoutExpired:
+                pass
+        return
     try:
         os.killpg(proc.pid, signal.SIGTERM)
         proc.wait(timeout=3)
@@ -348,3 +399,38 @@ def _terminate_process(proc: subprocess.Popen[str]) -> None:
             pass
         except subprocess.TimeoutExpired:
             pass
+
+
+def _is_expired(job: CodexLoginJob) -> bool:
+    try:
+        return datetime.fromisoformat(job.expires_at) <= datetime.now(UTC)
+    except ValueError:
+        return True
+
+
+@contextmanager
+def _file_lock(path: Path):
+    """Small cross-platform exclusive lock for atomic active-job creation."""
+    path.touch(exist_ok=True)
+    with path.open("r+b") as handle:
+        if os.name == "nt":
+            import msvcrt
+
+            if path.stat().st_size == 0:
+                handle.write(b"0")
+                handle.flush()
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+            try:
+                yield
+            finally:
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)

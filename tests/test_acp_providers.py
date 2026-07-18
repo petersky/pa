@@ -286,6 +286,22 @@ class AcpProviderTests(unittest.TestCase):
             jobs = list(executor.map(lambda _: create_job(), range(2)))
         self.assertEqual(sum(job is not None for job in jobs), 1)
 
+    def test_separate_worker_store_respects_active_disk_lease(self) -> None:
+        first = CodexLoginJobStore(self.data_dir)
+        job = first.create()
+        second = CodexLoginJobStore(self.data_dir)
+        self.assertEqual(second.latest_active().job_id, job.job_id)
+        with self.assertRaisesRegex(ValueError, "already active"):
+            second.create()
+
+    def test_separate_worker_cancellation_reaches_process_owner(self) -> None:
+        owner = CodexLoginJobStore(self.data_dir)
+        job = owner.create()
+        other_worker = CodexLoginJobStore(self.data_dir)
+        other_worker.cancel(job.job_id)
+        owner._refresh_cancelled(job)
+        self.assertEqual(job.state, LoginState.CANCELLED)
+
     def test_cancel_before_process_registration_still_terminates_and_reaps(
         self,
     ) -> None:
@@ -382,6 +398,20 @@ class AcpProviderTests(unittest.TestCase):
             _terminate_process(process)
         self.assertEqual(process.wait.call_count, 2)
         self.assertEqual(killpg.call_count, 2)
+
+    def test_windows_termination_uses_process_methods_and_reaps(self) -> None:
+        import subprocess
+
+        from pa.acp.providers.codex_auth import _terminate_process
+
+        process = MagicMock()
+        process.poll.return_value = None
+        process.wait.side_effect = [subprocess.TimeoutExpired(["codex"], 3), -9]
+        with patch("pa.acp.providers.codex_auth.os.name", "nt"):
+            _terminate_process(process)
+        process.terminate.assert_called_once()
+        process.kill.assert_called_once()
+        self.assertEqual(process.wait.call_count, 2)
 
     def test_resolve_codex_cli_honors_configured_executable(self) -> None:
         from pa.acp.providers.codex_auth import resolve_codex_cli

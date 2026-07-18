@@ -804,6 +804,7 @@
     }
     var loginButton = e.target.closest("[data-codex-login]");
     if (loginButton) {
+      codexLoginJob = "";
       codexLoginInstance = loginButton.getAttribute("data-codex-login") || "";
       codexLoginStartSequence += 1;
       var panel = $("#pa-codex-login-panel");
