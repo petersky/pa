@@ -6,8 +6,10 @@ dedicated macOS account that owns the PA service and `PA_DATA_DIR`.
 
 ## Enforced controls
 
-- The user LaunchAgent uses `RunAtLoad`, failure-only `KeepAlive`, a 10-second
-  restart throttle, a 45-second exit timeout, and bounded file descriptors.
+- The user LaunchAgent uses `RunAtLoad`, unconditional `KeepAlive`, a 10-second
+  restart throttle, a 300-second supervisor exit ceiling, and bounded file
+  descriptors. The ceiling covers PA's per-module teardown, completion drain,
+  ACP quiesce, and provider/browser stop budgets without cutting them short.
 - Application events are written as rotating JSON Lines to
   `~/.pa/logs/pa.jsonl` (10 MiB, five backups). launchd stdout/stderr remain in
   `server.log` and `server.err.log` for early-start failures.

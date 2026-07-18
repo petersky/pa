@@ -64,6 +64,8 @@ class InstallPlistTests(unittest.TestCase):
             "HardResourceLimits",
         ):
             self.assertIn(control, rendered)
+        self.assertIn("<key>KeepAlive</key>\n    <true/>", rendered)
+        self.assertIn("<key>ExitTimeOut</key>\n    <integer>300</integer>", rendered)
 
 
 class AutonomousHostControlsTests(unittest.TestCase):

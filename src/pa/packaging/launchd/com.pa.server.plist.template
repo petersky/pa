@@ -16,14 +16,11 @@
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
-    <dict>
-        <key>SuccessfulExit</key>
-        <false/>
-    </dict>
+    <true/>
     <key>ThrottleInterval</key>
     <integer>10</integer>
     <key>ExitTimeOut</key>
-    <integer>45</integer>
+    <integer>300</integer>
     <key>ProcessType</key>
     <string>Background</string>
     <key>SoftResourceLimits</key>
