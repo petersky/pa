@@ -575,15 +575,20 @@ async def peer_update(request: Request, body: dict) -> dict:
             detail="target_version is required for a fleet peer update",
         )
 
-    from pa.update.channels import ReleaseInfo
+    from pa.update.channels import resolve_release
     from pa.update.runner import apply_update
 
-    release = ReleaseInfo(
-        version=target_version,
-        install_spec=f"git+https://github.com/{settings.update_repo}.git@v{target_version}",
-        tag=f"v{target_version}",
-        track=channel,
-    )
+    try:
+        release = await asyncio.to_thread(
+            resolve_release,
+            channel,
+            target_version,
+            repo=settings.update_repo,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     async def _install_and_restart() -> None:
         await asyncio.sleep(0.25)
@@ -687,17 +692,27 @@ async def fleet_instance_update_events(request: Request, instance_id: str, job_i
     require_user(request)
     _update_job_or_404(request, instance_id, job_id)
     store = _update_store(request)
+    cursor_value = request.query_params.get("after") or request.headers.get(
+        "last-event-id", "0"
+    )
+    try:
+        initial_cursor = max(0, int(cursor_value))
+    except TypeError, ValueError:
+        raise HTTPException(
+            status_code=400, detail="Invalid update event cursor"
+        ) from None
 
     async def stream():
-        cursor = 0
+        cursor = initial_cursor
         while True:
             job = store.get(job_id)
             if not job:
                 yield 'event: error\ndata: {"message":"job missing"}\n\n'
                 return
-            for event in job.events[cursor:]:
-                yield f"event: phase\ndata: {json.dumps(event)}\n\n"
-            cursor = len(job.events)
+            for event in store.events_after(job, cursor):
+                seq = int(event["seq"])
+                yield f"id: {seq}\nevent: phase\ndata: {json.dumps(event)}\n\n"
+                cursor = seq
             yield f"event: status\ndata: {json.dumps(job.public_dict())}\n\n"
             if job.phase in TERMINAL_PHASES:
                 yield f"event: done\ndata: {json.dumps(job.public_dict())}\n\n"

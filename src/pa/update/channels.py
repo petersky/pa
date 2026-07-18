@@ -41,10 +41,52 @@ def _parse_version(version: str) -> tuple[int, ...]:
     return tuple(int(p) for p in parts) if parts else (0,)
 
 
+def compare_versions(left: str, right: str) -> int:
+    """Compare semantic PA versions, including common prerelease suffixes."""
+
+    def key(value: str) -> tuple[tuple[int, ...], tuple[int, int, tuple[int, ...]]]:
+        normalized = value.strip().lower().removeprefix("v")
+        match = re.fullmatch(
+            r"(?P<release>\d+(?:\.\d+)*)"
+            r"(?:[-.]?(?P<label>alpha|a|beta|b|rc|pre|preview)"
+            r"[-.]?(?P<number>\d*)?)?",
+            normalized,
+        )
+        if not match:
+            raise ValueError(f"Invalid version {value!r}; expected a semantic version")
+        release_parts = [int(part) for part in match.group("release").split(".")]
+        while len(release_parts) > 3 and release_parts[-1] == 0:
+            release_parts.pop()
+        release = tuple(release_parts) + (0,) * max(0, 3 - len(release_parts))
+        label = match.group("label")
+        if not label:
+            prerelease = (1, 0, ())
+        else:
+            rank = {
+                "alpha": 0,
+                "a": 0,
+                "beta": 1,
+                "b": 1,
+                "pre": 2,
+                "preview": 2,
+                "rc": 2,
+            }[label]
+            number = int(match.group("number") or 0)
+            prerelease = (0, rank, (number,))
+        return release, prerelease
+
+    left_key = key(left)
+    right_key = key(right)
+    return (left_key > right_key) - (left_key < right_key)
+
+
 def is_newer(current: str, latest: str, *, track: str | None = None) -> bool:
     if latest == "dev" or track == "dev":
         return True
-    return _parse_version(latest) > _parse_version(current)
+    try:
+        return compare_versions(latest, current) > 0
+    except ValueError:
+        return _parse_version(latest) > _parse_version(current)
 
 
 def _github_headers() -> dict[str, str]:
@@ -199,7 +241,7 @@ class PyPIChannel(UpdateChannel):
             resp = httpx.get(url, timeout=15.0)
             resp.raise_for_status()
             version = resp.json()["info"]["version"]
-        except (httpx.HTTPError, KeyError):
+        except httpx.HTTPError, KeyError:
             return None
         return ReleaseInfo(
             version=version,
@@ -249,6 +291,34 @@ def get_channel(name: str, *, repo: str = "petersky/pa") -> UpdateChannel:
     return GitHubTrackChannel(normalized, repo)
 
 
+def resolve_release(
+    name: str, version: str, *, repo: str = "petersky/pa"
+) -> ReleaseInfo:
+    """Resolve an exact fleet target using the selected channel's native semantics."""
+    normalized = normalize_track(name)
+    if normalized == ReleaseTrack.DEV:
+        release = get_channel(normalized, repo=repo).latest()
+        if not release:
+            raise RuntimeError("Could not resolve the dev channel ref")
+        if version != release.version:
+            raise ValueError(
+                f"Dev channel resolved version {release.version}, not requested {version}"
+            )
+        return release
+    if normalized == "pypi":
+        return ReleaseInfo(
+            version=version,
+            install_spec=f"pa=={version}",
+            track=normalized,
+        )
+    return ReleaseInfo(
+        version=version,
+        install_spec=f"git+https://github.com/{repo.strip().strip('/')}.git@v{version}",
+        tag=f"v{version}",
+        track=normalized,
+    )
+
+
 def resolve_track_ref(track: str, *, repo: str = "petersky/pa") -> str:
     """Return git ref (tag or branch) for a release track."""
     ref = _ref_from_channels_json(track, repo=repo)
@@ -275,5 +345,5 @@ def _ref_from_channels_json(track: str, *, repo: str = "petersky/pa") -> str | N
         data = json.loads(resp.text)
         ref = data.get(normalized) or data.get(track)
         return ref if ref else None
-    except (httpx.HTTPError, json.JSONDecodeError, KeyError):
+    except httpx.HTTPError, json.JSONDecodeError, KeyError:
         return None

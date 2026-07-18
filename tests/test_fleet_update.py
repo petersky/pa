@@ -20,8 +20,13 @@ from pa.fleet.update import (
     run_update_job,
 )
 from pa.fleet.update import _peer_json
-from pa.modules.fleet import _require_instance
-from pa.update.channels import resolve_uv_binary
+from pa.modules.fleet import _require_instance, fleet_instance_update_events
+from pa.update.channels import (
+    ReleaseInfo,
+    compare_versions,
+    resolve_release,
+    resolve_uv_binary,
+)
 
 
 class FleetUpdateStoreTests(unittest.TestCase):
@@ -70,6 +75,42 @@ class FleetUpdateStoreTests(unittest.TestCase):
         self.assertEqual(start.call_count, 1)
         self.assertEqual(start.call_args.args[2].job_id, job.job_id)
 
+    def test_event_sequence_survives_tail_truncation_and_reconnect(self) -> None:
+        store = FleetUpdateJobStore(self.data_dir)
+        job = store.create(self.instance, FleetUpdateRequest(), "release")
+        for index in range(502):
+            store.event(job, UpdatePhase.PREFLIGHT, f"event-{index + 1}")
+
+        self.assertEqual(len(job.events), 500)
+        self.assertEqual([event["seq"] for event in job.events[:2]], [3, 4])
+        self.assertEqual(job.events[-1]["seq"], 502)
+
+        first_connection = store.events_after(job, 500)
+        self.assertEqual([event["seq"] for event in first_connection], [501, 502])
+        reconnect = store.events_after(job, 501)
+        self.assertEqual([event["seq"] for event in reconnect], [502])
+        self.assertEqual(
+            [event["seq"] for event in first_connection[:-1]]
+            + [event["seq"] for event in reconnect],
+            [501, 502],
+        )
+
+    def test_legacy_events_receive_stable_sequences_on_reload(self) -> None:
+        store = FleetUpdateJobStore(self.data_dir)
+        job = store.create(self.instance, FleetUpdateRequest(), "release")
+        job.events = [
+            {"phase": "preflight", "message": "one"},
+            {"phase": "quiescing", "message": "two"},
+        ]
+        job.next_event_seq = 1
+        store.persist(job)
+
+        reloaded_store = FleetUpdateJobStore(self.data_dir)
+        reloaded = reloaded_store.get(job.job_id)
+        self.assertEqual([event["seq"] for event in reloaded.events], [1, 2])
+        reloaded_store.event(reloaded, UpdatePhase.INSTALLING, "three")
+        self.assertEqual([event["seq"] for event in reloaded.events], [1, 2, 3])
+
 
 class FleetUpdateWorkflowTests(unittest.IsolatedAsyncioTestCase):
     async def _run(self, responses, *, force=False, target="0.2.6"):
@@ -92,7 +133,7 @@ class FleetUpdateWorkflowTests(unittest.IsolatedAsyncioTestCase):
         ):
             return await run_update_job(settings, store, job)
 
-    async def test_success_verifies_reported_version(self) -> None:
+    async def test_explicit_valid_upgrade_verifies_reported_version(self) -> None:
         job = await self._run(
             [
                 {"instance_id": "peer-1", "version": "0.2.5"},
@@ -103,6 +144,27 @@ class FleetUpdateWorkflowTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(job.phase, UpdatePhase.SUCCEEDED)
         self.assertEqual(job.verified_version, "0.2.6")
+
+    async def test_explicit_equal_version_fails_before_quiesce(self) -> None:
+        job = await self._run(
+            [{"instance_id": "peer-1", "version": "0.2.5"}],
+            target="0.2.5",
+        )
+        self.assertEqual(job.phase, UpdatePhase.FAILED)
+        self.assertIn("must be newer", job.error)
+
+    async def test_explicit_downgrade_fails_before_quiesce(self) -> None:
+        job = await self._run(
+            [{"instance_id": "peer-1", "version": "0.2.5"}],
+            target="0.2.4",
+        )
+        self.assertEqual(job.phase, UpdatePhase.FAILED)
+        self.assertIn("current 0.2.5", job.error)
+
+    def test_semantic_version_comparison_handles_prereleases(self) -> None:
+        self.assertLess(compare_versions("0.2.6-beta.1", "0.2.6"), 0)
+        self.assertGreater(compare_versions("0.2.6", "0.2.6-rc.2"), 0)
+        self.assertEqual(compare_versions("v0.2.6", "0.2.6.0"), 0)
 
     async def test_quiesce_timeout_requires_force(self) -> None:
         job = await self._run(
@@ -142,18 +204,40 @@ class FleetUpdateWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(job.phase, UpdatePhase.FAILED)
         self.assertIn("did not report an available version", job.error)
 
-    async def test_disconnect_still_requires_verified_version_change(self) -> None:
+    async def test_dispatch_transport_errors_continue_to_exact_verification(
+        self,
+    ) -> None:
+        for error in (
+            httpx.ConnectError("peer stopped before response"),
+            httpx.ReadError("peer restarted during response"),
+            httpx.RemoteProtocolError("peer closed protocol during restart"),
+        ):
+            with self.subTest(error=type(error).__name__):
+                job = await self._run(
+                    [
+                        {"instance_id": "peer-1", "version": "0.2.5"},
+                        {"done": True},
+                        error,
+                        {"instance_id": "peer-1", "version": "0.2.5"},
+                    ]
+                )
+                self.assertEqual(job.phase, UpdatePhase.FAILED)
+                self.assertEqual(job.expected_version, "0.2.6")
+                self.assertIn("expected 0.2.6", job.error)
+
+    async def test_connect_error_can_succeed_only_after_exact_verification(
+        self,
+    ) -> None:
         job = await self._run(
             [
                 {"instance_id": "peer-1", "version": "0.2.5"},
                 {"done": True},
-                httpx.ReadError("peer restarted during response"),
-                {"instance_id": "peer-1", "version": "0.2.5"},
+                httpx.ConnectError("peer restarted before response"),
+                {"instance_id": "peer-1", "version": "0.2.6"},
             ]
         )
-        self.assertEqual(job.phase, UpdatePhase.FAILED)
-        self.assertEqual(job.expected_version, "0.2.6")
-        self.assertIn("expected 0.2.6", job.error)
+        self.assertEqual(job.phase, UpdatePhase.SUCCEEDED)
+        self.assertEqual(job.verified_version, job.expected_version)
 
     async def _run_resumed(self, phase: UpdatePhase):
         tmp = tempfile.TemporaryDirectory()
@@ -238,6 +322,49 @@ class FleetUpdateWorkflowTests(unittest.IsolatedAsyncioTestCase):
         peer.assert_not_awaited()
 
 
+class FleetUpdateSSETests(unittest.IsolatedAsyncioTestCase):
+    async def test_sse_reconnect_uses_monotonic_sequence_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = FleetUpdateJobStore(Path(tmp))
+            instance = SimpleNamespace(
+                instance_id="peer-1", name="mini", url="http://mini:8080"
+            )
+            job = store.create(instance, FleetUpdateRequest(), "release")
+            for index in range(501):
+                store.event(job, UpdatePhase.PREFLIGHT, f"event-{index + 1}")
+            store.event(job, UpdatePhase.SUCCEEDED, "done")
+
+            request = MagicMock()
+            request.state.user = object()
+            request.query_params = {"after": "500"}
+            request.headers = {}
+            request.app.state.ctx.require_service.return_value = store
+            response = await fleet_instance_update_events(request, "peer-1", job.job_id)
+            chunks = []
+            async for chunk in response.body_iterator:
+                chunks.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
+            body = "".join(chunks)
+
+            request.query_params = {}
+            request.headers = {"last-event-id": "501"}
+            reconnect_response = await fleet_instance_update_events(
+                request, "peer-1", job.job_id
+            )
+            reconnect_chunks = []
+            async for chunk in reconnect_response.body_iterator:
+                reconnect_chunks.append(
+                    chunk.decode() if isinstance(chunk, bytes) else chunk
+                )
+            reconnect_body = "".join(reconnect_chunks)
+
+        self.assertEqual(body.count("id: 501\n"), 1)
+        self.assertEqual(body.count("id: 502\n"), 1)
+        self.assertNotIn("id: 500\n", body)
+        self.assertLess(body.index("id: 501\n"), body.index("id: 502\n"))
+        self.assertNotIn("id: 501\n", reconnect_body)
+        self.assertEqual(reconnect_body.count("id: 502\n"), 1)
+
+
 class FleetPeerAuthTests(unittest.TestCase):
     def test_peer_endpoint_rejects_user_session(self) -> None:
         request = MagicMock()
@@ -296,3 +423,27 @@ class UvResolutionTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(RuntimeError, "PA_UV_BIN"):
                 resolve_uv_binary()
+
+
+class FleetReleaseResolutionTests(unittest.TestCase):
+    def test_dev_uses_channel_resolved_branch_install_spec(self) -> None:
+        channel = MagicMock()
+        channel.latest.return_value = ReleaseInfo(
+            version="dev",
+            install_spec="git+https://github.com/petersky/pa.git@feature/dev-fleet",
+            tag="feature/dev-fleet",
+            track="dev",
+        )
+        with patch("pa.update.channels.get_channel", return_value=channel):
+            release = resolve_release("dev", "dev", repo="petersky/pa")
+        self.assertEqual(
+            release.install_spec,
+            "git+https://github.com/petersky/pa.git@feature/dev-fleet",
+        )
+        self.assertNotIn("@vdev", release.install_spec)
+
+    def test_release_and_beta_keep_version_tag_install_specs(self) -> None:
+        release = resolve_release("release", "0.2.6", repo="petersky/pa")
+        beta = resolve_release("beta", "0.2.7-beta.1", repo="petersky/pa")
+        self.assertTrue(release.install_spec.endswith("@v0.2.6"))
+        self.assertTrue(beta.install_spec.endswith("@v0.2.7-beta.1"))

@@ -17,6 +17,8 @@ from pydantic import BaseModel, Field, field_validator
 from pa.config import Settings
 from pa.core.io import atomic_write_json
 from pa.fleet.registry import FleetRegistry
+from pa.update.channels import compare_versions
+from pa.update.registry import ReleaseTrack, normalize_track
 
 
 class UpdatePhase(StrEnum):
@@ -63,6 +65,7 @@ class FleetUpdateJob(BaseModel):
     verified_version: str | None = None
     error: str | None = None
     events: list[dict[str, Any]] = Field(default_factory=list)
+    next_event_seq: int = 1
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     completed_at: datetime | None = None
@@ -87,6 +90,14 @@ class FleetUpdateJobStore:
                 job = FleetUpdateJob.model_validate_json(path.read_text())
             except OSError, ValueError, json.JSONDecodeError:
                 continue
+            next_seq = 1
+            for event in job.events:
+                seq = event.get("seq")
+                if not isinstance(seq, int) or seq < next_seq:
+                    seq = next_seq
+                    event["seq"] = seq
+                next_seq = seq + 1
+            job.next_event_seq = max(job.next_event_seq, next_seq)
             self._jobs[job.job_id] = job
 
     def create(
@@ -133,13 +144,18 @@ class FleetUpdateJobStore:
         job.phase = phase
         job.events.append(
             {
+                "seq": job.next_event_seq,
                 "at": datetime.now(UTC).isoformat(),
                 "phase": phase.value,
                 "message": message,
             }
         )
+        job.next_event_seq += 1
         job.events = job.events[-500:]
         self.persist(job)
+
+    def events_after(self, job: FleetUpdateJob, after_seq: int) -> list[dict[str, Any]]:
+        return [event for event in job.events if int(event.get("seq", 0)) > after_seq]
 
 
 def _headers(settings: Settings) -> dict[str, str]:
@@ -206,11 +222,24 @@ async def run_update_job(
                         )
                     job.expected_version = job.available_version
 
-                if job.expected_version == job.current_version:
-                    raise RuntimeError(
-                        f"Peer already reports requested version {job.expected_version}; "
-                        "no update was performed"
-                    )
+                if normalize_track(job.channel) != ReleaseTrack.DEV:
+                    try:
+                        comparison = compare_versions(
+                            job.expected_version, job.current_version
+                        )
+                    except ValueError as exc:
+                        raise RuntimeError(
+                            f"Cannot compare requested version {job.expected_version!r} "
+                            f"with current version {job.current_version!r}: {exc}"
+                        ) from exc
+                    if comparison <= 0:
+                        relation = (
+                            "already running" if comparison == 0 else "newer than"
+                        )
+                        raise RuntimeError(
+                            f"Peer is {relation} requested version {job.expected_version} "
+                            f"(current {job.current_version}); target_version must be newer"
+                        )
                 store.event(
                     job,
                     UpdatePhase.PREFLIGHT,
@@ -278,7 +307,7 @@ async def run_update_job(
                             "Peer accepted an unexpected update version: "
                             f"expected {job.expected_version}, got {accepted_version or 'none'}"
                         )
-                except httpx.ReadError, httpx.RemoteProtocolError:
+                except httpx.TransportError:
                     # The service may close the response after accepting and restarting.
                     # The durable INSTALLING checkpoint makes recovery verification-only.
                     pass
