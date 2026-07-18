@@ -95,6 +95,30 @@ class FleetUpdateStoreTests(unittest.TestCase):
         )
         self.assertNotEqual(first.job_id, second.job_id)
 
+    def test_cross_store_reconciliation_preserves_live_job_identity(self) -> None:
+        store = FleetUpdateJobStore(self.data_dir)
+        original = store.create(self.instance, FleetUpdateRequest(), "release")
+        other = SimpleNamespace(
+            instance_id="peer-2", name="linux", url="http://linux:8080"
+        )
+
+        external_store = FleetUpdateJobStore(self.data_dir)
+        external = external_store.create(other, FleetUpdateRequest(), "release")
+        created = store.create(
+            SimpleNamespace(
+                instance_id="peer-3", name="studio", url="http://studio:8080"
+            ),
+            FleetUpdateRequest(),
+            "release",
+        )
+
+        self.assertIs(store.get(original.job_id), original)
+        self.assertEqual(store.get(external.job_id).job_id, external.job_id)
+        self.assertIs(store.get(created.job_id), created)
+        store.event(original, UpdatePhase.PREFLIGHT, "still live")
+        self.assertIs(store.get(original.job_id), original)
+        self.assertEqual(store.get(original.job_id).events[-1]["message"], "still live")
+
     def test_persists_audit_without_token_or_credentials(self) -> None:
         store = FleetUpdateJobStore(self.data_dir)
         job = store.create(

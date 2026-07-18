@@ -98,7 +98,7 @@ class FleetUpdateJobStore:
         self._tasks: dict[str, asyncio.Task[Any]] = {}
         self._load()
 
-    def _load(self) -> None:
+    def _load(self, *, preserve_existing: bool = False) -> None:
         for path in self.directory.glob("*.json"):
             try:
                 job = FleetUpdateJob.model_validate_json(path.read_text())
@@ -112,11 +112,17 @@ class FleetUpdateJobStore:
                     event["seq"] = seq
                 next_seq = seq + 1
             job.next_event_seq = max(job.next_event_seq, next_seq)
-            self._jobs[job.job_id] = job
+            existing = self._jobs.get(job.job_id) if preserve_existing else None
+            if existing is None:
+                self._jobs[job.job_id] = job
+                continue
+            # A running task holds the original model object. Reconcile durable
+            # fields in place so get()/SSE and that task continue sharing it.
+            for field_name in FleetUpdateJob.model_fields:
+                setattr(existing, field_name, getattr(job, field_name))
 
     def _reload_jobs(self) -> None:
-        self._jobs.clear()
-        self._load()
+        self._load(preserve_existing=True)
 
     @contextmanager
     def _instance_lock(self, instance_id: str):
