@@ -41,6 +41,13 @@ class SyncTokenAuthSeparationTests(unittest.TestCase):
                 Route("/api/fleet/join-token", _ok, methods=["POST"]),
                 Route("/api/sync/push", _ok, methods=["POST"]),
                 Route("/api/health", _ok, methods=["GET"]),
+                Route("/api/status", _ok, methods=["GET"]),
+                Route("/api/agent/quiesce", _ok, methods=["GET", "POST"]),
+                Route("/api/fleet/peer-update-check", _ok, methods=["GET"]),
+                Route("/api/fleet/peer-update", _ok, methods=["POST"]),
+                Route("/api/fleet/peer-update/{operation_id}", _ok, methods=["GET"]),
+                Route("/api/config", _ok, methods=["GET"]),
+                Route("/api/agent/prompt", _ok, methods=["POST"]),
             ]
         )
         app.add_middleware(
@@ -96,6 +103,41 @@ class SyncTokenAuthSeparationTests(unittest.TestCase):
         )
         self.assertEqual(resp.status_code, 401)
         self.assertEqual(resp.json()["detail"], "Authentication required")
+
+    def test_hardened_peer_accepts_sync_token_only_for_update_routes(self) -> None:
+        self.settings.auth_required = True
+        headers = {"Authorization": "Bearer shared-secret"}
+        routes = [
+            ("GET", "/api/status"),
+            ("GET", "/api/agent/quiesce"),
+            ("POST", "/api/agent/quiesce"),
+            ("GET", "/api/fleet/peer-update-check"),
+            ("POST", "/api/fleet/peer-update"),
+            ("GET", "/api/fleet/peer-update/job-123"),
+        ]
+        for method, path in routes:
+            with self.subTest(method=method, path=path):
+                response = self.client.request(method, path, headers=headers, json={})
+                self.assertEqual(response.status_code, 200, response.text)
+
+    def test_hardened_peer_does_not_grant_sync_token_user_api_access(self) -> None:
+        self.settings.auth_required = True
+        headers = {"Authorization": "Bearer shared-secret"}
+        for method, path in [
+            ("GET", "/api/config"),
+            ("POST", "/api/agent/prompt"),
+            ("POST", "/api/fleet/join-token"),
+        ]:
+            with self.subTest(method=method, path=path):
+                response = self.client.request(method, path, headers=headers, json={})
+                self.assertEqual(response.status_code, 401, response.text)
+
+        user = self.users.ensure_default_user()
+        response = self.client.get(
+            "/api/config",
+            headers={"Authorization": f"Bearer {user.cli_token}"},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
 
 
 if __name__ == "__main__":

@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import os
 import re
+import shutil
 import subprocess
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from pathlib import Path
+from urllib.parse import quote
 
 import httpx
 
-from pa import __version__
 from pa.update.registry import ReleaseTrack, normalize_track
 
 
@@ -22,6 +25,7 @@ class ReleaseInfo:
     track: str | None = None
     notes: str | None = None
     name: str | None = None
+    revision: str | None = None
 
 
 class UpdateChannel(ABC):
@@ -39,10 +43,52 @@ def _parse_version(version: str) -> tuple[int, ...]:
     return tuple(int(p) for p in parts) if parts else (0,)
 
 
+def compare_versions(left: str, right: str) -> int:
+    """Compare semantic PA versions, including common prerelease suffixes."""
+
+    def key(value: str) -> tuple[tuple[int, ...], tuple[int, int, tuple[int, ...]]]:
+        normalized = value.strip().lower().removeprefix("v")
+        match = re.fullmatch(
+            r"(?P<release>\d+(?:\.\d+)*)"
+            r"(?:[-.]?(?P<label>alpha|a|beta|b|rc|pre|preview)"
+            r"[-.]?(?P<number>\d*)?)?",
+            normalized,
+        )
+        if not match:
+            raise ValueError(f"Invalid version {value!r}; expected a semantic version")
+        release_parts = [int(part) for part in match.group("release").split(".")]
+        while len(release_parts) > 3 and release_parts[-1] == 0:
+            release_parts.pop()
+        release = tuple(release_parts) + (0,) * max(0, 3 - len(release_parts))
+        label = match.group("label")
+        if not label:
+            prerelease = (1, 0, ())
+        else:
+            rank = {
+                "alpha": 0,
+                "a": 0,
+                "beta": 1,
+                "b": 1,
+                "pre": 2,
+                "preview": 2,
+                "rc": 2,
+            }[label]
+            number = int(match.group("number") or 0)
+            prerelease = (0, rank, (number,))
+        return release, prerelease
+
+    left_key = key(left)
+    right_key = key(right)
+    return (left_key > right_key) - (left_key < right_key)
+
+
 def is_newer(current: str, latest: str, *, track: str | None = None) -> bool:
     if latest == "dev" or track == "dev":
         return True
-    return _parse_version(latest) > _parse_version(current)
+    try:
+        return compare_versions(latest, current) > 0
+    except ValueError:
+        return _parse_version(latest) > _parse_version(current)
 
 
 def _github_headers() -> dict[str, str]:
@@ -59,12 +105,16 @@ class GitHubTrackChannel(UpdateChannel):
     def latest(self) -> ReleaseInfo | None:
         if self.track == ReleaseTrack.DEV:
             ref = _ref_from_channels_json(self.track, repo=self.repo) or "main"
+            revision = _resolve_github_revision(self.repo, ref)
+            if not revision:
+                return None
             return ReleaseInfo(
                 version="dev",
-                install_spec=f"git+https://github.com/{self.repo}.git@{ref}",
+                install_spec=f"git+https://github.com/{self.repo}.git@{revision}",
                 url=f"https://github.com/{self.repo}",
                 tag=ref,
                 track=self.track,
+                revision=revision,
             )
 
         releases = self._list_releases()
@@ -197,7 +247,7 @@ class PyPIChannel(UpdateChannel):
             resp = httpx.get(url, timeout=15.0)
             resp.raise_for_status()
             version = resp.json()["info"]["version"]
-        except (httpx.HTTPError, KeyError):
+        except httpx.HTTPError, KeyError:
             return None
         return ReleaseInfo(
             version=version,
@@ -210,12 +260,34 @@ class PyPIChannel(UpdateChannel):
 
 
 def _uv_tool_install(spec: str) -> None:
+    uv = resolve_uv_binary()
     result = subprocess.run(
-        ["uv", "tool", "install", "--force", spec],
+        [str(uv), "tool", "install", "--force", spec],
         check=False,
     )
     if result.returncode != 0:
         raise RuntimeError(f"uv tool install failed for {spec}")
+
+
+def resolve_uv_binary() -> str:
+    """Find uv in interactive shells and sparse launchd/systemd environments."""
+    configured = os.environ.get("PA_UV_BIN", "").strip()
+    candidates = [
+        configured,
+        shutil.which("uv") or "",
+        str(Path.home() / ".local" / "bin" / "uv"),
+        str(Path.home() / ".cargo" / "bin" / "uv"),
+        "/opt/homebrew/bin/uv",
+        "/usr/local/bin/uv",
+        "/usr/bin/uv",
+    ]
+    for candidate in candidates:
+        if candidate and Path(candidate).is_file() and os.access(candidate, os.X_OK):
+            return candidate
+    raise RuntimeError(
+        "uv was not found; install uv or set PA_UV_BIN to its absolute path "
+        "for the PA service environment"
+    )
 
 
 def get_channel(name: str, *, repo: str = "petersky/pa") -> UpdateChannel:
@@ -223,6 +295,66 @@ def get_channel(name: str, *, repo: str = "petersky/pa") -> UpdateChannel:
     if normalized == "pypi":
         return PyPIChannel()
     return GitHubTrackChannel(normalized, repo)
+
+
+def resolve_release(
+    name: str,
+    version: str,
+    *,
+    repo: str = "petersky/pa",
+    revision: str | None = None,
+) -> ReleaseInfo:
+    """Resolve an exact fleet target using the selected channel's native semantics."""
+    normalized = normalize_track(name)
+    if normalized == ReleaseTrack.DEV:
+        if revision:
+            if not re.fullmatch(r"[0-9a-fA-F]{40}", revision):
+                raise ValueError(
+                    "Dev update revision must be a full 40-character commit SHA"
+                )
+            return ReleaseInfo(
+                version="dev",
+                install_spec=(
+                    f"git+https://github.com/{repo.strip().strip('/')}.git@{revision}"
+                ),
+                tag=revision,
+                track=normalized,
+                revision=revision.lower(),
+            )
+        release = get_channel(normalized, repo=repo).latest()
+        if not release:
+            raise RuntimeError("Could not resolve the dev channel ref")
+        if version != release.version:
+            raise ValueError(
+                f"Dev channel resolved version {release.version}, not requested {version}"
+            )
+        return release
+    if normalized == "pypi":
+        return ReleaseInfo(
+            version=version,
+            install_spec=f"pa=={version}",
+            track=normalized,
+        )
+    return ReleaseInfo(
+        version=version,
+        install_spec=f"git+https://github.com/{repo.strip().strip('/')}.git@v{version}",
+        tag=f"v{version}",
+        track=normalized,
+    )
+
+
+def _resolve_github_revision(repo: str, ref: str) -> str | None:
+    url = (
+        f"https://api.github.com/repos/{repo.strip().strip('/')}/commits/"
+        f"{quote(ref, safe='')}"
+    )
+    try:
+        response = httpx.get(url, timeout=15.0, headers=_github_headers())
+        response.raise_for_status()
+        revision = str(response.json().get("sha") or "").lower()
+    except httpx.HTTPError, ValueError, AttributeError:
+        return None
+    return revision if re.fullmatch(r"[0-9a-f]{40}", revision) else None
 
 
 def resolve_track_ref(track: str, *, repo: str = "petersky/pa") -> str:
@@ -251,5 +383,5 @@ def _ref_from_channels_json(track: str, *, repo: str = "petersky/pa") -> str | N
         data = json.loads(resp.text)
         ref = data.get(normalized) or data.get(track)
         return ref if ref else None
-    except (httpx.HTTPError, json.JSONDecodeError, KeyError):
+    except httpx.HTTPError, json.JSONDecodeError, KeyError:
         return None

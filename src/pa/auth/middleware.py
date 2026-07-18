@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hmac
+import re
 
 from fastapi import HTTPException, Request
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -29,6 +30,16 @@ SYNC_PATHS = {
     "/api/sync/refs",
 }
 
+# Fleet sync credentials are accepted only for the peer operations required by
+# native updates. Other API routes continue to require a user session/CLI token.
+FLEET_INSTANCE_ROUTES = {
+    ("GET", "/api/status"),
+    ("GET", "/api/agent/quiesce"),
+    ("POST", "/api/agent/quiesce"),
+    ("GET", "/api/fleet/peer-update-check"),
+    ("POST", "/api/fleet/peer-update"),
+}
+
 CSRF_EXEMPT_PATHS = {
     "/api/fleet/join",
     "/api/auth/login",
@@ -50,6 +61,14 @@ def _is_sync_path(path: str) -> bool:
     return path in SYNC_PATHS
 
 
+def _is_fleet_instance_route(request: Request) -> bool:
+    if (request.method, request.url.path) in FLEET_INSTANCE_ROUTES:
+        return True
+    return request.method == "GET" and bool(
+        re.fullmatch(r"/api/fleet/peer-update/[A-Za-z0-9-]{1,80}", request.url.path)
+    )
+
+
 def _sync_auth_required(settings: Settings) -> bool:
     """Peer sync endpoints require a bearer when a sync token (or auth_required) is set."""
     return bool(settings.sync_token) or settings.auth_required
@@ -61,13 +80,17 @@ def _needs_csrf(request: Request) -> bool:
     path = request.url.path
     if _is_public(path) or path in CSRF_EXEMPT_PATHS:
         return False
-    if path.startswith("/api/") and request.headers.get("authorization", "").startswith("Bearer "):
+    if path.startswith("/api/") and request.headers.get("authorization", "").startswith(
+        "Bearer "
+    ):
         return False
     return True
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, settings: Settings, users: UserDirectory, sessions: SessionManager):
+    def __init__(
+        self, app, settings: Settings, users: UserDirectory, sessions: SessionManager
+    ):
         super().__init__(app)
         self.settings = settings
         self.users = users
@@ -80,6 +103,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         path = request.url.path
         is_public = _is_public(path)
+        is_fleet_instance_route = _is_fleet_instance_route(request)
 
         auth_header = request.headers.get("authorization", "")
         if auth_header.startswith("Bearer "):
@@ -121,6 +145,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 and path.startswith("/api/")
                 and not is_public
                 and not _is_sync_path(path)
+                and not (
+                    is_fleet_instance_route and request.state.instance_authenticated
+                )
             )
             if needs_user_auth:
                 return JSONResponse(

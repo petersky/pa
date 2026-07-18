@@ -98,7 +98,9 @@ class FleetJoinWiringTests(unittest.TestCase):
         self.assertEqual(owner_public_url(self.settings), "http://macbook:8080")
 
     def test_owner_public_url_avoids_zero_bind(self) -> None:
-        settings = Settings(data_dir=self.data_dir, host="0.0.0.0", port=8080, instance_url="")
+        settings = Settings(
+            data_dir=self.data_dir, host="0.0.0.0", port=8080, instance_url=""
+        )
         url = owner_public_url(settings)
         self.assertNotIn("0.0.0.0", url)
         self.assertIn("127.0.0.1", url)
@@ -115,9 +117,14 @@ class FleetJoinWiringTests(unittest.TestCase):
         self.assertIn("loopback_bind", ids)
         for issue in issues:
             self.assertTrue(issue["fix"])
-            self.assertIn(issue["action"], {"set_instance_url", "set_bind_all", "ensure_sync_token"})
+            self.assertIn(
+                issue["action"],
+                {"set_instance_url", "set_bind_all", "ensure_sync_token"},
+            )
         warnings = readiness_warnings(settings)
-        self.assertTrue(any("loopback" in w.lower() or "127.0.0.1" in w for w in warnings))
+        self.assertTrue(
+            any("loopback" in w.lower() or "127.0.0.1" in w for w in warnings)
+        )
 
     def test_apply_reachability_settings_persists(self) -> None:
         settings = Settings(
@@ -136,8 +143,12 @@ class FleetJoinWiringTests(unittest.TestCase):
         cfg = load_instance_config(self.data_dir)
         self.assertEqual(cfg.instance_url, "http://macbook:8080")
         self.assertEqual(cfg.host, "0.0.0.0")
-        self.assertFalse(any(i["id"] == "missing_instance_url" for i in readiness_issues(settings)))
-        self.assertFalse(any(i["id"] == "loopback_bind" for i in readiness_issues(settings)))
+        self.assertFalse(
+            any(i["id"] == "missing_instance_url" for i in readiness_issues(settings))
+        )
+        self.assertFalse(
+            any(i["id"] == "loopback_bind" for i in readiness_issues(settings))
+        )
 
     def test_apply_reachability_rejects_loopback_url(self) -> None:
         settings = Settings(data_dir=self.data_dir, instance_url="", host="0.0.0.0")
@@ -303,7 +314,10 @@ class RemoteInstallJobMockTests(unittest.IsolatedAsyncioTestCase):
             mock_conn.__aexit__ = AsyncMock(return_value=None)
 
             with (
-                patch("pa.fleet.remote_install._connect_ssh", AsyncMock(return_value=mock_conn)),
+                patch(
+                    "pa.fleet.remote_install._connect_ssh",
+                    AsyncMock(return_value=mock_conn),
+                ),
                 patch(
                     "pa.fleet.remote_install._run_remote_install",
                     AsyncMock(return_value=0),
@@ -317,7 +331,10 @@ class RemoteInstallJobMockTests(unittest.IsolatedAsyncioTestCase):
 
             self.assertEqual(result.status, InstallJobStatus.SUCCEEDED)
             # Password must not appear in logs or disk snapshot
-            blob = "\n".join(result.log_lines) + (data_dir / "fleet_jobs" / f"{job.job_id}.json").read_text()
+            blob = (
+                "\n".join(result.log_lines)
+                + (data_dir / "fleet_jobs" / f"{job.job_id}.json").read_text()
+            )
             self.assertNotIn("once", blob)
 
 
@@ -440,6 +457,17 @@ class FleetHealthParallelTests(unittest.IsolatedAsyncioTestCase):
                         200,
                         [{"id": host, "display_name": host.upper(), "available": True}],
                     )
+                if url.endswith("/api/status"):
+                    return FakeResp(200, {"version": "0.2.5", "release_track": "beta"})
+                if url.endswith("/api/fleet/peer-update-check"):
+                    return FakeResp(
+                        200,
+                        {
+                            "available_version": "0.2.6",
+                            "upgrade_available": True,
+                            "channel": "beta",
+                        },
+                    )
                 return FakeResp(404)
 
             mock_client = MagicMock()
@@ -458,8 +486,23 @@ class FleetHealthParallelTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(by_id["b"]["healthy"])
             self.assertEqual(by_id["a"]["providers"][0]["id"], "a")
             self.assertEqual(by_id["b"]["providers"][0]["id"], "b")
-            # health + providers for each instance
-            self.assertEqual(mock_client.get.await_count, 4)
+            self.assertEqual(by_id["a"]["current_version"], "0.2.5")
+            self.assertEqual(by_id["b"]["available_version"], "0.2.6")
+            self.assertEqual(by_id["a"]["update_channel"], "beta")
+            # health + providers + status + update check for each instance
+            self.assertEqual(mock_client.get.await_count, 8)
+
+
+class FleetUpdateUiTests(unittest.TestCase):
+    def test_update_form_uses_peer_track_and_rechecks_selected_channel(self) -> None:
+        root = Path(__file__).parents[1]
+        script = (root / "src/pa/server/static/js/fleet.js").read_text()
+        template = (root / "src/pa/server/templates/pages/fleet.html").read_text()
+        self.assertIn("row.update_channel", script)
+        self.assertIn("row.dataset.updateChannel", script)
+        self.assertIn("/update-check?channel=", script)
+        self.assertIn("refreshFleetUpdateCheck().then", script)
+        self.assertIn('name="install_timeout"', template)
 
 
 class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
@@ -544,7 +587,10 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(create_call.kwargs["body"]["label"], "card:card-1")
             prompt_call = peer.await_args_list[1]
-            self.assertIn("# Card: Implement remote control", prompt_call.kwargs["body"]["message"])
+            self.assertIn(
+                "# Card: Implement remote control",
+                prompt_call.kwargs["body"]["message"],
+            )
             store.update_card.assert_called_once()
             store.add_knowledge.assert_called_once()
 
@@ -677,7 +723,9 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
             request.body = AsyncMock(return_value=b"")
             seen = {}
 
-            async def upstream_handler(upstream_request: httpx.Request) -> httpx.Response:
+            async def upstream_handler(
+                upstream_request: httpx.Request,
+            ) -> httpx.Response:
                 seen["url"] = str(upstream_request.url)
                 seen["authorization"] = upstream_request.headers.get("authorization")
                 return httpx.Response(
@@ -713,7 +761,9 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(seen["authorization"], "Bearer fleet-secret")
             self.assertEqual(client_factory.call_args.kwargs["timeout"].read, 120.0)
 
-    async def test_agent_proxy_disables_read_timeout_only_for_session_events(self) -> None:
+    async def test_agent_proxy_disables_read_timeout_only_for_session_events(
+        self,
+    ) -> None:
         from pa.modules.fleet import fleet_agent_proxy
 
         with tempfile.TemporaryDirectory() as tmp:

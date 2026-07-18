@@ -537,6 +537,9 @@
     $all("#pa-fleet-instances [data-fleet-providers]").forEach(function (el) {
       el.innerHTML = '<span class="muted small">Checking…</span>';
     });
+    $all("#pa-fleet-instances [data-fleet-current-version], #pa-fleet-instances [data-fleet-available-version]").forEach(function (el) {
+      el.innerHTML = '<span class="muted small">Checking…</span>';
+    });
     setLiveBanner("Checking instance health…");
   }
 
@@ -550,9 +553,69 @@
       if (!row) return;
       var healthEl = $("[data-fleet-health]", tr);
       var providersEl = $("[data-fleet-providers]", tr);
+      var currentEl = $("[data-fleet-current-version]", tr);
+      var availableEl = $("[data-fleet-available-version]", tr);
       if (healthEl) healthEl.innerHTML = healthHtml(!!row.healthy);
       if (providersEl) providersEl.innerHTML = providersHtml(row.providers || []);
+      if (currentEl) currentEl.textContent = row.current_version || "—";
+      if (availableEl) {
+        availableEl.textContent = row.available_version || "—";
+        availableEl.classList.toggle("status-active", !!row.upgrade_available);
+      }
+      tr.dataset.updateChannel = row.update_channel || "release";
+      tr.dataset.currentVersion = row.current_version || "";
+      tr.dataset.availableVersion = row.available_version || "";
     });
+  }
+
+  var fleetUpdateName = "";
+
+  async function refreshFleetUpdateCheck() {
+    var form = $("#pa-fleet-update-form");
+    var confirmText = $("#pa-fleet-update-confirm");
+    if (!form || !form.elements.instance_id.value) return null;
+    var channel = form.elements.channel.value;
+    if (confirmText) confirmText.textContent = "Checking " + channel + " availability…";
+    var data = await api(
+      "/api/fleet/instances/" + encodeURIComponent(form.elements.instance_id.value) +
+      "/update-check?channel=" + encodeURIComponent(channel)
+    );
+    if (confirmText) confirmText.textContent =
+      "Update " + fleetUpdateName + " on " + data.channel + " from " +
+      (data.current_version || "unknown") + " to " +
+      (data.available_version || "unknown") + "? Active agent sessions will be drained and PA will restart.";
+    return data;
+  }
+
+  function watchFleetUpdate(instanceId, jobId) {
+    var log = $("#pa-fleet-update-log");
+    var status = $("#pa-fleet-update-status");
+    var source = new EventSource(
+      "/api/fleet/instances/" + encodeURIComponent(instanceId) +
+      "/update/" + encodeURIComponent(jobId) + "/events"
+    );
+    source.addEventListener("phase", function (event) {
+      var item = JSON.parse(event.data || "{}");
+      if (log) {
+        log.textContent += (log.textContent ? "\n" : "") +
+          "[" + (item.phase || "update") + "] " + (item.message || "");
+        log.scrollTop = log.scrollHeight;
+      }
+      if (status) status.textContent = item.message || item.phase || "Updating…";
+    });
+    source.addEventListener("done", function (event) {
+      var job = JSON.parse(event.data || "{}");
+      source.close();
+      if (status) status.textContent = job.phase === "succeeded"
+        ? "Verified PA " + (job.verified_version || "unknown") + " on " + job.instance_name + "."
+        : (job.error || "Update failed");
+      loadLiveStatus();
+    });
+    source.onerror = function () {
+      if (source.readyState === EventSource.CLOSED && status) {
+        status.textContent = "Update event stream closed; refresh to inspect the persisted result.";
+      }
+    };
   }
 
   var liveStatusSeq = 0;
@@ -779,6 +842,30 @@
       return;
     }
 
+    var updateBtn = e.target.closest("[data-fleet-update]");
+    if (updateBtn) {
+      var panel = $("#pa-fleet-update-panel");
+      var updateForm = $("#pa-fleet-update-form");
+      if (!panel || !updateForm) return;
+      updateForm.elements.instance_id.value = updateBtn.getAttribute("data-fleet-update") || "";
+      fleetUpdateName = updateBtn.getAttribute("data-instance-name") || "this instance";
+      var row = updateBtn.closest("tr[data-fleet-instance]");
+      updateForm.elements.channel.value = (row && row.dataset.updateChannel) || "release";
+      panel.hidden = false;
+      panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      refreshFleetUpdateCheck().catch(function (err) {
+        var confirmText = $("#pa-fleet-update-confirm");
+        if (confirmText) confirmText.textContent = err.message;
+      });
+      return;
+    }
+
+    if (e.target.closest("[data-fleet-update-cancel]")) {
+      var updatePanel = $("#pa-fleet-update-panel");
+      if (updatePanel) updatePanel.hidden = true;
+      return;
+    }
+
     var inviteBtn = e.target.closest("[data-fleet-invite]");
     if (inviteBtn) {
       var realmId = inviteBtn.getAttribute("data-fleet-invite");
@@ -809,11 +896,46 @@
     }
   });
 
+  document.addEventListener("change", function (e) {
+    if (!e.target.matches("#pa-fleet-update-form [name=channel]")) return;
+    refreshFleetUpdateCheck().catch(function (err) {
+      var confirmText = $("#pa-fleet-update-confirm");
+      if (confirmText) confirmText.textContent = err.message;
+    });
+  });
+
   document.addEventListener("submit", function (e) {
     var form = e.target;
     if (!form) return;
     // Allow forms identified by id or data-fleet-fix (inline readiness fixes).
     if (!form.id && !form.getAttribute("data-fleet-fix")) return;
+
+    if (form.id === "pa-fleet-update-form") {
+      e.preventDefault();
+      var updateBody = formToObject(form);
+      var updateInstanceId = updateBody.instance_id;
+      delete updateBody.instance_id;
+      updateBody.quiesce_timeout = parseFloat(updateBody.quiesce_timeout || "300");
+      updateBody.install_timeout = parseFloat(updateBody.install_timeout || "900");
+      updateBody.force = !!form.elements.force.checked;
+      if (!updateBody.target_version) delete updateBody.target_version;
+      var updateStatus = $("#pa-fleet-update-status");
+      var updateLog = $("#pa-fleet-update-log");
+      if (updateStatus) updateStatus.textContent = "Rechecking selected channel…";
+      if (updateLog) updateLog.textContent = "";
+      refreshFleetUpdateCheck().then(function () {
+        if (updateStatus) updateStatus.textContent = "Starting persistent update job…";
+        return api("/api/fleet/instances/" + encodeURIComponent(updateInstanceId) + "/update", {
+          method: "POST",
+          body: updateBody,
+        });
+      }).then(function (job) {
+        watchFleetUpdate(updateInstanceId, job.job_id);
+      }).catch(function (err) {
+        if (updateStatus) updateStatus.textContent = err.message;
+      });
+      return;
+    }
 
     if (form.id === "pa-remote-start-form") {
       e.preventDefault();
