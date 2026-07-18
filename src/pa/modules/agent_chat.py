@@ -65,6 +65,7 @@ class CreateSessionBody(BaseModel):
     mode_id: str | None = None
     effort: str | None = None
     config: dict[str, str | bool] = Field(default_factory=dict)
+    dispatch_id: str | None = None
 
 
 def _config_option_id(runtime, requested: str) -> str:
@@ -72,13 +73,17 @@ def _config_option_id(runtime, requested: str) -> str:
     aliases = {
         "effort": {"effort", "reasoningeffort", "reasoninglevel", "thinkinglevel"},
     }
-    wanted = aliases.get(requested, {requested.lower().replace("_", "").replace("-", "")})
+    wanted = aliases.get(
+        requested, {requested.lower().replace("_", "").replace("-", "")}
+    )
     connection = getattr(runtime, "connection", None)
     options = getattr(connection, "config_options", None) or []
     for option in options:
         if not isinstance(option, dict):
             continue
-        option_id = option.get("id") or option.get("configId") or option.get("config_id")
+        option_id = (
+            option.get("id") or option.get("configId") or option.get("config_id")
+        )
         name = option.get("name")
         normalized = {
             str(value).lower().replace("_", "").replace("-", "").replace(" ", "")
@@ -235,6 +240,20 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
             raise
     except Exception as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if body.dispatch_id:
+        dispatch_store = request.app.state.ctx.services.get("dispatch_store")
+        record = dispatch_store.get(body.dispatch_id) if dispatch_store else None
+        if not record:
+            if created_runtime:
+                await runtime.close()
+                mgr._runtimes.pop(runtime.session_id, None)
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "dispatch_not_materialized", "recoverable": True},
+            )
+        record.session_id = runtime.session_id
+        record.state = "dispatched"
+        dispatch_store.put(record)
     return runtime.snapshot()
 
 

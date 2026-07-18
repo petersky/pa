@@ -233,6 +233,26 @@ class RetryAndConflictTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(raised.exception.status_code, 409)
         self.assertEqual(raised.exception.detail["code"], "sync_conflict")
 
+    async def test_unreachable_peer_blocks_dispatch_instead_of_hiding_divergence(
+        self,
+    ) -> None:
+        settings = Settings(
+            instance_id="authority",
+            peers=["http://peer-a"],
+            sync_token="secret",
+        )
+        log = MagicMock()
+        log.get_head.return_value = "head-local"
+        request = request_for(settings, MagicMock(), {"event_log": log})
+        with patch("pa.modules.fleet.httpx.AsyncClient") as client:
+            client.return_value.__aenter__.return_value.get = AsyncMock(
+                side_effect=httpx.ConnectError("offline")
+            )
+            with self.assertRaises(HTTPException) as raised:
+                await _assert_dispatch_sync_health(request, "default")
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertEqual(raised.exception.detail["code"], "sync_unavailable")
+
 
 class EventLogMergeTests(unittest.TestCase):
     def test_compatible_heads_produce_same_deterministic_merge_hash(self) -> None:
@@ -299,6 +319,48 @@ class EventLogMergeTests(unittest.TestCase):
             )
             self.assertIn("left-card", seen)
             self.assertIn("right-card", seen)
+
+    def test_delete_and_concurrent_edit_require_operator_resolution(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            objects = ObjectStore(root / "objects")
+            for name in ("left", "right"):
+                (root / name).mkdir()
+            left = EventLog(objects, root / "left", "left")
+            right = EventLog(objects, root / "right", "right")
+            _, base = left.append_event(
+                CardEvent(
+                    type=EventType.CARD_CREATED,
+                    realm_id="default",
+                    card_id="card-1",
+                    author_principal="test",
+                    author_instance="left",
+                    payload=Card(id="card-1", title="base").model_dump(mode="json"),
+                )
+            )
+            right.advance_ref("default", base.hash)
+            _, deleted = left.append_event(
+                CardEvent(
+                    type=EventType.CARD_DELETED,
+                    realm_id="default",
+                    card_id="card-1",
+                    author_principal="test",
+                    author_instance="left",
+                )
+            )
+            _, edited = right.append_event(
+                CardEvent(
+                    type=EventType.CARD_UPDATED,
+                    realm_id="default",
+                    card_id="card-1",
+                    author_principal="test",
+                    author_instance="right",
+                    payload={"title": "edited"},
+                )
+            )
+            compatible, health = left.compatible_histories(deleted.hash, edited.hash)
+            self.assertFalse(compatible)
+            self.assertEqual(health["conflicts"][0]["field"], "__terminal__")
 
 
 class BoundedDrainTests(unittest.IsolatedAsyncioTestCase):

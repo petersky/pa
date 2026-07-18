@@ -1163,6 +1163,19 @@ async def _assert_dispatch_sync_health(request: Request, realm_id: str) -> None:
             except httpx.HTTPError, ValueError:
                 heads[peer_url] = None
     known = {head for head in heads.values() if head}
+    unavailable = sorted(peer for peer, head in heads.items() if head is None)
+    if unavailable:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "sync_unavailable",
+                "message": "Dispatch blocked because not every configured peer reported its realm head",
+                "realm_id": realm_id,
+                "heads": heads,
+                "unavailable": unavailable,
+                "recoverable": True,
+            },
+        )
     if len(known) > 1:
         raise HTTPException(
             status_code=409,
@@ -1283,6 +1296,7 @@ async def start_remote_agent_work(
         "effort": body.effort,
         "config": body.config,
         "surface": "execution",
+        "dispatch_id": authority_record.dispatch_id if authority_record else None,
     }
     session_body = {
         key: value for key, value in session_body.items() if value not in (None, "")
@@ -1300,12 +1314,22 @@ async def start_remote_agent_work(
     session_id = session.get("id") if isinstance(session, dict) else None
     if not session_id:
         raise HTTPException(status_code=502, detail="Peer did not return a session id")
-    if dispatch_body and authority_record:
-        dispatch_body["session_id"] = session_id
-        await _peer_dispatch_json(request, instance_id, dispatch_body)
+    if authority_record:
         authority_record.session_id = session_id
         authority_record.state = "dispatched"
         _dispatch_store(request).put(authority_record)
+
+    updated_card = None
+    if card:
+        # Publish ACTIVE before the non-blocking prompt. Completion may arrive as
+        # soon as that call is accepted and must never be overwritten afterward.
+        updated_card = store.update_card(
+            card.id,
+            CardUpdate(lane=CardLane.ACTIVE, preferred_instance=instance_id),
+            realm_id=realm_id,
+            principal_id=get_principal_id(request),
+            instance_id=settings.instance_id,
+        )
 
     message = body.message.strip()
     if card and not message:
@@ -1338,18 +1362,6 @@ async def start_remote_agent_work(
             # the operator can open it and retry instead of losing track of an orphan.
             prompt_error = str(exc.detail)
 
-    updated_card = None
-    if card:
-        updated_card = store.update_card(
-            card.id,
-            CardUpdate(
-                lane=CardLane.ACTIVE,
-                preferred_instance=instance_id,
-            ),
-            realm_id=realm_id,
-            principal_id=get_principal_id(request),
-            instance_id=settings.instance_id,
-        )
     store.add_knowledge(
         KnowledgeEntry(
             session_id=session_id,

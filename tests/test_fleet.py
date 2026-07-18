@@ -648,7 +648,7 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
                 )
 
             self.assertEqual(result["session"]["session"]["id"], "remote-session")
-            self.assertEqual(materialize.await_count, 2)
+            self.assertEqual(materialize.await_count, 1)
             self.assertEqual(
                 materialize.await_args_list[0].args[2]["card_id"]
                 if "card_id" in materialize.await_args_list[0].args[2]
@@ -662,6 +662,10 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
                 "/Users/petersky/repos/petersky/pa",
             )
             self.assertEqual(create_call.kwargs["body"]["label"], "card:card-1")
+            self.assertEqual(
+                create_call.kwargs["body"]["dispatch_id"],
+                result["dispatch"]["dispatch_id"],
+            )
             prompt_call = peer.await_args_list[1]
             self.assertIn(
                 "# Card: Implement remote control",

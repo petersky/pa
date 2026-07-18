@@ -198,6 +198,10 @@ class EventLog:
         left, right = changes(head_a), changes(head_b)
         conflicts = []
         for entity in sorted(set(left) & set(right)):
+            if "__terminal__" in left[entity] or "__terminal__" in right[entity]:
+                if left[entity] != right[entity]:
+                    conflicts.append({"entity": entity, "field": "__terminal__"})
+                    continue
             for field in sorted(set(left[entity]) & set(right[entity])):
                 if left[entity][field] != right[entity][field]:
                     conflicts.append({"entity": entity, "field": field})
