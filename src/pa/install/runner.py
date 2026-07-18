@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import re
-import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 from pa.cli import service as svc
-from pa.config import Settings, get_settings, reset_settings
+from pa.config import get_settings, reset_settings
 from pa.install.metadata import InstallMetadata, save_install_metadata
+from pa.packaging.uv import resolve_uv_binary
 
 
 def _run(cmd: list[str], *, cwd: Path | None = None) -> None:
@@ -67,13 +66,12 @@ def install_from_path(
     start_service: bool = True,
 ) -> None:
     """Install PA via uv tool and register host service."""
-    if not shutil.which("uv"):
-        raise RuntimeError("uv is required. Install from https://docs.astral.sh/uv/")
+    uv = resolve_uv_binary()
 
     if source:
-        _run(["uv", "tool", "install", "--force", str(source)])
+        _run([uv, "tool", "install", "--force", str(source)])
     else:
-        _run(["uv", "tool", "install", "--force", "pa"])
+        _run([uv, "tool", "install", "--force", "pa"])
 
     pa_bin = svc.find_pa_binary()
     if not pa_bin:
