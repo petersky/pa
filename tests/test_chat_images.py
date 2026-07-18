@@ -204,6 +204,8 @@ assert.strictEqual(window.PAAgentChat.anchoredScrollTop(75, 400, 650), 325);
         self.assertIn('const modelId = this.els.model.value;', script)
         self.assertIn('const modeId = this.els.mode.value;', script)
         self.assertIn('errors.push(error)', script)
+        self.assertIn('this.settingsPending = pending;', script)
+        self.assertIn('if (this.settingsPending)', script)
         self.assertIn('No changes to apply.', script)
         self.assertIn("Discard unsaved Agent settings changes", script)
         self.assertIn("sessionConfigSummary", script)

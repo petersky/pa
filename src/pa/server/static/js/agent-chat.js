@@ -1333,6 +1333,7 @@
   };
 
   AgentChatWidget.prototype.setSettingsPending = function (pending) {
+    this.settingsPending = pending;
     [this.els.model, this.els.mode].concat(Array.from(this.els.config ? this.els.config.querySelectorAll("select,input") : []))
       .filter(Boolean).forEach(function (control) { control.disabled = pending; });
     if (this.els.settingsApply) {
@@ -1491,6 +1492,11 @@
       }
       self.els.config.appendChild(wrap);
     });
+    if (this.settingsPending) {
+      this.els.config.querySelectorAll("select,input").forEach(function (control) {
+        control.disabled = true;
+      });
+    }
   };
 
   AgentChatWidget.prototype.switchSession = function (sessionId) {
