@@ -60,9 +60,12 @@ class FleetUpdateJob(BaseModel):
     health_timeout: float = 180.0
     phase: UpdatePhase = UpdatePhase.PENDING
     current_version: str | None = None
+    current_identity: str | None = None
     available_version: str | None = None
     expected_version: str | None = None
+    expected_identity: str | None = None
     verified_version: str | None = None
+    verified_identity: str | None = None
     error: str | None = None
     events: list[dict[str, Any]] = Field(default_factory=list)
     next_event_seq: int = 1
@@ -194,12 +197,13 @@ async def run_update_job(
                         "Peer identity did not match the registered fleet instance"
                     )
                 job.current_version = str(status.get("version") or "") or None
+                job.current_identity = str(status.get("install_revision") or "") or None
                 if not job.current_version:
                     raise RuntimeError("Peer did not report its current version")
 
-                if job.target_version:
-                    job.expected_version = job.target_version
-                else:
+                track = normalize_track(job.channel)
+                checked: dict[str, Any] | None = None
+                if not job.target_version or track == ReleaseTrack.DEV:
                     checked = await _peer_json(
                         client,
                         "GET",
@@ -220,9 +224,30 @@ async def run_update_job(
                             f"Peer already reports {job.current_version}; no newer "
                             f"{job.channel} version is available"
                         )
-                    job.expected_version = job.available_version
+                job.expected_version = job.target_version or job.available_version
 
-                if normalize_track(job.channel) != ReleaseTrack.DEV:
+                if track == ReleaseTrack.DEV:
+                    if job.expected_version != job.available_version:
+                        raise RuntimeError(
+                            f"Dev channel target must be {job.available_version}, not "
+                            f"{job.expected_version}"
+                        )
+                    job.expected_identity = (
+                        str((checked or {}).get("target_identity") or "").lower()
+                        or None
+                    )
+                    if not job.expected_identity:
+                        raise RuntimeError(
+                            "Dev update check did not resolve an immutable target revision"
+                        )
+                    if job.current_identity and (
+                        job.current_identity.lower() == job.expected_identity
+                    ):
+                        raise RuntimeError(
+                            f"Peer already has dev revision {job.expected_identity}; "
+                            "no update was performed"
+                        )
+                else:
                     try:
                         comparison = compare_versions(
                             job.expected_version, job.current_version
@@ -255,6 +280,14 @@ async def run_update_job(
             if not job.expected_version:
                 raise RuntimeError(
                     "Cannot safely resume update without a durable expected version; "
+                    "start a new update job"
+                )
+            if (
+                normalize_track(job.channel) == ReleaseTrack.DEV
+                and not job.expected_identity
+            ):
+                raise RuntimeError(
+                    "Cannot safely resume dev update without a durable target revision; "
                     "start a new update job"
                 )
 
@@ -299,6 +332,7 @@ async def run_update_job(
                         json={
                             "channel": job.channel,
                             "target_version": job.expected_version,
+                            "target_identity": job.expected_identity,
                         },
                     )
                     accepted_version = str(result.get("target_version") or "") or None
@@ -306,6 +340,18 @@ async def run_update_job(
                         raise RuntimeError(
                             "Peer accepted an unexpected update version: "
                             f"expected {job.expected_version}, got {accepted_version or 'none'}"
+                        )
+                    accepted_identity = (
+                        str(result.get("target_identity") or "").lower() or None
+                    )
+                    if (
+                        job.expected_identity
+                        and accepted_identity != job.expected_identity
+                    ):
+                        raise RuntimeError(
+                            "Peer accepted an unexpected update identity: "
+                            f"expected {job.expected_identity}, got "
+                            f"{accepted_identity or 'none'}"
                         )
                 except httpx.TransportError:
                     # The service may close the response after accepting and restarting.
@@ -339,16 +385,61 @@ async def run_update_job(
                     last_error = "peer identity changed after restart"
                 else:
                     job.verified_version = str(status.get("version") or "") or None
+                    job.verified_identity = (
+                        str(status.get("install_revision") or "").lower() or None
+                    )
                     store.event(
                         job,
                         UpdatePhase.VERIFYING,
                         f"Peer reports version {job.verified_version or 'unknown'}",
                     )
-                    if job.verified_version != job.expected_version:
-                        last_error = (
-                            f"expected {job.expected_version}, peer reports "
-                            f"{job.verified_version or 'no version'}"
+                    if normalize_track(job.channel) == ReleaseTrack.DEV:
+                        installed_version = (
+                            str(status.get("installed_version") or "") or None
                         )
+                        installed_channel = normalize_track(
+                            str(status.get("install_channel") or "release")
+                        )
+                        version_matches_install = False
+                        if job.verified_version and installed_version:
+                            try:
+                                version_matches_install = (
+                                    compare_versions(
+                                        job.verified_version, installed_version
+                                    )
+                                    == 0
+                                )
+                            except ValueError:
+                                version_matches_install = False
+                        verified = (
+                            installed_channel == ReleaseTrack.DEV
+                            and job.verified_identity == job.expected_identity
+                            and version_matches_install
+                        )
+                        if not verified:
+                            last_error = (
+                                f"expected dev revision {job.expected_identity}, peer reports "
+                                f"revision {job.verified_identity or 'none'}, channel "
+                                f"{installed_channel}, running {job.verified_version or 'none'}, "
+                                f"installed {installed_version or 'none'}"
+                            )
+                    else:
+                        try:
+                            verified = bool(
+                                job.verified_version
+                                and compare_versions(
+                                    job.verified_version, job.expected_version
+                                )
+                                == 0
+                            )
+                        except ValueError:
+                            verified = False
+                        if not verified:
+                            last_error = (
+                                f"expected {job.expected_version} (semantic version), peer "
+                                f"reports {job.verified_version or 'no version'}"
+                            )
+                    if not verified:
                         await asyncio.sleep(2)
                         continue
                     job.completed_at = datetime.now(UTC)

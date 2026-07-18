@@ -9,6 +9,7 @@ import subprocess
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import quote
 
 import httpx
 
@@ -24,6 +25,7 @@ class ReleaseInfo:
     track: str | None = None
     notes: str | None = None
     name: str | None = None
+    revision: str | None = None
 
 
 class UpdateChannel(ABC):
@@ -103,12 +105,16 @@ class GitHubTrackChannel(UpdateChannel):
     def latest(self) -> ReleaseInfo | None:
         if self.track == ReleaseTrack.DEV:
             ref = _ref_from_channels_json(self.track, repo=self.repo) or "main"
+            revision = _resolve_github_revision(self.repo, ref)
+            if not revision:
+                return None
             return ReleaseInfo(
                 version="dev",
-                install_spec=f"git+https://github.com/{self.repo}.git@{ref}",
+                install_spec=f"git+https://github.com/{self.repo}.git@{revision}",
                 url=f"https://github.com/{self.repo}",
                 tag=ref,
                 track=self.track,
+                revision=revision,
             )
 
         releases = self._list_releases()
@@ -292,11 +298,29 @@ def get_channel(name: str, *, repo: str = "petersky/pa") -> UpdateChannel:
 
 
 def resolve_release(
-    name: str, version: str, *, repo: str = "petersky/pa"
+    name: str,
+    version: str,
+    *,
+    repo: str = "petersky/pa",
+    revision: str | None = None,
 ) -> ReleaseInfo:
     """Resolve an exact fleet target using the selected channel's native semantics."""
     normalized = normalize_track(name)
     if normalized == ReleaseTrack.DEV:
+        if revision:
+            if not re.fullmatch(r"[0-9a-fA-F]{40}", revision):
+                raise ValueError(
+                    "Dev update revision must be a full 40-character commit SHA"
+                )
+            return ReleaseInfo(
+                version="dev",
+                install_spec=(
+                    f"git+https://github.com/{repo.strip().strip('/')}.git@{revision}"
+                ),
+                tag=revision,
+                track=normalized,
+                revision=revision.lower(),
+            )
         release = get_channel(normalized, repo=repo).latest()
         if not release:
             raise RuntimeError("Could not resolve the dev channel ref")
@@ -317,6 +341,20 @@ def resolve_release(
         tag=f"v{version}",
         track=normalized,
     )
+
+
+def _resolve_github_revision(repo: str, ref: str) -> str | None:
+    url = (
+        f"https://api.github.com/repos/{repo.strip().strip('/')}/commits/"
+        f"{quote(ref, safe='')}"
+    )
+    try:
+        response = httpx.get(url, timeout=15.0, headers=_github_headers())
+        response.raise_for_status()
+        revision = str(response.json().get("sha") or "").lower()
+    except httpx.HTTPError, ValueError, AttributeError:
+        return None
+    return revision if re.fullmatch(r"[0-9a-f]{40}", revision) else None
 
 
 def resolve_track_ref(track: str, *, repo: str = "petersky/pa") -> str:

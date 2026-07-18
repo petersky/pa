@@ -569,6 +569,7 @@ async def peer_update(request: Request, body: dict) -> dict:
     settings = request.app.state.ctx.settings
     channel = (body.get("channel") or settings.release_track or "release").strip()
     target_version = (body.get("target_version") or "").strip() or None
+    target_identity = (body.get("target_identity") or "").strip() or None
     if not target_version:
         raise HTTPException(
             status_code=400,
@@ -584,6 +585,7 @@ async def peer_update(request: Request, body: dict) -> dict:
             channel,
             target_version,
             repo=settings.update_repo,
+            revision=target_identity,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -610,6 +612,7 @@ async def peer_update(request: Request, body: dict) -> dict:
         "accepted": True,
         "current_version": __import__("pa").__version__,
         "target_version": release.version,
+        "target_identity": release.revision or release.tag or release.version,
         "channel": channel,
     }
 
@@ -626,6 +629,11 @@ async def peer_update_check(request: Request, channel: str | None = None) -> dic
         "available_version": result.latest,
         "upgrade_available": result.upgrade_available,
         "channel": channel or settings.release_track,
+        "target_identity": (
+            result.release.revision
+            if result.release and result.release.revision
+            else (result.release.tag if result.release else None)
+        ),
     }
 
 

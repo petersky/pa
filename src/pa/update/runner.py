@@ -79,6 +79,7 @@ def apply_update(
             channel=name,
             installed_at=datetime.now(UTC),
             pa_bin=str(pa_bin) if pa_bin else None,
+            source_revision=target.revision or target.tag,
         ),
     )
 

@@ -20,8 +20,14 @@ from pa.fleet.update import (
     run_update_job,
 )
 from pa.fleet.update import _peer_json
+from pa.install.metadata import (
+    InstallMetadata,
+    load_install_metadata,
+    save_install_metadata,
+)
 from pa.modules.fleet import _require_instance, fleet_instance_update_events
 from pa.update.channels import (
+    GitHubTrackChannel,
     ReleaseInfo,
     compare_versions,
     resolve_release,
@@ -113,7 +119,7 @@ class FleetUpdateStoreTests(unittest.TestCase):
 
 
 class FleetUpdateWorkflowTests(unittest.IsolatedAsyncioTestCase):
-    async def _run(self, responses, *, force=False, target="0.2.6"):
+    async def _run(self, responses, *, force=False, target="0.2.6", channel="release"):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         settings = Settings(data_dir=Path(tmp.name), sync_token="fleet-secret")
@@ -123,8 +129,13 @@ class FleetUpdateWorkflowTests(unittest.IsolatedAsyncioTestCase):
         )
         job = store.create(
             instance,
-            FleetUpdateRequest(target_version=target, force=force, health_timeout=10),
-            "release",
+            FleetUpdateRequest(
+                target_version=target,
+                channel=channel,
+                force=force,
+                health_timeout=10,
+            ),
+            channel,
         )
         with (
             patch("pa.fleet.update._peer_json", AsyncMock(side_effect=responses)),
@@ -144,6 +155,108 @@ class FleetUpdateWorkflowTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(job.phase, UpdatePhase.SUCCEEDED)
         self.assertEqual(job.verified_version, "0.2.6")
+
+    async def test_semantically_equivalent_reported_version_succeeds(self) -> None:
+        job = await self._run(
+            [
+                {"instance_id": "peer-1", "version": "0.2.5"},
+                {"done": True},
+                {"target_version": "0.2.6"},
+                {"instance_id": "peer-1", "version": "0.2.6.0"},
+            ]
+        )
+        self.assertEqual(job.phase, UpdatePhase.SUCCEEDED)
+        self.assertEqual(compare_versions(job.verified_version, "0.2.6"), 0)
+
+    async def test_dev_verifies_immutable_installed_revision(self) -> None:
+        old_revision = "a" * 40
+        expected_revision = "b" * 40
+        job = await self._run(
+            [
+                {
+                    "instance_id": "peer-1",
+                    "version": "0.2.5",
+                    "install_revision": old_revision,
+                },
+                {
+                    "available_version": "dev",
+                    "upgrade_available": True,
+                    "target_identity": expected_revision,
+                },
+                {"done": True},
+                {
+                    "target_version": "dev",
+                    "target_identity": expected_revision,
+                },
+                {
+                    "instance_id": "peer-1",
+                    "version": "0.2.6",
+                    "installed_version": "0.2.6.0",
+                    "install_channel": "dev",
+                    "install_revision": expected_revision,
+                },
+            ],
+            target=None,
+            channel="dev",
+        )
+        self.assertEqual(job.phase, UpdatePhase.SUCCEEDED)
+        self.assertEqual(job.verified_identity, expected_revision)
+
+    async def test_dev_noop_revision_fails_before_quiesce(self) -> None:
+        revision = "c" * 40
+        job = await self._run(
+            [
+                {
+                    "instance_id": "peer-1",
+                    "version": "0.2.5",
+                    "install_revision": revision,
+                },
+                {
+                    "available_version": "dev",
+                    "upgrade_available": True,
+                    "target_identity": revision,
+                },
+            ],
+            target=None,
+            channel="dev",
+        )
+        self.assertEqual(job.phase, UpdatePhase.FAILED)
+        self.assertIn("already has dev revision", job.error)
+
+    async def test_dev_wrong_revision_fails_verification(self) -> None:
+        expected_revision = "d" * 40
+        wrong_revision = "e" * 40
+        job = await self._run(
+            [
+                {
+                    "instance_id": "peer-1",
+                    "version": "0.2.5",
+                    "install_revision": "a" * 40,
+                },
+                {
+                    "available_version": "dev",
+                    "upgrade_available": True,
+                    "target_identity": expected_revision,
+                },
+                {"done": True},
+                {
+                    "target_version": "dev",
+                    "target_identity": expected_revision,
+                },
+                {
+                    "instance_id": "peer-1",
+                    "version": "0.2.6",
+                    "installed_version": "0.2.6",
+                    "install_channel": "dev",
+                    "install_revision": wrong_revision,
+                },
+            ],
+            target=None,
+            channel="dev",
+        )
+        self.assertEqual(job.phase, UpdatePhase.FAILED)
+        self.assertIn(expected_revision, job.error)
+        self.assertIn(wrong_revision, job.error)
 
     async def test_explicit_equal_version_fails_before_quiesce(self) -> None:
         job = await self._run(
@@ -426,24 +539,59 @@ class UvResolutionTests(unittest.TestCase):
 
 
 class FleetReleaseResolutionTests(unittest.TestCase):
+    def test_dev_channel_resolves_branch_to_immutable_commit(self) -> None:
+        revision = "2" * 40
+        channel = GitHubTrackChannel("dev", "petersky/pa")
+        with (
+            patch("pa.update.channels._ref_from_channels_json", return_value="main"),
+            patch("pa.update.channels._resolve_github_revision", return_value=revision),
+        ):
+            release = channel.latest()
+        self.assertEqual(release.revision, revision)
+        self.assertTrue(release.install_spec.endswith(f"@{revision}"))
+
     def test_dev_uses_channel_resolved_branch_install_spec(self) -> None:
         channel = MagicMock()
+        revision = "f" * 40
         channel.latest.return_value = ReleaseInfo(
             version="dev",
-            install_spec="git+https://github.com/petersky/pa.git@feature/dev-fleet",
+            install_spec=f"git+https://github.com/petersky/pa.git@{revision}",
             tag="feature/dev-fleet",
             track="dev",
+            revision=revision,
         )
         with patch("pa.update.channels.get_channel", return_value=channel):
             release = resolve_release("dev", "dev", repo="petersky/pa")
         self.assertEqual(
             release.install_spec,
-            "git+https://github.com/petersky/pa.git@feature/dev-fleet",
+            f"git+https://github.com/petersky/pa.git@{revision}",
         )
         self.assertNotIn("@vdev", release.install_spec)
+        self.assertEqual(release.revision, revision)
+
+    def test_dev_exact_revision_builds_immutable_install_spec(self) -> None:
+        revision = "1" * 40
+        release = resolve_release("dev", "dev", repo="petersky/pa", revision=revision)
+        self.assertTrue(release.install_spec.endswith(f"@{revision}"))
+        self.assertEqual(release.revision, revision)
 
     def test_release_and_beta_keep_version_tag_install_specs(self) -> None:
         release = resolve_release("release", "0.2.6", repo="petersky/pa")
         beta = resolve_release("beta", "0.2.7-beta.1", repo="petersky/pa")
         self.assertTrue(release.install_spec.endswith("@v0.2.6"))
         self.assertTrue(beta.install_spec.endswith("@v0.2.7-beta.1"))
+
+    def test_install_metadata_persists_dev_source_revision(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            revision = "3" * 40
+            save_install_metadata(
+                Path(tmp),
+                InstallMetadata(
+                    version="0.2.6",
+                    channel="dev",
+                    source_revision=revision,
+                ),
+            )
+            loaded = load_install_metadata(Path(tmp))
+        self.assertEqual(loaded.channel, "dev")
+        self.assertEqual(loaded.source_revision, revision)

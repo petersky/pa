@@ -18,6 +18,7 @@ class InstallMetadata(BaseModel):
     method: str = "uv-tool"
     channel: str = "release"
     pa_bin: str | None = None
+    source_revision: str | None = None
 
 
 def install_metadata_path(data_dir: Path) -> Path:
@@ -30,7 +31,7 @@ def load_install_metadata(data_dir: Path) -> InstallMetadata | None:
         return None
     try:
         return InstallMetadata.model_validate_json(path.read_text())
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError, ValueError:
         return None
 
 
