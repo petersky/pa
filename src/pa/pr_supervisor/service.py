@@ -398,9 +398,12 @@ class PRSupervisor:
         return watch
 
     async def retire_watch(self, watch_id: str) -> PRWatch | None:
-        watch = self.store.set_terminal(watch_id, PRWatchStatus.RETIRED)
-        if not watch:
+        current = self.store.get_watch(watch_id)
+        if not current:
             return None
+        if current.status in {PRWatchStatus.MERGED, PRWatchStatus.CLOSED}:
+            return current
+        watch = self.store.set_terminal(watch_id, PRWatchStatus.RETIRED)
         self._audit(
             watch,
             "watch_retired",

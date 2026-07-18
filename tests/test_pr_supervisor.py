@@ -825,6 +825,32 @@ class PRSupervisorApiAndMcpTests(unittest.TestCase):
             ).get_watch(watch_id)
             self.assertEqual(canonical.status, PRWatchStatus.RETIRED)
 
+            supervisor_store = app.state.ctx.require_service(
+                "pr_supervisor_store"
+            )
+            supervisor_store.set_terminal(
+                watch_id,
+                PRWatchStatus.MERGED,
+                state={
+                    "merge_commit_sha": "d" * 40,
+                    "card_lane": "pending",
+                },
+            )
+            repeated = client.post(
+                "/api/pr-supervisor/retirements",
+                headers=headers,
+                json={
+                    "watch": incoming,
+                    "event_key": "late-operator-retirement",
+                },
+            )
+            self.assertEqual(repeated.status_code, 200, repeated.text)
+            self.assertEqual(repeated.json()["status"], "merged")
+            self.assertEqual(
+                repeated.json()["state"]["merge_commit_sha"], "d" * 40
+            )
+            self.assertEqual(repeated.json()["state"]["card_lane"], "pending")
+
             unsigned = client.post(
                 "/api/pr-supervisor/webhook/github",
                 content=b"{}",

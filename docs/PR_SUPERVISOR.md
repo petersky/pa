@@ -31,7 +31,9 @@ lease from the authority before polling or changing watch state:
 
 Ordinary replicas never let an older terminal snapshot overwrite newer active
 state. Operator retirement is propagated as a separate idempotent fleet
-transition, so it does not depend on snapshot timestamps to take effect.
+transition, so it does not depend on snapshot timestamps to take effect. The
+transition preserves each peer's richer observation data and never downgrades
+an already merged or closed watch.
 
 An explicit connection failure may fail over to a replacement executor. An
 ambiguous response failure never falls back to a second instance because the

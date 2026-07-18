@@ -295,20 +295,26 @@ def ingest_retirement(request: Request, body: dict[str, Any]) -> dict[str, Any]:
         incoming.realm_id, incoming.repository, incoming.pr_number
     )
     if existing:
-        retired = store.set_terminal(
-            existing.id,
-            PRWatchStatus.RETIRED,
-            state=incoming.state,
-        )
+        if existing.status in {PRWatchStatus.MERGED, PRWatchStatus.CLOSED}:
+            retired = existing
+            event_type = "retirement_ignored_stronger_terminal"
+        else:
+            retired = store.set_terminal(
+                existing.id,
+                PRWatchStatus.RETIRED,
+                state=existing.state,
+            )
+            event_type = "watch_retired"
     else:
         incoming.status = PRWatchStatus.RETIRED
         retired = store.upsert_watch(incoming, preserve_lease=False)
+        event_type = "watch_retired"
     event_key = str(body.get("event_key") or f"{retired.id}:retired")
     store.append_event(
         PRWatchEvent(
             watch_id=retired.id,
             event_key=event_key,
-            event_type="watch_retired",
+            event_type=event_type,
             source="fleet_transition",
         )
     )
