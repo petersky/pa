@@ -540,11 +540,11 @@
       .join(" ");
   }
 
-  function healthHtml(healthy) {
-    if (healthy) {
-      return '<span class="status status-active">up</span>';
-    }
-    return '<span class="status status-blocked">down</span>';
+  function healthHtml(state) {
+    var terminal = ["up", "down", "partial", "error", "timeout"];
+    state = terminal.indexOf(state) >= 0 ? state : "error";
+    return '<span class="status ' + (state === "up" ? "status-active" : "status-blocked") +
+      '">' + escapeHtml(state) + "</span>";
   }
 
   function setLiveBanner(text) {
@@ -583,15 +583,15 @@
     }
   }
 
-  function resetLivePlaceholders() {
+  function resetLivePlaceholders(force) {
     $all("#pa-fleet-instances [data-fleet-health]").forEach(function (el) {
-      el.innerHTML = '<span class="muted small">Checking…</span>';
+      if (force || !el.dataset.fleetTerminal) el.innerHTML = '<span class="muted small">Checking…</span>';
     });
     $all("#pa-fleet-instances [data-fleet-providers]").forEach(function (el) {
-      el.innerHTML = '<span class="muted small">Checking…</span>';
+      if (force || !el.dataset.fleetTerminal) el.innerHTML = '<span class="muted small">Checking…</span>';
     });
     $all("#pa-fleet-instances [data-fleet-current-version], #pa-fleet-instances [data-fleet-available-version]").forEach(function (el) {
-      el.innerHTML = '<span class="muted small">Checking…</span>';
+      if (force || !el.dataset.fleetTerminal) el.innerHTML = '<span class="muted small">Checking…</span>';
     });
     setLiveBanner("Checking instance health…");
   }
@@ -603,17 +603,31 @@
     });
     $all("#pa-fleet-instances tr[data-fleet-instance]").forEach(function (tr) {
       var row = byId[tr.getAttribute("data-fleet-instance")];
-      if (!row) return;
+      if (!row) row = { state: "error", providers_state: "error", status_state: "error", update_state: "error" };
       var healthEl = $("[data-fleet-health]", tr);
       var providersEl = $("[data-fleet-providers]", tr);
       var currentEl = $("[data-fleet-current-version]", tr);
       var availableEl = $("[data-fleet-available-version]", tr);
-      if (healthEl) healthEl.innerHTML = healthHtml(!!row.healthy);
-      if (providersEl) providersEl.innerHTML = providersHtml(row.providers || [], row.instance_id);
-      if (currentEl) currentEl.textContent = row.current_version || "—";
+      var state = row.state || (row.healthy ? "up" : "down");
+      var detailStates = [row.providers_state, row.status_state, row.update_state];
+      if (state === "up" && detailStates.some(function (item) { return item && item !== "up"; })) state = "partial";
+      if (healthEl) { healthEl.innerHTML = healthHtml(state); healthEl.dataset.fleetTerminal = "1"; }
+      if (providersEl) {
+        providersEl.innerHTML = row.providers_state === "up"
+          ? providersHtml(row.providers || [], row.instance_id)
+          : '<span class="status status-blocked">' + escapeHtml(row.providers_state || "error") + '</span>';
+        providersEl.dataset.fleetTerminal = "1";
+      }
+      if (currentEl) {
+        currentEl.textContent = row.current_version ||
+          (row.status_state === "up" ? "—" : (row.status_state || "error"));
+        currentEl.dataset.fleetTerminal = "1";
+      }
       if (availableEl) {
-        availableEl.textContent = row.available_version || "—";
+        availableEl.textContent = row.available_version ||
+          (row.update_state === "up" ? "—" : (row.update_state || "error"));
         availableEl.classList.toggle("status-active", !!row.upgrade_available);
+        availableEl.dataset.fleetTerminal = "1";
       }
       tr.dataset.updateChannel = row.update_channel || "release";
       tr.dataset.currentVersion = row.current_version || "";
@@ -672,16 +686,39 @@
   }
 
   var liveStatusSeq = 0;
+  var liveStatusRequest = null;
+  var liveStatusController = null;
+  var liveStatusTimer = null;
 
-  async function loadLiveStatus() {
+  function terminalLiveFailure(message, state) {
+    if (!$("#pa-fleet-root")) return;
+    $all("#pa-fleet-instances tr[data-fleet-instance]").forEach(function (tr) {
+      var health = $("[data-fleet-health]", tr);
+      var providers = $("[data-fleet-providers]", tr);
+      if (health && !health.dataset.fleetTerminal) { health.innerHTML = healthHtml(state); health.dataset.fleetTerminal = "1"; }
+      if (providers && !providers.dataset.fleetTerminal) { providers.textContent = "—"; providers.dataset.fleetTerminal = "1"; }
+      $all("[data-fleet-current-version], [data-fleet-available-version]", tr).forEach(function (el) {
+        if (!el.dataset.fleetTerminal) { el.textContent = "—"; el.dataset.fleetTerminal = "1"; }
+      });
+    });
+    setLiveBanner((message || "Health check failed") + " · Use Refresh to retry.");
+  }
+
+  function loadLiveStatus() {
     var root = $("#pa-fleet-root");
     var table = $("#pa-fleet-instances");
-    if (!root || !table) return;
+    if (!root || !table) return Promise.resolve();
+    if (liveStatusRequest) return liveStatusRequest;
 
     var seq = ++liveStatusSeq;
-    resetLivePlaceholders();
-    try {
-      var rows = await api("/api/fleet/health");
+    resetLivePlaceholders(false);
+    liveStatusController = typeof AbortController === "function" ? new AbortController() : null;
+    liveStatusTimer = setTimeout(function () {
+      if (seq !== liveStatusSeq) return;
+      if (liveStatusController) liveStatusController.abort();
+      terminalLiveFailure("Health check timed out", "timeout");
+    }, 12000);
+    liveStatusRequest = api("/api/fleet/health", liveStatusController ? { signal: liveStatusController.signal } : {}).then(function (rows) {
       if (seq !== liveStatusSeq) return;
       applyLiveStatus(rows);
       var up = (rows || []).filter(function (r) {
@@ -699,16 +736,18 @@
               " up"
           : ""
       );
-    } catch (err) {
+    }).catch(function (err) {
       if (seq !== liveStatusSeq) return;
-      $all("#pa-fleet-instances [data-fleet-health]").forEach(function (el) {
-        el.innerHTML = '<span class="status status-blocked">?</span>';
-      });
-      $all("#pa-fleet-instances [data-fleet-providers]").forEach(function (el) {
-        el.innerHTML = '<span class="muted">—</span>';
-      });
-      setLiveBanner(err.message || "Health check failed");
-    }
+      terminalLiveFailure(err.name === "AbortError" ? "Health check timed out" : err.message,
+        err.name === "AbortError" ? "timeout" : "error");
+    }).finally(function () {
+      if (seq !== liveStatusSeq) return;
+      clearTimeout(liveStatusTimer);
+      liveStatusTimer = null;
+      liveStatusController = null;
+      liveStatusRequest = null;
+    });
+    return liveStatusRequest;
   }
 
   function maybeLoadLiveStatus() {
@@ -729,6 +768,16 @@
     ) {
       maybeLoadLiveStatus();
       maybeLoadRemoteOperations();
+    }
+  });
+  document.body.addEventListener("htmx:beforeSwap", function (evt) {
+    var target = evt.target;
+    if (target && target.id === "app-view" && liveStatusRequest) {
+      liveStatusSeq += 1;
+      if (liveStatusController) liveStatusController.abort();
+      clearTimeout(liveStatusTimer);
+      liveStatusRequest = null;
+      liveStatusController = null;
     }
   });
 

@@ -58,6 +58,10 @@ from pa.fleet.update import (
 )
 from pa.network.peer_table import PeerTable
 
+FLEET_HEALTH_TIMEOUT = 3.0
+FLEET_DETAIL_TIMEOUT = 5.0
+FLEET_AGGREGATE_TIMEOUT = 9.0
+
 router = APIRouter()
 ui_router = APIRouter()
 _peer_update_task: asyncio.Task[Any] | None = None
@@ -524,7 +528,7 @@ def remove_instance(request: Request, instance_id: str) -> dict:
 
 @router.get("/fleet/health")
 async def fleet_health(request: Request) -> list[dict]:
-    """Probe all fleet instances in parallel; include ACP providers when up."""
+    """Return bounded, independent health dimensions for every fleet instance."""
     require_user(request)
     ctx = request.app.state.ctx
     settings = ctx.settings
@@ -537,55 +541,139 @@ async def fleet_health(request: Request) -> list[dict]:
     if settings.sync_token:
         headers["Authorization"] = f"Bearer {settings.sync_token}"
 
-    async with httpx.AsyncClient(timeout=5.0) as client:
+    async with httpx.AsyncClient(timeout=FLEET_DETAIL_TIMEOUT) as client:
+
+        async def remote_get(url: str, *, timeout: float, headers=None):
+            return await asyncio.wait_for(
+                client.get(url, headers=headers, timeout=timeout), timeout=timeout
+            )
+
+        async def dimension(coro, parser, *, timeout: float) -> tuple[str, Any]:
+            try:
+                response = await asyncio.wait_for(coro, timeout=timeout)
+                if response.status_code != 200:
+                    return "error", None
+                return "up", parser(response.json())
+            except (TimeoutError, asyncio.TimeoutError):
+                return "timeout", None
+            except (httpx.HTTPError, ValueError, TypeError, AttributeError):
+                return "error", None
+
+        def dict_payload(value: Any) -> dict:
+            if not isinstance(value, dict):
+                raise TypeError("expected an object response")
+            return value
 
         async def check_one(inst: FleetInstance) -> dict:
-            healthy = False
+            is_local = inst.instance_id == settings.instance_id
+            health_state = "up" if is_local else "down"
             providers: list = []
             current_version = None
             available_version = None
             upgrade_available = False
             update_channel = None
-            try:
-                resp = await client.get(f"{inst.url.rstrip('/')}/api/health")
-                healthy = resp.status_code == 200
-            except httpx.HTTPError:
-                pass
-            if healthy:
+            providers_state = status_state = update_state = "error"
+            base = inst.url.rstrip("/")
+            if not is_local:
                 try:
-                    resp = await client.get(
-                        f"{inst.url.rstrip('/')}/api/agent/providers",
-                        headers=headers,
-                        timeout=15.0,
+                    resp = await remote_get(
+                        f"{base}/api/health", timeout=FLEET_HEALTH_TIMEOUT
                     )
-                    if resp.status_code == 200:
-                        payload = resp.json()
-                        providers = payload if isinstance(payload, list) else []
+                    health_state = "up" if resp.status_code == 200 else "down"
+                except (TimeoutError, asyncio.TimeoutError):
+                    health_state = "timeout"
                 except httpx.HTTPError:
-                    pass
-                try:
-                    status_resp, update_resp = await asyncio.gather(
-                        client.get(
-                            f"{inst.url.rstrip('/')}/api/status", headers=headers
+                    health_state = "down"
+            if health_state == "up":
+                if is_local:
+                    from pa.acp.providers.resolve import list_provider_summaries
+                    from pa.release.version import read_version
+
+                    try:
+                        current_version = read_version()
+                    except (OSError, RuntimeError, ValueError):
+                        current_version = None
+                        status_state = "error"
+                    update_channel = settings.release_track
+                    if current_version:
+                        status_state = "up"
+
+                    async def local_providers() -> tuple[str, list]:
+                        try:
+                            value = await asyncio.wait_for(
+                                asyncio.to_thread(
+                                    list_provider_summaries, settings.data_dir
+                                ),
+                                timeout=FLEET_DETAIL_TIMEOUT,
+                            )
+                            return "up", value
+                        except (TimeoutError, asyncio.TimeoutError):
+                            return "timeout", []
+                        except Exception:
+                            return "error", []
+
+                    async def local_update() -> tuple[str, Any]:
+                        # Update discovery may use the network, even for local.
+                        from pa.update.runner import check_update
+                        try:
+                            value = await asyncio.wait_for(
+                                asyncio.to_thread(check_update, settings),
+                                timeout=FLEET_DETAIL_TIMEOUT,
+                            )
+                            return "up", value
+                        except (TimeoutError, asyncio.TimeoutError):
+                            return "timeout", None
+                        except Exception:
+                            return "error", None
+
+                    provider_result, update_result = await asyncio.gather(
+                        local_providers(), local_update()
+                    )
+                    providers_state, providers = provider_result
+                    update_state, update = update_result
+                    if update:
+                        available_version = update.latest
+                        upgrade_available = update.upgrade_available
+                else:
+                    provider_result, status_result, update_result = await asyncio.gather(
+                        dimension(
+                            remote_get(f"{base}/api/agent/providers", headers=headers,
+                                       timeout=FLEET_DETAIL_TIMEOUT),
+                            lambda value: value if isinstance(value, list) else [],
+                            timeout=FLEET_DETAIL_TIMEOUT,
                         ),
-                        client.get(
-                            f"{inst.url.rstrip('/')}/api/fleet/peer-update-check",
-                            headers=headers,
+                        dimension(
+                            remote_get(f"{base}/api/status", headers=headers,
+                                       timeout=FLEET_DETAIL_TIMEOUT),
+                            dict_payload,
+                            timeout=FLEET_DETAIL_TIMEOUT,
+                        ),
+                        dimension(
+                            remote_get(f"{base}/api/fleet/peer-update-check", headers=headers,
+                                       timeout=FLEET_DETAIL_TIMEOUT),
+                            dict_payload,
+                            timeout=FLEET_DETAIL_TIMEOUT,
                         ),
                     )
-                    if status_resp.status_code == 200:
-                        status_data = status_resp.json()
+                    providers_state, provider_data = provider_result
+                    status_state, status_data = status_result
+                    update_state, update_data = update_result
+                    providers = provider_data or []
+                    if status_data:
                         current_version = status_data.get("version")
                         update_channel = status_data.get("release_track")
-                    if update_resp.status_code == 200:
-                        update_data = update_resp.json()
+                    if update_data:
                         available_version = update_data.get("available_version")
                         upgrade_available = bool(update_data.get("upgrade_available"))
                         update_channel = update_data.get("channel") or update_channel
-                except httpx.HTTPError, ValueError, AttributeError:
-                    pass
+            else:
+                providers_state = status_state = update_state = "down"
             data = inst.model_dump(mode="json")
-            data["healthy"] = healthy
+            data["healthy"] = health_state == "up"
+            data["state"] = health_state
+            data["providers_state"] = providers_state
+            data["status_state"] = status_state
+            data["update_state"] = update_state
             data["providers"] = providers
             data["current_version"] = current_version
             data["available_version"] = available_version
@@ -593,7 +681,37 @@ async def fleet_health(request: Request) -> list[dict]:
             data["update_channel"] = update_channel
             return data
 
-        results = await asyncio.gather(*(check_one(inst) for inst in instances))
+        tasks = [asyncio.create_task(check_one(inst)) for inst in instances]
+        done, pending = await asyncio.wait(tasks, timeout=FLEET_AGGREGATE_TIMEOUT)
+        completed: dict[asyncio.Task, dict] = {}
+        failed: set[asyncio.Task] = set()
+        for task in done:
+            if task.cancelled():
+                continue
+            try:
+                completed[task] = task.result()
+            except Exception:
+                # A rendering contract is more useful than allowing one unusual
+                # probe/parser failure to discard every peer's completed result.
+                failed.add(task)
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
+        results = []
+        for inst, task in zip(instances, tasks, strict=True):
+            if task in completed:
+                results.append(completed[task])
+                continue
+            data = inst.model_dump(mode="json")
+            terminal_state = "error" if task in failed else "timeout"
+            data.update({
+                "healthy": False, "state": terminal_state, "providers": [],
+                "providers_state": terminal_state, "status_state": terminal_state,
+                "update_state": terminal_state, "current_version": None,
+                "available_version": None, "upgrade_available": False,
+                "update_channel": None,
+            })
+            results.append(data)
 
     now = datetime.now(UTC)
     for inst, live in zip(instances, results, strict=True):

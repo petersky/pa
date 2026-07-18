@@ -550,11 +550,95 @@ class FleetHealthParallelTests(unittest.IsolatedAsyncioTestCase):
             ]
             self.assertTrue(provider_calls)
             self.assertTrue(
-                all(call.kwargs["timeout"] == 15.0 for call in provider_calls)
+                all(call.kwargs["timeout"] == 5.0 for call in provider_calls)
             )
             self.assertEqual(by_id["a"]["update_channel"], "beta")
             # health + providers + status + update check for each instance
             self.assertEqual(mock_client.get.await_count, 8)
+
+    async def test_slow_peer_and_detail_timeouts_are_terminal_and_isolated(self) -> None:
+        import asyncio
+        from pa.modules.fleet import fleet_health
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="local")
+            fleet = FleetRegistry(settings.data_dir, settings.fleet_id)
+            for instance_id in ("fast", "hung"):
+                fleet.upsert_instance(FleetInstance(
+                    instance_id=instance_id, name=instance_id,
+                    url=f"http://{instance_id}:8080",
+                ))
+            ctx = MagicMock(settings=settings)
+            ctx.require_service.return_value = fleet
+            request = MagicMock()
+            request.app.state.ctx = ctx
+
+            class Resp:
+                status_code = 200
+                def __init__(self, payload=None): self.payload = payload or {}
+                def json(self): return self.payload
+
+            async def get(url, **_kwargs):
+                if "hung" in url:
+                    await asyncio.Future()
+                if url.endswith("/providers"):
+                    return Resp([])
+                if url.endswith("/api/status"):
+                    return Resp({"version": "1.0.0"})
+                if url.endswith("peer-update-check"):
+                    await asyncio.Future()
+                return Resp()
+
+            client = MagicMock()
+            client.get = AsyncMock(side_effect=get)
+            client.__aenter__ = AsyncMock(return_value=client)
+            client.__aexit__ = AsyncMock(return_value=None)
+            with (
+                patch("pa.modules.fleet.require_user"),
+                patch("pa.modules.fleet.httpx.AsyncClient", return_value=client),
+                patch("pa.modules.fleet.FLEET_HEALTH_TIMEOUT", 0.01),
+                patch("pa.modules.fleet.FLEET_DETAIL_TIMEOUT", 0.01),
+                patch("pa.modules.fleet.FLEET_AGGREGATE_TIMEOUT", 0.03),
+            ):
+                rows = await fleet_health(request)
+
+            by_id = {row["instance_id"]: row for row in rows}
+            self.assertEqual(by_id["hung"]["state"], "timeout")
+            self.assertEqual(by_id["fast"]["state"], "up")
+            self.assertEqual(by_id["fast"]["update_state"], "timeout")
+            self.assertEqual(by_id["fast"]["providers_state"], "up")
+            self.assertTrue(all(row["state"] != "checking" for row in rows))
+
+    async def test_local_health_does_not_use_broken_advertised_url(self) -> None:
+        from pa.modules.fleet import fleet_health
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                data_dir=Path(tmp), instance_id="local",
+                instance_url="http://broken.invalid:8080",
+            )
+            fleet = FleetRegistry(settings.data_dir, settings.fleet_id)
+            fleet.upsert_instance(FleetInstance(
+                instance_id="local", name="local", url=settings.instance_url,
+            ))
+            ctx = MagicMock(settings=settings)
+            ctx.require_service.return_value = fleet
+            request = MagicMock()
+            request.app.state.ctx = ctx
+            client = MagicMock()
+            client.get = AsyncMock(side_effect=AssertionError("local URL was probed"))
+            client.__aenter__ = AsyncMock(return_value=client)
+            client.__aexit__ = AsyncMock(return_value=None)
+            with (
+                patch("pa.modules.fleet.require_user"),
+                patch("pa.modules.fleet.httpx.AsyncClient", return_value=client),
+                patch("pa.acp.providers.resolve.list_provider_summaries", return_value=[]),
+                patch("pa.update.runner.check_update", side_effect=RuntimeError("offline")),
+            ):
+                rows = await fleet_health(request)
+            self.assertEqual(rows[0]["state"], "up")
+            self.assertEqual(rows[0]["update_state"], "error")
+            client.get.assert_not_awaited()
 
 
 class FleetUpdateUiTests(unittest.TestCase):
@@ -567,6 +651,22 @@ class FleetUpdateUiTests(unittest.TestCase):
         self.assertIn("/update-check?channel=", script)
         self.assertIn("refreshFleetUpdateCheck().then", script)
         self.assertIn('name="install_timeout"', template)
+
+    def test_live_health_is_single_flight_abortable_and_terminal(self) -> None:
+        root = Path(__file__).parents[1]
+        script = (root / "src/pa/server/static/js/fleet.js").read_text()
+        template = (root / "src/pa/server/templates/pages/fleet.html").read_text()
+        self.assertIn("if (liveStatusRequest) return liveStatusRequest", script)
+        self.assertIn('document.body.addEventListener("htmx:beforeSwap"', script)
+        self.assertIn("liveStatusController.abort()", script)
+        self.assertIn('terminalLiveFailure("Health check timed out", "timeout")', script)
+        self.assertIn('["up", "down", "partial", "error", "timeout"]', script)
+        self.assertIn("if (seq !== liveStatusSeq) return", script)
+        self.assertIn("!el.dataset.fleetTerminal", script)
+        self.assertIn("Health check failed", script)
+        self.assertIn('row.status_state === "up" ? "—"', script)
+        self.assertIn('row.update_state === "up" ? "—"', script)
+        self.assertIn('id="pa-fleet-refresh"', template)
 
 
 class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
