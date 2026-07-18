@@ -7,6 +7,7 @@ PA persists only public device-flow instructions and lifecycle events.
 from __future__ import annotations
 
 import os
+import queue
 import re
 import selectors
 import shutil
@@ -15,7 +16,7 @@ import subprocess
 import threading
 import time
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
@@ -238,24 +239,38 @@ class CodexLoginJobStore:
         if slave_fd is not None:
             _close_fd(slave_fd)
             slave_fd = None
+        started_at = time.monotonic()
+        deadline = started_at + job.timeout_seconds
         with self._lock:
             self._processes[job_id] = proc
             job.process_pid = proc.pid
+            job.expires_at = (
+                datetime.now(UTC) + timedelta(seconds=job.timeout_seconds)
+            ).isoformat()
             self._persist(job)
             cancelled_before_registration = job.state == LoginState.CANCELLED
         if cancelled_before_registration:
             _terminate_process(proc)
 
-        started_at = time.monotonic()
-        deadline = started_at + job.timeout_seconds
         last_output_at: float | None = None
         capture = ""
         selector: selectors.BaseSelector | None = None
+        output_queue: queue.Queue[str] | None = None
+        output_thread: threading.Thread | None = None
         try:
             if master_fd is not None:
                 os.set_blocking(master_fd, False)
                 selector = selectors.DefaultSelector()
                 selector.register(master_fd, selectors.EVENT_READ)
+            elif proc.stdout is not None:
+                output_queue = queue.Queue()
+                output_thread = threading.Thread(
+                    target=_read_stream,
+                    args=(proc.stdout, output_queue),
+                    daemon=True,
+                    name=f"codex-login-output-{job_id}",
+                )
+                output_thread.start()
             while proc.poll() is None:
                 self._refresh_cancelled(job)
                 if job.state == LoginState.CANCELLED:
@@ -289,13 +304,19 @@ class CodexLoginJobStore:
                         "Codex did not provide a verification URL and code. Update the target Codex CLI or retry.",
                     )
                     return
-                chunk = self._read_ready(proc, master_fd, selector, timeout=0.25)
+                chunk = self._read_ready(
+                    proc, master_fd, selector, output_queue, timeout=0.25
+                )
                 if chunk:
                     last_output_at = time.monotonic()
                     capture = (capture + chunk)[-MAX_CAPTURE_CHARS:]
                     self._consume_output(job, capture, chunk)
+            if output_thread is not None:
+                output_thread.join(timeout=1)
             while True:
-                chunk = self._read_ready(proc, master_fd, selector, timeout=0)
+                chunk = self._read_ready(
+                    proc, master_fd, selector, output_queue, timeout=0
+                )
                 if not chunk:
                     break
                 capture = (capture + chunk)[-MAX_CAPTURE_CHARS:]
@@ -339,6 +360,7 @@ class CodexLoginJobStore:
         proc: subprocess.Popen[Any],
         master_fd: int | None,
         selector: selectors.BaseSelector | None,
+        output_queue: queue.Queue[str] | None,
         *,
         timeout: float,
     ) -> str:
@@ -349,12 +371,14 @@ class CodexLoginJobStore:
                 return os.read(master_fd, 4096).decode("utf-8", errors="replace")
             except (BlockingIOError, OSError):
                 return ""
-        if proc.stdout is None:
+        if output_queue is None:
             return ""
-        line = proc.stdout.readline()
-        if isinstance(line, bytes):
-            return line.decode("utf-8", errors="replace")
-        return line
+        try:
+            if timeout:
+                return output_queue.get(timeout=timeout)
+            return output_queue.get_nowait()
+        except queue.Empty:
+            return ""
 
     def _consume_output(self, job: CodexLoginJob, capture: str, _chunk: str) -> None:
         clean_capture = normalize_terminal_output(capture)
@@ -502,6 +526,18 @@ def _close_fd(fd: int | None) -> None:
         os.close(fd)
     except OSError:
         pass
+
+
+def _read_stream(stream: Any, output: queue.Queue[str]) -> None:
+    """Read a blocking pipe off-thread so lifecycle checks remain responsive."""
+    read = getattr(stream, "read1", stream.read)
+    while True:
+        chunk = read(4096)
+        if not chunk:
+            return
+        if isinstance(chunk, bytes):
+            chunk = chunk.decode("utf-8", errors="replace")
+        output.put(chunk)
 
 
 def _terminate_orphan_group(pid: int) -> None:

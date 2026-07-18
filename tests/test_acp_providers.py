@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import queue
 import tempfile
 import threading
 import time
@@ -515,6 +516,33 @@ class AcpProviderTests(unittest.TestCase):
         process.terminate.assert_called_once()
         process.kill.assert_called_once()
         self.assertEqual(process.wait.call_count, 2)
+
+    def test_pipe_read_timeout_does_not_block_lifecycle_checks(self) -> None:
+        store = CodexLoginJobStore(self.data_dir)
+        output: queue.Queue[str] = queue.Queue()
+        started = time.monotonic()
+        chunk = store._read_ready(
+            MagicMock(), None, None, output, timeout=0.01
+        )
+        self.assertEqual(chunk, "")
+        self.assertLess(time.monotonic() - started, 0.5)
+
+    @unittest.skipIf(__import__("os").name == "nt", "Unix PTY setup")
+    def test_runner_deadline_refreshes_persisted_expiry(self) -> None:
+        store = CodexLoginJobStore(self.data_dir)
+        job = store.create()
+        original_expiry = datetime.fromisoformat(job.expires_at)
+        job.expires_at = (datetime.now(UTC) - timedelta(seconds=1)).isoformat()
+
+        process = MagicMock()
+        process.pid = 12345
+        process.poll.return_value = 0
+        process.wait.return_value = 0
+        with patch("pa.acp.providers.codex_auth.subprocess.Popen", return_value=process):
+            store._run(job.job_id, "/custom/codex")
+
+        self.assertGreater(datetime.fromisoformat(job.expires_at), original_expiry)
+        self.assertEqual(job.state, LoginState.SUCCEEDED)
 
     def test_resolve_codex_cli_honors_configured_executable(self) -> None:
         from pa.acp.providers.codex_auth import resolve_codex_cli
