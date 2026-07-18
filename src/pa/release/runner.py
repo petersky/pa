@@ -1,8 +1,7 @@
-"""Create releases: bump version, commit, tag, push."""
+"""Prepare releases on a branch, then tag the merged main commit."""
 
 from __future__ import annotations
 
-import json
 import subprocess
 import time
 from dataclasses import dataclass, field
@@ -10,7 +9,6 @@ from pathlib import Path
 
 from pa.release.notes import notes_path_for_tag, write_release_notes
 from pa.release.version import (
-    CHANNELS_JSON,
     ROOT,
     bump_major,
     bump_minor,
@@ -62,6 +60,113 @@ def _run(cmd: list[str], *, cwd: Path | None = None) -> None:
 
 def _capture(cmd: list[str], *, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(cmd, cwd=cwd, check=False, capture_output=True, text=True)
+
+
+def current_branch() -> str:
+    """Return the checked-out branch, rejecting detached HEAD."""
+    result = _capture(["git", "branch", "--show-current"], cwd=ROOT)
+    branch = result.stdout.strip()
+    if result.returncode != 0 or not branch:
+        raise ReleaseError("release preparation requires a checked-out branch")
+    return branch
+
+
+def ensure_release_branch(tag: str, *, amend: bool = False) -> str:
+    """Create/switch to the branch that carries a release-related PR."""
+    prefix = "release-notes" if amend else "release"
+    branch = f"{prefix}/{_normalize_tag(tag)}"
+    current = current_branch()
+    if current == branch:
+        return branch
+    if current != "main":
+        raise ReleaseError(
+            f"release preparation must start from main or {branch}; currently on {current}",
+            hints=["Switch to an up-to-date main branch, then rerun the release command."],
+        )
+    if _capture(["git", "status", "--porcelain"], cwd=ROOT).stdout.strip():
+        raise ReleaseError(
+            "release preparation requires a clean working tree",
+            hints=["Commit, stash, or discard unrelated changes before preparing the release PR."],
+        )
+    local = _capture(["git", "show-ref", "--verify", "--quiet", f"refs/heads/{branch}"], cwd=ROOT)
+    if local.returncode == 0:
+        _run(["git", "switch", branch], cwd=ROOT)
+        return branch
+    remote = _capture(["git", "show-ref", "--verify", "--quiet", f"refs/remotes/origin/{branch}"], cwd=ROOT)
+    if remote.returncode == 0:
+        _run(["git", "switch", "-c", branch, "--track", f"origin/{branch}"], cwd=ROOT)
+        return branch
+    _run(["git", "switch", "-c", branch], cwd=ROOT)
+    return branch
+
+
+def origin_main_release_notes(tag: str, *, commit: str = "origin/main") -> str:
+    """Return a release-notes file from a merged main commit."""
+    if not tag.startswith("v"):
+        tag = f"v{tag}"
+    notes_rel = notes_path_for_tag(tag).relative_to(ROOT)
+    notes_result = _capture(["git", "show", f"{commit}:{notes_rel}"], cwd=ROOT)
+    if notes_result.returncode != 0:
+        raise ReleaseError(
+            f"{commit} does not contain {notes_rel}",
+            hints=["Merge the release PR first, then rerun --publish."],
+        )
+    return notes_result.stdout
+
+
+def release_commit_on_origin_main(tag: str) -> str:
+    """Return the origin/main commit that introduced this release, not a later tip."""
+    tag = _normalize_tag(tag)
+    expected = tag[1:]
+    notes_rel = str(notes_path_for_tag(tag).relative_to(ROOT))
+    _run(["git", "fetch", "origin", "main"], cwd=ROOT)
+
+    notes_intro = _capture(
+        [
+            "git",
+            "log",
+            "-1",
+            "--format=%H",
+            "--diff-filter=A",
+            "origin/main",
+            "--",
+            notes_rel,
+        ],
+        cwd=ROOT,
+    )
+    version_intro = _capture(
+        [
+            "git",
+            "log",
+            "-1",
+            "--format=%H",
+            "-S",
+            f'version = "{expected}"',
+            "origin/main",
+            "--",
+            "pyproject.toml",
+        ],
+        cwd=ROOT,
+    )
+    sha = (notes_intro.stdout.strip() or version_intro.stdout.strip())
+    if not sha:
+        raise ReleaseError(
+            f"could not find the {tag} release commit on origin/main",
+            hints=["Merge the release PR first, then rerun --publish."],
+        )
+
+    ancestor = _capture(["git", "merge-base", "--is-ancestor", sha, "origin/main"], cwd=ROOT)
+    if ancestor.returncode != 0:
+        raise ReleaseError(f"release commit {sha[:12]} is not on origin/main")
+
+    version_result = _capture(["git", "show", f"{sha}:pyproject.toml"], cwd=ROOT)
+    if version_result.returncode != 0 or f'version = "{expected}"' not in version_result.stdout:
+        raise ReleaseError(
+            f"origin/main release commit for {tag} does not contain version {expected}",
+            hints=["Merge the release PR first, then rerun --publish."],
+        )
+    origin_main_release_notes(tag, commit=sha)
+    return sha
 
 
 def _normalize_tag(tag: str) -> str:
@@ -211,21 +316,6 @@ def commits_behind_origin_main(
     return int(text) if text else 0
 
 
-def _update_channels_manifest(version: str, tag: str, *, channel: str | None = None) -> None:
-    track = channel or track_for_version(version)
-    data: dict[str, str] = {}
-    if CHANNELS_JSON.exists():
-        try:
-            data = json.loads(CHANNELS_JSON.read_text())
-        except json.JSONDecodeError:
-            data = {}
-    data[track] = tag
-    if track == "release" and not channel:
-        data["release"] = tag
-    data.setdefault("dev", "main")
-    CHANNELS_JSON.write_text(json.dumps(data, indent=2) + "\n")
-
-
 def resolve_version(bump: str) -> str:
     bump = bump.lower()
     old = read_version()
@@ -240,9 +330,23 @@ def resolve_version(bump: str) -> str:
     return validate_version(bump)
 
 
+def _require_release_branch(branch: str, *, amend: bool = False) -> None:
+    prefix = "release-notes/" if amend else "release/"
+    if branch.startswith(prefix):
+        return
+    kind = "release-notes/*" if amend else "release/*"
+    raise ReleaseError(
+        f"refusing to push release changes from {branch}; expected a {kind} branch",
+        hints=[
+            "Start from an up-to-date main branch so the release command can create the PR branch.",
+        ],
+    )
+
+
 def create_release(
     bump: str,
     *,
+    target_version: str | None = None,
     channel: str | None = None,
     commit: bool = True,
     push: bool = False,
@@ -250,9 +354,17 @@ def create_release(
     notes_content: str | None = None,
     notes_path: Path | None = None,
     check_tag: bool = True,
+    create_tag: bool = False,
 ) -> ReleaseResult:
     old = read_version()
-    new = resolve_version(bump)
+    # Callers that create/switch the release branch first must carry forward the
+    # version resolved from main.  Re-resolving a relative bump on a reused
+    # release branch can otherwise bump an already-bumped or stale version.
+    new = (
+        validate_version(target_version)
+        if target_version
+        else resolve_version(bump)
+    )
     tag = tag_for_version(new)
     track = channel or track_for_version(new)
 
@@ -261,8 +373,8 @@ def create_release(
 
     print(f"==> Bumping version {old} -> {new}...", flush=True)
     set_version(new)
-    _update_channels_manifest(new, tag, channel=channel)
     # Keep the editable package version in uv.lock aligned with pyproject.toml.
+    # channels.json is updated by CI after the tag exists (avoids advertising a missing tag).
     print("==> Updating uv.lock...", flush=True)
     _run(["uv", "lock"], cwd=ROOT)
 
@@ -271,7 +383,7 @@ def create_release(
         written_notes = write_release_notes(tag, notes_content, path=notes_path)
 
     if commit:
-        files = ["pyproject.toml", "src/pa/__init__.py", "channels.json", "uv.lock"]
+        files = ["pyproject.toml", "src/pa/__init__.py", "uv.lock"]
         if written_notes:
             files.append(str(written_notes.relative_to(ROOT)))
         print(f"==> Committing release ({', '.join(files)})...", flush=True)
@@ -281,27 +393,17 @@ def create_release(
     else:
         print("==> Skipping commit (--no-commit).", flush=True)
 
-    print(f"==> Creating annotated tag {tag}...", flush=True)
-    try:
-        _run(["git", "tag", "-a", tag, "-m", message or f"Release {tag}"])
-    except RuntimeError as exc:
-        err = str(exc)
-        if "already exists" in err:
-            # Convert late failures (e.g. race after preflight) into actionable advice.
-            try:
-                ensure_tag_available(tag)
-            except ReleaseError:
-                raise
-            raise ReleaseError(err) from exc
-        raise
-
     if push:
-        print("==> Pushing commit to origin...", flush=True)
-        _run(["git", "push"])
-        print(f"==> Pushing tag {tag} to origin...", flush=True)
-        _run(["git", "push", "origin", tag])
+        branch = current_branch()
+        _require_release_branch(branch)
+        print(f"==> Pushing release branch {branch} to origin...", flush=True)
+        _run(["git", "push", "-u", "origin", branch])
     else:
-        print("==> Skipping push (--no-push).", flush=True)
+        print("==> Skipping release-branch push (--no-push).", flush=True)
+
+    if create_tag:
+        print(f"==> Creating annotated tag {tag}...", flush=True)
+        _run(["git", "tag", "-a", tag, "-m", message or f"Release {tag}"])
 
     return ReleaseResult(
         old_version=old,
@@ -333,21 +435,36 @@ def amend_release_notes(
     else:
         print("==> Skipping commit (--no-commit).", flush=True)
     if push:
-        print("==> Pushing amended notes to origin...", flush=True)
-        _run(["git", "push"])
+        branch = current_branch()
+        _require_release_branch(branch, amend=True)
+        print(f"==> Pushing amended-notes branch {branch} to origin...", flush=True)
+        _run(["git", "push", "-u", "origin", branch])
     else:
         print("==> Skipping push (--no-push).", flush=True)
     return written
 
 
-def push_existing_release(tag: str) -> None:
-    """Push main and an existing local tag to origin."""
+def tag_merged_release(tag: str, *, message: str | None = None, push: bool = True) -> Path:
+    """Tag the verified release commit on origin/main and optionally push that tag."""
     if not tag.startswith("v"):
         tag = f"v{tag}"
-    print("==> Pushing commit to origin...", flush=True)
-    _run(["git", "push"])
-    print(f"==> Pushing tag {tag} to origin...", flush=True)
-    _run(["git", "push", "origin", tag])
+    ensure_tag_available(tag)
+    commit = release_commit_on_origin_main(tag)
+    tip = _capture(["git", "rev-parse", "origin/main"], cwd=ROOT).stdout.strip()
+    if tip and tip != commit:
+        print(
+            f"==> origin/main has moved past the {tag} release commit; "
+            f"tagging {commit[:12]} (not {tip[:12]})...",
+            flush=True,
+        )
+    print(f"==> Creating annotated tag {tag} on {commit[:12]}...", flush=True)
+    _run(["git", "tag", "-a", tag, commit, "-m", message or f"Release {tag}"], cwd=ROOT)
+    if push:
+        print(f"==> Pushing tag {tag} to origin...", flush=True)
+        _run(["git", "push", "origin", tag])
+    else:
+        print("==> Skipping tag push (--no-push).", flush=True)
+    return notes_path_for_tag(tag)
 
 
 def github_release_exists(tag: str) -> bool:
