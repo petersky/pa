@@ -804,9 +804,12 @@
     }
     var loginButton = e.target.closest("[data-codex-login]");
     if (loginButton) {
-      codexLoginJob = "";
-      codexLoginInstance = loginButton.getAttribute("data-codex-login") || "";
-      codexLoginStartSequence += 1;
+      var nextLoginInstance = loginButton.getAttribute("data-codex-login") || "";
+      if (codexLoginInstance && codexLoginInstance !== nextLoginInstance) {
+        codexLoginJob = "";
+        codexLoginStartSequence += 1;
+      }
+      codexLoginInstance = nextLoginInstance;
       var panel = $("#pa-codex-login-panel");
       var instance = $("#pa-codex-login-instance");
       var instructions = $("#pa-codex-login-instructions");
@@ -834,6 +837,7 @@
         return watchCodexLogin(startInstance, job.job_id);
       }).catch(function (err) {
         if (err.detail && err.detail.job_id) {
+          if (startSequence !== codexLoginStartSequence) return;
           codexLoginJob = err.detail.job_id;
           if (loginInstructions) loginInstructions.textContent =
             "An existing login is active; restoring it…";
