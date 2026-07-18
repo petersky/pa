@@ -277,7 +277,38 @@ class AgentChatSseTests(unittest.TestCase):
                     list(range(4002, 5002)),
                 )
                 self.assertTrue(older["page"]["has_older"])
+                self.assertEqual(older["page"]["next_before_seq"], 4002)
                 self.assertEqual(newest["live"], live)
+
+    def test_history_reports_exhausted_reverse_page(self) -> None:
+        session = AgentSession(id="sess-short", agent_name="codex")
+        store = _FakeStore(
+            [
+                TranscriptEvent(
+                    session_id=session.id,
+                    seq=seq,
+                    event_type="message",
+                    payload={"text": str(seq)},
+                )
+                for seq in range(1, 4)
+            ]
+        )
+        manager = MagicMock()
+        manager.store = store
+        manager.store.get_session = MagicMock(return_value=session)
+        manager.get.return_value = None
+        request = MagicMock()
+        request.app.state.ctx.settings.instance_id = "mini-1"
+        request.app.state.ctx.settings.instance_name = "macmini"
+
+        with patch("pa.modules.agent_chat._manager", return_value=manager):
+            page = get_agent_session_history(
+                request, session.id, before_seq=3, limit=2
+            )
+
+        self.assertEqual([event["seq"] for event in page["events"]], [1, 2])
+        self.assertFalse(page["page"]["has_older"])
+        self.assertIsNone(page["page"]["next_before_seq"])
 
     def test_codex_message_phase_is_preserved(self) -> None:
         update = {

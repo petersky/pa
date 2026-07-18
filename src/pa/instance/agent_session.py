@@ -814,6 +814,7 @@ class AgentSessionRuntime:
                 "oldest_seq": events[0].seq if events else None,
                 "newest_seq": events[-1].seq if events else None,
                 "has_older": has_older,
+                "next_before_seq": events[0].seq if has_older and events else None,
                 "limit": TRANSCRIPT_WINDOW_LIMIT,
             },
             "pending_permissions": [

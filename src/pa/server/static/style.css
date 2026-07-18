@@ -1087,6 +1087,12 @@ code {
   flex: 0 0 auto;
 }
 
+.acw-load-older-status {
+  align-self: center;
+  margin: -0.3rem 0 0;
+  color: var(--pa-danger);
+}
+
 .acw-msg {
   display: flex;
   flex-direction: column;
@@ -1127,6 +1133,11 @@ code {
 
 .acw-bubble p { margin: 0 0 0.4rem; }
 .acw-bubble p:last-child { margin-bottom: 0; }
+.acw-bubble ul,
+.acw-bubble ol { margin: 0.35rem 0; padding-inline-start: 1.4rem; }
+.acw-bubble li + li { margin-top: 0.15rem; }
+.acw-bubble code { overflow-wrap: break-word; }
+.acw-bubble a { color: inherit; text-decoration: underline; }
 .acw-bubble pre {
   margin: 0.35rem 0;
   padding: 0.4rem;
@@ -1134,7 +1145,11 @@ code {
   background: var(--pa-bg);
   border-radius: 5px;
   font-size: 0.8rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
+
+.acw-bubble pre code { overflow-wrap: inherit; }
 
 .acw-bubble-user {
   background: var(--pa-chat-user-bg);

@@ -56,6 +56,7 @@ class AgentSessionLiveEventTests(unittest.TestCase):
         self.assertEqual(restored[0]["seq"], 5002)
         self.assertEqual(restored[-1]["seq"], 6001)
         self.assertTrue(snapshot["transcript_page"]["has_older"])
+        self.assertEqual(snapshot["transcript_page"]["next_before_seq"], 5002)
 
     def test_prompting_tracks_in_flight_turn_not_connection_or_lock_cleanup(
         self,
