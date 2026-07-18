@@ -8,6 +8,9 @@ Type=simple
 ExecStart={{PA_BIN}} serve
 Restart=on-failure
 RestartSec=5
+TimeoutStopSec=45
+LimitNOFILE=8192
+MemoryMax=4G
 
 {{ENV_LINES}}
 

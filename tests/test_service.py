@@ -4,10 +4,16 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+import json
+import logging
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from pa.cli import service
+from pa.config import Settings
+from pa.core.logging import configure_logging
+from pa.domain.instance_config import InstanceConfig, save_instance_config
+from pa.acp.providers.metadata import save_credentials
 
 
 class InstallPlistTests(unittest.TestCase):
@@ -46,6 +52,47 @@ class InstallPlistTests(unittest.TestCase):
 
         self.assertEqual(result, self.plist)
         self.assertEqual(self.plist.read_bytes(), b"updated launch agent")
+
+    def test_launchd_unit_has_bounded_restart_and_resource_controls(self) -> None:
+        settings = Settings(data_dir=Path(self._tmp.name))
+        rendered = service.render_plist(settings, self.pa_bin).decode()
+        for control in (
+            "ThrottleInterval",
+            "ExitTimeOut",
+            "ProcessType",
+            "SoftResourceLimits",
+            "HardResourceLimits",
+        ):
+            self.assertIn(control, rendered)
+
+
+class AutonomousHostControlsTests(unittest.TestCase):
+    def test_secret_files_are_owner_only_even_when_replacing_loose_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = root / "config.json"
+            config.write_text("{}")
+            config.chmod(0o644)
+            save_instance_config(root, InstanceConfig(sync_token="secret"))
+            credentials = root / "integrations" / "codex.json"
+            save_credentials(root, "codex", {"CODEX_API_KEY": "secret"})
+            self.assertEqual(config.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(credentials.stat().st_mode & 0o777, 0o600)
+
+    def test_structured_log_is_persistent_and_machine_readable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp))
+            configure_logging(settings)
+            logging.getLogger("pa.smoke").warning(
+                "health degraded api_key=%s", "sk_test-secret-value"
+            )
+            for handler in logging.getLogger().handlers:
+                handler.flush()
+            payload = json.loads((settings.data_dir / "logs" / "pa.jsonl").read_text())
+            self.assertEqual(payload["logger"], "pa.smoke")
+            self.assertEqual(payload["message"], "health degraded api_key=[redacted]")
+            self.assertNotIn("sk_test-secret-value", json.dumps(payload))
+            self.assertEqual(payload["level"], "WARNING")
 
 
 if __name__ == "__main__":

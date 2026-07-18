@@ -44,14 +44,15 @@ def load_instance_config(data_dir: Path) -> InstanceConfig | None:
     try:
         data = json.loads(path.read_text())
         return InstanceConfig.model_validate(data)
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError, ValueError:
         return None
 
 
 def save_instance_config(data_dir: Path, config: InstanceConfig) -> Path:
     data_dir.mkdir(parents=True, exist_ok=True)
     path = config_path(data_dir)
-    atomic_write_json(path, config.model_dump())
+    # config.json contains the fleet sync token and session secret.
+    atomic_write_json(path, config.model_dump(), mode=0o600)
     return path
 
 
