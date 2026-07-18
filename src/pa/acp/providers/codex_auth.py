@@ -73,6 +73,7 @@ class CodexLoginJob(BaseModel):
     updated_at: str
     expires_at: str
     timeout_seconds: int
+    owner_pid: int = 0
     verification_url: str | None = None
     user_code: str | None = None
     error: str | None = None
@@ -104,7 +105,7 @@ class CodexLoginJobStore:
                 job = CodexLoginJob.model_validate_json(path.read_text())
             except OSError, ValueError:
                 continue
-            if not job.terminal and _is_expired(job):
+            if not job.terminal and (_is_expired(job) or not _pid_alive(job.owner_pid)):
                 job.state = LoginState.INTERRUPTED
                 job.error = (
                     "PA restarted while this login was active; start a new login."
@@ -128,6 +129,7 @@ class CodexLoginJobStore:
                 now.timestamp() + timeout_seconds, UTC
             ).isoformat(),
             timeout_seconds=timeout_seconds,
+            owner_pid=os.getpid(),
         )
         with self._lock:
             with _file_lock(self._lease_path):
@@ -245,6 +247,9 @@ class CodexLoginJobStore:
                 proc.wait(timeout=5)
                 return
             returncode = proc.wait(timeout=5)
+            self._refresh_cancelled(job)
+            if job.state == LoginState.CANCELLED:
+                return
             if returncode == 0:
                 self._finish(
                     job,
@@ -289,6 +294,7 @@ class CodexLoginJobStore:
             self._persist(job)
 
     def _finish(self, job: CodexLoginJob, state: LoginState, message: str) -> None:
+        self._refresh_cancelled(job)
         with self._lock:
             if job.state == LoginState.CANCELLED:
                 return
@@ -318,7 +324,9 @@ class CodexLoginJobStore:
                 disk_job = CodexLoginJob.model_validate_json(path.read_text())
             except OSError, ValueError:
                 continue
-            if not disk_job.terminal and _is_expired(disk_job):
+            if not disk_job.terminal and (
+                _is_expired(disk_job) or not _pid_alive(disk_job.owner_pid)
+            ):
                 disk_job.state = LoginState.INTERRUPTED
                 disk_job.error = "Login lease expired; start a new login."
                 self._event(disk_job, "interrupted", disk_job.error)
@@ -406,6 +414,18 @@ def _is_expired(job: CodexLoginJob) -> bool:
         return datetime.fromisoformat(job.expires_at) <= datetime.now(UTC)
     except ValueError:
         return True
+
+
+def _pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except PermissionError:
+        return True
+    except OSError:
+        return False
 
 
 @contextmanager

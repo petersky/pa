@@ -302,6 +302,24 @@ class AcpProviderTests(unittest.TestCase):
         owner._refresh_cancelled(job)
         self.assertEqual(job.state, LoginState.CANCELLED)
 
+    def test_completion_does_not_overwrite_cross_worker_cancellation(self) -> None:
+        owner = CodexLoginJobStore(self.data_dir)
+        job = owner.create()
+        other_worker = CodexLoginJobStore(self.data_dir)
+        other_worker.cancel(job.job_id)
+        owner._finish(job, LoginState.SUCCEEDED, "complete")
+        self.assertEqual(job.state, LoginState.CANCELLED)
+        reloaded = CodexLoginJobStore(self.data_dir).get(job.job_id)
+        self.assertEqual(reloaded.state, LoginState.CANCELLED)
+
+    def test_dead_owner_job_is_interrupted_before_expiry(self) -> None:
+        first = CodexLoginJobStore(self.data_dir)
+        job = first.create()
+        job.owner_pid = 999_999_999
+        first._persist(job)
+        recovered = CodexLoginJobStore(self.data_dir).get(job.job_id)
+        self.assertEqual(recovered.state, LoginState.INTERRUPTED)
+
     def test_cancel_before_process_registration_still_terminates_and_reaps(
         self,
     ) -> None:
