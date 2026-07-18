@@ -219,6 +219,21 @@ class AcpProviderTests(unittest.TestCase):
         self.assertEqual(malformed_status[:2], (False, "unknown"))
         self.assertNotIn(malformed_secret, " ".join(str(v) for v in malformed_status))
 
+    def test_codex_status_unknown_success_is_not_marked_configured(self) -> None:
+        import subprocess
+
+        unknown = subprocess.CompletedProcess(
+            ["codex", "login", "status"], 0, "Future login method\n", ""
+        )
+        with patch("pa.acp.providers.codex.subprocess.run", return_value=unknown):
+            configured, method, message, error = _codex_auth_status(
+                "/usr/bin/codex", creds={}, env={}
+            )
+        self.assertFalse(configured)
+        self.assertEqual(method, "unknown")
+        self.assertIn("unknown", message)
+        self.assertIsNone(error)
+
     def test_login_output_redacts_credentials_but_keeps_device_instructions(
         self,
     ) -> None:
@@ -324,6 +339,15 @@ class AcpProviderTests(unittest.TestCase):
             while job.job_id in store._processes and time.monotonic() < deadline:
                 time.sleep(0.01)
         terminate_mock.assert_called()
+        self.assertEqual(job.state, LoginState.CANCELLED)
+
+    def test_cancel_before_worker_start_never_launches_codex(self) -> None:
+        store = CodexLoginJobStore(self.data_dir)
+        job = store.create()
+        store.cancel(job.job_id)
+        with patch("pa.acp.providers.codex_auth.subprocess.Popen") as popen:
+            store._run(job.job_id, "/custom/codex")
+        popen.assert_not_called()
         self.assertEqual(job.state, LoginState.CANCELLED)
 
     def test_resolve_codex_cli_honors_configured_executable(self) -> None:

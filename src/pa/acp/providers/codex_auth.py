@@ -172,6 +172,8 @@ class CodexLoginJobStore:
         if not job:
             return
         with self._lock:
+            if job.state == LoginState.CANCELLED:
+                return
             job.state = LoginState.RUNNING
             self._event(
                 job,

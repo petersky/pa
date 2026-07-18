@@ -519,7 +519,12 @@
           (p.auth_status ? " · " + p.auth_status : ""));
         var login = "";
         if (p.id === "codex" && p.login_in_progress) {
-          login = ' <span class="muted small">login in progress</span>';
+          var activeJob = p.meta && p.meta.active_login_job_id;
+          login = activeJob ?
+            ' <button type="button" class="ghost small" data-codex-login-resume="' +
+              escapeHtml(instanceId || "") + '" data-login-job="' +
+              escapeHtml(activeJob) + '">Resume sign-in</button>' :
+            ' <span class="muted small">login in progress</span>';
         } else if (p.id === "codex" && p.codex_cli_installed && !p.auth_configured) {
           login = ' <button type="button" class="ghost small" data-codex-login="' +
             escapeHtml(instanceId || "") + '">Sign in with ChatGPT</button>';
@@ -547,6 +552,7 @@
 
   var codexLoginInstance = "";
   var codexLoginJob = "";
+  var codexLoginStartSequence = 0;
 
   function codexLoginBase(instanceId) {
     return "/api/fleet/instances/" + encodeURIComponent(instanceId) +
@@ -778,9 +784,26 @@
       }).finally(function () { cliInstallButton.disabled = false; });
       return;
     }
+    var resumeButton = e.target.closest("[data-codex-login-resume]");
+    if (resumeButton) {
+      codexLoginInstance = resumeButton.getAttribute("data-codex-login-resume") || "";
+      codexLoginJob = resumeButton.getAttribute("data-login-job") || "";
+      codexLoginStartSequence += 1;
+      var resumePanel = $("#pa-codex-login-panel");
+      var resumeInstance = $("#pa-codex-login-instance");
+      var resumeInstructions = $("#pa-codex-login-instructions");
+      if (resumePanel) resumePanel.hidden = false;
+      if (resumeInstance) resumeInstance.textContent = "Target instance: " + codexLoginInstance;
+      if (resumeInstructions) resumeInstructions.textContent = "Restoring device authentication…";
+      watchCodexLogin(codexLoginInstance, codexLoginJob).catch(function (err) {
+        if (resumeInstructions) resumeInstructions.textContent = err.message;
+      });
+      return;
+    }
     var loginButton = e.target.closest("[data-codex-login]");
     if (loginButton) {
       codexLoginInstance = loginButton.getAttribute("data-codex-login") || "";
+      codexLoginStartSequence += 1;
       var panel = $("#pa-codex-login-panel");
       var instance = $("#pa-codex-login-instance");
       var instructions = $("#pa-codex-login-instructions");
@@ -793,13 +816,19 @@
       var confirmButton = $("#pa-codex-login-confirm");
       var loginInstructions = $("#pa-codex-login-instructions");
       if (!codexLoginInstance || !confirmButton) return;
+      var startInstance = codexLoginInstance;
+      var startSequence = ++codexLoginStartSequence;
       confirmButton.disabled = true;
       if (loginInstructions) loginInstructions.textContent = "Starting device authentication…";
-      api(codexLoginBase(codexLoginInstance), {
+      api(codexLoginBase(startInstance), {
         method: "POST", body: { consent: true, timeout_seconds: 600 }
       }).then(function (job) {
+        if (startSequence !== codexLoginStartSequence) {
+          return api(codexLoginBase(startInstance) + "/" +
+            encodeURIComponent(job.job_id) + "/cancel", { method: "POST" });
+        }
         codexLoginJob = job.job_id;
-        return watchCodexLogin(codexLoginInstance, job.job_id);
+        return watchCodexLogin(startInstance, job.job_id);
       }).catch(function (err) {
         if (loginInstructions) loginInstructions.textContent = err.message;
       }).finally(function () { confirmButton.disabled = false; });
@@ -807,6 +836,7 @@
     }
     if (e.target.closest("#pa-codex-login-cancel")) {
       var loginPanel = $("#pa-codex-login-panel");
+      codexLoginStartSequence += 1;
       if (codexLoginJob && codexLoginInstance) {
         api(codexLoginBase(codexLoginInstance) + "/" + encodeURIComponent(codexLoginJob) + "/cancel", {
           method: "POST"

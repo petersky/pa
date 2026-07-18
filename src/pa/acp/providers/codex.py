@@ -400,9 +400,9 @@ def _codex_auth_status(
         if "not logged in" in normalized or "not authenticated" in normalized:
             return False, "none", "Not signed in to Codex on the target.", None
         return (
-            True,
+            False,
             "unknown",
-            "Codex reports a login, but its authentication method is unknown.",
+            "Codex status succeeded, but its authentication method is unknown; sign in again if needed.",
             None,
         )
     if "not logged in" in normalized or "not authenticated" in normalized:
