@@ -23,12 +23,15 @@ from pa.core.context import AppContext
 from pa.core.io import atomic_write_json
 from pa.core.ui.pages import PageDefinition, PageRegistry
 from pa.domain.models import (
+    CardEvent,
     CardLane,
     CardUpdate,
     FleetInstance,
     KnowledgeEntry,
     RealmRole,
+    EventType,
 )
+from pa.execution.dispatch import CompletionOutbox, DispatchRecord, DispatchStore
 from pa.fleet.join import (
     apply_reachability_settings,
     ensure_sync_token,
@@ -120,6 +123,157 @@ class RemoteAgentStartBody(BaseModel):
     effort: str | None = None
     cwd: str | None = None
     config: dict[str, str | bool] = Field(default_factory=dict)
+
+
+class DispatchMaterializeBody(BaseModel):
+    dispatch_id: str
+    mutation_id: str
+    card: dict[str, Any]
+    card_version: str
+    realm_id: str
+    authority_instance_id: str
+    authority_url: str
+    target_instance_id: str
+    session_id: str | None = None
+
+
+class DispatchCompletionBody(BaseModel):
+    mutation_id: str
+    card_id: str
+    realm_id: str
+    card_version: str
+    source_instance_id: str
+    session_id: str | None = None
+    result: dict[str, Any] = Field(default_factory=dict)
+
+
+def _dispatch_store(request: Request) -> DispatchStore:
+    service = request.app.state.ctx.services.get("dispatch_store")
+    if service:
+        return service
+    service = DispatchStore(request.app.state.ctx.settings.data_dir)
+    request.app.state.ctx.register_service("dispatch_store", service)
+    return service
+
+
+@router.post("/fleet/dispatch/materialize")
+def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dict:
+    """Make an exact authoritative card version resolvable before session creation."""
+    settings = request.app.state.ctx.settings
+    if body.target_instance_id != settings.instance_id:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "wrong_target", "expected": settings.instance_id},
+        )
+    store = request.app.state.ctx.store
+    incoming = body.card
+    card_id = str(incoming.get("id") or "")
+    if not card_id:
+        raise HTTPException(status_code=400, detail="card.id required")
+    existing = store.get_card(card_id, realm_id=body.realm_id)
+    if existing and existing.updated_at.isoformat() != body.card_version:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "stale_target_card",
+                "card_id": card_id,
+                "target_version": existing.updated_at.isoformat(),
+                "authority_version": body.card_version,
+            },
+        )
+    if not existing:
+        event = CardEvent(
+            type=EventType.CARD_CREATED,
+            realm_id=body.realm_id,
+            card_id=card_id,
+            author_principal="fleet:dispatch",
+            author_instance=body.authority_instance_id,
+            payload=incoming,
+        )
+        log = request.app.state.ctx.require_service("event_log")
+        log.append_event(event)
+        store.apply_event(event)
+    record = DispatchRecord(
+        dispatch_id=body.dispatch_id,
+        mutation_id=body.mutation_id,
+        card_id=card_id,
+        realm_id=body.realm_id,
+        card_version=body.card_version,
+        authority_instance_id=body.authority_instance_id,
+        authority_url=body.authority_url,
+        target_instance_id=body.target_instance_id,
+        session_id=body.session_id,
+    )
+    try:
+        _dispatch_store(request).put(record)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "idempotency_conflict", "message": str(exc)},
+        ) from exc
+    return {
+        "dispatch_id": body.dispatch_id,
+        "card_id": card_id,
+        "card_version": body.card_version,
+        "resolvable": True,
+    }
+
+
+@router.post("/fleet/dispatch/{dispatch_id}/complete")
+def complete_dispatch(
+    request: Request, dispatch_id: str, body: DispatchCompletionBody
+) -> dict:
+    """Apply an authenticated, version-aware completion exactly once at origin."""
+    ledger = _dispatch_store(request)
+    record = ledger.get(dispatch_id)
+    if not record:
+        raise HTTPException(
+            status_code=409, detail={"code": "unknown_dispatch", "recoverable": True}
+        )
+    if (
+        record.mutation_id != body.mutation_id
+        or request.headers.get("idempotency-key") != body.mutation_id
+    ):
+        raise HTTPException(status_code=409, detail={"code": "idempotency_conflict"})
+    if record.state == "acknowledged":
+        return {"dispatch_id": dispatch_id, "acknowledged": True, "duplicate": True}
+    card = request.app.state.ctx.store.get_card(body.card_id, realm_id=body.realm_id)
+    if not card:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "authority_card_missing", "recoverable": True},
+        )
+    expected_dispatch_transition = (
+        card.lane == CardLane.ACTIVE
+        and card.preferred_instance == body.source_instance_id
+    )
+    if (
+        card.updated_at.isoformat() != body.card_version
+        and card.lane != CardLane.DONE
+        and not expected_dispatch_transition
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "authority_version_conflict",
+                "expected": body.card_version,
+                "actual": card.updated_at.isoformat(),
+            },
+        )
+    if card.lane != CardLane.DONE:
+        request.app.state.ctx.store.update_card(
+            card.id,
+            CardUpdate(lane=CardLane.DONE),
+            realm_id=body.realm_id,
+            principal_id="fleet:completion",
+            instance_id=request.app.state.ctx.settings.instance_id,
+        )
+    record.state = "acknowledged"
+    record.session_id = body.session_id
+    record.completion_payload = body.result
+    record.acknowledged_at = datetime.now(UTC)
+    ledger.put(record)
+    return {"dispatch_id": dispatch_id, "acknowledged": True, "duplicate": False}
 
 
 def _fleet_context(request: Request) -> dict:
@@ -952,6 +1106,75 @@ async def _peer_agent_json(
     return resp.json()
 
 
+async def _peer_dispatch_json(
+    request: Request, instance_id: str, body: dict[str, Any]
+) -> dict:
+    inst = _fleet_instance_or_404(request, instance_id)
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                f"{inst.url.rstrip('/')}/api/fleet/dispatch/materialize",
+                headers={
+                    **_peer_headers(request),
+                    "Idempotency-Key": str(body["mutation_id"]),
+                },
+                json=body,
+            )
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "target_unavailable",
+                "message": str(exc),
+                "recoverable": True,
+            },
+        ) from exc
+    if resp.status_code >= 400:
+        try:
+            detail = resp.json().get("detail")
+        except ValueError, AttributeError:
+            detail = resp.text[:500]
+        raise HTTPException(status_code=resp.status_code, detail=detail)
+    return resp.json()
+
+
+async def _assert_dispatch_sync_health(request: Request, realm_id: str) -> None:
+    """Never choose an arbitrary realm head for remote work."""
+    settings = request.app.state.ctx.settings
+    if not settings.peers:
+        return
+    log = request.app.state.ctx.require_service("event_log")
+    heads: dict[str, str | None] = {settings.instance_id: log.get_head(realm_id)}
+    headers = _peer_headers(request)
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        for peer_url in settings.peers:
+            try:
+                response = await client.get(
+                    f"{peer_url.rstrip('/')}/api/sync/refs",
+                    params={"realm": realm_id},
+                    headers=headers,
+                )
+                response.raise_for_status()
+                refs = response.json()
+                heads[peer_url] = next(
+                    (r.get("head_hash") for r in refs if r.get("realm_id") == realm_id),
+                    None,
+                )
+            except httpx.HTTPError, ValueError:
+                heads[peer_url] = None
+    known = {head for head in heads.values() if head}
+    if len(known) > 1:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "sync_conflict",
+                "message": "Dispatch blocked until realm heads converge",
+                "realm_id": realm_id,
+                "heads": heads,
+            },
+        )
+
+
 def _project_working_directory(
     project,
     *,
@@ -995,9 +1218,53 @@ async def start_remote_agent_work(
     card = store.get_card(body.card_id, realm_id=realm_id) if body.card_id else None
     if body.card_id and not card:
         raise HTTPException(status_code=404, detail="Card not found")
+    if card:
+        await _assert_dispatch_sync_health(request, realm_id)
     project_id = body.project_id or (card.project_id if card else None)
     project = store.get_project(project_id, realm_id=realm_id) if project_id else None
     inst = _fleet_instance_or_404(request, instance_id)
+
+    dispatch_body = None
+    authority_record = None
+    if card:
+        dispatch_id = str(uuid4())
+        mutation_id = str(uuid4())
+        authority_url = settings.instance_url
+        if not authority_url or authority_url.startswith(
+            ("http://127.", "http://localhost")
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "authority_unroutable",
+                    "message": "Configure a fleet-reachable instance_url before remote card dispatch",
+                },
+            )
+        dispatch_body = {
+            "dispatch_id": dispatch_id,
+            "mutation_id": mutation_id,
+            "card": card.model_dump(mode="json"),
+            "card_version": card.updated_at.isoformat(),
+            "realm_id": realm_id,
+            "authority_instance_id": settings.instance_id,
+            "authority_url": authority_url,
+            "target_instance_id": instance_id,
+        }
+        authority_record = DispatchRecord(
+            dispatch_id=dispatch_id,
+            mutation_id=mutation_id,
+            card_id=card.id,
+            realm_id=realm_id,
+            card_version=card.updated_at.isoformat(),
+            authority_instance_id=settings.instance_id,
+            authority_url=authority_url,
+            target_instance_id=instance_id,
+            state="dispatching",
+        )
+        _dispatch_store(request).put(authority_record)
+        # This is deliberately before session creation: a missing/stale target
+        # blocks actionably and can never leave an orphan agent session.
+        await _peer_dispatch_json(request, instance_id, dispatch_body)
 
     session_body: dict[str, Any] = {
         "label": f"card:{card.id}" if card else None,
@@ -1033,6 +1300,12 @@ async def start_remote_agent_work(
     session_id = session.get("id") if isinstance(session, dict) else None
     if not session_id:
         raise HTTPException(status_code=502, detail="Peer did not return a session id")
+    if dispatch_body and authority_record:
+        dispatch_body["session_id"] = session_id
+        await _peer_dispatch_json(request, instance_id, dispatch_body)
+        authority_record.session_id = session_id
+        authority_record.state = "dispatched"
+        _dispatch_store(request).put(authority_record)
 
     message = body.message.strip()
     if card and not message:
@@ -1102,6 +1375,9 @@ async def start_remote_agent_work(
         "prompt": prompt_result,
         "prompt_error": prompt_error,
         "card": updated_card.model_dump(mode="json") if updated_card else None,
+        "dispatch": authority_record.model_dump(mode="json")
+        if authority_record
+        else None,
     }
 
 
@@ -1358,6 +1634,7 @@ class FleetModule(Module):
         ctx.register_service(
             "fleet_update_job_store", FleetUpdateJobStore(settings.data_dir)
         )
+        ctx.register_service("dispatch_store", DispatchStore(settings.data_dir))
 
         pages: PageRegistry = ctx.require_service("pages")
         pages.register(
@@ -1378,6 +1655,18 @@ class FleetModule(Module):
             ctx.require_service("fleet_registry"),
             ctx.require_service("fleet_update_job_store"),
         )
+        outbox = CompletionOutbox(
+            ctx.require_service("dispatch_store"), ctx.settings.sync_token
+        )
+        outbox.start()
+        ctx.register_service("completion_outbox", outbox)
+        agent = ctx.require_service("instance_agent")
+        agent.completion_handler = outbox.queue
+
+    async def on_shutdown(self, app, ctx: AppContext) -> None:
+        outbox = ctx.services.get("completion_outbox")
+        if outbox:
+            await outbox.close(timeout=5.0)
 
     def api_routers(self):
         return [("/api", router, ["fleet"])]

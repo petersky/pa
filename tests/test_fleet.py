@@ -578,6 +578,7 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
                 data_dir=Path(tmp),
                 instance_id="controller-1",
                 instance_name="controller",
+                instance_url="http://controller:8080",
                 primary_realm="default",
                 sync_token="secret",
             )
@@ -635,6 +636,10 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
                 patch("pa.modules.fleet.require_user", return_value=object()),
                 patch("pa.modules.fleet.get_principal_id", return_value="user:local"),
                 patch("pa.modules.fleet._peer_agent_json", peer),
+                patch(
+                    "pa.modules.fleet._peer_dispatch_json",
+                    AsyncMock(return_value={"resolvable": True}),
+                ) as materialize,
             ):
                 result = await start_remote_agent_work(
                     request,
@@ -643,6 +648,13 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
                 )
 
             self.assertEqual(result["session"]["session"]["id"], "remote-session")
+            self.assertEqual(materialize.await_count, 2)
+            self.assertEqual(
+                materialize.await_args_list[0].args[2]["card_id"]
+                if "card_id" in materialize.await_args_list[0].args[2]
+                else materialize.await_args_list[0].args[2]["card"]["id"],
+                "card-1",
+            )
             create_call = peer.await_args_list[0]
             self.assertEqual(create_call.args[3], "sessions")
             self.assertEqual(

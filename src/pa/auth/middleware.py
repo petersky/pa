@@ -29,6 +29,8 @@ SYNC_PATHS = {
     "/api/sync/push",
     "/api/sync/relay",
     "/api/sync/refs",
+    "/api/fleet/dispatch/materialize",
+    "/api/fleet/dispatch/",
 }
 
 # Fleet sync credentials are accepted only for the peer operations required by
@@ -60,7 +62,7 @@ def _is_public(path: str) -> bool:
 
 
 def _is_sync_path(path: str) -> bool:
-    return path in SYNC_PATHS
+    return path in SYNC_PATHS or path.startswith("/api/fleet/dispatch/")
 
 
 def _is_fleet_instance_route(request: Request) -> bool:

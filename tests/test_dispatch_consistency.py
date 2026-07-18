@@ -1,0 +1,309 @@
+from __future__ import annotations
+
+import asyncio
+import tempfile
+import unittest
+from datetime import UTC, datetime
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import httpx
+from fastapi import HTTPException
+
+from pa.config import Settings
+from pa.domain.models import Card, CardEvent, CardLane, EventType
+from pa.execution.dispatch import CompletionOutbox, DispatchRecord, DispatchStore
+from pa.modules.fleet import (
+    DispatchCompletionBody,
+    DispatchMaterializeBody,
+    _assert_dispatch_sync_health,
+    complete_dispatch,
+    materialize_dispatch,
+)
+from pa.sync.event_log import EventLog
+from pa.sync.object_store import ObjectStore
+
+
+def request_for(settings: Settings, store: MagicMock, services: dict | None = None):
+    ctx = MagicMock(settings=settings, store=store)
+    ctx.services = services or {}
+    ctx.require_service.side_effect = lambda name: ctx.services[name]
+    ctx.register_service.side_effect = lambda name, value: ctx.services.__setitem__(
+        name, value
+    )
+    request = MagicMock()
+    request.app.state.ctx = ctx
+    request.headers = {}
+    return request
+
+
+class MaterializationTests(unittest.TestCase):
+    def test_missing_target_card_is_durably_materialized_at_exact_version(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="target")
+            card = Card(id="card-1", title="Fleet convergence")
+            store = MagicMock()
+            store.get_card.return_value = None
+            log = MagicMock()
+            request = request_for(settings, store, {"event_log": log})
+            body = DispatchMaterializeBody(
+                dispatch_id="dispatch-1",
+                mutation_id="mutation-1",
+                card=card.model_dump(mode="json"),
+                card_version=card.updated_at.isoformat(),
+                realm_id="default",
+                authority_instance_id="authority",
+                authority_url="http://authority:8080",
+                target_instance_id="target",
+            )
+
+            result = materialize_dispatch(request, body)
+
+            self.assertTrue(result["resolvable"])
+            log.append_event.assert_called_once()
+            store.apply_event.assert_called_once()
+            self.assertEqual(
+                DispatchStore(settings.data_dir).get("dispatch-1").card_id, "card-1"
+            )
+
+    def test_stale_target_returns_actionable_409(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="target")
+            target = Card(id="card-1", title="stale")
+            authority = target.model_copy(
+                update={"title": "new", "updated_at": datetime.now(UTC)}
+            )
+            store = MagicMock()
+            store.get_card.return_value = target
+            request = request_for(settings, store, {"event_log": MagicMock()})
+            with self.assertRaises(HTTPException) as raised:
+                materialize_dispatch(
+                    request,
+                    DispatchMaterializeBody(
+                        dispatch_id="dispatch-1",
+                        mutation_id="mutation-1",
+                        card=authority.model_dump(mode="json"),
+                        card_version=authority.updated_at.isoformat(),
+                        realm_id="default",
+                        authority_instance_id="authority",
+                        authority_url="http://authority",
+                        target_instance_id="target",
+                    ),
+                )
+            self.assertEqual(raised.exception.status_code, 409)
+            self.assertEqual(raised.exception.detail["code"], "stale_target_card")
+
+
+class CompletionTests(unittest.TestCase):
+    def test_duplicate_completion_updates_card_exactly_once(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="authority")
+            card = Card(id="card-1", title="done remotely")
+            store = MagicMock()
+            store.get_card.return_value = card
+            ledger = DispatchStore(settings.data_dir)
+            ledger.put(
+                DispatchRecord(
+                    dispatch_id="dispatch-1",
+                    mutation_id="mutation-1",
+                    card_id=card.id,
+                    realm_id="default",
+                    card_version=card.updated_at.isoformat(),
+                    authority_instance_id="authority",
+                    authority_url="http://authority",
+                    target_instance_id="target",
+                    session_id="session-1",
+                    state="dispatched",
+                )
+            )
+            request = request_for(settings, store, {"dispatch_store": ledger})
+            request.headers = {"idempotency-key": "mutation-1"}
+            body = DispatchCompletionBody(
+                mutation_id="mutation-1",
+                card_id=card.id,
+                realm_id="default",
+                card_version=card.updated_at.isoformat(),
+                source_instance_id="target",
+                session_id="session-1",
+            )
+
+            first = complete_dispatch(request, "dispatch-1", body)
+            second = complete_dispatch(request, "dispatch-1", body)
+
+            self.assertFalse(first["duplicate"])
+            self.assertTrue(second["duplicate"])
+            store.update_card.assert_called_once()
+
+    def test_end_to_end_remote_completion_accepts_recorded_dispatch_transition(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="authority")
+            original = Card(id="card-1", title="remote")
+            active = original.model_copy(
+                update={"lane": CardLane.ACTIVE, "preferred_instance": "target"}
+            )
+            store = MagicMock()
+            store.get_card.return_value = active
+            ledger = DispatchStore(settings.data_dir)
+            ledger.put(
+                DispatchRecord(
+                    dispatch_id="dispatch-1",
+                    mutation_id="mutation-1",
+                    card_id=original.id,
+                    realm_id="default",
+                    card_version=original.updated_at.isoformat(),
+                    authority_instance_id="authority",
+                    authority_url="http://authority",
+                    target_instance_id="target",
+                    session_id="session-1",
+                    state="dispatched",
+                )
+            )
+            request = request_for(settings, store, {"dispatch_store": ledger})
+            request.headers = {"idempotency-key": "mutation-1"}
+            result = complete_dispatch(
+                request,
+                "dispatch-1",
+                DispatchCompletionBody(
+                    mutation_id="mutation-1",
+                    card_id=original.id,
+                    realm_id="default",
+                    card_version=original.updated_at.isoformat(),
+                    source_instance_id="target",
+                    session_id="session-1",
+                ),
+            )
+            self.assertTrue(result["acknowledged"])
+            self.assertEqual(store.update_card.call_args.args[1].lane, CardLane.DONE)
+
+
+class RetryAndConflictTests(unittest.IsolatedAsyncioTestCase):
+    async def test_authority_unavailable_keeps_completion_pending_for_restart(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = DispatchStore(Path(tmp))
+            ledger.put(
+                DispatchRecord(
+                    dispatch_id="dispatch-1",
+                    mutation_id="mutation-1",
+                    card_id="card-1",
+                    realm_id="default",
+                    card_version="v1",
+                    authority_instance_id="authority",
+                    authority_url="http://authority",
+                    target_instance_id="target",
+                    session_id="session-1",
+                )
+            )
+            outbox = CompletionOutbox(ledger, "secret", retry_seconds=0.01)
+            outbox.queue("session-1", {"stop_reason": "end_turn"})
+            with patch("pa.execution.dispatch.httpx.AsyncClient") as client:
+                client.return_value.__aenter__.return_value.post = AsyncMock(
+                    side_effect=httpx.ConnectError("offline")
+                )
+                await outbox._send(ledger.get("dispatch-1"))
+
+            reloaded = DispatchStore(Path(tmp)).get("dispatch-1")
+            self.assertEqual(reloaded.state, "completion_pending")
+            self.assertEqual(reloaded.attempts, 1)
+            self.assertIn("offline", reloaded.last_error)
+
+    async def test_dispatch_is_blocked_when_two_peer_heads_diverge(self) -> None:
+        settings = Settings(
+            instance_id="authority",
+            peers=["http://peer-a", "http://peer-b"],
+            sync_token="secret",
+        )
+        log = MagicMock()
+        log.get_head.return_value = "head-local"
+        request = request_for(settings, MagicMock(), {"event_log": log})
+        responses = []
+        for head in ("head-a", "head-b"):
+            response = MagicMock()
+            response.json.return_value = [{"realm_id": "default", "head_hash": head}]
+            responses.append(response)
+        with patch("pa.modules.fleet.httpx.AsyncClient") as client:
+            client.return_value.__aenter__.return_value.get = AsyncMock(
+                side_effect=responses
+            )
+            with self.assertRaises(HTTPException) as raised:
+                await _assert_dispatch_sync_health(request, "default")
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertEqual(raised.exception.detail["code"], "sync_conflict")
+
+
+class EventLogMergeTests(unittest.TestCase):
+    def test_compatible_heads_produce_same_deterministic_merge_hash(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            objects = ObjectStore(Path(tmp) / "objects")
+            log = EventLog(objects, Path(tmp), "node-a")
+            other = EventLog(objects, Path(tmp) / "other", "node-b")
+            # Parent hashes are sufficient for proving deterministic merge encoding.
+            first = log.merge_heads("default", "b" * 64, "a" * 64, "ignored")
+            second = other.merge_heads("default", "a" * 64, "b" * 64, "other")
+            self.assertEqual(first.hash, second.hash)
+
+    def test_three_instance_disjoint_histories_converge_without_operator_conflict(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            objects = ObjectStore(root / "objects")
+            for name in ("left", "right", "observer"):
+                (root / name).mkdir()
+            left = EventLog(objects, root / "left", "left")
+            right = EventLog(objects, root / "right", "right")
+            observer = EventLog(objects, root / "observer", "observer")
+            base_event = CardEvent(
+                type=EventType.CARD_CREATED,
+                realm_id="default",
+                card_id="base",
+                author_principal="test",
+                author_instance="left",
+                payload=Card(id="base", title="base").model_dump(mode="json"),
+            )
+            _, base = left.append_event(base_event)
+            right.advance_ref("default", base.hash)
+            _, left_head = left.append_event(
+                CardEvent(
+                    type=EventType.CARD_UPDATED,
+                    realm_id="default",
+                    card_id="left-card",
+                    author_principal="test",
+                    author_instance="left",
+                    payload={"title": "left"},
+                )
+            )
+            _, right_head = right.append_event(
+                CardEvent(
+                    type=EventType.CARD_UPDATED,
+                    realm_id="default",
+                    card_id="right-card",
+                    author_principal="test",
+                    author_instance="right",
+                    payload={"title": "right"},
+                )
+            )
+            compatible, health = observer.compatible_histories(
+                left_head.hash, right_head.hash
+            )
+            self.assertTrue(compatible, health)
+            merged = observer.merge_heads(
+                "default", left_head.hash, right_head.hash, "sync:auto"
+            )
+            seen: list[str] = []
+            observer.apply_commit_chain(
+                merged.hash, lambda event: seen.append(event.card_id or "merge")
+            )
+            self.assertIn("left-card", seen)
+            self.assertIn("right-card", seen)
+
+
+class BoundedDrainTests(unittest.IsolatedAsyncioTestCase):
+    async def test_outbox_shutdown_is_bounded_with_pending_stream_work(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            outbox = CompletionOutbox(DispatchStore(Path(tmp)), "", retry_seconds=60)
+            outbox.start()
+            await asyncio.wait_for(outbox.close(timeout=0.01), timeout=1.5)
