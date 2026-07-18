@@ -13,7 +13,13 @@ from pa.core.context import AppContext
 from pa.core.ui.pages import PageDefinition, PageRegistry
 from pa.domain.models import ProjectUpdate
 from pa.pr_supervisor.github import GitHubAPIError, verify_webhook_signature
-from pa.pr_supervisor.models import GitHubCapability, PRPolicy, PRWatch
+from pa.pr_supervisor.models import (
+    GitHubCapability,
+    PRPolicy,
+    PRWatch,
+    PRWatchEvent,
+    PRWatchStatus,
+)
 from pa.pr_supervisor.service import PRSupervisor
 from pa.pr_supervisor.store import PRSupervisorStore
 
@@ -279,6 +285,34 @@ def ingest_replica(request: Request, body: dict[str, Any]) -> dict[str, Any]:
     watch = PRWatch.model_validate(body.get("watch") or body)
     stored = _store(request).upsert_watch(watch, preserve_lease=True)
     return stored.model_dump(mode="json")
+
+
+@router.post("/pr-supervisor/retirements")
+def ingest_retirement(request: Request, body: dict[str, Any]) -> dict[str, Any]:
+    incoming = PRWatch.model_validate(body.get("watch") or {})
+    store = _store(request)
+    existing = store.find_watch(
+        incoming.realm_id, incoming.repository, incoming.pr_number
+    )
+    if existing:
+        retired = store.set_terminal(
+            existing.id,
+            PRWatchStatus.RETIRED,
+            state=incoming.state,
+        )
+    else:
+        incoming.status = PRWatchStatus.RETIRED
+        retired = store.upsert_watch(incoming, preserve_lease=False)
+    event_key = str(body.get("event_key") or f"{retired.id}:retired")
+    store.append_event(
+        PRWatchEvent(
+            watch_id=retired.id,
+            event_key=event_key,
+            event_type="watch_retired",
+            source="fleet_transition",
+        )
+    )
+    return retired.model_dump(mode="json")
 
 
 @router.post("/pr-supervisor/watches/{watch_id}/lease")

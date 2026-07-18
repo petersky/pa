@@ -151,21 +151,20 @@ class PRSupervisorStore:
                 ).fetchone()
             existing = self._row_to_watch(row) if row else None
             if existing:
-                if preserve_lease:
-                    terminal = {
-                        PRWatchStatus.MERGED,
-                        PRWatchStatus.CLOSED,
-                        PRWatchStatus.RETIRED,
-                    }
-                    existing_terminal = existing.status in terminal
-                    incoming_terminal = watch.status in terminal
-                    if existing_terminal and not incoming_terminal:
-                        return existing
-                    if (
-                        existing.updated_at > watch.updated_at
-                        and (existing_terminal or not incoming_terminal)
-                    ):
-                        return existing
+                if preserve_lease and (
+                    existing.updated_at > watch.updated_at
+                    or (
+                        existing.status
+                        in {
+                            PRWatchStatus.MERGED,
+                            PRWatchStatus.CLOSED,
+                            PRWatchStatus.RETIRED,
+                        }
+                        and watch.status
+                        in {PRWatchStatus.ACTIVE, PRWatchStatus.BLOCKED}
+                    )
+                ):
+                    return existing
                 watch.id = existing.id
                 watch.created_at = existing.created_at
                 if preserve_lease:

@@ -230,13 +230,13 @@ class PRSupervisorStoreTests(unittest.TestCase):
         result = self.store.upsert_watch(stale, preserve_lease=True)
         self.assertEqual(result.status, PRWatchStatus.MERGED)
 
-    def test_terminal_replica_supersedes_newer_active_lease_state(self) -> None:
+    def test_stale_terminal_replica_cannot_stop_newer_active_watch(self) -> None:
         active = self.store.get_watch("watch-1")
         retired = watch()
         retired.status = PRWatchStatus.RETIRED
         retired.updated_at = active.updated_at - timedelta(seconds=10)
         result = self.store.upsert_watch(retired, preserve_lease=True)
-        self.assertEqual(result.status, PRWatchStatus.RETIRED)
+        self.assertEqual(result.status, PRWatchStatus.ACTIVE)
 
 
 class GateAndSecurityTests(unittest.TestCase):
@@ -583,11 +583,13 @@ class PRSupervisorServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_retire_and_refresh_replicate_watch_state(self) -> None:
         service = await self.make_service([snapshot()])
         service._replicate = AsyncMock()
+        service._broadcast_retirement = AsyncMock()
         refreshed = await service.refresh_watch("watch-1")
         self.assertIsNotNone(refreshed)
         retired = await service.retire_watch("watch-1")
         self.assertEqual(retired.status, PRWatchStatus.RETIRED)
         self.assertEqual(service._replicate.await_count, 2)
+        service._broadcast_retirement.assert_awaited_once_with(retired)
 
     async def test_migration_applies_repository_policy_override(self) -> None:
         card = SimpleNamespace(
@@ -807,6 +809,21 @@ class PRSupervisorApiAndMcpTests(unittest.TestCase):
                 "pr_supervisor_store"
             ).get_watch(watch_id)
             self.assertEqual(canonical.owner_instance_id, "worker-a")
+
+            retirement = client.post(
+                "/api/pr-supervisor/retirements",
+                headers=headers,
+                json={
+                    "watch": incoming,
+                    "event_key": "operator-retirement-1",
+                },
+            )
+            self.assertEqual(retirement.status_code, 200, retirement.text)
+            self.assertEqual(retirement.json()["status"], "retired")
+            canonical = app.state.ctx.require_service(
+                "pr_supervisor_store"
+            ).get_watch(watch_id)
+            self.assertEqual(canonical.status, PRWatchStatus.RETIRED)
 
             unsigned = client.post(
                 "/api/pr-supervisor/webhook/github",

@@ -29,6 +29,10 @@ lease from the authority before polling or changing watch state:
 - replica updates preserve newer and terminal authority state;
 - executor dispatch uses a fleet-stable event key and an atomic destination claim.
 
+Ordinary replicas never let an older terminal snapshot overwrite newer active
+state. Operator retirement is propagated as a separate idempotent fleet
+transition, so it does not depend on snapshot timestamps to take effect.
+
 An explicit connection failure may fail over to a replacement executor. An
 ambiguous response failure never falls back to a second instance because the
 origin may already have queued the prompt; PA retries the same idempotent event

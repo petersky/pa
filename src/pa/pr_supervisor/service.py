@@ -407,6 +407,7 @@ class PRSupervisor:
             f"{watch.id}:retired:{watch.updated_at.isoformat()}",
         )
         await self._replicate(watch)
+        await self._broadcast_retirement(watch)
         return watch
 
     async def _process_watch(self, watch: PRWatch, grant: LeaseGrant) -> None:
@@ -795,12 +796,7 @@ class PRSupervisor:
     async def _replicate(self, watch: PRWatch | None) -> None:
         if not watch:
             return
-        urls = set(self.settings.peers)
-        authority = self._authority_url()
-        if authority:
-            urls.add(authority)
-        local = (self.settings.instance_url or "").rstrip("/")
-        urls = {url.rstrip("/") for url in urls if url and url.rstrip("/") != local}
+        urls = self._fleet_urls()
         if not urls:
             return
         payload = {"watch": watch.model_dump(mode="json")}
@@ -816,6 +812,40 @@ class PRSupervisor:
         failures = sum(1 for result in results if isinstance(result, Exception))
         if failures:
             self.store.increment_metric("replication_errors", failures)
+
+    async def _broadcast_retirement(self, watch: PRWatch) -> None:
+        urls = self._fleet_urls()
+        if not urls:
+            return
+        event_key = f"{watch.id}:retired:{watch.updated_at.isoformat()}"
+        results = await asyncio.gather(
+            *(
+                self._post_json(
+                    f"{url}/api/pr-supervisor/retirements",
+                    {
+                        "watch": watch.model_dump(mode="json"),
+                        "event_key": event_key,
+                    },
+                )
+                for url in urls
+            ),
+            return_exceptions=True,
+        )
+        failures = sum(1 for result in results if isinstance(result, Exception))
+        if failures:
+            self.store.increment_metric("replication_errors", failures)
+
+    def _fleet_urls(self) -> set[str]:
+        urls = set(self.settings.peers)
+        authority = self._authority_url()
+        if authority:
+            urls.add(authority)
+        local = (self.settings.instance_url or "").rstrip("/")
+        return {
+            url.rstrip("/")
+            for url in urls
+            if url and url.rstrip("/") != local
+        }
 
     def _authority_url(self) -> str | None:
         authority = (self.settings.fleet_owner_url or "").rstrip("/")
