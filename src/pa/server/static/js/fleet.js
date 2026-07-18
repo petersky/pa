@@ -618,9 +618,14 @@
           : '<span class="status status-blocked">' + escapeHtml(row.providers_state || "error") + '</span>';
         providersEl.dataset.fleetTerminal = "1";
       }
-      if (currentEl) { currentEl.textContent = row.current_version || (row.status_state || "error"); currentEl.dataset.fleetTerminal = "1"; }
+      if (currentEl) {
+        currentEl.textContent = row.current_version ||
+          (row.status_state === "up" ? "—" : (row.status_state || "error"));
+        currentEl.dataset.fleetTerminal = "1";
+      }
       if (availableEl) {
-        availableEl.textContent = row.available_version || (row.update_state || "error");
+        availableEl.textContent = row.available_version ||
+          (row.update_state === "up" ? "—" : (row.update_state || "error"));
         availableEl.classList.toggle("status-active", !!row.upgrade_available);
         availableEl.dataset.fleetTerminal = "1";
       }
@@ -712,7 +717,7 @@
       if (seq !== liveStatusSeq) return;
       if (liveStatusController) liveStatusController.abort();
       terminalLiveFailure("Health check timed out", "timeout");
-    }, 10000);
+    }, 12000);
     liveStatusRequest = api("/api/fleet/health", liveStatusController ? { signal: liveStatusController.signal } : {}).then(function (rows) {
       if (seq !== liveStatusSeq) return;
       applyLiveStatus(rows);

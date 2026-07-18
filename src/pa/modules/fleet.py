@@ -60,7 +60,7 @@ from pa.network.peer_table import PeerTable
 
 FLEET_HEALTH_TIMEOUT = 3.0
 FLEET_DETAIL_TIMEOUT = 5.0
-FLEET_AGGREGATE_TIMEOUT = 7.0
+FLEET_AGGREGATE_TIMEOUT = 9.0
 
 router = APIRouter()
 ui_router = APIRouter()
@@ -590,16 +590,6 @@ async def fleet_health(request: Request) -> list[dict]:
                     from pa.release.version import read_version
 
                     try:
-                        providers = await asyncio.wait_for(
-                            asyncio.to_thread(list_provider_summaries, settings.data_dir),
-                            timeout=FLEET_DETAIL_TIMEOUT,
-                        )
-                        providers_state = "up"
-                    except (TimeoutError, asyncio.TimeoutError):
-                        providers_state = "timeout"
-                    except Exception:
-                        providers_state = "error"
-                    try:
                         current_version = read_version()
                     except (OSError, RuntimeError, ValueError):
                         current_version = None
@@ -607,23 +597,43 @@ async def fleet_health(request: Request) -> list[dict]:
                     update_channel = settings.release_track
                     if current_version:
                         status_state = "up"
-                    # Update discovery may use the network, even for local, so it
-                    # remains isolated and bounded like every other dimension.
-                    async def local_update():
-                        from pa.update.runner import check_update
-                        return await asyncio.to_thread(check_update, settings)
 
-                    try:
-                        update = await asyncio.wait_for(
-                            local_update(), timeout=FLEET_DETAIL_TIMEOUT
-                        )
+                    async def local_providers() -> tuple[str, list]:
+                        try:
+                            value = await asyncio.wait_for(
+                                asyncio.to_thread(
+                                    list_provider_summaries, settings.data_dir
+                                ),
+                                timeout=FLEET_DETAIL_TIMEOUT,
+                            )
+                            return "up", value
+                        except (TimeoutError, asyncio.TimeoutError):
+                            return "timeout", []
+                        except Exception:
+                            return "error", []
+
+                    async def local_update() -> tuple[str, Any]:
+                        # Update discovery may use the network, even for local.
+                        from pa.update.runner import check_update
+                        try:
+                            value = await asyncio.wait_for(
+                                asyncio.to_thread(check_update, settings),
+                                timeout=FLEET_DETAIL_TIMEOUT,
+                            )
+                            return "up", value
+                        except (TimeoutError, asyncio.TimeoutError):
+                            return "timeout", None
+                        except Exception:
+                            return "error", None
+
+                    provider_result, update_result = await asyncio.gather(
+                        local_providers(), local_update()
+                    )
+                    providers_state, providers = provider_result
+                    update_state, update = update_result
+                    if update:
                         available_version = update.latest
                         upgrade_available = update.upgrade_available
-                        update_state = "up"
-                    except (TimeoutError, asyncio.TimeoutError):
-                        update_state = "timeout"
-                    except Exception:
-                        update_state = "error"
                 else:
                     provider_result, status_result, update_result = await asyncio.gather(
                         dimension(

@@ -664,6 +664,8 @@ class FleetUpdateUiTests(unittest.TestCase):
         self.assertIn("if (seq !== liveStatusSeq) return", script)
         self.assertIn("!el.dataset.fleetTerminal", script)
         self.assertIn("Health check failed", script)
+        self.assertIn('row.status_state === "up" ? "—"', script)
+        self.assertIn('row.update_state === "up" ? "—"', script)
         self.assertIn('id="pa-fleet-refresh"', template)
 
 
