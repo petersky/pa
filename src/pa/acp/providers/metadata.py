@@ -47,7 +47,7 @@ def load_metadata(data_dir: Path, provider_id: str) -> ProviderMetadata | None:
         return None
     try:
         return ProviderMetadata.model_validate(json.loads(path.read_text()))
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError, ValueError:
         return None
 
 
@@ -66,7 +66,7 @@ def load_credentials(data_dir: Path, provider_id: str) -> dict[str, str]:
         data = json.loads(path.read_text())
         if isinstance(data, dict):
             return {str(k): str(v) for k, v in data.items() if v is not None}
-    except (json.JSONDecodeError, ValueError, TypeError):
+    except json.JSONDecodeError, ValueError, TypeError:
         pass
     return {}
 
@@ -75,7 +75,7 @@ def save_credentials(data_dir: Path, provider_id: str, secrets: dict[str, str]) 
     path = credentials_path(data_dir, provider_id)
     existing = load_credentials(data_dir, provider_id)
     existing.update({k: v for k, v in secrets.items() if v})
-    atomic_write_json(path, existing)
+    atomic_write_json(path, existing, mode=0o600)
     return path
 
 

@@ -79,7 +79,11 @@ For a **multi-machine Tailscale setup** (MacBook + Mac mini + Linux dev/staging)
 - macOS plist: `~/Library/LaunchAgents/com.pa.server.plist`
 - Linux unit: `~/.config/systemd/user/pa-server.service`
 - Logs: `~/.pa/logs/server.log`, `~/.pa/logs/server.err.log`
+- Rotating structured logs: `~/.pa/logs/pa.jsonl` (plus five backups)
 - Install metadata: `~/.pa/install.json`
+
+For autonomous Mac mini controls and the manual reboot/login acceptance checklist,
+see [MAC_MINI_AUTONOMY.md](MAC_MINI_AUTONOMY.md).
 
 ### Configuration
 
