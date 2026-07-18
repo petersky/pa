@@ -79,7 +79,9 @@ class Settings(BaseSettings):
     update_repo: str = "petersky/pa"
     install_method: str = "uv-tool"
 
-    @field_validator("peers", "subscribed_realms", "capabilities", "agent_args", mode="before")
+    @field_validator(
+        "peers", "subscribed_realms", "capabilities", "agent_args", mode="before"
+    )
     @classmethod
     def _parse_env_list(cls, value: object) -> object:
         if value is None:
@@ -151,8 +153,10 @@ _settings: Settings | None = None
 def get_settings() -> Settings:
     global _settings
     if _settings is None:
-        data_dir = default_data_dir()
-        kwargs: dict = {}
+        # Resolve settings sources first so instance config is loaded from the
+        # directory selected by PA_DATA_DIR (including via .env), not ~/.pa.
+        data_dir = Settings().data_dir
+        kwargs: dict = {"data_dir": data_dir}
         merge_config_into_settings(data_dir, kwargs)
         if config_path(data_dir).exists():
             kwargs["session_secret"] = ensure_session_secret(data_dir)
