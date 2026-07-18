@@ -9,6 +9,8 @@ import logging
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from typer.testing import CliRunner
+
 from pa.cli import service
 from pa.config import Settings
 from pa.core.logging import configure_logging
@@ -95,6 +97,36 @@ class AutonomousHostControlsTests(unittest.TestCase):
             self.assertEqual(payload["message"], "health degraded api_key=[redacted]")
             self.assertNotIn("sk_test-secret-value", json.dumps(payload))
             self.assertEqual(payload["level"], "WARNING")
+
+    def test_service_only_no_start_preserves_authority_migration_barrier(self) -> None:
+        from pa.cli.main import app
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp))
+            with (
+                patch("pa.cli.main.get_settings", return_value=settings),
+                patch("pa.cli.service.service_supported", return_value=True),
+                patch(
+                    "pa.cli.service.find_service_binary",
+                    return_value=Path("/bin/pa"),
+                ),
+                patch(
+                    "pa.cli.service.install_service",
+                    return_value=Path("/tmp/pa.plist"),
+                ),
+                patch(
+                    "pa.cli.service.get_status",
+                    return_value=MagicMock(backend="launchd"),
+                ),
+                patch("pa.cli.service.bootstrap") as bootstrap,
+                patch("pa.install.runner.record_install"),
+            ):
+                result = CliRunner().invoke(
+                    app, ["install", "--service-only", "--no-start"]
+                )
+        self.assertEqual(result.exit_code, 0, result.output)
+        bootstrap.assert_not_called()
+        self.assertIn("Service left stopped", result.output)
 
 
 if __name__ == "__main__":

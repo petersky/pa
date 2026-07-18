@@ -21,6 +21,10 @@ dedicated macOS account that owns the PA service and `PA_DATA_DIR`.
 - Remote card dispatch fails closed unless the exact authoritative card version
   is materialized on the selected target. Completion is idempotent and only the
   authority moves the card to done.
+- PR supervision uses an explicitly selected, always-on single lease authority;
+  it must not inherit a sleeping MacBook fleet owner. See
+  [PR_SUPERVISOR.md](PR_SUPERVISOR.md#safe-authority-migration) for the fenced
+  stop-all/TTL-drain migration and rollback procedure.
 - Updates require an interactive confirmation unless `--yes` is explicit. A
   service restart requires `--restart` or a separate operator decision. Agents
   must not install, restart, update, change credentials, or widen repository
@@ -62,6 +66,9 @@ production login session, power state, credentials, or network:
 5. Run `pa doctor`; verify Codex authentication and GitHub capability for
    `petersky/pa`, then open a harmless supervised PR and observe a full stable
    green refresh before merge.
+7. Keep the former MacBook authority offline for more than the reported lease
+   TTL. Verify `/api/pr-supervisor/health` remains ready on the selected always-on
+   authority and watch observations continue advancing with increasing fences.
 6. Temporarily remove network access and verify health failure is observable,
    logs remain bounded, pending completion survives restart, and recovery does
    not require deleting `PA_DATA_DIR`.

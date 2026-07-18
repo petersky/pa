@@ -57,7 +57,10 @@ def resolve_policy(
 
 def _page_context(request: Request) -> dict[str, Any]:
     service = _service(request)
-    realm = request.query_params.get("realm") or request.app.state.ctx.settings.primary_realm
+    realm = (
+        request.query_params.get("realm")
+        or request.app.state.ctx.settings.primary_realm
+    )
     watches = service.store.list_watches(realm_id=realm, include_retired=True)
     selected_id = request.query_params.get("watch")
     selected = service.store.get_watch(selected_id) if selected_id else None
@@ -164,9 +167,7 @@ async def retire_watch(request: Request, watch_id: str) -> dict[str, Any]:
 
 
 @router.post("/pr-supervisor/pull-requests", status_code=201)
-async def create_pull_request(
-    request: Request, body: dict[str, Any]
-) -> dict[str, Any]:
+async def create_pull_request(request: Request, body: dict[str, Any]) -> dict[str, Any]:
     service = _service(request)
     settings = request.app.state.ctx.settings
     repository = str(body.get("repository") or "")
@@ -187,11 +188,7 @@ async def create_pull_request(
             repository,
             title=str(body["title"]),
             head=str(body["head"]),
-            base=str(
-                body.get("base")
-                or policy.integration_branch
-                or "main"
-            ),
+            base=str(body.get("base") or policy.integration_branch or "main"),
             body=str(body.get("body") or ""),
             draft=body.get("draft"),
             policy=policy,
@@ -206,7 +203,9 @@ async def create_pull_request(
             repository=repository,
             pr_number=int(pr["number"]),
             pr_url=str(pr.get("html_url") or ""),
-            base_branch=str((pr.get("base") or {}).get("ref") or body.get("base") or "main"),
+            base_branch=str(
+                (pr.get("base") or {}).get("ref") or body.get("base") or "main"
+            ),
             head_sha=str((pr.get("head") or {}).get("sha") or "") or None,
             originating_instance_id=settings.instance_id,
             originating_session_id=body.get("originating_session_id"),
@@ -230,7 +229,9 @@ async def create_pull_request(
 def capabilities(request: Request) -> dict[str, Any]:
     service = _service(request)
     instances = _store(request).list_capabilities()
-    if not any(item.instance_id == service.capability.instance_id for item in instances):
+    if not any(
+        item.instance_id == service.capability.instance_id for item in instances
+    ):
         instances.insert(0, service.capability)
     return {
         "local": service.capability.model_dump(mode="json"),
@@ -241,6 +242,11 @@ def capabilities(request: Request) -> dict[str, Any]:
 @router.get("/pr-supervisor/metrics")
 def metrics(request: Request) -> dict[str, int]:
     return _store(request).metrics()
+
+
+@router.get("/pr-supervisor/health")
+def supervisor_health(request: Request) -> dict[str, Any]:
+    return _service(request).authority_health()
 
 
 @router.put("/pr-supervisor/policies/projects/{project_id}")
@@ -350,9 +356,7 @@ def heartbeat(request: Request, body: dict[str, Any]) -> dict[str, Any]:
 
 
 @router.post("/pr-supervisor/dispatch")
-async def dispatch_executor(
-    request: Request, body: dict[str, Any]
-) -> dict[str, Any]:
+async def dispatch_executor(request: Request, body: dict[str, Any]) -> dict[str, Any]:
     service = _service(request)
     watch = PRWatch.model_validate(body.get("watch") or {})
     service.store.upsert_watch(watch)
@@ -391,9 +395,7 @@ async def github_webhook(request: Request) -> dict[str, Any]:
 def pull_requests_page(request: Request):
     from pa.modules.ui_shell import render_page
 
-    page = request.app.state.ctx.require_service("pages").get_by_path(
-        "/pull-requests"
-    )
+    page = request.app.state.ctx.require_service("pages").get_by_path("/pull-requests")
     if not page:
         raise HTTPException(status_code=404)
     return render_page(request, page)
@@ -657,9 +659,7 @@ class PRSupervisorModule(Module):
             if repository:
                 policies = dict(config.get("pr_repository_policies") or {})
                 policy_data = dict(
-                    policies.get(repository)
-                    or config.get("pr_policy")
-                    or {}
+                    policies.get(repository) or config.get("pr_policy") or {}
                 )
                 policy_data.update(
                     {

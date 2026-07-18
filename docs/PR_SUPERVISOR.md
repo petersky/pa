@@ -16,9 +16,16 @@ PA safely migrates discoverable associations at startup. An open card containing
 an exact `https://github.com/OWNER/REPO/pull/NUMBER` URL gets a watch if none
 exists. PA does not guess from branch names or issue URLs.
 
-## Fleet ownership and failover
+## Lease authority and worker failover
 
-The fleet owner is the lease authority. Every capable instance advertises a
+`PA_PR_SUPERVISOR_AUTHORITY_URL` (or the persisted
+`pr_supervisor_authority_url`) selects the single lease authority independently
+of the fleet owner. When unset, PA retains the legacy `fleet_owner_url` behavior.
+Point it at an always-on Mac mini or Monica; do not use a laptop that routinely
+sleeps. The configured authority treats its own advertised URL as local and
+uses its replicated SQLite state as the compare-and-swap boundary.
+
+Every capable instance advertises a
 secret-free GitHub capability heartbeat. A worker obtains an atomic renewable
 lease from the authority before polling or changing watch state:
 
@@ -45,8 +52,54 @@ the expired lease. If the fleet authority or every eligible credential is
 unavailable, the watch becomes visibly blocked with an actionable reason. PA
 does not silently drop supervision.
 
+`GET /api/pr-supervisor/health` exposes the authority URL and role, explicit vs
+legacy selection, authority reachability, last successful contact, active/local
+watch counts, lease TTL, and the largest observed fence token. It never returns
+tokens. `authority_unreachable` is actionable; `authority_unverified` is normal
+only before the first heartbeat or lease request after startup.
+
 Credentials remain instance-local. Tokens and webhook secrets are never copied
 into watches, audit events, prompts, fleet heartbeats, or sync objects.
+
+### Safe authority migration
+
+Authority selection is intentionally not automatic: two independent SQLite
+authorities could both grant a valid-looking lease. Migrate in a short,
+fail-closed maintenance window so no split brain is possible:
+
+1. Deploy this PA version to every instance without changing authority config.
+   On the intended always-on authority, configure its own GitHub credential and
+   repository allowlist; do not copy the MacBook credential.
+2. Verify every active watch is replicated to the new authority. Compare active
+   watch count, watch IDs, and `max_fence_token` from
+   `/api/pr-supervisor/health` and `/api/pr-supervisor/watches` on old and new.
+   Stop if the new authority is missing a watch or has a lower fence.
+3. Quiesce PA on all supervisor-eligible instances with bounded `pa stop`.
+   This is the fencing barrier. Record the stop time and wait at least 45 seconds
+   (the reported `lease_ttl_seconds`) after the last instance stopped. If the
+   MacBook is already unreachable, its last leases still must age past TTL.
+4. While services are stopped, persist the same always-on URL everywhere:
+
+   ```bash
+   pa config set pr_supervisor_authority_url http://always-on-mini:8080
+   pa install --service-only --no-start
+   ```
+
+   `--no-start` is required here: it regenerates the unit environment without
+   bootstrapping the stopped service during the fencing barrier.
+5. Start the new authority first. Confirm health says `role=lease_authority`,
+   `state=ready`, and its fence baseline is no lower than the recorded value.
+   Start one authenticated worker and force a watch refresh. Its newly granted
+   fence must be greater than the pre-migration fence.
+6. Start remaining workers one at a time. Verify each reports the same
+   `authority_url`. Leave the former MacBook stopped until its config has been
+   changed; an old authority must never rejoin with legacy configuration.
+7. Observe an active watch for longer than 45 seconds with the MacBook offline.
+   Confirm fresh observation timestamps, successful renewals/polls, and no
+   `authority_unreachable` state. Only then end the maintenance window.
+
+Rollback uses the same stop-all, TTL-drain barrier. Never point a subset back to
+the old authority while any worker can still reach the new one.
 
 ## GitHub authentication
 

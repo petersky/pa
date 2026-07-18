@@ -28,7 +28,9 @@ def service_environment(settings: Settings) -> dict[str, str]:
         env["PA_AGENT_PROVIDER"] = settings.agent_provider
     if settings.agent_command:
         agent_bin = resolve_executable(settings.agent_command, path=service_path)
-        env["PA_AGENT_COMMAND"] = str(agent_bin) if agent_bin else settings.agent_command
+        env["PA_AGENT_COMMAND"] = (
+            str(agent_bin) if agent_bin else settings.agent_command
+        )
     if settings.agent_args is not None:
         env["PA_AGENT_ARGS"] = _env_list(settings.agent_args)
     if settings.subscribed_realms:
@@ -43,6 +45,8 @@ def service_environment(settings: Settings) -> dict[str, str]:
         env["PA_INSTANCE_URL"] = settings.instance_url
     if settings.fleet_owner_url:
         env["PA_FLEET_OWNER_URL"] = settings.fleet_owner_url
+    if settings.pr_supervisor_authority_url:
+        env["PA_PR_SUPERVISOR_AUTHORITY_URL"] = settings.pr_supervisor_authority_url
     if settings.relay_enabled:
         env["PA_RELAY_ENABLED"] = "true"
     if not settings.agent_enabled:

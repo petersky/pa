@@ -62,7 +62,9 @@ def init(
     data_dir: Annotated[str | None, typer.Option(help="Data directory")] = None,
     fleet_id: Annotated[str | None, typer.Option(help="Fleet ID")] = None,
     realm: Annotated[str | None, typer.Option(help="Primary realm ID")] = None,
-    url: Annotated[str | None, typer.Option(help="Public instance URL (Tailscale)")] = None,
+    url: Annotated[
+        str | None, typer.Option(help="Public instance URL (Tailscale)")
+    ] = None,
     track: Annotated[str | None, typer.Option(help="Release track")] = None,
     peers: Annotated[str | None, typer.Option(help="Comma-separated peer URLs")] = None,
     sync_token: Annotated[str | None, typer.Option(help="Shared sync token")] = None,
@@ -123,7 +125,9 @@ def status() -> None:
     if snap.get("service_binary") and snap["service_binary"] != snap["binary"]:
         typer.echo(f"  Service bin: {snap['service_binary']}")
     if snap["installed_version"]:
-        typer.echo(f"  Installed:   {snap['installed_version']} ({snap['install_method']})")
+        typer.echo(
+            f"  Installed:   {snap['installed_version']} ({snap['install_method']})"
+        )
         if snap.get("install_channel"):
             typer.echo(f"  Track:       {snap['install_channel']}")
         if snap["installed_version"] != snap["version"]:
@@ -135,9 +139,7 @@ def status() -> None:
 
     svc_info = snap["service"]
     if svc_info["installed"] or svc.service_supported():
-        typer.echo(
-            f"  Service:     {svc_info['state']} ({svc_info['backend']})"
-        )
+        typer.echo(f"  Service:     {svc_info['state']} ({svc_info['backend']})")
         if svc_info["installed"]:
             typer.echo(f"  Unit:        {svc_info['unit_path']}")
     typer.echo(f"  Debug:       {snap['debug']}")
@@ -162,9 +164,13 @@ def install(
         bool,
         typer.Option("--record-only", help="Only write install.json metadata"),
     ] = False,
-    channel: Annotated[str, typer.Option(help="Release track for install metadata")] = "release",
+    channel: Annotated[
+        str, typer.Option(help="Release track for install metadata")
+    ] = "release",
     name: Annotated[str, typer.Option(help="Instance name")] = "local",
-    no_start: Annotated[bool, typer.Option(help="Do not start service after install")] = False,
+    no_start: Annotated[
+        bool, typer.Option(help="Do not start service after install")
+    ] = False,
     from_source: Annotated[
         Path | None,
         typer.Option("--from-source", help="Install from local path (repo root)"),
@@ -181,7 +187,9 @@ def install(
 
     if service_only:
         if not svc.service_supported():
-            typer.echo("Service management is not supported on this platform.", err=True)
+            typer.echo(
+                "Service management is not supported on this platform.", err=True
+            )
             raise typer.Exit(1)
         settings = get_settings()
         pa_bin = svc.find_service_binary()
@@ -189,14 +197,19 @@ def install(
             typer.echo("pa binary not found in PATH.", err=True)
             raise typer.Exit(1)
         path = svc.install_service(settings, pa_bin)
-        svc.bootstrap()
+        if not no_start:
+            svc.bootstrap()
         record_install(channel=channel, pa_bin=pa_bin)
         typer.echo(f"Registered {svc.get_status(settings).backend} service: {path}")
         typer.echo(f"Service binary: {pa_bin}")
+        if no_start:
+            typer.echo("Service left stopped (--no-start).")
         return
 
     try:
-        install_from_path(from_source, name=name, channel=channel, start_service=not no_start)
+        install_from_path(
+            from_source, name=name, channel=channel, start_service=not no_start
+        )
     except RuntimeError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(1) from exc
@@ -211,7 +224,9 @@ def install(
 def start(
     no_acp_resume: Annotated[
         bool,
-        typer.Option("--no-acp-resume", help="Do not resume quiesced ACP sessions on startup"),
+        typer.Option(
+            "--no-acp-resume", help="Do not resume quiesced ACP sessions on startup"
+        ),
     ] = False,
 ) -> None:
     """Start the PA host service (launchd or systemd)."""
@@ -236,7 +251,9 @@ def start(
 def stop(
     no_acp_quiesce: Annotated[
         bool,
-        typer.Option("--no-acp-quiesce", help="Skip waiting for ACP sessions before stop"),
+        typer.Option(
+            "--no-acp-quiesce", help="Skip waiting for ACP sessions before stop"
+        ),
     ] = False,
 ) -> None:
     """Stop the PA host service."""
@@ -263,11 +280,15 @@ def stop(
 def restart_cmd(
     no_acp_quiesce: Annotated[
         bool,
-        typer.Option("--no-acp-quiesce", help="Skip waiting for ACP sessions before restart"),
+        typer.Option(
+            "--no-acp-quiesce", help="Skip waiting for ACP sessions before restart"
+        ),
     ] = False,
     no_acp_resume: Annotated[
         bool,
-        typer.Option("--no-acp-resume", help="Do not resume quiesced ACP sessions after restart"),
+        typer.Option(
+            "--no-acp-resume", help="Do not resume quiesced ACP sessions after restart"
+        ),
     ] = False,
 ) -> None:
     """Restart the PA host service."""
@@ -297,7 +318,9 @@ def restart_cmd(
 
 @app.command()
 def logs(
-    follow: Annotated[bool, typer.Option("-f", "--follow", help="Follow log output")] = False,
+    follow: Annotated[
+        bool, typer.Option("-f", "--follow", help="Follow log output")
+    ] = False,
     lines: Annotated[int, typer.Option("-n", help="Number of lines")] = 50,
 ) -> None:
     """Tail PA server logs."""
@@ -312,10 +335,14 @@ def logs(
 
 @app.command()
 def update(
-    check: Annotated[bool, typer.Option("--check", help="Check for updates only")] = False,
+    check: Annotated[
+        bool, typer.Option("--check", help="Check for updates only")
+    ] = False,
     restart: Annotated[
         bool,
-        typer.Option("--restart", help="Restart service after update without prompting"),
+        typer.Option(
+            "--restart", help="Restart service after update without prompting"
+        ),
     ] = False,
     yes: Annotated[
         bool,
@@ -445,11 +472,17 @@ def _release_command(bump: str):
             raise typer.Exit(1) from exc
 
         typer.echo(f"Prepared {result.old_version} → {result.new_version} on {branch}")
-        typer.echo(f"Tag will be {result.tag} ({result.track} track) after merge + publish")
+        typer.echo(
+            f"Tag will be {result.tag} ({result.track} track) after merge + publish"
+        )
         if no_push:
-            typer.echo(f"Local only (--no-push). Push later: git push -u origin {branch}")
+            typer.echo(
+                f"Local only (--no-push). Push later: git push -u origin {branch}"
+            )
         else:
-            typer.echo(f"Pushed {branch}. Open a PR, merge, then: ./scripts/release.sh --publish --tag {result.tag}")
+            typer.echo(
+                f"Pushed {branch}. Open a PR, merge, then: ./scripts/release.sh --publish --tag {result.tag}"
+            )
 
     return command
 
@@ -501,7 +534,9 @@ def plugins_list() -> None:
         eps = importlib.metadata.entry_points().get(ENTRYPOINT_GROUP, [])
 
     if eps:
-        typer.echo("Registered entry points (not necessarily loaded if duplicate name):")
+        typer.echo(
+            "Registered entry points (not necessarily loaded if duplicate name):"
+        )
         for ep in eps:
             typer.echo(f"  {ep.name} = {ep.value}")
     else:
@@ -523,7 +558,9 @@ def serve(
     reload: Annotated[bool, typer.Option(help="Auto-reload on code changes")] = False,
     debug: Annotated[
         bool,
-        typer.Option("--debug", help="Enable debug logging, hooks history, and dev tools"),
+        typer.Option(
+            "--debug", help="Enable debug logging, hooks history, and dev tools"
+        ),
     ] = False,
 ) -> None:
     """Start the PA backend server."""
@@ -608,7 +645,9 @@ def _fleet_api_base(settings: Settings) -> str:
     return f"http://{host}:{settings.port}"
 
 
-def _fleet_api_post(settings: Settings, path: str, body: dict | None = None) -> dict | None:
+def _fleet_api_post(
+    settings: Settings, path: str, body: dict | None = None
+) -> dict | None:
     """POST to the local running server; return JSON or None if unreachable."""
     import httpx
 
@@ -682,7 +721,9 @@ def fleet_join_token() -> None:
         owner = owner_public_url(settings)
         typer.echo(f"Token: {token}")
         typer.echo(f"Expires: {join.expires_at.isoformat()}")
-        typer.echo("(server unreachable — wrote token to disk; live server will reload it)")
+        typer.echo(
+            "(server unreachable — wrote token to disk; live server will reload it)"
+        )
 
     typer.echo(f"Owner URL: {owner}")
     typer.echo("Join on remote:")
@@ -719,12 +760,16 @@ def fleet_join(
         typer.echo("Run pa init first.", err=True)
         raise typer.Exit(1)
 
-    owner_url = owner or os.environ.get("PA_FLEET_OWNER_URL", "") or settings.fleet_owner_url
+    owner_url = (
+        owner or os.environ.get("PA_FLEET_OWNER_URL", "") or settings.fleet_owner_url
+    )
     if not owner_url:
         typer.echo("Set --owner or PA_FLEET_OWNER_URL.", err=True)
         raise typer.Exit(1)
 
-    instance_url = url or settings.instance_url or f"http://{settings.host}:{settings.port}"
+    instance_url = (
+        url or settings.instance_url or f"http://{settings.host}:{settings.port}"
+    )
     instance_name = name or settings.instance_name
 
     async def _join():
@@ -805,7 +850,9 @@ def fleet_remove(
                 headers[HEADER_NAME] = csrf
             if settings.sync_token:
                 headers["Authorization"] = f"Bearer {settings.sync_token}"
-            resp = client.delete(f"{base}/api/fleet/instances/{instance_id}", headers=headers)
+            resp = client.delete(
+                f"{base}/api/fleet/instances/{instance_id}", headers=headers
+            )
             if resp.status_code < 400:
                 typer.echo(f"Removed {instance_id}")
                 return
@@ -848,7 +895,9 @@ def fleet_register(
     }
     data = _fleet_api_post(settings, "/api/fleet/register-remote", body)
     if data:
-        typer.echo(f"Registered {data.get('name')} ({data.get('instance_id')}) via server")
+        typer.echo(
+            f"Registered {data.get('name')} ({data.get('instance_id')}) via server"
+        )
         return
 
     fleet = FleetRegistry(settings.data_dir, settings.fleet_id)
@@ -872,7 +921,9 @@ def fleet_install_remote(
     name: Annotated[str, typer.Option(help="Remote instance name")],
     url: Annotated[str, typer.Option(help="Remote advertised URL (Tailscale)")],
     port: Annotated[int, typer.Option(help="SSH port")] = 22,
-    identity: Annotated[str | None, typer.Option("--identity", "-i", help="SSH identity file")] = None,
+    identity: Annotated[
+        str | None, typer.Option("--identity", "-i", help="SSH identity file")
+    ] = None,
     password: Annotated[
         bool,
         typer.Option("--ask-password", help="Prompt for SSH password (not stored)"),
@@ -953,7 +1004,9 @@ def realm_list() -> None:
         typer.echo(f"  {realm.id:<20} {realm.name or realm.id}")
     typer.echo("")
     for m in membership.list_memberships():
-        typer.echo(f"    {m.principal_type.value}:{m.principal_id} → {m.realm_id} ({m.role.value})")
+        typer.echo(
+            f"    {m.principal_type.value}:{m.principal_id} → {m.realm_id} ({m.role.value})"
+        )
 
 
 @realm_app.command("invite")
@@ -996,7 +1049,9 @@ def peers_list() -> None:
     if discovered:
         typer.echo("Discovered:")
         for p in discovered:
-            typer.echo(f"  {p.name} ({p.id}) fleet={p.fleet_id} realms={p.subscribed_realms}")
+            typer.echo(
+                f"  {p.name} ({p.id}) fleet={p.fleet_id} realms={p.subscribed_realms}"
+            )
 
 
 @project_app.command("list")
