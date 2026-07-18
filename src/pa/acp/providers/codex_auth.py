@@ -284,6 +284,13 @@ class CodexLoginJobStore:
                         "Codex login timed out; start a new login to retry.",
                     )
                     return
+                chunk = self._read_ready(
+                    proc, master_fd, selector, output_queue, timeout=0.25
+                )
+                if chunk:
+                    last_output_at = time.monotonic()
+                    capture = (capture + chunk)[-MAX_CAPTURE_CHARS:]
+                    self._consume_output(job, capture, chunk)
                 now = time.monotonic()
                 if last_output_at is None and now - started_at >= NO_OUTPUT_TIMEOUT_S:
                     _terminate_process(proc)
@@ -304,13 +311,6 @@ class CodexLoginJobStore:
                         "Codex did not provide a verification URL and code. Update the target Codex CLI or retry.",
                     )
                     return
-                chunk = self._read_ready(
-                    proc, master_fd, selector, output_queue, timeout=0.25
-                )
-                if chunk:
-                    last_output_at = time.monotonic()
-                    capture = (capture + chunk)[-MAX_CAPTURE_CHARS:]
-                    self._consume_output(job, capture, chunk)
             if output_thread is not None:
                 output_thread.join(timeout=1)
             while True:

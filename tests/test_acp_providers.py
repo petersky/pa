@@ -527,6 +527,37 @@ class AcpProviderTests(unittest.TestCase):
         self.assertEqual(chunk, "")
         self.assertLess(time.monotonic() - started, 0.5)
 
+    def test_queued_pipe_instructions_are_consumed_before_timeouts(self) -> None:
+        store = CodexLoginJobStore(self.data_dir)
+        job = store.create()
+
+        stream = MagicMock()
+        stream.read1.side_effect = [
+            b"Open https://auth.openai.com/device enter ABCD-EFGH",
+            b"",
+        ]
+        process = MagicMock()
+        process.stdout = stream
+        process.pid = 12345
+        process.poll.side_effect = [None, 0]
+        process.wait.return_value = 0
+        with (
+            patch("pa.acp.providers.codex_auth.os.name", "nt"),
+            patch(
+                "pa.acp.providers.codex_auth.subprocess.CREATE_NEW_PROCESS_GROUP",
+                0,
+                create=True,
+            ),
+            patch("pa.acp.providers.codex_auth.subprocess.Popen", return_value=process),
+            patch("pa.acp.providers.codex_auth.NO_OUTPUT_TIMEOUT_S", 0),
+            patch("pa.acp.providers.codex_auth.NO_INSTRUCTIONS_TIMEOUT_S", 0),
+        ):
+            store._run(job.job_id, "/custom/codex")
+
+        self.assertEqual(job.verification_url, "https://auth.openai.com/device")
+        self.assertEqual(job.user_code, "ABCD-EFGH")
+        self.assertEqual(job.state, LoginState.SUCCEEDED)
+
     @unittest.skipIf(__import__("os").name == "nt", "Unix PTY setup")
     def test_runner_deadline_refreshes_persisted_expiry(self) -> None:
         store = CodexLoginJobStore(self.data_dir)
