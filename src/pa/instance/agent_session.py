@@ -17,7 +17,6 @@ from pa.acp.client import (
     normalize_session_update,
     permission_cancelled,
     permission_selected,
-    usage_to_dict,
 )
 from pa.acp.providers.registry import DEFAULT_PROVIDER_ID
 from pa.acp.providers.resolve import resolve_agent_provider
@@ -153,7 +152,9 @@ class AgentSessionRuntime:
                 sub.get_nowait()
                 sub.put_nowait(event)
 
-    def _append_transcript(self, event_type: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def _append_transcript(
+        self, event_type: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
         self._seq += 1
         te = TranscriptEvent(
             session_id=self.session_id,
@@ -263,7 +264,9 @@ class AgentSessionRuntime:
                 url=str(browser_config.get("url") or "about:blank"),
                 width=browser_config.get("width"),
                 height=browser_config.get("height"),
-                device_scale_factor=float(browser_config.get("device_scale_factor") or 1),
+                device_scale_factor=float(
+                    browser_config.get("device_scale_factor") or 1
+                ),
             )
             self.agent_env.update(attachment.environment())
         wire_path = _session_dir(self.settings.data_dir, self.session_id) / "wire.jsonl"
@@ -324,7 +327,9 @@ class AgentSessionRuntime:
         device_scale_factor: float = 1,
     ) -> dict:
         if self.prompting:
-            raise RuntimeError("Wait for the current turn to finish before changing the browser attachment")
+            raise RuntimeError(
+                "Wait for the current turn to finish before changing the browser attachment"
+            )
         external_id = self.session.external_session_id
         if self.connection:
             await self.connection.disconnect()
@@ -412,11 +417,18 @@ class AgentSessionRuntime:
         self._drain_task = asyncio.create_task(self._drain_queue())
 
     async def _drain_queue(self) -> None:
-        while self._queue and not self._queue_paused and not self._closed and self.connected:
+        while (
+            self._queue
+            and not self._queue_paused
+            and not self._closed
+            and self.connected
+        ):
             if self.manager.quiescing:
                 break
             item = self._queue.pop(0)
-            self._append_transcript("queue_dequeued", {"id": item.id, "message": item.message})
+            self._append_transcript(
+                "queue_dequeued", {"id": item.id, "message": item.message}
+            )
             try:
                 await self._run_prompt(item)
             except Exception as exc:
@@ -459,7 +471,12 @@ class AgentSessionRuntime:
             self._queue.append(item)
         self._append_transcript(
             "queue_enqueued",
-            {"id": item.id, "message": message, "action": action, "position": 0 if action == "prepend" else len(self._queue) - 1},
+            {
+                "id": item.id,
+                "message": message,
+                "action": action,
+                "position": 0 if action == "prepend" else len(self._queue) - 1,
+            },
         )
         self._flush_transcript()
         if not self._queue_paused:
@@ -601,6 +618,23 @@ class AgentSessionRuntime:
                     },
                 )
                 self._flush_transcript()
+                if self.manager.completion_handler and item.card_id:
+                    try:
+                        result = self.manager.completion_handler(
+                            self.session_id,
+                            {
+                                "stop_reason": stop_reason,
+                                "usage": usage,
+                                "queued_prompt_id": item.id,
+                            },
+                        )
+                        if asyncio.iscoroutine(result):
+                            await result
+                    except Exception:
+                        # Completion delivery is an outbox operation. A transport
+                        # failure must never turn successful agent work into a
+                        # failed turn or lose the durable pending mutation.
+                        logger.exception("Failed to queue card completion")
                 return stop_reason
             finally:
                 self._finish_turn_state()
@@ -621,10 +655,19 @@ class AgentSessionRuntime:
         )
 
     def _notify_connection_lost(self, item: QueuedPrompt, exc: BaseException) -> None:
-        logger.warning("ACP connection lost for session %s during prompt %s: %s", self.session_id, item.id, exc)
+        logger.warning(
+            "ACP connection lost for session %s during prompt %s: %s",
+            self.session_id,
+            item.id,
+            exc,
+        )
         self._append_transcript(
             "connection_lost",
-            {"message": "Connection to the agent was lost while handling this prompt. It may or may not have reached the agent — if you don't see a response, you may want to retry.", "queued_prompt_id": item.id, "detail": str(exc)},
+            {
+                "message": "Connection to the agent was lost while handling this prompt. It may or may not have reached the agent — if you don't see a response, you may want to retry.",
+                "queued_prompt_id": item.id,
+                "detail": str(exc),
+            },
         )
         self._flush_transcript()
 
@@ -693,7 +736,9 @@ class AgentSessionRuntime:
                     if option_id:
                         break
                 if not option_id and options and isinstance(options[0], dict):
-                    option_id = options[0].get("optionId") or options[0].get("option_id")
+                    option_id = options[0].get("optionId") or options[0].get(
+                        "option_id"
+                    )
             if not option_id:
                 return False
             response = permission_selected(option_id)
@@ -734,7 +779,9 @@ class AgentSessionRuntime:
             raise RuntimeError("Session not connected")
         await self.connection.set_config(config_id, value)
         self.session = self.connection.session or self.session
-        self._append_transcript("config_changed", {"config_id": config_id, "value": value})
+        self._append_transcript(
+            "config_changed", {"config_id": config_id, "value": value}
+        )
         self._flush_transcript()
 
     def snapshot(self) -> dict[str, Any]:
@@ -752,12 +799,16 @@ class AgentSessionRuntime:
             "prompting": self.prompting,
             "queue_paused": self._queue_paused,
             "queue": [q.public_dict() for q in self._queue],
-            "in_flight": self._in_flight.model_dump(mode="json") if self._in_flight else None,
+            "in_flight": self._in_flight.model_dump(mode="json")
+            if self._in_flight
+            else None,
             "models": conn.models if conn else None,
             "modes": conn.modes if conn else None,
             "config_options": conn.config_options if conn else None,
             "metrics": self.session.metrics_json,
-            "turn_started_at": self._turn_started_at.isoformat() if self._turn_started_at else None,
+            "turn_started_at": self._turn_started_at.isoformat()
+            if self._turn_started_at
+            else None,
             "transcript": [e.model_dump(mode="json") for e in events],
             "transcript_page": {
                 "oldest_seq": events[0].seq if events else None,
@@ -781,7 +832,8 @@ class AgentSessionRuntime:
             external_session_id=self.session.external_session_id,
             agent_name=self.session.agent_name,
             status="idle",
-            cwd=self.session.cwd or (self.connection.session_cwd if self.connection else None),
+            cwd=self.session.cwd
+            or (self.connection.session_cwd if self.connection else None),
             title=self.session.title,
             label=self.session.label,
             model_id=self.session.model_id,
@@ -829,6 +881,9 @@ class AgentSessionManager:
         self._default_label = "default"
         self._lock = asyncio.Lock()
         self.browser = BrowserManager(settings.data_dir)
+        self.completion_handler: (
+            Callable[[str, dict[str, Any]], Awaitable[Any] | Any] | None
+        ) = None
 
     # Compatibility aliases used by existing call sites
     @property
@@ -858,9 +913,14 @@ class AgentSessionManager:
 
     def progress(self) -> QuiesceProgress:
         active = sum(1 for rt in self._runtimes.values() if rt.connected)
-        queued = sum(len(rt._queue) + (1 if rt._in_flight else 0) for rt in self._runtimes.values())
+        queued = sum(
+            len(rt._queue) + (1 if rt._in_flight else 0)
+            for rt in self._runtimes.values()
+        )
         return QuiesceProgress(
-            phase="quiescing" if self._quiescing else ("prompting" if self.prompting else "idle"),
+            phase="quiescing"
+            if self._quiescing
+            else ("prompting" if self.prompting else "idle"),
             connected=self.connected,
             prompting=self.prompting,
             quiescing=self._quiescing,
@@ -909,7 +969,9 @@ class AgentSessionManager:
             if user_store.path.exists():
                 return bool(user_store.load().agent_auto_approve_permissions)
         return bool(
-            get_preferences_store(self.settings.data_dir).load().agent_auto_approve_permissions
+            get_preferences_store(self.settings.data_dir)
+            .load()
+            .agent_auto_approve_permissions
         )
 
     def set_auto_approve(
@@ -1015,7 +1077,9 @@ class AgentSessionManager:
             # Force recreate
             await runtime.close()
             self._runtimes.pop(runtime.session_id, None)
-            runtime = await self.create_session(label=self._default_label, title="Instance agent")
+            runtime = await self.create_session(
+                label=self._default_label, title="Instance agent"
+            )
             self._last_error = None
             return runtime.connected
         except Exception as exc:
@@ -1053,10 +1117,16 @@ class AgentSessionManager:
             provider_override=provider_override,
         )
         # When resuming an existing session, keep its provider unless explicitly overridden.
-        if existing and existing.agent_name and existing.agent_name not in {
-            "instance",
-            "",
-        } and not provider_override:
+        if (
+            existing
+            and existing.agent_name
+            and existing.agent_name
+            not in {
+                "instance",
+                "",
+            }
+            and not provider_override
+        ):
             provider_id = existing.agent_name
             from pa.acp.providers.registry import get_provider
             from pa.acp.providers.resolve import _spawn_overrides
@@ -1142,7 +1212,11 @@ class AgentSessionManager:
     ) -> AgentSessionRuntime:
         async with self._lock:
             for rt in self._runtimes.values():
-                if rt.session.label == self._default_label and rt.connected and not rt._closed:
+                if (
+                    rt.session.label == self._default_label
+                    and rt.connected
+                    and not rt._closed
+                ):
                     return rt
             existing = self.store.get_session_by_label(self._default_label)
             if existing and existing.id in self._runtimes:
@@ -1285,13 +1359,17 @@ class AgentSessionManager:
         self._quiescing = True
         self._accepting = False
 
-        async def _emit(phase: str, *, done: bool = False, error: str | None = None) -> None:
+        async def _emit(
+            phase: str, *, done: bool = False, error: str | None = None
+        ) -> None:
             progress = self.progress()
             progress.phase = phase
             progress.done = done
             progress.error = error
-            progress.message = self._status_message() if not done else (
-                "ACP sessions quiesced" if not error else error
+            progress.message = (
+                self._status_message()
+                if not done
+                else ("ACP sessions quiesced" if not error else error)
             )
             if on_progress:
                 result = on_progress(progress)
@@ -1302,7 +1380,9 @@ class AgentSessionManager:
         deadline = asyncio.get_running_loop().time() + timeout
         while any(rt.prompting for rt in self._runtimes.values()):
             if asyncio.get_running_loop().time() >= deadline:
-                await _emit("timeout", done=True, error="Timed out waiting for ACP turn")
+                await _emit(
+                    "timeout", done=True, error="Timed out waiting for ACP turn"
+                )
                 raise TimeoutError("Timed out waiting for active ACP session to finish")
             await _emit("waiting")
             await asyncio.sleep(_QUIESCE_POLL_SECONDS)

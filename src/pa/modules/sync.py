@@ -87,7 +87,22 @@ def sync_push(request: Request, body: dict) -> dict:
             elif log.is_ancestor(head_hash, local_head):
                 head_hash = local_head
             else:
-                raise HTTPException(status_code=409, detail="Diverged heads; merge required")
+                compatible, health = log.compatible_histories(local_head, head_hash)
+                if not compatible:
+                    raise HTTPException(
+                        status_code=409,
+                        detail={
+                            "code": "sync_conflict",
+                            "message": "Diverged histories modify incompatible fields; operator resolution required",
+                            "realm_id": realm_id,
+                            "local_head": local_head,
+                            "remote_head": head_hash,
+                            **health,
+                        },
+                    )
+                merge = log.merge_heads(realm_id, local_head, head_hash, "sync:auto")
+                head_hash = merge.hash
+                store.rebuild_from_log(realm_id)
         else:
             log.advance_ref(realm_id, head_hash)
             store.rebuild_from_log(realm_id)
@@ -99,7 +114,9 @@ def sync_push(request: Request, body: dict) -> dict:
 async def sync_relay(request: Request, body: dict) -> dict:
     settings = request.app.state.ctx.settings
     if not settings.relay_enabled:
-        raise HTTPException(status_code=403, detail="Relay not enabled on this instance")
+        raise HTTPException(
+            status_code=403, detail="Relay not enabled on this instance"
+        )
     target_url = body.get("target_url", "")
     if not target_url:
         raise HTTPException(status_code=400, detail="target_url required")
@@ -110,7 +127,9 @@ async def sync_relay(request: Request, body: dict) -> dict:
         raise HTTPException(status_code=400, detail="Invalid target_url")
     host = parsed.hostname or ""
     if host in ("127.0.0.1", "localhost", "::1") or host.startswith("169.254."):
-        raise HTTPException(status_code=403, detail="Relay to local/metadata hosts is not allowed")
+        raise HTTPException(
+            status_code=403, detail="Relay to local/metadata hosts is not allowed"
+        )
     import httpx
 
     headers = {}
@@ -140,7 +159,6 @@ async def sync_conflicts(request: Request, realm: str | None = None) -> dict:
     log: EventLog = request.app.state.ctx.require_service("event_log")
     local_head = log.get_head(realm_id)
     peer_heads: dict[str, str | None] = {settings.instance_id: local_head}
-    registry = request.app.state.ctx.require_service("peer_registry")
     headers = {}
     if settings.sync_token:
         headers["Authorization"] = f"Bearer {settings.sync_token}"
@@ -154,7 +172,9 @@ async def sync_conflicts(request: Request, realm: str | None = None) -> dict:
                 resp.raise_for_status()
                 for ref in resp.json():
                     if ref.get("realm_id") == realm_id:
-                        peer_heads[ref.get("instance_id", peer_url)] = ref.get("head_hash")
+                        peer_heads[ref.get("instance_id", peer_url)] = ref.get(
+                            "head_hash"
+                        )
             except httpx.HTTPError:
                 peer_heads[peer_url] = None
     unique_heads = {h for h in peer_heads.values() if h}

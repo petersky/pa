@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import threading
+from collections import defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Callable
@@ -48,7 +49,9 @@ class EventLog:
             if "/" not in key:
                 continue
             realm_id, instance_id = key.split("/", 1)
-            refs.append(SyncRef(realm_id=realm_id, instance_id=instance_id, head_hash=head))
+            refs.append(
+                SyncRef(realm_id=realm_id, instance_id=instance_id, head_hash=head)
+            )
         return refs
 
     def append_event(
@@ -127,28 +130,98 @@ class EventLog:
         head_b: str,
         author_principal: str,
     ) -> SyncCommit:
+        parents = sorted({head_a, head_b})
+        merge_id = object_hash("|".join(parents).encode())
         merge_event = CardEvent(
+            id=f"merge-{merge_id}",
             type=EventType.CARD_UPDATED,
             realm_id=realm_id,
-            author_principal=author_principal,
-            author_instance=self.instance_id,
-            payload={"merge": True, "parents": [head_a, head_b]},
+            author_principal="sync:auto",
+            author_instance="sync-merge",
+            payload={"merge": True, "parents": parents},
+            timestamp=datetime(1970, 1, 1, tzinfo=UTC),
         )
         event_hash = self.store.put_json(merge_event.model_dump(mode="json"))
         commit = SyncCommit(
             hash="",
             realm_id=realm_id,
-            instance_id=self.instance_id,
-            parent_hashes=sorted({head_a, head_b}),
+            instance_id="sync-merge",
+            parent_hashes=parents,
             event_hashes=[event_hash],
-            author_principal=author_principal,
-            timestamp=datetime.now(UTC),
+            author_principal="sync:auto",
+            timestamp=datetime(1970, 1, 1, tzinfo=UTC),
         )
         commit.hash = self.store.put_json(commit.model_dump(mode="json"))
         with self._lock:
             self._refs[self.ref_key(realm_id)] = commit.hash
             self._save_refs()
         return commit
+
+    def compatible_histories(self, head_a: str, head_b: str) -> tuple[bool, dict]:
+        """Detect field-level conflicts in the two branches since their common base."""
+        ancestors_a = self._ancestors(head_a)
+        ancestors_b = self._ancestors(head_b)
+        common = ancestors_a & ancestors_b
+
+        def changes(head: str) -> dict[tuple[str, str], dict[str, object]]:
+            result: dict[tuple[str, str], dict[str, object]] = defaultdict(dict)
+            seen: set[str] = set()
+            stack = [head]
+            while stack:
+                commit_hash = stack.pop()
+                if commit_hash in seen or commit_hash in common:
+                    continue
+                seen.add(commit_hash)
+                commit = self.get_commit(commit_hash)
+                if not commit:
+                    continue
+                stack.extend(commit.parent_hashes)
+                for event_hash in commit.event_hashes:
+                    event = self.get_event(event_hash)
+                    if not event or event.payload.get("merge"):
+                        continue
+                    identity = event.card_id or event.project_id
+                    if not identity:
+                        continue
+                    entity = "card" if event.card_id else "project"
+                    if event.type in {
+                        EventType.CARD_DELETED,
+                        EventType.PROJECT_ARCHIVED,
+                    }:
+                        result[(entity, identity)].setdefault(
+                            "__terminal__", event.type.value
+                        )
+                    for field, value in event.payload.items():
+                        result[(entity, identity)].setdefault(field, value)
+            return result
+
+        left, right = changes(head_a), changes(head_b)
+        conflicts = []
+        for entity in sorted(set(left) & set(right)):
+            if "__terminal__" in left[entity] or "__terminal__" in right[entity]:
+                if left[entity] != right[entity]:
+                    conflicts.append({"entity": entity, "field": "__terminal__"})
+                    continue
+            for field in sorted(set(left[entity]) & set(right[entity])):
+                if left[entity][field] != right[entity][field]:
+                    conflicts.append({"entity": entity, "field": field})
+        return not conflicts, {
+            "conflicts": conflicts,
+            "common_ancestors": sorted(common),
+        }
+
+    def _ancestors(self, head: str) -> set[str]:
+        result: set[str] = set()
+        stack = [head]
+        while stack:
+            current = stack.pop()
+            if current in result:
+                continue
+            result.add(current)
+            commit = self.get_commit(current)
+            if commit:
+                stack.extend(commit.parent_hashes)
+        return result
 
     def advance_ref(self, realm_id: str, commit_hash: str) -> None:
         with self._lock:

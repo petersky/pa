@@ -17,7 +17,6 @@ from pa.domain.store import get_store
 
 if TYPE_CHECKING:
     from pa.instance.agent_session import AgentSessionManager
-    from pa.network.registry import PeerRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +33,9 @@ class Kernel:
         self.registry = registry
 
     @classmethod
-    def boot(cls, *, settings: Settings | None = None, load_modules: bool = True) -> Kernel:
+    def boot(
+        cls, *, settings: Settings | None = None, load_modules: bool = True
+    ) -> Kernel:
         settings = settings or get_settings()
         configure_logging(settings)
 
@@ -76,7 +77,9 @@ class Kernel:
 
         event_log = self.ctx.services.get("event_log")
         if event_log:
-            lease_mgr = LeaseManager(self.ctx.store, event_log, self.ctx.settings.instance_id)
+            lease_mgr = LeaseManager(
+                self.ctx.store, event_log, self.ctx.settings.instance_id
+            )
             self.ctx.register_service("lease_manager", lease_mgr)
             fleet: FleetRegistry = self.ctx.require_service("fleet_registry")
             peer_table: PeerTable = self.ctx.require_service("peer_table")
@@ -104,10 +107,17 @@ class Kernel:
         )
 
     async def shutdown(self, app: FastAPI) -> None:
+        import asyncio
+
         await self.ctx.hooks.emit("app.shutdown", app=app, ctx=self.ctx)
 
         for entry in reversed(self.registry.modules):
-            await entry.module.on_shutdown(app, self.ctx)
+            try:
+                await asyncio.wait_for(
+                    entry.module.on_shutdown(app, self.ctx), timeout=10.0
+                )
+            except asyncio.TimeoutError:
+                logger.error("Timed out shutting down module %s", entry.module.name)
 
         agent: AgentSessionManager | None = self.ctx.services.get("instance_agent")
         if agent:
@@ -116,7 +126,9 @@ class Kernel:
             from pa.instance.quiesce import consume_skip_quiesce
 
             skip = consume_skip_quiesce(self.ctx.settings.data_dir)
-            quiesce = (not skip) and os.environ.get("PA_ACP_QUIESCE", "1").strip().lower() not in {
+            quiesce = (not skip) and os.environ.get(
+                "PA_ACP_QUIESCE", "1"
+            ).strip().lower() not in {
                 "0",
                 "false",
                 "no",
@@ -124,10 +136,15 @@ class Kernel:
             }
             if quiesce and (agent.connected or agent.prompting):
                 try:
-                    await agent.quiesce(reason="shutdown")
+                    await asyncio.wait_for(
+                        agent.quiesce(reason="shutdown", timeout=20.0), timeout=25.0
+                    )
                 except Exception:
                     logger.exception("ACP quiesce during shutdown failed")
-            await agent.stop()
+            try:
+                await asyncio.wait_for(agent.stop(), timeout=10.0)
+            except asyncio.TimeoutError:
+                logger.error("Timed out stopping ACP/browser runtimes")
 
     def build_app(self) -> FastAPI:
         from contextlib import asynccontextmanager
@@ -163,12 +180,18 @@ class Kernel:
         app.state.templates.env.globals["asset_version"] = assets.version
 
         if DEFAULT_STATIC.exists():
-            app.mount("/static", StaticFiles(directory=str(DEFAULT_STATIC)), name="static")
+            app.mount(
+                "/static", StaticFiles(directory=str(DEFAULT_STATIC)), name="static"
+            )
 
         for entry in self.registry.modules:
             for url_path, fs_path in entry.module.static_mounts():
                 if Path(fs_path).exists():
-                    app.mount(url_path, StaticFiles(directory=fs_path), name=url_path.strip("/"))
+                    app.mount(
+                        url_path,
+                        StaticFiles(directory=fs_path),
+                        name=url_path.strip("/"),
+                    )
 
         for entry in self.registry.modules:
             for prefix, router, tags in entry.module.api_routers():
@@ -188,8 +211,6 @@ class Kernel:
         return app
 
     def _install_auth_middleware(self, app: FastAPI) -> None:
-        from starlette.middleware.base import BaseHTTPMiddleware
-
         from pa.auth.middleware import AuthMiddleware
         from pa.auth.sessions import SessionManager
         from pa.auth.users import UserDirectory
@@ -250,7 +271,9 @@ class Kernel:
 
             if path.startswith("/static/"):
                 if request.query_params.get("v"):
-                    response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+                    response.headers["Cache-Control"] = (
+                        "public, max-age=31536000, immutable"
+                    )
                 else:
                     response.headers["Cache-Control"] = "no-cache"
             elif "text/html" in content_type:
