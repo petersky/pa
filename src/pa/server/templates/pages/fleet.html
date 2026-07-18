@@ -31,7 +31,7 @@
     {% if fleet_instances %}
     <table class="data-table" id="pa-fleet-instances">
       <thead>
-        <tr><th>Name</th><th>URL</th><th>Zone</th><th>Capabilities</th><th>ACP providers</th><th>Status</th><th></th></tr>
+        <tr><th>Name</th><th>URL</th><th>Zone</th><th>Capabilities</th><th>Version</th><th>Available</th><th>ACP providers</th><th>Status</th><th></th></tr>
       </thead>
       <tbody>
         {% for inst in fleet_instances %}
@@ -40,6 +40,8 @@
           <td><a href="{{ inst.url }}" target="_blank" rel="noopener">{{ inst.url }}</a></td>
           <td>{{ inst.zone }}</td>
           <td>{{ inst.capabilities | join(', ') }}</td>
+          <td data-fleet-current-version><span class="muted small">Checking…</span></td>
+          <td data-fleet-available-version><span class="muted small">Checking…</span></td>
           <td data-fleet-providers>
             <span class="muted small">Checking…</span>
           </td>
@@ -48,6 +50,7 @@
           </td>
           <td>
             {% if inst.instance_id != settings.instance_id %}
+            <button type="button" class="ghost small" data-fleet-update="{{ inst.instance_id }}" data-instance-name="{{ inst.name }}">Update</button>
             <button type="button" class="ghost danger small" data-fleet-remove="{{ inst.instance_id }}">Remove</button>
             {% else %}
             <span class="muted small">local</span>
@@ -58,6 +61,22 @@
       </tbody>
     </table>
     <p class="muted small" id="pa-fleet-live-status" aria-live="polite">Checking instance health…</p>
+    <div class="panel-inset stack" id="pa-fleet-update-panel" hidden>
+      <div class="panel-header"><h3>Fleet update</h3></div>
+      <form class="stack" id="pa-fleet-update-form">
+        <input type="hidden" name="instance_id">
+        <p id="pa-fleet-update-confirm"></p>
+        <label>Channel
+          <select name="channel"><option value="release">release</option><option value="beta">beta</option><option value="dev">dev</option></select>
+        </label>
+        <label>Target version (optional) <input name="target_version" placeholder="latest on channel"></label>
+        <label>Quiesce timeout (seconds) <input name="quiesce_timeout" type="number" min="1" max="3600" value="300"></label>
+        <label><input name="force" type="checkbox"> Continue if agent drain times out</label>
+        <div class="form-actions"><button class="primary" type="submit">Confirm update</button><button class="ghost" type="button" data-fleet-update-cancel>Cancel</button></div>
+      </form>
+      <pre id="pa-fleet-update-log" aria-live="polite"></pre>
+      <p class="muted small" id="pa-fleet-update-status"></p>
+    </div>
     {% else %}
     <p class="empty">No fleet instances registered.</p>
     {% endif %}

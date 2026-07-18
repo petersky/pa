@@ -440,6 +440,10 @@ class FleetHealthParallelTests(unittest.IsolatedAsyncioTestCase):
                         200,
                         [{"id": host, "display_name": host.upper(), "available": True}],
                     )
+                if url.endswith("/api/status"):
+                    return FakeResp(200, {"version": "0.2.5"})
+                if url.endswith("/api/fleet/peer-update-check"):
+                    return FakeResp(200, {"available_version": "0.2.6", "upgrade_available": True})
                 return FakeResp(404)
 
             mock_client = MagicMock()
@@ -458,8 +462,10 @@ class FleetHealthParallelTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(by_id["b"]["healthy"])
             self.assertEqual(by_id["a"]["providers"][0]["id"], "a")
             self.assertEqual(by_id["b"]["providers"][0]["id"], "b")
-            # health + providers for each instance
-            self.assertEqual(mock_client.get.await_count, 4)
+            self.assertEqual(by_id["a"]["current_version"], "0.2.5")
+            self.assertEqual(by_id["b"]["available_version"], "0.2.6")
+            # health + providers + status + update check for each instance
+            self.assertEqual(mock_client.get.await_count, 8)
 
 
 class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
