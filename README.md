@@ -123,6 +123,7 @@ Environment variables (prefix `PA_`):
 | `PA_RELEASE_TRACK` | `release` | Update track: `release`, `beta`, `alpha`, `dev`, or `pypi` |
 | `PA_UPDATE_CHANNEL` | *(alias)* | Legacy alias for `PA_RELEASE_TRACK` |
 | `PA_UPDATE_REPO` | `petersky/pa` | GitHub repo for release checks |
+| `PA_UV_BIN` | *(auto-detected)* | Absolute `uv` path override for install/update in sparse service or SSH environments |
 
 ## Theming
 
