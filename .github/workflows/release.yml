@@ -132,7 +132,7 @@ jobs:
             git commit -m "chore: update channels.json for ${TAG}"
             git push -u origin "${BRANCH}"
           fi
-          if [[ "$(git rev-list --count origin/main..HEAD)" -gt 0 ]] && \
+          if ! git diff --quiet origin/main HEAD -- channels.json && \
              ! gh pr list --base main --head "${BRANCH}" --state open --json number --jq 'length > 0' | grep -qx true; then
             gh pr create \
               --base main \
@@ -205,7 +205,7 @@ jobs:
             git commit -m "chore: set channels.json ${TRACK}=${REF}"
             git push -u origin "${BRANCH}"
           fi
-          if [[ "$(git rev-list --count origin/main..HEAD)" -gt 0 ]] && \
+          if ! git diff --quiet origin/main HEAD -- channels.json && \
              ! gh pr list --base main --head "${BRANCH}" --state open --json number --jq 'length > 0' | grep -qx true; then
             gh pr create \
               --base main \
