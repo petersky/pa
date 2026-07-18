@@ -704,7 +704,8 @@
     Array.from(this.els.messages.children).forEach(function (child) {
       if (
         !child.hasAttribute("data-acw-placeholder") &&
-        !child.hasAttribute("data-acw-load-older")
+        !child.hasAttribute("data-acw-load-older") &&
+        !child.hasAttribute("data-acw-load-older-status")
       ) child.remove();
     });
     this.streaming = {};

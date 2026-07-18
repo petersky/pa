@@ -331,6 +331,7 @@ setImmediate(function () {
 
         script = (template_root.parent / "static" / "js" / "agent-chat.js").read_text()
         self.assertIn('role === "user" || role === "agent"', script)
+        self.assertIn('!child.hasAttribute("data-acw-load-older-status")', script)
         self.assertIn("newSessionSnapshotForProvider", script)
         self.assertIn('provider.addEventListener("change"', script)
         self.assertIn("populateSelect", script)
