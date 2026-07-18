@@ -13,7 +13,6 @@ from pydantic import BaseModel, Field, model_validator
 
 from pa.auth.middleware import get_principal_id
 from pa.core.contracts import Module
-from pa.core.context import AppContext
 from pa.core.preferences import get_preferences_store
 from pa.instance.agent_session import TRANSCRIPT_WINDOW_LIMIT
 from pa.instance.quiesce import ImageAttachment, MAX_TOTAL_IMAGE_BYTES
@@ -31,6 +30,18 @@ def _user_id(request: Request) -> str | None:
 
 def _manager(request: Request):
     return request.app.state.ctx.require_service("instance_agent")
+
+
+def _session_pr_watches(request: Request, session) -> list[dict[str, Any]]:
+    store = request.app.state.ctx.services.get("pr_supervisor_store")
+    if not store:
+        return []
+    return [
+        watch.model_dump(mode="json")
+        for watch in store.list_watches(include_retired=True)
+        if watch.originating_session_id == session.id
+        or (watch.card_id and watch.card_id == session.card_id)
+    ]
 
 
 def _runtime_or_404(request: Request, session_id: str):
@@ -270,6 +281,7 @@ def list_agent_session_history(
             **session.model_dump(mode="json"),
             "instance_id": settings.instance_id,
             "instance_name": settings.instance_name,
+            "pr_watches": _session_pr_watches(request, session),
             "live": bool(
                 (runtime := mgr.get(session.id))
                 and not getattr(runtime, "_closed", False)
@@ -340,6 +352,7 @@ def get_agent_session_history(
             "name": settings.instance_name,
         },
         "live": bool(runtime and not getattr(runtime, "_closed", False)),
+        "pr_watches": _session_pr_watches(request, session),
         "events": [event.model_dump(mode="json") for event in events],
         "page": page,
     }

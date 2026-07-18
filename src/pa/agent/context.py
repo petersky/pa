@@ -43,6 +43,21 @@ def build_project_context_prefix(project: Project | None, card: Card | None = No
         if project.repos:
             repos = ", ".join(r.url for r in project.repos)
             parts.append(f"\n## Repositories\n{repos}")
+        pr_policy = dict((project.tool_config or {}).get("pr_policy") or {})
+        ready = pr_policy.get("ready_by_default", True)
+        notify = pr_policy.get("auto_notify", True)
+        merge = pr_policy.get("agent_merge_on_green", True)
+        parts.append(
+            "\n## Pull request lifecycle\n"
+            f"- Open card/project pull requests {'ready for review' if ready else 'according to explicit policy'} by default; "
+            "use draft only when the user explicitly requests it.\n"
+            "- Register the PR with PA's durable PR supervisor and preserve the "
+            "originating session, instance, repository, card, and worktree context.\n"
+            f"- Executor notifications are {'enabled' if notify else 'disabled'} for this project.\n"
+            f"- Agent merge-on-green is {'enabled' if merge else 'disabled'}; never merge until "
+            "the supervisor reports a stable green head and you independently "
+            "revalidate every required signal."
+        )
     if card:
         parts.append(f"\n# Card: {card.title}")
         if card.body:

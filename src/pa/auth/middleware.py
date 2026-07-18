@@ -19,6 +19,7 @@ PUBLIC_PATHS = {
     "/api/health",
     "/api/auth/login",
     "/api/fleet/join",
+    "/api/pr-supervisor/webhook/github",
     "/login",
 }
 
@@ -43,6 +44,7 @@ FLEET_INSTANCE_ROUTES = {
 CSRF_EXEMPT_PATHS = {
     "/api/fleet/join",
     "/api/auth/login",
+    "/api/pr-supervisor/webhook/github",
     "/login",
 }
 
@@ -63,6 +65,10 @@ def _is_sync_path(path: str) -> bool:
 
 def _is_fleet_instance_route(request: Request) -> bool:
     if (request.method, request.url.path) in FLEET_INSTANCE_ROUTES:
+        return True
+    if request.url.path.startswith("/api/pr-supervisor/") and request.url.path != (
+        "/api/pr-supervisor/webhook/github"
+    ):
         return True
     if request.method == "GET" and re.fullmatch(
         r"/api/fleet/peer-update/[A-Za-z0-9-]{1,80}", request.url.path

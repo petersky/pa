@@ -1,0 +1,95 @@
+{% from "macros/layout.html" import page_layout %}
+
+{% set main %}
+<div class="panel">
+  <div class="panel-header">
+    <div>
+      <h2>Pull request supervisor</h2>
+      <p class="muted">Durable lifecycle watches run independently of advisor sessions.</p>
+    </div>
+    <span class="badge">{{ capability.state }}</span>
+  </div>
+
+  <div class="panel-inset">
+    <h3>GitHub capability</h3>
+    <p>
+      Instance {{ capability.instance_id }} ·
+      {% if capability.authenticated %}authenticated{% else %}not authenticated{% endif %} ·
+      webhook {% if capability.webhook_configured %}configured{% else %}not configured{% endif %}
+    </p>
+    {% if capability.detail %}<p class="muted">{{ capability.detail }}</p>{% endif %}
+    {% if capability.allowed_repositories %}
+    <p class="muted">Allowed: {{ capability.allowed_repositories | join(', ') }}</p>
+    {% endif %}
+  </div>
+
+  <div class="panel-inset">
+    <h3>Operations</h3>
+    <p class="muted">
+      Active watches {{ metrics.get('active_watches', 0) }} ·
+      polls {{ metrics.get('polls', 0) }} ·
+      prompts {{ metrics.get('executor_prompts', 0) }} ·
+      errors {{ metrics.get('poll_errors', 0) + metrics.get('dispatch_errors', 0) }}
+    </p>
+  </div>
+
+  {% if watch %}
+  <div class="panel">
+    <div class="panel-header">
+      <h3><a href="{{ watch.pr_url }}" target="_blank" rel="noopener">{{ watch.repository }}#{{ watch.pr_number }}</a></h3>
+      <span class="badge">{{ watch.status.value }}</span>
+    </div>
+    <p class="muted">
+      Realm {{ watch.realm_id }} · card {{ watch.card_id or 'unlinked' }} ·
+      project {{ watch.project_id or 'unlinked' }}
+    </p>
+    <p>
+      Head {{ watch.head_sha or 'unknown' }} · base {{ watch.base_branch or 'unknown' }} ·
+      owner {{ watch.owner_instance_id or 'unassigned' }} · fence {{ watch.fence_token }}
+    </p>
+    {% if watch.last_error %}<p class="danger">{{ watch.last_error }}</p>{% endif %}
+    <h4>Audit history</h4>
+    {% if watch_events %}
+    <ul class="item-list">
+      {% for event in watch_events %}
+      <li class="item">
+        <span class="badge">{{ event.event_type }}</span>
+        <span>{{ event.created_at }}</span>
+        {% if event.head_sha %}<span class="muted">{{ event.head_sha[:12] }}</span>{% endif %}
+        {% if event.payload.get('reasons') %}
+        <ul>{% for reason in event.payload.get('reasons') %}<li>{{ reason }}</li>{% endfor %}</ul>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="empty">No audit events yet.</p>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <h3>Watches</h3>
+  {% if watches %}
+  <ul class="item-list">
+    {% for item in watches %}
+    <li class="item">
+      <a href="/pull-requests?realm={{ active_realm }}&watch={{ item.id }}">
+        <h3>{{ item.repository }}#{{ item.pr_number }}</h3>
+      </a>
+      <span class="badge">{{ item.status.value }}</span>
+      <p class="muted">
+        {{ item.state.get('supervisor_state', 'waiting for observation') }} ·
+        head {{ (item.head_sha or 'unknown')[:12] }} ·
+        updated {{ item.updated_at }}
+      </p>
+      {% if item.last_error %}<p class="danger">{{ item.last_error }}</p>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="empty">No pull requests are being supervised.</p>
+  {% endif %}
+</div>
+{% endset %}
+
+{{ page_layout(main=main, class='page-pr-supervisor') }}

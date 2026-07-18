@@ -89,11 +89,22 @@ def _agent_context(request: Request) -> dict:
     runtimes = agent.list_runtimes() if hasattr(agent, "list_runtimes") else []
     live = [rt.session for rt in runtimes if not getattr(rt, "_closed", False)]
     default = next((s for s in live if s.label == "default"), live[0] if live else None)
+    sessions = live or ctx.store.list_sessions()[:8]
+    watches_by_session: dict[str, list] = {session.id: [] for session in sessions}
+    supervisor_store = ctx.services.get("pr_supervisor_store")
+    if supervisor_store:
+        for watch in supervisor_store.list_watches(include_retired=True):
+            for session in sessions:
+                if watch.originating_session_id == session.id or (
+                    watch.card_id and watch.card_id == session.card_id
+                ):
+                    watches_by_session[session.id].append(watch)
     return {
         "agent_connected": agent.connected,
         "agent_enabled": ctx.settings.agent_enabled,
-        "sessions": live or ctx.store.list_sessions()[:8],
+        "sessions": sessions,
         "session_id": default.id if default else "",
+        "pr_watches_by_session": watches_by_session,
     }
 
 
