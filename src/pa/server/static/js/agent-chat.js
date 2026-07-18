@@ -1364,27 +1364,41 @@
     const currentMode = (snap.session && snap.session.mode_id) || (snap.modes && (snap.modes.currentModeId || snap.modes.current_mode_id));
     const requests = [];
     if (this.els.model && this.els.model.value && this.els.model.value !== currentModel) {
-      requests.push(function () { return self.putOption("model", { model_id: self.els.model.value }); });
+      const modelId = this.els.model.value;
+      requests.push(function () { return self.putOption("model", { model_id: modelId }); });
     }
     if (this.els.mode && this.els.mode.value && this.els.mode.value !== currentMode) {
-      requests.push(function () { return self.putOption("mode", { mode_id: self.els.mode.value }); });
+      const modeId = this.els.mode.value;
+      requests.push(function () { return self.putOption("mode", { mode_id: modeId }); });
     }
     if (this.els.config) {
       this.els.config.querySelectorAll("[data-acw-config-id]").forEach(function (input) {
         const original = input.dataset.acwOriginal;
         const value = input.type === "checkbox" ? input.checked : input.value;
         if (String(value) !== String(original)) {
-          requests.push(function () { return self.putOption("config", { config_id: input.dataset.acwConfigId, value: value }); });
+          const configId = input.dataset.acwConfigId;
+          requests.push(function () { return self.putOption("config", { config_id: configId, value: value }); });
         }
       });
     }
+    if (!requests.length) {
+      this.resetSettingsDraft();
+      if (this.els.settingsStatus) this.els.settingsStatus.textContent = "No changes to apply.";
+      return Promise.resolve();
+    }
     this.setSettingsPending(true);
-    return requests.reduce(function (promise, request) { return promise.then(request); }, Promise.resolve())
+    const errors = [];
+    return requests.reduce(function (promise, request) {
+      return promise.then(function () {
+        return request().catch(function (error) { errors.push(error); });
+      });
+    }, Promise.resolve())
       .then(function () { return self.api("/sessions/" + self.sessionId); })
       .then(function (fresh) {
         self.settingsDirty = false;
         self.applyOptionSnapshot(fresh);
         refreshSessionList(self.sessionId);
+        if (errors.length) throw new Error(errors.map(function (error) { return error.message; }).join("; "));
         if (self.els.settingsStatus) {
           self.els.settingsStatus.classList.remove("is-error");
           self.els.settingsStatus.textContent = "Applied successfully.";
