@@ -59,6 +59,7 @@ class FleetUpdateJob(BaseModel):
     phase: UpdatePhase = UpdatePhase.PENDING
     current_version: str | None = None
     available_version: str | None = None
+    expected_version: str | None = None
     verified_version: str | None = None
     error: str | None = None
     events: list[dict[str, Any]] = Field(default_factory=list)
@@ -170,62 +171,132 @@ async def run_update_job(
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(20.0, read=max(job.quiesce_timeout + 10, 30))
         ) as client:
-            store.event(
-                job, UpdatePhase.PREFLIGHT, "Checking peer health and current version"
-            )
-            status = await _peer_json(client, "GET", f"{base}/api/status", settings)
-            if status.get("instance_id") != job.instance_id:
-                raise RuntimeError(
-                    "Peer identity did not match the registered fleet instance"
-                )
-            job.current_version = str(status.get("version") or "") or None
-            store.persist(job)
+            if job.phase == UpdatePhase.PENDING:
+                status = await _peer_json(client, "GET", f"{base}/api/status", settings)
+                if status.get("instance_id") != job.instance_id:
+                    raise RuntimeError(
+                        "Peer identity did not match the registered fleet instance"
+                    )
+                job.current_version = str(status.get("version") or "") or None
+                if not job.current_version:
+                    raise RuntimeError("Peer did not report its current version")
 
-            store.event(job, UpdatePhase.QUIESCING, "Draining active agent sessions")
-            quiesce = await _peer_json(
-                client,
-                "POST",
-                f"{base}/api/agent/quiesce",
-                settings,
-                json={
-                    "reason": "fleet-update",
-                    "timeout": job.quiesce_timeout,
-                    "wait": True,
-                },
-            )
-            if quiesce.get("error") and not job.force:
-                raise RuntimeError(
-                    f"Agent drain failed: {quiesce['error']}. Retry with force=true to continue."
-                )
-            if quiesce.get("error"):
+                if job.target_version:
+                    job.expected_version = job.target_version
+                else:
+                    checked = await _peer_json(
+                        client,
+                        "GET",
+                        f"{base}/api/fleet/peer-update-check",
+                        settings,
+                        params={"channel": job.channel},
+                    )
+                    job.available_version = (
+                        str(checked.get("available_version") or "") or None
+                    )
+                    if not job.available_version:
+                        raise RuntimeError(
+                            "Peer update check did not report an available version; "
+                            "specify target_version and retry"
+                        )
+                    if not checked.get("upgrade_available"):
+                        raise RuntimeError(
+                            f"Peer already reports {job.current_version}; no newer "
+                            f"{job.channel} version is available"
+                        )
+                    job.expected_version = job.available_version
+
+                if job.expected_version == job.current_version:
+                    raise RuntimeError(
+                        f"Peer already reports requested version {job.expected_version}; "
+                        "no update was performed"
+                    )
                 store.event(
                     job,
-                    UpdatePhase.QUIESCING,
-                    f"Drain timed out; force policy accepted: {quiesce['error']}",
+                    UpdatePhase.PREFLIGHT,
+                    f"Preflight complete: {job.current_version} → {job.expected_version}",
                 )
 
-            store.event(
-                job,
-                UpdatePhase.INSTALLING,
-                "Checking, downloading, and installing the requested release",
-            )
-            try:
-                result = await _peer_json(
+            if not job.expected_version and job.target_version:
+                # Backfill jobs written by the first fleet-update release. An
+                # explicit target is already durable and safe to verify against.
+                job.expected_version = job.target_version
+                store.persist(job)
+
+            if not job.expected_version:
+                raise RuntimeError(
+                    "Cannot safely resume update without a durable expected version; "
+                    "start a new update job"
+                )
+
+            if job.phase == UpdatePhase.PREFLIGHT:
+                quiesce = await _peer_json(
                     client,
                     "POST",
-                    f"{base}/api/fleet/peer-update",
+                    f"{base}/api/agent/quiesce",
                     settings,
-                    json={"channel": job.channel, "target_version": job.target_version},
+                    json={
+                        "reason": "fleet-update",
+                        "timeout": job.quiesce_timeout,
+                        "wait": True,
+                    },
                 )
-                job.available_version = result.get("target_version")
-                store.persist(job)
-            except httpx.ReadError, httpx.RemoteProtocolError:
-                # A service may close the request while restarting itself.
-                pass
+                if quiesce.get("error") and not job.force:
+                    raise RuntimeError(
+                        f"Agent drain failed: {quiesce['error']}. "
+                        "Retry with force=true to continue."
+                    )
+                message = "Agent sessions drained"
+                if quiesce.get("error"):
+                    message = (
+                        f"Drain timed out; force policy accepted: {quiesce['error']}"
+                    )
+                store.event(job, UpdatePhase.QUIESCING, message)
 
-        store.event(
-            job, UpdatePhase.RESTARTING, "Waiting for the peer service to restart"
-        )
+            if job.phase == UpdatePhase.QUIESCING:
+                # Persist this checkpoint before the non-idempotent peer request.
+                # Recovery from INSTALLING verifies the outcome and never resends it.
+                store.event(
+                    job,
+                    UpdatePhase.INSTALLING,
+                    f"Requesting installation of PA {job.expected_version}",
+                )
+                try:
+                    result = await _peer_json(
+                        client,
+                        "POST",
+                        f"{base}/api/fleet/peer-update",
+                        settings,
+                        json={
+                            "channel": job.channel,
+                            "target_version": job.expected_version,
+                        },
+                    )
+                    accepted_version = str(result.get("target_version") or "") or None
+                    if accepted_version != job.expected_version:
+                        raise RuntimeError(
+                            "Peer accepted an unexpected update version: "
+                            f"expected {job.expected_version}, got {accepted_version or 'none'}"
+                        )
+                except httpx.ReadError, httpx.RemoteProtocolError:
+                    # The service may close the response after accepting and restarting.
+                    # The durable INSTALLING checkpoint makes recovery verification-only.
+                    pass
+                store.event(
+                    job,
+                    UpdatePhase.RESTARTING,
+                    "Update request sent; waiting for the peer service to restart",
+                )
+
+        if job.phase == UpdatePhase.INSTALLING:
+            store.event(
+                job,
+                UpdatePhase.RESTARTING,
+                "Controller recovered after update dispatch; verifying without resending",
+            )
+        elif job.phase not in {UpdatePhase.RESTARTING, UpdatePhase.VERIFYING}:
+            raise RuntimeError(f"Cannot resume update from phase {job.phase.value}")
+
         await asyncio.sleep(1)
         deadline = time.monotonic() + job.health_timeout
         last_error = "peer did not become healthy"
@@ -239,15 +310,15 @@ async def run_update_job(
                     last_error = "peer identity changed after restart"
                 else:
                     job.verified_version = str(status.get("version") or "") or None
-                    expected = job.target_version or job.available_version
                     store.event(
                         job,
                         UpdatePhase.VERIFYING,
                         f"Peer reports version {job.verified_version or 'unknown'}",
                     )
-                    if expected and job.verified_version != expected:
+                    if job.verified_version != job.expected_version:
                         last_error = (
-                            f"expected {expected}, peer reports {job.verified_version}"
+                            f"expected {job.expected_version}, peer reports "
+                            f"{job.verified_version or 'no version'}"
                         )
                         await asyncio.sleep(2)
                         continue
@@ -261,7 +332,7 @@ async def run_update_job(
             except httpx.HTTPError as exc:
                 last_error = str(exc)
             await asyncio.sleep(2)
-        if job.verified_version and (job.target_version or job.available_version):
+        if job.verified_version:
             raise RuntimeError(f"Version verification failed: {last_error}")
         raise RuntimeError(f"Peer health verification timed out: {last_error}")
     except Exception as exc:

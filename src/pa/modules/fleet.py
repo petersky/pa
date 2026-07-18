@@ -89,7 +89,9 @@ def _fleet_context(request: Request) -> dict:
     primary_realm = (
         settings.primary_realm
         if hasattr(settings, "primary_realm")
-        else (settings.subscribed_realms[0] if settings.subscribed_realms else "personal")
+        else (
+            settings.subscribed_realms[0] if settings.subscribed_realms else "personal"
+        )
     )
     return {
         "fleet_instances": fleet.list_instances(),
@@ -358,8 +360,13 @@ async def fleet_health(request: Request) -> list[dict]:
                     pass
                 try:
                     status_resp, update_resp = await asyncio.gather(
-                        client.get(f"{inst.url.rstrip('/')}/api/status", headers=headers),
-                        client.get(f"{inst.url.rstrip('/')}/api/fleet/peer-update-check", headers=headers),
+                        client.get(
+                            f"{inst.url.rstrip('/')}/api/status", headers=headers
+                        ),
+                        client.get(
+                            f"{inst.url.rstrip('/')}/api/fleet/peer-update-check",
+                            headers=headers,
+                        ),
                     )
                     if status_resp.status_code == 200:
                         current_version = status_resp.json().get("version")
@@ -367,7 +374,7 @@ async def fleet_health(request: Request) -> list[dict]:
                         update_data = update_resp.json()
                         available_version = update_data.get("available_version")
                         upgrade_available = bool(update_data.get("upgrade_available"))
-                except (httpx.HTTPError, ValueError, AttributeError):
+                except httpx.HTTPError, ValueError, AttributeError:
                     pass
             data = inst.model_dump(mode="json")
             data["healthy"] = healthy
@@ -405,7 +412,9 @@ async def install_remote(request: Request, body: dict) -> dict:
             detail="host, user, instance_name, and instance_url are required",
         )
     if not settings.instance_url and not settings.host:
-        raise HTTPException(status_code=400, detail="Owner instance_url is not configured")
+        raise HTTPException(
+            status_code=400, detail="Owner instance_url is not configured"
+        )
 
     warnings = readiness_warnings(settings)
     # Allow install even with warnings, but surface them.
@@ -487,7 +496,9 @@ def create_realm(request: Request, body: dict) -> dict:
     realm = membership.ensure_realm(realm_id, body.get("name", ""))
     principal = get_principal_id(request)
     uid = principal[5:] if principal.startswith("user:") else "local"
-    membership.ensure_owner_membership(realm_id, uid, fleet_id=request.app.state.ctx.settings.fleet_id)
+    membership.ensure_owner_membership(
+        realm_id, uid, fleet_id=request.app.state.ctx.settings.fleet_id
+    )
     return realm.model_dump()
 
 
@@ -497,7 +508,9 @@ def realm_invite(request: Request, body: dict) -> dict:
     membership: MembershipStore = request.app.state.ctx.require_service("membership")
     realm_id = body.get("realm_id", request.app.state.ctx.settings.primary_realm)
     role = RealmRole(body.get("role", "editor"))
-    invite = membership.create_invite(realm_id, role, created_by=get_principal_id(request))
+    invite = membership.create_invite(
+        realm_id, role, created_by=get_principal_id(request)
+    )
     return {
         "token": invite.token,
         "realm_id": invite.realm_id,
@@ -513,7 +526,9 @@ def accept_invite(request: Request, body: dict) -> dict:
     token = body.get("token", "")
     principal = get_principal_id(request)
     uid = principal[5:] if principal.startswith("user:") else "local"
-    m = membership.accept_invite(token, uid, fleet_id=request.app.state.ctx.settings.fleet_id)
+    m = membership.accept_invite(
+        token, uid, fleet_id=request.app.state.ctx.settings.fleet_id
+    )
     if not m:
         raise HTTPException(status_code=400, detail="Invalid invite")
     return m.model_dump(mode="json")
@@ -537,7 +552,9 @@ def _peer_headers(request: Request) -> dict[str, str]:
 
 def _require_instance(request: Request) -> None:
     if not getattr(request.state, "instance_authenticated", False):
-        raise HTTPException(status_code=401, detail="Fleet instance authentication required")
+        raise HTTPException(
+            status_code=401, detail="Fleet instance authentication required"
+        )
 
 
 @router.post("/fleet/peer-update")
@@ -546,25 +563,27 @@ async def peer_update(request: Request, body: dict) -> dict:
     global _peer_update_task
     _require_instance(request)
     if _peer_update_task and not _peer_update_task.done():
-        raise HTTPException(status_code=409, detail="A fleet update is already running on this peer")
+        raise HTTPException(
+            status_code=409, detail="A fleet update is already running on this peer"
+        )
     settings = request.app.state.ctx.settings
     channel = (body.get("channel") or settings.release_track or "release").strip()
     target_version = (body.get("target_version") or "").strip() or None
+    if not target_version:
+        raise HTTPException(
+            status_code=400,
+            detail="target_version is required for a fleet peer update",
+        )
 
     from pa.update.channels import ReleaseInfo
-    from pa.update.runner import apply_update, check_update
+    from pa.update.runner import apply_update
 
-    checked = check_update(settings, channel_name=channel)
-    release = checked.release
-    if target_version:
-        release = ReleaseInfo(
-            version=target_version,
-            install_spec=f"git+https://github.com/{settings.update_repo}.git@v{target_version}",
-            tag=f"v{target_version}",
-            track=channel,
-        )
-    if not release:
-        raise HTTPException(status_code=502, detail=f"No release available on channel {channel}")
+    release = ReleaseInfo(
+        version=target_version,
+        install_spec=f"git+https://github.com/{settings.update_repo}.git@v{target_version}",
+        tag=f"v{target_version}",
+        track=channel,
+    )
 
     async def _install_and_restart() -> None:
         await asyncio.sleep(0.25)
@@ -584,7 +603,7 @@ async def peer_update(request: Request, body: dict) -> dict:
     _peer_update_task = asyncio.create_task(_install_and_restart())
     return {
         "accepted": True,
-        "current_version": checked.current,
+        "current_version": __import__("pa").__version__,
         "target_version": release.version,
         "channel": channel,
     }
@@ -618,7 +637,9 @@ async def update_fleet_instance(
     require_user(request)
     settings = request.app.state.ctx.settings
     if not settings.sync_token:
-        raise HTTPException(status_code=409, detail="Configure a fleet sync token before updating peers")
+        raise HTTPException(
+            status_code=409, detail="Configure a fleet sync token before updating peers"
+        )
     inst = _fleet_instance_or_404(request, instance_id)
     store = _update_store(request)
     try:
@@ -626,7 +647,10 @@ async def update_fleet_instance(
     except RuntimeError as exc:
         raise HTTPException(
             status_code=409,
-            detail={"message": "An update is already active for this instance", "job_id": str(exc)},
+            detail={
+                "message": "An update is already active for this instance",
+                "job_id": str(exc),
+            },
         ) from exc
     start_update_job(settings, store, job)
     return job.public_dict()
@@ -636,7 +660,11 @@ async def update_fleet_instance(
 def list_fleet_instance_updates(request: Request, instance_id: str) -> list[dict]:
     require_user(request)
     _fleet_instance_or_404(request, instance_id)
-    return [job.public_dict() for job in _update_store(request).list() if job.instance_id == instance_id]
+    return [
+        job.public_dict()
+        for job in _update_store(request).list()
+        if job.instance_id == instance_id
+    ]
 
 
 def _update_job_or_404(request: Request, instance_id: str, job_id: str):
@@ -647,7 +675,9 @@ def _update_job_or_404(request: Request, instance_id: str, job_id: str):
 
 
 @router.get("/fleet/instances/{instance_id}/update/{job_id}")
-def fleet_instance_update_status(request: Request, instance_id: str, job_id: str) -> dict:
+def fleet_instance_update_status(
+    request: Request, instance_id: str, job_id: str
+) -> dict:
     require_user(request)
     return _update_job_or_404(request, instance_id, job_id).public_dict()
 
@@ -663,7 +693,7 @@ async def fleet_instance_update_events(request: Request, instance_id: str, job_i
         while True:
             job = store.get(job_id)
             if not job:
-                yield "event: error\ndata: {\"message\":\"job missing\"}\n\n"
+                yield 'event: error\ndata: {"message":"job missing"}\n\n'
                 return
             for event in job.events[cursor:]:
                 yield f"event: phase\ndata: {json.dumps(event)}\n\n"
@@ -708,9 +738,11 @@ async def _peer_agent_json(
     if resp.status_code >= 400:
         try:
             detail = resp.json().get("detail")
-        except (ValueError, AttributeError):
+        except ValueError, AttributeError:
             detail = resp.text[:500]
-        raise HTTPException(status_code=resp.status_code, detail=detail or "Peer request failed")
+        raise HTTPException(
+            status_code=resp.status_code, detail=detail or "Peer request failed"
+        )
     return resp.json()
 
 
@@ -724,7 +756,9 @@ def _project_working_directory(
         return None
     tool_config = project.tool_config or {}
     paths_by_instance = tool_config.get("repo_paths_by_instance") or {}
-    mapped_path = paths_by_instance.get(instance_id) or paths_by_instance.get(instance_name)
+    mapped_path = paths_by_instance.get(instance_id) or paths_by_instance.get(
+        instance_name
+    )
     if mapped_path:
         return str(mapped_path)
 
@@ -732,7 +766,9 @@ def _project_working_directory(
     if development_instance not in {instance_id, instance_name}:
         return None
     for repo in project.repos or []:
-        path = repo.get("path") if isinstance(repo, dict) else getattr(repo, "path", None)
+        path = (
+            repo.get("path") if isinstance(repo, dict) else getattr(repo, "path", None)
+        )
         if path:
             return str(path)
     return None
@@ -775,7 +811,9 @@ async def start_remote_agent_work(
         "config": body.config,
         "surface": "execution",
     }
-    session_body = {key: value for key, value in session_body.items() if value not in (None, "")}
+    session_body = {
+        key: value for key, value in session_body.items() if value not in (None, "")
+    }
     snapshot = await _peer_agent_json(
         request,
         instance_id,
@@ -923,7 +961,9 @@ async def fleet_agent_proxy(
     try:
         content = await upstream.aread()
     except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail=f"Peer response failed: {exc}") from exc
+        raise HTTPException(
+            status_code=502, detail=f"Peer response failed: {exc}"
+        ) from exc
     finally:
         await upstream.aclose()
         await client.aclose()
@@ -1037,14 +1077,18 @@ class FleetModule(Module):
         membership = get_membership_store(settings)
         for realm in settings.subscribed_realms:
             membership.ensure_realm(realm)
-            membership.ensure_owner_membership(realm, "local", fleet_id=settings.fleet_id)
+            membership.ensure_owner_membership(
+                realm, "local", fleet_id=settings.fleet_id
+            )
         ctx.register_service("membership", membership)
         peer_table = get_peer_table(settings)
         for realm in settings.subscribed_realms:
             peer_table.sync_from_settings_peers(realm, settings.peers, settings.zone)
         ctx.register_service("peer_table", peer_table)
         ctx.register_service("fleet_job_store", get_job_store(settings))
-        ctx.register_service("fleet_update_job_store", FleetUpdateJobStore(settings.data_dir))
+        ctx.register_service(
+            "fleet_update_job_store", FleetUpdateJobStore(settings.data_dir)
+        )
 
         pages: PageRegistry = ctx.require_service("pages")
         pages.register(

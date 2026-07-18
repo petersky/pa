@@ -131,6 +131,112 @@ class FleetUpdateWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(job.phase, UpdatePhase.FAILED)
         self.assertIn("identity", job.error)
 
+    async def test_absent_available_version_fails_before_drain_or_install(self) -> None:
+        job = await self._run(
+            [
+                {"instance_id": "peer-1", "version": "0.2.5"},
+                {"available_version": None, "upgrade_available": False},
+            ],
+            target=None,
+        )
+        self.assertEqual(job.phase, UpdatePhase.FAILED)
+        self.assertIn("did not report an available version", job.error)
+
+    async def test_disconnect_still_requires_verified_version_change(self) -> None:
+        job = await self._run(
+            [
+                {"instance_id": "peer-1", "version": "0.2.5"},
+                {"done": True},
+                httpx.ReadError("peer restarted during response"),
+                {"instance_id": "peer-1", "version": "0.2.5"},
+            ]
+        )
+        self.assertEqual(job.phase, UpdatePhase.FAILED)
+        self.assertEqual(job.expected_version, "0.2.6")
+        self.assertIn("expected 0.2.6", job.error)
+
+    async def _run_resumed(self, phase: UpdatePhase):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        settings = Settings(data_dir=Path(tmp.name), sync_token="fleet-secret")
+        store = FleetUpdateJobStore(Path(tmp.name))
+        instance = SimpleNamespace(
+            instance_id="peer-1", name="mini", url="http://mini:8080"
+        )
+        job = store.create(
+            instance, FleetUpdateRequest(target_version="0.2.6"), "release"
+        )
+        job.phase = phase
+        job.current_version = "0.2.5"
+        job.expected_version = "0.2.6"
+        store.persist(job)
+        job = FleetUpdateJobStore(Path(tmp.name)).get(job.job_id)
+
+        responses = []
+        if phase == UpdatePhase.PREFLIGHT:
+            responses.append({"done": True})
+        if phase in {UpdatePhase.PREFLIGHT, UpdatePhase.QUIESCING}:
+            responses.append({"target_version": "0.2.6"})
+        responses.append({"instance_id": "peer-1", "version": "0.2.6"})
+        peer = AsyncMock(side_effect=responses)
+        with (
+            patch("pa.fleet.update._peer_json", peer),
+            patch("pa.fleet.update.asyncio.sleep", AsyncMock()),
+            patch("pa.fleet.update.time.monotonic", side_effect=[0, 1, 20]),
+        ):
+            result = await run_update_job(settings, store, job)
+        return result, peer
+
+    async def test_resume_from_preflight_skips_preflight_only(self) -> None:
+        job, peer = await self._run_resumed(UpdatePhase.PREFLIGHT)
+        urls = [call.args[2] for call in peer.await_args_list]
+        self.assertEqual(job.phase, UpdatePhase.SUCCEEDED)
+        self.assertNotIn("/api/fleet/peer-update-check", urls)
+        self.assertEqual(sum(url.endswith("/api/agent/quiesce") for url in urls), 1)
+        self.assertEqual(sum(url.endswith("/api/fleet/peer-update") for url in urls), 1)
+
+    async def test_resume_from_quiescing_skips_preflight_and_drain(self) -> None:
+        job, peer = await self._run_resumed(UpdatePhase.QUIESCING)
+        urls = [call.args[2] for call in peer.await_args_list]
+        self.assertEqual(job.phase, UpdatePhase.SUCCEEDED)
+        self.assertFalse(any(url.endswith("/api/agent/quiesce") for url in urls))
+        self.assertEqual(sum(url.endswith("/api/fleet/peer-update") for url in urls), 1)
+
+    async def test_resume_after_install_dispatch_is_verification_only(self) -> None:
+        for phase in (
+            UpdatePhase.INSTALLING,
+            UpdatePhase.RESTARTING,
+            UpdatePhase.VERIFYING,
+        ):
+            with self.subTest(phase=phase):
+                job, peer = await self._run_resumed(phase)
+                urls = [call.args[2] for call in peer.await_args_list]
+                self.assertEqual(job.phase, UpdatePhase.SUCCEEDED)
+                self.assertFalse(
+                    any(url.endswith("/api/agent/quiesce") for url in urls)
+                )
+                self.assertFalse(
+                    any(url.endswith("/api/fleet/peer-update") for url in urls)
+                )
+
+    async def test_legacy_recovery_without_expected_version_fails_safely(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        settings = Settings(data_dir=Path(tmp.name), sync_token="fleet-secret")
+        store = FleetUpdateJobStore(Path(tmp.name))
+        instance = SimpleNamespace(
+            instance_id="peer-1", name="mini", url="http://mini:8080"
+        )
+        job = store.create(instance, FleetUpdateRequest(), "release")
+        job.phase = UpdatePhase.INSTALLING
+        store.persist(job)
+        peer = AsyncMock()
+        with patch("pa.fleet.update._peer_json", peer):
+            result = await run_update_job(settings, store, job)
+        self.assertEqual(result.phase, UpdatePhase.FAILED)
+        self.assertIn("durable expected version", result.error)
+        peer.assert_not_awaited()
+
 
 class FleetPeerAuthTests(unittest.TestCase):
     def test_peer_endpoint_rejects_user_session(self) -> None:
