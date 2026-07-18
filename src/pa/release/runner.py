@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 import time
 from dataclasses import dataclass, field
@@ -60,6 +61,14 @@ def _run(cmd: list[str], *, cwd: Path | None = None) -> None:
 
 def _capture(cmd: list[str], *, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(cmd, cwd=cwd, check=False, capture_output=True, text=True)
+
+
+def _capture_checked(cmd: list[str], *, cwd: Path | None = None) -> str:
+    result = _capture(cmd, cwd=cwd)
+    if result.returncode != 0:
+        msg = result.stderr.strip() or result.stdout.strip() or "command failed"
+        raise RuntimeError(f"{' '.join(cmd)}: {msg}")
+    return result.stdout.strip()
 
 
 def current_branch() -> str:
@@ -341,6 +350,124 @@ def _require_release_branch(branch: str, *, amend: bool = False) -> None:
             "Start from an up-to-date main branch so the release command can create the PR branch.",
         ],
     )
+
+
+def ensure_release_pr(tag: str, branch: str) -> str:
+    """Create the release PR if needed and return its URL."""
+    tag = _normalize_tag(tag)
+    existing = _capture_checked(
+        [
+            "gh",
+            "pr",
+            "list",
+            "--base",
+            "main",
+            "--head",
+            branch,
+            "--state",
+            "open",
+            "--limit",
+            "1",
+            "--json",
+            "url",
+        ],
+        cwd=ROOT,
+    )
+    try:
+        matches = json.loads(existing or "[]")
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"could not parse gh pr list output: {exc}") from exc
+    if matches:
+        url = str(matches[0]["url"])
+        print(f"  Using existing release PR: {url}", flush=True)
+        return url
+
+    print(f"==> Creating release PR for {tag}...", flush=True)
+    url = _capture_checked(
+        [
+            "gh",
+            "pr",
+            "create",
+            "--base",
+            "main",
+            "--head",
+            branch,
+            "--title",
+            f"Release {tag}",
+            "--body",
+            f"Prepare PA {tag} for publication.",
+        ],
+        cwd=ROOT,
+    )
+    if not url:
+        raise RuntimeError("gh pr create did not return a pull request URL")
+    print(f"  Created release PR: {url}", flush=True)
+    return url
+
+
+def merge_release_pr(
+    pr: str,
+    *,
+    head_commit: str,
+    check_discovery_timeout: float = 60.0,
+) -> None:
+    """Wait for PR checks and merge the unchanged release head."""
+    print("==> Waiting for release PR checks...", flush=True)
+    deadline = time.monotonic() + check_discovery_timeout
+    while True:
+        checks = _capture(
+            ["gh", "pr", "checks", pr, "--watch", "--fail-fast"],
+            cwd=ROOT,
+        )
+        if checks.returncode == 0:
+            break
+        message = checks.stderr.strip() or checks.stdout.strip() or "command failed"
+        if "no checks reported" not in message.lower():
+            raise ReleaseError(
+                "release PR checks did not pass",
+                hints=[f"Inspect or resume the release from {pr}"],
+            )
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise ReleaseError(
+                "no checks appeared for the release PR",
+                hints=[f"Inspect the Actions configuration and release PR at {pr}"],
+            )
+        delay = min(2.0, remaining)
+        print(f"  Checks not registered yet; retrying in {delay:.0f}s...", flush=True)
+        time.sleep(delay)
+
+    print("==> Merging release PR...", flush=True)
+    try:
+        _run(
+            [
+                "gh",
+                "pr",
+                "merge",
+                pr,
+                "--merge",
+                "--match-head-commit",
+                head_commit,
+            ],
+            cwd=ROOT,
+        )
+    except RuntimeError as exc:
+        raise ReleaseError(
+            "could not merge the release PR",
+            hints=[
+                f"Resolve any review or branch-protection requirements at {pr}, then run:\n"
+                f"    ./scripts/release.sh --publish"
+            ],
+        ) from exc
+    print(f"  Merged release PR: {pr}", flush=True)
+
+
+def head_commit() -> str:
+    """Return the current commit SHA."""
+    sha = _capture_checked(["git", "rev-parse", "HEAD"], cwd=ROOT)
+    if not sha:
+        raise RuntimeError("git rev-parse HEAD returned no commit")
+    return sha
 
 
 def create_release(
