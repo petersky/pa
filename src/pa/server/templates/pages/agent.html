@@ -18,7 +18,12 @@
         tabindex="0">
       <strong>{{ s.title or s.label or s.agent_name }}</strong>
       <span class="muted">{{ s.status }}</span>
-      {% if s.model_id %}<span class="muted">{{ s.model_id }}</span>{% endif %}
+      <span class="muted agent-session-runtime">
+        {{ s.agent_name }}{% if s.model_id %} · {{ s.model_id }}{% endif %}{% if s.mode_id %} · {{ s.mode_id }}{% endif %}
+      </span>
+      {% if s.config_json and s.config_json.get('values') %}
+      <span class="muted small agent-session-config">{{ s.config_json.get('values') | tojson }}</span>
+      {% endif %}
       {% for watch in pr_watches_by_session.get(s.id, []) %}
       <a class="badge" href="/pull-requests?watch={{ watch.id }}"
          title="{{ watch.repository }}#{{ watch.pr_number }} PR supervision">
@@ -53,17 +58,21 @@
     </label>
     <label>
       <span>Model</span>
-      <input name="model_id" list="agent-new-models" placeholder="Provider default" autocomplete="off">
-      <datalist id="agent-new-models" data-agent-new-models></datalist>
+      <select name="model_id" data-agent-new-model aria-describedby="agent-new-model-help">
+        <option value="">Provider default</option>
+      </select>
+      <small class="muted" id="agent-new-model-help">Inherited from the selected provider when unchanged.</small>
     </label>
     <label>
       <span>Mode</span>
-      <input name="mode_id" list="agent-new-modes" placeholder="Provider default" autocomplete="off">
-      <datalist id="agent-new-modes" data-agent-new-modes></datalist>
+      <select name="mode_id" data-agent-new-mode aria-describedby="agent-new-mode-help">
+        <option value="">Provider default</option>
+      </select>
+      <small class="muted" id="agent-new-mode-help">Inherited from the selected provider when unchanged.</small>
     </label>
     <label>
       <span>Effort</span>
-      <select name="effort">
+      <select name="effort" data-agent-new-effort>
         <option value="">Provider default</option>
         <option value="low">Low</option>
         <option value="medium">Medium</option>
@@ -71,6 +80,7 @@
         <option value="xhigh">Extra high</option>
       </select>
     </label>
+    <div class="agent-new-related stack" data-agent-new-related hidden></div>
     <label>
       <span>Working directory</span>
       <input name="cwd" placeholder="Instance default" autocomplete="off">

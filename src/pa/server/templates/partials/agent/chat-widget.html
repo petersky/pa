@@ -44,7 +44,7 @@
       <button type="button" class="ghost small" data-acw-browser-toggle title="Attach a browser to this session">Attach Browser</button>
       <details class="acw-menu acw-settings-menu">
         <summary>Agent settings…</summary>
-        <div class="acw-menu-body acw-settings-body">
+        <form class="acw-menu-body acw-settings-body" data-acw-settings-form>
           {% if show_model %}
           <label class="acw-select-wrap" data-acw-model-wrap hidden>
             <span>Model</span>
@@ -58,7 +58,12 @@
           </label>
           {% endif %}
           <div class="acw-config" data-acw-config hidden></div>
-        </div>
+          <p class="muted small acw-settings-status" data-acw-settings-status role="status" aria-live="polite">No unsaved changes.</p>
+          <div class="acw-settings-actions">
+            <button type="button" class="ghost small" data-acw-settings-reset disabled>Reset</button>
+            <button type="submit" class="primary small" data-acw-settings-apply disabled>Apply</button>
+          </div>
+        </form>
       </details>
       <details class="acw-menu acw-session-menu">
         <summary>Session…</summary>

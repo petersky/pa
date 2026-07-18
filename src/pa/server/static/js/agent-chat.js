@@ -123,6 +123,10 @@
       modelWrap: root.querySelector("[data-acw-model-wrap]"),
       modeWrap: root.querySelector("[data-acw-mode-wrap]"),
       config: root.querySelector("[data-acw-config]"),
+      settingsForm: root.querySelector("[data-acw-settings-form]"),
+      settingsApply: root.querySelector("[data-acw-settings-apply]"),
+      settingsReset: root.querySelector("[data-acw-settings-reset]"),
+      settingsStatus: root.querySelector("[data-acw-settings-status]"),
       toolToggle: root.querySelector("[data-acw-tool-toggle]"),
       toolFlyout: root.querySelector("[data-acw-tool-flyout]"),
       toolActivity: root.querySelector("[data-acw-tool-activity]"),
@@ -229,22 +233,30 @@
     if (qr) qr.addEventListener("click", function () { self.queueControl("resume"); });
     if (this.els.model) {
       this.els.model.addEventListener("change", function () {
-        const selected = self.els.model.value;
-        self.els.model.disabled = true;
-        self.putOption("model", { model_id: selected })
-          .then(function (result) { self.els.model.value = result.model_id || selected; })
-          .catch(function () { /* putOption restored the server value */ })
-          .finally(function () { self.els.model.disabled = false; });
+        self.markSettingsDirty();
       });
     }
     if (this.els.mode) {
       this.els.mode.addEventListener("change", function () {
-        const selected = self.els.mode.value;
-        self.els.mode.disabled = true;
-        self.putOption("mode", { mode_id: selected })
-          .then(function (result) { self.els.mode.value = result.mode_id || selected; })
-          .catch(function () { /* putOption restored the server value */ })
-          .finally(function () { self.els.mode.disabled = false; });
+        self.markSettingsDirty();
+      });
+    }
+    if (this.els.settingsForm) {
+      this.els.settingsForm.addEventListener("submit", function (event) {
+        event.preventDefault();
+        self.applySettings();
+      });
+    }
+    if (this.els.settingsReset) {
+      this.els.settingsReset.addEventListener("click", function () { self.resetSettingsDraft(); });
+    }
+    const settingsMenu = this.root.querySelector(".acw-settings-menu");
+    if (settingsMenu) {
+      settingsMenu.addEventListener("toggle", function () {
+        if (!settingsMenu.open && self.settingsDirty) {
+          if (!window.confirm("Discard unsaved Agent settings changes?")) settingsMenu.open = true;
+          else self.resetSettingsDraft();
+        }
       });
     }
     if (this.els.toolToggle) this.els.toolToggle.addEventListener("click", function () { self.toggleFlyout("tool"); });
@@ -1310,6 +1322,98 @@
     }
   };
 
+  AgentChatWidget.prototype.markSettingsDirty = function () {
+    this.settingsDirty = true;
+    if (this.els.settingsApply) this.els.settingsApply.disabled = false;
+    if (this.els.settingsReset) this.els.settingsReset.disabled = false;
+    if (this.els.settingsStatus) {
+      this.els.settingsStatus.classList.remove("is-error");
+      this.els.settingsStatus.textContent = "Unsaved changes.";
+    }
+  };
+
+  AgentChatWidget.prototype.setSettingsPending = function (pending) {
+    this.settingsPending = pending;
+    [this.els.model, this.els.mode].concat(Array.from(this.els.config ? this.els.config.querySelectorAll("select,input") : []))
+      .filter(Boolean).forEach(function (control) { control.disabled = pending; });
+    if (this.els.settingsApply) {
+      this.els.settingsApply.disabled = pending || !this.settingsDirty;
+      this.els.settingsApply.textContent = pending ? "Applying…" : "Apply";
+    }
+    if (this.els.settingsReset) this.els.settingsReset.disabled = pending || !this.settingsDirty;
+  };
+
+  AgentChatWidget.prototype.resetSettingsDraft = function () {
+    this.settingsDirty = false;
+    if (this.lastSnapshot) {
+      this.renderModelsModes(this.lastSnapshot);
+      this.renderConfigOptions(this.lastSnapshot);
+    }
+    if (this.els.settingsApply) this.els.settingsApply.disabled = true;
+    if (this.els.settingsReset) this.els.settingsReset.disabled = true;
+    if (this.els.settingsStatus) {
+      this.els.settingsStatus.classList.remove("is-error");
+      this.els.settingsStatus.textContent = "No unsaved changes.";
+    }
+  };
+
+  AgentChatWidget.prototype.applySettings = function () {
+    const self = this;
+    if (!this.settingsDirty || !this.sessionId) return Promise.resolve();
+    const snap = this.lastSnapshot || {};
+    const currentModel = (snap.session && snap.session.model_id) || (snap.models && (snap.models.currentModelId || snap.models.current_model_id));
+    const currentMode = (snap.session && snap.session.mode_id) || (snap.modes && (snap.modes.currentModeId || snap.modes.current_mode_id));
+    const requests = [];
+    if (this.els.model && this.els.model.value && this.els.model.value !== currentModel) {
+      const modelId = this.els.model.value;
+      requests.push(function () { return self.putOption("model", { model_id: modelId }); });
+    }
+    if (this.els.mode && this.els.mode.value && this.els.mode.value !== currentMode) {
+      const modeId = this.els.mode.value;
+      requests.push(function () { return self.putOption("mode", { mode_id: modeId }); });
+    }
+    if (this.els.config) {
+      this.els.config.querySelectorAll("[data-acw-config-id]").forEach(function (input) {
+        const original = input.dataset.acwOriginal;
+        const value = input.type === "checkbox" ? input.checked : input.value;
+        if (String(value) !== String(original)) {
+          const configId = input.dataset.acwConfigId;
+          requests.push(function () { return self.putOption("config", { config_id: configId, value: value }); });
+        }
+      });
+    }
+    if (!requests.length) {
+      this.resetSettingsDraft();
+      if (this.els.settingsStatus) this.els.settingsStatus.textContent = "No changes to apply.";
+      return Promise.resolve();
+    }
+    this.setSettingsPending(true);
+    const errors = [];
+    return requests.reduce(function (promise, request) {
+      return promise.then(function () {
+        return request().catch(function (error) { errors.push(error); });
+      });
+    }, Promise.resolve())
+      .then(function () { return self.api("/sessions/" + self.sessionId); })
+      .then(function (fresh) {
+        self.settingsDirty = false;
+        self.applyOptionSnapshot(fresh);
+        refreshSessionList(self.sessionId);
+        if (errors.length) throw new Error(errors.map(function (error) { return error.message; }).join("; "));
+        if (self.els.settingsStatus) {
+          self.els.settingsStatus.classList.remove("is-error");
+          self.els.settingsStatus.textContent = "Applied successfully.";
+        }
+      })
+      .catch(function (error) {
+        if (self.els.settingsStatus) {
+          self.els.settingsStatus.classList.add("is-error");
+          self.els.settingsStatus.textContent = "Could not apply settings: " + error.message;
+        }
+      })
+      .finally(function () { self.setSettingsPending(false); });
+  };
+
   AgentChatWidget.prototype.renderConfigOptions = function (snap) {
     if (!this.els.config) return;
     const self = this;
@@ -1352,9 +1456,9 @@
           ? configValues[id]
           : (opt.currentValue != null ? opt.currentValue : opt.current_value);
         input.checked = !!current;
-        input.addEventListener("change", function () {
-          self.putOption("config", { config_id: id, value: !!input.checked }).catch(function () {});
-        });
+        input.dataset.acwConfigId = id;
+        input.dataset.acwOriginal = String(!!current);
+        input.addEventListener("change", function () { self.markSettingsDirty(); });
         wrap.appendChild(input);
         wrap.appendChild(document.createTextNode(" " + name));
       } else {
@@ -1380,18 +1484,25 @@
           option.selected = true;
           select.appendChild(option);
         }
-        select.addEventListener("change", function () {
-          self.putOption("config", { config_id: id, value: select.value }).catch(function () {});
-        });
+        select.dataset.acwConfigId = id;
+        select.dataset.acwOriginal = current == null ? "" : String(current);
+        select.addEventListener("change", function () { self.markSettingsDirty(); });
         wrap.appendChild(document.createTextNode(name + " "));
         wrap.appendChild(select);
       }
       self.els.config.appendChild(wrap);
     });
+    if (this.settingsPending) {
+      this.els.config.querySelectorAll("select,input").forEach(function (control) {
+        control.disabled = true;
+      });
+    }
   };
 
   AgentChatWidget.prototype.switchSession = function (sessionId) {
     if (!sessionId || sessionId === this.sessionId) return;
+    if (this.settingsDirty && !window.confirm("Discard unsaved Agent settings changes and switch sessions?")) return;
+    if (this.settingsDirty) this.resetSettingsDraft();
     if (this.es) {
       this.es.close();
       this.es = null;
@@ -1659,16 +1770,32 @@
           li.innerHTML =
             "<strong>" + escapeHtml(s.title || s.label || "Agent") + "</strong>" +
             '<span class="muted">' + escapeHtml(s.status || "") + "</span>" +
-            (s.model_id ? '<span class="muted">' + escapeHtml(s.model_id) + "</span>" : "");
+            '<span class="muted agent-session-runtime">' + escapeHtml(
+              [s.agent_name, s.model_id, s.mode_id].filter(Boolean).join(" · ")
+            ) + "</span>" +
+            sessionConfigSummary(s.config_json);
           list.appendChild(li);
         });
       })
       .catch(function () { /* ignore */ });
   }
 
-  function populateDatalist(list, values, idKeys) {
-    if (!list) return;
-    list.innerHTML = "";
+  function sessionConfigSummary(config) {
+    const values = config && config.values;
+    if (!values || !Object.keys(values).length) return "";
+    return '<span class="muted small agent-session-config">' + escapeHtml(
+      Object.keys(values).map(function (key) { return key + ": " + values[key]; }).join(" · ")
+    ) + "</span>";
+  }
+
+  function populateSelect(select, values, idKeys, defaultLabel) {
+    if (!select) return;
+    const selected = select.value;
+    select.innerHTML = "";
+    const inherited = document.createElement("option");
+    inherited.value = "";
+    inherited.textContent = defaultLabel || "Provider default";
+    select.appendChild(inherited);
     (values || []).forEach(function (item) {
       const value = typeof item === "object"
         ? idKeys.map(function (key) { return item[key]; }).find(Boolean)
@@ -1676,15 +1803,43 @@
       if (!value) return;
       const option = document.createElement("option");
       option.value = value;
-      list.appendChild(option);
+      option.textContent = typeof item === "object" ? (item.name || item.label || value) : value;
+      if (String(value) === selected) option.selected = true;
+      select.appendChild(option);
     });
   }
 
   function populateNewSessionOptions(dialog, snap) {
     const models = snap && snap.models && (snap.models.availableModels || snap.models.available_models);
     const modes = snap && snap.modes && (snap.modes.availableModes || snap.modes.available_modes);
-    populateDatalist(dialog.querySelector("[data-agent-new-models]"), models, ["modelId", "model_id", "id"]);
-    populateDatalist(dialog.querySelector("[data-agent-new-modes]"), modes, ["id", "modeId", "mode_id"]);
+    populateSelect(dialog.querySelector("[data-agent-new-model]"), models, ["modelId", "model_id", "id"]);
+    populateSelect(dialog.querySelector("[data-agent-new-mode]"), modes, ["id", "modeId", "mode_id"]);
+    const raw = (snap && snap.config_options) || [];
+    const effort = raw.find(function (option) {
+      const id = String(option && (option.id || option.configId || option.config_id || option.name) || "").toLowerCase().replace(/[_ -]/g, "");
+      return ["effort", "reasoningeffort", "reasoninglevel", "thinkinglevel"].includes(id);
+    });
+    const effortChoices = effort && (effort.options || effort.choices || effort.values);
+    populateSelect(dialog.querySelector("[data-agent-new-effort]"), effortChoices && effortChoices.length ? effortChoices : ["low", "medium", "high", "xhigh"], ["value", "id"], "Provider default");
+    const related = dialog.querySelector("[data-agent-new-related]");
+    if (!related) return;
+    related.innerHTML = "";
+    raw.filter(function (option) { return option && option !== effort; }).forEach(function (option) {
+      const id = option.id || option.configId || option.config_id;
+      const choices = option.options || option.choices || option.values || [];
+      if (!id || !choices.length) return;
+      const label = document.createElement("label");
+      const caption = document.createElement("span");
+      caption.textContent = option.name || id;
+      const select = document.createElement("select");
+      select.name = "config." + id;
+      select.dataset.agentNewConfig = id;
+      populateSelect(select, choices, ["value", "id"]);
+      label.appendChild(caption);
+      label.appendChild(select);
+      related.appendChild(label);
+    });
+    related.hidden = !related.children.length;
   }
 
   function newSessionSnapshotForProvider(widget, providerId) {
@@ -1794,6 +1949,11 @@
           const value = String(data.get(key) || "").trim();
           if (value) body[key] = value;
         });
+        body.config = {};
+        dialog.querySelectorAll("[data-agent-new-config]").forEach(function (select) {
+          if (select.value) body.config[select.dataset.agentNewConfig] = select.value;
+        });
+        if (!Object.keys(body.config).length) delete body.config;
         const submit = dialog.querySelector("[data-agent-new-submit]");
         const error = dialog.querySelector("[data-agent-new-error]");
         if (submit) {
