@@ -423,11 +423,13 @@ def _release_command(bump: str):
         from pa.release.version import tag_for_version
 
         try:
-            tag = tag_for_version(resolve_version(bump))
+            target_version = resolve_version(bump)
+            tag = tag_for_version(target_version)
             ensure_tag_available(tag)
             branch = ensure_release_branch(tag)
             result = create_release(
                 bump,
+                target_version=target_version,
                 commit=not no_commit,
                 push=not no_push,
                 message=message,

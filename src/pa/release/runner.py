@@ -346,6 +346,7 @@ def _require_release_branch(branch: str, *, amend: bool = False) -> None:
 def create_release(
     bump: str,
     *,
+    target_version: str | None = None,
     channel: str | None = None,
     commit: bool = True,
     push: bool = False,
@@ -356,7 +357,14 @@ def create_release(
     create_tag: bool = False,
 ) -> ReleaseResult:
     old = read_version()
-    new = resolve_version(bump)
+    # Callers that create/switch the release branch first must carry forward the
+    # version resolved from main.  Re-resolving a relative bump on a reused
+    # release branch can otherwise bump an already-bumped or stale version.
+    new = (
+        validate_version(target_version)
+        if target_version
+        else resolve_version(bump)
+    )
     tag = tag_for_version(new)
     track = channel or track_for_version(new)
 

@@ -293,6 +293,7 @@ def _run(argv: list[str] | None = None) -> int:
 
     result = create_release(
         args.version,
+        target_version=new,
         channel=args.channel,
         commit=not args.no_commit,
         push=do_push,
