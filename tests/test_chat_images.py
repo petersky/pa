@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import shutil
+import subprocess
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -119,6 +121,60 @@ class ChatWidgetTemplateTests(unittest.TestCase):
         self.assertIn('data-api-base="/api/agent"', html)
         self.assertIn('data-auto-start="1"', html)
 
+    @unittest.skipUnless(shutil.which("node"), "node is required for chat UI behavior tests")
+    def test_transcript_dedup_scroll_follow_and_prepend_anchor(self) -> None:
+        script_path = (
+            Path(__file__).parents[1]
+            / "src"
+            / "pa"
+            / "server"
+            / "static"
+            / "js"
+            / "agent-chat.js"
+        )
+        program = r"""
+const fs = require("fs");
+const vm = require("vm");
+const assert = require("assert");
+global.window = {};
+global.document = {
+  addEventListener: function () {},
+  querySelector: function () { return null; },
+  querySelectorAll: function () { return []; },
+  body: null,
+};
+vm.runInThisContext(fs.readFileSync(process.argv[1], "utf8"));
+
+const Widget = window.PAAgentChat.AgentChatWidget;
+const widget = Object.create(Widget.prototype);
+widget.seenEvents = {};
+widget.transcriptEvents = [];
+widget.lastSeq = 0;
+let bubbles = 0;
+let scrolls = 0;
+widget.addBubble = function () { bubbles += 1; };
+widget.scrollToBottom = function () { scrolls += 1; };
+widget.isNearBottom = function () { return false; };
+
+widget.handleEvent({ seq: 7, type: "error", payload: { message: "once" } }, false);
+widget.handleEvent({ seq: 7, type: "error", payload: { message: "duplicate" } }, false);
+assert.strictEqual(bubbles, 1);
+assert.strictEqual(widget.transcriptEvents.length, 1);
+assert.strictEqual(scrolls, 0);
+
+widget.isNearBottom = function () { return true; };
+widget.handleEvent({ seq: 8, type: "error", payload: { message: "follow" } }, false);
+assert.strictEqual(scrolls, 1);
+assert.strictEqual(window.PAAgentChat.anchoredScrollTop(75, 400, 650), 325);
+"""
+
+        subprocess.run(
+            [shutil.which("node"), "-e", program, str(script_path)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
     def test_agent_page_starts_new_sessions_from_a_configuration_dialog(self) -> None:
         template_root = Path(__file__).parents[1] / "src" / "pa" / "server" / "templates"
         source = (template_root / "pages" / "agent.html").read_text()
@@ -156,6 +212,8 @@ class ChatWidgetTemplateTests(unittest.TestCase):
         self.assertIn("var generation = ++remoteLoadGeneration;", fleet_script)
         self.assertIn("instanceId !== remoteInstanceId", fleet_script)
         self.assertIn("var dispatchInstanceId = remoteInstanceId;", fleet_script)
+        self.assertIn("loadOlderRemoteAudit", fleet_script)
+        self.assertIn("data-remote-audit-older", fleet_script)
         self.assertNotIn("setTimeout(loadRemoteOperations", fleet_script)
         self.assertIn("setApiBase", chat_script)
 

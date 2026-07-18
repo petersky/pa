@@ -47,6 +47,7 @@ logger = logging.getLogger(__name__)
 
 _RETRY_SECONDS = 30
 _QUIESCE_POLL_SECONDS = 0.4
+TRANSCRIPT_WINDOW_LIMIT = 1000
 PromptAction = Literal["append", "prepend", "interrupt"]
 
 
@@ -738,7 +739,12 @@ class AgentSessionRuntime:
 
     def snapshot(self) -> dict[str, Any]:
         self._flush_transcript()
-        events = self.store.list_transcript_events(self.session_id, after_seq=0, limit=2000)
+        events = self.store.list_transcript_events_before(
+            self.session_id,
+            limit=TRANSCRIPT_WINDOW_LIMIT + 1,
+        )
+        has_older = len(events) > TRANSCRIPT_WINDOW_LIMIT
+        events = events[-TRANSCRIPT_WINDOW_LIMIT:]
         conn = self.connection
         return {
             "session": self.session.model_dump(mode="json"),
@@ -753,6 +759,12 @@ class AgentSessionRuntime:
             "metrics": self.session.metrics_json,
             "turn_started_at": self._turn_started_at.isoformat() if self._turn_started_at else None,
             "transcript": [e.model_dump(mode="json") for e in events],
+            "transcript_page": {
+                "oldest_seq": events[0].seq if events else None,
+                "newest_seq": events[-1].seq if events else None,
+                "has_older": has_older,
+                "limit": TRANSCRIPT_WINDOW_LIMIT,
+            },
             "pending_permissions": [
                 self._permission_requests[rid]
                 for rid in self._pending_permissions
