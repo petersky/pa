@@ -1200,7 +1200,14 @@ def _proxy_agent_providers(
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail=f"Peer unreachable: {exc}") from exc
     if resp.status_code >= 400:
-        raise HTTPException(status_code=resp.status_code, detail=resp.text[:500])
+        try:
+            payload = resp.json()
+            detail = (
+                payload.get("detail", payload) if isinstance(payload, dict) else payload
+            )
+        except ValueError:
+            detail = resp.text[:500]
+        raise HTTPException(status_code=resp.status_code, detail=detail)
     return resp.json()
 
 

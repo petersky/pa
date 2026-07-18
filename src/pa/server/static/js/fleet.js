@@ -40,7 +40,9 @@
     }
     if (!resp.ok) {
       var detail = (data && data.detail) || resp.statusText || "Request failed";
-      throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+      var error = new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+      error.detail = detail;
+      throw error;
     }
     return data;
   }
@@ -830,6 +832,12 @@
         codexLoginJob = job.job_id;
         return watchCodexLogin(startInstance, job.job_id);
       }).catch(function (err) {
+        if (err.detail && err.detail.job_id) {
+          codexLoginJob = err.detail.job_id;
+          if (loginInstructions) loginInstructions.textContent =
+            "An existing login is active; restoring it…";
+          return watchCodexLogin(startInstance, codexLoginJob);
+        }
         if (loginInstructions) loginInstructions.textContent = err.message;
       }).finally(function () { confirmButton.disabled = false; });
       return;
