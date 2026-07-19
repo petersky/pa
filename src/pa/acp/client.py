@@ -622,6 +622,10 @@ class AgentConnection:
             self._ctx = None
             self._conn = None
             self._proc = None
+            if self.session and self.session.status not in {"closed", "quiesced"}:
+                self.session.status = "disconnected"
+                self.session.updated_at = datetime.now(UTC)
+                self.store.save_session(self.session)
             if ctx is not None:
                 try:
                     await asyncio.wait_for(
@@ -631,10 +635,6 @@ class AgentConnection:
                     logger.debug(
                         "ACP transport cleanup after death failed", exc_info=True
                     )
-        if self.session and self.session.status not in {"closed", "quiesced"}:
-            self.session.status = "disconnected"
-            self.session.updated_at = datetime.now(UTC)
-            self.store.save_session(self.session)
 
     async def cancel(self) -> None:
         if not self._conn or not self.session or not self.session.external_session_id:
