@@ -167,7 +167,10 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
     principal_id = get_principal_id(request)
     created_runtime = False
     from pa.acp.surfaces import surface_for_label
-    from pa.acp.providers.resolve import resolve_surface_preferences
+    from pa.acp.providers.resolve import (
+        resolve_provider_id,
+        resolve_surface_preferences,
+    )
     from pa.acp.surfaces import AgentInvocationContext
     from pa.core.preferences import SurfaceAgentPrefs
 
@@ -184,10 +187,6 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                 project_id=body.project_id,
             ),
         )
-    # An explicit provider switch must not inherit model/config ids belonging to
-    # a different provider.
-    if body.provider and surface_defaults.provider not in {None, body.provider}:
-        surface_defaults = SurfaceAgentPrefs(provider=body.provider)
     project_tool_config = None
     new_logical_session = True
     if body.project_id:
@@ -261,6 +260,24 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
         )
         actual_provider = actual_provider.strip().lower()
         defaults_provider = str(surface_defaults.provider or "").strip().lower()
+        if (
+            new_logical_session
+            and not defaults_provider
+            and isinstance(settings.data_dir, (str, Path))
+        ):
+            # Resolve what "inherit" means without the request override. Saved
+            # option ids are safe only when that provider is the one we started.
+            defaults_provider, _ = resolve_provider_id(
+                settings,
+                AgentInvocationContext(
+                    surface=surface,
+                    principal_id=principal_id,
+                    card_id=body.card_id,
+                    project_id=body.project_id,
+                ),
+                project_tool_config=project_tool_config,
+            )
+            defaults_provider = defaults_provider.strip().lower()
         initial_defaults = (
             surface_defaults
             if new_logical_session
