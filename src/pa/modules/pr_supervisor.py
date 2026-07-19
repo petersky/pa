@@ -659,6 +659,7 @@ class PRSupervisorModule(Module):
                 "GET",
                 f"/api/projects/{project_id}",
                 params={"realm": realm},
+                allow_not_found=True,
             )
             project = Project.model_validate(project_data) if project_data else None
             if not project:

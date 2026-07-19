@@ -494,7 +494,12 @@ class ItemsModule(Module):
         @mcp.tool()
         def get_item(item_id: str) -> dict | None:
             """Get a single item by ID."""
-            return request_local_pa(ctx.settings, "GET", f"/api/items/{item_id}")
+            return request_local_pa(
+                ctx.settings,
+                "GET",
+                f"/api/items/{item_id}",
+                allow_not_found=True,
+            )
 
         @mcp.tool()
         def list_knowledge(item_id: str | None = None, limit: int = 20) -> list[dict]:

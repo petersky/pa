@@ -47,8 +47,7 @@ class LeaseManager:
                 "expires_at": expires.isoformat(),
             },
         )
-        self.log.append_event(event)
-        self.store.apply_event(event)
+        self.store.commit_event(event)
         return True
 
     def release(
@@ -75,8 +74,7 @@ class LeaseManager:
             author_instance=self.instance_id,
             payload={},
         )
-        self.log.append_event(event)
-        self.store.apply_event(event)
+        self.store.commit_event(event)
         return True
 
     def is_holder(self, card_id: str, realm_id: str, instance_id: str) -> bool:

@@ -34,6 +34,34 @@ def _check_realm_access(request: Request, realm_id: str) -> None:
         raise HTTPException(status_code=403, detail="No access to realm")
 
 
+def _ensure_projection_at_head(store, log: EventLog, realm_id: str, head: str) -> None:
+    """Ensure conflict resolution reads entity state for its exact local head."""
+    if store.get_projection_head(realm_id) != head:
+        if not log.get_commit(head):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "missing_head_object",
+                    "realm_id": realm_id,
+                    "head": head,
+                },
+            )
+        store.rebuild_from_log(realm_id)
+    actual_head = log.get_head(realm_id)
+    projection_head = store.get_projection_head(realm_id)
+    if actual_head != head or projection_head != head:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "stale_sync_head",
+                "message": "The local head changed while preparing conflict resolution; retry",
+                "expected_head": head,
+                "actual_head": actual_head,
+                "projection_head": projection_head,
+            },
+        )
+
+
 @router.get("/sync/refs")
 def sync_refs(request: Request, realm: str | None = None) -> list[dict]:
     log: EventLog = request.app.state.ctx.require_service("event_log")
@@ -217,6 +245,9 @@ async def resolve_sync_conflicts(request: Request, body: dict) -> dict:
     remote_commit = log.get_commit(remote_head) if remote_head else None
     if not local_head or not remote_commit or remote_commit.realm_id != realm_id:
         raise HTTPException(status_code=400, detail="valid remote_head required")
+    store = get_store()
+    with store.mutation():
+        _ensure_projection_at_head(store, log, realm_id, local_head)
     compatible, health = log.compatible_histories(local_head, remote_head)
     if compatible:
         raise HTTPException(
@@ -264,7 +295,6 @@ async def resolve_sync_conflicts(request: Request, body: dict) -> dict:
 
     principal = get_principal_id(request)
     instance = request.app.state.ctx.settings.instance_id
-    store = get_store()
     events: list[CardEvent] = []
     for (entity, entity_id), item in supplied.items():
         action = item.get("action", "update")
@@ -353,14 +383,17 @@ async def resolve_sync_conflicts(request: Request, body: dict) -> dict:
                     else fields,
                 )
             )
-    try:
-        merge = log.resolve_heads(realm_id, local_head, remote_head, events, principal)
-    except StaleSyncHeadError as exc:
-        raise HTTPException(
-            status_code=409,
-            detail={"code": "stale_sync_head", "actual_head": exc.actual},
-        ) from exc
-    store.rebuild_from_log(realm_id)
+    with store.mutation():
+        try:
+            merge = log.resolve_heads(
+                realm_id, local_head, remote_head, events, principal
+            )
+        except StaleSyncHeadError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "stale_sync_head", "actual_head": exc.actual},
+            ) from exc
+        store.rebuild_from_log(realm_id)
     engine: SyncEngine = request.app.state.ctx.require_service("sync_engine")
     await engine.notify_commit(realm_id)
     return {"realm_id": realm_id, "head": merge.hash, "resolved": len(events)}

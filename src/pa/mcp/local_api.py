@@ -19,6 +19,7 @@ def request_local_pa(
     *,
     params: dict | None = None,
     json: dict | None = None,
+    allow_not_found: bool = False,
 ):
     host = settings.host if settings.host not in {"0.0.0.0", "::"} else "127.0.0.1"
     user = UserDirectory(settings.data_dir).ensure_default_user()
@@ -32,6 +33,8 @@ def request_local_pa(
             headers=headers,
             timeout=10.0,
         )
+        if allow_not_found and response.status_code == 404:
+            return None
         response.raise_for_status()
         return response.json()
     except httpx.HTTPError as exc:

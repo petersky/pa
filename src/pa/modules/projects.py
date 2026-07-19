@@ -199,6 +199,7 @@ class ProjectsModule(Module):
                 "GET",
                 f"/api/projects/{project_id}",
                 params={"realm": realm},
+                allow_not_found=True,
             )
 
         @mcp.tool()

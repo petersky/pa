@@ -70,6 +70,12 @@ class CardProjection:
         finally:
             conn.close()
 
+    @contextmanager
+    def mutation(self) -> Iterator[None]:
+        """Serialize a complete event-log and projection mutation."""
+        with self._mutation_lock:
+            yield
+
     def _init_db(self) -> None:
         with self._conn() as conn:
             conn.executescript(
@@ -275,6 +281,16 @@ class CardProjection:
         elif event.type == EventType.PROJECT_ARCHIVED:
             self._apply_project_archived(event)
 
+    @serialized_mutation
+    def commit_event(self, event: CardEvent):
+        """Append, project, and checkpoint one event as an ordered unit."""
+        if not self.event_log:
+            raise RuntimeError("Cannot commit an event without an event log")
+        _, commit = self.event_log.append_event(event, on_commit=self._on_commit)
+        self.apply_event(event)
+        self._record_projection_head(event.realm_id, commit.hash)
+        return commit
+
     def get_projection_head(self, realm_id: str) -> str | None:
         with self._conn() as conn:
             row = conn.execute(
@@ -387,7 +403,19 @@ class CardProjection:
 
     def _apply_deleted(self, event: CardEvent) -> None:
         if event.card_id:
-            self.delete_card(event.card_id)
+            self._delete_card_projection(event.card_id, realm_id=event.realm_id)
+
+    def _delete_card_projection(
+        self, card_id: str, *, realm_id: str | None = None
+    ) -> bool:
+        query = "DELETE FROM cards WHERE id = ?"
+        params: list[str] = [card_id]
+        if realm_id:
+            query += " AND realm_id = ?"
+            params.append(realm_id)
+        with self._conn() as conn:
+            cur = conn.execute(query, params)
+        return cur.rowcount > 0
 
     def _apply_lease(self, event: CardEvent) -> None:
         if not event.card_id:
@@ -483,9 +511,7 @@ class CardProjection:
                 author_instance=instance_id,
                 payload=card.model_dump(mode="json"),
             )
-            self.event_log.append_event(event, on_commit=self._on_commit)
-            self.apply_event(event)
-            self._record_projection_head(event.realm_id)
+            self.commit_event(event)
         else:
             self._upsert_card(card)
         return card
@@ -558,9 +584,7 @@ class CardProjection:
                 author_instance=instance_id,
                 payload=payload,
             )
-            self.event_log.append_event(event, on_commit=self._on_commit)
-            self.apply_event(event)
-            self._record_projection_head(event.realm_id)
+            self.commit_event(event)
             return self.get_card(card_id, realm_id=realm_id)
         for key, value in updates.items():
             if value is not None:
@@ -591,13 +615,9 @@ class CardProjection:
                 author_instance=instance_id,
                 payload={},
             )
-            self.event_log.append_event(event, on_commit=self._on_commit)
-            self.apply_event(event)
-            self._record_projection_head(event.realm_id)
+            self.commit_event(event)
             return True
-        with self._conn() as conn:
-            cur = conn.execute("DELETE FROM cards WHERE id = ?", (card_id,))
-        return cur.rowcount > 0
+        return self._delete_card_projection(card_id, realm_id=realm_id)
 
     def _upsert_project(self, project: Project) -> None:
         with self._conn() as conn:
@@ -653,9 +673,7 @@ class CardProjection:
                 author_instance=instance_id,
                 payload=project.model_dump(mode="json"),
             )
-            self.event_log.append_event(event, on_commit=self._on_commit)
-            self.apply_event(event)
-            self._record_projection_head(event.realm_id)
+            self.commit_event(event)
         else:
             self._upsert_project(project)
         return project
@@ -723,9 +741,7 @@ class CardProjection:
                 author_instance=instance_id,
                 payload=payload,
             )
-            self.event_log.append_event(event, on_commit=self._on_commit)
-            self.apply_event(event)
-            self._record_projection_head(event.realm_id)
+            self.commit_event(event)
             return self.get_project(project_id, realm_id=realm_id)
         for key, value in updates.items():
             if value is not None:
@@ -754,9 +770,7 @@ class CardProjection:
                 author_instance=instance_id,
                 payload={},
             )
-            self.event_log.append_event(event, on_commit=self._on_commit)
-            self.apply_event(event)
-            self._record_projection_head(event.realm_id)
+            self.commit_event(event)
             return self.get_project(project_id, realm_id=realm_id)
         return self.update_project(
             project_id,
