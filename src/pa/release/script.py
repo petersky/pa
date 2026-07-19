@@ -22,10 +22,13 @@ from pa.release.runner import (
     amend_release_notes,
     commits_behind_origin_main,
     create_release,
-    ensure_tag_available,
-    publish_github_release,
+    ensure_release_pr,
     ensure_release_branch,
+    ensure_tag_available,
+    head_commit,
+    merge_release_pr,
     origin_main_release_notes,
+    publish_github_release,
     resolve_version,
     tag_merged_release,
     wait_for_github_release,
@@ -119,6 +122,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("-m", "--message", help="Commit/tag message")
     parser.add_argument("--skip-gh", action="store_true", help="Skip gh release create/edit")
     parser.add_argument(
+        "--ship",
+        action="store_true",
+        help="Create and merge the release PR, then tag and publish without prompting",
+    )
+    parser.add_argument(
         "--wait-ci",
         type=int,
         default=120,
@@ -167,6 +175,40 @@ def _notes_path_from_merged_main(tag: str) -> tuple[Path, Path]:
         temporary.close()
 
 
+def _confirm_ship(tag: str, pr_url: str) -> bool:
+    if not sys.stdin.isatty():
+        return False
+    try:
+        answer = input(
+            f"Wait for checks, merge {pr_url}, tag, and publish {tag}? [y/N] "
+        )
+    except EOFError:
+        return False
+    return answer.strip().lower() in {"y", "yes"}
+
+
+def _publish(tag: str, args: argparse.Namespace, *, do_push: bool) -> None:
+    _log(f"Publishing {tag}...")
+    tag_merged_release(tag, message=args.message, push=do_push)
+    if args.notes_file:
+        notes_path = args.notes_file
+        temporary_notes = None
+    else:
+        notes_path, temporary_notes = _notes_path_from_merged_main(tag)
+    try:
+        if not args.skip_gh:
+            if do_push:
+                _wait_then_publish(tag, notes_path, wait_ci=args.wait_ci)
+            else:
+                _log("==> Skipping GitHub release publish (--no-push).")
+        else:
+            _log("==> Skipping GitHub release publish (--skip-gh).")
+    finally:
+        if temporary_notes:
+            temporary_notes.unlink(missing_ok=True)
+    _log(f"Done. Published {tag}" if do_push else f"Done. Tagged {tag} locally (--no-push).")
+
+
 def _run(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     do_push = not args.no_push
@@ -181,7 +223,11 @@ def _run(argv: list[str] | None = None) -> int:
             print(f"dry-run: amend {tag}")
         elif args.version:
             new = resolve_version(args.version)
-            print(f"dry-run: {args.version} -> {new} (v{new}) channel={args.channel or track_for_version(new)}")
+            action = "ship" if args.ship else "prepare"
+            print(
+                f"dry-run: {action} {args.version} -> {new} (v{new}) "
+                f"channel={args.channel or track_for_version(new)}"
+            )
         else:
             print("error: version required", file=sys.stderr)
             return 1
@@ -191,25 +237,7 @@ def _run(argv: list[str] | None = None) -> int:
         tag = args.tag or tag_for_version(read_version())
         if not tag.startswith("v"):
             tag = f"v{tag}"
-        _log(f"Publishing {tag}...")
-        tag_merged_release(tag, message=args.message, push=do_push)
-        if args.notes_file:
-            notes_path = args.notes_file
-            temporary_notes = None
-        else:
-            notes_path, temporary_notes = _notes_path_from_merged_main(tag)
-        try:
-            if not args.skip_gh:
-                if do_push:
-                    _wait_then_publish(tag, notes_path, wait_ci=args.wait_ci)
-                else:
-                    _log("==> Skipping GitHub release publish (--no-push).")
-            else:
-                _log("==> Skipping GitHub release publish (--skip-gh).")
-        finally:
-            if temporary_notes:
-                temporary_notes.unlink(missing_ok=True)
-        _log(f"Done. Published {tag}" if do_push else f"Done. Tagged {tag} locally (--no-push).")
+        _publish(tag, args, do_push=do_push)
         return 0
 
     if args.amend:
@@ -261,6 +289,9 @@ def _run(argv: list[str] | None = None) -> int:
         print("error: version bump required (major, minor, patch, or X.Y.Z)", file=sys.stderr)
         return 1
 
+    if args.ship and (not do_push or args.no_commit or args.skip_gh):
+        raise ReleaseError("--ship requires commit, push, and GitHub publishing to be enabled")
+
     if _warn_if_behind_origin_main(require_up_to_date=do_push):
         return 1
 
@@ -304,12 +335,27 @@ def _run(argv: list[str] | None = None) -> int:
     )
     _log(f"  Release PR is ready: {result.old_version} -> {result.new_version} ({result.tag})")
 
-    _log(f"\nRelease {tag} prepared; merge the release PR, then publish it.")
+    _log(f"\nRelease {tag} prepared.")
     _log(f"  Notes: {notes_path}")
     if do_push:
-        _log(f"  Open PR: gh pr create --base main --head {branch} --title 'Release {tag}'")
+        pr_url = ensure_release_pr(tag, branch)
+        pr_head_commit = head_commit()
     else:
         _log(f"  Push branch later: git push -u origin {branch}")
+        pr_url = None
+        pr_head_commit = None
+
+    should_ship = bool(args.ship)
+    if pr_url and not should_ship:
+        should_ship = _confirm_ship(tag, pr_url)
+    if pr_url and should_ship:
+        assert pr_head_commit is not None
+        merge_release_pr(pr_url, head_commit=pr_head_commit)
+        _publish(tag, args, do_push=True)
+        return 0
+
+    if pr_url:
+        _log(f"  Release PR: {pr_url}")
     _log(f"  After merge: ./scripts/release.sh --publish --tag {tag}")
     return 0
 
