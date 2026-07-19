@@ -1136,24 +1136,53 @@ code {
 .acw-bubble ul,
 .acw-bubble ol { margin: 0.35rem 0; padding-inline-start: 1.4rem; }
 .acw-bubble li + li { margin-top: 0.15rem; }
-.acw-bubble code { overflow-wrap: break-word; }
+.acw-bubble code {
+  overflow-wrap: break-word;
+  font-size: 0.8rem;
+  padding: 0.1em 0.3em;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--pa-text) 10%, transparent);
+}
 .acw-bubble a { color: inherit; text-decoration: underline; }
 .acw-bubble pre {
   margin: 0.35rem 0;
-  padding: 0.4rem;
+  padding: 0.55rem 0.65rem;
   overflow: auto;
-  background: var(--pa-bg);
+  background: var(--pa-surface);
+  color: var(--pa-text);
+  border: 1px solid var(--pa-border);
   border-radius: 5px;
   font-size: 0.8rem;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
-.acw-bubble pre code { overflow-wrap: inherit; }
+.acw-bubble pre code {
+  overflow-wrap: inherit;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font-size: inherit;
+}
 
 .acw-bubble-user {
   background: var(--pa-chat-user-bg);
   color: var(--pa-chat-user-fg);
+}
+
+/* User bubbles use --pa-bg as foreground; keep code readable on accent. */
+.acw-bubble-user code {
+  background: rgb(0 0 0 / 0.22);
+  color: #fff;
+}
+.acw-bubble-user pre {
+  background: rgb(0 0 0 / 0.28);
+  color: #f4f6fb;
+  border-color: rgb(255 255 255 / 0.18);
+}
+.acw-bubble-user pre code {
+  background: transparent;
+  color: inherit;
 }
 
 .acw-bubble-agent {

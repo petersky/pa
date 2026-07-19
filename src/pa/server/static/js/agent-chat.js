@@ -600,11 +600,17 @@
   }
 
   AgentChatWidget.prototype._isDuplicateUserBubble = function (text) {
-    if (!text || !this.els.messages) return false;
+    // Compare against dataset.markdown (raw prompt), not textContent — markdown
+    // rendering drops newlines (`<br>` / `<p>`), which made every multi-line
+    // optimistic bubble look unique and paint a second copy from SSE.
+    if (typeof text !== "string" || !this.els.messages) return false;
     const rows = this.els.messages.querySelectorAll(".acw-msg-user .acw-bubble");
     if (!rows.length) return false;
     const last = rows[rows.length - 1];
-    return (last.textContent || "") === text;
+    const lastText = Object.prototype.hasOwnProperty.call(last.dataset, "markdown")
+      ? last.dataset.markdown
+      : (last.textContent || "");
+    return lastText === text;
   };
 
   AgentChatWidget.prototype.setStatus = function (state) {
@@ -819,7 +825,8 @@
     ].forEach(function (name) {
       es.addEventListener(name, onAny);
     });
-    es.onmessage = onAny;
+    // Do not also set es.onmessage — that would double-dispatch default
+    // "message" events (addEventListener("message") is already registered).
     es.onerror = function () {
       self.setStatus("offline");
     };
@@ -989,12 +996,16 @@
 
   AgentChatWidget.prototype.renderMarkdownBubble = function (bubble) {
     const content = bubble.dataset.markdown || "";
+    // Preserve attachment gallery across innerHTML replacement.
+    const gallery = bubble.querySelector(".acw-message-images");
+    if (gallery) gallery.remove();
     if (this.rawText) {
       bubble.textContent = content;
     } else {
       bubble.innerHTML = renderMarkdown(content);
       if (window.PALinks) window.PALinks.decorate(bubble);
     }
+    if (gallery) bubble.insertBefore(gallery, bubble.firstChild);
   };
 
   AgentChatWidget.prototype.rerenderMarkdownBubbles = function () {
