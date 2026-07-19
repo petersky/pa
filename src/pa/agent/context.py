@@ -13,6 +13,17 @@ PA provides browser tools through the `pa` MCP server. For browser work, use the
 Prefer these tools over the Codex in-app browser. You may attach and configure a
 headless browser yourself; the user does not need to attach one first."""
 
+PA_DATA_SAFETY_CONTEXT = """## PA data and sync safety
+Treat the running PA server as the sole writer for its PA_DATA_DIR. Use PA MCP
+tools or the local PA HTTP API for card, project, sync, and conflict-resolution
+changes. Never import PA internals to mutate the Store/EventLog from a script,
+write pa.db or sync_refs.json directly, or force a ref to a chosen head.
+
+If sync status reports different durable and projection heads, call PA's
+sync_reconcile tool/API. Do not restart PA merely to refresh cached state. For
+diverged histories, use the conflict-resolution tool/API so PA records a merge
+commit; preserve both parents and supply an explicit value for every conflict."""
+
 
 def resolve_project_for_prompt(
     store: Store,
@@ -30,7 +41,9 @@ def resolve_project_for_prompt(
     return None
 
 
-def build_project_context_prefix(project: Project | None, card: Card | None = None) -> str:
+def build_project_context_prefix(
+    project: Project | None, card: Card | None = None
+) -> str:
     if not project and not card:
         return ""
     parts: list[str] = []
@@ -81,7 +94,7 @@ def augment_message_with_context(
     )
     card = store.get_card(card_id, realm_id=realm_id) if card_id else None
     prefix = build_project_context_prefix(project, card)
-    prefixes = [PA_BROWSER_CONTEXT]
+    prefixes = [PA_DATA_SAFETY_CONTEXT, PA_BROWSER_CONTEXT]
     if prefix:
         prefixes.insert(0, prefix)
     context = "\n\n".join(prefixes)

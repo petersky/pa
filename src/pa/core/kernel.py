@@ -34,29 +34,46 @@ class Kernel:
 
     @classmethod
     def boot(
-        cls, *, settings: Settings | None = None, load_modules: bool = True
+        cls,
+        *,
+        settings: Settings | None = None,
+        load_modules: bool = True,
+        claim_writer: bool = False,
     ) -> Kernel:
         settings = settings or get_settings()
-        configure_logging(settings)
+        writer_lock = None
+        if claim_writer:
+            from pa.core.writer_lock import DataDirWriterLock
 
-        hooks = HookBus()
-        if settings.debug:
-            hooks.enable_history(True)
+            writer_lock = DataDirWriterLock(settings.data_dir)
+            writer_lock.acquire()
+        try:
+            configure_logging(settings)
 
-        ctx = AppContext(settings=settings, hooks=hooks, store=get_store())
-        from pa.core.ui.pages import PageRegistry
+            hooks = HookBus()
+            if settings.debug:
+                hooks.enable_history(True)
 
-        ctx.register_service("pages", PageRegistry())
-        from pa.core.assets import build_asset_manifest
+            ctx = AppContext(settings=settings, hooks=hooks, store=get_store())
+            if writer_lock:
+                ctx.register_service("writer_lock", writer_lock)
+            from pa.core.ui.pages import PageRegistry
 
-        ctx.register_service("assets", build_asset_manifest(DEFAULT_STATIC))
-        registry = ModuleRegistry(ctx)
+            ctx.register_service("pages", PageRegistry())
+            from pa.core.assets import build_asset_manifest
 
-        if load_modules:
-            registry.load_all()
+            ctx.register_service("assets", build_asset_manifest(DEFAULT_STATIC))
+            registry = ModuleRegistry(ctx)
 
-        kernel = cls(ctx, registry)
-        return kernel
+            if load_modules:
+                registry.load_all()
+
+            kernel = cls(ctx, registry)
+            return kernel
+        except BaseException:
+            if writer_lock:
+                writer_lock.release()
+            raise
 
     async def startup(self, app: FastAPI) -> None:
         from pa.execution.lease import LeaseManager
@@ -158,9 +175,22 @@ class Kernel:
 
         @asynccontextmanager
         async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-            await kernel.startup(app)
-            yield
-            await kernel.shutdown(app)
+            from pa.core.writer_lock import DataDirWriterLock
+
+            writer_lock = kernel.ctx.services.get("writer_lock")
+            if not writer_lock:
+                writer_lock = DataDirWriterLock(kernel.ctx.settings.data_dir)
+                writer_lock.acquire()
+                kernel.ctx.register_service("writer_lock", writer_lock)
+            started = False
+            try:
+                await kernel.startup(app)
+                started = True
+                yield
+            finally:
+                if started:
+                    await kernel.shutdown(app)
+                writer_lock.release()
 
         app = FastAPI(
             title="PA",

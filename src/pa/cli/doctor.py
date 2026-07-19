@@ -34,7 +34,9 @@ async def _check_peers(peers: list[str], sync_token: str) -> list[tuple[str, boo
                 headers = {}
                 if sync_token:
                     headers["Authorization"] = f"Bearer {sync_token}"
-                resp = await client.get(f"{peer.rstrip('/')}/api/health", headers=headers)
+                resp = await client.get(
+                    f"{peer.rstrip('/')}/api/health", headers=headers
+                )
                 results.append((peer, resp.status_code == 200))
             except httpx.HTTPError:
                 results.append((peer, False))
@@ -69,7 +71,9 @@ def run_doctor() -> int:
         failures.append("config.json missing — run pa init")
 
     if install_meta:
-        typer.echo(f"  [ok]   Install: v{install_meta.version} ({install_meta.channel})")
+        typer.echo(
+            f"  [ok]   Install: v{install_meta.version} ({install_meta.channel})"
+        )
     else:
         warnings.append("install.json missing — run pa install --record-only")
 
@@ -81,7 +85,9 @@ def run_doctor() -> int:
             if not svc_status.running:
                 warnings.append(f"service not running ({svc_status.backend})")
         else:
-            warnings.append("service unit not installed — run pa install --service-only")
+            warnings.append(
+                "service unit not installed — run pa install --service-only"
+            )
     else:
         warnings.append(f"no service manager on {sys.platform}")
 
@@ -94,7 +100,9 @@ def run_doctor() -> int:
     elif svc_status.running:
         warnings.append(f"health check failed for {instance_url}")
     else:
-        warnings.append(f"instance not reachable at {instance_url} (service may be stopped)")
+        warnings.append(
+            f"instance not reachable at {instance_url} (service may be stopped)"
+        )
 
     if settings.peers:
         typer.echo(f"  [..]   Peers ({len(settings.peers)}):")
@@ -120,10 +128,8 @@ def run_doctor() -> int:
         if not st.get("available"):
             warnings.append(f"ACP provider not available: {st.get('id')}")
 
-    from pa.domain.store import get_store
     from pa.sync.infrastructure import get_event_log, get_object_store
 
-    store = get_store()
     event_log = get_event_log(settings)
     obj_store = get_object_store(settings)
     for realm in settings.subscribed_realms:

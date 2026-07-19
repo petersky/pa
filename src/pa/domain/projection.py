@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Iterator
+from functools import wraps
+from typing import Callable, Iterator, TypeVar
 from uuid import uuid4
 
 from pa.domain.models import (
@@ -36,11 +38,25 @@ from pa.domain.models import (
 )
 from pa.sync.event_log import EventLog
 
+T = TypeVar("T")
+
+
+def serialized_mutation(method: Callable[..., T]) -> Callable[..., T]:
+    """Keep ref advancement, projection application, and checkpoint ordered."""
+
+    @wraps(method)
+    def wrapped(self: CardProjection, *args, **kwargs):
+        with self._mutation_lock:
+            return method(self, *args, **kwargs)
+
+    return wrapped
+
 
 class CardProjection:
     def __init__(self, db_path: Path, event_log: EventLog | None = None) -> None:
         self.db_path = db_path
         self.event_log = event_log
+        self._mutation_lock = threading.RLock()
         self._init_db()
 
     @contextmanager
@@ -141,17 +157,27 @@ class CardProjection:
                 );
                 CREATE INDEX IF NOT EXISTS idx_transcript_session_seq
                     ON agent_transcript_events(session_id, seq);
+                CREATE TABLE IF NOT EXISTS sync_projection_heads (
+                    realm_id TEXT PRIMARY KEY,
+                    head_hash TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
                 """
             )
             self._migrate_items_to_cards(conn)
             self._migrate_schema(conn)
 
     def _migrate_schema(self, conn: sqlite3.Connection) -> None:
-        card_cols = {row[1] for row in conn.execute("PRAGMA table_info(cards)").fetchall()}
+        card_cols = {
+            row[1] for row in conn.execute("PRAGMA table_info(cards)").fetchall()
+        }
         if "project_id" not in card_cols:
             conn.execute("ALTER TABLE cards ADD COLUMN project_id TEXT")
 
-        session_cols = {row[1] for row in conn.execute("PRAGMA table_info(agent_sessions)").fetchall()}
+        session_cols = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(agent_sessions)").fetchall()
+        }
         if "card_id" not in session_cols:
             conn.execute("ALTER TABLE agent_sessions ADD COLUMN card_id TEXT")
             conn.execute(
@@ -193,7 +219,9 @@ class CardProjection:
             """
         )
 
-        knowledge_cols = {row[1] for row in conn.execute("PRAGMA table_info(knowledge)").fetchall()}
+        knowledge_cols = {
+            row[1] for row in conn.execute("PRAGMA table_info(knowledge)").fetchall()
+        }
         if knowledge_cols and "card_id" not in knowledge_cols:
             conn.execute("ALTER TABLE knowledge ADD COLUMN card_id TEXT")
             conn.execute(
@@ -247,6 +275,34 @@ class CardProjection:
         elif event.type == EventType.PROJECT_ARCHIVED:
             self._apply_project_archived(event)
 
+    def get_projection_head(self, realm_id: str) -> str | None:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT head_hash FROM sync_projection_heads WHERE realm_id = ?",
+                (realm_id,),
+            ).fetchone()
+        return row["head_hash"] if row else None
+
+    def _record_projection_head(
+        self, realm_id: str, head_hash: str | None = None
+    ) -> None:
+        if not self.event_log:
+            return
+        head_hash = head_hash or self.event_log.get_head(realm_id)
+        if not head_hash:
+            return
+        with self._conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO sync_projection_heads (realm_id, head_hash, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(realm_id) DO UPDATE SET
+                    head_hash = excluded.head_hash,
+                    updated_at = excluded.updated_at
+                """,
+                (realm_id, head_hash, datetime.now(UTC).isoformat()),
+            )
+
     def _apply_created(self, event: CardEvent) -> None:
         p = event.payload
         card = Card(
@@ -274,7 +330,9 @@ class CardProjection:
             title=p.get("title", ""),
             description=p.get("description", ""),
             status=ProjectStatus(p.get("status", "active")),
-            memberships=[ProjectMembership.model_validate(m) for m in p.get("memberships", [])],
+            memberships=[
+                ProjectMembership.model_validate(m) for m in p.get("memberships", [])
+            ],
             repos=[ProjectRepo.model_validate(r) for r in p.get("repos", [])],
             agent_prompt=p.get("agent_prompt", ""),
             tool_config=p.get("tool_config", {}),
@@ -293,7 +351,9 @@ class CardProjection:
             if key == "status" and value is not None:
                 project.status = ProjectStatus(value)
             elif key == "memberships" and value is not None:
-                project.memberships = [ProjectMembership.model_validate(m) for m in value]
+                project.memberships = [
+                    ProjectMembership.model_validate(m) for m in value
+                ]
             elif key == "repos" and value is not None:
                 project.repos = [ProjectRepo.model_validate(r) for r in value]
             elif hasattr(project, key):
@@ -381,7 +441,9 @@ class CardProjection:
                     json.dumps(card.preferred_capabilities),
                     card.lease_holder_instance,
                     card.lease_holder_principal,
-                    card.lease_expires_at.isoformat() if card.lease_expires_at else None,
+                    card.lease_expires_at.isoformat()
+                    if card.lease_expires_at
+                    else None,
                     card.created_by_principal,
                     card.created_by_instance,
                     card.created_at.isoformat(),
@@ -389,6 +451,7 @@ class CardProjection:
                 ),
             )
 
+    @serialized_mutation
     def create_card(
         self,
         data: CardCreate,
@@ -422,6 +485,7 @@ class CardProjection:
             )
             self.event_log.append_event(event, on_commit=self._on_commit)
             self.apply_event(event)
+            self._record_projection_head(event.realm_id)
         else:
             self._upsert_card(card)
         return card
@@ -465,6 +529,7 @@ class CardProjection:
             row = conn.execute(query, params).fetchone()
         return self._row_to_card(row) if row else None
 
+    @serialized_mutation
     def update_card(
         self,
         card_id: str,
@@ -495,6 +560,7 @@ class CardProjection:
             )
             self.event_log.append_event(event, on_commit=self._on_commit)
             self.apply_event(event)
+            self._record_projection_head(event.realm_id)
             return self.get_card(card_id, realm_id=realm_id)
         for key, value in updates.items():
             if value is not None:
@@ -503,6 +569,7 @@ class CardProjection:
         self._upsert_card(card)
         return card
 
+    @serialized_mutation
     def delete_card(
         self,
         card_id: str,
@@ -526,6 +593,7 @@ class CardProjection:
             )
             self.event_log.append_event(event, on_commit=self._on_commit)
             self.apply_event(event)
+            self._record_projection_head(event.realm_id)
             return True
         with self._conn() as conn:
             cur = conn.execute("DELETE FROM cards WHERE id = ?", (card_id,))
@@ -557,6 +625,7 @@ class CardProjection:
                 ),
             )
 
+    @serialized_mutation
     def create_project(
         self,
         data: ProjectCreate,
@@ -586,6 +655,7 @@ class CardProjection:
             )
             self.event_log.append_event(event, on_commit=self._on_commit)
             self.apply_event(event)
+            self._record_projection_head(event.realm_id)
         else:
             self._upsert_project(project)
         return project
@@ -608,7 +678,9 @@ class CardProjection:
             rows = conn.execute(query, params).fetchall()
         return [self._row_to_project(row) for row in rows]
 
-    def get_project(self, project_id: str, realm_id: str | None = None) -> Project | None:
+    def get_project(
+        self, project_id: str, realm_id: str | None = None
+    ) -> Project | None:
         query = "SELECT * FROM projects WHERE id = ?"
         params: list[str] = [project_id]
         if realm_id:
@@ -618,6 +690,7 @@ class CardProjection:
             row = conn.execute(query, params).fetchone()
         return self._row_to_project(row) if row else None
 
+    @serialized_mutation
     def update_project(
         self,
         project_id: str,
@@ -636,7 +709,9 @@ class CardProjection:
             if key == "status" and value is not None:
                 payload["status"] = value.value if hasattr(value, "value") else value
             elif key in ("memberships", "repos") and value is not None:
-                payload[key] = [v.model_dump() if hasattr(v, "model_dump") else v for v in value]
+                payload[key] = [
+                    v.model_dump() if hasattr(v, "model_dump") else v for v in value
+                ]
             elif value is not None:
                 payload[key] = value
         if self.event_log and payload:
@@ -650,6 +725,7 @@ class CardProjection:
             )
             self.event_log.append_event(event, on_commit=self._on_commit)
             self.apply_event(event)
+            self._record_projection_head(event.realm_id)
             return self.get_project(project_id, realm_id=realm_id)
         for key, value in updates.items():
             if value is not None:
@@ -658,6 +734,7 @@ class CardProjection:
         self._upsert_project(project)
         return project
 
+    @serialized_mutation
     def archive_project(
         self,
         project_id: str,
@@ -679,6 +756,7 @@ class CardProjection:
             )
             self.event_log.append_event(event, on_commit=self._on_commit)
             self.apply_event(event)
+            self._record_projection_head(event.realm_id)
             return self.get_project(project_id, realm_id=realm_id)
         return self.update_project(
             project_id,
@@ -688,7 +766,9 @@ class CardProjection:
             instance_id=instance_id,
         )
 
-    def list_cards_for_project(self, project_id: str, realm_id: str | None = None) -> list[Card]:
+    def list_cards_for_project(
+        self, project_id: str, realm_id: str | None = None
+    ) -> list[Card]:
         return self.list_cards(realm_id=realm_id, project_id=project_id)
 
     def assign_card_to_project(
@@ -713,7 +793,9 @@ class CardProjection:
         card = self.create_card(data.to_card_create(), **kwargs)
         return Item.from_card(card)
 
-    def list_items(self, kind: ItemKind | None = None, status: ItemStatus | None = None) -> list[Item]:
+    def list_items(
+        self, kind: ItemKind | None = None, status: ItemStatus | None = None
+    ) -> list[Item]:
         lane = _STATUS_TO_LANE.get(status) if status else None
         cards = self.list_cards(
             kind=CardKind(kind.value) if kind else None,
@@ -804,7 +886,9 @@ class CardProjection:
             ).fetchone()
         return int(row["max_seq"] if row else 0) + 1
 
-    def append_transcript_events(self, events: list[TranscriptEvent]) -> list[TranscriptEvent]:
+    def append_transcript_events(
+        self, events: list[TranscriptEvent]
+    ) -> list[TranscriptEvent]:
         if not events:
             return events
         with self._conn() as conn:
@@ -893,7 +977,9 @@ class CardProjection:
             )
         return entry
 
-    def list_knowledge(self, item_id: str | None = None, limit: int = 50) -> list[KnowledgeEntry]:
+    def list_knowledge(
+        self, item_id: str | None = None, limit: int = 50
+    ) -> list[KnowledgeEntry]:
         query = "SELECT * FROM knowledge WHERE 1=1"
         params: list[str | int] = []
         if item_id:
@@ -905,6 +991,7 @@ class CardProjection:
             rows = conn.execute(query, params).fetchall()
         return [self._row_to_knowledge(row) for row in rows]
 
+    @serialized_mutation
     def rebuild_from_log(self, realm_id: str) -> None:
         if not self.event_log:
             return
@@ -915,6 +1002,7 @@ class CardProjection:
             conn.execute("DELETE FROM cards WHERE realm_id = ?", (realm_id,))
             conn.execute("DELETE FROM projects WHERE realm_id = ?", (realm_id,))
         self.event_log.apply_commit_chain(head, self.apply_event)
+        self._record_projection_head(realm_id, head)
 
     @staticmethod
     def _row_to_project(row: sqlite3.Row) -> Project:
@@ -924,7 +1012,10 @@ class CardProjection:
             title=row["title"],
             description=row["description"],
             status=ProjectStatus(row["status"]),
-            memberships=[ProjectMembership.model_validate(m) for m in json.loads(row["memberships"])],
+            memberships=[
+                ProjectMembership.model_validate(m)
+                for m in json.loads(row["memberships"])
+            ],
             repos=[ProjectRepo.model_validate(r) for r in json.loads(row["repos"])],
             agent_prompt=row["agent_prompt"],
             tool_config=json.loads(row["tool_config"]),
@@ -974,7 +1065,7 @@ class CardProjection:
                 return raw
             try:
                 return json.loads(raw)
-            except (json.JSONDecodeError, TypeError):
+            except json.JSONDecodeError, TypeError:
                 return {}
 
         return AgentSession(

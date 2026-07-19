@@ -115,6 +115,46 @@ PA separates **who runs instances** from **what card state is shared**:
 
 Card state is stored as an append-only **event log** (git-inspired content-addressed objects) with a SQLite **projection** for fast reads. Instances sync via `POST /api/sync/*` endpoints.
 
+### Local writer and distributed history
+
+“Single writer” is local, not fleet-wide. Every running instance is the sole
+writer for its own `PA_DATA_DIR`, while all instances may independently create
+commits in the same realm. A server-lifetime advisory lock prevents two PA
+servers from owning one directory. CLI and stdio MCP mutations are clients of
+that server; they do not open the live SQLite/event-log files as another writer.
+
+The write path is:
+
+1. The owning server appends immutable event and commit objects.
+2. It advances `sync_refs.json` under an inter-process lock and compare-and-swap
+   check.
+3. It applies the event to SQLite and records the projected commit head.
+4. It advertises the new head to peers.
+
+Peers exchange immutable objects. The receiving server alone decides whether
+its local ref can fast-forward, already contains the incoming head, can create a
+conflict-free two-parent merge, or must return a field-level conflict. Manual
+resolution creates another two-parent merge with explicit resolution events;
+it never rewrites a ref to discard one history.
+
+`POST /api/sync/conflicts/resolve` and MCP `resolve_sync_conflicts` accept one
+entry per entity: `{"entity":"card","id":"…","action":"update","fields":{"title":"…"}}`.
+Every reported conflicting field must be present. For delete-vs-edit conflicts,
+choose `delete` (card), `archive` (project), or `upsert` with the complete entity
+state. PA validates the result before advancing the ref.
+
+The event log/ref is durable history; SQLite is a rebuildable read model. PA
+compares the projection checkpoint with the durable head during startup and in
+`GET /api/sync/status`. `POST /api/sync/reconcile` (MCP `sync_reconcile`)
+reloads refs and rebuilds a stale projection without restarting the server.
+Ref reads also refresh from disk, and ref mutations use a file lock plus CAS as
+defense against older utilities or accidental concurrent processes.
+
+Do not share one `PA_DATA_DIR` over NFS, mount it into multiple containers, run
+two servers against it, or use Python scripts that call `Store`, `EventLog`, or
+`rebuild_from_log` beside a live server. High availability uses separate PA
+instances/data directories and normal realm sync.
+
 Configure with:
 
 - `PA_FLEET_ID`, `PA_SUBSCRIBED_REALMS`, `PA_ZONE`, `PA_CAPABILITIES`, `PA_RELAY_ENABLED`
@@ -143,13 +183,14 @@ PA is designed **agent-first**: agents can direct PA and be directed by it, incl
 
 ### Principles
 
-1. **MCP is the agent API** — capabilities agents need exist as MCP tools (cards, projects, fleet, sync).
+1. **MCP is the agent API** — capabilities agents need exist as MCP tools (cards, projects, fleet, sync). The stdio MCP process proxies synchronized reads and writes to the owning PA server.
 2. **ACP is session transport** — the instance agent connects via ACP; PA MCP is injected as a stdio server in the session.
 3. **Bidirectional control**
    - *Agent → PA:* create/move cards, assign projects, query fleet, trigger execution.
    - *PA → Agent:* leases, project context prefix on prompts, per-user env, instance routing.
 4. **Project context** — prompts with a `card_id` or `project_id` prepend the project's `agent_prompt` and repo list.
 5. **UI is optional** — HTMX web UI, CLI, MCP, and ACP chat are peers.
+6. **Agents do not repair storage directly** — injected prompt context requires server APIs for reconciliation and conflict merge, and forbids direct ref/SQLite manipulation or restart-as-refresh.
 
 ### Interfaces
 
