@@ -339,15 +339,18 @@ def _run(argv: list[str] | None = None) -> int:
     _log(f"  Notes: {notes_path}")
     if do_push:
         pr_url = ensure_release_pr(tag, branch)
+        pr_head_commit = head_commit()
     else:
         _log(f"  Push branch later: git push -u origin {branch}")
         pr_url = None
+        pr_head_commit = None
 
     should_ship = bool(args.ship)
     if pr_url and not should_ship:
         should_ship = _confirm_ship(tag, pr_url)
     if pr_url and should_ship:
-        merge_release_pr(pr_url, head_commit=head_commit())
+        assert pr_head_commit is not None
+        merge_release_pr(pr_url, head_commit=pr_head_commit)
         _publish(tag, args, do_push=True)
         return 0
 
