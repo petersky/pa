@@ -1008,6 +1008,61 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn(b"event: ready", body)
             self.assertIsNone(client_factory.call_args.kwargs["timeout"].read)
 
+    async def test_agent_proxy_treats_peer_restart_as_event_stream_eof(self) -> None:
+        from pa.modules.fleet import fleet_agent_proxy
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), sync_token="fleet-secret")
+            fleet = FleetRegistry(settings.data_dir, settings.fleet_id)
+            fleet.upsert_instance(
+                FleetInstance(
+                    instance_id="mini-1",
+                    name="macmini",
+                    url="http://mini:8080",
+                )
+            )
+            ctx = MagicMock(settings=settings)
+            ctx.require_service.return_value = fleet
+            request = MagicMock()
+            request.app.state.ctx = ctx
+            request.method = "GET"
+            request.query_params.multi_items.return_value = []
+            request.headers.get.side_effect = lambda name: {
+                "accept": "text/event-stream"
+            }.get(name)
+            request.body = AsyncMock(return_value=b"")
+
+            class InterruptedEventStream(httpx.AsyncByteStream):
+                async def __aiter__(self):
+                    yield b"event: ready\ndata: {}\n\n"
+                    raise httpx.RemoteProtocolError("incomplete chunked read")
+
+            async def upstream_handler(_request: httpx.Request) -> httpx.Response:
+                return httpx.Response(
+                    200,
+                    stream=InterruptedEventStream(),
+                    headers={"content-type": "text/event-stream"},
+                )
+
+            upstream_client = httpx.AsyncClient(
+                transport=httpx.MockTransport(upstream_handler)
+            )
+            with (
+                patch("pa.modules.fleet.require_user", return_value=object()),
+                patch(
+                    "pa.modules.fleet.httpx.AsyncClient",
+                    return_value=upstream_client,
+                ),
+            ):
+                response = await fleet_agent_proxy(
+                    request,
+                    "mini-1",
+                    "sessions/remote-session/events",
+                )
+                body = b"".join([chunk async for chunk in response.body_iterator])
+
+            self.assertIn(b"event: ready", body)
+
 
 if __name__ == "__main__":
     unittest.main()

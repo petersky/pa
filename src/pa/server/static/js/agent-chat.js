@@ -1086,7 +1086,12 @@
   AgentChatWidget.prototype.upsertTool = function (payload, ts) {
     this.clearPlaceholder();
     const id = payload.tool_call_id || "tool";
-    let el = this.els.toolActivity && this.els.toolActivity.querySelector('[data-tool-id="' + id + '"]');
+    let el = null;
+    if (this.els.toolActivity) {
+      el = Array.from(this.els.toolActivity.querySelectorAll("[data-tool-id]")).find(function (candidate) {
+        return candidate.dataset.toolId === id;
+      }) || null;
+    }
     if (!el) {
       el = document.createElement("div");
       el.className = "acw-tool";
