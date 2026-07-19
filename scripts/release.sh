@@ -3,6 +3,7 @@
 #
 # Usage:
 #   ./scripts/release.sh patch
+#   ./scripts/release.sh patch --ship     # PR, checks, merge, tag, publish
 #   ./scripts/release.sh minor
 #   ./scripts/release.sh patch --no-push   # local only, no push
 #   ./scripts/release.sh 1.2.3 --channel beta
