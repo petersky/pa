@@ -99,6 +99,7 @@ class AgentChatSseTests(unittest.TestCase):
     def test_provider_options_fall_back_to_persisted_capability_catalog(self) -> None:
         session = AgentSession(
             agent_name="codex",
+            principal_id="user:local",
             config_json={
                 "models": {"availableModels": [{"modelId": "gpt-cached"}]},
                 "modes": {"availableModes": [{"id": "code"}]},
@@ -109,9 +110,13 @@ class AgentChatSseTests(unittest.TestCase):
         manager.list_runtimes.return_value = []
         manager.store.list_sessions.return_value = [session]
         request = MagicMock()
+        request.app.state.ctx.settings.auth_required = True
 
         with (
             patch("pa.modules.agent_chat._manager", return_value=manager),
+            patch(
+                "pa.modules.agent_chat.get_principal_id", return_value="user:local"
+            ),
             patch("pa.acp.providers.registry.get_provider", return_value=MagicMock()),
         ):
             result = get_provider_options(request, "codex")
@@ -119,6 +124,45 @@ class AgentChatSseTests(unittest.TestCase):
         self.assertTrue(result["cached"])
         self.assertEqual(
             result["models"]["availableModels"][0]["modelId"], "gpt-cached"
+        )
+
+    def test_provider_options_exclude_other_users_sessions(self) -> None:
+        other_live = MagicMock()
+        other_live._closed = False
+        other_live.session = AgentSession(
+            agent_name="codex", principal_id="user:other"
+        )
+        other_live.connection.models = {
+            "availableModels": [{"modelId": "other-live"}]
+        }
+        own_cached = AgentSession(
+            agent_name="codex",
+            principal_id="user:local",
+            config_json={
+                "models": {"availableModels": [{"modelId": "own-cached"}]}
+            },
+        )
+        manager = MagicMock()
+        manager.list_runtimes.return_value = [other_live]
+        manager.store.list_sessions.return_value = [
+            other_live.session,
+            own_cached,
+        ]
+        request = MagicMock()
+        request.app.state.ctx.settings.auth_required = True
+
+        with (
+            patch("pa.modules.agent_chat._manager", return_value=manager),
+            patch(
+                "pa.modules.agent_chat.get_principal_id", return_value="user:local"
+            ),
+            patch("pa.acp.providers.registry.get_provider", return_value=MagicMock()),
+        ):
+            result = get_provider_options(request, "codex")
+
+        self.assertTrue(result["cached"])
+        self.assertEqual(
+            result["models"]["availableModels"][0]["modelId"], "own-cached"
         )
 
     def test_new_session_applies_provider_and_initial_options(self) -> None:

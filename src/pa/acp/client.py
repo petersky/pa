@@ -617,19 +617,24 @@ class AgentConnection:
 
     async def _mark_transport_dead(self) -> None:
         """Drop a dead ACP transport without blocking on a hung subprocess exit."""
-        ctx = self._ctx
-        self._ctx = None
-        self._conn = None
-        self._proc = None
+        async with self._disconnect_lock:
+            ctx = self._ctx
+            self._ctx = None
+            self._conn = None
+            self._proc = None
+            if ctx is not None:
+                try:
+                    await asyncio.wait_for(
+                        ctx.__aexit__(None, None, None), timeout=2.0
+                    )
+                except Exception:
+                    logger.debug(
+                        "ACP transport cleanup after death failed", exc_info=True
+                    )
         if self.session and self.session.status not in {"closed", "quiesced"}:
             self.session.status = "disconnected"
             self.session.updated_at = datetime.now(UTC)
             self.store.save_session(self.session)
-        if ctx is not None:
-            try:
-                await asyncio.wait_for(ctx.__aexit__(None, None, None), timeout=2.0)
-            except Exception:
-                logger.debug("ACP transport cleanup after death failed", exc_info=True)
 
     async def cancel(self) -> None:
         if not self._conn or not self.session or not self.session.external_session_id:

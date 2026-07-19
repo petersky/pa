@@ -354,9 +354,19 @@ def get_provider_options(request: Request, provider_id: str) -> dict:
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     mgr = _manager(request)
+    principal_id = get_principal_id(request)
+    auth_required = bool(request.app.state.ctx.settings.auth_required)
+
+    def session_is_visible(session) -> bool:
+        return (
+            not auth_required
+            or getattr(session, "principal_id", None) == principal_id
+        )
+
     for runtime in mgr.list_runtimes():
         if (
             runtime.session.agent_name == provider_id
+            and session_is_visible(runtime.session)
             and not getattr(runtime, "_closed", False)
             and runtime.connection
         ):
@@ -368,7 +378,7 @@ def get_provider_options(request: Request, provider_id: str) -> dict:
                 "cached": False,
             }
     for session in mgr.store.list_sessions():
-        if session.agent_name != provider_id:
+        if session.agent_name != provider_id or not session_is_visible(session):
             continue
         config = dict(session.config_json or {})
         if any(key in config for key in ("models", "modes", "options")):

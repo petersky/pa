@@ -50,6 +50,27 @@ class AgentSessionLiveEventTests(unittest.TestCase):
 
             context.__aexit__.assert_awaited_once_with(None, None, None)
 
+    def test_mark_transport_dead_uses_disconnect_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            connection = AgentConnection(
+                Settings(data_dir=Path(tmp)), MagicMock()
+            )
+            context = MagicMock()
+            context.__aexit__ = AsyncMock()
+            connection._ctx = context
+
+            async def run() -> None:
+                await connection._disconnect_lock.acquire()
+                cleanup = asyncio.create_task(connection._mark_transport_dead())
+                await asyncio.sleep(0)
+                self.assertFalse(cleanup.done())
+                connection._disconnect_lock.release()
+                await cleanup
+
+            asyncio.run(run())
+
+            context.__aexit__.assert_awaited_once_with(None, None, None)
+
     def test_snapshot_restores_bounded_newest_transcript_window(self) -> None:
         events = [
             TranscriptEvent(
