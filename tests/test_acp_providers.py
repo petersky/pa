@@ -328,6 +328,22 @@ class AcpProviderTests(unittest.TestCase):
         self.assertEqual(job.state, LoginState.WAITING_FOR_USER)
         self.assertNotIn("[90m", normalize_terminal_output(capture))
 
+    def test_parser_accepts_chatgpt_four_five_device_codes(self) -> None:
+        store = CodexLoginJobStore(self.data_dir)
+        job = store.create()
+        job.state = LoginState.RUNNING
+        capture = (
+            "Follow these steps to sign in with ChatGPT using device code authorization:\n"
+            "1. Open this link in your browser and sign in to your account\n"
+            "https://auth.openai.com/codex/device\n"
+            "2. Enter this one-time code (expires in 15 minutes)\n"
+            "DUKP-DTG49\n"
+        )
+        store._consume_output(job, capture, capture)
+        self.assertEqual(job.verification_url, "https://auth.openai.com/codex/device")
+        self.assertEqual(job.user_code, "DUKP-DTG49")
+        self.assertEqual(job.state, LoginState.WAITING_FOR_USER)
+
     @unittest.skipIf(__import__("os").name == "nt", "Unix PTY capture")
     def test_login_uses_pty_to_surface_unterminated_device_instructions(self) -> None:
         script = self.data_dir / "fake-codex"

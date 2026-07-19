@@ -234,6 +234,147 @@ assert.ok(!html.includes("javascript:"));
         )
 
     @unittest.skipUnless(shutil.which("node"), "node is required for chat UI behavior tests")
+    def test_optimistic_user_bubble_dedupes_multiline_and_keeps_images(self) -> None:
+        script_path = (
+            Path(__file__).parents[1]
+            / "src"
+            / "pa"
+            / "server"
+            / "static"
+            / "js"
+            / "agent-chat.js"
+        )
+        program = r"""
+const fs = require("fs");
+const vm = require("vm");
+const assert = require("assert");
+global.window = {
+  marked: { parse: function (raw) {
+    return "<p>" + String(raw).replace(/\n/g, "<br>") + "</p>";
+  } },
+  DOMPurify: { sanitize: function (html) { return html; } }
+};
+global.document = {
+  addEventListener: function () {},
+  querySelector: function () { return null; },
+  querySelectorAll: function () { return []; },
+  body: null,
+  createElement: function (tag) {
+    const el = {
+      tagName: String(tag).toUpperCase(),
+      className: "",
+      hidden: false,
+      dataset: {},
+      childNodes: [],
+      children: [],
+      style: {},
+      textContent: "",
+      innerHTML: "",
+      src: "",
+      alt: "",
+      dateTime: "",
+      appendChild: function (child) {
+        this.childNodes.push(child);
+        this.children.push(child);
+        child.parentNode = this;
+        return child;
+      },
+      insertBefore: function (child, _ref) {
+        this.childNodes.unshift(child);
+        this.children.unshift(child);
+        child.parentNode = this;
+        return child;
+      },
+      querySelector: function (sel) {
+        if (sel === ".acw-message-images") {
+          return this.children.find(function (c) { return c.className === "acw-message-images"; }) || null;
+        }
+        return null;
+      },
+      querySelectorAll: function () { return []; },
+      remove: function () {
+        if (!this.parentNode) return;
+        const parent = this.parentNode;
+        parent.childNodes = parent.childNodes.filter(function (c) { return c !== el; });
+        parent.children = parent.children.filter(function (c) { return c !== el; });
+        this.parentNode = null;
+      },
+      setAttribute: function () {},
+    };
+    Object.defineProperty(el, "textContent", {
+      get: function () { return this._text || ""; },
+      set: function (v) { this._text = String(v); this.innerHTML = ""; this.childNodes = []; this.children = []; },
+      configurable: true,
+    });
+    Object.defineProperty(el, "innerHTML", {
+      get: function () { return this._html || ""; },
+      set: function (v) {
+        this._html = String(v);
+        // Simulate markdown replacing children (gallery would be wiped without preserve logic).
+        this.childNodes = [];
+        this.children = [];
+        this._text = String(v).replace(/<[^>]+>/g, "");
+      },
+      configurable: true,
+    });
+    return el;
+  },
+};
+vm.runInThisContext(fs.readFileSync(process.argv[1], "utf8"));
+const Widget = window.PAAgentChat.AgentChatWidget;
+const widget = Object.create(Widget.prototype);
+widget.rawText = false;
+widget.showSystem = false;
+widget.seenEvents = {};
+widget.transcriptEvents = [];
+widget.lastSeq = 0;
+widget.streaming = {};
+widget.els = {
+  messages: {
+    children: [],
+    appendChild: function (child) { this.children.push(child); return child; },
+    querySelectorAll: function (sel) {
+      if (sel === ".acw-msg-user .acw-bubble") {
+        return this.children
+          .filter(function (row) { return row.className.indexOf("acw-msg-user") >= 0; })
+          .map(function (row) { return row.children[0]; });
+      }
+      return [];
+    },
+  },
+  placeholder: { hidden: false },
+};
+widget.clearPlaceholder = function () { this.els.placeholder.hidden = true; };
+widget.isNearBottom = function () { return true; };
+widget.scrollToBottom = function () {};
+widget.setTurnActive = function () {};
+
+const prompt = "line one\nline two";
+widget.addBubble("user", prompt, new Date().toISOString(), {
+  images: [{ name: "shot.png", mime_type: "image/png", preview: "data:image/png;base64,xx" }],
+});
+assert.strictEqual(widget.els.messages.children.length, 1);
+const bubble = widget.els.messages.children[0].children[0];
+assert.strictEqual(bubble.dataset.markdown, prompt);
+assert.ok(bubble.querySelector(".acw-message-images"), "gallery should survive markdown render");
+assert.strictEqual(bubble.querySelector(".acw-message-images").children[0].src, "data:image/png;base64,xx");
+
+widget.handleEvent({
+  seq: 42,
+  type: "user_message",
+  payload: { message: prompt, images: [{ name: "shot.png", mime_type: "image/png" }] },
+  created_at: new Date().toISOString(),
+}, false);
+assert.strictEqual(widget.els.messages.children.length, 1, "SSE should not duplicate multiline optimistic bubble");
+"""
+        subprocess.run(
+            [shutil.which("node"), "-e", program, str(script_path)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+    @unittest.skipUnless(shutil.which("node"), "node is required for chat UI behavior tests")
     def test_older_paging_retries_exhausts_and_keeps_concurrent_live_events(self) -> None:
         script_path = (
             Path(__file__).parents[1]

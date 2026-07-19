@@ -37,10 +37,12 @@ MAX_EVENT_CHARS = 500
 MAX_EVENTS = 200
 
 _URL_RE = re.compile(r"https://[^\s<>\]\[\"']{1,2048}", re.IGNORECASE)
+# Codex device codes are hyphenated groups; ChatGPT currently uses 4-5 (XXXX-XXXXX)
+# while older flows used 4-4. Allow 4–5 chars per trailing group.
 _CODE_RE = re.compile(
     r"(?i)(?:code(?:\s+is)?|enter|use)\s*[:\-]?\s*"
-    r"([A-Z0-9]{4}(?:[ -][A-Z0-9]{4}){1,4})|"
-    r"(?<![A-Z0-9])([A-Z0-9]{4}(?:-[A-Z0-9]{4}){1,4})(?![A-Z0-9])"
+    r"([A-Z0-9]{4}(?:[ -][A-Z0-9]{4,5}){1,4})|"
+    r"(?<![A-Z0-9])([A-Z0-9]{4}(?:-[A-Z0-9]{4,5}){1,4})(?![A-Z0-9])"
 )
 _ANSI_CSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 _ANSI_OSC_RE = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
