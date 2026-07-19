@@ -11,7 +11,15 @@ from uuid import uuid4
 
 from acp import PROTOCOL_VERSION, image_block, text_block
 from acp.interfaces import Client
-from acp.schema import AllowedOutcome, DeniedOutcome, RequestPermissionResponse
+from acp.schema import (
+    AllowedOutcome,
+    ClientCapabilities,
+    DeniedOutcome,
+    FileSystemCapabilities,
+    ReadTextFileResponse,
+    RequestPermissionResponse,
+    WriteTextFileResponse,
+)
 
 from pa.acp.mcp_config import pa_mcp_servers
 from pa.acp.providers.base import AgentProviderSpec
@@ -261,6 +269,68 @@ class PAClient(Client):
             if inspect.isawaitable(result):
                 await result
 
+    async def read_text_file(
+        self,
+        path: str,
+        session_id: str,
+        limit: int | None = None,
+        line: int | None = None,
+        **kwargs: Any,
+    ) -> ReadTextFileResponse:
+        """Serve ACP client-side file reads advertised during initialization."""
+        target = Path(path)
+        if not target.is_absolute():
+            raise ValueError("ACP file paths must be absolute")
+        content = await asyncio.to_thread(target.read_text, encoding="utf-8")
+        if line is not None or limit is not None:
+            lines = content.splitlines(keepends=True)
+            start = max((line or 1) - 1, 0)
+            stop = None if limit is None else start + limit
+            content = "".join(lines[start:stop])
+        self._wire(
+            "in",
+            {
+                "method": "fs/read_text_file",
+                "params": {"session_id": session_id, "path": path, "line": line, "limit": limit},
+            },
+        )
+        return ReadTextFileResponse(content=content)
+
+    async def write_text_file(
+        self,
+        content: str,
+        path: str,
+        session_id: str,
+        **kwargs: Any,
+    ) -> WriteTextFileResponse:
+        """Serve ACP client-side file writes advertised during initialization."""
+        target = Path(path)
+        if not target.is_absolute():
+            raise ValueError("ACP file paths must be absolute")
+        await asyncio.to_thread(target.write_text, content, encoding="utf-8")
+        self._wire(
+            "in",
+            {
+                "method": "fs/write_text_file",
+                "params": {"session_id": session_id, "path": path},
+            },
+        )
+        return WriteTextFileResponse()
+
+    async def ext_method(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        """Acknowledge optional agent extensions that PA does not interpret."""
+        self._wire(
+            "in",
+            {"method": f"_{method}", "params": params, "ignored": True},
+        )
+        return {}
+
+    async def ext_notification(self, method: str, params: dict[str, Any]) -> None:
+        self._wire(
+            "in",
+            {"method": f"_{method}", "params": params, "ignored": True},
+        )
+
     def drain_updates(self) -> list[Any]:
         updates, self._updates = self._updates, []
         return updates
@@ -313,6 +383,7 @@ class AgentConnection:
         self.session: AgentSession | None = None
         self.session_cwd: str | None = None
         self._resume_supported: bool = False
+        self._load_supported: bool = False
         self._disconnect_lock = asyncio.Lock()
         self._init_response: Any = None
         self.models: dict[str, Any] | None = None
@@ -412,14 +483,24 @@ class AgentConnection:
                     os.environ.pop(key, None)
                 else:
                     os.environ[key] = old
-        self._init_response = await self._conn.initialize(protocol_version=PROTOCOL_VERSION)
+        self._init_response = await self._conn.initialize(
+            protocol_version=PROTOCOL_VERSION,
+            client_capabilities=ClientCapabilities(
+                fs=FileSystemCapabilities(
+                    read_text_file=True,
+                    write_text_file=True,
+                )
+            ),
+        )
         self._resume_supported = _agent_supports_resume(self._init_response)
+        self._load_supported = _agent_supports_load(self._init_response)
         self._wire_log(
             "out",
             {
                 "method": "initialize",
                 "result": {
                     "resume_supported": self._resume_supported,
+                    "load_supported": self._load_supported,
                     "protocol_version": PROTOCOL_VERSION,
                 },
             },
@@ -429,29 +510,41 @@ class AgentConnection:
         self.session_cwd = session_cwd
         mcp = pa_mcp_servers(self.settings)
 
-        resumed = False
+        restored = False
         session_meta: dict[str, Any] = {}
-        if resume_external_id and self._resume_supported:
+        restore_method = (
+            "session/resume"
+            if self._resume_supported
+            else "session/load"
+            if self._load_supported
+            else None
+        )
+        if resume_external_id and restore_method:
             try:
-                resume_resp = await self._conn.resume_session(
+                restore = (
+                    self._conn.resume_session
+                    if restore_method == "session/resume"
+                    else self._conn.load_session
+                )
+                restore_resp = await restore(
                     cwd=session_cwd,
                     session_id=resume_external_id,
                     mcp_servers=mcp,
                 )
-                session_meta = extract_models_modes_config(resume_resp)
-                resumed = True
+                session_meta = extract_models_modes_config(restore_resp)
+                restored = True
                 self._wire_log(
                     "out",
                     {
-                        "method": "session/resume",
+                        "method": restore_method,
                         "params": {"session_id": resume_external_id, "cwd": session_cwd},
                     },
                 )
             except Exception:
-                logger.exception("ACP resume failed; creating new session")
-                resumed = False
+                logger.exception("ACP %s failed; creating new session", restore_method)
+                restored = False
 
-        if resumed:
+        if restored:
             if existing_session:
                 self.session = existing_session
                 self.session.external_session_id = resume_external_id
@@ -718,3 +811,21 @@ def _agent_supports_resume(init_response: Any) -> bool:
     if resume is None and isinstance(session_caps, dict):
         resume = session_caps.get("resume")
     return bool(resume)
+
+
+def _agent_supports_load(init_response: Any) -> bool:
+    caps = getattr(init_response, "agent_capabilities", None) or getattr(
+        init_response, "agentCapabilities", None
+    )
+    if caps is None and isinstance(init_response, dict):
+        caps = init_response.get("agentCapabilities") or init_response.get("agent_capabilities")
+    if caps is None:
+        return False
+    load = getattr(caps, "load_session", None)
+    if load is None:
+        load = getattr(caps, "loadSession", None)
+    if load is None and isinstance(caps, dict):
+        load = caps.get("loadSession")
+        if load is None:
+            load = caps.get("load_session")
+    return bool(load)

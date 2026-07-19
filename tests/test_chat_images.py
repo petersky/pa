@@ -127,6 +127,49 @@ class ChatWidgetTemplateTests(unittest.TestCase):
         self.assertIn('data-auto-start="1"', html)
 
     @unittest.skipUnless(shutil.which("node"), "node is required for chat UI behavior tests")
+    def test_tool_ids_with_newlines_do_not_become_css_selectors(self) -> None:
+        script_path = (
+            Path(__file__).parents[1]
+            / "src"
+            / "pa"
+            / "server"
+            / "static"
+            / "js"
+            / "agent-chat.js"
+        )
+        program = r"""
+const fs = require("fs");
+const vm = require("vm");
+const assert = require("assert");
+global.window = {};
+global.document = { addEventListener: function () {}, querySelector: function () { return null; }, querySelectorAll: function () { return []; }, body: null };
+vm.runInThisContext(fs.readFileSync(process.argv[1], "utf8"));
+const Widget = window.PAAgentChat.AgentChatWidget;
+const widget = Object.create(Widget.prototype);
+const id = "23\nfc_opaque";
+const existing = { dataset: { toolId: id }, querySelector: function () { return null; } };
+widget.els = {
+  toolActivity: {
+    querySelectorAll: function (selector) {
+      assert.strictEqual(selector, "[data-tool-id]");
+      return [existing];
+    },
+    querySelector: function () { throw new Error("raw tool id used as a selector"); }
+  }
+};
+widget.activeToolIds = {};
+widget.toolTimers = {};
+widget.clearPlaceholder = function () {};
+widget.upsertTool({ tool_call_id: id, status: "completed" });
+"""
+        subprocess.run(
+            [shutil.which("node"), "-e", program, str(script_path)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+    @unittest.skipUnless(shutil.which("node"), "node is required for chat UI behavior tests")
     def test_transcript_dedup_scroll_follow_and_prepend_anchor(self) -> None:
         script_path = (
             Path(__file__).parents[1]

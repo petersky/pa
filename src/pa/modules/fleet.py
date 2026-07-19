@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 from datetime import UTC, datetime
 from typing import Any, AsyncIterator
@@ -57,6 +58,8 @@ from pa.fleet.update import (
     start_update_job,
 )
 from pa.network.peer_table import PeerTable
+
+logger = logging.getLogger(__name__)
 
 FLEET_HEALTH_TIMEOUT = 3.0
 FLEET_DETAIL_TIMEOUT = 5.0
@@ -1558,8 +1561,17 @@ async def fleet_agent_proxy(
 
         async def relay() -> AsyncIterator[bytes]:
             try:
-                async for chunk in upstream.aiter_raw():
-                    yield chunk
+                try:
+                    async for chunk in upstream.aiter_raw():
+                        yield chunk
+                except httpx.RemoteProtocolError:
+                    # A peer restart can end an unbounded SSE response without a
+                    # terminating HTTP chunk. At this point response headers have
+                    # already been sent, so the only correct behavior is EOF.
+                    logger.info(
+                        "Peer %s closed agent event stream during restart",
+                        instance_id,
+                    )
             finally:
                 await upstream.aclose()
                 await client.aclose()
