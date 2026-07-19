@@ -347,6 +347,18 @@ setImmediate(function () {
         self.assertIn("sessionConfigSummary", script)
         self.assertGreaterEqual(script.count("self.applyOptionSnapshot(snap);"), 2)
 
+    def test_settings_page_exposes_durable_new_chat_defaults(self) -> None:
+        root = Path(__file__).parents[1] / "src" / "pa" / "server"
+        source = (root / "templates" / "pages" / "settings.html").read_text()
+
+        self.assertIn("New chat defaults (user)", source)
+        self.assertIn("data-settings-default-provider", source)
+        self.assertIn("data-settings-default-model", source)
+        self.assertIn("data-settings-default-mode", source)
+        self.assertIn("data-settings-default-effort", source)
+        self.assertIn('surfaces["chat.default"]', source)
+        self.assertIn("/api/agent/provider-options/", source)
+
     def test_fleet_page_exposes_remote_operations_console(self) -> None:
         root = Path(__file__).parents[1] / "src" / "pa" / "server"
         template = (root / "templates" / "pages" / "fleet.html").read_text()

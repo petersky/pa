@@ -14,7 +14,9 @@ from pa.acp.client import normalize_session_update
 from pa.domain.models import AgentSession, TranscriptEvent
 from pa.modules.agent_chat import (
     CreateSessionBody,
+    _apply_initial_options,
     create_session,
+    get_provider_options,
     get_agent_session_history,
     list_agent_session_history,
     list_agent_sessions,
@@ -68,6 +70,55 @@ class _FakeRuntime:
 
 
 class AgentChatSseTests(unittest.TestCase):
+    def test_saved_surface_defaults_are_applied_to_a_new_session(self) -> None:
+        from pa.core.preferences import SurfaceAgentPrefs
+
+        runtime = MagicMock()
+        runtime.connection.config_options = [
+            {"id": "reasoningEffort", "name": "Reasoning effort"}
+        ]
+        runtime.set_model = AsyncMock()
+        runtime.set_mode = AsyncMock()
+        runtime.set_config = AsyncMock()
+        defaults = SurfaceAgentPrefs(
+            model_id="gpt-default",
+            mode_id="code",
+            effort="high",
+            config={"sandbox": "workspace"},
+        )
+
+        asyncio.run(_apply_initial_options(runtime, CreateSessionBody(), defaults))
+
+        runtime.set_model.assert_awaited_once_with("gpt-default")
+        runtime.set_mode.assert_awaited_once_with("code")
+        runtime.set_config.assert_any_await("sandbox", "workspace")
+        runtime.set_config.assert_any_await("reasoningEffort", "high")
+
+    def test_provider_options_fall_back_to_persisted_capability_catalog(self) -> None:
+        session = AgentSession(
+            agent_name="codex",
+            config_json={
+                "models": {"availableModels": [{"modelId": "gpt-cached"}]},
+                "modes": {"availableModes": [{"id": "code"}]},
+                "options": [{"id": "reasoningEffort"}],
+            },
+        )
+        manager = MagicMock()
+        manager.list_runtimes.return_value = []
+        manager.store.list_sessions.return_value = [session]
+        request = MagicMock()
+
+        with (
+            patch("pa.modules.agent_chat._manager", return_value=manager),
+            patch("pa.acp.providers.registry.get_provider", return_value=MagicMock()),
+        ):
+            result = get_provider_options(request, "codex")
+
+        self.assertTrue(result["cached"])
+        self.assertEqual(
+            result["models"]["availableModels"][0]["modelId"], "gpt-cached"
+        )
+
     def test_new_session_applies_provider_and_initial_options(self) -> None:
         runtime = MagicMock()
         runtime.connection.config_options = [

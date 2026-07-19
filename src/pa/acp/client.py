@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import inspect
 import json
 import logging
@@ -312,6 +313,7 @@ class AgentConnection:
         self.session: AgentSession | None = None
         self.session_cwd: str | None = None
         self._resume_supported: bool = False
+        self._disconnect_lock = asyncio.Lock()
         self._init_response: Any = None
         self.models: dict[str, Any] | None = None
         self.modes: dict[str, Any] | None = None
@@ -515,10 +517,14 @@ class AgentConnection:
             self.session.model_id = meta["model_id"]
         if meta.get("mode_id"):
             self.session.mode_id = meta["mode_id"]
+        config = dict(self.session.config_json or {})
+        if meta.get("models") is not None:
+            config["models"] = meta.get("models")
+        if meta.get("modes") is not None:
+            config["modes"] = meta.get("modes")
         if meta.get("config_options") is not None:
-            self.session.config_json = {
-                "options": meta.get("config_options"),
-            }
+            config["options"] = meta.get("config_options")
+        self.session.config_json = config
 
     async def prompt(
         self,
@@ -676,11 +682,13 @@ class AgentConnection:
         self.store.save_session(self.session)
 
     async def disconnect(self) -> None:
-        if self._ctx:
-            await self._ctx.__aexit__(None, None, None)
-        self._ctx = None
-        self._conn = None
-        self._proc = None
+        async with self._disconnect_lock:
+            ctx = self._ctx
+            self._ctx = None
+            self._conn = None
+            self._proc = None
+            if ctx:
+                await ctx.__aexit__(None, None, None)
         if self.session and self.session.status not in {"closed", "quiesced"}:
             self.session.status = "disconnected"
             self.store.save_session(self.session)

@@ -21,6 +21,7 @@ class SurfaceAgentPrefs(BaseModel):
     provider: str | None = None
     model_id: str | None = None
     mode_id: str | None = None
+    effort: str | None = None
     config: dict = Field(default_factory=dict)
 
 

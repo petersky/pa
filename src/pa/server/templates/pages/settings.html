@@ -45,7 +45,7 @@
   <div class="panel">
     <div class="panel-header"><h2>Agent</h2></div>
     <p class="muted">Permission prompts and default ACP provider. User preference overrides the instance default when set. Per-surface overrides apply to chat, card embeds, projects, and execution.</p>
-    <form class="stack settings-agent-prefs" id="pa-agent-prefs-form">
+    <form class="stack settings-agent-prefs" id="pa-agent-prefs-form" data-instance-provider="{{ settings.agent_provider if settings is defined else 'cursor' }}">
       <label class="checkbox-row">
         <input type="checkbox" name="user_auto_approve"
                {% if prefs.agent_auto_approve_permissions %}checked{% endif %}>
@@ -72,9 +72,26 @@
           <option value="codex" {% if global_prefs.agent_provider == 'codex' %}selected{% endif %}>Codex</option>
         </select>
       </label>
+      {% set chat_defaults = (prefs.agent_surfaces or {}).get('chat.default') %}
+      <fieldset class="stack" data-settings-chat-defaults>
+        <legend>New chat defaults (user)</legend>
+        <label>
+          <span>Provider</span>
+          <select name="surface_chat_default" data-settings-default-provider>
+            <option value="">Inherit my ACP provider</option>
+            <option value="cursor" {% if chat_defaults and chat_defaults.provider == 'cursor' %}selected{% endif %}>Cursor</option>
+            <option value="codex" {% if chat_defaults and chat_defaults.provider == 'codex' %}selected{% endif %}>Codex</option>
+          </select>
+        </label>
+        <label><span>Model</span><select name="default_model_id" data-settings-default-model data-saved-value="{{ chat_defaults.model_id if chat_defaults and chat_defaults.model_id else '' }}"><option value="">Provider default</option></select></label>
+        <label><span>Mode</span><select name="default_mode_id" data-settings-default-mode data-saved-value="{{ chat_defaults.mode_id if chat_defaults and chat_defaults.mode_id else '' }}"><option value="">Provider default</option></select></label>
+        <label><span>Effort</span><select name="default_effort" data-settings-default-effort data-saved-value="{{ chat_defaults.effort if chat_defaults and chat_defaults.effort else '' }}"><option value="">Provider default</option></select></label>
+        <div class="stack" data-settings-default-related hidden></div>
+        <script type="application/json" data-settings-default-config-json>{{ (chat_defaults.config if chat_defaults else {}) | tojson }}</script>
+      </fieldset>
       <fieldset class="stack">
         <legend>Per-surface provider overrides (user)</legend>
-        {% set surfaces = [('chat.default', 'Default chat'), ('chat.card', 'Card embeds'), ('project', 'Projects'), ('execution', 'Execution router')] %}
+        {% set surfaces = [('chat.card', 'Card embeds'), ('project', 'Projects'), ('execution', 'Execution router')] %}
         {% for key, label in surfaces %}
         <label>
           <span>{{ label }} ({{ key }})</span>
@@ -171,6 +188,76 @@
 (function () {
   var form = document.getElementById("pa-agent-prefs-form");
   if (!form) return;
+  function optionValues(snap, key, snake) {
+    var group = snap && snap[key];
+    return group && (group[key === "models" ? "availableModels" : "availableModes"] || group[snake]) || [];
+  }
+  function fill(select, values, keys, saved, label) {
+    if (!select) return;
+    var wanted = saved != null ? String(saved) : select.value;
+    select.innerHTML = "";
+    var base = document.createElement("option");
+    base.value = "";
+    base.textContent = label || "Provider default";
+    select.appendChild(base);
+    (values || []).forEach(function (item) {
+      var value = typeof item === "object" ? keys.map(function (key) { return item[key]; }).find(Boolean) : item;
+      if (!value) return;
+      var option = document.createElement("option");
+      option.value = value;
+      option.textContent = typeof item === "object" ? (item.name || item.label || value) : value;
+      select.appendChild(option);
+    });
+    select.value = wanted;
+    if (wanted && select.value !== wanted) {
+      var custom = document.createElement("option");
+      custom.value = wanted;
+      custom.textContent = wanted;
+      custom.selected = true;
+      select.appendChild(custom);
+    }
+  }
+  async function loadDefaultOptions(useSaved) {
+    var provider = form.querySelector("[data-settings-default-provider]");
+    var providerId = provider.value || form.user_provider.value || form.global_provider.value || form.dataset.instanceProvider || "";
+    if (!providerId) return;
+    var response = await fetch("/api/agent/provider-options/" + encodeURIComponent(providerId), { credentials: "same-origin", headers: { Accept: "application/json" } });
+    if (!response.ok) return;
+    var snap = await response.json();
+    var model = form.querySelector("[data-settings-default-model]");
+    var mode = form.querySelector("[data-settings-default-mode]");
+    var effort = form.querySelector("[data-settings-default-effort]");
+    fill(model, optionValues(snap, "models", "available_models"), ["modelId", "model_id", "id"], useSaved ? model.dataset.savedValue : "");
+    fill(mode, optionValues(snap, "modes", "available_modes"), ["id", "modeId", "mode_id"], useSaved ? mode.dataset.savedValue : "");
+    var raw = snap.config_options || [];
+    var savedConfig = {};
+    var savedConfigNode = form.querySelector("[data-settings-default-config-json]");
+    try { savedConfig = JSON.parse(savedConfigNode && savedConfigNode.textContent || "{}"); } catch (_) {}
+    var effortOption = raw.find(function (item) {
+      var id = String(item && (item.id || item.configId || item.config_id || item.name) || "").toLowerCase().replace(/[_ -]/g, "");
+      return ["effort", "reasoningeffort", "reasoninglevel", "thinkinglevel"].includes(id);
+    });
+    fill(effort, effortOption && (effortOption.options || effortOption.choices || effortOption.values) || ["low", "medium", "high", "xhigh"], ["value", "id"], useSaved ? effort.dataset.savedValue : "");
+    var related = form.querySelector("[data-settings-default-related]");
+    related.innerHTML = "";
+    raw.filter(function (item) { return item && item !== effortOption; }).forEach(function (item) {
+      var id = item.id || item.configId || item.config_id;
+      var choices = item.options || item.choices || item.values || [];
+      if (!id || !choices.length) return;
+      var label = document.createElement("label");
+      var caption = document.createElement("span");
+      caption.textContent = item.name || id;
+      var select = document.createElement("select");
+      select.dataset.settingsDefaultConfig = id;
+      fill(select, choices, ["value", "id"], useSaved ? savedConfig[id] : "");
+      label.appendChild(caption); label.appendChild(select); related.appendChild(label);
+    });
+    related.hidden = !related.children.length;
+  }
+  var defaultProvider = form.querySelector("[data-settings-default-provider]");
+  if (defaultProvider) defaultProvider.addEventListener("change", function () { loadDefaultOptions(false); });
+  form.user_provider.addEventListener("change", function () { if (!defaultProvider.value) loadDefaultOptions(false); });
+  loadDefaultOptions(true);
   form.addEventListener("submit", async function (e) {
     e.preventDefault();
     var status = document.getElementById("pa-agent-prefs-status");
@@ -182,7 +269,7 @@
     var userProvider = form.user_provider.value || null;
     var globalProvider = form.global_provider.value || null;
     var surfaces = {};
-    ["chat_default", "chat_card", "project", "execution"].forEach(function (key) {
+    ["chat_card", "project", "execution"].forEach(function (key) {
       var el = form["surface_" + key];
       if (!el) return;
       var surfaceKey = key.replace("_", ".");
@@ -191,6 +278,17 @@
       if (el.value) surfaces[surfaceKey] = { provider: el.value };
       else surfaces[surfaceKey] = { provider: null };
     });
+    var defaultConfig = {};
+    form.querySelectorAll("[data-settings-default-config]").forEach(function (select) {
+      if (select.value) defaultConfig[select.dataset.settingsDefaultConfig] = select.value;
+    });
+    surfaces["chat.default"] = {
+      provider: form.surface_chat_default.value || null,
+      model_id: form.default_model_id.value || null,
+      mode_id: form.default_mode_id.value || null,
+      effort: form.default_effort.value || null,
+      config: defaultConfig,
+    };
     try {
       await fetch("/api/agent/preferences", {
         method: "PUT",

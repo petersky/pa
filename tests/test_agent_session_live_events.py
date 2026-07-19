@@ -1,7 +1,11 @@
 import asyncio
+import tempfile
 import unittest
-from unittest.mock import MagicMock, Mock
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, Mock
 
+from pa.acp.client import AgentConnection
+from pa.config import Settings
 from pa.domain.models import AgentSession, TranscriptEvent
 from pa.instance.agent_session import AgentSessionRuntime
 
@@ -27,6 +31,25 @@ class _TranscriptStore:
 
 
 class AgentSessionLiveEventTests(unittest.TestCase):
+    def test_concurrent_disconnect_only_exits_transport_once(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            connection = AgentConnection(
+                Settings(data_dir=Path(tmp)), MagicMock()
+            )
+            context = MagicMock()
+            context.__aexit__ = AsyncMock()
+            connection._ctx = context
+
+            async def run() -> None:
+                await asyncio.gather(
+                    connection.disconnect(),
+                    connection.disconnect(),
+                )
+
+            asyncio.run(run())
+
+            context.__aexit__.assert_awaited_once_with(None, None, None)
+
     def test_snapshot_restores_bounded_newest_transcript_window(self) -> None:
         events = [
             TranscriptEvent(
