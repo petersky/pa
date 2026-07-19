@@ -45,6 +45,7 @@ class AgentSessionLiveEventTests(unittest.TestCase):
                 status="disconnected",
                 label="default",
                 external_session_id=None,
+                principal_id="persisted-user",
             )
             resolved = SimpleNamespace(
                 provider_id="codex",
@@ -57,17 +58,22 @@ class AgentSessionLiveEventTests(unittest.TestCase):
                     patch(
                         "pa.instance.agent_session.resolve_agent_provider",
                         return_value=resolved,
-                    ),
+                    ) as resolve_provider,
                     patch.object(AgentSessionRuntime, "start", new=AsyncMock()),
                 ):
-                    return await manager.create_session(
+                    runtime = await manager.create_session(
                         label="default", existing=existing
                     )
+                return runtime, resolve_provider
 
-            runtime = asyncio.run(run())
+            runtime, resolve_provider = asyncio.run(run())
 
             self.assertEqual(runtime.session.id, "default-session")
             self.assertEqual(runtime.session.agent_name, "codex")
+            self.assertEqual(
+                resolve_provider.call_args.args[1].principal_id,
+                "persisted-user",
+            )
             store.save_session.assert_called_with(existing)
 
     def test_resumable_default_session_keeps_its_provider(self) -> None:

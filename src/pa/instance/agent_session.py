@@ -1130,10 +1130,17 @@ class AgentSessionManager:
         if not self._accepting or self._quiescing:
             raise RuntimeError("Agent is quiescing")
 
+        effective_principal_id = (
+            principal_id
+            if principal_id is not None
+            else existing.principal_id
+            if existing
+            else None
+        )
         surface_key = surface or surface_for_label(label, project_id=project_id)
         ctx = AgentInvocationContext(
             surface=surface_key,
-            principal_id=principal_id,
+            principal_id=effective_principal_id,
             card_id=card_id,
             project_id=project_id,
             provider_override=provider_override,
