@@ -960,6 +960,12 @@ class AgentSessionManager:
             return f"{active} ACP session{'s' if active != 1 else ''} idle, {queued} queued"
         return "ACP agent offline"
 
+    def _default_requires_provider_resolution(
+        self, label: str | None, resume_external_id: str | None
+    ) -> bool:
+        """Use current defaults when the instance session has nothing to resume."""
+        return label == self._default_label and not resume_external_id
+
     def should_auto_approve(self, principal_id: str | None) -> bool:
         """Resolve auto-approve: user prefs (if present) → global prefs → False (UI prompt)."""
         user_id = None
@@ -1056,6 +1062,20 @@ class AgentSessionManager:
         session.cwd = snap.cwd or session.cwd
         session.label = snap.label or session.label
         session.title = snap.title or session.title
+        provider_spec = None
+        if self._default_requires_provider_resolution(
+            session.label, snap.external_session_id
+        ):
+            resolved = resolve_agent_provider(
+                self.settings,
+                AgentInvocationContext(
+                    surface=SURFACE_CHAT_DEFAULT,
+                    principal_id=session.principal_id,
+                ),
+            )
+            session.agent_name = resolved.provider_id
+            provider_spec = resolved.spec
+            self.store.save_session(session)
         runtime = AgentSessionRuntime(self, session)
         queued = list(snap.queued_prompts)
         if snap.in_flight:
@@ -1064,6 +1084,7 @@ class AgentSessionManager:
             resume_external_id=snap.external_session_id,
             queued_prompts=queued,
             queue_paused=snap.queue_paused,
+            provider_spec=provider_spec,
         )
         self._runtimes[runtime.session_id] = runtime
         return runtime
@@ -1117,6 +1138,13 @@ class AgentSessionManager:
             project_id=project_id,
             provider_override=provider_override,
         )
+        non_resumable_default = bool(
+            existing
+            and self._default_requires_provider_resolution(
+                label or existing.label,
+                resume_external_id or existing.external_session_id,
+            )
+        )
         # When resuming an existing session, keep its provider unless explicitly overridden.
         if (
             existing
@@ -1127,6 +1155,7 @@ class AgentSessionManager:
                 "",
             }
             and not provider_override
+            and not non_resumable_default
         ):
             provider_id = existing.agent_name
             from pa.acp.providers.registry import get_provider

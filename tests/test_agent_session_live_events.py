@@ -2,12 +2,14 @@ import asyncio
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, Mock
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 from pa.acp.client import AgentConnection
 from pa.config import Settings
 from pa.domain.models import AgentSession, TranscriptEvent
-from pa.instance.agent_session import AgentSessionRuntime
+from pa.instance.agent_session import AgentSessionManager, AgentSessionRuntime
+from pa.instance.quiesce import QuiesceSnapshot, SessionSnapshot
 
 
 class _TranscriptStore:
@@ -31,6 +33,139 @@ class _TranscriptStore:
 
 
 class AgentSessionLiveEventTests(unittest.TestCase):
+    def test_stale_default_session_uses_configured_provider(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = MagicMock()
+            manager = AgentSessionManager(
+                Settings(data_dir=Path(tmp), agent_provider="codex"), store
+            )
+            existing = AgentSession(
+                id="default-session",
+                agent_name="cursor",
+                status="disconnected",
+                label="default",
+                external_session_id=None,
+            )
+            resolved = SimpleNamespace(
+                provider_id="codex",
+                spec=MagicMock(id="codex"),
+                source="instance",
+            )
+
+            async def run():
+                with (
+                    patch(
+                        "pa.instance.agent_session.resolve_agent_provider",
+                        return_value=resolved,
+                    ),
+                    patch.object(AgentSessionRuntime, "start", new=AsyncMock()),
+                ):
+                    return await manager.create_session(
+                        label="default", existing=existing
+                    )
+
+            runtime = asyncio.run(run())
+
+            self.assertEqual(runtime.session.id, "default-session")
+            self.assertEqual(runtime.session.agent_name, "codex")
+            store.save_session.assert_called_with(existing)
+
+    def test_resumable_default_session_keeps_its_provider(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = MagicMock()
+            manager = AgentSessionManager(
+                Settings(data_dir=Path(tmp), agent_provider="codex"), store
+            )
+            existing = AgentSession(
+                id="default-session",
+                agent_name="cursor",
+                status="disconnected",
+                label="default",
+                external_session_id="cursor-session",
+            )
+            cursor_spec = MagicMock(id="cursor")
+            provider = MagicMock()
+            provider.resolve_spawn.return_value = cursor_spec
+
+            async def run():
+                with (
+                    patch(
+                        "pa.acp.providers.registry.get_provider",
+                        return_value=provider,
+                    ),
+                    patch(
+                        "pa.instance.agent_session.resolve_agent_provider"
+                    ) as resolve_provider,
+                    patch.object(
+                        AgentSessionRuntime, "start", new=AsyncMock()
+                    ) as start,
+                ):
+                    runtime = await manager.create_session(
+                        label="default",
+                        existing=existing,
+                        resume_external_id="cursor-session",
+                    )
+                return runtime, resolve_provider, start
+
+            runtime, resolve_provider, start = asyncio.run(run())
+
+            self.assertEqual(runtime.session.agent_name, "cursor")
+            resolve_provider.assert_not_called()
+            start.assert_awaited_once_with(
+                resume_external_id="cursor-session",
+                provider_spec=cursor_spec,
+            )
+
+    def test_non_resumable_default_snapshot_uses_configured_provider(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = MagicMock()
+            store.get_session.return_value = AgentSession(
+                id="default-session",
+                agent_name="cursor",
+                status="disconnected",
+                label="default",
+            )
+            manager = AgentSessionManager(
+                Settings(data_dir=Path(tmp), agent_provider="codex"), store
+            )
+            resolved = SimpleNamespace(
+                provider_id="codex",
+                spec=MagicMock(id="codex"),
+                source="instance",
+            )
+            snapshot = SessionSnapshot(
+                session_id="default-session",
+                agent_name="cursor",
+                status="disconnected",
+                label="default",
+            )
+
+            async def run():
+                with (
+                    patch(
+                        "pa.instance.agent_session.resolve_agent_provider",
+                        return_value=resolved,
+                    ),
+                    patch.object(
+                        AgentSessionRuntime, "start", new=AsyncMock()
+                    ) as start,
+                ):
+                    runtime = await manager._resume_from_snapshot(
+                        snapshot, QuiesceSnapshot()
+                    )
+                return runtime, start
+
+            runtime, start = asyncio.run(run())
+
+            self.assertEqual(runtime.session.agent_name, "codex")
+            store.save_session.assert_called_with(runtime.session)
+            start.assert_awaited_once_with(
+                resume_external_id=None,
+                queued_prompts=[],
+                queue_paused=False,
+                provider_spec=resolved.spec,
+            )
+
     def test_concurrent_disconnect_only_exits_transport_once(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             connection = AgentConnection(
