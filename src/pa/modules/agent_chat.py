@@ -256,9 +256,21 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                 project_tool_config=project_tool_config,
             )
             created_runtime = True
+        actual_provider = str(
+            getattr(getattr(runtime, "session", None), "agent_name", "") or ""
+        )
+        actual_provider = actual_provider.strip().lower()
+        defaults_provider = str(surface_defaults.provider or "").strip().lower()
+        initial_defaults = (
+            surface_defaults
+            if new_logical_session
+            and defaults_provider
+            and defaults_provider == actual_provider
+            else None
+        )
         try:
             await _apply_initial_options(
-                runtime, body, surface_defaults if new_logical_session else None
+                runtime, body, initial_defaults
             )
         except Exception:
             if created_runtime:

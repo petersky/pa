@@ -65,7 +65,8 @@ class FileBrowserTests(unittest.TestCase):
             self.assertEqual(trusted, Path(other).resolve())
 
     def test_auth_required_rejects_default_unauthenticated_ui_user(self) -> None:
-        path = self.root / "private.txt"
+        path = self.root / "users" / "local" / "private.txt"
+        path.parent.mkdir(parents=True)
         path.write_text("private")
         self.request.app.state.ctx.settings.auth_required = True
         with self.assertRaises(HTTPException) as raised:
@@ -75,6 +76,54 @@ class FileBrowserTests(unittest.TestCase):
         self.request.state.user_authenticated = True
         resolved, _ = _resolve_authorized_path(self.request, str(path))
         self.assertEqual(resolved, path.resolve())
+
+    def test_auth_required_scopes_session_and_project_roots_to_principal(self) -> None:
+        with tempfile.TemporaryDirectory() as shared:
+            paths = {
+                name: Path(shared) / name
+                for name in (
+                    "alice-session",
+                    "bob-session",
+                    "alice-project",
+                    "bob-project",
+                )
+            }
+            files = {}
+            for name, root in paths.items():
+                root.mkdir()
+                files[name] = root / "file.txt"
+                files[name].write_text(name)
+            self.request.app.state.ctx.settings.auth_required = True
+            self.request.state.user_authenticated = True
+            self.request.state.principal_id = "user:alice"
+            self.store.list_sessions.return_value = [
+                SimpleNamespace(
+                    cwd=str(paths["alice-session"]), principal_id="user:alice"
+                ),
+                SimpleNamespace(
+                    cwd=str(paths["bob-session"]), principal_id="user:bob"
+                ),
+            ]
+            self.store.list_projects.return_value = [
+                SimpleNamespace(
+                    repos=[SimpleNamespace(path=str(paths["alice-project"]))],
+                    created_by_principal="user:alice",
+                    memberships=[],
+                ),
+                SimpleNamespace(
+                    repos=[SimpleNamespace(path=str(paths["bob-project"]))],
+                    created_by_principal="user:bob",
+                    memberships=[],
+                ),
+            ]
+
+            for name in ("alice-session", "alice-project"):
+                resolved, _ = _resolve_authorized_path(self.request, str(files[name]))
+                self.assertEqual(resolved, files[name].resolve())
+            for name in ("bob-session", "bob-project"):
+                with self.assertRaises(HTTPException) as raised:
+                    _resolve_authorized_path(self.request, str(files[name]))
+                self.assertEqual(raised.exception.status_code, 403)
 
     def test_symlink_cannot_escape_a_trusted_root(self) -> None:
         with tempfile.TemporaryDirectory() as other:
@@ -146,6 +195,17 @@ class FileBrowserTests(unittest.TestCase):
         changed = next(row for row in side if row["kind"] == "changed")
         self.assertEqual(changed["left"], "old")
         self.assertEqual(changed["right"], "new")
+
+    def test_side_by_side_diff_keeps_pure_additions(self) -> None:
+        raw = "@@ -1,1 +1,3 @@\n existing\n+added one\n+added two\n"
+
+        side = _side_by_side_diff(raw)
+
+        additions = [row for row in side if row["right"].startswith("added")]
+        self.assertEqual(
+            [row["right"] for row in additions], ["added one", "added two"]
+        )
+        self.assertTrue(all(row["left"] == "" for row in additions))
 
 
 if __name__ == "__main__":

@@ -11,6 +11,7 @@ from urllib.parse import urlencode
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse
 
+from pa.auth.middleware import get_principal_id
 from pa.core.contracts import Module
 
 router = APIRouter()
@@ -36,17 +37,40 @@ def _browse_url(path: Path, **params: str | int) -> str:
 
 def _trusted_roots(request: Request) -> list[Path]:
     ctx = request.app.state.ctx
-    candidates: list[Path] = [Path(ctx.settings.data_dir)]
+    auth_required = bool(ctx.settings.auth_required)
+    principal_id = get_principal_id(request)
+    data_dir = Path(ctx.settings.data_dir)
+    candidates: list[Path] = []
+    if auth_required:
+        if principal_id.startswith("user:"):
+            candidates.append(data_dir / "users" / principal_id[5:])
+    else:
+        candidates.append(data_dir)
     try:
         candidates.extend(
             Path(session.cwd)
             for session in ctx.store.list_sessions()
             if session.cwd
+            and (
+                not auth_required
+                or getattr(session, "principal_id", None) == principal_id
+            )
         )
     except (AttributeError, TypeError):
         pass
     try:
         for project in ctx.store.list_projects():
+            memberships = getattr(project, "memberships", ()) or ()
+            can_access = (
+                not auth_required
+                or getattr(project, "created_by_principal", None) == principal_id
+                or any(
+                    getattr(membership, "principal_id", None) == principal_id
+                    for membership in memberships
+                )
+            )
+            if not can_access:
+                continue
             candidates.extend(Path(repo.path) for repo in project.repos if repo.path)
     except (AttributeError, TypeError):
         pass
@@ -207,6 +231,24 @@ def _side_by_side_diff(raw: str) -> list[dict[str, str]]:
                 })
                 old_no += bool(left)
                 new_no += bool(right)
+            continue
+        if line.startswith("+") and not line.startswith("+++"):
+            while (
+                index < len(lines)
+                and lines[index].startswith("+")
+                and not lines[index].startswith("+++")
+            ):
+                rows.append(
+                    {
+                        "kind": "changed",
+                        "left": "",
+                        "right": lines[index][1:],
+                        "left_no": "",
+                        "right_no": str(new_no),
+                    }
+                )
+                new_no += 1
+                index += 1
             continue
         if line.startswith(" "):
             rows.append({

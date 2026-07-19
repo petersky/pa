@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import json
 import unittest
+from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -159,6 +161,45 @@ class AgentChatSseTests(unittest.TestCase):
         runtime.set_model.assert_awaited_once_with("gpt-test")
         runtime.set_mode.assert_awaited_once_with("code")
         runtime.set_config.assert_awaited_once_with("reasoningEffort", "high")
+
+    def test_new_session_does_not_apply_unscoped_defaults_to_other_provider(
+        self,
+    ) -> None:
+        from pa.core.preferences import SurfaceAgentPrefs
+
+        runtime = MagicMock()
+        runtime.session.agent_name = "cursor"
+        runtime.connection.config_options = []
+        runtime.set_model = AsyncMock()
+        runtime.set_mode = AsyncMock()
+        runtime.set_config = AsyncMock()
+        runtime.snapshot.return_value = {"session": {"id": "sess-cursor"}}
+
+        manager = MagicMock()
+        manager.create_session = AsyncMock(return_value=runtime)
+        request = MagicMock()
+        request.app.state.ctx.settings = SimpleNamespace(data_dir=Path("/tmp"))
+        defaults = SurfaceAgentPrefs(
+            model_id="gpt-codex", mode_id="code", config={"sandbox": "workspace"}
+        )
+
+        async def run() -> dict:
+            with (
+                patch("pa.modules.agent_chat._manager", return_value=manager),
+                patch("pa.modules.agent_chat.get_principal_id", return_value="user:local"),
+                patch(
+                    "pa.acp.providers.resolve.resolve_surface_preferences",
+                    return_value=defaults,
+                ),
+            ):
+                return await create_session(request, CreateSessionBody())
+
+        result = asyncio.run(run())
+
+        self.assertEqual(result["session"]["id"], "sess-cursor")
+        runtime.set_model.assert_not_awaited()
+        runtime.set_mode.assert_not_awaited()
+        runtime.set_config.assert_not_awaited()
 
     def test_labeled_session_is_cleaned_up_when_initial_options_fail(self) -> None:
         runtime = MagicMock()
