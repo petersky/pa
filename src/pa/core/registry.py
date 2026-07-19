@@ -66,6 +66,7 @@ class ModuleRegistry:
         from pa.modules.browser import BrowserModule
         from pa.modules.debug import DebugModule
         from pa.modules.fleet import FleetModule
+        from pa.modules.files import FilesModule
         from pa.modules.integrations import IntegrationsModule
         from pa.modules.instance import InstanceModule
         from pa.modules.items import ItemsModule
@@ -91,6 +92,7 @@ class ModuleRegistry:
             AgentProvidersModule(),
             ThemeModule(),
             DebugModule(),
+            FilesModule(),
             UiShellModule(),
         ):
             self.register(module, source="builtin")

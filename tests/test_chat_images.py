@@ -359,6 +359,20 @@ setImmediate(function () {
         self.assertIn('surfaces["chat.default"]', source)
         self.assertIn("/api/agent/provider-options/", source)
 
+    def test_chat_links_open_externally_or_use_the_file_browser(self) -> None:
+        root = Path(__file__).parents[1] / "src" / "pa" / "server"
+        spa = (root / "static" / "js" / "spa.js").read_text()
+        agent = (root / "static" / "js" / "agent-chat.js").read_text()
+        shell = (root / "templates" / "shell.html").read_text()
+
+        self.assertIn('link.target = "_blank"', spa)
+        self.assertIn('link.rel = "noopener noreferrer"', spa)
+        self.assertIn('browserLink.href = "/browse?"', spa)
+        self.assertIn('direct = "file://"', spa)
+        self.assertIn("window.PALinks.decorate(bubble)", agent)
+        self.assertIn("renderMarkdownAsync", agent)
+        self.assertIn("js/file-browser.js", shell)
+
     def test_fleet_page_exposes_remote_operations_console(self) -> None:
         root = Path(__file__).parents[1] / "src" / "pa" / "server"
         template = (root / "templates" / "pages" / "fleet.html").read_text()

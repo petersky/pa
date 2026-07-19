@@ -42,6 +42,10 @@
     return libsPromise || Promise.resolve();
   }
 
+  function renderMarkdownAsync(text) {
+    return ensureMarkdown().then(function () { return renderMarkdown(text); });
+  }
+
   function csrfHeaders() {
     const meta = document.querySelector('meta[name="csrf-token"]');
     const headers = { "Content-Type": "application/json", Accept: "application/json" };
@@ -989,9 +993,7 @@
       bubble.textContent = content;
     } else {
       bubble.innerHTML = renderMarkdown(content);
-      bubble.querySelectorAll("a").forEach(function (link) {
-        link.rel = "noopener noreferrer";
-      });
+      if (window.PALinks) window.PALinks.decorate(bubble);
     }
   };
 
@@ -1151,6 +1153,7 @@
     const plan = this.plans[index];
     if (!plan || !this.els.planDetail) return;
     this.els.planDetail.innerHTML = plan.html;
+    if (window.PALinks) window.PALinks.decorate(this.els.planDetail);
     if (this.els.planList) {
       this.els.planList.querySelectorAll("button").forEach(function (button, buttonIndex) {
         button.classList.toggle("active", buttonIndex === index);
@@ -2102,6 +2105,7 @@
     refreshSessionList: refreshSessionList,
     anchoredScrollTop: anchoredScrollTop,
     renderMarkdown: renderMarkdown,
+    renderMarkdownAsync: renderMarkdownAsync,
   };
 
   document.addEventListener("DOMContentLoaded", function () {
