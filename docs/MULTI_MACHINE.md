@@ -11,6 +11,11 @@ This guide covers a minimal four-machine PA setup using **Tailscale** for connec
 
 All inter-instance URLs use Tailscale hostnames (e.g. `http://macbook:8080`), not `127.0.0.1`.
 
+Each row in this topology is a separate PA instance with a separate
+`PA_DATA_DIR`. One server process owns each directory; distribution happens by
+exchanging immutable commits between those servers. Never point two services,
+containers, or hosts at the same directory, including through a network mount.
+
 See also: [DEPLOYMENT.md](DEPLOYMENT.md) for host vs dev separation.
 
 ---
@@ -147,6 +152,19 @@ pa peers
 pa sync status --realm personal
 ```
 
+`Head`, `Projection`, and `Consistent: yes` should agree. If the projection was
+interrupted or an older utility changed refs, repair it through the live server:
+
+```bash
+pa sync reconcile --realm personal
+```
+
+Agents should use the PA MCP `sync_status` and `sync_reconcile` tools. Do not
+edit `pa.db`/`sync_refs.json`, invoke PA store internals from a side script, or
+restart merely to make an in-memory head notice a disk change. A true divergent
+history is resolved with `resolve_sync_conflicts`, which preserves both heads in
+an auditable merge commit.
+
 Create a card on MacBook → confirm it appears on Mac mini (may take a few seconds).
 
 ---
@@ -247,6 +265,9 @@ pa sync status --realm personal
 | SSH install auth failed | Use agent/keys, `--identity`, or `--ask-password` (one-shot, not stored) |
 | Peers unreachable | Confirm Tailscale; use `http://hostname:port` not localhost; `pa config set host 0.0.0.0` then `pa restart` |
 | Sync not working | Same sync token (join sets this), same realm, check Fleet readiness warnings |
+| Head and projection differ | Run MCP `sync_reconcile` or `POST /api/sync/reconcile`; inspect missing-object errors instead of restarting |
+| “data directory already has a running writer” | Stop the duplicate service or give it a distinct `PA_DATA_DIR`; never share one directory between instances |
+| Sync returns 409 conflict | Supply explicit per-field resolutions through MCP `resolve_sync_conflicts` / the resolution API; do not force a ref |
 | Linux service won't start | `systemctl --user status pa-server`; check `loginctl enable-linger` |
 | Wrong update track | `pa update --channel beta`; check `config.json` `release_track` |
 

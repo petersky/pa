@@ -9,7 +9,7 @@ import unittest
 from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 from fastapi.testclient import TestClient
@@ -971,7 +971,9 @@ class PRSupervisorApiAndMcpTests(unittest.TestCase):
                 return register
 
         mcp = FakeMcp()
-        kernel.register_mcp(mcp)
+        local_api = MagicMock()
+        with patch("pa.mcp.local_api.request_local_pa", local_api):
+            kernel.register_mcp(mcp)
         expected = {
             "list_pr_watches",
             "get_pr_watch",
@@ -983,20 +985,24 @@ class PRSupervisorApiAndMcpTests(unittest.TestCase):
             "github_integration_capability",
         }
         self.assertTrue(expected.issubset(mcp.names))
-        project = SimpleNamespace(
-            tool_config={
+        project = {
+            "id": "project-1",
+            "realm_id": "default",
+            "title": "Project",
+            "tool_config": {
                 "pr_policy": {
                     "integration_branch": "release",
                     "required_checks": ["release-ci"],
                 }
-            }
-        )
-        kernel.ctx.store.get_project = MagicMock(return_value=project)
+            },
+        }
 
-        def update_project(project_id, update, **kwargs):
-            return SimpleNamespace(tool_config=update.tool_config)
+        def request_side_effect(settings, method, path, **kwargs):
+            if method == "GET":
+                return project
+            return {**project, "tool_config": kwargs["json"]["tool_config"]}
 
-        kernel.ctx.store.update_project = MagicMock(side_effect=update_project)
+        local_api.side_effect = request_side_effect
         result = mcp.functions["set_project_pr_policy"]("project-1", auto_notify=False)
         self.assertEqual(result["policy"]["integration_branch"], "release")
         self.assertEqual(result["policy"]["required_checks"], ["release-ci"])

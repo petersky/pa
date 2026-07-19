@@ -8,10 +8,12 @@ from pa.auth.middleware import get_principal_id
 from pa.core.contracts import Module
 from pa.core.context import AppContext
 from pa.domain.store import get_store
+from pa.domain.models import Card, CardEvent, EventType, Project
 from pa.fleet.membership import MembershipStore
 from pa.sync.compaction import SyncMetrics
 from pa.sync.engine import SyncEngine
 from pa.sync.event_log import EventLog
+from pa.sync.event_log import StaleSyncHeadError
 from pa.sync.infrastructure import get_event_log, get_object_store
 from pa.sync.object_store import ObjectStore
 
@@ -30,6 +32,34 @@ def _check_realm_access(request: Request, realm_id: str) -> None:
     principal_id = _membership_principal(request)
     if not membership.has_role(realm_id, principal_id):
         raise HTTPException(status_code=403, detail="No access to realm")
+
+
+def _ensure_projection_at_head(store, log: EventLog, realm_id: str, head: str) -> None:
+    """Ensure conflict resolution reads entity state for its exact local head."""
+    if store.get_projection_head(realm_id) != head:
+        if not log.get_commit(head):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "missing_head_object",
+                    "realm_id": realm_id,
+                    "head": head,
+                },
+            )
+        store.rebuild_from_log(realm_id)
+    actual_head = log.get_head(realm_id)
+    projection_head = store.get_projection_head(realm_id)
+    if actual_head != head or projection_head != head:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "stale_sync_head",
+                "message": "The local head changed while preparing conflict resolution; retry",
+                "expected_head": head,
+                "actual_head": actual_head,
+                "projection_head": projection_head,
+            },
+        )
 
 
 @router.get("/sync/refs")
@@ -80,32 +110,50 @@ def sync_push(request: Request, body: dict) -> dict:
 
     if head_hash:
         local_head = log.get_head(realm_id)
-        if local_head and local_head != head_hash:
-            if log.is_ancestor(local_head, head_hash):
-                log.advance_ref(realm_id, head_hash)
-                store.rebuild_from_log(realm_id)
-            elif log.is_ancestor(head_hash, local_head):
-                head_hash = local_head
-            else:
-                compatible, health = log.compatible_histories(local_head, head_hash)
-                if not compatible:
-                    raise HTTPException(
-                        status_code=409,
-                        detail={
-                            "code": "sync_conflict",
-                            "message": "Diverged histories modify incompatible fields; operator resolution required",
-                            "realm_id": realm_id,
-                            "local_head": local_head,
-                            "remote_head": head_hash,
-                            **health,
-                        },
+        try:
+            if local_head and local_head != head_hash:
+                if log.is_ancestor(local_head, head_hash):
+                    log.advance_ref(realm_id, head_hash, expected_head=local_head)
+                    store.rebuild_from_log(realm_id)
+                elif log.is_ancestor(head_hash, local_head):
+                    head_hash = local_head
+                else:
+                    compatible, health = log.compatible_histories(local_head, head_hash)
+                    if not compatible:
+                        raise HTTPException(
+                            status_code=409,
+                            detail={
+                                "code": "sync_conflict",
+                                "message": "Diverged histories modify incompatible fields; operator resolution required",
+                                "realm_id": realm_id,
+                                "local_head": local_head,
+                                "remote_head": head_hash,
+                                **health,
+                            },
+                        )
+                    merge = log.merge_heads(
+                        realm_id,
+                        local_head,
+                        head_hash,
+                        "sync:auto",
+                        expected_head=local_head,
                     )
-                merge = log.merge_heads(realm_id, local_head, head_hash, "sync:auto")
-                head_hash = merge.hash
+                    head_hash = merge.hash
+                    store.rebuild_from_log(realm_id)
+            elif local_head != head_hash:
+                log.advance_ref(realm_id, head_hash, expected_head=local_head)
                 store.rebuild_from_log(realm_id)
-        else:
-            log.advance_ref(realm_id, head_hash)
-            store.rebuild_from_log(realm_id)
+        except StaleSyncHeadError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "stale_sync_head",
+                    "message": "The local head changed during sync; retry against the new head",
+                    "realm_id": realm_id,
+                    "expected_head": exc.expected,
+                    "actual_head": exc.actual,
+                },
+            ) from exc
 
     return {"imported": len(imported), "head": head_hash}
 
@@ -185,14 +233,220 @@ async def sync_conflicts(request: Request, realm: str | None = None) -> dict:
     }
 
 
+@router.post("/sync/conflicts/resolve")
+async def resolve_sync_conflicts(request: Request, body: dict) -> dict:
+    """Resolve divergent fields by recording an auditable merge commit."""
+    realm_id = body.get("realm_id") or request.app.state.ctx.settings.primary_realm
+    remote_head = body.get("remote_head", "")
+    resolutions = body.get("resolutions") or []
+    _check_realm_access(request, realm_id)
+    log: EventLog = request.app.state.ctx.require_service("event_log")
+    local_head = log.get_head(realm_id)
+    remote_commit = log.get_commit(remote_head) if remote_head else None
+    if not local_head or not remote_commit or remote_commit.realm_id != realm_id:
+        raise HTTPException(status_code=400, detail="valid remote_head required")
+    store = get_store()
+    with store.mutation():
+        _ensure_projection_at_head(store, log, realm_id, local_head)
+    compatible, health = log.compatible_histories(local_head, remote_head)
+    if compatible:
+        raise HTTPException(
+            status_code=409, detail="histories do not require manual resolution"
+        )
+
+    supplied: dict[tuple[str, str], dict] = {}
+    for item in resolutions:
+        entity = item.get("entity")
+        entity_id = item.get("id")
+        if entity not in {"card", "project"} or not entity_id:
+            raise HTTPException(
+                status_code=400, detail="each resolution needs entity and id"
+            )
+        valid_actions = (
+            {"update", "delete", "upsert"}
+            if entity == "card"
+            else {"update", "archive", "upsert"}
+        )
+        if item.get("action", "update") not in valid_actions:
+            raise HTTPException(
+                status_code=400,
+                detail=f"invalid {entity} resolution action",
+            )
+        supplied[(entity, entity_id)] = item
+    missing = []
+    for conflict in health["conflicts"]:
+        entity, entity_id = conflict["entity"]
+        item = supplied.get((entity, entity_id))
+        field = conflict["field"]
+        if not item or (
+            field != "__terminal__" and field not in item.get("fields", {})
+        ):
+            missing.append({"entity": entity, "id": entity_id, "field": field})
+        elif field == "__terminal__" and item.get("action") not in {
+            "delete" if entity == "card" else "archive",
+            "upsert",
+        }:
+            missing.append({"entity": entity, "id": entity_id, "field": field})
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "incomplete_resolution", "missing": missing},
+        )
+
+    principal = get_principal_id(request)
+    instance = request.app.state.ctx.settings.instance_id
+    events: list[CardEvent] = []
+    for (entity, entity_id), item in supplied.items():
+        action = item.get("action", "update")
+        fields = dict(item.get("fields") or {})
+        if entity == "card":
+            current = store.get_card(entity_id, realm_id=realm_id)
+            if action == "update" and not current:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"card {entity_id} requires an upsert resolution",
+                )
+            if action in {"update", "upsert"}:
+                candidate = (
+                    current.model_dump(mode="json") if current else {"id": entity_id}
+                )
+                try:
+                    validated = Card.model_validate(
+                        {**candidate, **fields, "id": entity_id, "realm_id": realm_id}
+                    )
+                except ValueError as exc:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"invalid card resolution for {entity_id}: {exc}",
+                    ) from exc
+                normalized = validated.model_dump(mode="json")
+                fields = (
+                    normalized
+                    if action == "upsert"
+                    else {key: normalized[key] for key in fields if key in normalized}
+                )
+            event_type = {
+                "delete": EventType.CARD_DELETED,
+                "upsert": EventType.CARD_CREATED,
+            }.get(action, EventType.CARD_UPDATED)
+            events.append(
+                CardEvent(
+                    type=event_type,
+                    realm_id=realm_id,
+                    card_id=entity_id,
+                    author_principal=principal,
+                    author_instance=instance,
+                    payload={"id": entity_id, **fields}
+                    if action == "upsert"
+                    else fields,
+                )
+            )
+        else:
+            current = store.get_project(entity_id, realm_id=realm_id)
+            if action == "update" and not current:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"project {entity_id} requires an upsert resolution",
+                )
+            if action in {"update", "upsert"}:
+                candidate = (
+                    current.model_dump(mode="json") if current else {"id": entity_id}
+                )
+                try:
+                    validated = Project.model_validate(
+                        {**candidate, **fields, "id": entity_id, "realm_id": realm_id}
+                    )
+                except ValueError as exc:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"invalid project resolution for {entity_id}: {exc}",
+                    ) from exc
+                normalized = validated.model_dump(mode="json")
+                fields = (
+                    normalized
+                    if action == "upsert"
+                    else {key: normalized[key] for key in fields if key in normalized}
+                )
+            event_type = {
+                "archive": EventType.PROJECT_ARCHIVED,
+                "upsert": EventType.PROJECT_CREATED,
+            }.get(action, EventType.PROJECT_UPDATED)
+            events.append(
+                CardEvent(
+                    type=event_type,
+                    realm_id=realm_id,
+                    project_id=entity_id,
+                    author_principal=principal,
+                    author_instance=instance,
+                    payload={"id": entity_id, **fields}
+                    if action == "upsert"
+                    else fields,
+                )
+            )
+    with store.mutation():
+        try:
+            merge = log.resolve_heads(
+                realm_id, local_head, remote_head, events, principal
+            )
+        except StaleSyncHeadError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "stale_sync_head", "actual_head": exc.actual},
+            ) from exc
+        store.rebuild_from_log(realm_id)
+    engine: SyncEngine = request.app.state.ctx.require_service("sync_engine")
+    await engine.notify_commit(realm_id)
+    return {"realm_id": realm_id, "head": merge.hash, "resolved": len(events)}
+
+
 @router.get("/sync/status")
 async def sync_status(request: Request, realm: str | None = None) -> dict:
     engine: SyncEngine = request.app.state.ctx.require_service("sync_engine")
     metrics: SyncMetrics = request.app.state.ctx.require_service("sync_metrics")
     realm_id = realm or request.app.state.ctx.settings.primary_realm
     status = engine.status(realm_id)
+    log: EventLog = request.app.state.ctx.require_service("event_log")
+    store = get_store()
+    durable_head = log.get_head(realm_id)
+    projection_head = store.get_projection_head(realm_id)
+    status["head"] = durable_head
+    status["projection_head"] = projection_head
+    status["consistent"] = durable_head == projection_head
+    status["writer"] = "server"
     status["metrics"] = metrics.snapshot()
     return status
+
+
+@router.post("/sync/reconcile")
+def sync_reconcile(request: Request, body: dict) -> dict:
+    """Reload durable refs and repair a stale SQLite projection safely."""
+    realm_id = body.get("realm_id") or request.app.state.ctx.settings.primary_realm
+    _check_realm_access(request, realm_id)
+    log: EventLog = request.app.state.ctx.require_service("event_log")
+    store = get_store()
+    log.reload_refs()
+    durable_head = log.get_head(realm_id)
+    projection_head = store.get_projection_head(realm_id)
+    rebuilt = False
+    if durable_head and projection_head != durable_head:
+        if not log.get_commit(durable_head):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "missing_head_object",
+                    "realm_id": realm_id,
+                    "head": durable_head,
+                },
+            )
+        store.rebuild_from_log(realm_id)
+        rebuilt = True
+    return {
+        "realm_id": realm_id,
+        "head": durable_head,
+        "projection_head": store.get_projection_head(realm_id),
+        "rebuilt": rebuilt,
+        "consistent": durable_head == store.get_projection_head(realm_id),
+    }
 
 
 class SyncModule(Module):
@@ -245,9 +499,56 @@ class SyncModule(Module):
 
         store = get_store()
         for realm in settings.subscribed_realms:
+            durable_head = event_log.get_head(realm)
+            if durable_head and store.get_projection_head(realm) != durable_head:
+                if event_log.get_commit(durable_head):
+                    store.rebuild_from_log(realm)
             advanced = await engine.anti_entropy(realm)
             if advanced:
                 store.rebuild_from_log(realm)
 
     def api_routers(self):
         return [("/api", router, ["sync"])]
+
+    def register_mcp(self, mcp, ctx: AppContext) -> None:
+        from pa.mcp.local_api import request_local_pa
+
+        @mcp.tool()
+        def sync_status(realm: str = "default") -> dict:
+            """Check durable/projection sync consistency through the PA server."""
+            return request_local_pa(
+                ctx.settings, "GET", "/api/sync/status", params={"realm": realm}
+            )
+
+        @mcp.tool()
+        def sync_reconcile(realm: str = "default") -> dict:
+            """Repair a stale local projection from its durable event-log head."""
+            return request_local_pa(
+                ctx.settings,
+                "POST",
+                "/api/sync/reconcile",
+                json={"realm_id": realm},
+            )
+
+        @mcp.tool()
+        def resolve_sync_conflicts(
+            remote_head: str,
+            resolutions: list[dict],
+            realm: str = "default",
+        ) -> dict:
+            """Resolve divergent histories with an explicit auditable merge.
+
+            Each resolution is {entity: card|project, id, action, fields}. Use
+            update for field conflicts; delete/archive or a full upsert for a
+            delete-vs-edit conflict. Include every field reported as conflicting.
+            """
+            return request_local_pa(
+                ctx.settings,
+                "POST",
+                "/api/sync/conflicts/resolve",
+                json={
+                    "realm_id": realm,
+                    "remote_head": remote_head,
+                    "resolutions": resolutions,
+                },
+            )

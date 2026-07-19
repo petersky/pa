@@ -1,5 +1,3 @@
-import json
-import sys
 from pathlib import Path
 from typing import Annotated
 
@@ -10,8 +8,6 @@ from pa import __version__
 from pa.config import Settings, get_settings, reset_settings
 from pa.core.kernel import Kernel, reset_kernel
 from pa.core.registry import ENTRYPOINT_GROUP
-from pa.domain.store import get_store
-from pa.install.metadata import load_install_metadata
 
 app = typer.Typer(
     name="pa",
@@ -645,6 +641,38 @@ def _fleet_api_base(settings: Settings) -> str:
     return f"http://{host}:{settings.port}"
 
 
+def _local_api_request(
+    settings: Settings,
+    method: str,
+    path: str,
+    *,
+    params: dict | None = None,
+    body: dict | None = None,
+) -> dict | list:
+    """Route CLI operations through the running server (the local sole writer)."""
+    import httpx
+
+    from pa.auth.users import UserDirectory
+
+    user = UserDirectory(settings.data_dir).ensure_default_user()
+    try:
+        response = httpx.request(
+            method,
+            f"{_fleet_api_base(settings)}{path}",
+            params=params,
+            json=body,
+            headers={"Authorization": f"Bearer {user.cli_token}"},
+            timeout=10.0,
+        )
+        response.raise_for_status()
+        return response.json()
+    except httpx.HTTPError as exc:
+        raise RuntimeError(
+            "The local PA server is unavailable or rejected the request. Start PA "
+            "for this PA_DATA_DIR; offline CLI writes are intentionally disabled."
+        ) from exc
+
+
 def _fleet_api_post(
     settings: Settings, path: str, body: dict | None = None
 ) -> dict | None:
@@ -1059,13 +1087,17 @@ def project_list(
     realm: Annotated[str | None, typer.Option(help="Realm ID")] = None,
 ) -> None:
     """List projects in a realm."""
-    from pa.domain.store import get_store
-
     settings = get_settings()
-    store = get_store()
     realm_id = realm or settings.primary_realm
-    for project in store.list_projects(realm_id=realm_id):
-        typer.echo(f"  {project.id:<36} {project.title}")
+    try:
+        projects = _local_api_request(
+            settings, "GET", "/api/projects", params={"realm": realm_id}
+        )
+    except RuntimeError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1) from exc
+    for project in projects:
+        typer.echo(f"  {project['id']:<36} {project['title']}")
 
 
 @project_app.command("create")
@@ -1075,17 +1107,23 @@ def project_create(
     realm: Annotated[str | None, typer.Option(help="Realm ID")] = None,
 ) -> None:
     """Create a new project."""
-    from pa.domain.models import ProjectCreate
-    from pa.domain.store import get_store
-
     settings = get_settings()
-    store = get_store()
     realm_id = realm or settings.primary_realm
-    project = store.create_project(
-        ProjectCreate(realm_id=realm_id, title=title, description=description),
-        instance_id=settings.instance_id,
-    )
-    typer.echo(f"Created project {project.id}: {project.title}")
+    try:
+        project = _local_api_request(
+            settings,
+            "POST",
+            "/api/projects",
+            body={
+                "realm_id": realm_id,
+                "title": title,
+                "description": description,
+            },
+        )
+    except RuntimeError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1) from exc
+    typer.echo(f"Created project {project['id']}: {project['title']}")
 
 
 @sync_app.command("status")
@@ -1093,14 +1131,40 @@ def sync_status(
     realm: Annotated[str | None, typer.Option(help="Realm ID")] = None,
 ) -> None:
     """Show sync status for a realm."""
-    from pa.sync.infrastructure import get_sync_engine
-
     settings = get_settings()
     realm_id = realm or settings.primary_realm
-    engine = get_sync_engine(settings)
-    status = engine.status(realm_id)
+    try:
+        status = _local_api_request(
+            settings, "GET", "/api/sync/status", params={"realm": realm_id}
+        )
+    except RuntimeError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1) from exc
     typer.echo(f"Realm:   {status['realm_id']}")
     typer.echo(f"Head:    {status.get('head') or '—'}")
+    typer.echo(f"Projection: {status.get('projection_head') or '—'}")
+    typer.echo(f"Consistent: {'yes' if status.get('consistent') else 'NO'}")
     typer.echo(f"Objects: {status.get('object_count', 0)}")
     typer.echo(f"Peers:   {status.get('peer_count', 0)}")
     typer.echo(f"Zone:    {status.get('zone')}")
+
+
+@sync_app.command("reconcile")
+def sync_reconcile(
+    realm: Annotated[str | None, typer.Option(help="Realm ID")] = None,
+) -> None:
+    """Repair the local SQLite projection from the durable sync head."""
+    settings = get_settings()
+    realm_id = realm or settings.primary_realm
+    try:
+        result = _local_api_request(
+            settings,
+            "POST",
+            "/api/sync/reconcile",
+            body={"realm_id": realm_id},
+        )
+    except RuntimeError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1) from exc
+    action = "rebuilt" if result.get("rebuilt") else "already consistent"
+    typer.echo(f"Realm {realm_id}: {action} at {result.get('head') or '—'}")

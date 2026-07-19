@@ -11,7 +11,7 @@ from pa.auth.middleware import get_principal_id
 from pa.core.contracts import Module
 from pa.core.context import AppContext
 from pa.core.ui.pages import PageDefinition, PageRegistry
-from pa.domain.models import ProjectUpdate
+from pa.domain.models import Project, ProjectUpdate
 from pa.pr_supervisor.github import GitHubAPIError, verify_webhook_signature
 from pa.pr_supervisor.models import (
     GitHubCapability,
@@ -493,6 +493,8 @@ class PRSupervisorModule(Module):
         return [ui_router]
 
     def register_mcp(self, mcp, ctx: AppContext) -> None:
+        from pa.mcp.local_api import request_local_pa
+
         store: PRSupervisorStore = ctx.require_service("pr_supervisor_store")
 
         @mcp.tool()
@@ -652,7 +654,14 @@ class PRSupervisorModule(Module):
             agent_merge_on_green: bool = True,
         ) -> dict[str, Any] | None:
             """Set project-wide or repository-specific PR supervision policy."""
-            project = ctx.store.get_project(project_id, realm_id=realm)
+            project_data = request_local_pa(
+                ctx.settings,
+                "GET",
+                f"/api/projects/{project_id}",
+                params={"realm": realm},
+                allow_not_found=True,
+            )
+            project = Project.model_validate(project_data) if project_data else None
             if not project:
                 return None
             config = dict(project.tool_config or {})
@@ -682,17 +691,20 @@ class PRSupervisorModule(Module):
                 )
                 policy = PRPolicy.model_validate(policy_data)
                 config["pr_policy"] = policy.model_dump(mode="json")
-            updated = ctx.store.update_project(
-                project_id,
-                ProjectUpdate(tool_config=config),
-                realm_id=realm,
-                instance_id=ctx.settings.instance_id,
+            updated = request_local_pa(
+                ctx.settings,
+                "PATCH",
+                f"/api/projects/{project_id}",
+                params={"realm": realm},
+                json={"tool_config": config},
             )
             return {
                 "project_id": project_id,
                 "repository": repository,
                 "policy": policy.model_dump(mode="json"),
-                "tool_config": updated.tool_config if updated else config,
+                "tool_config": updated.get("tool_config", config)
+                if updated
+                else config,
             }
 
         @mcp.tool()

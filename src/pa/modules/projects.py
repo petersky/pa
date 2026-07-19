@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse
 
 from pa.auth.middleware import get_principal_id
 from pa.core.contracts import Module
@@ -15,7 +15,10 @@ ui_router = APIRouter()
 
 
 def _active_realm(request: Request) -> str:
-    return request.query_params.get("realm") or request.app.state.ctx.settings.primary_realm
+    return (
+        request.query_params.get("realm")
+        or request.app.state.ctx.settings.primary_realm
+    )
 
 
 def _projects_context(request: Request) -> dict:
@@ -26,7 +29,9 @@ def _projects_context(request: Request) -> dict:
     return {
         "projects": store.list_projects(realm_id=realm),
         "project": project,
-        "cards": store.list_cards_for_project(project_id, realm_id=realm) if project_id else [],
+        "cards": store.list_cards_for_project(project_id, realm_id=realm)
+        if project_id
+        else [],
         "active_realm": realm,
         "realms": request.app.state.ctx.settings.subscribed_realms,
     }
@@ -51,7 +56,9 @@ def create_project_api(request: Request, data: ProjectCreate) -> dict:
 
 
 @router.get("/projects/{project_id}")
-def get_project_api(request: Request, project_id: str, realm: str | None = None) -> dict:
+def get_project_api(
+    request: Request, project_id: str, realm: str | None = None
+) -> dict:
     realm_id = realm or request.app.state.ctx.settings.primary_realm
     project = get_store().get_project(project_id, realm_id=realm_id)
     if not project:
@@ -81,7 +88,9 @@ def update_project_api(
 
 
 @router.get("/projects/{project_id}/cards")
-def project_cards_api(request: Request, project_id: str, realm: str | None = None) -> list[dict]:
+def project_cards_api(
+    request: Request, project_id: str, realm: str | None = None
+) -> list[dict]:
     realm_id = realm or request.app.state.ctx.settings.primary_realm
     cards = get_store().list_cards_for_project(project_id, realm_id=realm_id)
     return [c.model_dump(mode="json") for c in cards]
@@ -173,18 +182,25 @@ class ProjectsModule(Module):
         return [ui_router]
 
     def register_mcp(self, mcp, ctx: AppContext) -> None:
-        store = ctx.store
+        from pa.mcp.local_api import request_local_pa
 
         @mcp.tool()
         def list_projects(realm: str = "default") -> list[dict]:
             """List projects in a realm."""
-            return [p.model_dump(mode="json") for p in store.list_projects(realm_id=realm)]
+            return request_local_pa(
+                ctx.settings, "GET", "/api/projects", params={"realm": realm}
+            )
 
         @mcp.tool()
         def get_project(project_id: str, realm: str = "default") -> dict | None:
             """Get a project by ID."""
-            project = store.get_project(project_id, realm_id=realm)
-            return project.model_dump(mode="json") if project else None
+            return request_local_pa(
+                ctx.settings,
+                "GET",
+                f"/api/projects/{project_id}",
+                params={"realm": realm},
+                allow_not_found=True,
+            )
 
         @mcp.tool()
         def create_project(
@@ -194,15 +210,17 @@ class ProjectsModule(Module):
             agent_prompt: str = "",
         ) -> dict:
             """Create a new project."""
-            project = store.create_project(
-                ProjectCreate(
-                    realm_id=realm,
-                    title=title,
-                    description=description,
-                    agent_prompt=agent_prompt,
-                )
+            return request_local_pa(
+                ctx.settings,
+                "POST",
+                "/api/projects",
+                json={
+                    "realm_id": realm,
+                    "title": title,
+                    "description": description,
+                    "agent_prompt": agent_prompt,
+                },
             )
-            return project.model_dump(mode="json")
 
         @mcp.tool()
         def update_project(
@@ -213,16 +231,21 @@ class ProjectsModule(Module):
             realm: str = "default",
         ) -> dict | None:
             """Update project fields."""
-            project = store.update_project(
-                project_id,
-                ProjectUpdate(
-                    title=title,
-                    description=description,
-                    agent_prompt=agent_prompt,
-                ),
-                realm_id=realm,
+            return request_local_pa(
+                ctx.settings,
+                "PATCH",
+                f"/api/projects/{project_id}",
+                params={"realm": realm},
+                json={
+                    key: value
+                    for key, value in {
+                        "title": title,
+                        "description": description,
+                        "agent_prompt": agent_prompt,
+                    }.items()
+                    if value is not None
+                },
             )
-            return project.model_dump(mode="json") if project else None
 
         @mcp.tool()
         def assign_card_to_project(
@@ -231,5 +254,9 @@ class ProjectsModule(Module):
             realm: str = "default",
         ) -> dict | None:
             """Assign a card to a project."""
-            card = store.assign_card_to_project(card_id, project_id, realm_id=realm)
-            return card.model_dump(mode="json") if card else None
+            return request_local_pa(
+                ctx.settings,
+                "POST",
+                f"/api/projects/{project_id}/assign/{card_id}",
+                params={"realm": realm},
+            )

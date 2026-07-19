@@ -30,7 +30,10 @@ def _templates(request: Request):
 
 
 def _active_realm(request: Request) -> str:
-    return request.query_params.get("realm") or request.app.state.ctx.settings.primary_realm
+    return (
+        request.query_params.get("realm")
+        or request.app.state.ctx.settings.primary_realm
+    )
 
 
 def _active_project(request: Request) -> str | None:
@@ -50,7 +53,9 @@ def _pr_watch_context(request: Request, card_id: str) -> dict:
     }
 
 
-def _cards_context(request: Request, *, kind: CardKind | None = None, lane: CardLane | None = None) -> dict:
+def _cards_context(
+    request: Request, *, kind: CardKind | None = None, lane: CardLane | None = None
+) -> dict:
     store = get_store()
     realm = _active_realm(request)
     project_id = _active_project(request)
@@ -135,7 +140,9 @@ def get_card_api(request: Request, card_id: str, realm: str | None = None) -> di
 
 
 @router.patch("/cards/{card_id}")
-def update_card_api(request: Request, card_id: str, data: CardUpdate, realm: str | None = None) -> dict:
+def update_card_api(
+    request: Request, card_id: str, data: CardUpdate, realm: str | None = None
+) -> dict:
     settings = request.app.state.ctx.settings
     realm_id = realm or settings.primary_realm
     card = get_store().update_card(
@@ -151,7 +158,9 @@ def update_card_api(request: Request, card_id: str, data: CardUpdate, realm: str
 
 
 @router.get("/items")
-def list_items(kind: ItemKind | None = None, status: ItemStatus | None = None) -> list[dict]:
+def list_items(
+    kind: ItemKind | None = None, status: ItemStatus | None = None
+) -> list[dict]:
     items = get_store().list_items(kind=kind, status=status)
     return [item.model_dump(mode="json") for item in items]
 
@@ -281,7 +290,9 @@ def card_detail_empty(request: Request) -> HTMLResponse:
 
 
 @ui_router.get("/partials/cards/{card_id}/detail", response_class=HTMLResponse)
-def card_detail_partial(request: Request, card_id: str, realm: str | None = None) -> HTMLResponse:
+def card_detail_partial(
+    request: Request, card_id: str, realm: str | None = None
+) -> HTMLResponse:
     realm_id = realm or _active_realm(request)
     card = get_store().get_card(card_id, realm_id=realm_id)
     return _templates(request).TemplateResponse(
@@ -434,25 +445,29 @@ class ItemsModule(Module):
         return [ui_router]
 
     def register_mcp(self, mcp, ctx: AppContext) -> None:
-        store = ctx.store
+        from pa.mcp.local_api import request_local_pa
 
         @mcp.tool()
-        def list_items(kind: str | None = None, status: str | None = None) -> list[dict]:
+        def list_items(
+            kind: str | None = None, status: str | None = None
+        ) -> list[dict]:
             """List goals, tasks, projects, and concerns."""
-            items = store.list_items(
-                kind=ItemKind(kind) if kind else None,
-                status=ItemStatus(status) if status else None,
+            return request_local_pa(
+                ctx.settings,
+                "GET",
+                "/api/items",
+                params={"kind": kind, "status": status},
             )
-            return [item.model_dump(mode="json") for item in items]
 
         @mcp.tool()
         def list_cards(realm: str = "default", lane: str | None = None) -> list[dict]:
             """List cards in a realm."""
-            cards = store.list_cards(
-                realm_id=realm,
-                lane=CardLane(lane) if lane else None,
+            return request_local_pa(
+                ctx.settings,
+                "GET",
+                "/api/cards",
+                params={"realm": realm, "lane": lane},
             )
-            return [c.model_dump(mode="json") for c in cards]
 
         @mcp.tool()
         def create_item(
@@ -463,25 +478,35 @@ class ItemsModule(Module):
             parent_id: str | None = None,
         ) -> dict:
             """Create a goal, task, project, or concern."""
-            item = store.create_item(
-                ItemCreate(
-                    kind=ItemKind(kind),
-                    title=title,
-                    body=body,
-                    status=ItemStatus(status),
-                    parent_id=parent_id,
-                )
+            return request_local_pa(
+                ctx.settings,
+                "POST",
+                "/api/items",
+                json={
+                    "kind": kind,
+                    "title": title,
+                    "body": body,
+                    "status": status,
+                    "parent_id": parent_id,
+                },
             )
-            return item.model_dump(mode="json")
 
         @mcp.tool()
         def get_item(item_id: str) -> dict | None:
             """Get a single item by ID."""
-            item = store.get_item(item_id)
-            return item.model_dump(mode="json") if item else None
+            return request_local_pa(
+                ctx.settings,
+                "GET",
+                f"/api/items/{item_id}",
+                allow_not_found=True,
+            )
 
         @mcp.tool()
         def list_knowledge(item_id: str | None = None, limit: int = 20) -> list[dict]:
             """List captured knowledge from agent sessions."""
-            entries = store.list_knowledge(item_id=item_id, limit=limit)
-            return [entry.model_dump(mode="json") for entry in entries]
+            return request_local_pa(
+                ctx.settings,
+                "GET",
+                "/api/knowledge",
+                params={"item_id": item_id, "limit": limit},
+            )
