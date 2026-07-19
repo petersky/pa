@@ -1,7 +1,11 @@
 import asyncio
+import tempfile
 import unittest
-from unittest.mock import MagicMock, Mock
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, Mock
 
+from pa.acp.client import AgentConnection
+from pa.config import Settings
 from pa.domain.models import AgentSession, TranscriptEvent
 from pa.instance.agent_session import AgentSessionRuntime
 
@@ -27,6 +31,74 @@ class _TranscriptStore:
 
 
 class AgentSessionLiveEventTests(unittest.TestCase):
+    def test_concurrent_disconnect_only_exits_transport_once(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            connection = AgentConnection(
+                Settings(data_dir=Path(tmp)), MagicMock()
+            )
+            context = MagicMock()
+            context.__aexit__ = AsyncMock()
+            connection._ctx = context
+
+            async def run() -> None:
+                await asyncio.gather(
+                    connection.disconnect(),
+                    connection.disconnect(),
+                )
+
+            asyncio.run(run())
+
+            context.__aexit__.assert_awaited_once_with(None, None, None)
+
+    def test_mark_transport_dead_uses_disconnect_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            connection = AgentConnection(
+                Settings(data_dir=Path(tmp)), MagicMock()
+            )
+            context = MagicMock()
+            context.__aexit__ = AsyncMock()
+            connection._ctx = context
+
+            async def run() -> None:
+                await connection._disconnect_lock.acquire()
+                cleanup = asyncio.create_task(connection._mark_transport_dead())
+                await asyncio.sleep(0)
+                self.assertFalse(cleanup.done())
+                connection._disconnect_lock.release()
+                await cleanup
+
+            asyncio.run(run())
+
+            context.__aexit__.assert_awaited_once_with(None, None, None)
+
+    def test_mark_transport_dead_updates_status_before_cleanup_finishes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = MagicMock()
+            connection = AgentConnection(Settings(data_dir=Path(tmp)), store)
+            connection.session = AgentSession(
+                agent_name="codex", status="prompting"
+            )
+            cleanup_started = asyncio.Event()
+            allow_cleanup = asyncio.Event()
+
+            async def block_cleanup(*_args) -> None:
+                cleanup_started.set()
+                await allow_cleanup.wait()
+
+            context = MagicMock()
+            context.__aexit__ = AsyncMock(side_effect=block_cleanup)
+            connection._ctx = context
+
+            async def run() -> None:
+                cleanup = asyncio.create_task(connection._mark_transport_dead())
+                await cleanup_started.wait()
+                self.assertEqual(connection.session.status, "disconnected")
+                store.save_session.assert_called_once_with(connection.session)
+                allow_cleanup.set()
+                await cleanup
+
+            asyncio.run(run())
+
     def test_snapshot_restores_bounded_newest_transcript_window(self) -> None:
         events = [
             TranscriptEvent(

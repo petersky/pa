@@ -116,6 +116,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:
         request.state.principal_id = None
         request.state.user = None
+        request.state.user_authenticated = False
         request.state.instance_authenticated = False
 
         path = request.url.path
@@ -134,6 +135,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 if user:
                     request.state.user = user
                     request.state.principal_id = f"user:{user.id}"
+                    request.state.user_authenticated = True
 
         session_token = request.cookies.get(self.sessions.COOKIE_NAME)
         if session_token and not request.state.principal_id:
@@ -143,6 +145,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 if user:
                     request.state.user = user
                     request.state.principal_id = f"user:{user.id}"
+                    request.state.user_authenticated = True
 
         if (
             _sync_auth_required(self.settings)

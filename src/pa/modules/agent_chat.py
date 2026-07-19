@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
@@ -95,14 +96,22 @@ def _config_option_id(runtime, requested: str) -> str:
     return "reasoning_effort" if requested == "effort" else requested
 
 
-async def _apply_initial_options(runtime, body: CreateSessionBody) -> None:
-    if body.model_id:
-        await runtime.set_model(body.model_id)
-    if body.mode_id:
-        await runtime.set_mode(body.mode_id)
-    config = dict(body.config)
-    if body.effort:
-        config[_config_option_id(runtime, "effort")] = body.effort
+async def _apply_initial_options(runtime, body: CreateSessionBody, defaults=None) -> None:
+    model_id = body.model_id or (defaults.model_id if defaults else None)
+    mode_id = body.mode_id or (defaults.mode_id if defaults else None)
+    effort = body.effort or (defaults.effort if defaults else None)
+    if model_id:
+        await runtime.set_model(model_id)
+    if mode_id:
+        await runtime.set_mode(mode_id)
+    config = dict(defaults.config if defaults else {})
+    config.update(body.config)
+    if effort:
+        config[_config_option_id(runtime, "effort")] = effort
+    elif "reasoning_effort" in config:
+        config[_config_option_id(runtime, "effort")] = config.pop(
+            "reasoning_effort"
+        )
     for config_id, value in config.items():
         await runtime.set_config(config_id, value)
 
@@ -158,15 +167,35 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
     principal_id = get_principal_id(request)
     created_runtime = False
     from pa.acp.surfaces import surface_for_label
+    from pa.acp.providers.resolve import (
+        resolve_provider_id,
+        resolve_surface_preferences,
+    )
+    from pa.acp.surfaces import AgentInvocationContext
+    from pa.core.preferences import SurfaceAgentPrefs
 
     surface = body.surface or surface_for_label(body.label, project_id=body.project_id)
+    settings = request.app.state.ctx.settings
+    surface_defaults = SurfaceAgentPrefs()
+    if isinstance(settings.data_dir, (str, Path)):
+        surface_defaults = resolve_surface_preferences(
+            settings,
+            AgentInvocationContext(
+                surface=surface,
+                principal_id=principal_id,
+                card_id=body.card_id,
+                project_id=body.project_id,
+            ),
+        )
     project_tool_config = None
+    new_logical_session = True
     if body.project_id:
         project = mgr.store.get_project(body.project_id)
         if project and getattr(project, "tool_config", None):
             project_tool_config = dict(project.tool_config)
     try:
         if body.attach_default or body.label == "default":
+            new_logical_session = mgr.store.get_session_by_label("default") is None
             runtime = await mgr.attach_default(
                 principal_id=principal_id,
                 cwd=body.cwd,
@@ -182,6 +211,7 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
             if existing is None:
                 stored = mgr.store.get_session_by_label(body.label)
                 if stored and stored.status not in {"closed", "quiesced"}:
+                    new_logical_session = False
                     runtime = await mgr.create_session(
                         label=body.label,
                         title=body.title or stored.title,
@@ -210,6 +240,7 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                     )
                     created_runtime = True
             else:
+                new_logical_session = False
                 runtime = existing
         else:
             runtime = await mgr.create_session(
@@ -224,8 +255,40 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                 project_tool_config=project_tool_config,
             )
             created_runtime = True
+        actual_provider = str(
+            getattr(getattr(runtime, "session", None), "agent_name", "") or ""
+        )
+        actual_provider = actual_provider.strip().lower()
+        defaults_provider = str(surface_defaults.provider or "").strip().lower()
+        if (
+            new_logical_session
+            and not defaults_provider
+            and isinstance(settings.data_dir, (str, Path))
+        ):
+            # Resolve what "inherit" means without the request override. Saved
+            # option ids are safe only when that provider is the one we started.
+            defaults_provider, _ = resolve_provider_id(
+                settings,
+                AgentInvocationContext(
+                    surface=surface,
+                    principal_id=principal_id,
+                    card_id=body.card_id,
+                    project_id=body.project_id,
+                ),
+                project_tool_config=project_tool_config,
+            )
+            defaults_provider = defaults_provider.strip().lower()
+        initial_defaults = (
+            surface_defaults
+            if new_logical_session
+            and defaults_provider
+            and defaults_provider == actual_provider
+            else None
+        )
         try:
-            await _apply_initial_options(runtime, body)
+            await _apply_initial_options(
+                runtime, body, initial_defaults
+            )
         except Exception:
             if created_runtime:
                 try:
@@ -279,6 +342,60 @@ def list_agent_sessions(request: Request) -> list[dict]:
         for rt in mgr.list_runtimes()
         if not rt._closed
     ]
+
+
+@router.get("/provider-options/{provider_id}")
+def get_provider_options(request: Request, provider_id: str) -> dict:
+    """Return live or durably cached session options for a provider."""
+    from pa.acp.providers.registry import get_provider
+
+    try:
+        get_provider(provider_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    mgr = _manager(request)
+    principal_id = get_principal_id(request)
+    auth_required = bool(request.app.state.ctx.settings.auth_required)
+
+    def session_is_visible(session) -> bool:
+        return (
+            not auth_required
+            or getattr(session, "principal_id", None) == principal_id
+        )
+
+    for runtime in mgr.list_runtimes():
+        if (
+            runtime.session.agent_name == provider_id
+            and session_is_visible(runtime.session)
+            and not getattr(runtime, "_closed", False)
+            and runtime.connection
+        ):
+            return {
+                "provider": provider_id,
+                "models": runtime.connection.models,
+                "modes": runtime.connection.modes,
+                "config_options": runtime.connection.config_options,
+                "cached": False,
+            }
+    for session in mgr.store.list_sessions():
+        if session.agent_name != provider_id or not session_is_visible(session):
+            continue
+        config = dict(session.config_json or {})
+        if any(key in config for key in ("models", "modes", "options")):
+            return {
+                "provider": provider_id,
+                "models": config.get("models"),
+                "modes": config.get("modes"),
+                "config_options": config.get("options"),
+                "cached": True,
+            }
+    return {
+        "provider": provider_id,
+        "models": None,
+        "modes": None,
+        "config_options": None,
+        "cached": True,
+    }
 
 
 @router.get("/history")

@@ -134,7 +134,11 @@ class Kernel:
                 "no",
                 "off",
             }
-            if quiesce and (agent.connected or agent.prompting):
+            has_open_sessions = any(
+                not getattr(runtime, "_closed", False)
+                for runtime in agent.list_runtimes()
+            )
+            if quiesce and has_open_sessions:
                 try:
                     await asyncio.wait_for(
                         agent.quiesce(reason="shutdown", timeout=20.0), timeout=25.0

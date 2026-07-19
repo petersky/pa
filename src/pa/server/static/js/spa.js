@@ -61,6 +61,65 @@
     return meta && meta.content ? { "X-CSRF-Token": meta.content } : {};
   }
 
+  function filesystemTarget(href) {
+    var raw = String(href || "");
+    var path = "";
+    if (raw.indexOf("file:///") === 0) {
+      try { path = decodeURIComponent(new URL(raw).pathname); } catch (_error) { return null; }
+    } else if (/^\/(Users|home|tmp|private|workspace|mnt|opt|var)(\/|$)/.test(raw)) {
+      try { path = decodeURIComponent(raw.split(/[?#]/, 1)[0]); } catch (_error) { path = raw; }
+    } else {
+      return null;
+    }
+    var line = null;
+    var match = path.match(/:(\d+)$/);
+    if (match) {
+      line = Number(match[1]);
+      path = path.slice(0, -match[0].length);
+    }
+    return { path: path, line: line };
+  }
+
+  function decorateLinks(scope) {
+    (scope || document).querySelectorAll("a[href]").forEach(function (link) {
+      if (link.dataset.paLinkDecorated === "1") return;
+      link.dataset.paLinkDecorated = "1";
+      var raw = link.getAttribute("href") || "";
+      var file = filesystemTarget(raw);
+      if (file) {
+        var direct = "file://" + encodeURI(file.path).replace(/#/g, "%23").replace(/\?/g, "%3F");
+        var params = new URLSearchParams({ path: file.path });
+        if (file.line) params.set("line", String(file.line));
+        link.href = direct;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.classList.add("pa-file-link");
+        link.title = "Open file directly";
+        var browserLink = document.createElement("a");
+        browserLink.href = "/browse?" + params.toString();
+        browserLink.className = "pa-file-browser-link";
+        browserLink.setAttribute("aria-label", "View " + file.path + " in PA");
+        browserLink.title = "View in PA";
+        browserLink.textContent = "▣";
+        browserLink.dataset.paLinkDecorated = "1";
+        link.insertAdjacentElement("afterend", browserLink);
+        return;
+      }
+      try {
+        var url = new URL(raw, window.location.href);
+        if (url.origin !== window.location.origin || !/^https?:$/.test(url.protocol)) {
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+        }
+      } catch (_error) {}
+    });
+  }
+
+  window.PALinks = {
+    decorate: decorateLinks,
+    filesystemTarget: filesystemTarget,
+  };
+
   function reloadWithCacheBust() {
     var url = new URL(window.location.href);
     url.searchParams.set("_cb", String(Date.now()));
@@ -213,6 +272,7 @@
       updateTitle();
       initBoardDragDrop(target);
       initAgentReconnect();
+      decorateLinks(target);
       if (window.PAAgentChat && typeof window.PAAgentChat.mount === "function") {
         window.PAAgentChat.mount(target);
       }
@@ -265,6 +325,7 @@
     updateTitle();
     initBoardDragDrop(document);
     initAgentReconnect();
+    decorateLinks(document);
     checkServerBuild();
     window.setInterval(checkServerBuild, VERSION_POLL_MS);
   });

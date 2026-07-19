@@ -30,7 +30,11 @@ from pa.acp.providers.registry import (
     get_provider,
     list_provider_ids,
 )
-from pa.acp.providers.resolve import resolve_agent_provider, resolve_provider_id
+from pa.acp.providers.resolve import (
+    resolve_agent_provider,
+    resolve_provider_id,
+    resolve_surface_preferences,
+)
 from pa.acp.surfaces import (
     SURFACE_CHAT_CARD,
     SURFACE_CHAT_DEFAULT,
@@ -92,6 +96,42 @@ class AcpProviderTests(unittest.TestCase):
         pid, source = resolve_provider_id(self.settings, ctx)
         self.assertEqual(pid, "codex")
         self.assertEqual(source, "surface")
+
+    def test_surface_session_defaults_merge_global_and_user_fields(self) -> None:
+        get_preferences_store(self.data_dir).update(
+            agent_surfaces={
+                SURFACE_CHAT_DEFAULT: SurfaceAgentPrefs(
+                    provider="cursor",
+                    model_id="global-model",
+                    effort="medium",
+                    config={"sandbox": "workspace", "shared": "global"},
+                )
+            }
+        )
+        get_preferences_store(self.data_dir, user_id="alice").update(
+            agent_surfaces={
+                SURFACE_CHAT_DEFAULT: SurfaceAgentPrefs(
+                    provider="codex",
+                    mode_id="code",
+                    config={"shared": "user"},
+                )
+            }
+        )
+
+        resolved = resolve_surface_preferences(
+            self.settings,
+            AgentInvocationContext(
+                surface=SURFACE_CHAT_DEFAULT, principal_id="user:alice"
+            ),
+        )
+
+        self.assertEqual(resolved.provider, "codex")
+        self.assertEqual(resolved.model_id, "global-model")
+        self.assertEqual(resolved.mode_id, "code")
+        self.assertEqual(resolved.effort, "medium")
+        self.assertEqual(
+            resolved.config, {"sandbox": "workspace", "shared": "user"}
+        )
 
     def test_resolve_explicit_override_wins(self) -> None:
         ctx = AgentInvocationContext(

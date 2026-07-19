@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import json
 import unittest
+from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -14,7 +16,9 @@ from pa.acp.client import normalize_session_update
 from pa.domain.models import AgentSession, TranscriptEvent
 from pa.modules.agent_chat import (
     CreateSessionBody,
+    _apply_initial_options,
     create_session,
+    get_provider_options,
     get_agent_session_history,
     list_agent_session_history,
     list_agent_sessions,
@@ -68,6 +72,99 @@ class _FakeRuntime:
 
 
 class AgentChatSseTests(unittest.TestCase):
+    def test_saved_surface_defaults_are_applied_to_a_new_session(self) -> None:
+        from pa.core.preferences import SurfaceAgentPrefs
+
+        runtime = MagicMock()
+        runtime.connection.config_options = [
+            {"id": "reasoningEffort", "name": "Reasoning effort"}
+        ]
+        runtime.set_model = AsyncMock()
+        runtime.set_mode = AsyncMock()
+        runtime.set_config = AsyncMock()
+        defaults = SurfaceAgentPrefs(
+            model_id="gpt-default",
+            mode_id="code",
+            effort="high",
+            config={"sandbox": "workspace"},
+        )
+
+        asyncio.run(_apply_initial_options(runtime, CreateSessionBody(), defaults))
+
+        runtime.set_model.assert_awaited_once_with("gpt-default")
+        runtime.set_mode.assert_awaited_once_with("code")
+        runtime.set_config.assert_any_await("sandbox", "workspace")
+        runtime.set_config.assert_any_await("reasoningEffort", "high")
+
+    def test_provider_options_fall_back_to_persisted_capability_catalog(self) -> None:
+        session = AgentSession(
+            agent_name="codex",
+            principal_id="user:local",
+            config_json={
+                "models": {"availableModels": [{"modelId": "gpt-cached"}]},
+                "modes": {"availableModes": [{"id": "code"}]},
+                "options": [{"id": "reasoningEffort"}],
+            },
+        )
+        manager = MagicMock()
+        manager.list_runtimes.return_value = []
+        manager.store.list_sessions.return_value = [session]
+        request = MagicMock()
+        request.app.state.ctx.settings.auth_required = True
+
+        with (
+            patch("pa.modules.agent_chat._manager", return_value=manager),
+            patch(
+                "pa.modules.agent_chat.get_principal_id", return_value="user:local"
+            ),
+            patch("pa.acp.providers.registry.get_provider", return_value=MagicMock()),
+        ):
+            result = get_provider_options(request, "codex")
+
+        self.assertTrue(result["cached"])
+        self.assertEqual(
+            result["models"]["availableModels"][0]["modelId"], "gpt-cached"
+        )
+
+    def test_provider_options_exclude_other_users_sessions(self) -> None:
+        other_live = MagicMock()
+        other_live._closed = False
+        other_live.session = AgentSession(
+            agent_name="codex", principal_id="user:other"
+        )
+        other_live.connection.models = {
+            "availableModels": [{"modelId": "other-live"}]
+        }
+        own_cached = AgentSession(
+            agent_name="codex",
+            principal_id="user:local",
+            config_json={
+                "models": {"availableModels": [{"modelId": "own-cached"}]}
+            },
+        )
+        manager = MagicMock()
+        manager.list_runtimes.return_value = [other_live]
+        manager.store.list_sessions.return_value = [
+            other_live.session,
+            own_cached,
+        ]
+        request = MagicMock()
+        request.app.state.ctx.settings.auth_required = True
+
+        with (
+            patch("pa.modules.agent_chat._manager", return_value=manager),
+            patch(
+                "pa.modules.agent_chat.get_principal_id", return_value="user:local"
+            ),
+            patch("pa.acp.providers.registry.get_provider", return_value=MagicMock()),
+        ):
+            result = get_provider_options(request, "codex")
+
+        self.assertTrue(result["cached"])
+        self.assertEqual(
+            result["models"]["availableModels"][0]["modelId"], "own-cached"
+        )
+
     def test_new_session_applies_provider_and_initial_options(self) -> None:
         runtime = MagicMock()
         runtime.connection.config_options = [
@@ -108,6 +205,92 @@ class AgentChatSseTests(unittest.TestCase):
         runtime.set_model.assert_awaited_once_with("gpt-test")
         runtime.set_mode.assert_awaited_once_with("code")
         runtime.set_config.assert_awaited_once_with("reasoningEffort", "high")
+
+    def test_new_session_does_not_apply_unscoped_defaults_to_other_provider(
+        self,
+    ) -> None:
+        from pa.core.preferences import SurfaceAgentPrefs
+
+        runtime = MagicMock()
+        runtime.session.agent_name = "cursor"
+        runtime.connection.config_options = []
+        runtime.set_model = AsyncMock()
+        runtime.set_mode = AsyncMock()
+        runtime.set_config = AsyncMock()
+        runtime.snapshot.return_value = {"session": {"id": "sess-cursor"}}
+
+        manager = MagicMock()
+        manager.create_session = AsyncMock(return_value=runtime)
+        request = MagicMock()
+        request.app.state.ctx.settings = SimpleNamespace(data_dir=Path("/tmp"))
+        defaults = SurfaceAgentPrefs(
+            model_id="gpt-codex", mode_id="code", config={"sandbox": "workspace"}
+        )
+
+        async def run() -> dict:
+            with (
+                patch("pa.modules.agent_chat._manager", return_value=manager),
+                patch("pa.modules.agent_chat.get_principal_id", return_value="user:local"),
+                patch(
+                    "pa.acp.providers.resolve.resolve_surface_preferences",
+                    return_value=defaults,
+                ),
+                patch(
+                    "pa.acp.providers.resolve.resolve_provider_id",
+                    return_value=("codex", "user"),
+                ),
+            ):
+                return await create_session(request, CreateSessionBody())
+
+        result = asyncio.run(run())
+
+        self.assertEqual(result["session"]["id"], "sess-cursor")
+        runtime.set_model.assert_not_awaited()
+        runtime.set_mode.assert_not_awaited()
+        runtime.set_config.assert_not_awaited()
+
+    def test_new_session_applies_defaults_for_inherited_provider(self) -> None:
+        from pa.core.preferences import SurfaceAgentPrefs
+
+        runtime = MagicMock()
+        runtime.session.agent_name = "cursor"
+        runtime.connection.config_options = []
+        runtime.set_model = AsyncMock()
+        runtime.set_mode = AsyncMock()
+        runtime.set_config = AsyncMock()
+        runtime.snapshot.return_value = {"session": {"id": "sess-cursor"}}
+
+        manager = MagicMock()
+        manager.create_session = AsyncMock(return_value=runtime)
+        request = MagicMock()
+        request.app.state.ctx.settings = SimpleNamespace(data_dir=Path("/tmp"))
+        defaults = SurfaceAgentPrefs(
+            model_id="cursor-model",
+            mode_id="agent",
+            config={"sandbox": "workspace"},
+        )
+
+        async def run() -> dict:
+            with (
+                patch("pa.modules.agent_chat._manager", return_value=manager),
+                patch("pa.modules.agent_chat.get_principal_id", return_value="user:local"),
+                patch(
+                    "pa.acp.providers.resolve.resolve_surface_preferences",
+                    return_value=defaults,
+                ),
+                patch(
+                    "pa.acp.providers.resolve.resolve_provider_id",
+                    return_value=("cursor", "user"),
+                ),
+            ):
+                return await create_session(request, CreateSessionBody())
+
+        result = asyncio.run(run())
+
+        self.assertEqual(result["session"]["id"], "sess-cursor")
+        runtime.set_model.assert_awaited_once_with("cursor-model")
+        runtime.set_mode.assert_awaited_once_with("agent")
+        runtime.set_config.assert_awaited_once_with("sandbox", "workspace")
 
     def test_labeled_session_is_cleaned_up_when_initial_options_fail(self) -> None:
         runtime = MagicMock()

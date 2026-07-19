@@ -1753,6 +1753,56 @@ code {
 
 .hidden { display: none; }
 
+/* ── Filesystem browser ── */
+
+.pa-file-browser-link {
+  display: inline-flex;
+  margin-left: 0.22rem;
+  padding: 0 0.18rem;
+  border: 1px solid var(--pa-border);
+  border-radius: 4px;
+  font-size: 0.72em;
+  line-height: 1.35;
+  text-decoration: none;
+  vertical-align: middle;
+}
+
+.file-browser { min-height: calc(100vh - 7rem); }
+.file-browser-header { align-items: flex-start; gap: 1rem; }
+.file-browser-header h2 { overflow-wrap: anywhere; }
+.file-browser-actions { display: flex; gap: 0.4rem; flex-shrink: 0; }
+.file-breadcrumbs { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.25rem; font-size: 0.8rem; }
+.file-breadcrumbs a { overflow-wrap: anywhere; }
+.file-directory-list { display: flex; flex-direction: column; }
+.file-entry { display: grid; grid-template-columns: 1rem minmax(0, 1fr) auto; gap: 0.45rem; align-items: center; padding: 0.45rem 0.7rem; border-bottom: 1px solid var(--pa-border); text-decoration: none; }
+.file-entry:hover { background: color-mix(in srgb, var(--pa-accent) 8%, transparent); }
+.file-entry.is-directory strong { color: var(--pa-accent); }
+.file-image-viewer { display: grid; place-items: center; gap: 0.5rem; margin: 0; padding: 1rem; }
+.file-image-viewer img { max-width: 100%; max-height: calc(100vh - 13rem); object-fit: contain; }
+.file-view-tabs { display: flex; align-items: center; flex-wrap: wrap; gap: 0.35rem; padding: 0.55rem 0.7rem; border-bottom: 1px solid var(--pa-border); }
+.file-markdown-view { max-width: 58rem; padding: 1rem 1.25rem 3rem; line-height: 1.55; }
+.file-markdown-view pre, .file-source-view pre, .file-diff pre { margin: 0; }
+.file-source-view, .file-diff { max-height: calc(100vh - 12rem); overflow: auto; background: var(--pa-bg); }
+.file-source-view code { display: block; min-width: max-content; padding: 0.65rem 0 2rem; counter-reset: source-line; tab-size: 4; }
+.file-source-line { display: block; min-height: 1.25em; padding-right: 1rem; }
+.file-source-line::before { counter-increment: source-line; content: counter(source-line); display: inline-block; width: 4rem; margin-right: 0.8rem; padding-right: 0.7rem; color: var(--pa-text-muted); border-right: 1px solid var(--pa-border); text-align: right; user-select: none; }
+.file-source-line.is-focused { background: color-mix(in srgb, var(--pa-accent) 18%, transparent); }
+.file-diff-inline pre { min-width: max-content; padding: 0.65rem 0; }
+.diff-line { display: block; padding: 0 0.8rem; min-height: 1.25em; }
+.diff-added { background: color-mix(in srgb, #2ea043 18%, transparent); }
+.diff-removed { background: color-mix(in srgb, #f85149 18%, transparent); }
+.diff-hunk { color: var(--pa-accent); background: color-mix(in srgb, var(--pa-accent) 10%, transparent); }
+.diff-meta { color: var(--pa-text-muted); }
+.file-diff-side table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.file-diff-side td { width: 50%; padding: 0 0.5rem; vertical-align: top; border-right: 1px solid var(--pa-border); }
+.file-diff-side td.diff-line-no { width: 3rem; color: var(--pa-text-muted); text-align: right; user-select: none; }
+.file-diff-side pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.file-diff-side tr.diff-changed td:nth-child(-n+2) { background: color-mix(in srgb, #f85149 14%, transparent); }
+.file-diff-side tr.diff-changed td:nth-child(n+3) { background: color-mix(in srgb, #2ea043 14%, transparent); }
+.file-diff-side tr.diff-hunk td { width: auto; color: var(--pa-accent); background: color-mix(in srgb, var(--pa-accent) 10%, transparent); }
+
 @media (max-width: 900px) {
   .board-grid { grid-template-columns: 1fr 1fr; }
+  .file-browser-header { flex-direction: column; }
+  .file-browser-actions { width: 100%; }
 }

@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+import asyncio
 import json
 import logging
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from typer.testing import CliRunner
 
@@ -16,6 +17,7 @@ from pa.config import Settings
 from pa.core.logging import configure_logging
 from pa.domain.instance_config import InstanceConfig, save_instance_config
 from pa.acp.providers.metadata import save_credentials
+from pa.core.kernel import Kernel
 
 
 class InstallPlistTests(unittest.TestCase):
@@ -71,6 +73,28 @@ class InstallPlistTests(unittest.TestCase):
 
 
 class AutonomousHostControlsTests(unittest.TestCase):
+    def test_shutdown_snapshots_open_sessions_after_transport_loss(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime = MagicMock(_closed=False)
+            agent = MagicMock(connected=False, prompting=False)
+            agent.list_runtimes.return_value = [runtime]
+            agent.quiesce = AsyncMock()
+            agent.stop = AsyncMock()
+            ctx = MagicMock()
+            ctx.settings = Settings(data_dir=Path(tmp))
+            ctx.hooks.emit = AsyncMock()
+            ctx.services = {"instance_agent": agent}
+            registry = MagicMock(modules=[])
+            kernel = Kernel(ctx, registry)
+
+            with patch(
+                "pa.instance.quiesce.consume_skip_quiesce", return_value=False
+            ):
+                asyncio.run(kernel.shutdown(MagicMock()))
+
+            agent.quiesce.assert_awaited_once()
+            agent.stop.assert_awaited_once()
+
     def test_secret_files_are_owner_only_even_when_replacing_loose_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

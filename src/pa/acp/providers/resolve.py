@@ -67,6 +67,35 @@ def resolve_provider_id(
     return DEFAULT_PROVIDER_ID, "default"
 
 
+def resolve_surface_preferences(
+    settings: Settings, ctx: AgentInvocationContext
+) -> SurfaceAgentPrefs:
+    """Merge global and user defaults for one surface, field by field."""
+    global_prefs = get_preferences_store(settings.data_dir).load()
+    global_surface = (global_prefs.agent_surfaces or {}).get(ctx.surface)
+    if not isinstance(global_surface, SurfaceAgentPrefs):
+        global_surface = SurfaceAgentPrefs.model_validate(global_surface or {})
+
+    user_surface = SurfaceAgentPrefs()
+    user_id = ctx.user_id()
+    if user_id:
+        user_prefs = get_preferences_store(
+            settings.data_dir, user_id=user_id
+        ).load()
+        raw = (user_prefs.agent_surfaces or {}).get(ctx.surface)
+        if not isinstance(raw, SurfaceAgentPrefs):
+            raw = SurfaceAgentPrefs.model_validate(raw or {})
+        user_surface = raw
+
+    return SurfaceAgentPrefs(
+        provider=user_surface.provider or global_surface.provider,
+        model_id=user_surface.model_id or global_surface.model_id,
+        mode_id=user_surface.mode_id or global_surface.mode_id,
+        effort=user_surface.effort or global_surface.effort,
+        config={**global_surface.config, **user_surface.config},
+    )
+
+
 def resolve_agent_provider(
     settings: Settings,
     ctx: AgentInvocationContext,

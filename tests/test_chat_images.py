@@ -347,6 +347,32 @@ setImmediate(function () {
         self.assertIn("sessionConfigSummary", script)
         self.assertGreaterEqual(script.count("self.applyOptionSnapshot(snap);"), 2)
 
+    def test_settings_page_exposes_durable_new_chat_defaults(self) -> None:
+        root = Path(__file__).parents[1] / "src" / "pa" / "server"
+        source = (root / "templates" / "pages" / "settings.html").read_text()
+
+        self.assertIn("New chat defaults (user)", source)
+        self.assertIn("data-settings-default-provider", source)
+        self.assertIn("data-settings-default-model", source)
+        self.assertIn("data-settings-default-mode", source)
+        self.assertIn("data-settings-default-effort", source)
+        self.assertIn('surfaces["chat.default"]', source)
+        self.assertIn("/api/agent/provider-options/", source)
+
+    def test_chat_links_open_externally_or_use_the_file_browser(self) -> None:
+        root = Path(__file__).parents[1] / "src" / "pa" / "server"
+        spa = (root / "static" / "js" / "spa.js").read_text()
+        agent = (root / "static" / "js" / "agent-chat.js").read_text()
+        shell = (root / "templates" / "shell.html").read_text()
+
+        self.assertIn('link.target = "_blank"', spa)
+        self.assertIn('link.rel = "noopener noreferrer"', spa)
+        self.assertIn('browserLink.href = "/browse?"', spa)
+        self.assertIn('direct = "file://"', spa)
+        self.assertIn("window.PALinks.decorate(bubble)", agent)
+        self.assertIn("renderMarkdownAsync", agent)
+        self.assertIn("js/file-browser.js", shell)
+
     def test_fleet_page_exposes_remote_operations_console(self) -> None:
         root = Path(__file__).parents[1] / "src" / "pa" / "server"
         template = (root / "templates" / "pages" / "fleet.html").read_text()

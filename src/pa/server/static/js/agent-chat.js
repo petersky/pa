@@ -42,6 +42,10 @@
     return libsPromise || Promise.resolve();
   }
 
+  function renderMarkdownAsync(text) {
+    return ensureMarkdown().then(function () { return renderMarkdown(text); });
+  }
+
   function csrfHeaders() {
     const meta = document.querySelector('meta[name="csrf-token"]');
     const headers = { "Content-Type": "application/json", Accept: "application/json" };
@@ -989,9 +993,7 @@
       bubble.textContent = content;
     } else {
       bubble.innerHTML = renderMarkdown(content);
-      bubble.querySelectorAll("a").forEach(function (link) {
-        link.rel = "noopener noreferrer";
-      });
+      if (window.PALinks) window.PALinks.decorate(bubble);
     }
   };
 
@@ -1151,6 +1153,7 @@
     const plan = this.plans[index];
     if (!plan || !this.els.planDetail) return;
     this.els.planDetail.innerHTML = plan.html;
+    if (window.PALinks) window.PALinks.decorate(this.els.planDetail);
     if (this.els.planList) {
       this.els.planList.querySelectorAll("button").forEach(function (button, buttonIndex) {
         button.classList.toggle("active", buttonIndex === index);
@@ -1833,6 +1836,15 @@
       if (String(value) === selected) option.selected = true;
       select.appendChild(option);
     });
+    if (selected && !Array.prototype.some.call(select.options, function (option) {
+      return option.value === selected;
+    })) {
+      const option = document.createElement("option");
+      option.value = selected;
+      option.textContent = selected;
+      option.selected = true;
+      select.appendChild(option);
+    }
   }
 
   function populateNewSessionOptions(dialog, snap) {
@@ -1873,13 +1885,7 @@
     const activeProvider = snap && snap.session && snap.session.agent_name;
     if (providerId && providerId === activeProvider) return Promise.resolve(snap);
     if (!providerId) return Promise.resolve(null);
-    return csrfFetch("/sessions").then(function (sessions) {
-      const match = (sessions || []).find(function (session) {
-        return session && session.agent_name === providerId;
-      });
-      if (!match || !match.id) return null;
-      return csrfFetch("/sessions/" + encodeURIComponent(match.id));
-    });
+    return csrfFetch("/provider-options/" + encodeURIComponent(providerId));
   }
 
   function refreshNewSessionOptions(dialog, widget) {
@@ -1887,15 +1893,49 @@
     const providerId = provider ? provider.value : "";
     const requestId = Number(dialog._acwOptionsRequest || 0) + 1;
     dialog._acwOptionsRequest = requestId;
-    // Never leave another provider's suggestions visible while lookup is pending.
-    populateNewSessionOptions(dialog, null);
+    dialog.querySelectorAll("[data-agent-new-model], [data-agent-new-mode], [data-agent-new-effort]").forEach(function (select) {
+      select.disabled = true;
+    });
     return newSessionSnapshotForProvider(widget, providerId)
       .then(function (snap) {
         if (dialog._acwOptionsRequest === requestId) populateNewSessionOptions(dialog, snap);
       })
       .catch(function () {
         if (dialog._acwOptionsRequest === requestId) populateNewSessionOptions(dialog, null);
+      })
+      .finally(function () {
+        if (dialog._acwOptionsRequest !== requestId) return;
+        dialog.querySelectorAll("[data-agent-new-model], [data-agent-new-mode], [data-agent-new-effort]").forEach(function (select) {
+          select.disabled = false;
+        });
       });
+  }
+
+  function applyNewSessionDefaults(dialog, defaults) {
+    defaults = defaults || {};
+    const values = {
+      "[data-agent-new-model]": defaults.model_id || "",
+      "[data-agent-new-mode]": defaults.mode_id || "",
+      "[data-agent-new-effort]": defaults.effort || "",
+    };
+    Object.keys(values).forEach(function (selector) {
+      const select = dialog.querySelector(selector);
+      if (!select) return;
+      select.value = values[selector];
+      if (values[selector] && select.value !== values[selector]) {
+        const option = document.createElement("option");
+        option.value = values[selector];
+        option.textContent = values[selector];
+        option.selected = true;
+        select.appendChild(option);
+      }
+    });
+    const config = defaults.config || {};
+    dialog.querySelectorAll("[data-agent-new-config]").forEach(function (select) {
+      if (Object.prototype.hasOwnProperty.call(config, select.dataset.agentNewConfig)) {
+        select.value = String(config[select.dataset.agentNewConfig]);
+      }
+    });
   }
 
   function prepareNewSessionDialog(dialog, widget) {
@@ -1903,8 +1943,21 @@
     const snap = widget && widget._acw && widget._acw.lastSnapshot;
     const activeProvider = snap && snap.session && snap.session.agent_name;
     populateNewSessionOptions(dialog, snap);
-    return csrfFetch("/providers")
-      .then(function (providers) {
+    return Promise.all([csrfFetch("/providers"), csrfFetch("/preferences")])
+      .then(function (results) {
+        const providers = results[0];
+        const prefs = results[1] || {};
+        const userSurfaces = prefs.user && prefs.user.agent_surfaces || {};
+        const globalSurfaces = prefs.global && prefs.global.agent_surfaces || {};
+        const userDefaults = userSurfaces["chat.default"] || {};
+        const globalDefaults = globalSurfaces["chat.default"] || {};
+        const defaults = {
+          provider: userDefaults.provider || globalDefaults.provider || prefs.agent_provider || activeProvider || "",
+          model_id: userDefaults.model_id || globalDefaults.model_id || "",
+          mode_id: userDefaults.mode_id || globalDefaults.mode_id || "",
+          effort: userDefaults.effort || globalDefaults.effort || "",
+          config: Object.assign({}, globalDefaults.config || {}, userDefaults.config || {}),
+        };
         if (!provider) return;
         provider.innerHTML = '<option value="">Instance default</option>';
         (providers || []).forEach(function (item) {
@@ -1912,10 +1965,13 @@
           const option = document.createElement("option");
           option.value = item.id;
           option.textContent = item.display_name || item.id;
-          if (item.id === activeProvider) option.selected = true;
+          if (item.id === defaults.provider) option.selected = true;
           provider.appendChild(option);
         });
-        return refreshNewSessionOptions(dialog, widget);
+        if (!provider.value && defaults.provider) provider.value = defaults.provider;
+        return refreshNewSessionOptions(dialog, widget).then(function () {
+          applyNewSessionDefaults(dialog, defaults);
+        });
       })
       .catch(function () { /* the instance default remains available */ });
   }
@@ -1960,6 +2016,9 @@
       const provider = dialog.querySelector("[data-agent-new-provider]");
       if (provider) {
         provider.addEventListener("change", function () {
+          dialog.querySelectorAll("[data-agent-new-model], [data-agent-new-mode], [data-agent-new-effort]").forEach(function (select) {
+            select.value = "";
+          });
           refreshNewSessionOptions(dialog, document.querySelector("[data-agent-chat]"));
         });
       }
@@ -2046,6 +2105,7 @@
     refreshSessionList: refreshSessionList,
     anchoredScrollTop: anchoredScrollTop,
     renderMarkdown: renderMarkdown,
+    renderMarkdownAsync: renderMarkdownAsync,
   };
 
   document.addEventListener("DOMContentLoaded", function () {

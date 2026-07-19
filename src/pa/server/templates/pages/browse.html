@@ -1,0 +1,69 @@
+{% from "macros/layout.html" import page_layout %}
+
+{% set main %}
+<div class="panel file-browser" data-file-browser>
+  <header class="panel-header file-browser-header">
+    <div>
+      <h2>{{ path.name or path }}</h2>
+      <nav class="file-breadcrumbs" aria-label="Filesystem path">
+        {% for crumb in breadcrumbs %}
+        <a href="{{ crumb.url }}">{{ crumb.label }}</a>{% if not loop.last %}<span>/</span>{% endif %}
+        {% endfor %}
+      </nav>
+    </div>
+    {% if kind == 'file' %}
+    <div class="file-browser-actions">
+      <a class="ghost small" href="file://{{ path }}" target="_blank" rel="noopener noreferrer">Open file</a>
+      <a class="ghost small" href="{{ download_url }}">Download</a>
+    </div>
+    {% endif %}
+  </header>
+
+  {% if kind == 'directory' %}
+  <div class="file-directory-list">
+    {% if parent_url %}<a class="file-entry is-directory" href="{{ parent_url }}"><span aria-hidden="true">↰</span><strong>..</strong></a>{% endif %}
+    {% for entry in entries %}
+    <a class="file-entry{% if entry.is_dir %} is-directory{% endif %}" href="{{ entry.url }}">
+      <span aria-hidden="true">{{ '▸' if entry.is_dir else '·' }}</span>
+      <strong>{{ entry.name }}</strong>
+      {% if entry.size is not none %}<span class="muted small">{{ entry.size }} bytes</span>{% endif %}
+    </a>
+    {% else %}
+    <p class="muted">This directory is empty.</p>
+    {% endfor %}
+  </div>
+  {% elif is_image %}
+  <figure class="file-image-viewer"><img src="{{ raw_url }}" alt="{{ path.name }}"><figcaption class="muted">{{ mime }} · {{ size }} bytes</figcaption></figure>
+  {% elif too_large %}
+  <div class="empty-state"><h2>File too large to preview</h2><p class="muted">Text previews are limited to 2 MB. You can still download the file.</p></div>
+  {% elif is_text %}
+  <div class="file-view-tabs" role="tablist">
+    {% if is_markdown %}<button type="button" class="ghost small active" data-file-view="rendered">Rendered</button>{% endif %}
+    <button type="button" class="ghost small{% if not is_markdown %} active{% endif %}" data-file-view="source">Source</button>
+    {% if inline_diff %}
+    <button type="button" class="ghost small" data-file-view="inline-diff">Inline diff</button>
+    <button type="button" class="ghost small" data-file-view="side-diff">Side-by-side diff</button>
+    <span class="muted small">against {{ diff_base }}</span>
+    {% endif %}
+  </div>
+  {% if is_markdown %}
+  <article class="file-markdown-view" data-file-view-panel="rendered" data-file-markdown></article>
+  <textarea data-file-markdown-source hidden>{{ text }}</textarea>
+  {% endif %}
+  <div class="file-source-view" data-file-view-panel="source" {% if is_markdown %}hidden{% endif %}>
+    <pre><code data-source-code data-language="{{ language }}" data-focus-line="{{ line or '' }}">{{ text }}</code></pre>
+  </div>
+  {% if inline_diff %}
+  <div class="file-diff file-diff-inline" data-file-view-panel="inline-diff" hidden><pre>{% for row in inline_diff %}<span class="diff-line diff-{{ row.kind }}">{{ row.text }}
+</span>{% endfor %}</pre></div>
+  <div class="file-diff file-diff-side" data-file-view-panel="side-diff" hidden>
+    <table><tbody>{% for row in side_diff %}<tr class="diff-{{ row.kind }}"><td class="diff-line-no">{{ row.left_no }}</td><td><pre>{{ row.left }}</pre></td><td class="diff-line-no">{{ row.right_no }}</td><td><pre>{{ row.right }}</pre></td></tr>{% endfor %}</tbody></table>
+  </div>
+  {% endif %}
+  {% else %}
+  <div class="empty-state"><h2>Preview unavailable</h2><p class="muted">{{ mime }} · {{ size }} bytes</p><a class="primary" href="{{ download_url }}">Download file</a></div>
+  {% endif %}
+</div>
+{% endset %}
+
+{{ page_layout(main=main, class='page-file-browser') }}
