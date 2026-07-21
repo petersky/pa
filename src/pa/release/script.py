@@ -20,8 +20,10 @@ from pa.release.notes import (
 from pa.release.runner import (
     ReleaseError,
     amend_release_notes,
+    cleanup_release_branch,
     commits_behind_origin_main,
     create_release,
+    current_branch,
     ensure_release_pr,
     ensure_release_branch,
     ensure_tag_available,
@@ -187,6 +189,20 @@ def _confirm_ship(tag: str, pr_url: str) -> bool:
     return answer.strip().lower() in {"y", "yes"}
 
 
+def _cleanup_finished_release_branch(tag: str, branch: str | None = None) -> None:
+    """Remove the finished release PR branch after merge/publish."""
+    tag = tag if tag.startswith("v") else f"v{tag}"
+    if branch:
+        cleanup_release_branch(branch)
+        return
+    try:
+        current = current_branch()
+    except ReleaseError:
+        return
+    if current in {f"release/{tag}", f"release-notes/{tag}"}:
+        cleanup_release_branch(current)
+
+
 def _publish(tag: str, args: argparse.Namespace, *, do_push: bool) -> None:
     _log(f"Publishing {tag}...")
     tag_merged_release(tag, message=args.message, push=do_push)
@@ -238,6 +254,7 @@ def _run(argv: list[str] | None = None) -> int:
         if not tag.startswith("v"):
             tag = f"v{tag}"
         _publish(tag, args, do_push=do_push)
+        _cleanup_finished_release_branch(tag)
         return 0
 
     if args.amend:
@@ -352,6 +369,7 @@ def _run(argv: list[str] | None = None) -> int:
         assert pr_head_commit is not None
         merge_release_pr(pr_url, head_commit=pr_head_commit)
         _publish(tag, args, do_push=True)
+        _cleanup_finished_release_branch(tag, branch)
         return 0
 
     if pr_url:

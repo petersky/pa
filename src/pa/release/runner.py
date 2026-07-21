@@ -462,6 +462,103 @@ def merge_release_pr(
     print(f"  Merged release PR: {pr}", flush=True)
 
 
+def cleanup_release_branch(branch: str, *, remote: str = "origin") -> None:
+    """Switch back to main and delete the finished release branch locally and on origin.
+
+    Safe to call after the release PR has merged (or the remote branch is already
+    gone). Refuses to delete anything outside ``release/`` / ``release-notes/``.
+    Idempotent when the branch is already absent.
+    """
+    if not branch.startswith(("release/", "release-notes/")):
+        raise ReleaseError(
+            f"refusing to clean up non-release branch {branch}",
+            hints=["Pass the release/* or release-notes/* branch created for this release."],
+        )
+
+    print(f"==> Cleaning up {branch}...", flush=True)
+    _run(["git", "fetch", remote, "main"], cwd=ROOT)
+
+    local = _capture(
+        ["git", "show-ref", "--verify", "--quiet", f"refs/heads/{branch}"],
+        cwd=ROOT,
+    )
+    remote_heads = _capture(["git", "ls-remote", "--heads", remote, branch], cwd=ROOT)
+    if remote_heads.returncode != 0:
+        # Network/auth failures must not be treated as "already deleted".
+        remote_probe_ok = False
+        remote_exists = True
+        probe_error = (
+            remote_heads.stderr.strip()
+            or remote_heads.stdout.strip()
+            or "ls-remote failed"
+        )
+        print(
+            f"  warning: could not probe {remote}/{branch} ({probe_error}); "
+            "will still attempt remote delete.",
+            flush=True,
+        )
+    else:
+        remote_probe_ok = True
+        remote_exists = bool(remote_heads.stdout.strip())
+
+    if local.returncode != 0 and remote_probe_ok and not remote_exists:
+        print(f"  Branch {branch} already cleaned up.", flush=True)
+        try:
+            on_main = current_branch() == "main"
+        except ReleaseError:
+            on_main = False
+        if not on_main:
+            _run(["git", "switch", "main"], cwd=ROOT)
+        ff = _capture(["git", "merge", "--ff-only", f"{remote}/main"], cwd=ROOT)
+        if ff.returncode != 0:
+            msg = ff.stderr.strip() or ff.stdout.strip() or "fast-forward failed"
+            print(
+                f"  warning: could not fast-forward main onto {remote}/main: {msg}",
+                flush=True,
+            )
+        return
+
+    current = current_branch()
+    if current == branch:
+        _run(["git", "switch", "main"], cwd=ROOT)
+    elif current != "main":
+        print(
+            f"  Leaving checkout on {current}; still removing {branch}.",
+            flush=True,
+        )
+
+    if current_branch() == "main":
+        ff = _capture(["git", "merge", "--ff-only", f"{remote}/main"], cwd=ROOT)
+        if ff.returncode != 0:
+            msg = ff.stderr.strip() or ff.stdout.strip() or "fast-forward failed"
+            print(
+                f"  warning: could not fast-forward main onto {remote}/main: {msg}",
+                flush=True,
+            )
+
+    if local.returncode == 0:
+        deleted = _capture(["git", "branch", "-d", branch], cwd=ROOT)
+        if deleted.returncode != 0:
+            # GitHub merge can leave the local tip not considered merged until
+            # main is updated; after fetch/ff, force-delete leftovers.
+            msg = deleted.stderr.strip() or deleted.stdout.strip() or "not fully merged"
+            print(f"  git branch -d failed ({msg}); deleting with -D.", flush=True)
+            _run(["git", "branch", "-D", branch], cwd=ROOT)
+        print(f"  Deleted local branch {branch}.", flush=True)
+
+    if remote_exists:
+        removed = _capture(["git", "push", remote, "--delete", branch], cwd=ROOT)
+        if removed.returncode != 0:
+            msg = removed.stderr.strip() or removed.stdout.strip() or "delete failed"
+            print(f"  warning: could not delete {remote}/{branch}: {msg}", flush=True)
+        else:
+            print(f"  Deleted {remote}/{branch}.", flush=True)
+    elif remote_probe_ok:
+        print(f"  Remote branch {remote}/{branch} already gone.", flush=True)
+
+    _capture(["git", "fetch", "--prune", remote], cwd=ROOT)
+
+
 def head_commit() -> str:
     """Return the current commit SHA."""
     sha = _capture_checked(["git", "rev-parse", "HEAD"], cwd=ROOT)

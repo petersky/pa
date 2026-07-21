@@ -73,9 +73,11 @@ def test_ship_uses_head_captured_before_confirmation() -> None:
         patch("pa.release.script._confirm_ship", side_effect=confirm),
         patch("pa.release.script.merge_release_pr") as merge_pr,
         patch("pa.release.script._publish"),
+        patch("pa.release.script._cleanup_finished_release_branch") as cleanup,
     ):
         assert script._run(["1.2.3", "--no-agent"]) == 0
 
     merge_pr.assert_called_once_with(
         "https://example.test/pr/1", head_commit="pushed-pr-sha"
     )
+    cleanup.assert_called_once_with("v1.2.3", "release/v1.2.3")
