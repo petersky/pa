@@ -1,7 +1,16 @@
 import subprocess
 from unittest.mock import call, patch
 
-from pa.release.runner import ROOT, create_release, ensure_release_pr, merge_release_pr
+import pytest
+
+from pa.release.runner import (
+    ROOT,
+    ReleaseError,
+    cleanup_release_branch,
+    create_release,
+    ensure_release_pr,
+    merge_release_pr,
+)
 
 
 def test_create_release_uses_version_resolved_before_branch_switch() -> None:
@@ -86,3 +95,49 @@ def test_merge_release_pr_retries_until_checks_are_registered() -> None:
 
     assert capture.call_count == 2
     sleep.assert_called_once_with(2.0)
+
+
+def test_cleanup_release_branch_switches_to_main_and_deletes_local_and_remote() -> None:
+    present = subprocess.CompletedProcess([], 0, stdout="", stderr="")
+    remote_present = subprocess.CompletedProcess(
+        [], 0, stdout="abc123\trefs/heads/release/v1.2.3\n", stderr=""
+    )
+    ok = subprocess.CompletedProcess([], 0, stdout="", stderr="")
+    captures = [
+        present,  # local show-ref
+        remote_present,  # ls-remote
+        ok,  # merge --ff-only
+        ok,  # branch -d
+        ok,  # push --delete
+        ok,  # fetch --prune
+    ]
+    with (
+        patch("pa.release.runner._run") as run,
+        patch("pa.release.runner._capture", side_effect=captures) as capture,
+        patch(
+            "pa.release.runner.current_branch",
+            side_effect=["release/v1.2.3", "main"],
+        ),
+    ):
+        cleanup_release_branch("release/v1.2.3")
+
+    assert run.call_args_list == [
+        call(["git", "fetch", "origin", "main"], cwd=ROOT),
+        call(["git", "switch", "main"], cwd=ROOT),
+    ]
+    assert capture.call_args_list == [
+        call(
+            ["git", "show-ref", "--verify", "--quiet", "refs/heads/release/v1.2.3"],
+            cwd=ROOT,
+        ),
+        call(["git", "ls-remote", "--heads", "origin", "release/v1.2.3"], cwd=ROOT),
+        call(["git", "merge", "--ff-only", "origin/main"], cwd=ROOT),
+        call(["git", "branch", "-d", "release/v1.2.3"], cwd=ROOT),
+        call(["git", "push", "origin", "--delete", "release/v1.2.3"], cwd=ROOT),
+        call(["git", "fetch", "--prune", "origin"], cwd=ROOT),
+    ]
+
+
+def test_cleanup_release_branch_refuses_non_release_names() -> None:
+    with pytest.raises(ReleaseError, match="non-release branch"):
+        cleanup_release_branch("agent/feature")
