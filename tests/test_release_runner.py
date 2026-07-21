@@ -141,3 +141,34 @@ def test_cleanup_release_branch_switches_to_main_and_deletes_local_and_remote() 
 def test_cleanup_release_branch_refuses_non_release_names() -> None:
     with pytest.raises(ReleaseError, match="non-release branch"):
         cleanup_release_branch("agent/feature")
+
+
+def test_cleanup_release_branch_retries_delete_when_ls_remote_fails() -> None:
+    local_missing = subprocess.CompletedProcess([], 1, stdout="", stderr="")
+    probe_failed = subprocess.CompletedProcess(
+        [], 1, stdout="", stderr="ssh: connect to host github.com port 22: Connection refused"
+    )
+    ok = subprocess.CompletedProcess([], 0, stdout="", stderr="")
+    captures = [
+        local_missing,  # local show-ref
+        probe_failed,  # ls-remote
+        ok,  # merge --ff-only
+        ok,  # push --delete
+        ok,  # fetch --prune
+    ]
+    with (
+        patch("pa.release.runner._run") as run,
+        patch("pa.release.runner._capture", side_effect=captures) as capture,
+        patch("pa.release.runner.current_branch", side_effect=["main", "main"]),
+    ):
+        cleanup_release_branch("release/v1.2.3")
+
+    assert run.call_args_list == [
+        call(["git", "fetch", "origin", "main"], cwd=ROOT),
+    ]
+    assert call(
+        ["git", "push", "origin", "--delete", "release/v1.2.3"], cwd=ROOT
+    ) in capture.call_args_list
+    assert call(
+        ["git", "branch", "-d", "release/v1.2.3"], cwd=ROOT
+    ) not in capture.call_args_list

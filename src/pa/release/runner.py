@@ -483,8 +483,25 @@ def cleanup_release_branch(branch: str, *, remote: str = "origin") -> None:
         cwd=ROOT,
     )
     remote_heads = _capture(["git", "ls-remote", "--heads", remote, branch], cwd=ROOT)
-    remote_exists = remote_heads.returncode == 0 and bool(remote_heads.stdout.strip())
-    if local.returncode != 0 and not remote_exists:
+    if remote_heads.returncode != 0:
+        # Network/auth failures must not be treated as "already deleted".
+        remote_probe_ok = False
+        remote_exists = True
+        probe_error = (
+            remote_heads.stderr.strip()
+            or remote_heads.stdout.strip()
+            or "ls-remote failed"
+        )
+        print(
+            f"  warning: could not probe {remote}/{branch} ({probe_error}); "
+            "will still attempt remote delete.",
+            flush=True,
+        )
+    else:
+        remote_probe_ok = True
+        remote_exists = bool(remote_heads.stdout.strip())
+
+    if local.returncode != 0 and remote_probe_ok and not remote_exists:
         print(f"  Branch {branch} already cleaned up.", flush=True)
         try:
             on_main = current_branch() == "main"
@@ -536,7 +553,7 @@ def cleanup_release_branch(branch: str, *, remote: str = "origin") -> None:
             print(f"  warning: could not delete {remote}/{branch}: {msg}", flush=True)
         else:
             print(f"  Deleted {remote}/{branch}.", flush=True)
-    else:
+    elif remote_probe_ok:
         print(f"  Remote branch {remote}/{branch} already gone.", flush=True)
 
     _capture(["git", "fetch", "--prune", remote], cwd=ROOT)
