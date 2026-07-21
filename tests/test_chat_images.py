@@ -535,12 +535,16 @@ setImmediate(function () {
         root = Path(__file__).parents[1] / "src" / "pa" / "server"
         source = (root / "templates" / "pages" / "settings.html").read_text()
 
-        self.assertIn("New chat defaults (user)", source)
+        self.assertIn("Instance defaults for new chats", source)
+        self.assertIn("My overrides for new chats", source)
+        self.assertIn('data-settings-defaults-scope="global"', source)
+        self.assertIn('data-settings-defaults-scope="user"', source)
         self.assertIn("data-settings-default-provider", source)
         self.assertIn("data-settings-default-model", source)
         self.assertIn("data-settings-default-mode", source)
         self.assertIn("data-settings-default-effort", source)
         self.assertIn('surfaces["chat.default"]', source)
+        self.assertIn('globalSurfaces', source)
         self.assertIn("/api/agent/provider-options/", source)
 
     def test_chat_links_open_externally_or_use_the_file_browser(self) -> None:

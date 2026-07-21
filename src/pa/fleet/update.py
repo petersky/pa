@@ -415,7 +415,10 @@ async def run_update_job(
                 )
                 store.persist(job)
             last_install_error = "peer has not reported install completion"
+            install_attempt = 0
+            last_operation_message = ""
             while datetime.now(UTC) < job.install_deadline:
+                install_attempt += 1
                 try:
                     async with httpx.AsyncClient(timeout=5.0) as client:
                         operation = await _peer_json(
@@ -429,21 +432,49 @@ async def run_update_job(
                         raise RuntimeError(
                             f"Peer installation failed: {operation.get('error') or 'unknown error'}"
                         )
-                    if operation_status in {"installed", "restarting", "completed"}:
+                    operation_message = str(operation.get("message") or "")
+                    if operation_message and operation_message != last_operation_message:
+                        last_operation_message = operation_message
+                        store.event(job, UpdatePhase.WAITING_INSTALL, operation_message)
+                    if operation_status in {
+                        "installed",
+                        "restarting",
+                        "restart_failed",
+                        "completed",
+                    }:
                         job.health_deadline = datetime.now(UTC) + timedelta(
                             seconds=job.health_timeout
                         )
+                        restart_note = "Installation complete; waiting for restarted peer health"
+                        if operation_status == "restart_failed":
+                            restart_note = (
+                                "Restart command reported an error after installation; "
+                                "verifying peer health before declaring failure"
+                            )
                         store.event(
                             job,
                             UpdatePhase.RESTARTING,
-                            "Installation complete; waiting for restarted peer health",
+                            restart_note,
                         )
                         break
                     last_install_error = (
                         f"peer install status is {operation_status or 'unknown'}"
                     )
+                    if install_attempt % 5 == 0 and not operation_message:
+                        store.event(
+                            job,
+                            UpdatePhase.WAITING_INSTALL,
+                            f"Still waiting for installation ({last_install_error})",
+                        )
                 except httpx.HTTPError as exc:
                     last_install_error = str(exc)
+                    if install_attempt % 5 == 0:
+                        store.event(
+                            job,
+                            UpdatePhase.WAITING_INSTALL,
+                            "Peer is temporarily unreachable while installation or "
+                            f"restart is in progress (attempt {install_attempt})",
+                        )
                 await asyncio.sleep(2)
             if job.phase == UpdatePhase.WAITING_INSTALL:
                 raise RuntimeError(
@@ -460,7 +491,9 @@ async def run_update_job(
             )
             store.persist(job)
         last_error = "peer did not become healthy"
+        health_attempt = 0
         while datetime.now(UTC) < job.health_deadline:
+            health_attempt += 1
             try:
                 async with httpx.AsyncClient(timeout=5.0) as client:
                     status = await _peer_json(
@@ -540,6 +573,17 @@ async def run_update_job(
                     return job
             except httpx.HTTPError as exc:
                 last_error = str(exc)
+            if health_attempt % 5 == 0:
+                remaining = max(
+                    0,
+                    int((job.health_deadline - datetime.now(UTC)).total_seconds()),
+                )
+                store.event(
+                    job,
+                    UpdatePhase.RESTARTING,
+                    f"Still waiting for peer health (attempt {health_attempt}, "
+                    f"{remaining}s remaining): {last_error}",
+                )
             await asyncio.sleep(2)
         if job.verified_version:
             raise RuntimeError(f"Version verification failed: {last_error}")

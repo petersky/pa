@@ -265,7 +265,7 @@ def stop(
     else:
         request_skip_quiesce(settings.data_dir)
     try:
-        svc.stop()
+        svc.stop(progress=lambda message: typer.echo(f"  Service:     {message}"))
         typer.echo("PA service stopped.")
     except RuntimeError as exc:
         typer.echo(str(exc), err=True)
@@ -303,7 +303,10 @@ def restart_cmd(
     if no_acp_resume:
         mark_no_resume(settings)
     try:
-        svc.restart(settings)
+        svc.restart(
+            settings,
+            progress=lambda message: typer.echo(f"  Service:     {message}"),
+        )
         print_service_ready(settings, action="restarted")
         if no_acp_resume:
             typer.echo("  ACP:         resume disabled for this restart")
@@ -414,7 +417,10 @@ def update(
         return
 
     try:
-        svc.restart(settings)
+        svc.restart(
+            settings,
+            progress=lambda message: typer.echo(f"  Service:     {message}"),
+        )
     except RuntimeError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(1) from exc

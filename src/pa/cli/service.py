@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -10,6 +11,7 @@ import time
 from xml.sax.saxutils import escape
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 from pa.config import Settings
 from pa.packaging.service_env import service_environment
@@ -17,6 +19,13 @@ from pa.packaging.service_env import service_environment
 LABEL = "com.pa.server"
 PLIST_NAME = f"{LABEL}.plist"
 SYSTEMD_UNIT = "pa-server.service"
+
+ServiceProgress = Callable[[str], None]
+
+
+def _report(progress: ServiceProgress | None, message: str) -> None:
+    if progress:
+        progress(message)
 
 
 @dataclass
@@ -243,31 +252,71 @@ def _launchd_job_loaded() -> bool:
     return "Could not find service" not in text
 
 
-def _unload_launchd_job(*, timeout: float = 10.0) -> None:
+def _launchd_job_summary() -> str:
+    result = _run_launchctl("print", _domain_target())
+    if result.returncode != 0:
+        return "no longer registered"
+    values: dict[str, str] = {}
+    for raw in result.stdout.splitlines():
+        line = raw.strip()
+        for key in ("state", "pid", "last exit code"):
+            prefix = f"{key} = "
+            if line.startswith(prefix):
+                values[key] = line.removeprefix(prefix)
+    return ", ".join(f"{key}={value}" for key, value in values.items()) or "registered"
+
+
+def _unload_launchd_job(
+    *, timeout: float = 300.0, progress: ServiceProgress | None = None
+) -> None:
     """Boot out the LaunchAgent and wait until launchd forgets it.
 
     A short sleep is not enough: launchd often keeps a SIGTERMed job visible
     briefly, and an immediate re-bootstrap then fails with I/O error 5.
     """
     target = _domain_target()
+    _report(
+        progress,
+        f"Asked launchd to stop PA; waiting up to {timeout:g}s for graceful shutdown.",
+    )
     result = _run_launchctl("bootout", target)
     if result.returncode != 0 and "No such process" not in (result.stderr or ""):
         # Still try to wait it out; print may already show the job as gone.
         pass
 
     deadline = time.monotonic() + timeout
+    started = time.monotonic()
+    next_progress = 2.0
     delay = 0.25
     while time.monotonic() < deadline:
         if not _launchd_job_loaded():
             # Extra beat so bootstrap is less likely to hit transient error 5.
             time.sleep(0.5)
+            _report(progress, "PA shutdown completed; launchd released the job.")
             return
+        elapsed = time.monotonic() - started
+        if elapsed >= next_progress:
+            assessment = (
+                "shutdown is slower than expected"
+                if elapsed >= 30.0
+                else "graceful shutdown is still progressing"
+            )
+            _report(
+                progress,
+                f"Still waiting after {elapsed:.0f}s ({_launchd_job_summary()}); "
+                f"{assessment}.",
+            )
+            next_progress = 5.0 if elapsed < 5.0 else next_progress + 5.0
         time.sleep(delay)
         delay = min(delay * 1.5, 1.5)
         _run_launchctl("bootout", target)
 
     if _launchd_job_loaded():
-        raise RuntimeError(f"Timed out unloading launchd job {target}")
+        raise RuntimeError(
+            f"Timed out after {timeout:g}s waiting for launchd job {target} "
+            f"({_launchd_job_summary()}). The service manager may be terminating a "
+            "hung process; inspect `pa logs` before retrying."
+        )
 
 
 def _bootstrap_launchd_plist(plist: Path, *, attempts: int = 8) -> None:
@@ -352,23 +401,27 @@ def start(settings: Settings | None = None) -> None:
     raise RuntimeError(f"Unsupported platform: {sys.platform}")
 
 
-def stop() -> None:
+def stop(*, progress: ServiceProgress | None = None) -> None:
     if _is_darwin():
         if not _launchd_job_loaded():
             return
-        _unload_launchd_job()
+        _unload_launchd_job(progress=progress)
         return
 
     if _is_linux():
+        _report(progress, "Asked systemd to stop PA; waiting for graceful shutdown.")
         result = _run_systemctl("stop", SYSTEMD_UNIT)
         if result.returncode != 0 and "not loaded" not in result.stderr.lower():
             raise RuntimeError(result.stderr.strip() or "systemctl stop failed")
+        _report(progress, "PA shutdown completed; systemd stopped the service.")
         return
 
     raise RuntimeError(f"Unsupported platform: {sys.platform}")
 
 
-def restart(settings: Settings | None = None) -> None:
+def restart(
+    settings: Settings | None = None, *, progress: ServiceProgress | None = None
+) -> None:
     settings = settings or Settings()
     if _is_darwin():
         if not _plist_path().exists():
@@ -376,25 +429,147 @@ def restart(settings: Settings | None = None) -> None:
         # Unload fully, rewrite the plist, then bootstrap. RunAtLoad starts the
         # job; avoid kickstart -k unless the process never comes up.
         if _launchd_job_loaded():
-            _unload_launchd_job()
+            _unload_launchd_job(progress=progress)
         pa_bin = find_service_binary()
         if pa_bin:
             install_plist(settings, pa_bin)
+        _report(progress, "Starting PA under launchd.")
         _bootstrap_launchd_plist(_plist_path())
         if _wait_launchd_running(timeout=8.0):
+            _report(progress, "PA reached the running state.")
             return
+        _report(progress, "PA has not started yet; asking launchd to kick-start it.")
         result = _run_launchctl("kickstart", "-k", _domain_target())
         if result.returncode != 0:
             err = (result.stderr or result.stdout or "").strip()
             raise RuntimeError(err or "launchctl kickstart failed")
         if not _wait_launchd_running():
             raise RuntimeError("PA service did not reach running state after restart")
+        _report(progress, "PA reached the running state.")
         return
 
     if _is_linux():
+        _report(progress, "Asked systemd to restart PA; waiting for completion.")
         result = _run_systemctl("restart", SYSTEMD_UNIT)
         if result.returncode != 0:
             raise RuntimeError(result.stderr.strip() or "systemctl restart failed")
+        _report(progress, "PA restart completed under systemd.")
+        return
+
+    raise RuntimeError(f"Unsupported platform: {sys.platform}")
+
+
+def _schedule_launchd_rebootstrap(
+    plist: Path, *, log_path: Path | None = None
+) -> None:
+    """Detached bootout+bootstrap so an in-process updater can exit cleanly.
+
+    Writing a new plist is not enough: launchd keeps the previously loaded job
+    definition until the service is bootstrapped again. Doing that synchronously
+    from inside the running job kills the updater before it records success.
+    """
+    target = _domain_target()
+    gui_domain = f"gui/{os.getuid()}"
+    log_file = str(log_path) if log_path else "/dev/null"
+    if log_path:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+    # Match ExitTimeOut / unload patience: bootout may need minutes for a
+    # draining ACP session, and bootstrap can hit transient I/O error 5.
+    # launchctl print can exit 0 with "Could not find service" after bootout —
+    # treat that the same as unloaded (see `_launchd_job_loaded`).
+    script = f"""
+set +e
+exec >>{shlex.quote(log_file)} 2>&1
+echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) scheduling launchd rebootstrap for {shlex.quote(target)}"
+sleep 1
+deadline=$(( $(date +%s) + 300 ))
+job_loaded() {{
+  out=$(launchctl print {shlex.quote(target)} 2>&1)
+  status=$?
+  if [ "$status" -ne 0 ]; then
+    return 1
+  fi
+  case "$out" in
+    *"Could not find service"*) return 1 ;;
+  esac
+  return 0
+}}
+while [ "$(date +%s)" -lt "$deadline" ]; do
+  launchctl bootout {shlex.quote(target)} >/dev/null 2>&1
+  if ! job_loaded; then
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) launchd released {shlex.quote(target)}"
+    break
+  fi
+  sleep 1
+done
+if job_loaded; then
+  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) timed out waiting for bootout of {shlex.quote(target)}"
+  exit 1
+fi
+sleep 0.5
+for delay in 0.5 1 1.5 2 3 4 5 6; do
+  if launchctl bootstrap {shlex.quote(gui_domain)} {shlex.quote(str(plist))}; then
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) bootstrap succeeded"
+    exit 0
+  fi
+  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) bootstrap failed; retrying in ${{delay}}s"
+  sleep "$delay"
+done
+echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) bootstrap failed after retries"
+exit 1
+"""
+    subprocess.Popen(
+        ["/bin/bash", "-c", script],
+        start_new_session=True,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        close_fds=True,
+    )
+
+
+def request_restart(
+    settings: Settings | None = None, *, progress: ServiceProgress | None = None
+) -> None:
+    """Ask the host manager to restart the service without managing our own exit.
+
+    This path is for code running inside the PA service. A synchronous
+    unload/bootstrap or systemctl restart makes the updater a child of the process
+    it is terminating, so it can be killed before it records success or starts the
+    replacement service.
+
+    Always rewrite the host unit first so peer updates pick up a new binary path
+    or environment instead of restarting the previously loaded definition.
+    """
+    settings = settings or Settings()
+    pa_bin = find_service_binary()
+    if pa_bin:
+        install_service(settings, pa_bin)
+
+    if _is_darwin():
+        if not _plist_path().exists():
+            raise RuntimeError("PA service not installed. Run: pa install --service-only")
+        _report(
+            progress,
+            "Scheduling a launchd reload so the updated service definition is used.",
+        )
+        _schedule_launchd_rebootstrap(
+            _plist_path(),
+            log_path=settings.data_dir / "logs" / "service-rebootstrap.log",
+        )
+        _report(progress, "launchd reload scheduled; waiting for host-managed restart.")
+        return
+
+    if _is_linux():
+        _report(progress, "Reloading systemd unit definitions.")
+        reload = _run_systemctl("daemon-reload")
+        if reload.returncode != 0:
+            raise RuntimeError(reload.stderr.strip() or "systemctl daemon-reload failed")
+        _report(progress, "Handing the non-blocking restart to systemd.")
+        result = _run_systemctl("restart", "--no-block", SYSTEMD_UNIT)
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.strip() or "systemctl restart request failed")
+        _report(progress, "systemd accepted the restart request.")
         return
 
     raise RuntimeError(f"Unsupported platform: {sys.platform}")

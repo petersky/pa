@@ -643,7 +643,7 @@ class PeerUpdateIdempotencyTests(unittest.IsolatedAsyncioTestCase):
             patch("pa.update.channels.resolve_release", return_value=self.release),
             patch("pa.modules.fleet._peer_has_exact_release", return_value=False),
             patch("pa.update.runner.apply_update", return_value=update_result) as apply,
-            patch("pa.cli.service.restart"),
+            patch("pa.cli.service.request_restart"),
             patch("pa.instance.quiesce.request_skip_quiesce"),
         ):
             await peer_update(self.request, self.body)
@@ -660,7 +660,7 @@ class PeerUpdateIdempotencyTests(unittest.IsolatedAsyncioTestCase):
             patch("pa.update.channels.resolve_release", return_value=self.release),
             patch("pa.modules.fleet._peer_has_exact_release", return_value=True),
             patch("pa.update.runner.apply_update") as apply,
-            patch("pa.cli.service.restart") as restart,
+            patch("pa.cli.service.request_restart") as restart,
             patch("pa.instance.quiesce.request_skip_quiesce"),
         ):
             await peer_update(self.request, self.body)

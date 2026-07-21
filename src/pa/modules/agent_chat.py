@@ -806,7 +806,18 @@ def put_agent_preferences(request: Request, body: PreferencesBody) -> dict:
                 surfaces[key] = SurfaceAgentPrefs.model_validate(raw)
             else:
                 surfaces[key] = SurfaceAgentPrefs(provider=str(raw) if raw else None)
-        updates["agent_surfaces"] = surfaces
+        # Merge keys so partial clients (e.g. Settings saving only chat.default)
+        # do not wipe other surface defaults.
+        if body.scope == "global":
+            existing = get_preferences_store(settings.data_dir).load().agent_surfaces
+        else:
+            user_id = _user_id(request)
+            existing = (
+                get_preferences_store(settings.data_dir, user_id=user_id)
+                .load()
+                .agent_surfaces
+            )
+        updates["agent_surfaces"] = {**(existing or {}), **surfaces}
     if not updates:
         return get_agent_preferences(request)
     if body.scope == "global":

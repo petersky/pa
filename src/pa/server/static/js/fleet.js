@@ -601,13 +601,14 @@
     setLiveBanner("Checking instance health…");
   }
 
-  function applyLiveStatus(rows) {
+  function applyLiveStatus(rows, partial) {
     var byId = {};
     (rows || []).forEach(function (row) {
       if (row && row.instance_id) byId[row.instance_id] = row;
     });
     $all("#pa-fleet-instances tr[data-fleet-instance]").forEach(function (tr) {
       var row = byId[tr.getAttribute("data-fleet-instance")];
+      if (!row && partial) return;
       if (!row) row = { state: "error", providers_state: "error", status_state: "error", update_state: "error" };
       var healthEl = $("[data-fleet-health]", tr);
       var providersEl = $("[data-fleet-providers]", tr);
@@ -718,34 +719,47 @@
     var seq = ++liveStatusSeq;
     resetLivePlaceholders(false);
     liveStatusController = typeof AbortController === "function" ? new AbortController() : null;
+    var instanceIds = $all("#pa-fleet-instances tr[data-fleet-instance]").map(function (tr) {
+      return tr.getAttribute("data-fleet-instance");
+    });
+    var localId = root.dataset.localId || "";
+    instanceIds.sort(function (left, right) {
+      if (left === localId) return -1;
+      if (right === localId) return 1;
+      return 0;
+    });
+    var completed = 0;
+    var up = 0;
     liveStatusTimer = setTimeout(function () {
       if (seq !== liveStatusSeq) return;
       if (liveStatusController) liveStatusController.abort();
       terminalLiveFailure("Health check timed out", "timeout");
     }, 12000);
-    liveStatusRequest = api("/api/fleet/health", liveStatusController ? { signal: liveStatusController.signal } : {}).then(function (rows) {
-      if (seq !== liveStatusSeq) return;
-      applyLiveStatus(rows);
-      var up = (rows || []).filter(function (r) {
-        return r.healthy;
-      }).length;
-      var total = (rows || []).length;
-      setLiveBanner(
-        total
-          ? "Checked " +
-              total +
-              " instance" +
-              (total === 1 ? "" : "s") +
-              " · " +
-              up +
-              " up"
-          : ""
-      );
-    }).catch(function (err) {
-      if (seq !== liveStatusSeq) return;
-      terminalLiveFailure(err.name === "AbortError" ? "Health check timed out" : err.message,
-        err.name === "AbortError" ? "timeout" : "error");
-    }).finally(function () {
+    var requests = instanceIds.map(function (instanceId) {
+      var path = "/api/fleet/health?instance_id=" + encodeURIComponent(instanceId);
+      return api(path, liveStatusController ? { signal: liveStatusController.signal } : {}).then(function (rows) {
+        if (seq !== liveStatusSeq) return;
+        applyLiveStatus(rows, true);
+        completed += 1;
+        if (rows && rows[0] && rows[0].healthy) up += 1;
+        setLiveBanner("Checked " + completed + " of " + instanceIds.length +
+          " instances · " + up + " up");
+      }).catch(function (err) {
+        if (seq !== liveStatusSeq) return;
+        var state = err.name === "AbortError" ? "timeout" : "error";
+        applyLiveStatus([{
+          instance_id: instanceId,
+          state: state,
+          providers_state: state,
+          status_state: state,
+          update_state: state,
+        }], true);
+        completed += 1;
+        setLiveBanner("Checked " + completed + " of " + instanceIds.length +
+          " instances · " + up + " up");
+      });
+    });
+    liveStatusRequest = Promise.all(requests).finally(function () {
       if (seq !== liveStatusSeq) return;
       clearTimeout(liveStatusTimer);
       liveStatusTimer = null;

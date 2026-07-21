@@ -71,6 +71,61 @@ class InstallPlistTests(unittest.TestCase):
         self.assertIn("<key>KeepAlive</key>\n    <true/>", rendered)
         self.assertIn("<key>ExitTimeOut</key>\n    <integer>300</integer>", rendered)
 
+    def test_in_service_systemd_restart_reloads_unit_then_non_blocking(self) -> None:
+        accepted = MagicMock(returncode=0, stderr="", stdout="")
+        progress = MagicMock()
+        with (
+            patch.object(service, "_is_darwin", return_value=False),
+            patch.object(service, "_is_linux", return_value=True),
+            patch.object(service, "find_service_binary", return_value=self.pa_bin),
+            patch.object(service, "install_service") as install,
+            patch.object(service, "_run_systemctl", return_value=accepted) as systemctl,
+        ):
+            service.request_restart(self.settings, progress=progress)
+
+        install.assert_called_once_with(self.settings, self.pa_bin)
+        self.assertEqual(
+            [c.args for c in systemctl.call_args_list],
+            [
+                ("daemon-reload",),
+                ("restart", "--no-block", service.SYSTEMD_UNIT),
+            ],
+        )
+        self.assertGreaterEqual(progress.call_count, 2)
+
+    def test_in_service_launchd_restart_schedules_rebootstrap(self) -> None:
+        settings = Settings(data_dir=Path(self._tmp.name))
+        with (
+            patch.object(service, "_is_darwin", return_value=True),
+            patch.object(service, "_is_linux", return_value=False),
+            patch.object(service, "_plist_path", return_value=self.plist),
+            patch.object(service, "find_service_binary", return_value=self.pa_bin),
+            patch.object(service, "install_service") as install,
+            patch.object(service, "_schedule_launchd_rebootstrap") as schedule,
+            patch.object(service, "_run_launchctl") as launchctl,
+        ):
+            self.plist.write_text("installed")
+            service.request_restart(settings)
+
+        install.assert_called_once_with(settings, self.pa_bin)
+        schedule.assert_called_once_with(
+            self.plist,
+            log_path=Path(self._tmp.name) / "logs" / "service-rebootstrap.log",
+        )
+        launchctl.assert_not_called()
+
+    def test_launchd_rebootstrap_script_waits_for_bootout_and_retries(self) -> None:
+        log_path = Path(self._tmp.name) / "rebootstrap.log"
+        with patch.object(service.subprocess, "Popen") as popen:
+            service._schedule_launchd_rebootstrap(self.plist, log_path=log_path)
+
+        script = popen.call_args.args[0][2]
+        self.assertIn("deadline=$(( $(date +%s) + 300 ))", script)
+        self.assertIn("for delay in 0.5 1 1.5 2 3 4 5 6", script)
+        self.assertIn('*"Could not find service"*) return 1 ;;', script)
+        self.assertIn("job_loaded", script)
+        self.assertIn(str(log_path), script)
+
 
 class AutonomousHostControlsTests(unittest.TestCase):
     def test_shutdown_snapshots_open_sessions_after_transport_loss(self) -> None:
