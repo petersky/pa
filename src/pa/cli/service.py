@@ -475,21 +475,34 @@ def _schedule_launchd_rebootstrap(
         log_path.parent.mkdir(parents=True, exist_ok=True)
     # Match ExitTimeOut / unload patience: bootout may need minutes for a
     # draining ACP session, and bootstrap can hit transient I/O error 5.
+    # launchctl print can exit 0 with "Could not find service" after bootout —
+    # treat that the same as unloaded (see `_launchd_job_loaded`).
     script = f"""
 set +e
 exec >>{shlex.quote(log_file)} 2>&1
 echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) scheduling launchd rebootstrap for {shlex.quote(target)}"
 sleep 1
 deadline=$(( $(date +%s) + 300 ))
+job_loaded() {{
+  out=$(launchctl print {shlex.quote(target)} 2>&1)
+  status=$?
+  if [ "$status" -ne 0 ]; then
+    return 1
+  fi
+  case "$out" in
+    *"Could not find service"*) return 1 ;;
+  esac
+  return 0
+}}
 while [ "$(date +%s)" -lt "$deadline" ]; do
   launchctl bootout {shlex.quote(target)} >/dev/null 2>&1
-  if ! launchctl print {shlex.quote(target)} >/dev/null 2>&1; then
+  if ! job_loaded; then
     echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) launchd released {shlex.quote(target)}"
     break
   fi
   sleep 1
 done
-if launchctl print {shlex.quote(target)} >/dev/null 2>&1; then
+if job_loaded; then
   echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) timed out waiting for bootout of {shlex.quote(target)}"
   exit 1
 fi

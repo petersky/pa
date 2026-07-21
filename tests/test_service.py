@@ -122,6 +122,8 @@ class InstallPlistTests(unittest.TestCase):
         script = popen.call_args.args[0][2]
         self.assertIn("deadline=$(( $(date +%s) + 300 ))", script)
         self.assertIn("for delay in 0.5 1 1.5 2 3 4 5 6", script)
+        self.assertIn('*"Could not find service"*) return 1 ;;', script)
+        self.assertIn("job_loaded", script)
         self.assertIn(str(log_path), script)
 
 
