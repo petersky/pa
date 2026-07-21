@@ -7,7 +7,13 @@ from pa.auth.middleware import get_principal_id
 from pa.core.contracts import Module
 from pa.core.context import AppContext
 from pa.core.ui.pages import PageDefinition, PageRegistry
-from pa.domain.models import ProjectCreate, ProjectUpdate
+from pa.domain.models import (
+    ProjectCreate,
+    ProjectUpdate,
+    RepositoryCheckout,
+    RepositoryCreate,
+    RepositoryUpdate,
+)
 from pa.domain.store import get_store
 
 router = APIRouter()
@@ -28,6 +34,7 @@ def _projects_context(request: Request) -> dict:
     project = store.get_project(project_id, realm_id=realm) if project_id else None
     return {
         "projects": store.list_projects(realm_id=realm),
+        "repositories": store.list_repositories(realm),
         "project": project,
         "cards": store.list_cards_for_project(project_id, realm_id=realm)
         if project_id
@@ -85,6 +92,157 @@ def update_project_api(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     return project.model_dump(mode="json")
+
+
+@router.get("/repositories")
+def list_repositories_api(request: Request, realm: str | None = None) -> list[dict]:
+    realm_id = realm or request.app.state.ctx.settings.primary_realm
+    return [r.model_dump(mode="json") for r in get_store().list_repositories(realm_id)]
+
+
+@router.post("/repositories", status_code=201)
+def create_repository_api(request: Request, data: RepositoryCreate) -> dict:
+    settings = request.app.state.ctx.settings
+    repository = get_store().create_repository(
+        data, principal_id=get_principal_id(request), instance_id=settings.instance_id
+    )
+    return repository.model_dump(mode="json")
+
+
+@router.get("/repositories/{repository_id}")
+def get_repository_api(
+    request: Request, repository_id: str, realm: str | None = None
+) -> dict:
+    realm_id = realm or request.app.state.ctx.settings.primary_realm
+    repository = get_store().get_repository(repository_id, realm_id)
+    if not repository:
+        raise HTTPException(status_code=404, detail="Repository not found")
+    result = repository.model_dump(mode="json")
+    result["checkouts"] = [
+        c.model_dump(mode="json")
+        for c in get_store().list_repository_checkouts(repository_id)
+    ]
+    return result
+
+
+@router.patch("/repositories/{repository_id}")
+def update_repository_api(
+    request: Request,
+    repository_id: str,
+    data: RepositoryUpdate,
+    realm: str | None = None,
+) -> dict:
+    settings = request.app.state.ctx.settings
+    realm_id = realm or settings.primary_realm
+    repository = get_store().update_repository(
+        repository_id,
+        data,
+        realm_id=realm_id,
+        principal_id=get_principal_id(request),
+        instance_id=settings.instance_id,
+    )
+    if not repository:
+        raise HTTPException(status_code=404, detail="Repository not found")
+    return repository.model_dump(mode="json")
+
+
+@router.delete("/repositories/{repository_id}", status_code=204)
+def delete_repository_api(
+    request: Request, repository_id: str, realm: str | None = None
+) -> None:
+    settings = request.app.state.ctx.settings
+    realm_id = realm or settings.primary_realm
+    if not get_store().delete_repository(
+        repository_id,
+        realm_id=realm_id,
+        principal_id=get_principal_id(request),
+        instance_id=settings.instance_id,
+    ):
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+
+@router.put("/projects/{project_id}/repositories/{repository_id}")
+def link_repository_api(
+    request: Request,
+    project_id: str,
+    repository_id: str,
+    body: dict | None = None,
+    realm: str | None = None,
+) -> dict:
+    settings = request.app.state.ctx.settings
+    realm_id = realm or settings.primary_realm
+    if not get_store().link_project_repository(
+        project_id,
+        repository_id,
+        branch=(body or {}).get("branch"),
+        realm_id=realm_id,
+        principal_id=get_principal_id(request),
+        instance_id=settings.instance_id,
+    ):
+        raise HTTPException(status_code=404, detail="Project or repository not found")
+    return get_store().get_project(project_id, realm_id).model_dump(mode="json")
+
+
+@router.delete("/projects/{project_id}/repositories/{repository_id}", status_code=204)
+def unlink_repository_api(
+    request: Request, project_id: str, repository_id: str, realm: str | None = None
+) -> None:
+    settings = request.app.state.ctx.settings
+    realm_id = realm or settings.primary_realm
+    get_store().unlink_project_repository(
+        project_id,
+        repository_id,
+        realm_id=realm_id,
+        principal_id=get_principal_id(request),
+        instance_id=settings.instance_id,
+    )
+
+
+@router.put("/repositories/{repository_id}/checkouts/{checkout_instance_id}")
+def set_checkout_api(
+    request: Request,
+    repository_id: str,
+    checkout_instance_id: str,
+    body: dict,
+    realm: str | None = None,
+) -> dict:
+    settings = request.app.state.ctx.settings
+    realm_id = realm or settings.primary_realm
+    if not get_store().get_repository(repository_id, realm_id):
+        raise HTTPException(status_code=404, detail="Repository not found")
+    checkout = RepositoryCheckout(
+        repository_id=repository_id,
+        instance_id=checkout_instance_id,
+        path=body.get("path", ""),
+        branch=body.get("branch"),
+    )
+    get_store().set_repository_checkout(
+        checkout,
+        realm_id=realm_id,
+        principal_id=get_principal_id(request),
+        instance_id=settings.instance_id,
+    )
+    return checkout.model_dump(mode="json")
+
+
+@router.delete(
+    "/repositories/{repository_id}/checkouts/{checkout_instance_id}", status_code=204
+)
+def remove_checkout_api(
+    request: Request,
+    repository_id: str,
+    checkout_instance_id: str,
+    realm: str | None = None,
+) -> None:
+    settings = request.app.state.ctx.settings
+    realm_id = realm or settings.primary_realm
+    get_store().remove_repository_checkout(
+        repository_id,
+        checkout_instance_id,
+        realm_id=realm_id,
+        principal_id=get_principal_id(request),
+        instance_id=settings.instance_id,
+    )
 
 
 @router.get("/projects/{project_id}/cards")
@@ -145,6 +303,64 @@ def create_project_ui(
     page = request.app.state.ctx.require_service("pages").get_by_path("/projects")
     if not page:
         raise HTTPException(status_code=404)
+    return render_page(request, page)
+
+
+@ui_router.post("/projects/repositories")
+def create_repository_ui(
+    request: Request,
+    url: str = Form(...),
+    name: str = Form(""),
+    realm: str | None = None,
+) -> HTMLResponse:
+    from pa.modules.ui_shell import render_page
+
+    realm_id = realm or _active_realm(request)
+    settings = request.app.state.ctx.settings
+    get_store().create_repository(
+        RepositoryCreate(realm_id=realm_id, url=url, name=name),
+        principal_id=get_principal_id(request),
+        instance_id=settings.instance_id,
+    )
+    page = request.app.state.ctx.require_service("pages").get_by_path("/projects")
+    return render_page(request, page)
+
+
+@ui_router.post("/projects/{project_id}/repositories")
+def link_repository_ui(
+    request: Request,
+    project_id: str,
+    repository_id: str = Form(...),
+    branch: str = Form(""),
+    path: str = Form(""),
+    realm: str | None = None,
+) -> HTMLResponse:
+    from pa.modules.ui_shell import render_page
+
+    realm_id = realm or _active_realm(request)
+    settings = request.app.state.ctx.settings
+    store = get_store()
+    store.link_project_repository(
+        project_id,
+        repository_id,
+        branch=branch or None,
+        realm_id=realm_id,
+        principal_id=get_principal_id(request),
+        instance_id=settings.instance_id,
+    )
+    if path:
+        store.set_repository_checkout(
+            RepositoryCheckout(
+                repository_id=repository_id,
+                instance_id=settings.instance_id,
+                path=path,
+                branch=branch or None,
+            ),
+            realm_id=realm_id,
+            principal_id=get_principal_id(request),
+            instance_id=settings.instance_id,
+        )
+    page = request.app.state.ctx.require_service("pages").get_by_path("/projects")
     return render_page(request, page)
 
 
