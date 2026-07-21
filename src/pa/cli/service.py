@@ -459,7 +459,9 @@ def restart(
     raise RuntimeError(f"Unsupported platform: {sys.platform}")
 
 
-def _schedule_launchd_rebootstrap(plist: Path) -> None:
+def _schedule_launchd_rebootstrap(
+    plist: Path, *, log_path: Path | None = None
+) -> None:
     """Detached bootout+bootstrap so an in-process updater can exit cleanly.
 
     Writing a new plist is not enough: launchd keeps the previously loaded job
@@ -468,18 +470,40 @@ def _schedule_launchd_rebootstrap(plist: Path) -> None:
     """
     target = _domain_target()
     gui_domain = f"gui/{os.getuid()}"
+    log_file = str(log_path) if log_path else "/dev/null"
+    if log_path:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+    # Match ExitTimeOut / unload patience: bootout may need minutes for a
+    # draining ACP session, and bootstrap can hit transient I/O error 5.
     script = f"""
 set +e
+exec >>{shlex.quote(log_file)} 2>&1
+echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) scheduling launchd rebootstrap for {shlex.quote(target)}"
 sleep 1
-launchctl bootout {shlex.quote(target)} >/dev/null 2>&1
-for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+deadline=$(( $(date +%s) + 300 ))
+while [ "$(date +%s)" -lt "$deadline" ]; do
+  launchctl bootout {shlex.quote(target)} >/dev/null 2>&1
   if ! launchctl print {shlex.quote(target)} >/dev/null 2>&1; then
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) launchd released {shlex.quote(target)}"
     break
   fi
-  sleep 0.5
-  launchctl bootout {shlex.quote(target)} >/dev/null 2>&1
+  sleep 1
 done
-exec launchctl bootstrap {shlex.quote(gui_domain)} {shlex.quote(str(plist))}
+if launchctl print {shlex.quote(target)} >/dev/null 2>&1; then
+  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) timed out waiting for bootout of {shlex.quote(target)}"
+  exit 1
+fi
+sleep 0.5
+for delay in 0.5 1 1.5 2 3 4 5 6; do
+  if launchctl bootstrap {shlex.quote(gui_domain)} {shlex.quote(str(plist))}; then
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) bootstrap succeeded"
+    exit 0
+  fi
+  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) bootstrap failed; retrying in ${{delay}}s"
+  sleep "$delay"
+done
+echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) bootstrap failed after retries"
+exit 1
 """
     subprocess.Popen(
         ["/bin/bash", "-c", script],
@@ -516,7 +540,10 @@ def request_restart(
             progress,
             "Scheduling a launchd reload so the updated service definition is used.",
         )
-        _schedule_launchd_rebootstrap(_plist_path())
+        _schedule_launchd_rebootstrap(
+            _plist_path(),
+            log_path=settings.data_dir / "logs" / "service-rebootstrap.log",
+        )
         _report(progress, "launchd reload scheduled; waiting for host-managed restart.")
         return
 

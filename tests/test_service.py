@@ -94,6 +94,7 @@ class InstallPlistTests(unittest.TestCase):
         self.assertGreaterEqual(progress.call_count, 2)
 
     def test_in_service_launchd_restart_schedules_rebootstrap(self) -> None:
+        settings = Settings(data_dir=Path(self._tmp.name))
         with (
             patch.object(service, "_is_darwin", return_value=True),
             patch.object(service, "_is_linux", return_value=False),
@@ -104,11 +105,24 @@ class InstallPlistTests(unittest.TestCase):
             patch.object(service, "_run_launchctl") as launchctl,
         ):
             self.plist.write_text("installed")
-            service.request_restart(self.settings)
+            service.request_restart(settings)
 
-        install.assert_called_once_with(self.settings, self.pa_bin)
-        schedule.assert_called_once_with(self.plist)
+        install.assert_called_once_with(settings, self.pa_bin)
+        schedule.assert_called_once_with(
+            self.plist,
+            log_path=Path(self._tmp.name) / "logs" / "service-rebootstrap.log",
+        )
         launchctl.assert_not_called()
+
+    def test_launchd_rebootstrap_script_waits_for_bootout_and_retries(self) -> None:
+        log_path = Path(self._tmp.name) / "rebootstrap.log"
+        with patch.object(service.subprocess, "Popen") as popen:
+            service._schedule_launchd_rebootstrap(self.plist, log_path=log_path)
+
+        script = popen.call_args.args[0][2]
+        self.assertIn("deadline=$(( $(date +%s) + 300 ))", script)
+        self.assertIn("for delay in 0.5 1 1.5 2 3 4 5 6", script)
+        self.assertIn(str(log_path), script)
 
 
 class AutonomousHostControlsTests(unittest.TestCase):
