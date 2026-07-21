@@ -129,6 +129,39 @@ class ProjectRepo(BaseModel):
     path: str | None = None
 
 
+class Repository(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    realm_id: str = "default"
+    url: str
+    name: str = ""
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class RepositoryCreate(BaseModel):
+    realm_id: str = "default"
+    url: str
+    name: str = ""
+
+
+class RepositoryUpdate(BaseModel):
+    url: str | None = None
+    name: str | None = None
+
+
+class ProjectRepository(BaseModel):
+    project_id: str
+    repository_id: str
+    branch: str | None = None
+
+
+class RepositoryCheckout(BaseModel):
+    repository_id: str
+    instance_id: str
+    path: str
+    branch: str | None = None
+
+
 class ProjectMembership(BaseModel):
     principal_id: str
     role: str = "editor"
@@ -245,6 +278,13 @@ class EventType(StrEnum):
     PROJECT_CREATED = "project_created"
     PROJECT_UPDATED = "project_updated"
     PROJECT_ARCHIVED = "project_archived"
+    REPOSITORY_CREATED = "repository_created"
+    REPOSITORY_UPDATED = "repository_updated"
+    REPOSITORY_DELETED = "repository_deleted"
+    PROJECT_REPOSITORY_LINKED = "project_repository_linked"
+    PROJECT_REPOSITORY_UNLINKED = "project_repository_unlinked"
+    REPOSITORY_CHECKOUT_SET = "repository_checkout_set"
+    REPOSITORY_CHECKOUT_REMOVED = "repository_checkout_removed"
     LEASE_GRANTED = "lease_granted"
     LEASE_RELEASED = "lease_released"
     AGENT_PROGRESS = "agent_progress"

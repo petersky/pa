@@ -531,9 +531,7 @@ def remove_instance(request: Request, instance_id: str) -> dict:
 
 
 @router.get("/fleet/health")
-async def fleet_health(
-    request: Request, instance_id: str | None = None
-) -> list[dict]:
+async def fleet_health(request: Request, instance_id: str | None = None) -> list[dict]:
     """Return bounded, independent health dimensions for every fleet instance."""
     require_user(request)
     ctx = request.app.state.ctx
@@ -564,9 +562,9 @@ async def fleet_health(
                 if response.status_code != 200:
                     return "error", None
                 return "up", parser(response.json())
-            except (TimeoutError, asyncio.TimeoutError):
+            except TimeoutError, asyncio.TimeoutError:
                 return "timeout", None
-            except (httpx.HTTPError, ValueError, TypeError, AttributeError):
+            except httpx.HTTPError, ValueError, TypeError, AttributeError:
                 return "error", None
 
         def dict_payload(value: Any) -> dict:
@@ -590,7 +588,7 @@ async def fleet_health(
                         f"{base}/api/health", timeout=FLEET_HEALTH_TIMEOUT
                     )
                     health_state = "up" if resp.status_code == 200 else "down"
-                except (TimeoutError, asyncio.TimeoutError):
+                except TimeoutError, asyncio.TimeoutError:
                     health_state = "timeout"
                 except httpx.HTTPError:
                     health_state = "down"
@@ -601,7 +599,7 @@ async def fleet_health(
 
                     try:
                         current_version = read_version()
-                    except (OSError, RuntimeError, ValueError):
+                    except OSError, RuntimeError, ValueError:
                         current_version = None
                         status_state = "error"
                     update_channel = settings.release_track
@@ -617,7 +615,7 @@ async def fleet_health(
                                 timeout=FLEET_DETAIL_TIMEOUT,
                             )
                             return "up", value
-                        except (TimeoutError, asyncio.TimeoutError):
+                        except TimeoutError, asyncio.TimeoutError:
                             return "timeout", []
                         except Exception:
                             return "error", []
@@ -625,13 +623,14 @@ async def fleet_health(
                     async def local_update() -> tuple[str, Any]:
                         # Update discovery may use the network, even for local.
                         from pa.update.runner import check_update
+
                         try:
                             value = await asyncio.wait_for(
                                 asyncio.to_thread(check_update, settings),
                                 timeout=FLEET_DETAIL_TIMEOUT,
                             )
                             return "up", value
-                        except (TimeoutError, asyncio.TimeoutError):
+                        except TimeoutError, asyncio.TimeoutError:
                             return "timeout", None
                         except Exception:
                             return "error", None
@@ -645,22 +644,35 @@ async def fleet_health(
                         available_version = update.latest
                         upgrade_available = update.upgrade_available
                 else:
-                    provider_result, status_result, update_result = await asyncio.gather(
+                    (
+                        provider_result,
+                        status_result,
+                        update_result,
+                    ) = await asyncio.gather(
                         dimension(
-                            remote_get(f"{base}/api/agent/providers", headers=headers,
-                                       timeout=FLEET_DETAIL_TIMEOUT),
+                            remote_get(
+                                f"{base}/api/agent/providers",
+                                headers=headers,
+                                timeout=FLEET_DETAIL_TIMEOUT,
+                            ),
                             lambda value: value if isinstance(value, list) else [],
                             timeout=FLEET_DETAIL_TIMEOUT,
                         ),
                         dimension(
-                            remote_get(f"{base}/api/status", headers=headers,
-                                       timeout=FLEET_DETAIL_TIMEOUT),
+                            remote_get(
+                                f"{base}/api/status",
+                                headers=headers,
+                                timeout=FLEET_DETAIL_TIMEOUT,
+                            ),
                             dict_payload,
                             timeout=FLEET_DETAIL_TIMEOUT,
                         ),
                         dimension(
-                            remote_get(f"{base}/api/fleet/peer-update-check", headers=headers,
-                                       timeout=FLEET_DETAIL_TIMEOUT),
+                            remote_get(
+                                f"{base}/api/fleet/peer-update-check",
+                                headers=headers,
+                                timeout=FLEET_DETAIL_TIMEOUT,
+                            ),
                             dict_payload,
                             timeout=FLEET_DETAIL_TIMEOUT,
                         ),
@@ -714,13 +726,20 @@ async def fleet_health(
                 continue
             data = inst.model_dump(mode="json")
             terminal_state = "error" if task in failed else "timeout"
-            data.update({
-                "healthy": False, "state": terminal_state, "providers": [],
-                "providers_state": terminal_state, "status_state": terminal_state,
-                "update_state": terminal_state, "current_version": None,
-                "available_version": None, "upgrade_available": False,
-                "update_channel": None,
-            })
+            data.update(
+                {
+                    "healthy": False,
+                    "state": terminal_state,
+                    "providers": [],
+                    "providers_state": terminal_state,
+                    "status_state": terminal_state,
+                    "update_state": terminal_state,
+                    "current_version": None,
+                    "available_version": None,
+                    "upgrade_available": False,
+                    "update_channel": None,
+                }
+            )
             results.append(data)
 
     now = datetime.now(UTC)
@@ -1010,8 +1029,11 @@ async def peer_update(request: Request, body: dict) -> dict:
             from pa.instance.quiesce import request_skip_quiesce
 
             request_skip_quiesce(settings.data_dir)
+
             def restart_progress(message: str) -> None:
-                current = _read_peer_operation(settings, operation_id) or restarting_operation
+                current = (
+                    _read_peer_operation(settings, operation_id) or restarting_operation
+                )
                 _write_peer_operation(
                     settings,
                     operation_id,
@@ -1432,10 +1454,17 @@ async def start_remote_agent_work(
         # blocks actionably and can never leave an orphan agent session.
         await _peer_dispatch_json(request, instance_id, dispatch_body)
 
+    normalized_cwd = (
+        store.project_working_directory(project_id, instance_id) if project_id else None
+    )
+    if not isinstance(normalized_cwd, str):
+        normalized_cwd = None
+
     session_body: dict[str, Any] = {
         "label": f"card:{card.id}" if card else None,
         "title": body.title or (card.title if card else "Remote agent session"),
         "cwd": body.cwd
+        or normalized_cwd
         or _project_working_directory(
             project,
             instance_id=instance_id,

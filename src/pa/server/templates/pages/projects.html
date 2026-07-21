@@ -28,6 +28,17 @@
     </form>
   </details>
 
+  <details class="panel-inset">
+    <summary>New repository</summary>
+    <form class="stack" hx-post="/projects/repositories" hx-target="#app-view" hx-swap="innerHTML">
+      <input type="hidden" name="realm" value="{{ active_realm }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token }}">
+      <label>Repository URL <input type="url" name="url" required placeholder="https://github.com/org/repo.git"></label>
+      <label>Name <input type="text" name="name" placeholder="Optional display name"></label>
+      <button type="submit">Add repository</button>
+    </form>
+  </details>
+
   {% if project %}
   <div class="panel" style="margin-bottom: 1rem;">
     <h3>{{ project.title }}</h3>
@@ -39,7 +50,20 @@
     </details>
     {% endif %}
     {% if project.repos %}
-    <p class="muted">Repos: {% for r in project.repos %}{{ r.url }}{% if not loop.last %}, {% endif %}{% endfor %}</p>
+    <p class="muted">Repos: {% for r in project.repos %}{{ r.url }}{% if r.branch %} ({{ r.branch }}){% endif %}{% if r.path %} — {{ r.path }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</p>
+    {% endif %}
+    {% if repositories %}
+    <details class="panel-inset">
+      <summary>Link repository</summary>
+      <form class="stack" hx-post="/projects/{{ project.id }}/repositories" hx-target="#app-view" hx-swap="innerHTML">
+        <input type="hidden" name="realm" value="{{ active_realm }}">
+        <input type="hidden" name="csrf" value="{{ csrf_token }}">
+        <label>Repository <select name="repository_id">{% for r in repositories %}<option value="{{ r.id }}">{{ r.name or r.url }}</option>{% endfor %}</select></label>
+        <label>Branch <input name="branch" placeholder="Optional"></label>
+        <label>Checkout on this instance <input name="path" placeholder="Optional local path"></label>
+        <button type="submit">Link repository</button>
+      </form>
+    </details>
     {% endif %}
     {% set pr_policy = (project.tool_config or {}).get('pr_policy', {}) %}
     <details class="panel-inset">

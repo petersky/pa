@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from functools import wraps
 from typing import Callable, Iterator, TypeVar
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from pa.domain.models import (
     AgentSession,
@@ -33,6 +33,10 @@ from pa.domain.models import (
     ProjectRepo,
     ProjectStatus,
     ProjectUpdate,
+    Repository,
+    RepositoryCheckout,
+    RepositoryCreate,
+    RepositoryUpdate,
     TranscriptEvent,
     _STATUS_TO_LANE,
 )
@@ -120,6 +124,21 @@ class CardProjection:
                 );
                 CREATE INDEX IF NOT EXISTS idx_projects_realm ON projects(realm_id);
                 CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
+                CREATE TABLE IF NOT EXISTS repositories (
+                    id TEXT PRIMARY KEY, realm_id TEXT NOT NULL DEFAULT 'default',
+                    url TEXT NOT NULL, name TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                    UNIQUE(realm_id, url)
+                );
+                CREATE TABLE IF NOT EXISTS project_repositories (
+                    project_id TEXT NOT NULL, repository_id TEXT NOT NULL, branch TEXT,
+                    PRIMARY KEY(project_id, repository_id)
+                );
+                CREATE TABLE IF NOT EXISTS repository_checkouts (
+                    repository_id TEXT NOT NULL, instance_id TEXT NOT NULL,
+                    path TEXT NOT NULL, branch TEXT,
+                    PRIMARY KEY(repository_id, instance_id)
+                );
                 CREATE TABLE IF NOT EXISTS items (
                     id TEXT PRIMARY KEY,
                     kind TEXT NOT NULL,
@@ -172,6 +191,7 @@ class CardProjection:
             )
             self._migrate_items_to_cards(conn)
             self._migrate_schema(conn)
+            self._migrate_project_repositories(conn)
 
     def _migrate_schema(self, conn: sqlite3.Connection) -> None:
         card_cols = {
@@ -263,6 +283,56 @@ class CardProjection:
                 ),
             )
 
+    def _repository_id(self, realm_id: str, url: str) -> str:
+        return str(uuid5(NAMESPACE_URL, f"pa:{realm_id}:{url.strip()}"))
+
+    def _replace_project_repositories_conn(
+        self, conn, project_id: str, realm_id: str, repos: list, instance_id: str
+    ) -> None:
+        conn.execute(
+            "DELETE FROM project_repositories WHERE project_id = ?", (project_id,)
+        )
+        now = datetime.now(UTC).isoformat()
+        for raw in repos:
+            repo = ProjectRepo.model_validate(raw)
+            repository_id = self._repository_id(realm_id, repo.url)
+            conn.execute(
+                "INSERT OR IGNORE INTO repositories (id, realm_id, url, name, created_at, updated_at) VALUES (?, ?, ?, '', ?, ?)",
+                (repository_id, realm_id, repo.url, now, now),
+            )
+            actual = conn.execute(
+                "SELECT id FROM repositories WHERE realm_id=? AND url=?",
+                (realm_id, repo.url),
+            ).fetchone()["id"]
+            conn.execute(
+                "INSERT OR REPLACE INTO project_repositories (project_id, repository_id, branch) VALUES (?, ?, ?)",
+                (project_id, actual, repo.branch),
+            )
+            if repo.path:
+                conn.execute(
+                    "INSERT OR REPLACE INTO repository_checkouts (repository_id, instance_id, path, branch) VALUES (?, ?, ?, ?)",
+                    (actual, instance_id, repo.path, repo.branch),
+                )
+        # Normalized rows are authoritative. Clearing the compatibility cache
+        # prevents unlink/delete operations from resurrecting legacy entries.
+        conn.execute("UPDATE projects SET repos='[]' WHERE id=?", (project_id,))
+
+    def _migrate_project_repositories(self, conn) -> None:
+        instance_id = self.event_log.instance_id if self.event_log else "local"
+        for row in conn.execute("SELECT id, realm_id, repos FROM projects").fetchall():
+            try:
+                repos = json.loads(row["repos"] or "[]")
+            except TypeError, json.JSONDecodeError:
+                continue
+            existing = conn.execute(
+                "SELECT 1 FROM project_repositories WHERE project_id=? LIMIT 1",
+                (row["id"],),
+            ).fetchone()
+            if not existing and repos:
+                self._replace_project_repositories_conn(
+                    conn, row["id"], row["realm_id"], repos, instance_id
+                )
+
     def apply_event(self, event: CardEvent) -> None:
         if event.type == EventType.CARD_CREATED:
             self._apply_created(event)
@@ -280,6 +350,20 @@ class CardProjection:
             self._apply_project_updated(event)
         elif event.type == EventType.PROJECT_ARCHIVED:
             self._apply_project_archived(event)
+        elif event.type == EventType.REPOSITORY_CREATED:
+            self._apply_repository_created(event)
+        elif event.type == EventType.REPOSITORY_UPDATED:
+            self._apply_repository_updated(event)
+        elif event.type == EventType.REPOSITORY_DELETED:
+            self._apply_repository_deleted(event)
+        elif event.type == EventType.PROJECT_REPOSITORY_LINKED:
+            self._apply_project_repository_linked(event)
+        elif event.type == EventType.PROJECT_REPOSITORY_UNLINKED:
+            self._apply_project_repository_unlinked(event)
+        elif event.type == EventType.REPOSITORY_CHECKOUT_SET:
+            self._apply_repository_checkout_set(event)
+        elif event.type == EventType.REPOSITORY_CHECKOUT_REMOVED:
+            self._apply_repository_checkout_removed(event)
 
     @serialized_mutation
     def commit_event(self, event: CardEvent):
@@ -319,6 +403,88 @@ class CardProjection:
                 (realm_id, head_hash, datetime.now(UTC).isoformat()),
             )
 
+    def _apply_repository_created(self, event: CardEvent) -> None:
+        p = event.payload
+        now = p.get("created_at") or event.timestamp.isoformat()
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO repositories (id, realm_id, url, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    p["id"],
+                    event.realm_id,
+                    p["url"],
+                    p.get("name", ""),
+                    now,
+                    p.get("updated_at", now),
+                ),
+            )
+
+    def _apply_repository_updated(self, event: CardEvent) -> None:
+        p = event.payload
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM repositories WHERE id=? AND realm_id=?",
+                (p["id"], event.realm_id),
+            ).fetchone()
+            if row:
+                conn.execute(
+                    "UPDATE repositories SET url=?, name=?, updated_at=? WHERE id=?",
+                    (
+                        p.get("url", row["url"]),
+                        p.get("name", row["name"]),
+                        event.timestamp.isoformat(),
+                        p["id"],
+                    ),
+                )
+
+    def _apply_repository_deleted(self, event: CardEvent) -> None:
+        with self._conn() as conn:
+            rid = event.payload["id"]
+            conn.execute(
+                "DELETE FROM repository_checkouts WHERE repository_id=?", (rid,)
+            )
+            conn.execute(
+                "DELETE FROM project_repositories WHERE repository_id=?", (rid,)
+            )
+            conn.execute(
+                "DELETE FROM repositories WHERE id=? AND realm_id=?",
+                (rid, event.realm_id),
+            )
+
+    def _apply_project_repository_linked(self, event: CardEvent) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO project_repositories (project_id, repository_id, branch) VALUES (?, ?, ?)",
+                (
+                    event.project_id,
+                    event.payload["repository_id"],
+                    event.payload.get("branch"),
+                ),
+            )
+
+    def _apply_project_repository_unlinked(self, event: CardEvent) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                "DELETE FROM project_repositories WHERE project_id=? AND repository_id=?",
+                (event.project_id, event.payload["repository_id"]),
+            )
+
+    def _apply_repository_checkout_set(self, event: CardEvent) -> None:
+        p = event.payload
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO repository_checkouts (repository_id, instance_id, path, branch) VALUES (?, ?, ?, ?)",
+                (p["repository_id"], p["instance_id"], p["path"], p.get("branch")),
+            )
+
+    def _apply_repository_checkout_removed(self, event: CardEvent) -> None:
+        p = event.payload
+        with self._conn() as conn:
+            conn.execute(
+                "DELETE FROM repository_checkouts WHERE repository_id=? AND instance_id=?",
+                (p["repository_id"], p["instance_id"]),
+            )
+
     def _apply_created(self, event: CardEvent) -> None:
         p = event.payload
         card = Card(
@@ -356,6 +522,14 @@ class CardProjection:
             created_by_principal=event.author_principal,
         )
         self._upsert_project(project)
+        with self._conn() as conn:
+            self._replace_project_repositories_conn(
+                conn,
+                project.id,
+                project.realm_id,
+                p.get("repos", []),
+                event.author_instance,
+            )
 
     def _apply_project_updated(self, event: CardEvent) -> None:
         if not event.project_id:
@@ -376,6 +550,15 @@ class CardProjection:
                 setattr(project, key, value)
         project.updated_at = datetime.now(UTC)
         self._upsert_project(project)
+        if "repos" in event.payload:
+            with self._conn() as conn:
+                self._replace_project_repositories_conn(
+                    conn,
+                    project.id,
+                    project.realm_id,
+                    event.payload["repos"] or [],
+                    event.author_instance,
+                )
 
     def _apply_project_archived(self, event: CardEvent) -> None:
         if not event.project_id:
@@ -677,6 +860,201 @@ class CardProjection:
         else:
             self._upsert_project(project)
         return project
+
+    def list_repositories(self, realm_id: str = "default") -> list[Repository]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM repositories WHERE realm_id=? ORDER BY name, url",
+                (realm_id,),
+            ).fetchall()
+        return [Repository(**dict(row)) for row in rows]
+
+    def get_repository(
+        self, repository_id: str, realm_id: str = "default"
+    ) -> Repository | None:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM repositories WHERE id=? AND realm_id=?",
+                (repository_id, realm_id),
+            ).fetchone()
+        return Repository(**dict(row)) if row else None
+
+    def _repository_event(
+        self,
+        event_type: EventType,
+        realm_id: str,
+        payload: dict,
+        principal_id: str,
+        instance_id: str,
+        project_id: str | None = None,
+    ) -> None:
+        event = CardEvent(
+            type=event_type,
+            realm_id=realm_id,
+            project_id=project_id,
+            author_principal=principal_id,
+            author_instance=instance_id,
+            payload=payload,
+        )
+        if self.event_log:
+            self.commit_event(event)
+        else:
+            self.apply_event(event)
+
+    def create_repository(
+        self,
+        data: RepositoryCreate,
+        *,
+        principal_id: str = "user:local",
+        instance_id: str = "local",
+    ) -> Repository:
+        repository = Repository(
+            id=self._repository_id(data.realm_id, data.url), **data.model_dump()
+        )
+        self._repository_event(
+            EventType.REPOSITORY_CREATED,
+            data.realm_id,
+            repository.model_dump(mode="json"),
+            principal_id,
+            instance_id,
+        )
+        return self.get_repository(repository.id, data.realm_id) or repository
+
+    def update_repository(
+        self,
+        repository_id: str,
+        data: RepositoryUpdate,
+        *,
+        realm_id: str = "default",
+        principal_id: str = "user:local",
+        instance_id: str = "local",
+    ) -> Repository | None:
+        repository = self.get_repository(repository_id, realm_id)
+        if not repository:
+            return None
+        payload = {
+            "id": repository_id,
+            **data.model_dump(exclude_unset=True, exclude_none=True),
+        }
+        self._repository_event(
+            EventType.REPOSITORY_UPDATED, realm_id, payload, principal_id, instance_id
+        )
+        return self.get_repository(repository_id, realm_id)
+
+    def delete_repository(
+        self,
+        repository_id: str,
+        *,
+        realm_id: str = "default",
+        principal_id: str = "user:local",
+        instance_id: str = "local",
+    ) -> bool:
+        if not self.get_repository(repository_id, realm_id):
+            return False
+        self._repository_event(
+            EventType.REPOSITORY_DELETED,
+            realm_id,
+            {"id": repository_id},
+            principal_id,
+            instance_id,
+        )
+        return True
+
+    def link_project_repository(
+        self,
+        project_id: str,
+        repository_id: str,
+        *,
+        branch: str | None = None,
+        realm_id: str = "default",
+        principal_id: str = "user:local",
+        instance_id: str = "local",
+    ) -> bool:
+        if not self.get_project(project_id, realm_id) or not self.get_repository(
+            repository_id, realm_id
+        ):
+            return False
+        self._repository_event(
+            EventType.PROJECT_REPOSITORY_LINKED,
+            realm_id,
+            {"repository_id": repository_id, "branch": branch},
+            principal_id,
+            instance_id,
+            project_id,
+        )
+        return True
+
+    def unlink_project_repository(
+        self,
+        project_id: str,
+        repository_id: str,
+        *,
+        realm_id: str = "default",
+        principal_id: str = "user:local",
+        instance_id: str = "local",
+    ) -> bool:
+        self._repository_event(
+            EventType.PROJECT_REPOSITORY_UNLINKED,
+            realm_id,
+            {"repository_id": repository_id},
+            principal_id,
+            instance_id,
+            project_id,
+        )
+        return True
+
+    def set_repository_checkout(
+        self,
+        checkout: RepositoryCheckout,
+        *,
+        realm_id: str = "default",
+        principal_id: str = "user:local",
+        instance_id: str = "local",
+    ) -> None:
+        self._repository_event(
+            EventType.REPOSITORY_CHECKOUT_SET,
+            realm_id,
+            checkout.model_dump(mode="json"),
+            principal_id,
+            instance_id,
+        )
+
+    def remove_repository_checkout(
+        self,
+        repository_id: str,
+        checkout_instance_id: str,
+        *,
+        realm_id: str = "default",
+        principal_id: str = "user:local",
+        instance_id: str = "local",
+    ) -> None:
+        self._repository_event(
+            EventType.REPOSITORY_CHECKOUT_REMOVED,
+            realm_id,
+            {"repository_id": repository_id, "instance_id": checkout_instance_id},
+            principal_id,
+            instance_id,
+        )
+
+    def project_working_directory(
+        self, project_id: str, instance_id: str
+    ) -> str | None:
+        with self._conn() as conn:
+            row = conn.execute(
+                """SELECT rc.path FROM project_repositories pr
+                   JOIN repository_checkouts rc ON rc.repository_id=pr.repository_id
+                   WHERE pr.project_id=? AND rc.instance_id=? ORDER BY rc.path LIMIT 1""",
+                (project_id, instance_id),
+            ).fetchone()
+        return row["path"] if row else None
+
+    def list_repository_checkouts(self, repository_id: str) -> list[RepositoryCheckout]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM repository_checkouts WHERE repository_id=? ORDER BY instance_id",
+                (repository_id,),
+            ).fetchall()
+        return [RepositoryCheckout(**dict(row)) for row in rows]
 
     def list_projects(
         self,
@@ -1014,12 +1392,34 @@ class CardProjection:
             return
         with self._conn() as conn:
             conn.execute("DELETE FROM cards WHERE realm_id = ?", (realm_id,))
+            conn.execute(
+                "DELETE FROM project_repositories WHERE project_id IN (SELECT id FROM projects WHERE realm_id=?)",
+                (realm_id,),
+            )
+            conn.execute(
+                "DELETE FROM repository_checkouts WHERE repository_id IN (SELECT id FROM repositories WHERE realm_id=?)",
+                (realm_id,),
+            )
+            conn.execute("DELETE FROM repositories WHERE realm_id = ?", (realm_id,))
             conn.execute("DELETE FROM projects WHERE realm_id = ?", (realm_id,))
         self.event_log.apply_commit_chain(head, self.apply_event)
         self._record_projection_head(realm_id, head)
 
-    @staticmethod
-    def _row_to_project(row: sqlite3.Row) -> Project:
+    def _row_to_project(self, row: sqlite3.Row) -> Project:
+        with self._conn() as conn:
+            normalized = conn.execute(
+                """SELECT r.url, pr.branch, rc.path
+                   FROM project_repositories pr JOIN repositories r ON r.id=pr.repository_id
+                   LEFT JOIN repository_checkouts rc ON rc.repository_id=r.id AND rc.instance_id=?
+                   WHERE pr.project_id=? ORDER BY r.url""",
+                (self.event_log.instance_id if self.event_log else "local", row["id"]),
+            ).fetchall()
+        repos = [
+            ProjectRepo(url=r["url"], branch=r["branch"], path=r["path"])
+            for r in normalized
+        ]
+        if not repos:
+            repos = [ProjectRepo.model_validate(r) for r in json.loads(row["repos"])]
         return Project(
             id=row["id"],
             realm_id=row["realm_id"],
@@ -1030,7 +1430,7 @@ class CardProjection:
                 ProjectMembership.model_validate(m)
                 for m in json.loads(row["memberships"])
             ],
-            repos=[ProjectRepo.model_validate(r) for r in json.loads(row["repos"])],
+            repos=repos,
             agent_prompt=row["agent_prompt"],
             tool_config=json.loads(row["tool_config"]),
             tags=json.loads(row["tags"]),
