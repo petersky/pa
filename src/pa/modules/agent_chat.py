@@ -654,11 +654,48 @@ async def session_cancel(request: Request, session_id: str) -> dict:
 
 @router.post("/sessions/{session_id}/close")
 async def session_close(request: Request, session_id: str) -> dict:
+    """Close a live runtime, or mark a store-only orphan session closed.
+
+    After abrupt restarts, sessions can remain `prompting`/`connected` in the
+    durable store with no live ACP runtime. Operators still need `/close` to
+    clear those so card labels can be reused.
+    """
+    from datetime import UTC, datetime
+
     mgr = _manager(request)
-    runtime = _runtime_or_404(request, session_id)
-    await runtime.close()
-    mgr._runtimes.pop(session_id, None)
-    return {"ok": True}
+    runtime = mgr.get(session_id)
+    if runtime and not getattr(runtime, "_closed", False):
+        await runtime.close()
+        mgr._runtimes.pop(session_id, None)
+        return {"ok": True, "live": False}
+
+    session = mgr.store.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session.status != "closed":
+        session.status = "closed"
+        session.updated_at = datetime.now(UTC)
+        mgr.store.save_session(session)
+        try:
+            from pa.domain.models import TranscriptEvent
+
+            next_seq = mgr.store.next_transcript_seq(session_id)
+            mgr.store.append_transcript_events(
+                [
+                    TranscriptEvent(
+                        session_id=session_id,
+                        seq=next_seq,
+                        event_type="session_closed",
+                        payload={"reason": "orphan_close"},
+                    )
+                ]
+            )
+        except Exception:
+            logger.exception(
+                "Failed to append session_closed transcript for orphan %s",
+                session_id,
+            )
+    return {"ok": True, "live": False, "orphan": True}
 
 
 @router.post("/sessions/{session_id}/permissions/{request_id}")

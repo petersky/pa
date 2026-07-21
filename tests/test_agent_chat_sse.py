@@ -22,6 +22,7 @@ from pa.modules.agent_chat import (
     get_agent_session_history,
     list_agent_session_history,
     list_agent_sessions,
+    session_close,
     session_events,
 )
 
@@ -729,6 +730,36 @@ class AgentChatSseTests(unittest.TestCase):
 
         out = asyncio.run(run())
         self.assertEqual(len(out), 2)
+
+    def test_close_marks_store_only_orphan_sessions_closed(self) -> None:
+        orphan = AgentSession(
+            id="sess-orphan",
+            agent_name="codex",
+            status="prompting",
+            title="Make repositories first-class PA resources",
+            label="card:4bd6e725",
+        )
+        store = MagicMock()
+        store.get_session.return_value = orphan
+        store.next_transcript_seq.return_value = 42
+        store.append_transcript_events.return_value = []
+        manager = MagicMock()
+        manager.get.return_value = None
+        manager.store = store
+        request = MagicMock()
+
+        async def run() -> dict:
+            with patch("pa.modules.agent_chat._manager", return_value=manager):
+                return await session_close(request, "sess-orphan")
+
+        result = asyncio.run(run())
+        self.assertEqual(result, {"ok": True, "live": False, "orphan": True})
+        self.assertEqual(orphan.status, "closed")
+        store.save_session.assert_called_once_with(orphan)
+        store.append_transcript_events.assert_called_once()
+        event = store.append_transcript_events.call_args.args[0][0]
+        self.assertEqual(event.event_type, "session_closed")
+        self.assertEqual(event.seq, 42)
 
 
 if __name__ == "__main__":
