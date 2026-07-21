@@ -701,6 +701,36 @@ class AcpProviderTests(unittest.TestCase):
         with self.assertRaises(KeyError):
             get_provider("nope")
 
+    def test_put_agent_preferences_merges_global_surfaces(self) -> None:
+        from pa.modules.agent_chat import PreferencesBody, put_agent_preferences
+
+        get_preferences_store(self.data_dir).update(
+            agent_surfaces={
+                "chat.card": SurfaceAgentPrefs(provider="cursor"),
+                "execution": SurfaceAgentPrefs(provider="codex"),
+            }
+        )
+        request = MagicMock()
+        request.app.state.ctx.settings.data_dir = self.data_dir
+        with patch("pa.modules.agent_chat._user_id", return_value="alice"):
+            put_agent_preferences(
+                request,
+                PreferencesBody(
+                    agent_surfaces={
+                        "chat.default": {
+                            "provider": "codex",
+                            "model_id": "gpt-5",
+                        }
+                    },
+                    scope="global",
+                ),
+            )
+        prefs = get_preferences_store(self.data_dir).load()
+        self.assertEqual(prefs.agent_surfaces["chat.card"].provider, "cursor")
+        self.assertEqual(prefs.agent_surfaces["execution"].provider, "codex")
+        self.assertEqual(prefs.agent_surfaces["chat.default"].provider, "codex")
+        self.assertEqual(prefs.agent_surfaces["chat.default"].model_id, "gpt-5")
+
 
 if __name__ == "__main__":
     unittest.main()

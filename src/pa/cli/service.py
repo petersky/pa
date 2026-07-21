@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -458,6 +459,38 @@ def restart(
     raise RuntimeError(f"Unsupported platform: {sys.platform}")
 
 
+def _schedule_launchd_rebootstrap(plist: Path) -> None:
+    """Detached bootout+bootstrap so an in-process updater can exit cleanly.
+
+    Writing a new plist is not enough: launchd keeps the previously loaded job
+    definition until the service is bootstrapped again. Doing that synchronously
+    from inside the running job kills the updater before it records success.
+    """
+    target = _domain_target()
+    gui_domain = f"gui/{os.getuid()}"
+    script = f"""
+set +e
+sleep 1
+launchctl bootout {shlex.quote(target)} >/dev/null 2>&1
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+  if ! launchctl print {shlex.quote(target)} >/dev/null 2>&1; then
+    break
+  fi
+  sleep 0.5
+  launchctl bootout {shlex.quote(target)} >/dev/null 2>&1
+done
+exec launchctl bootstrap {shlex.quote(gui_domain)} {shlex.quote(str(plist))}
+"""
+    subprocess.Popen(
+        ["/bin/bash", "-c", script],
+        start_new_session=True,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        close_fds=True,
+    )
+
+
 def request_restart(
     settings: Settings | None = None, *, progress: ServiceProgress | None = None
 ) -> None:
@@ -467,20 +500,31 @@ def request_restart(
     unload/bootstrap or systemctl restart makes the updater a child of the process
     it is terminating, so it can be killed before it records success or starts the
     replacement service.
+
+    Always rewrite the host unit first so peer updates pick up a new binary path
+    or environment instead of restarting the previously loaded definition.
     """
     settings = settings or Settings()
+    pa_bin = find_service_binary()
+    if pa_bin:
+        install_service(settings, pa_bin)
+
     if _is_darwin():
         if not _plist_path().exists():
             raise RuntimeError("PA service not installed. Run: pa install --service-only")
-        _report(progress, "Handing the in-place restart to launchd.")
-        result = _run_launchctl("kickstart", "-k", _domain_target())
-        if result.returncode != 0:
-            err = (result.stderr or result.stdout or "").strip()
-            raise RuntimeError(err or "launchctl kickstart failed")
-        _report(progress, "launchd accepted the restart request.")
+        _report(
+            progress,
+            "Scheduling a launchd reload so the updated service definition is used.",
+        )
+        _schedule_launchd_rebootstrap(_plist_path())
+        _report(progress, "launchd reload scheduled; waiting for host-managed restart.")
         return
 
     if _is_linux():
+        _report(progress, "Reloading systemd unit definitions.")
+        reload = _run_systemctl("daemon-reload")
+        if reload.returncode != 0:
+            raise RuntimeError(reload.stderr.strip() or "systemctl daemon-reload failed")
         _report(progress, "Handing the non-blocking restart to systemd.")
         result = _run_systemctl("restart", "--no-block", SYSTEMD_UNIT)
         if result.returncode != 0:
