@@ -1012,19 +1012,44 @@ code {
   fill: currentColor;
 }
 
+.acw-rail-button .acw-gears {
+  width: 1.25rem;
+  height: 1.25rem;
+  overflow: visible;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.35;
+  stroke-linecap: round;
+}
+
 .acw-rail-button[aria-expanded="true"] {
   color: var(--pa-accent);
   background: var(--pa-accent-subtle);
 }
 
-.acw-rail-button.is-active svg {
+.acw-rail-button.is-active .acw-gears {
   color: var(--pa-accent);
-  animation: acw-tool-active 0.9s ease-in-out infinite;
 }
 
-@keyframes acw-tool-active {
-  0%, 100% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(1.15); opacity: 0.55; }
+.acw-rail-button.is-active .acw-gear-a,
+.acw-rail-button.is-active .acw-gear-c {
+  animation: acw-gear-clockwise 1.2s linear infinite;
+}
+
+.acw-rail-button.is-active .acw-gear-b {
+  animation: acw-gear-counterclockwise 1s linear infinite;
+}
+
+.acw-gear-a { transform-origin: 7.5px 7.5px; }
+.acw-gear-b { transform-origin: 17px 7px; }
+.acw-gear-c { transform-origin: 14px 16px; }
+
+@keyframes acw-gear-clockwise {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes acw-gear-counterclockwise {
+  to { transform: rotate(-360deg); }
 }
 
 .acw-rail-badge {

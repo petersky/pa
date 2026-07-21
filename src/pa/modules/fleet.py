@@ -305,6 +305,7 @@ def _fleet_context(request: Request) -> dict:
     )
     return {
         "fleet_instances": fleet.list_instances(),
+        "local_version": __import__("pa").__version__,
         "realms": membership.list_realms(),
         "memberships": membership.list_memberships(),
         "peer_routes": peer_table.all_routes(),
@@ -530,13 +531,19 @@ def remove_instance(request: Request, instance_id: str) -> dict:
 
 
 @router.get("/fleet/health")
-async def fleet_health(request: Request) -> list[dict]:
+async def fleet_health(
+    request: Request, instance_id: str | None = None
+) -> list[dict]:
     """Return bounded, independent health dimensions for every fleet instance."""
     require_user(request)
     ctx = request.app.state.ctx
     settings = ctx.settings
     fleet: FleetRegistry = ctx.require_service("fleet_registry")
     instances = list(fleet.list_instances())
+    if instance_id:
+        instances = [inst for inst in instances if inst.instance_id == instance_id]
+        if not instances:
+            raise HTTPException(status_code=404, detail="Fleet instance not found")
     if not instances:
         return []
 
@@ -719,9 +726,10 @@ async def fleet_health(request: Request) -> list[dict]:
     now = datetime.now(UTC)
     for inst, live in zip(instances, results, strict=True):
         inst.healthy = bool(live.get("healthy"))
-        inst.last_seen = now
+        if inst.healthy:
+            inst.last_seen = now
         fleet.upsert_instance(inst)
-        live["last_seen"] = now.isoformat()
+        live["last_seen"] = inst.last_seen.isoformat() if inst.last_seen else None
     return list(results)
 
 
@@ -984,30 +992,54 @@ async def peer_update(request: Request, body: dict) -> dict:
                 raise RuntimeError(
                     "Installer completed without reaching the requested PA target"
                 )
-            _write_peer_operation(
-                settings,
-                operation_id,
-                {
-                    **operation,
-                    "status": "installed",
-                    "installed_version": installed_version,
-                },
-            )
-            _write_peer_operation(
-                settings,
-                operation_id,
-                {**operation, "status": "restarting"},
-            )
+            installed_operation = {
+                **operation,
+                "status": "installed",
+                "installed_version": installed_version,
+                "message": "Installation complete; preparing a host-managed restart",
+            }
+            _write_peer_operation(settings, operation_id, installed_operation)
+            restarting_operation = {
+                **installed_operation,
+                "status": "restarting",
+                "restart_stage": "requested",
+                "message": "Handing restart control to the host service manager",
+            }
+            _write_peer_operation(settings, operation_id, restarting_operation)
             from pa.cli import service as svc
             from pa.instance.quiesce import request_skip_quiesce
 
             request_skip_quiesce(settings.data_dir)
-            await asyncio.to_thread(svc.restart, settings)
+            def restart_progress(message: str) -> None:
+                current = _read_peer_operation(settings, operation_id) or restarting_operation
+                _write_peer_operation(
+                    settings,
+                    operation_id,
+                    {**current, "status": "restarting", "message": message},
+                )
+
+            await asyncio.to_thread(
+                svc.request_restart,
+                settings,
+                progress=restart_progress,
+            )
         except Exception as exc:
+            current = _read_peer_operation(settings, operation_id) or operation
+            restart_was_requested = current.get("status") == "restarting"
             _write_peer_operation(
                 settings,
                 operation_id,
-                {**operation, "status": "failed", "error": str(exc)},
+                {
+                    **current,
+                    "status": "restart_failed" if restart_was_requested else "failed",
+                    "error": str(exc),
+                    "message": (
+                        "The restart request reported an error; the controller will "
+                        "verify peer health"
+                        if restart_was_requested
+                        else "Installation failed"
+                    ),
+                },
             )
             return
 

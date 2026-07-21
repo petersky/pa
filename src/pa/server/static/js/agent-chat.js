@@ -140,7 +140,6 @@
       toolFlyout: root.querySelector("[data-acw-tool-flyout]"),
       toolActivity: root.querySelector("[data-acw-tool-activity]"),
       toolEmpty: root.querySelector("[data-acw-tool-empty]"),
-      toolCount: root.querySelector("[data-acw-tool-count]"),
       planToggle: root.querySelector("[data-acw-plan-toggle]"),
       planFlyout: root.querySelector("[data-acw-plan-flyout]"),
       planList: root.querySelector("[data-acw-plan-list]"),
@@ -1053,14 +1052,22 @@
 
   AgentChatWidget.prototype.bumpActivityCount = function (activity) {
     this.activityCount += 1;
-    if (this.els.toolCount) {
-      this.els.toolCount.hidden = false;
-      this.els.toolCount.textContent = String(this.activityCount);
-    }
+  };
+
+  AgentChatWidget.prototype.toolActivityIsNearBottom = function () {
+    const container = this.els.toolFlyout || this.els.toolActivity;
+    if (!container) return false;
+    return container.scrollHeight - container.scrollTop - container.clientHeight < 72;
+  };
+
+  AgentChatWidget.prototype.followToolActivity = function (shouldFollow) {
+    const container = this.els.toolFlyout || this.els.toolActivity;
+    if (shouldFollow && container) container.scrollTop = container.scrollHeight;
   };
 
   AgentChatWidget.prototype.appendActivityProgress = function (key, chunk) {
     this.clearPlaceholder();
+    const shouldFollow = this.toolActivityIsNearBottom();
     const activity = this.ensureActivity();
     const id = "progress:" + key;
     let stream = this.activityStreams[id];
@@ -1074,6 +1081,7 @@
     }
     stream.text += chunk || "";
     stream.el.textContent = stream.text;
+    this.followToolActivity(shouldFollow);
   };
 
   AgentChatWidget.prototype.finalizeActivity = function () {
@@ -1085,6 +1093,7 @@
 
   AgentChatWidget.prototype.upsertTool = function (payload, ts) {
     this.clearPlaceholder();
+    const shouldFollow = this.toolActivityIsNearBottom();
     const id = payload.tool_call_id || "tool";
     let el = null;
     if (this.els.toolActivity) {
@@ -1133,6 +1142,7 @@
       }
     }
     this.updateToolAnimation();
+    this.followToolActivity(shouldFollow);
   };
 
   AgentChatWidget.prototype.updateToolAnimation = function () {
@@ -1152,10 +1162,6 @@
       });
     }
     if (this.els.toolEmpty) this.els.toolEmpty.hidden = false;
-    if (this.els.toolCount) {
-      this.els.toolCount.hidden = true;
-      this.els.toolCount.textContent = "0";
-    }
     if (this.els.planCount) {
       this.els.planCount.hidden = true;
       this.els.planCount.textContent = "0";
@@ -1188,25 +1194,45 @@
         return "- [" + status + "] " + content;
       })
       .join("\n");
-    const index = this.plans.length;
-    this.plans.push({
+    const planKey = String(payload.plan_id || payload.id || "current");
+    let index = this.plans.findIndex(function (plan) { return plan.key === planKey; });
+    const isNew = index < 0;
+    if (isNew) {
+      index = this.plans.length;
+      this.plans.push({ key: planKey });
+    }
+    this.plans[index] = {
+      key: planKey,
       html: renderMarkdown(md || "_Empty plan_"),
       created: created,
-    });
-    if (this.els.planList) {
+      entries: entries,
+      title: payload.title || (planKey === "current" ? "Current plan" : "Plan " + (index + 1)),
+    };
+    if (this.els.planList && isNew) {
       const item = document.createElement("li");
       const button = document.createElement("button");
       button.type = "button";
       button.className = "ghost";
-      button.innerHTML = "<strong>Plan " + (index + 1) + "</strong>" +
-        (created ? '<span class="muted">' + escapeHtml(new Date(created).toLocaleTimeString()) + "</span>" : "");
+      button.dataset.planKey = planKey;
       button.addEventListener("click", function () { self.selectPlan(index); });
       item.appendChild(button);
       this.els.planList.appendChild(item);
     }
+    if (this.els.planList) {
+      const button = Array.from(this.els.planList.querySelectorAll("button")).find(function (candidate) {
+        return candidate.dataset.planKey === planKey;
+      });
+      if (button) {
+        button.innerHTML = "<strong>" + escapeHtml(this.plans[index].title) + "</strong>" +
+          (created ? '<span class="muted">' + escapeHtml(new Date(created).toLocaleTimeString()) + "</span>" : "");
+      }
+    }
     if (this.els.planCount) {
-      this.els.planCount.hidden = false;
-      this.els.planCount.textContent = String(this.plans.length);
+      const completed = entries.filter(function (entry) {
+        return ["completed", "complete", "done"].indexOf(String(entry.status || "").toLowerCase()) >= 0;
+      }).length;
+      this.els.planCount.hidden = entries.length === 0;
+      this.els.planCount.textContent = completed + " of " + entries.length;
     }
     this.selectPlan(index);
   };

@@ -5,14 +5,14 @@
   <div class="panel-header"><h2>Settings</h2></div>
   {{ section_nav([
     ('appearance', 'Appearance'),
-    ('agent', 'Agent'),
+    ('agent', 'Agent defaults'),
     ('instance', 'Instance'),
-  ], active='appearance') }}
+  ], active='agent') }}
 </div>
 {% endset %}
 
 {% set main %}
-<section data-section="appearance">
+<section class="hidden" data-section="appearance" hidden>
   <div class="panel">
     <div class="panel-header"><h2>Appearance</h2></div>
     <p class="muted">Use the theme icon in the header to cycle: system → light → dark. Or pick a theme below.</p>
@@ -41,10 +41,10 @@
   </div>
 </section>
 
-<section class="stack hidden" data-section="agent" hidden>
+<section class="stack" data-section="agent">
   <div class="panel">
-    <div class="panel-header"><h2>Agent</h2></div>
-    <p class="muted">Permission prompts and default ACP provider. User preference overrides the instance default when set. Per-surface overrides apply to chat, card embeds, projects, and execution.</p>
+    <div class="panel-header"><h2>Agent defaults</h2></div>
+    <p class="muted">Choose the provider and session options PA uses for new agent work. Instance defaults apply to everyone; account overrides apply only to you.</p>
     <form class="stack settings-agent-prefs" id="pa-agent-prefs-form" data-instance-provider="{{ settings.agent_provider if settings is defined else 'cursor' }}">
       <label class="checkbox-row">
         <input type="checkbox" name="user_auto_approve"
@@ -72,9 +72,28 @@
           <option value="codex" {% if global_prefs.agent_provider == 'codex' %}selected{% endif %}>Codex</option>
         </select>
       </label>
+      {% set global_chat_defaults = (global_prefs.agent_surfaces or {}).get('chat.default') %}
+      <fieldset class="stack" data-settings-defaults-scope="global">
+        <legend>Instance defaults for new chats</legend>
+        <p class="muted small">These are the fallback model, mode, effort, and provider for every account on this PA instance.</p>
+        <label>
+          <span>Provider</span>
+          <select name="global_surface_chat_default" data-settings-default-provider>
+            <option value="">Inherit instance ACP provider</option>
+            <option value="cursor" {% if global_chat_defaults and global_chat_defaults.provider == 'cursor' %}selected{% endif %}>Cursor</option>
+            <option value="codex" {% if global_chat_defaults and global_chat_defaults.provider == 'codex' %}selected{% endif %}>Codex</option>
+          </select>
+        </label>
+        <label><span>Model</span><select name="global_default_model_id" data-settings-default-model data-saved-value="{{ global_chat_defaults.model_id if global_chat_defaults and global_chat_defaults.model_id else '' }}"><option value="">Provider default</option></select></label>
+        <label><span>Mode</span><select name="global_default_mode_id" data-settings-default-mode data-saved-value="{{ global_chat_defaults.mode_id if global_chat_defaults and global_chat_defaults.mode_id else '' }}"><option value="">Provider default</option></select></label>
+        <label><span>Effort</span><select name="global_default_effort" data-settings-default-effort data-saved-value="{{ global_chat_defaults.effort if global_chat_defaults and global_chat_defaults.effort else '' }}"><option value="">Provider default</option></select></label>
+        <div class="stack" data-settings-default-related hidden></div>
+        <script type="application/json" data-settings-default-config-json>{{ (global_chat_defaults.config if global_chat_defaults else {}) | tojson }}</script>
+      </fieldset>
       {% set chat_defaults = (prefs.agent_surfaces or {}).get('chat.default') %}
-      <fieldset class="stack" data-settings-chat-defaults>
-        <legend>New chat defaults (user)</legend>
+      <fieldset class="stack" data-settings-defaults-scope="user">
+        <legend>My overrides for new chats</legend>
+        <p class="muted small">Leave a value on “inherit” or “provider default” to use the instance setting above.</p>
         <label>
           <span>Provider</span>
           <select name="surface_chat_default" data-settings-default-provider>
@@ -217,28 +236,31 @@
       select.appendChild(custom);
     }
   }
-  async function loadDefaultOptions(useSaved) {
-    var provider = form.querySelector("[data-settings-default-provider]");
-    var providerId = provider.value || form.user_provider.value || form.global_provider.value || form.dataset.instanceProvider || "";
+  async function loadDefaultOptions(container, useSaved) {
+    var provider = container.querySelector("[data-settings-default-provider]");
+    var isGlobal = container.dataset.settingsDefaultsScope === "global";
+    var providerId = provider.value ||
+      (isGlobal ? "" : form.user_provider.value) ||
+      form.global_provider.value || form.dataset.instanceProvider || "";
     if (!providerId) return;
     var response = await fetch("/api/agent/provider-options/" + encodeURIComponent(providerId), { credentials: "same-origin", headers: { Accept: "application/json" } });
     if (!response.ok) return;
     var snap = await response.json();
-    var model = form.querySelector("[data-settings-default-model]");
-    var mode = form.querySelector("[data-settings-default-mode]");
-    var effort = form.querySelector("[data-settings-default-effort]");
+    var model = container.querySelector("[data-settings-default-model]");
+    var mode = container.querySelector("[data-settings-default-mode]");
+    var effort = container.querySelector("[data-settings-default-effort]");
     fill(model, optionValues(snap, "models", "available_models"), ["modelId", "model_id", "id"], useSaved ? model.dataset.savedValue : "");
     fill(mode, optionValues(snap, "modes", "available_modes"), ["id", "modeId", "mode_id"], useSaved ? mode.dataset.savedValue : "");
     var raw = snap.config_options || [];
     var savedConfig = {};
-    var savedConfigNode = form.querySelector("[data-settings-default-config-json]");
+    var savedConfigNode = container.querySelector("[data-settings-default-config-json]");
     try { savedConfig = JSON.parse(savedConfigNode && savedConfigNode.textContent || "{}"); } catch (_) {}
     var effortOption = raw.find(function (item) {
       var id = String(item && (item.id || item.configId || item.config_id || item.name) || "").toLowerCase().replace(/[_ -]/g, "");
       return ["effort", "reasoningeffort", "reasoninglevel", "thinkinglevel"].includes(id);
     });
     fill(effort, effortOption && (effortOption.options || effortOption.choices || effortOption.values) || ["low", "medium", "high", "xhigh"], ["value", "id"], useSaved ? effort.dataset.savedValue : "");
-    var related = form.querySelector("[data-settings-default-related]");
+    var related = container.querySelector("[data-settings-default-related]");
     related.innerHTML = "";
     raw.filter(function (item) { return item && item !== effortOption; }).forEach(function (item) {
       var id = item.id || item.configId || item.config_id;
@@ -254,10 +276,23 @@
     });
     related.hidden = !related.children.length;
   }
-  var defaultProvider = form.querySelector("[data-settings-default-provider]");
-  if (defaultProvider) defaultProvider.addEventListener("change", function () { loadDefaultOptions(false); });
-  form.user_provider.addEventListener("change", function () { if (!defaultProvider.value) loadDefaultOptions(false); });
-  loadDefaultOptions(true);
+  var defaultContainers = Array.from(form.querySelectorAll("[data-settings-defaults-scope]"));
+  defaultContainers.forEach(function (container) {
+    var provider = container.querySelector("[data-settings-default-provider]");
+    if (provider) provider.addEventListener("change", function () { loadDefaultOptions(container, false); });
+    loadDefaultOptions(container, true);
+  });
+  form.user_provider.addEventListener("change", function () {
+    defaultContainers.filter(function (container) {
+      return container.dataset.settingsDefaultsScope === "user" &&
+        !container.querySelector("[data-settings-default-provider]").value;
+    }).forEach(function (container) { loadDefaultOptions(container, false); });
+  });
+  form.global_provider.addEventListener("change", function () {
+    defaultContainers.filter(function (container) {
+      return !container.querySelector("[data-settings-default-provider]").value;
+    }).forEach(function (container) { loadDefaultOptions(container, false); });
+  });
   form.addEventListener("submit", async function (e) {
     e.preventDefault();
     var status = document.getElementById("pa-agent-prefs-status");
@@ -278,17 +313,22 @@
       if (el.value) surfaces[surfaceKey] = { provider: el.value };
       else surfaces[surfaceKey] = { provider: null };
     });
-    var defaultConfig = {};
-    form.querySelectorAll("[data-settings-default-config]").forEach(function (select) {
-      if (select.value) defaultConfig[select.dataset.settingsDefaultConfig] = select.value;
-    });
-    surfaces["chat.default"] = {
-      provider: form.surface_chat_default.value || null,
-      model_id: form.default_model_id.value || null,
-      mode_id: form.default_mode_id.value || null,
-      effort: form.default_effort.value || null,
-      config: defaultConfig,
-    };
+    function defaultsFor(scope) {
+      var container = form.querySelector('[data-settings-defaults-scope="' + scope + '"]');
+      var config = {};
+      container.querySelectorAll("[data-settings-default-config]").forEach(function (select) {
+        if (select.value) config[select.dataset.settingsDefaultConfig] = select.value;
+      });
+      return {
+        provider: container.querySelector("[data-settings-default-provider]").value || null,
+        model_id: container.querySelector("[data-settings-default-model]").value || null,
+        mode_id: container.querySelector("[data-settings-default-mode]").value || null,
+        effort: container.querySelector("[data-settings-default-effort]").value || null,
+        config: config,
+      };
+    }
+    surfaces["chat.default"] = defaultsFor("user");
+    var globalSurfaces = { "chat.default": defaultsFor("global") };
     try {
       await fetch("/api/agent/preferences", {
         method: "PUT",
@@ -308,6 +348,7 @@
         body: JSON.stringify({
           agent_auto_approve_permissions: globalVal,
           agent_provider: globalProvider,
+          agent_surfaces: globalSurfaces,
           scope: "global",
         }),
       });

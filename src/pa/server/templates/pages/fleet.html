@@ -40,13 +40,15 @@
           <td><a href="{{ inst.url }}" target="_blank" rel="noopener">{{ inst.url }}</a></td>
           <td>{{ inst.zone }}</td>
           <td>{{ inst.capabilities | join(', ') }}</td>
-          <td data-fleet-current-version><span class="muted small">Checking…</span></td>
+          <td data-fleet-current-version{% if inst.instance_id == settings.instance_id %} data-fleet-terminal="1"{% endif %}>
+            {% if inst.instance_id == settings.instance_id %}{{ local_version }}{% else %}<span class="muted small">Checking…</span>{% endif %}
+          </td>
           <td data-fleet-available-version><span class="muted small">Checking…</span></td>
           <td data-fleet-providers>
             <span class="muted small">Checking…</span>
           </td>
-          <td data-fleet-health>
-            <span class="muted small">Checking…</span>
+          <td data-fleet-health{% if inst.instance_id == settings.instance_id %} data-fleet-terminal="1"{% endif %}>
+            {% if inst.instance_id == settings.instance_id %}<span class="status status-active">up</span>{% else %}<span class="muted small">Checking…</span>{% endif %}
           </td>
           <td>
             {% if inst.instance_id != settings.instance_id %}

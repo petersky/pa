@@ -71,6 +71,33 @@ class InstallPlistTests(unittest.TestCase):
         self.assertIn("<key>KeepAlive</key>\n    <true/>", rendered)
         self.assertIn("<key>ExitTimeOut</key>\n    <integer>300</integer>", rendered)
 
+    def test_in_service_systemd_restart_is_non_blocking(self) -> None:
+        accepted = MagicMock(returncode=0, stderr="", stdout="")
+        progress = MagicMock()
+        with (
+            patch.object(service, "_is_darwin", return_value=False),
+            patch.object(service, "_is_linux", return_value=True),
+            patch.object(service, "_run_systemctl", return_value=accepted) as systemctl,
+        ):
+            service.request_restart(self.settings, progress=progress)
+
+        systemctl.assert_called_once_with(
+            "restart", "--no-block", service.SYSTEMD_UNIT
+        )
+        self.assertGreaterEqual(progress.call_count, 2)
+
+    def test_in_service_launchd_restart_keeps_job_loaded(self) -> None:
+        accepted = MagicMock(returncode=0, stderr="", stdout="")
+        with (
+            patch.object(service, "_is_darwin", return_value=True),
+            patch.object(service, "_plist_path", return_value=self.plist),
+            patch.object(service, "_run_launchctl", return_value=accepted) as launchctl,
+        ):
+            self.plist.write_text("installed")
+            service.request_restart(self.settings)
+
+        launchctl.assert_called_once_with("kickstart", "-k", service._domain_target())
+
 
 class AutonomousHostControlsTests(unittest.TestCase):
     def test_shutdown_snapshots_open_sessions_after_transport_loss(self) -> None:
