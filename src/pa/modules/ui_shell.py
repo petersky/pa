@@ -78,6 +78,7 @@ def _settings_context(request: Request) -> dict:
     global_prefs = get_preferences_store(settings.data_dir).load()
     kernel = request.app.state.kernel
     from pa.status.info import build_status_snapshot
+    from pa.acp.providers.registry import list_providers
 
     status = build_status_snapshot(ctx, module_count=len(kernel.registry.modules))
     return {
@@ -86,6 +87,10 @@ def _settings_context(request: Request) -> dict:
         "settings": settings,
         "status": status,
         "themes": get_theme_catalog(),
+        "agent_providers": [
+            {"id": provider.id, "display_name": provider.display_name}
+            for provider in list_providers()
+        ],
         "prompt_catalog": PROMPTS.catalog(provider=settings.agent_provider),
         "prompt_adapters": [
             item.model_dump(mode="json") for item in PROMPTS.adapters()

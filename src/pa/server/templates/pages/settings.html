@@ -61,16 +61,18 @@
         <span>My ACP provider</span>
         <select name="user_provider">
           <option value="">Inherit instance default</option>
-          <option value="cursor" {% if prefs.agent_provider == 'cursor' %}selected{% endif %}>Cursor</option>
-          <option value="codex" {% if prefs.agent_provider == 'codex' %}selected{% endif %}>Codex</option>
+          {% for provider in agent_providers %}
+          <option value="{{ provider.id }}" {% if prefs.agent_provider == provider.id %}selected{% endif %}>{{ provider.display_name }}</option>
+          {% endfor %}
         </select>
       </label>
       <label>
         <span>Instance default ACP provider</span>
         <select name="global_provider">
           <option value="">Use PA_AGENT_PROVIDER / config ({{ settings.agent_provider if settings is defined else 'cursor' }})</option>
-          <option value="cursor" {% if global_prefs.agent_provider == 'cursor' %}selected{% endif %}>Cursor</option>
-          <option value="codex" {% if global_prefs.agent_provider == 'codex' %}selected{% endif %}>Codex</option>
+          {% for provider in agent_providers %}
+          <option value="{{ provider.id }}" {% if global_prefs.agent_provider == provider.id %}selected{% endif %}>{{ provider.display_name }}</option>
+          {% endfor %}
         </select>
       </label>
       {% set global_chat_defaults = (global_prefs.agent_surfaces or {}).get('chat.default') %}
@@ -81,8 +83,9 @@
           <span>Provider</span>
           <select name="global_surface_chat_default" data-settings-default-provider>
             <option value="">Inherit instance ACP provider</option>
-            <option value="cursor" {% if global_chat_defaults and global_chat_defaults.provider == 'cursor' %}selected{% endif %}>Cursor</option>
-            <option value="codex" {% if global_chat_defaults and global_chat_defaults.provider == 'codex' %}selected{% endif %}>Codex</option>
+            {% for provider in agent_providers %}
+            <option value="{{ provider.id }}" {% if global_chat_defaults and global_chat_defaults.provider == provider.id %}selected{% endif %}>{{ provider.display_name }}</option>
+            {% endfor %}
           </select>
         </label>
         <label><span>Model</span><select name="global_default_model_id" data-settings-default-model data-saved-value="{{ global_chat_defaults.model_id if global_chat_defaults and global_chat_defaults.model_id else '' }}"><option value="">Provider default</option></select></label>
@@ -99,8 +102,9 @@
           <span>Provider</span>
           <select name="surface_chat_default" data-settings-default-provider>
             <option value="">Inherit my ACP provider</option>
-            <option value="cursor" {% if chat_defaults and chat_defaults.provider == 'cursor' %}selected{% endif %}>Cursor</option>
-            <option value="codex" {% if chat_defaults and chat_defaults.provider == 'codex' %}selected{% endif %}>Codex</option>
+            {% for provider in agent_providers %}
+            <option value="{{ provider.id }}" {% if chat_defaults and chat_defaults.provider == provider.id %}selected{% endif %}>{{ provider.display_name }}</option>
+            {% endfor %}
           </select>
         </label>
         <label><span>Model</span><select name="default_model_id" data-settings-default-model data-saved-value="{{ chat_defaults.model_id if chat_defaults and chat_defaults.model_id else '' }}"><option value="">Provider default</option></select></label>
@@ -119,8 +123,9 @@
             {% set cur = (prefs.agent_surfaces or {}).get(key) %}
             {% set cur_p = cur.provider if cur else None %}
             <option value="">Inherit</option>
-            <option value="cursor" {% if cur_p == 'cursor' %}selected{% endif %}>Cursor</option>
-            <option value="codex" {% if cur_p == 'codex' %}selected{% endif %}>Codex</option>
+            {% for provider in agent_providers %}
+            <option value="{{ provider.id }}" {% if cur_p == provider.id %}selected{% endif %}>{{ provider.display_name }}</option>
+            {% endfor %}
           </select>
         </label>
         {% endfor %}

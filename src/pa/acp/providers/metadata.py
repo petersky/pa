@@ -19,6 +19,7 @@ class ProviderMetadata(BaseModel):
     command: str | None = None
     configured: bool = False
     env: dict[str, str] = Field(default_factory=dict)
+    configuration: dict[str, Any] = Field(default_factory=dict)
     last_probe_at: str | None = None
     last_probe: dict[str, Any] | None = None
     updated_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())

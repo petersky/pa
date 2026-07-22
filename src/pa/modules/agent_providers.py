@@ -25,6 +25,12 @@ class ConfigureBody(BaseModel):
     no_browser: bool | None = None
     codex_path: str | None = None
     initial_agent_mode: str | None = None
+    model: str | None = None
+    model_provider: str | None = None
+    model_provider_name: str | None = None
+    model_provider_base_url: str | None = None
+    model_provider_env_key: str | None = None
+    model_provider_wire_api: str | None = None
 
 
 class InstanceProviderBody(BaseModel):
@@ -82,16 +88,25 @@ def configure_provider(request: Request, provider_id: str, body: ConfigureBody) 
         provider = get_provider(provider_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    status = provider.configure(
-        _data_dir(request),
-        ProviderConfigureBody(
-            env=body.env,
-            secrets=body.secrets,
-            no_browser=body.no_browser,
-            codex_path=body.codex_path,
-            initial_agent_mode=body.initial_agent_mode,
-        ),
-    )
+    try:
+        status = provider.configure(
+            _data_dir(request),
+            ProviderConfigureBody(
+                env=body.env,
+                secrets=body.secrets,
+                no_browser=body.no_browser,
+                codex_path=body.codex_path,
+                initial_agent_mode=body.initial_agent_mode,
+                model=body.model,
+                model_provider=body.model_provider,
+                model_provider_name=body.model_provider_name,
+                model_provider_base_url=body.model_provider_base_url,
+                model_provider_env_key=body.model_provider_env_key,
+                model_provider_wire_api=body.model_provider_wire_api,
+            ),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     return status.model_dump(mode="json")
 
 
@@ -234,7 +249,7 @@ class AgentProvidersModule(Module):
         def agent_provider_status(
             provider_id: str, instance_id: str | None = None
         ) -> dict:
-            """Status for one ACP provider (cursor, codex, …)."""
+            """Status for one ACP provider (cursor, codex, openinterpreter, …)."""
             if instance_id:
                 return _fleet_proxy(
                     ctx,
@@ -290,13 +305,25 @@ class AgentProvidersModule(Module):
             env: dict[str, str] | None = None,
             secrets: dict[str, str] | None = None,
             no_browser: bool | None = None,
+            model: str | None = None,
+            model_provider: str | None = None,
+            model_provider_name: str | None = None,
+            model_provider_base_url: str | None = None,
+            model_provider_env_key: str | None = None,
+            model_provider_wire_api: str | None = None,
             instance_id: str | None = None,
         ) -> dict:
-            """Configure provider env/secrets (secrets stay on the target host)."""
+            """Configure ACP/model provider settings; secrets stay on the target host."""
             body = {
                 "env": env or {},
                 "secrets": secrets or {},
                 "no_browser": no_browser,
+                "model": model,
+                "model_provider": model_provider,
+                "model_provider_name": model_provider_name,
+                "model_provider_base_url": model_provider_base_url,
+                "model_provider_env_key": model_provider_env_key,
+                "model_provider_wire_api": model_provider_wire_api,
             }
             if instance_id:
                 return _fleet_proxy(
@@ -312,6 +339,12 @@ class AgentProvidersModule(Module):
                     env=body["env"],
                     secrets=body["secrets"],
                     no_browser=no_browser,
+                    model=model,
+                    model_provider=model_provider,
+                    model_provider_name=model_provider_name,
+                    model_provider_base_url=model_provider_base_url,
+                    model_provider_env_key=model_provider_env_key,
+                    model_provider_wire_api=model_provider_wire_api,
                 ),
             )
             return status.model_dump(mode="json")
