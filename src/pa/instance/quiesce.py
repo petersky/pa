@@ -120,7 +120,9 @@ class QuiesceSnapshot(BaseModel):
 
     @property
     def queued_count(self) -> int:
-        per_session = sum(len(s.queued_prompts) for s in self.sessions)
+        per_session = sum(
+            len(s.queued_prompts) + (1 if s.in_flight else 0) for s in self.sessions
+        )
         return per_session + len(self.queued_prompts)
 
 

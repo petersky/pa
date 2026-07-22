@@ -176,6 +176,30 @@ class PromptRegistryTests(unittest.TestCase):
         with self.assertRaisesRegex(PromptRenderError, "limit is 5"):
             registry.render("test.limit", {"value": "123456"}, provider="codex")
 
+    def test_provider_context_reserve_is_enforced_for_nested_prompts(self) -> None:
+        registry = PromptRegistry()
+        registry.register(
+            PromptDefinition(
+                key="test.nested",
+                purpose="test reserved provider context",
+                scope="global",
+                version=1,
+                template="{{ value }}",
+                variables=(
+                    PromptVariable(
+                        name="value",
+                        description="Nested prompt payload.",
+                        example="small",
+                    ),
+                ),
+            )
+        )
+        payload = {"value": "x" * 70_000}
+
+        self.assertEqual(len(registry.render("test.nested", payload).text), 70_000)
+        with self.assertRaisesRegex(PromptRenderError, "limit is 65536"):
+            registry.render("test.nested", payload, reserve_context=True)
+
     def test_registry_has_no_host_assumptions(self) -> None:
         templates = "\n".join(item.template for item in PROMPTS.all())
         for forbidden in ("Mac mini", "/Users/", "/home/", "localhost:"):
@@ -259,6 +283,46 @@ class PromptCompositionTests(unittest.TestCase):
             "body",
             audit["agent.context.card"]["resolved_context"]["card"],
         )
+
+    def test_composition_failure_does_not_leave_session_prompting(self) -> None:
+        async def run() -> tuple[bool, object]:
+            with tempfile.TemporaryDirectory() as tmp:
+                store = MagicMock()
+                store.get_card.return_value = None
+                store.get_project.return_value = None
+                settings = Settings(data_dir=Path(tmp), instance_id="executor")
+                session = AgentSession(
+                    id="session-limit",
+                    agent_name="codex",
+                    cwd=str(Path(tmp) / "workspace"),
+                    config_json={
+                        "execution_context": {
+                            "instance": {"id": "executor", "name": "Executor"},
+                            "cwd": str(Path(tmp) / "workspace"),
+                            "repositories": [],
+                        }
+                    },
+                )
+                manager = AgentSessionManager(settings, store)
+                manager.workspace_manager.renew_session = MagicMock()
+                runtime = AgentSessionRuntime(manager, session)
+                connection = MagicMock()
+                connection.prompt = AsyncMock(return_value="end_turn")
+                runtime.connection = connection
+
+                with self.assertRaises(PromptRenderError):
+                    await runtime._run_prompt(
+                        QueuedPrompt(
+                            message="x" * 300_000,
+                            session_id=session.id,
+                            cwd=session.cwd,
+                        )
+                    )
+                return runtime.prompting, connection.prompt
+
+        prompting, prompt = asyncio.run(run())
+        self.assertFalse(prompting)
+        prompt.assert_not_awaited()
 
     def test_runtime_sends_composed_prompt_and_persists_exact_versions(self) -> None:
         async def run() -> tuple[str, AgentSession, list]:
@@ -347,6 +411,7 @@ class PromptSettingsAccessibilityTests(unittest.TestCase):
             'aria-live="polite"',
             "synthetic context",
             "Read-only; no override is configured",
+            "reserved for context",
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, template)

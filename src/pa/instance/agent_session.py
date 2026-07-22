@@ -618,8 +618,6 @@ class AgentSessionRuntime:
         if item.cwd:
             env["PWD"] = item.cwd
         async with self._prompt_lock:
-            self._in_flight = item
-            self._turn_started_at = datetime.now(UTC)
             composition = compose_session_prompt(
                 self.store,
                 self.settings,
@@ -687,6 +685,8 @@ class AgentSessionRuntime:
                 },
             )
             self._flush_transcript()
+            self._in_flight = item
+            self._turn_started_at = datetime.now(UTC)
             try:
                 try:
                     with _agent_env_overlay(env):
@@ -930,9 +930,6 @@ class AgentSessionRuntime:
         }
 
     def to_session_snapshot(self) -> SessionSnapshot:
-        queued = list(self._queue)
-        if self._in_flight:
-            queued = [self._in_flight, *queued]
         return SessionSnapshot(
             session_id=self.session.id,
             external_session_id=self.session.external_session_id,
@@ -949,8 +946,8 @@ class AgentSessionRuntime:
             principal_id=self.session.principal_id,
             prompting=False,
             queue_paused=self._queue_paused,
-            queued_prompts=queued,
-            in_flight=None,
+            queued_prompts=list(self._queue),
+            in_flight=self._in_flight,
         )
 
     async def close(self) -> None:
@@ -1004,6 +1001,9 @@ class AgentSessionManager:
         provider_id: str,
     ) -> dict[str, str]:
         """Provision or recover the durable workspace before spawning a provider."""
+        prior_config = dict(session.config_json or {})
+        prior_context = dict(prior_config.get("execution_context") or {})
+        authority_instance = prior_context.get("authority_instance")
         session.status = "provisioning"
         config = dict(session.config_json or {})
         config["provisioning"] = {
@@ -1042,6 +1042,8 @@ class AgentSessionManager:
                     provider_id=provider_id,
                 )
             context = workspace.execution_context(self.settings, provider_id)
+            if authority_instance:
+                context["authority_instance"] = authority_instance
             session.cwd = workspace.cwd
             config = dict(session.config_json or {})
             config["execution_context"] = context
@@ -1057,7 +1059,10 @@ class AgentSessionManager:
         except Exception as exc:
             session.status = "provisioning_failed"
             config = dict(session.config_json or {})
-            config.pop("execution_context", None)
+            if authority_instance:
+                config["execution_context"] = {"authority_instance": authority_instance}
+            else:
+                config.pop("execution_context", None)
             config["provisioning"] = {
                 "state": "failed",
                 "stage": "workspace",
@@ -1296,15 +1301,24 @@ class AgentSessionManager:
             provider_spec.env.update(workspace_env)
         runtime = AgentSessionRuntime(self, session, agent_env=workspace_env)
         queued = list(snap.queued_prompts)
-        if snap.in_flight:
+        interrupted = snap.in_flight
+        # Version-1 snapshots briefly encoded an interrupted turn as the first
+        # queued item. Preserve recovery semantics when reading those files.
+        if interrupted is None and queued and queued[0].source == "in_flight":
+            interrupted = queued.pop(0)
+        if interrupted:
             from pa.prompts import PROMPTS
 
             recovery = PROMPTS.render(
                 "session.recovery.resume", provider=session.agent_name
             )
-            snap.in_flight.message = f"{recovery.text}\n\n{snap.in_flight.message}"
-            snap.in_flight.source = "recovery"
-            queued.insert(0, snap.in_flight)
+            interrupted = interrupted.model_copy(
+                update={
+                    "message": f"{recovery.text}\n\n{interrupted.message}",
+                    "source": "recovery",
+                }
+            )
+            queued.insert(0, interrupted)
         for item in queued:
             item.cwd = session.cwd
             merged_env = dict(item.agent_env or {})
