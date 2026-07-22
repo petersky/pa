@@ -307,6 +307,99 @@
     return "/partials/cards/" + encodeURIComponent(cardId) + "/detail?" + params.toString();
   }
 
+  function cardMarkdownSource(element) {
+    if (Object.prototype.hasOwnProperty.call(element, "_paMarkdownSource")) {
+      return element._paMarkdownSource;
+    }
+    var source = element.querySelector("[data-card-markdown-source]");
+    if (!source) return "";
+    try {
+      element._paMarkdownSource = JSON.parse(source.textContent || '""');
+    } catch (_error) {
+      element._paMarkdownSource = source.textContent || "";
+    }
+    return element._paMarkdownSource;
+  }
+
+  function renderMarkdownInto(element, markdown) {
+    if (!element) return Promise.resolve();
+    if (!window.PAAgentChat || typeof window.PAAgentChat.renderMarkdownAsync !== "function") {
+      element.textContent = markdown || "";
+      return Promise.resolve();
+    }
+    element.setAttribute("aria-busy", "true");
+    return window.PAAgentChat.renderMarkdownAsync(markdown).then(function (html) {
+      element.innerHTML = html;
+      element.removeAttribute("aria-busy");
+      decorateLinks(element);
+    });
+  }
+
+  function renderCardMarkdown(scope) {
+    var root = scope || document;
+    var elements = [];
+    if (root.matches && root.matches("[data-card-markdown]")) elements.push(root);
+    root.querySelectorAll("[data-card-markdown]").forEach(function (element) {
+      elements.push(element);
+    });
+    elements.forEach(function (element) {
+      var markdown = cardMarkdownSource(element);
+      renderMarkdownInto(element, markdown);
+    });
+  }
+
+  function setMarkdownEditorTab(editor, name) {
+    if (!editor) return;
+    editor.querySelectorAll("[data-markdown-tab]").forEach(function (tab) {
+      var selected = tab.dataset.markdownTab === name;
+      tab.setAttribute("aria-selected", selected ? "true" : "false");
+      tab.classList.toggle("ghost", !selected);
+    });
+    editor.querySelectorAll("[data-markdown-panel]").forEach(function (panel) {
+      panel.hidden = panel.dataset.markdownPanel !== name;
+    });
+    if (name === "preview") {
+      var input = editor.querySelector("[data-markdown-input]");
+      var preview = editor.querySelector("[data-markdown-preview]");
+      renderMarkdownInto(preview, input ? input.value : "");
+    }
+  }
+
+  function closeInlineEditor(field, restoreFocus) {
+    if (!field) return;
+    var form = field.querySelector("[data-inline-edit-form]");
+    var trigger = field.querySelector("[data-inline-edit-open]");
+    if (form) {
+      form.reset();
+      form.hidden = true;
+      setMarkdownEditorTab(form.closest("[data-markdown-editor]"), "edit");
+    }
+    if (trigger) {
+      trigger.hidden = false;
+      if (restoreFocus) trigger.focus();
+    }
+    field.classList.remove("is-editing");
+  }
+
+  function openInlineEditor(field) {
+    if (!field) return;
+    field.closest("[data-card-detail]").querySelectorAll("[data-inline-edit-field].is-editing").forEach(function (openField) {
+      if (openField !== field) closeInlineEditor(openField, false);
+    });
+    var form = field.querySelector("[data-inline-edit-form]");
+    var trigger = field.querySelector("[data-inline-edit-open]");
+    if (!form || !trigger) return;
+    trigger.hidden = true;
+    form.hidden = false;
+    field.classList.add("is-editing");
+    setMarkdownEditorTab(form.closest("[data-markdown-editor]"), "edit");
+    var input = form.querySelector("[data-inline-edit-input]");
+    if (input) {
+      input.focus();
+      if (typeof input.select === "function" && input.tagName === "INPUT") input.select();
+    }
+  }
+
   function renderCardDialogError(cardId, realm, message) {
     var content = cardDialogContent();
     if (!content) return;
@@ -350,6 +443,7 @@
         content.innerHTML = html;
         if (typeof htmx !== "undefined") htmx.process(content);
         decorateLinks(content);
+        renderCardMarkdown(content);
         if (window.PAAgentChat && typeof window.PAAgentChat.mount === "function") {
           window.PAAgentChat.mount(content);
         }
@@ -436,6 +530,7 @@
 
   document.body.addEventListener("htmx:after:swap", function (event) {
     var target = swapTarget(event);
+    if (target) renderCardMarkdown(target);
     if (target && target.id === "app-view") {
       setActiveNav(window.location.pathname);
       updateTitle();
@@ -535,20 +630,24 @@
     }
     var detail = event.target.closest("[data-card-detail]");
     if (!detail) return;
-    if (event.target.closest("[data-card-edit-open]")) {
-      detail.querySelector("[data-card-edit]").hidden = false;
-      event.target.closest("[data-card-edit-open]").hidden = true;
-      var title = detail.querySelector("[data-card-edit] input[name='title']");
-      if (title) title.focus();
+    var editTrigger = event.target.closest("[data-inline-edit-open]");
+    if (editTrigger) {
+      var embeddedControl = event.target.closest("a, audio, video, iframe, input, select, textarea");
+      if (embeddedControl && embeddedControl !== editTrigger) return;
+      openInlineEditor(editTrigger.closest("[data-inline-edit-field]"));
       return;
     }
-    if (event.target.closest("[data-card-edit-cancel]")) {
-      detail.querySelector("[data-card-edit]").hidden = true;
-      var editButton = detail.querySelector("[data-card-edit-open]");
-      if (editButton) {
-        editButton.hidden = false;
-        editButton.focus();
-      }
+    var editCancel = event.target.closest("[data-inline-edit-cancel]");
+    if (editCancel) {
+      closeInlineEditor(editCancel.closest("[data-inline-edit-field]"), true);
+      return;
+    }
+    var markdownTab = event.target.closest("[data-markdown-tab]");
+    if (markdownTab) {
+      setMarkdownEditorTab(
+        markdownTab.closest("[data-markdown-editor]"),
+        markdownTab.dataset.markdownTab
+      );
       return;
     }
     var agentButton = event.target.closest("[data-card-agent-start]");
@@ -572,12 +671,33 @@
     }
   });
 
+  document.body.addEventListener("keydown", function (event) {
+    var trigger = event.target.closest("[data-inline-edit-open]");
+    if (trigger && event.target === trigger && (event.key === "Enter" || event.key === " ")) {
+      event.preventDefault();
+      openInlineEditor(trigger.closest("[data-inline-edit-field]"));
+      return;
+    }
+    var form = event.target.closest("[data-inline-edit-form]");
+    if (!form) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeInlineEditor(form.closest("[data-inline-edit-field]"), true);
+      return;
+    }
+    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      if (typeof form.requestSubmit === "function") form.requestSubmit();
+    }
+  });
+
   document.addEventListener("DOMContentLoaded", function () {
     setActiveNav(window.location.pathname);
     updateTitle();
     initBoardDragDrop(document);
     initAgentReconnect();
     decorateLinks(document);
+    renderCardMarkdown(document);
     checkServerBuild();
     var dialog = cardDialog();
     if (dialog) {

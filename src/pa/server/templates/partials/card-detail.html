@@ -1,16 +1,45 @@
 <article class="card-detail" data-card-detail data-card-id="{{ card.id }}">
   <header class="card-detail-header">
-    <div>
+    <div class="card-detail-heading">
       <div class="compact-card-meta">
         <span class="badge">{{ card.kind.value }}</span>
-        <span class="status status-{{ card.lane.value }}">{{ card.lane.value }}</span>
+        <form class="inline-select-form status-{{ card.lane.value }}"
+              hx-post="/partials/cards/{{ card.id }}?realm={{ card.realm_id }}"
+              hx-target="#card-detail-dialog-content"
+              hx-swap="innerHTML"
+              hx-trigger="change">
+          <input type="hidden" name="csrf" value="{{ csrf_token }}">
+          <label class="sr-only" for="card-lane-{{ card.id }}">Lane</label>
+          <select id="card-lane-{{ card.id }}" name="lane" aria-label="Change lane">
+            {% for lane in lanes %}<option value="{{ lane.value }}" {% if card.lane == lane %}selected{% endif %}>{{ lane.value | capitalize }}</option>{% endfor %}
+          </select>
+        </form>
         {% if card.summary_stale %}<span class="summary-stale">Summary needs review</span>{% endif %}
       </div>
-      <h2 id="card-detail-title" tabindex="-1">{{ card.title }}</h2>
+      <div class="inline-edit-field inline-edit-title" data-inline-edit-field>
+        <h2 id="card-detail-title" tabindex="-1">
+          <button type="button" class="inline-edit-trigger" data-inline-edit-open aria-label="Edit title">{{ card.title }}</button>
+        </h2>
+        <form class="inline-edit-form" data-inline-edit-form hidden
+              hx-post="/partials/cards/{{ card.id }}?realm={{ card.realm_id }}"
+              hx-target="#card-detail-dialog-content"
+              hx-swap="innerHTML">
+          <input type="hidden" name="csrf" value="{{ csrf_token }}">
+          <label class="sr-only" for="card-title-input-{{ card.id }}">Title</label>
+          <input id="card-title-input-{{ card.id }}" type="text" name="title" value="{{ card.title }}" required data-inline-edit-input>
+          <div class="inline-edit-actions">
+            <button type="submit" class="small">Save</button>
+            <button type="button" class="ghost small" data-inline-edit-cancel>Cancel</button>
+          </div>
+        </form>
+      </div>
       {% if project %}<a href="/projects?realm={{ card.realm_id }}&project={{ project.id }}">{{ project.title }}</a>{% endif %}
     </div>
     <div class="card-detail-actions">
-      <button type="button" class="ghost" data-card-edit-open>Edit</button>
+      <button type="button" class="ghost danger"
+              hx-delete="/partials/cards/{{ card.id }}?realm={{ card.realm_id }}"
+              hx-target="#card-detail-dialog-content"
+              hx-confirm="Delete this card permanently?">Delete</button>
       <button type="button" class="ghost" data-card-dialog-close aria-label="Close card details">Close</button>
     </div>
   </header>
@@ -20,12 +49,58 @@
       <h3 id="card-summary-title">Summary</h3>
       <span class="muted">{{ card.summary_source.value }}{% if card.summary_updated_at %} · {{ card.summary_updated_at.strftime('%b %-d, %Y') }}{% endif %}</span>
     </div>
-    <p class="card-detail-summary">{{ card.summary }}</p>
+    <div class="inline-edit-field" data-inline-edit-field>
+      <div class="inline-edit-trigger inline-edit-block" data-inline-edit-open tabindex="0" aria-label="Edit summary">
+        <span class="card-markdown card-detail-summary" data-card-markdown>
+          <span hidden data-card-markdown-source>{{ card.summary | tojson }}</span>
+        </span>
+      </div>
+      <form class="inline-edit-form" data-inline-edit-form hidden
+            hx-post="/partials/cards/{{ card.id }}?realm={{ card.realm_id }}"
+            hx-target="#card-detail-dialog-content"
+            hx-swap="innerHTML">
+        <input type="hidden" name="csrf" value="{{ csrf_token }}">
+        <label class="sr-only" for="card-summary-input-{{ card.id }}">Summary</label>
+        <textarea id="card-summary-input-{{ card.id }}" name="summary" rows="4" data-inline-edit-input>{{ card.summary }}</textarea>
+        <small>Saving a summary records manual provenance.</small>
+        <div class="inline-edit-actions">
+          <button type="submit" class="small">Save</button>
+          <button type="button" class="ghost small" data-inline-edit-cancel>Cancel</button>
+        </div>
+      </form>
+    </div>
   </section>
 
   <section class="card-detail-section" aria-labelledby="card-details-title">
     <h3 id="card-details-title">Details</h3>
-    {% if card.body %}<div class="card-detail-body">{{ card.body }}</div>{% else %}<p class="muted">No additional details.</p>{% endif %}
+    <div class="inline-edit-field" data-inline-edit-field>
+      <div class="inline-edit-trigger inline-edit-block" data-inline-edit-open tabindex="0" aria-label="Edit details">
+        {% if card.body %}
+        <span class="card-markdown card-detail-body" data-card-markdown>
+          <span hidden data-card-markdown-source>{{ card.body | tojson }}</span>
+        </span>
+        {% else %}<span class="muted">No additional details. Click to add them.</span>{% endif %}
+      </div>
+      <form class="inline-edit-form markdown-editor" data-inline-edit-form data-markdown-editor hidden
+            hx-post="/partials/cards/{{ card.id }}?realm={{ card.realm_id }}"
+            hx-target="#card-detail-dialog-content"
+            hx-swap="innerHTML">
+        <input type="hidden" name="csrf" value="{{ csrf_token }}">
+        <div class="markdown-editor-tabs" role="tablist" aria-label="Details editor mode">
+          <button type="button" class="markdown-editor-tab" role="tab" aria-selected="true" data-markdown-tab="edit">Edit</button>
+          <button type="button" class="markdown-editor-tab ghost" role="tab" aria-selected="false" data-markdown-tab="preview">Preview</button>
+        </div>
+        <div role="tabpanel" data-markdown-panel="edit">
+          <label class="sr-only" for="card-body-input-{{ card.id }}">Details</label>
+          <textarea id="card-body-input-{{ card.id }}" name="body" rows="10" data-inline-edit-input data-markdown-input>{{ card.body }}</textarea>
+        </div>
+        <div class="card-markdown markdown-editor-preview" role="tabpanel" data-markdown-panel="preview" data-markdown-preview hidden></div>
+        <div class="inline-edit-actions">
+          <button type="submit" class="small">Save</button>
+          <button type="button" class="ghost small" data-inline-edit-cancel>Cancel</button>
+        </div>
+      </form>
+    </div>
   </section>
 
   <div class="card-detail-grid">
@@ -118,24 +193,4 @@
     {% endif %}
   </section>
 
-  <section class="card-edit-surface" data-card-edit hidden aria-labelledby="card-edit-title">
-    <div class="section-heading-inline"><h3 id="card-edit-title">Edit card</h3><button type="button" class="ghost" data-card-edit-cancel>Cancel</button></div>
-    <form class="stack"
-          hx-post="/partials/cards/{{ card.id }}?realm={{ card.realm_id }}"
-          hx-target="#card-detail-dialog-content"
-          hx-swap="innerHTML">
-      <input type="hidden" name="csrf" value="{{ csrf_token }}">
-      <label>Title<input type="text" name="title" value="{{ card.title }}" required></label>
-      <label>Summary<textarea name="summary" rows="3">{{ card.summary }}</textarea><small>Editing the summary records manual provenance.</small></label>
-      <label>Details<textarea name="body" rows="8">{{ card.body }}</textarea></label>
-      <label>Lane<select name="lane">{% for lane in lanes %}<option value="{{ lane.value }}" {% if card.lane == lane %}selected{% endif %}>{{ lane.value | capitalize }}</option>{% endfor %}</select></label>
-      <div class="form-actions">
-        <button type="submit">Save changes</button>
-        <button type="button" class="ghost danger"
-                hx-delete="/partials/cards/{{ card.id }}?realm={{ card.realm_id }}"
-                hx-target="#card-detail-dialog-content"
-                hx-confirm="Delete this card permanently?">Delete card</button>
-      </div>
-    </form>
-  </section>
 </article>
