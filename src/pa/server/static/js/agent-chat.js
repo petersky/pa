@@ -78,6 +78,19 @@
     return "<p>" + escapeHtml(raw).replace(/\n/g, "<br>") + "</p>";
   }
 
+  /* Cursor often omits messageId and also drops the separator between
+     successive thought/response segments (especially across tool calls).
+     When a chunk abuts a sentence end with no whitespace, insert a break. */
+  function streamChunkSeparator(prev, chunk) {
+    if (!prev || !chunk) return "";
+    const left = prev.charAt(prev.length - 1);
+    const right = chunk.charAt(0);
+    if (!left || !right) return "";
+    if (/\s/.test(left) || /\s/.test(right)) return "";
+    if (/[.!?]/.test(left) && /[A-Z"'“‘(\[]/.test(right)) return "\n\n";
+    return "";
+  }
+
   function formatElapsed(ms) {
     const s = Math.max(0, Math.floor(ms / 1000));
     const m = Math.floor(s / 60);
@@ -874,6 +887,11 @@
         }
         break;
       case "tool_call":
+        // Cursor reuses a null messageId for the whole turn, so without this
+        // post-tool text is appended onto the pre-tool bubble ("needed.Monica").
+        this.finalizeStreams(created);
+        this.upsertTool(payload, created);
+        break;
       case "tool_call_update":
         this.upsertTool(payload, created);
         break;
@@ -1024,7 +1042,8 @@
       stream = { text: "", bubble: created.bubble, row: created.row };
       this.streaming[id] = stream;
     }
-    stream.text += chunk || "";
+    const next = chunk || "";
+    stream.text += streamChunkSeparator(stream.text, next) + next;
     stream.bubble.dataset.markdown = stream.text;
     this.renderMarkdownBubble(stream.bubble);
   };
@@ -1079,7 +1098,8 @@
       this.activityStreams[id] = stream;
       this.bumpActivityCount(activity);
     }
-    stream.text += chunk || "";
+    const next = chunk || "";
+    stream.text += streamChunkSeparator(stream.text, next) + next;
     stream.el.textContent = stream.text;
     this.followToolActivity(shouldFollow);
   };
