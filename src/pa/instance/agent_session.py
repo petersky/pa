@@ -618,75 +618,79 @@ class AgentSessionRuntime:
         if item.cwd:
             env["PWD"] = item.cwd
         async with self._prompt_lock:
-            composition = compose_session_prompt(
-                self.store,
-                self.settings,
-                self.session,
-                item.message,
-                card_id=item.card_id,
-                project_id=item.project_id,
-            )
-            prompt_audit = list(item.prompt_audit) + composition.audit_records()
-            from pa.prompts import PROMPTS
-
-            remote_default = PROMPTS.render(
-                "dispatch.remote.default", provider=self.session.agent_name
-            )
-            if item.message == remote_default.text:
-                prompt_audit.insert(0, remote_default.audit_record())
-            if item.source == "recovery":
-                definition = PROMPTS.get("session.recovery.resume")
-                prompt_audit.insert(
-                    0,
-                    {
-                        "key": definition.key,
-                        "version": definition.version,
-                        "source": definition.source,
-                        "scope": definition.scope,
-                        "provider": self.session.agent_name,
-                        "resolved_context": {},
-                    },
-                )
-            if item.source == "pr-supervisor":
-                for key in (
-                    "pr_supervisor.action.required",
-                    "pr_supervisor.action.green",
-                    "pr_supervisor.action.merged",
-                ):
-                    definition = PROMPTS.get(key)
-                    if definition.template in item.message:
-                        prompt_audit.insert(
-                            0,
-                            {
-                                "key": definition.key,
-                                "version": definition.version,
-                                "source": definition.source,
-                                "scope": definition.scope,
-                                "provider": self.session.agent_name,
-                                "resolved_context": {},
-                            },
-                        )
-            config = dict(self.session.config_json or {})
-            audit_history = list(config.get("prompt_audit") or [])
-            audit_history.append({"prompt_id": item.id, "prompts": prompt_audit})
-            config["prompt_audit"] = audit_history[-50:]
-            self.session.config_json = config
-            self._save_session_preserving_external_browser()
-            self._append_transcript(
-                "prompt_rendered", {"id": item.id, "prompts": prompt_audit}
-            )
-            self._append_transcript(
-                "user_message",
-                {
-                    "id": item.id,
-                    "message": item.message,
-                    "source": item.source,
-                    "images": [image.public_dict() for image in item.images],
-                },
-            )
-            self._flush_transcript()
             self._in_flight = item
             self._turn_started_at = datetime.now(UTC)
+            try:
+                composition = compose_session_prompt(
+                    self.store,
+                    self.settings,
+                    self.session,
+                    item.message,
+                    card_id=item.card_id,
+                    project_id=item.project_id,
+                )
+                prompt_audit = list(item.prompt_audit) + composition.audit_records()
+                from pa.prompts import PROMPTS
+
+                remote_default = PROMPTS.render(
+                    "dispatch.remote.default", provider=self.session.agent_name
+                )
+                if item.message == remote_default.text:
+                    prompt_audit.insert(0, remote_default.audit_record())
+                if item.source == "recovery":
+                    definition = PROMPTS.get("session.recovery.resume")
+                    prompt_audit.insert(
+                        0,
+                        {
+                            "key": definition.key,
+                            "version": definition.version,
+                            "source": definition.source,
+                            "scope": definition.scope,
+                            "provider": self.session.agent_name,
+                            "resolved_context": {},
+                        },
+                    )
+                if item.source == "pr-supervisor":
+                    for key in (
+                        "pr_supervisor.action.required",
+                        "pr_supervisor.action.green",
+                        "pr_supervisor.action.merged",
+                    ):
+                        definition = PROMPTS.get(key)
+                        if definition.template in item.message:
+                            prompt_audit.insert(
+                                0,
+                                {
+                                    "key": definition.key,
+                                    "version": definition.version,
+                                    "source": definition.source,
+                                    "scope": definition.scope,
+                                    "provider": self.session.agent_name,
+                                    "resolved_context": {},
+                                },
+                            )
+                config = dict(self.session.config_json or {})
+                audit_history = list(config.get("prompt_audit") or [])
+                audit_history.append({"prompt_id": item.id, "prompts": prompt_audit})
+                config["prompt_audit"] = audit_history[-50:]
+                self.session.config_json = config
+                self._save_session_preserving_external_browser()
+                self._append_transcript(
+                    "prompt_rendered", {"id": item.id, "prompts": prompt_audit}
+                )
+                self._append_transcript(
+                    "user_message",
+                    {
+                        "id": item.id,
+                        "message": item.message,
+                        "source": item.source,
+                        "images": [image.public_dict() for image in item.images],
+                    },
+                )
+                self._flush_transcript()
+            except BaseException:
+                self._finish_turn_state()
+                raise
             try:
                 try:
                     with _agent_env_overlay(env):

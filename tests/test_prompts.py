@@ -6,7 +6,7 @@ import asyncio
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from pa.agent.context import compose_session_prompt
 from pa.config import Settings
@@ -285,7 +285,7 @@ class PromptCompositionTests(unittest.TestCase):
         )
 
     def test_composition_failure_does_not_leave_session_prompting(self) -> None:
-        async def run() -> tuple[bool, object]:
+        async def run() -> tuple[bool, object, list[tuple[bool, str | None]]]:
             with tempfile.TemporaryDirectory() as tmp:
                 store = MagicMock()
                 store.get_card.return_value = None
@@ -310,7 +310,25 @@ class PromptCompositionTests(unittest.TestCase):
                 connection.prompt = AsyncMock(return_value="end_turn")
                 runtime.connection = connection
 
-                with self.assertRaises(PromptRenderError):
+                observed: list[tuple[bool, str | None]] = []
+
+                def inspect_composition(*args, **kwargs):
+                    snapshot = runtime.to_session_snapshot()
+                    observed.append(
+                        (
+                            runtime.prompting,
+                            snapshot.in_flight.id if snapshot.in_flight else None,
+                        )
+                    )
+                    return compose_session_prompt(*args, **kwargs)
+
+                with (
+                    patch(
+                        "pa.instance.agent_session.compose_session_prompt",
+                        side_effect=inspect_composition,
+                    ),
+                    self.assertRaises(PromptRenderError),
+                ):
                     await runtime._run_prompt(
                         QueuedPrompt(
                             message="x" * 300_000,
@@ -318,9 +336,12 @@ class PromptCompositionTests(unittest.TestCase):
                             cwd=session.cwd,
                         )
                     )
-                return runtime.prompting, connection.prompt
+                return runtime.prompting, connection.prompt, observed
 
-        prompting, prompt = asyncio.run(run())
+        prompting, prompt, observed = asyncio.run(run())
+        self.assertEqual(len(observed), 1)
+        self.assertTrue(observed[0][0])
+        self.assertIsNotNone(observed[0][1])
         self.assertFalse(prompting)
         prompt.assert_not_awaited()
 
