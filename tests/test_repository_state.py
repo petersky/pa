@@ -9,6 +9,7 @@ import pytest
 from pydantic import ValidationError
 
 from pa.repository.state import (
+    GitInspectionError,
     RepositorySnapshot,
     RepositorySnapshotInput,
     RepositoryStateService,
@@ -62,12 +63,23 @@ def test_redacts_passwords_from_remote_urls(tmp_path: Path) -> None:
     assert result.snapshot.remotes[0].fetch_url == "https://user@example.test/repo.git"
 
 
-def test_missing_repo_is_error_and_is_not_persisted(tmp_path: Path) -> None:
+def test_untracked_only_is_not_tracked_dirty(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    make_repo(repo)
+    (repo / "new.txt").write_text("new\n")
+
+    result = RepositoryStateService(tmp_path / "data", "macmini").refresh(repo)
+
+    assert result.snapshot.dirty is False
+    assert result.snapshot.untracked == 1
+
+
+def test_missing_repo_is_persisted_as_error(tmp_path: Path) -> None:
     service = RepositoryStateService(tmp_path / "data", "macmini")
     result = service.refresh(tmp_path / "missing")
     assert result.state == "error"
     assert result.snapshot.inspection_error
-    assert service.list() == []
+    assert service.list()[0].state == "error"
 
 
 def test_fetch_head_stat_error_returns_structured_error(tmp_path: Path) -> None:
@@ -87,7 +99,30 @@ def test_fetch_head_stat_error_returns_structured_error(tmp_path: Path) -> None:
 
     assert result.state == "error"
     assert "Could not read FETCH_HEAD metadata" in result.state_reason
-    assert service.list() == []
+    assert service.list()[0].state == "error"
+
+
+def test_failed_refresh_replaces_prior_path_observation_with_error(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    make_repo(repo)
+    service = RepositoryStateService(tmp_path / "data", "macmini")
+    successful = service.refresh(repo)
+
+    with patch.object(
+        service.inspector,
+        "inspect",
+        side_effect=GitInspectionError("inspection failed"),
+    ):
+        failed = service.refresh(repo)
+
+    listed = service.list()
+    assert len(listed) == 1
+    assert listed[0].state == "error"
+    assert listed[0].snapshot.repository_id == successful.snapshot.repository_id
+    assert listed[0].snapshot.head == successful.snapshot.head
+    assert failed.snapshot.observed_at > successful.snapshot.observed_at
 
 
 def test_reconcile_keeps_newest_observation_per_instance_and_repo(

@@ -186,7 +186,7 @@ class GitInspector:
             upstream=upstream,
             ahead=ahead,
             behind=behind,
-            dirty=bool(entries),
+            dirty=any(not entry.startswith("?? ") for entry in entries),
             untracked=untracked,
             remotes=sorted(remotes.values(), key=lambda item: item.name),
             last_fetch_at=fetched,
@@ -279,15 +279,36 @@ class RepositoryStateService:
         return f"{snapshot.instance_id}:{snapshot.repository_id}"
 
     def refresh(self, path: Path) -> RepositoryObservation:
+        requested = path.expanduser().resolve()
         try:
             snapshot = self.inspector.inspect(path, self.instance_id)
         except GitInspectionError as exc:
-            snapshot = RepositorySnapshot(
-                repository_id=str(path.expanduser().resolve()),
-                path=str(path.expanduser().resolve()),
-                instance_id=self.instance_id,
-                inspection_error=str(exc),
+            snapshots = self.store.load()
+            previous = next(
+                (
+                    item
+                    for item in snapshots.values()
+                    if item.instance_id == self.instance_id
+                    and Path(item.path).expanduser().resolve() == requested
+                ),
+                None,
             )
+            if previous:
+                snapshot = previous.model_copy(
+                    update={
+                        "observed_at": datetime.now(UTC),
+                        "inspection_error": str(exc),
+                    }
+                )
+            else:
+                snapshot = RepositorySnapshot(
+                    repository_id=str(requested),
+                    path=str(requested),
+                    instance_id=self.instance_id,
+                    inspection_error=str(exc),
+                )
+            snapshots[self._key(snapshot)] = snapshot
+            self.store.save(snapshots)
             return RepositoryObservation(
                 snapshot=snapshot, state="error", state_reason=str(exc)
             )
