@@ -35,7 +35,12 @@ PA resolves `agent` via PATH / service PATH. Install/update: Cursor CLI itself (
 ## Resume / quiesce
 
 - PA quiesces sessions and attempts ACP resume when the agent advertises resume support.
-- **Limitation (upstream reports):** `session/load` / resume has failed in some Cursor ACP versions even when `loadSession` is advertised. PA falls back to `session/new` on resume failure.
+- **Limitation (upstream):** Cursor advertises `loadSession: true` but `session/load` returns `Invalid params` / session-not-found. PA’s Cursor provider sets `session_load_supported=False` and uses `session/new` after restart instead of attempting load.
+
+## Client methods
+
+- Cursor may call vendor client methods such as `cursor/update_todos` (and unstable `elicitation/*`) without the ACP `_` extension prefix.
+- PA acknowledges those via the client handler wrapper so they do not log as `Method not found`.
 
 ## Slash commands / extras
 
