@@ -256,6 +256,17 @@ class CoreWorkUiRouteTests(unittest.TestCase):
             self.assertEqual(updated.summary_source, CardSummarySource.MANUAL)
             self.assertTrue(updated.summary_stale)
 
+            unchanged_at = updated.updated_at
+            no_op = client.post(
+                f"/partials/cards/{card.id}",
+                headers={"X-CSRF-Token": token_match.group(1)},
+                data=form,
+            )
+            self.assertEqual(no_op.status_code, 200, no_op.text)
+            unchanged = self.app.state.ctx.store.get_card(card.id)
+            assert unchanged is not None
+            self.assertEqual(unchanged.updated_at, unchanged_at)
+
             missing = client.post(
                 f"/partials/cards/{card.id}?realm=elsewhere",
                 headers={"X-CSRF-Token": token_match.group(1)},

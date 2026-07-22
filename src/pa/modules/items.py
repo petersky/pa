@@ -447,13 +447,15 @@ def card_detail_update(
         changes["summary"] = summary
     if lane != existing.lane:
         changes["lane"] = lane
-    card = store.update_card(
-        card_id,
-        CardUpdate(**changes),
-        realm_id=realm_id,
-        principal_id=get_principal_id(request),
-        instance_id=settings.instance_id,
-    )
+    card = existing
+    if changes:
+        card = store.update_card(
+            card_id,
+            CardUpdate(**changes),
+            realm_id=realm_id,
+            principal_id=get_principal_id(request),
+            instance_id=settings.instance_id,
+        )
     if not card:
         raise HTTPException(status_code=404, detail="Card not found")
     return _templates(request).TemplateResponse(
