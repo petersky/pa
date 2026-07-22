@@ -1,0 +1,208 @@
+{
+  "delay_ms": 100.0,
+  "runtime": {
+    "event_loop": {
+      "latest_lag_ms": 1.313,
+      "max_lag_ms": 294.281,
+      "p95_lag_ms": 1.422,
+      "samples": 319
+    },
+    "executor": {
+      "active": 0,
+      "closing": false,
+      "max_queue": 16,
+      "max_workers": 4,
+      "queued": 0
+    },
+    "operations": {
+      "benchmark.browser_startup": {
+        "active": 0,
+        "cancelled": 0,
+        "completed": 1,
+        "failed": 0,
+        "max_active": 1,
+        "max_queued": 0,
+        "max_runtime_ms": 100.351,
+        "queued": 0,
+        "rejected": 0,
+        "submitted": 1,
+        "timed_out": 0,
+        "total_queue_ms": 0.0,
+        "total_runtime_ms": 100.351
+      },
+      "benchmark.disk": {
+        "active": 0,
+        "cancelled": 0,
+        "completed": 1,
+        "failed": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "max_runtime_ms": 105.049,
+        "queued": 0,
+        "rejected": 0,
+        "submitted": 1,
+        "timed_out": 0,
+        "total_queue_ms": 0.092,
+        "total_runtime_ms": 105.049
+      },
+      "benchmark.git": {
+        "active": 0,
+        "cancelled": 0,
+        "completed": 1,
+        "failed": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "max_runtime_ms": 214.064,
+        "queued": 0,
+        "rejected": 0,
+        "submitted": 1,
+        "timed_out": 0,
+        "total_queue_ms": 0.099,
+        "total_runtime_ms": 214.064
+      },
+      "benchmark.peer_http": {
+        "active": 0,
+        "cancelled": 0,
+        "completed": 1,
+        "failed": 0,
+        "max_active": 1,
+        "max_queued": 0,
+        "max_runtime_ms": 101.154,
+        "queued": 0,
+        "rejected": 0,
+        "submitted": 1,
+        "timed_out": 0,
+        "total_queue_ms": 0.0,
+        "total_runtime_ms": 101.154
+      },
+      "benchmark.pr_supervisor": {
+        "active": 0,
+        "cancelled": 0,
+        "completed": 1,
+        "failed": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "max_runtime_ms": 297.769,
+        "queued": 0,
+        "rejected": 0,
+        "submitted": 1,
+        "timed_out": 0,
+        "total_queue_ms": 0.053,
+        "total_runtime_ms": 297.769
+      },
+      "benchmark.provider": {
+        "active": 0,
+        "cancelled": 0,
+        "completed": 1,
+        "failed": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "max_runtime_ms": 258.119,
+        "queued": 0,
+        "rejected": 0,
+        "submitted": 1,
+        "timed_out": 0,
+        "total_queue_ms": 0.047,
+        "total_runtime_ms": 258.119
+      },
+      "benchmark.sqlite": {
+        "active": 0,
+        "cancelled": 0,
+        "completed": 1,
+        "failed": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "max_runtime_ms": 298.345,
+        "queued": 0,
+        "rejected": 0,
+        "submitted": 1,
+        "timed_out": 0,
+        "total_queue_ms": 0.053,
+        "total_runtime_ms": 298.345
+      },
+      "benchmark.subprocess": {
+        "active": 0,
+        "cancelled": 0,
+        "completed": 1,
+        "failed": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "max_runtime_ms": 293.438,
+        "queued": 0,
+        "rejected": 0,
+        "submitted": 1,
+        "timed_out": 0,
+        "total_queue_ms": 0.07,
+        "total_runtime_ms": 293.438
+      },
+      "benchmark.sync": {
+        "active": 0,
+        "cancelled": 0,
+        "completed": 1,
+        "failed": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "max_runtime_ms": 294.993,
+        "queued": 0,
+        "rejected": 0,
+        "submitted": 1,
+        "timed_out": 0,
+        "total_queue_ms": 0.056,
+        "total_runtime_ms": 294.993
+      }
+    },
+    "requests": {
+      "average_ms": 0.0,
+      "count": 0,
+      "max_ms": 0.0,
+      "slow": []
+    }
+  },
+  "scenarios": [
+    {
+      "baseline_unrelated_ms": 299.41,
+      "bounded_unrelated_ms": 6.105,
+      "scenario": "git"
+    },
+    {
+      "baseline_unrelated_ms": 182.372,
+      "bounded_unrelated_ms": 6.208,
+      "scenario": "disk"
+    },
+    {
+      "baseline_unrelated_ms": 290.88,
+      "bounded_unrelated_ms": 6.22,
+      "scenario": "sqlite"
+    },
+    {
+      "baseline_unrelated_ms": 243.365,
+      "bounded_unrelated_ms": 6.225,
+      "scenario": "provider"
+    },
+    {
+      "baseline_unrelated_ms": 175.093,
+      "bounded_unrelated_ms": 6.23,
+      "scenario": "sync"
+    },
+    {
+      "baseline_unrelated_ms": 296.994,
+      "bounded_unrelated_ms": 6.249,
+      "scenario": "pr_supervisor"
+    },
+    {
+      "baseline_unrelated_ms": 234.912,
+      "bounded_unrelated_ms": 6.178,
+      "scenario": "subprocess"
+    },
+    {
+      "baseline_unrelated_ms": null,
+      "bounded_unrelated_ms": 5.444,
+      "scenario": "peer_http"
+    },
+    {
+      "baseline_unrelated_ms": null,
+      "bounded_unrelated_ms": 6.358,
+      "scenario": "browser_startup"
+    }
+  ]
+}
