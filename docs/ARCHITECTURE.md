@@ -182,6 +182,7 @@ A **Project** is a realm-scoped container for cards with its own metadata:
 
 - Description, tags, memberships
 - Associated repositories (`ProjectRepo`)
+- Realm catalog: `GET /api/realm/repositories` lists synchronized repository records
 - Default `agent_prompt` and `tool_config` injected when agents work on project cards
 
 Cards link via `project_id`. Use `CardKind.PROJECT` only for legacy work-item taxonomy — prefer the Project entity for grouping.
