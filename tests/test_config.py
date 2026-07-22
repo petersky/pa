@@ -115,12 +115,17 @@ class DataDirIsolationTests(unittest.TestCase):
                 session_secret="isolated-secret",
             ),
         )
-        with patch("pa.cli.main.uvicorn.run") as run:
+        with (
+            patch("pa.cli.main.uvicorn.Config") as config,
+            patch("pa.server.shutdown.ShutdownAwareServer") as server,
+        ):
             result = CliRunner().invoke(app, ["serve"], env=self._environment())
 
         self.assertEqual(result.exit_code, 0, result.output)
-        run.assert_called_once()
-        self.assertEqual(run.call_args.kwargs["host"], "127.0.0.2")
+        config.assert_called_once()
+        self.assertEqual(config.call_args.kwargs["host"], "127.0.0.2")
+        self.assertEqual(config.call_args.kwargs["timeout_graceful_shutdown"], 10)
+        server.return_value.run.assert_called_once()
         self.assert_production_config_unchanged()
 
 

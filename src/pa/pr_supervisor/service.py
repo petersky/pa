@@ -222,6 +222,9 @@ class PRSupervisor:
     LEASE_TTL_SECONDS = 45
     LOOP_SECONDS = 2.0
     CAPABILITY_TTL_SECONDS = 120
+    CAPABILITY_PROBE_SECONDS = 15 * 60
+    CAPABILITY_ERROR_RETRY_SECONDS = 60
+    CAPABILITY_HEARTBEAT_SECONDS = 60
 
     def __init__(
         self,
@@ -263,6 +266,7 @@ class PRSupervisor:
         self._stopping = False
         self._capability: GitHubCapability | None = None
         self._capability_checked_at = None
+        self._capability_heartbeat_at = None
         self._authority_last_success_at = None
         self._authority_last_error: str | None = None
 
@@ -302,19 +306,42 @@ class PRSupervisor:
 
     async def refresh_capability(self, *, force: bool = False) -> GitHubCapability:
         now = utcnow()
-        if (
-            not force
-            and self._capability
-            and self._capability_checked_at
-            and now - self._capability_checked_at < timedelta(seconds=60)
-        ):
-            return self._capability
-        self.credentials = GitHubCredentials.load(self.settings.data_dir)
-        self.github.credentials = self.credentials
-        self._capability = await self.github.probe(self.settings.instance_id)
-        self._capability_checked_at = now
-        self.store.save_capability(self._capability)
-        await self._heartbeat_authority(self._capability)
+        credentials = GitHubCredentials.load(self.settings.data_dir)
+        credentials_changed = credentials != self.credentials
+        self.credentials = credentials
+        self.github.credentials = credentials
+        probe_seconds = (
+            self.CAPABILITY_ERROR_RETRY_SECONDS
+            if self._capability and self._capability.state == "error"
+            else self.CAPABILITY_PROBE_SECONDS
+        )
+        probe_due = (
+            force
+            or credentials_changed
+            or not self._capability
+            or not self._capability_checked_at
+            or now - self._capability_checked_at
+            >= timedelta(seconds=probe_seconds)
+        )
+        if probe_due:
+            self._capability = await self.github.probe(self.settings.instance_id)
+            self._capability_checked_at = now
+
+        heartbeat_due = (
+            probe_due
+            or not self._capability_heartbeat_at
+            or now - self._capability_heartbeat_at
+            >= timedelta(seconds=self.CAPABILITY_HEARTBEAT_SECONDS)
+        )
+        if heartbeat_due:
+            # Heartbeats keep fleet eligibility fresh without treating every
+            # heartbeat as a reason to call GitHub's /user endpoint.
+            self._capability = self._capability.model_copy(
+                update={"checked_at": now}
+            )
+            self.store.save_capability(self._capability)
+            await self._heartbeat_authority(self._capability)
+            self._capability_heartbeat_at = now
         return self._capability
 
     async def run_once(self) -> None:

@@ -596,6 +596,33 @@ class AgentChatSseTests(unittest.TestCase):
         )
         self.assertEqual(data["payload"]["text"], "thinking…")
 
+    def test_live_stream_exits_when_server_shutdown_begins(self) -> None:
+        from pa.server.shutdown import reset_shutdown_event, signal_shutdown
+
+        runtime = _FakeRuntime()
+        request = MagicMock()
+        request.headers = {}
+        request.query_params = {}
+        request.is_disconnected = AsyncMock(return_value=False)
+
+        async def run() -> None:
+            reset_shutdown_event()
+            with patch("pa.modules.agent_chat._runtime_or_404", return_value=runtime):
+                response = await session_events(request, "sess-shutdown")
+                next_chunk = asyncio.create_task(anext(response.body_iterator))
+                for _ in range(50):
+                    if runtime._subscribers:
+                        break
+                    await asyncio.sleep(0.01)
+                signal_shutdown()
+                with self.assertRaises(StopAsyncIteration):
+                    await asyncio.wait_for(next_chunk, timeout=1.0)
+                await response.body_iterator.aclose()
+            reset_shutdown_event()
+
+        asyncio.run(run())
+        self.assertEqual(runtime._subscribers, [])
+
     def test_paginated_catchup_is_complete_ordered_and_deduplicates_live_overlap(
         self,
     ) -> None:

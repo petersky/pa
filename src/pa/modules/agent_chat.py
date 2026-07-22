@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from pathlib import Path
@@ -504,6 +503,8 @@ def get_session_snapshot(request: Request, session_id: str) -> dict:
 
 @router.get("/sessions/{session_id}/events")
 async def session_events(request: Request, session_id: str) -> StreamingResponse:
+    from pa.server.shutdown import is_shutting_down, wait_for_shutdown_or
+
     runtime = _runtime_or_404(request, session_id)
     last_event_id = request.headers.get("Last-Event-ID")
     after_seq = 0
@@ -552,13 +553,18 @@ async def session_events(request: Request, session_id: str) -> StreamingResponse
                     break
 
             while True:
-                if await request.is_disconnected():
+                if is_shutting_down() or await request.is_disconnected():
                     break
                 try:
-                    event = await asyncio.wait_for(queue.get(), timeout=15.0)
-                except asyncio.TimeoutError:
+                    stopping, event = await wait_for_shutdown_or(
+                        queue.get(), timeout=15.0
+                    )
+                except TimeoutError:
                     yield ": keepalive\n\n"
                     continue
+                if stopping:
+                    break
+                assert event is not None
                 seq = int(event.get("seq") or 0)
                 if seq and seq <= cursor:
                     continue

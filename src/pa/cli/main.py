@@ -581,14 +581,24 @@ def serve(
     typer.echo(f"Starting PA on http://{bind_host}:{bind_port}")
     if settings.debug:
         typer.echo("  Debug mode enabled")
-    uvicorn.run(
-        "pa.server.app:create_app",
-        factory=True,
-        host=bind_host,
-        port=bind_port,
-        reload=reload,
-        log_level="debug" if settings.debug else "info",
-    )
+    server_options = {
+        "factory": True,
+        "host": bind_host,
+        "port": bind_port,
+        "log_level": "debug" if settings.debug else "info",
+        "timeout_graceful_shutdown": 10,
+    }
+    if reload:
+        # Uvicorn owns the reloader's child server. The hard grace deadline still
+        # applies; production service runs use ShutdownAwareServer below.
+        uvicorn.run("pa.server.app:create_app", reload=True, **server_options)
+        return
+
+    from pa.server.shutdown import ShutdownAwareServer, reset_shutdown_event
+
+    reset_shutdown_event()
+    config = uvicorn.Config("pa.server.app:create_app", **server_options)
+    ShutdownAwareServer(config).run()
 
 
 @app.command()
