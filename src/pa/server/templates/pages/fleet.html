@@ -6,6 +6,7 @@
   {{ section_nav([
     ('overview', 'Overview'),
     ('operations', 'Operations'),
+    ('sync', 'Realm sync'),
     ('readiness', 'Readiness'),
     ('add', 'Add machine'),
     ('realms', 'Realms'),
@@ -198,6 +199,41 @@
         </div>
       </div>
     </div>
+  </section>
+
+  <section class="stack hidden" data-section="sync" hidden>
+    <div class="panel-header">
+      <div>
+        <h2>Realm sync</h2>
+        <p class="muted small">Automatic convergence preserves every history. Incompatible field edits wait for an explicit audited decision.</p>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="primary small" id="pa-sync-converge">Converge now</button>
+        <button type="button" class="ghost small" id="pa-sync-refresh">Refresh</button>
+      </div>
+    </div>
+    <p>Realm <span class="badge" id="pa-sync-realm">{{ primary_realm }}</span></p>
+    <p class="muted" id="pa-sync-progress" aria-live="polite">Loading convergence status…</p>
+    <table class="data-table" id="pa-sync-instances">
+      <thead><tr><th>Instance</th><th>Status</th><th>Realm head</th></tr></thead>
+      <tbody><tr><td colspan="3" class="muted">Checking fleet heads…</td></tr></tbody>
+    </table>
+    <div class="panel-inset stack" id="pa-sync-conflicts" hidden>
+      <div class="panel-header"><h3>Operator resolution required</h3></div>
+      <p class="muted small">Choose the intended value for every incompatible field. The resolution creates a new merge commit with both heads as parents.</p>
+      <form class="stack" id="pa-sync-resolution-form">
+        <div id="pa-sync-resolution-fields"></div>
+        <div class="form-actions">
+          <button type="submit" class="primary">Record resolution and converge</button>
+        </div>
+      </form>
+    </div>
+    <details class="panel-inset">
+      <summary>Merge audit</summary>
+      <ul class="item-list compact" id="pa-sync-audit" style="margin-top:0.75rem">
+        <li class="muted">Loading audit history…</li>
+      </ul>
+    </details>
   </section>
 
   <section class="stack hidden" data-section="readiness" hidden>

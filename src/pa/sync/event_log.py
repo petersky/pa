@@ -6,7 +6,6 @@ import json
 import os
 import threading
 from contextlib import contextmanager
-from collections import defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Callable
@@ -193,8 +192,30 @@ class EventLog:
     ) -> SyncCommit:
         """Create a merge commit carrying explicit operator resolutions."""
         parents = sorted({local_head, remote_head})
+        audit_event = CardEvent(
+            type=EventType.CARD_UPDATED,
+            realm_id=realm_id,
+            author_principal=author_principal,
+            author_instance=self.instance_id,
+            payload={
+                "merge": True,
+                "resolution": "manual",
+                "parents": parents,
+                "resolved_events": [
+                    {
+                        "event_id": event.id,
+                        "entity": "card" if event.card_id else "project",
+                        "id": event.card_id or event.project_id,
+                        "type": event.type.value,
+                        "fields": event.payload,
+                    }
+                    for event in events
+                ],
+            },
+        )
         event_hashes = [
-            self.store.put_json(event.model_dump(mode="json")) for event in events
+            self.store.put_json(event.model_dump(mode="json"))
+            for event in [*events, audit_event]
         ]
         commit = SyncCommit(
             hash="",
@@ -215,19 +236,19 @@ class EventLog:
         ancestors_b = self._ancestors(head_b)
         common = ancestors_a & ancestors_b
 
-        def changes(head: str) -> dict[tuple[str, str], dict[str, object]]:
-            result: dict[tuple[str, str], dict[str, object]] = defaultdict(dict)
+        def changes(head: str) -> dict[tuple[str, str], dict[str, dict]]:
+            result: dict[tuple[str, str], dict[str, dict]] = {}
             seen: set[str] = set()
-            stack = [head]
-            while stack:
-                commit_hash = stack.pop()
+
+            def walk(commit_hash: str) -> None:
                 if commit_hash in seen or commit_hash in common:
-                    continue
+                    return
                 seen.add(commit_hash)
                 commit = self.get_commit(commit_hash)
                 if not commit:
-                    continue
-                stack.extend(commit.parent_hashes)
+                    return
+                for parent in commit.parent_hashes:
+                    walk(parent)
                 for event_hash in commit.event_hashes:
                     event = self.get_event(event_hash)
                     if not event or event.payload.get("merge"):
@@ -236,31 +257,133 @@ class EventLog:
                     if not identity:
                         continue
                     entity = "card" if event.card_id else "project"
+                    entity_changes = result.setdefault((entity, identity), {})
+                    source = {
+                        "instance_id": event.author_instance,
+                        "principal": event.author_principal,
+                        "event_id": event.id,
+                    }
                     if event.type in {
                         EventType.CARD_DELETED,
                         EventType.PROJECT_ARCHIVED,
                     }:
-                        result[(entity, identity)].setdefault(
-                            "__terminal__", event.type.value
-                        )
+                        entity_changes["__terminal__"] = {
+                            **source,
+                            "value": event.type.value,
+                        }
                     for field, value in event.payload.items():
-                        result[(entity, identity)].setdefault(field, value)
+                        entity_changes[field] = {**source, "value": value}
+
+            walk(head)
             return result
 
         left, right = changes(head_a), changes(head_b)
         conflicts = []
-        for entity in sorted(set(left) & set(right)):
-            if "__terminal__" in left[entity] or "__terminal__" in right[entity]:
-                if left[entity] != right[entity]:
-                    conflicts.append({"entity": entity, "field": "__terminal__"})
+        for entity_key in sorted(set(left) & set(right)):
+            entity, entity_id = entity_key
+            left_fields = left[entity_key]
+            right_fields = right[entity_key]
+            if "__terminal__" in left_fields or "__terminal__" in right_fields:
+                if left_fields != right_fields:
+                    conflicts.append(
+                        {
+                            "entity": entity,
+                            "id": entity_id,
+                            "field": "__terminal__",
+                            "local": left_fields.get("__terminal__")
+                            or {"value": "preserve"},
+                            "remote": right_fields.get("__terminal__")
+                            or {"value": "preserve"},
+                        }
+                    )
+                    conflicts[-1]["local"]["snapshot"] = self.entity_snapshot(
+                        head_a, entity, entity_id
+                    )
+                    conflicts[-1]["remote"]["snapshot"] = self.entity_snapshot(
+                        head_b, entity, entity_id
+                    )
                     continue
-            for field in sorted(set(left[entity]) & set(right[entity])):
-                if left[entity][field] != right[entity][field]:
-                    conflicts.append({"entity": entity, "field": field})
+            for field in sorted(set(left_fields) & set(right_fields)):
+                if left_fields[field]["value"] != right_fields[field]["value"]:
+                    conflicts.append(
+                        {
+                            "entity": entity,
+                            "id": entity_id,
+                            "field": field,
+                            "local": left_fields[field],
+                            "remote": right_fields[field],
+                        }
+                    )
         return not conflicts, {
             "conflicts": conflicts,
             "common_ancestors": sorted(common),
         }
+
+    def entity_snapshot(
+        self, head: str, entity: str, entity_id: str
+    ) -> dict | None:
+        """Materialize one entity at an arbitrary immutable history head."""
+        state: dict | None = None
+
+        def apply(event: CardEvent) -> None:
+            nonlocal state
+            matches = (
+                entity == "card" and event.card_id == entity_id
+            ) or (entity == "project" and event.project_id == entity_id)
+            if not matches:
+                return
+            if event.type in {EventType.CARD_CREATED, EventType.PROJECT_CREATED}:
+                state = dict(event.payload)
+            elif event.type in {
+                EventType.CARD_UPDATED,
+                EventType.PROJECT_UPDATED,
+                EventType.LEASE_GRANTED,
+                EventType.LEASE_RELEASED,
+            }:
+                if state is not None:
+                    state.update(event.payload)
+            elif event.type == EventType.CARD_DELETED:
+                state = None
+            elif event.type == EventType.PROJECT_ARCHIVED and state is not None:
+                state["status"] = "archived"
+
+        self.apply_commit_chain(head, apply)
+        return state
+
+    def merge_audit(self, realm_id: str, *, limit: int = 50) -> list[dict]:
+        """Return merge decisions embedded in the immutable realm history."""
+        head = self.get_head(realm_id)
+        if not head:
+            return []
+        records: list[dict] = []
+        seen: set[str] = set()
+        stack = [head]
+        while stack and len(records) < limit:
+            commit_hash = stack.pop()
+            if commit_hash in seen:
+                continue
+            seen.add(commit_hash)
+            commit = self.get_commit(commit_hash)
+            if not commit:
+                continue
+            for event_hash in commit.event_hashes:
+                event = self.get_event(event_hash)
+                if not event or not event.payload.get("merge"):
+                    continue
+                records.append(
+                    {
+                        "head": commit.hash,
+                        "parents": commit.parent_hashes,
+                        "mode": event.payload.get("resolution", "automatic"),
+                        "author_principal": commit.author_principal,
+                        "author_instance": event.author_instance,
+                        "timestamp": commit.timestamp.isoformat(),
+                        "resolved_events": event.payload.get("resolved_events", []),
+                    }
+                )
+            stack.extend(reversed(commit.parent_hashes))
+        records.sort(key=lambda item: item["timestamp"], reverse=True)
+        return records[:limit]
 
     def _ancestors(self, head: str) -> set[str]:
         result: set[str] = set()
