@@ -6,6 +6,7 @@ import json
 import logging
 from pathlib import Path
 from typing import Any, Literal
+from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -66,6 +67,8 @@ class CreateSessionBody(BaseModel):
     effort: str | None = None
     config: dict[str, str | bool] = Field(default_factory=dict)
     dispatch_id: str | None = None
+    resume: bool = False
+    resume_session_id: str | None = None
 
 
 def _config_option_id(runtime, requested: str) -> str:
@@ -121,6 +124,7 @@ class PromptBody(BaseModel):
     action: Literal["append", "prepend", "interrupt"] = "append"
     card_id: str | None = None
     project_id: str | None = None
+    dispatch_id: str | None = None
 
     @model_validator(mode="after")
     def validate_total_image_size(self) -> PromptBody:
@@ -188,6 +192,41 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
         )
     project_tool_config = None
     new_logical_session = True
+    dispatch_record = None
+    dispatch_store = None
+    if body.dispatch_id:
+        dispatch_store = request.app.state.ctx.services.get("dispatch_store")
+        dispatch_record = (
+            dispatch_store.get(body.dispatch_id) if dispatch_store else None
+        )
+        if not dispatch_record:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "dispatch_not_materialized", "recoverable": True},
+            )
+        if body.resume != dispatch_record.resume_requested:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "dispatch_resume_mismatch", "recoverable": False},
+            )
+        if body.resume and body.resume_session_id != dispatch_record.resume_session_id:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "resume_session_mismatch",
+                    "expected": dispatch_record.resume_session_id,
+                    "actual": body.resume_session_id,
+                    "recoverable": False,
+                },
+            )
+        if not body.resume and not dispatch_record.session_id:
+            dispatch_record.session_id = str(uuid4())
+            dispatch_store.transition(
+                dispatch_record,
+                "starting_session",
+                "Reserved stable session identity before provider startup.",
+                detail={"session_id": dispatch_record.session_id},
+            )
     if body.project_id:
         project = mgr.store.get_project(body.project_id)
         if not project:
@@ -195,7 +234,77 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
         if project and getattr(project, "tool_config", None):
             project_tool_config = dict(project.tool_config)
     try:
-        if body.attach_default or body.label == "default":
+        if dispatch_record:
+            linked_session_id = dispatch_record.session_id
+            linked_runtime = mgr.get(linked_session_id) if linked_session_id else None
+            if linked_runtime and not getattr(linked_runtime, "_closed", False):
+                new_logical_session = False
+                runtime = linked_runtime
+            elif linked_session_id:
+                stored = mgr.store.get_session(linked_session_id)
+                if not stored and not body.resume:
+                    runtime = await mgr.create_session(
+                        session_id=linked_session_id,
+                        label=body.label,
+                        title=body.title,
+                        cwd=body.cwd,
+                        principal_id=principal_id,
+                        card_id=body.card_id,
+                        project_id=body.project_id,
+                        surface=surface,
+                        provider_override=body.provider,
+                        project_tool_config=project_tool_config,
+                    )
+                    created_runtime = True
+                elif not stored or stored.status in {"closed", "quiesced"}:
+                    raise HTTPException(
+                        status_code=409,
+                        detail={
+                            "code": "linked_session_unavailable",
+                            "session_id": linked_session_id,
+                            "recoverable": False,
+                        },
+                    )
+                else:
+                    new_logical_session = False
+                    runtime = await mgr.create_session(
+                        label=stored.label,
+                        title=body.title or stored.title,
+                        cwd=body.cwd or stored.cwd,
+                        principal_id=principal_id or stored.principal_id,
+                        card_id=body.card_id or stored.card_id,
+                        project_id=body.project_id or stored.project_id,
+                        existing=stored,
+                        resume_external_id=stored.external_session_id,
+                        surface=surface,
+                        provider_override=body.provider,
+                        project_tool_config=project_tool_config,
+                    )
+                    created_runtime = True
+            elif body.resume:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "resume_session_missing",
+                        "session_id": body.resume_session_id,
+                        "recoverable": False,
+                    },
+                )
+            else:
+                # A materialized fresh dispatch never consults label lookup.
+                runtime = await mgr.create_session(
+                    label=body.label,
+                    title=body.title,
+                    cwd=body.cwd,
+                    principal_id=principal_id,
+                    card_id=body.card_id,
+                    project_id=body.project_id,
+                    surface=surface,
+                    provider_override=body.provider,
+                    project_tool_config=project_tool_config,
+                )
+                created_runtime = True
+        elif body.attach_default or body.label == "default":
             new_logical_session = mgr.store.get_session_by_label("default") is None
             runtime = await mgr.attach_default(
                 principal_id=principal_id,
@@ -303,31 +412,45 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                 finally:
                     mgr._runtimes.pop(runtime.session_id, None)
             raise
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-    if body.dispatch_id:
-        dispatch_store = request.app.state.ctx.services.get("dispatch_store")
-        record = dispatch_store.get(body.dispatch_id) if dispatch_store else None
-        if not record:
+    if dispatch_record:
+        if (
+            dispatch_record.session_id
+            and dispatch_record.session_id != runtime.session_id
+        ):
             if created_runtime:
                 await runtime.close()
                 mgr._runtimes.pop(runtime.session_id, None)
             raise HTTPException(
                 status_code=409,
-                detail={"code": "dispatch_not_materialized", "recoverable": True},
+                detail={
+                    "code": "dispatch_session_mismatch",
+                    "expected": dispatch_record.session_id,
+                    "actual": runtime.session_id,
+                    "recoverable": False,
+                },
             )
-        record.session_id = runtime.session_id
+        dispatch_record.session_id = runtime.session_id
         config = dict(runtime.session.config_json or {})
         execution = dict(config.get("execution_context") or {})
         execution["authority_instance"] = {
-            "id": record.authority_instance_id,
-            "name": record.authority_instance_name or record.authority_instance_id,
+            "id": dispatch_record.authority_instance_id,
+            "name": dispatch_record.authority_instance_name
+            or dispatch_record.authority_instance_id,
         }
+        execution["dispatch_id"] = dispatch_record.dispatch_id
         config["execution_context"] = execution
         runtime.session.config_json = config
         mgr.store.save_session(runtime.session)
-        record.state = "dispatched"
-        dispatch_store.put(record)
+        dispatch_store.transition(
+            dispatch_record,
+            "starting_session",
+            "Remote session linked to dispatch.",
+            detail={"session_id": runtime.session_id},
+        )
     return runtime.snapshot()
 
 
@@ -649,9 +772,46 @@ async def session_prompt(request: Request, session_id: str, body: PromptBody) ->
     if not message and not body.images:
         raise HTTPException(status_code=400, detail="message or image required")
     runtime = _runtime_or_404(request, session_id)
+    dispatch_record = None
+    dispatch_store = None
+    if body.dispatch_id:
+        dispatch_store = request.app.state.ctx.services.get("dispatch_store")
+        dispatch_record = (
+            dispatch_store.get(body.dispatch_id) if dispatch_store else None
+        )
+        if not dispatch_record:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "dispatch_not_materialized", "recoverable": True},
+            )
+        if dispatch_record.session_id != session_id:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "dispatch_session_mismatch",
+                    "expected": dispatch_record.session_id,
+                    "actual": session_id,
+                    "recoverable": False,
+                },
+            )
+        if dispatch_record.prompt_ack:
+            ack = dispatch_record.prompt_ack
+            return {
+                "stop_reason": "accepted",
+                "queued": True,
+                "started": False,
+                "accepted": True,
+                "accepted_event": ack.get("event_type"),
+                "prompt_id": ack.get("prompt_id"),
+                "dispatch_id": body.dispatch_id,
+                "session_id": session_id,
+                "duplicate": True,
+                "queue": [item.public_dict() for item in runtime._queue],
+            }
     principal_id = get_principal_id(request)
     # Return immediately; transcript/SSE streams the turn. Blocking here made the
     # old HTMX UI look like it only ever received "Turn completed".
+    before_seq = runtime._seq
     stop_reason = await runtime.prompt(
         message,
         images=body.images,
@@ -661,11 +821,55 @@ async def session_prompt(request: Request, session_id: str, body: PromptBody) ->
         action=body.action,
         wait=False,
     )
+    runtime._flush_transcript()
+    accepted = [
+        event
+        for event in runtime.store.list_transcript_events(
+            session_id, after_seq=before_seq, limit=20
+        )
+        if event.event_type in {"queue_enqueued", "user_message"}
+        and event.payload.get("message") == message
+    ]
+    if body.dispatch_id and not accepted:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "prompt_not_persisted",
+                "message": "Prompt acceptance was not present in the durable transcript.",
+                "recoverable": True,
+            },
+        )
+    accepted_event = accepted[0] if accepted else None
+    if dispatch_record and dispatch_store:
+        assert accepted_event is not None
+        dispatch_record.prompt_acknowledged_at = accepted_event.created_at
+        dispatch_record.prompt_ack = {
+            "event_id": accepted_event.id,
+            "event_seq": accepted_event.seq,
+            "event_type": accepted_event.event_type,
+            "prompt_id": accepted_event.payload.get("id"),
+        }
+        dispatch_store.transition(
+            dispatch_record,
+            "running",
+            "Prompt durably accepted by linked remote session.",
+            detail={
+                "session_id": session_id,
+                "event_id": accepted_event.id,
+                "event_seq": accepted_event.seq,
+                "event_type": accepted_event.event_type,
+            },
+        )
     return {
         "stop_reason": stop_reason,
         "queued": stop_reason == "queued",
         "started": stop_reason == "started",
+        "accepted": bool(accepted_event),
+        "accepted_event": accepted_event.event_type if accepted_event else None,
+        "prompt_id": accepted_event.payload.get("id") if accepted_event else None,
+        "dispatch_id": body.dispatch_id,
         "session_id": session_id,
+        "duplicate": False,
         "queue": [q.public_dict() for q in runtime._queue],
     }
 

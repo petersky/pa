@@ -285,9 +285,7 @@ class RealmConvergenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(conflict["local"]["instance_name"], "MacBook")
         self.assertEqual(conflict["remote"]["instance_name"], "Monica")
 
-        projection = CardProjection(
-            self.authority.settings.db_path, self.authority.log
-        )
+        projection = CardProjection(self.authority.settings.db_path, self.authority.log)
         projection.rebuild_from_log("default")
         self.authority.engine.on_head_advanced(projection.rebuild_from_log)
         ctx = MagicMock()
@@ -327,7 +325,9 @@ class RealmConvergenceTests(unittest.IsolatedAsyncioTestCase):
         audit = self.authority.log.merge_audit("default")
         self.assertEqual(audit[0]["mode"], "manual")
         self.assertEqual(audit[0]["author_principal"], "user:local")
-        self.assertEqual(set(audit[0]["parents"]), {conflict["local_head"], remote_head})
+        self.assertEqual(
+            set(audit[0]["parents"]), {conflict["local_head"], remote_head}
+        )
 
     async def test_conflicts_from_every_divergent_peer_remain_reported(self) -> None:
         card = self._shared_card()
@@ -344,7 +344,9 @@ class RealmConvergenceTests(unittest.IsolatedAsyncioTestCase):
             {"Monica", "Mac mini"},
         )
 
-    async def test_unavailable_peer_is_retried_and_eventually_adopts_merge(self) -> None:
+    async def test_unavailable_peer_is_retried_and_eventually_adopts_merge(
+        self,
+    ) -> None:
         card = self._shared_card()
         self._update(self.authority, card.id, title="new")
         self.network.unavailable.add("observer")
@@ -362,7 +364,9 @@ class RealmConvergenceTests(unittest.IsolatedAsyncioTestCase):
             {node.log.get_head("default") for node in self.nodes}, {repaired_head}
         )
 
-    async def test_delete_edit_resolution_restores_intentionally_active_card(self) -> None:
+    async def test_delete_edit_resolution_restores_intentionally_active_card(
+        self,
+    ) -> None:
         card = self._shared_card()
         _, deleted = self.authority.log.append_event(
             CardEvent(
@@ -381,9 +385,7 @@ class RealmConvergenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(conflict["field"], "__terminal__")
         self.assertEqual(conflict["remote"]["snapshot"]["lane"], "active")
 
-        projection = CardProjection(
-            self.authority.settings.db_path, self.authority.log
-        )
+        projection = CardProjection(self.authority.settings.db_path, self.authority.log)
         projection.rebuild_from_log("default")
         ctx = MagicMock()
         ctx.settings = self.authority.settings
@@ -469,9 +471,7 @@ class RealmConvergenceTests(unittest.IsolatedAsyncioTestCase):
         card = self._shared_card()
         self._update(self.authority, card.id, title="authority")
         self._update(self.target, card.id, body="target")
-        projection = CardProjection(
-            self.authority.settings.db_path, self.authority.log
-        )
+        projection = CardProjection(self.authority.settings.db_path, self.authority.log)
         projection.rebuild_from_log("default")
         self.authority.engine.on_head_advanced(projection.rebuild_from_log)
         self.authority.settings.peers = [self.target.url, self.observer.url]
@@ -498,7 +498,13 @@ class RealmConvergenceTests(unittest.IsolatedAsyncioTestCase):
         peer_agent = AsyncMock(
             side_effect=[
                 {"session": {"id": "remote-session", "title": card.title}},
-                {"started": True, "queued": False},
+                {
+                    "started": True,
+                    "queued": False,
+                    "accepted": True,
+                    "accepted_event": "queue_enqueued",
+                    "session_id": "remote-session",
+                },
             ]
         )
         materialize = AsyncMock(return_value={"resolvable": True})
@@ -511,12 +517,34 @@ class RealmConvergenceTests(unittest.IsolatedAsyncioTestCase):
             result = await start_remote_agent_work(
                 request,
                 self.target.settings.instance_id,
-                RemoteAgentStartBody(card_id=card.id, message="Continue"),
+                RemoteAgentStartBody(
+                    card_id=card.id,
+                    message="Continue",
+                    idempotency_key="realm-repair-dispatch",
+                ),
             )
+            from pa.modules.fleet import _process_remote_dispatch
+
+            app = MagicMock()
+            app.state.ctx = ctx
+            record = ctx.services["dispatch_store"].get(result["dispatch_id"])
+            peer_agent.side_effect = [
+                {"session": {"id": "remote-session", "title": card.title}},
+                {
+                    "started": True,
+                    "queued": False,
+                    "accepted": True,
+                    "accepted_event": "queue_enqueued",
+                    "session_id": "remote-session",
+                    "dispatch_id": result["dispatch_id"],
+                },
+            ]
+            await _process_remote_dispatch(app, record)
         dispatched_card = materialize.await_args.args[2]["card"]
         self.assertEqual(dispatched_card["title"], "authority")
         self.assertEqual(dispatched_card["body"], "target")
-        self.assertEqual(result["session"]["session"]["id"], "remote-session")
+        self.assertEqual(record.session_id, "remote-session")
+        self.assertEqual(record.state, "running")
 
 
 class RealmSyncWebUiTests(unittest.TestCase):
@@ -533,7 +561,9 @@ class RealmSyncWebUiTests(unittest.TestCase):
         self.assertIn("data-remote-dispatch-retry", script)
         self.assertIn('id="pa-sync-conflict-head"', script)
         self.assertIn("Other divergent peer heads remain queued", script)
-        refresh_handler = script.split('if (e.target.closest("#pa-sync-refresh"))', 1)[1]
+        refresh_handler = script.split('if (e.target.closest("#pa-sync-refresh"))', 1)[
+            1
+        ]
         self.assertIn("startSyncConvergence()", refresh_handler.split("return;", 1)[0])
 
     def test_realm_sync_reads_require_membership(self) -> None:
@@ -553,7 +583,9 @@ class RealmSyncWebUiTests(unittest.TestCase):
                 get_sync_convergence(request, "default")
             self.assertEqual(raised.exception.status_code, 403)
 
-    def test_fleet_route_renders_recovery_surface_and_live_status_contract(self) -> None:
+    def test_fleet_route_renders_recovery_surface_and_live_status_contract(
+        self,
+    ) -> None:
         reset_settings()
         reset_store()
         reset_infrastructure()

@@ -12,13 +12,21 @@ from fastapi import HTTPException
 
 from pa.config import Settings
 from pa.domain.models import Card, CardEvent, CardLane, EventType
-from pa.execution.dispatch import CompletionOutbox, DispatchRecord, DispatchStore
+from pa.execution.dispatch import (
+    CompletionOutbox,
+    DispatchRecord,
+    DispatchStore,
+    DispatchWorker,
+)
 from pa.modules.fleet import (
     DispatchCompletionBody,
     DispatchMaterializeBody,
     _assert_dispatch_sync_health,
+    _process_remote_dispatch,
+    cancel_dispatch,
     complete_dispatch,
     materialize_dispatch,
+    retry_dispatch,
 )
 from pa.sync.event_log import EventLog
 from pa.sync.object_store import ObjectStore
@@ -195,6 +203,7 @@ class RetryAndConflictTests(unittest.IsolatedAsyncioTestCase):
                     authority_url="http://authority",
                     target_instance_id="target",
                     session_id="session-1",
+                    state="running",
                 )
             )
             outbox = CompletionOutbox(ledger, "secret", retry_seconds=0.01)
@@ -209,6 +218,56 @@ class RetryAndConflictTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(reloaded.state, "completion_pending")
             self.assertEqual(reloaded.attempts, 1)
             self.assertIn("offline", reloaded.last_error)
+
+    async def test_completion_uses_latest_running_dispatch_for_resumed_session(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = DispatchStore(Path(tmp))
+            old = DispatchRecord(
+                dispatch_id="old",
+                mutation_id="old-mutation",
+                card_id="old-card",
+                authority_instance_id="authority",
+                authority_url="http://authority",
+                target_instance_id="target",
+                session_id="session-1",
+                state="completed",
+            )
+            ledger.put(old)
+            current = DispatchRecord(
+                dispatch_id="current",
+                mutation_id="current-mutation",
+                card_id="current-card",
+                authority_instance_id="authority",
+                authority_url="http://authority",
+                target_instance_id="target",
+                session_id="session-1",
+                state="running",
+            )
+            ledger.put(current)
+            outbox = CompletionOutbox(ledger, "", retry_seconds=60)
+
+            self.assertTrue(outbox.queue("session-1", {"stop_reason": "end_turn"}))
+            self.assertEqual(current.state, "completion_pending")
+            self.assertEqual(old.state, "completed")
+
+    async def test_unacknowledged_session_cannot_enqueue_completion(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = DispatchStore(Path(tmp))
+            record = DispatchRecord(
+                dispatch_id="dispatch-1",
+                mutation_id="mutation-1",
+                authority_instance_id="authority",
+                authority_url="http://authority",
+                target_instance_id="target",
+                session_id="session-1",
+                state="starting_session",
+            )
+            ledger.put(record)
+            outbox = CompletionOutbox(ledger, "", retry_seconds=60)
+            self.assertFalse(outbox.queue("session-1", {}))
+            self.assertEqual(record.state, "starting_session")
 
     async def test_dispatch_is_blocked_when_two_peer_heads_diverge(self) -> None:
         settings = Settings(
@@ -252,6 +311,254 @@ class RetryAndConflictTests(unittest.IsolatedAsyncioTestCase):
                 await _assert_dispatch_sync_health(request, "default")
         self.assertEqual(raised.exception.status_code, 409)
         self.assertEqual(raised.exception.detail["code"], "sync_unavailable")
+
+
+class DurableDispatchJobTests(unittest.IsolatedAsyncioTestCase):
+    def _job_app(self, root: Path):
+        settings = Settings(
+            data_dir=root,
+            instance_id="authority",
+            instance_name="authority",
+            instance_url="http://authority:8080",
+            sync_token="secret",
+        )
+        ledger = DispatchStore(root)
+        fleet = MagicMock()
+        fleet.list_instances.return_value = [
+            MagicMock(instance_id="target", name="target", url="http://target:8080")
+        ]
+        domain = MagicMock()
+        ctx = MagicMock(settings=settings, store=domain)
+        ctx.services = {"dispatch_store": ledger, "fleet_registry": fleet}
+        ctx.require_service.side_effect = lambda name: ctx.services[name]
+        app = MagicMock()
+        app.state.ctx = ctx
+        return app, ledger, domain
+
+    def _record(self, **updates) -> DispatchRecord:
+        values = {
+            "dispatch_id": "dispatch-1",
+            "mutation_id": "mutation-1",
+            "idempotency_key": "browser-1",
+            "request_fingerprint": "fingerprint-1",
+            "request_payload": {"message": "Do the work"},
+            "authority_instance_id": "authority",
+            "authority_url": "http://authority:8080",
+            "target_instance_id": "target",
+        }
+        values.update(updates)
+        return DispatchRecord(**values)
+
+    async def test_worker_records_every_stage_and_requires_delivery_ack(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            app, ledger, domain = self._job_app(Path(tmp))
+            record = self._record()
+            ledger.transition(record, "queued", "admitted")
+            ack = {
+                "accepted": True,
+                "accepted_event": "queue_enqueued",
+                "session_id": "session-new",
+                "dispatch_id": record.dispatch_id,
+                "prompt_id": "prompt-1",
+            }
+            peer_agent = AsyncMock(
+                side_effect=[{"session": {"id": "session-new"}}, ack]
+            )
+            with (
+                patch(
+                    "pa.modules.fleet._peer_dispatch_json",
+                    AsyncMock(return_value={"resolvable": True}),
+                ),
+                patch("pa.modules.fleet._peer_agent_json", peer_agent),
+            ):
+                await _process_remote_dispatch(app, record)
+
+            self.assertEqual(record.state, "running")
+            self.assertEqual(record.session_id, "session-new")
+            self.assertIsNotNone(record.prompt_acknowledged_at)
+            states = [event.state for event in record.events]
+            self.assertEqual(
+                states,
+                [
+                    "queued",
+                    "checking_sync",
+                    "materializing",
+                    "starting_session",
+                    "delivering_prompt",
+                    "running",
+                ],
+            )
+            create_body = peer_agent.await_args_list[0].kwargs["body"]
+            self.assertEqual(create_body["label"], f"dispatch:{record.dispatch_id}")
+            self.assertNotEqual(create_body["label"], "card:card-1")
+            domain.add_knowledge.assert_called_once()
+
+    async def test_missing_prompt_ack_is_retryable_and_keeps_exact_session(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            app, ledger, _domain = self._job_app(Path(tmp))
+            record = self._record()
+            ledger.transition(record, "queued", "admitted")
+            peer_agent = AsyncMock(
+                side_effect=[
+                    {"session": {"id": "session-new"}},
+                    {"started": True, "session_id": "session-new"},
+                ]
+            )
+            worker = DispatchWorker(
+                ledger, lambda item: _process_remote_dispatch(app, item)
+            )
+            with (
+                patch(
+                    "pa.modules.fleet._peer_dispatch_json",
+                    AsyncMock(return_value={"resolvable": True}),
+                ),
+                patch("pa.modules.fleet._peer_agent_json", peer_agent),
+            ):
+                await worker._execute(record)
+
+            self.assertEqual(record.state, "failed")
+            self.assertEqual(record.error_code, "prompt_ack_missing")
+            self.assertEqual(record.session_id, "session-new")
+            self.assertTrue(record.recoverable)
+
+    async def test_materialization_409_is_audited_without_starting_session(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            app, ledger, _domain = self._job_app(Path(tmp))
+            record = self._record(card_id="card-1", card_version="v1")
+            ledger.transition(record, "queued", "admitted")
+            app.state.ctx.store.get_card.return_value = MagicMock(
+                id="card-1",
+                title="Card",
+                project_id=None,
+                updated_at=MagicMock(isoformat=MagicMock(return_value="v1")),
+                model_dump=MagicMock(return_value={"id": "card-1"}),
+            )
+            conflict = HTTPException(
+                status_code=409,
+                detail={
+                    "code": "stale_target_card",
+                    "message": "Target has a different card version.",
+                    "recoverable": True,
+                },
+            )
+            worker = DispatchWorker(
+                ledger, lambda item: _process_remote_dispatch(app, item)
+            )
+            with (
+                patch("pa.modules.fleet._assert_dispatch_sync_health", AsyncMock()),
+                patch(
+                    "pa.modules.fleet._peer_dispatch_json",
+                    AsyncMock(side_effect=conflict),
+                ),
+                patch("pa.modules.fleet._peer_agent_json", AsyncMock()) as peer,
+            ):
+                await worker._execute(record)
+
+            self.assertEqual(record.state, "failed")
+            self.assertEqual(record.error_code, "stale_target_card")
+            peer.assert_not_awaited()
+
+    async def test_provider_timeout_is_background_failure_not_admission_failure(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            app, ledger, _domain = self._job_app(Path(tmp))
+            record = self._record()
+            ledger.transition(record, "queued", "admitted")
+            worker = DispatchWorker(
+                ledger, lambda item: _process_remote_dispatch(app, item)
+            )
+            timeout = HTTPException(
+                status_code=502,
+                detail={
+                    "code": "provider_timeout",
+                    "message": "Provider startup timed out.",
+                    "recoverable": True,
+                },
+            )
+            with (
+                patch(
+                    "pa.modules.fleet._peer_dispatch_json",
+                    AsyncMock(return_value={"resolvable": True}),
+                ),
+                patch(
+                    "pa.modules.fleet._peer_agent_json", AsyncMock(side_effect=timeout)
+                ),
+            ):
+                await worker._execute(record)
+            self.assertEqual(record.state, "failed")
+            self.assertEqual(record.error_code, "provider_timeout")
+
+    async def test_retry_and_cancel_preserve_dispatch_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            app, ledger, _domain = self._job_app(Path(tmp))
+            record = self._record(state="failed", last_error="offline")
+            ledger.put(record)
+            request = MagicMock()
+            request.app = app
+            with patch("pa.modules.fleet.require_user"):
+                retried = retry_dispatch(request, record.dispatch_id)
+                self.assertEqual(retried["state"], "queued")
+                cancelled = cancel_dispatch(request, record.dispatch_id)
+            self.assertEqual(cancelled["state"], "cancelled")
+            self.assertEqual(cancelled["dispatch_id"], "dispatch-1")
+
+
+class DispatchRestartTests(unittest.TestCase):
+    def test_restart_requeues_interrupted_job_with_same_session_and_identity(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            ledger = DispatchStore(root)
+            record = DispatchRecord(
+                dispatch_id="dispatch-1",
+                mutation_id="mutation-1",
+                idempotency_key="browser-1",
+                request_payload={"message": "work"},
+                authority_instance_id="authority",
+                authority_url="http://authority",
+                target_instance_id="target",
+                session_id="session-1",
+                state="delivering_prompt",
+            )
+            ledger.put(record)
+
+            reloaded = DispatchStore(root)
+            reloaded.reconcile_interrupted()
+            recovered = reloaded.get("dispatch-1")
+
+            self.assertEqual(recovered.state, "queued")
+            self.assertEqual(recovered.session_id, "session-1")
+            self.assertEqual(recovered.mutation_id, "mutation-1")
+            self.assertEqual(
+                recovered.events[-1].detail["previous_state"], "delivering_prompt"
+            )
+
+    def test_legacy_orphan_expires_with_actionable_retry_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            ledger = DispatchStore(root)
+            ledger.put(
+                DispatchRecord(
+                    dispatch_id="orphan-1",
+                    mutation_id="mutation-1",
+                    card_id="card-1",
+                    authority_instance_id="authority",
+                    authority_url="http://authority",
+                    target_instance_id="target",
+                    state="dispatching",
+                )
+            )
+            ledger.reconcile_interrupted()
+            orphan = ledger.get("orphan-1")
+            self.assertEqual(orphan.state, "failed")
+            self.assertEqual(orphan.error_code, "orphaned_legacy_dispatch")
+            self.assertIn("retry", orphan.last_error.lower())
 
 
 class EventLogMergeTests(unittest.TestCase):

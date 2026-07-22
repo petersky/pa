@@ -41,6 +41,7 @@ FLEET_INSTANCE_ROUTES = {
     ("POST", "/api/agent/quiesce"),
     ("GET", "/api/fleet/peer-update-check"),
     ("POST", "/api/fleet/peer-update"),
+    ("GET", "/api/fleet/dispatch-jobs"),
     ("GET", "/api/repositories"),
     ("POST", "/api/repositories/reconcile"),
 }

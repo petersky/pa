@@ -101,6 +101,7 @@
   var remoteAuditGeneration = 0;
   var remoteAuditSessionId = "";
   var remoteAuditEvents = [];
+  var remoteDispatchTimer = null;
   var syncPollTimer = null;
   var syncAllConflicts = [];
   var syncCurrentConflicts = [];
@@ -349,6 +350,8 @@
       try { remoteWatchers[key].close(); } catch (e) {}
       delete remoteWatchers[key];
     });
+    clearTimeout(remoteDispatchTimer);
+    remoteDispatchTimer = null;
   }
 
   function handleRemoteOperationsHidden() {
@@ -459,6 +462,92 @@
     }).join("");
   }
 
+  function remoteDispatchStageLabel(state) {
+    return {
+      queued: "Queued",
+      checking_sync: "Checking sync",
+      materializing: "Materializing",
+      starting_session: "Starting session",
+      delivering_prompt: "Delivering prompt",
+      running: "Running",
+      failed: "Failed",
+      completion_pending: "Completion pending",
+      completed: "Completed",
+      cancelled: "Cancelled",
+    }[state] || state || "Unknown";
+  }
+
+  function renderRemoteDispatches(dispatches) {
+    var list = $("#pa-remote-dispatch-list");
+    if (!list) return;
+    if (!dispatches || !dispatches.length) {
+      list.innerHTML = '<li class="muted">No durable dispatches for this instance.</li>';
+      return;
+    }
+    list.innerHTML = dispatches.map(function (dispatch) {
+      var state = dispatch.state || "queued";
+      var terminal = state === "failed" || state === "completed" || state === "cancelled";
+      var badge = state === "failed" ? "blocked" : state === "completed" ? "active" : "open";
+      var latest = dispatch.events && dispatch.events.length
+        ? dispatch.events[dispatch.events.length - 1].message : "";
+      var error = dispatch.last_error
+        ? '<p class="status status-blocked small">' + escapeHtml(dispatch.last_error) + "</p>" : "";
+      var outbox = dispatch.completion_outbox || {};
+      var outboxText = state === "completion_pending"
+        ? '<p class="muted small">Completion outbox attempt ' + escapeHtml(outbox.attempts || 0) +
+          (outbox.last_error ? " · " + escapeHtml(outbox.last_error) : "") + "</p>" : "";
+      var actions = '<span class="form-actions">';
+      if (dispatch.can_retry) actions += '<button type="button" class="ghost small" data-dispatch-retry="' +
+        escapeHtml(dispatch.dispatch_id) + '">Retry</button>';
+      if (dispatch.can_cancel) actions += '<button type="button" class="ghost small" data-dispatch-cancel="' +
+        escapeHtml(dispatch.dispatch_id) + '">Cancel</button>';
+      if (dispatch.session_id) actions += '<button type="button" class="ghost small" data-remote-session="' +
+        escapeHtml(dispatch.session_id) + '">Open session</button>';
+      actions += "</span>";
+      return '<li data-dispatch-id="' + escapeHtml(dispatch.dispatch_id) + '"><div class="panel-header"><div>' +
+        '<strong>' + escapeHtml(dispatch.card_id ? "Card dispatch" : "Remote session") + '</strong> ' +
+        '<span class="status status-' + badge + '">' + escapeHtml(remoteDispatchStageLabel(state)) + "</span>" +
+        '<p class="muted small"><code>' + escapeHtml(dispatch.dispatch_id) + "</code>" +
+        (latest ? " · " + escapeHtml(latest) : "") + "</p></div>" + actions + "</div>" +
+        error + outboxText + (terminal ? "" : '<progress></progress>') + "</li>";
+    }).join("");
+  }
+
+  async function loadRemoteDispatches(instanceId) {
+    if (!instanceId || instanceId !== remoteInstanceId) return;
+    clearTimeout(remoteDispatchTimer);
+    var localPath = "/api/fleet/dispatch-jobs?target_instance_id=" + encodeURIComponent(instanceId);
+    var targetPath = "/api/fleet/instances/" + encodeURIComponent(instanceId) + "/dispatches";
+    var local = await api(localPath);
+    if (instanceId !== remoteInstanceId || !$("#pa-remote-dispatch-list")) return;
+    var merged = {};
+    (local || []).forEach(function (item) { merged[item.dispatch_id] = item; });
+    renderRemoteDispatches(local || []);
+    var targetRows = await api(targetPath).catch(function () { return []; });
+    if (instanceId !== remoteInstanceId || !$("#pa-remote-dispatch-list")) return;
+    (targetRows || []).forEach(function (target) {
+      var authority = merged[target.dispatch_id];
+      if (!authority) {
+        merged[target.dispatch_id] = target;
+      } else if (target.state === "completion_pending" || target.state === "completed") {
+        authority.state = target.state;
+        authority.last_error = target.last_error;
+        authority.completion_outbox = target.completion_outbox;
+        authority.updated_at = target.updated_at;
+      }
+    });
+    var rows = Object.keys(merged).map(function (key) { return merged[key]; });
+    rows.sort(function (a, b) { return String(b.updated_at).localeCompare(String(a.updated_at)); });
+    renderRemoteDispatches(rows);
+    var active = rows.some(function (item) {
+      return ["queued", "checking_sync", "materializing", "starting_session",
+        "delivering_prompt", "running", "completion_pending"].indexOf(item.state) >= 0;
+    });
+    if (active) remoteDispatchTimer = setTimeout(function () {
+      loadRemoteDispatches(instanceId).catch(function () {});
+    }, 1000);
+  }
+
   async function loadRemoteProviders(instanceId, generation) {
     var select = $("[data-remote-provider]");
     if (!select) return;
@@ -505,6 +594,7 @@
       return;
     }
     if (status) status.textContent = "Loading remote sessions…";
+    loadRemoteDispatches(instanceId).catch(function () {});
     try {
       var base = remoteApiBase(instanceId);
       var warnings = [];
@@ -1182,6 +1272,42 @@
       return;
     }
 
+    var dispatchRetry = e.target.closest("[data-dispatch-retry]");
+    if (dispatchRetry) {
+      e.preventDefault();
+      var retryId = dispatchRetry.getAttribute("data-dispatch-retry");
+      dispatchRetry.disabled = true;
+      api("/api/fleet/dispatch-jobs/" + encodeURIComponent(retryId) + "/retry", {
+        method: "POST", body: {}
+      }).then(function () {
+        return loadRemoteDispatches(remoteInstanceId);
+      }).catch(function (err) {
+        var status = $("#pa-remote-status");
+        if (status) status.textContent = err.message;
+      }).finally(function () {
+        if (dispatchRetry.isConnected) dispatchRetry.disabled = false;
+      });
+      return;
+    }
+
+    var dispatchCancel = e.target.closest("[data-dispatch-cancel]");
+    if (dispatchCancel) {
+      e.preventDefault();
+      var cancelId = dispatchCancel.getAttribute("data-dispatch-cancel");
+      dispatchCancel.disabled = true;
+      api("/api/fleet/dispatch-jobs/" + encodeURIComponent(cancelId) + "/cancel", {
+        method: "POST", body: {}
+      }).then(function () {
+        return loadRemoteDispatches(remoteInstanceId);
+      }).catch(function (err) {
+        var status = $("#pa-remote-status");
+        if (status) status.textContent = err.message;
+      }).finally(function () {
+        if (dispatchCancel.isConnected) dispatchCancel.disabled = false;
+      });
+      return;
+    }
+
     var remoteSession = e.target.closest("[data-remote-session]");
     if (remoteSession) {
       selectRemoteSession(remoteSession.getAttribute("data-remote-session"));
@@ -1394,7 +1520,6 @@
         return;
       }
       var dispatchInstanceId = remoteInstanceId;
-      var remoteInstanceSelect = $("#pa-remote-instance");
       var remoteBody = formToObject(form);
       var cardSelect = form.elements.card_id;
       if (cardSelect && cardSelect.selectedOptions.length) {
@@ -1404,31 +1529,39 @@
       Object.keys(remoteBody).forEach(function (key) {
         if (remoteBody[key] === "") delete remoteBody[key];
       });
+      var admissionSlot = "pa-remote-dispatch-admission:" + dispatchInstanceId + ":" +
+        (remoteBody.card_id || "standalone") + ":" + (remoteBody.resume_session_id || "fresh");
+      var serializedBody = JSON.stringify(remoteBody);
+      var admission = null;
+      try { admission = JSON.parse(localStorage.getItem(admissionSlot) || "null"); } catch (err) {}
+      if (!admission || admission.body !== serializedBody || !admission.key) {
+        admission = {
+          key: window.crypto && window.crypto.randomUUID
+            ? window.crypto.randomUUID()
+            : String(Date.now()) + "-" + Math.random().toString(16).slice(2),
+          body: serializedBody,
+        };
+        try { localStorage.setItem(admissionSlot, JSON.stringify(admission)); } catch (err) {}
+      }
       var submit = form.querySelector("[data-remote-start]");
       if (submit) submit.disabled = true;
-      if (remoteInstanceSelect) remoteInstanceSelect.disabled = true;
-      if (remoteStatus) remoteStatus.textContent = "Starting remote session…";
+      if (remoteStatus) remoteStatus.textContent = "Queueing durable remote dispatch…";
       api(remoteApiBase(dispatchInstanceId) + "/start", {
         method: "POST",
         body: remoteBody,
+        headers: Object.assign(csrfHeaders(), { "Idempotency-Key": admission.key }),
       }).then(function (result) {
-        var snapshot = result.session || {};
-        var session = snapshot.session || snapshot;
-        if (!session.id) throw new Error("Remote instance did not return a session id.");
+        if (!result.dispatch_id) throw new Error("PA did not return a durable dispatch id.");
+        try { localStorage.removeItem(admissionSlot); } catch (err) {}
         if (
           dispatchInstanceId !== remoteInstanceId ||
           !form.isConnected
         ) return;
         if (remoteStatus) {
-          remoteStatus.textContent = result.prompt_error
-            ? "Remote session " + session.id + " started, but its initial prompt failed: " + result.prompt_error
-            : "Remote work started in session " + session.id + ".";
+          remoteStatus.textContent = (result.duplicate ? "Recovered" : "Queued") +
+            " durable dispatch " + result.dispatch_id + ". Other Fleet controls remain available.";
         }
-        return loadRemoteOperations().then(function () {
-          if (dispatchInstanceId === remoteInstanceId && form.isConnected) {
-            selectRemoteSession(session.id);
-          }
-        });
+        loadRemoteDispatches(dispatchInstanceId).catch(function () {});
       }).catch(function (err) {
         if (
           dispatchInstanceId === remoteInstanceId &&
@@ -1447,9 +1580,6 @@
         }
       }).finally(function () {
         if (submit && submit.isConnected) submit.disabled = false;
-        if (remoteInstanceSelect && remoteInstanceSelect.isConnected) {
-          remoteInstanceSelect.disabled = false;
-        }
       });
       return;
     }

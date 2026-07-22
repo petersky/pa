@@ -702,7 +702,9 @@ class FleetUpdateUiTests(unittest.TestCase):
 
 
 class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
-    async def test_card_dispatch_returns_remote_session_and_records_audit(self) -> None:
+    async def test_card_dispatch_returns_durable_admission_without_peer_wait(
+        self,
+    ) -> None:
         from pa.modules.fleet import RemoteAgentStartBody, start_remote_agent_work
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -755,9 +757,14 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
             ctx = MagicMock()
             ctx.settings = settings
             ctx.store = store
-            ctx.require_service.return_value = fleet
+            ctx.services = {"fleet_registry": fleet}
+            ctx.require_service.side_effect = lambda name: ctx.services[name]
+            ctx.register_service.side_effect = lambda name, value: (
+                ctx.services.__setitem__(name, value)
+            )
             request = MagicMock()
             request.app.state.ctx = ctx
+            request.headers = {"idempotency-key": "browser-attempt-1"}
 
             peer = AsyncMock(
                 side_effect=[
@@ -779,35 +786,23 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
                     "mini-1",
                     RemoteAgentStartBody(card_id=card.id, provider="codex"),
                 )
+                duplicate = await start_remote_agent_work(
+                    request,
+                    "mini-1",
+                    RemoteAgentStartBody(card_id=card.id, provider="codex"),
+                )
 
-            self.assertEqual(result["session"]["session"]["id"], "remote-session")
-            self.assertEqual(materialize.await_count, 1)
-            self.assertEqual(
-                materialize.await_args_list[0].args[2]["card_id"]
-                if "card_id" in materialize.await_args_list[0].args[2]
-                else materialize.await_args_list[0].args[2]["card"]["id"],
-                "card-1",
-            )
-            create_call = peer.await_args_list[0]
-            self.assertEqual(create_call.args[3], "sessions")
-            self.assertNotIn("cwd", create_call.kwargs["body"])
+            self.assertTrue(result["accepted"])
+            self.assertFalse(result["duplicate"])
+            self.assertTrue(duplicate["duplicate"])
+            self.assertEqual(duplicate["dispatch_id"], result["dispatch_id"])
+            self.assertEqual(result["dispatch"]["state"], "queued")
+            self.assertEqual(result["dispatch"]["card_id"], "card-1")
+            self.assertEqual(peer.await_count, 0)
+            self.assertEqual(materialize.await_count, 0)
             store.project_working_directory.assert_not_called()
-            self.assertEqual(create_call.kwargs["body"]["label"], "card:card-1")
-            self.assertEqual(
-                create_call.kwargs["body"]["dispatch_id"],
-                result["dispatch"]["dispatch_id"],
-            )
-            prompt_call = peer.await_args_list[1]
-            self.assertEqual(
-                prompt_call.kwargs["body"]["message"],
-                "Work on this card autonomously. Report progress, blockers, "
-                "and the final result.",
-            )
-            self.assertNotIn("/Users/petersky", prompt_call.kwargs["body"]["message"])
-            # Target-side composition waits for the target workspace; no
-            # controller-local project path enters the remote prompt.
-            store.update_card.assert_called_once()
-            store.add_knowledge.assert_called_once()
+            store.update_card.assert_not_called()
+            store.add_knowledge.assert_not_called()
 
     async def test_remote_agent_start_omits_cwd_when_checkout_ambiguous(
         self,
@@ -846,15 +841,21 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
             store.get_project.return_value = project
             store.project_working_directory.return_value = None
             ctx = MagicMock(settings=settings, store=store)
-            ctx.require_service.return_value = fleet
+            ctx.services = {"fleet_registry": fleet}
+            ctx.require_service.side_effect = lambda name: ctx.services[name]
+            ctx.register_service.side_effect = lambda name, value: (
+                ctx.services.__setitem__(name, value)
+            )
             request = MagicMock()
             request.app.state.ctx = ctx
+            request.headers = {"idempotency-key": "ambiguous-cwd"}
             peer = AsyncMock(
                 return_value={"session": {"id": "remote-session", "title": "Remote"}}
             )
 
             with (
                 patch("pa.modules.fleet.require_user", return_value=object()),
+                patch("pa.modules.fleet.get_principal_id", return_value="user:local"),
                 patch("pa.modules.fleet._peer_agent_json", peer),
             ):
                 await start_remote_agent_work(
@@ -866,8 +867,9 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
                     ),
                 )
 
-            create_call = peer.await_args_list[0]
-            self.assertNotIn("cwd", create_call.kwargs["body"])
+            self.assertEqual(peer.await_count, 0)
+            record = next(iter(ctx.services["dispatch_store"].list()))
+            self.assertEqual(record.project_id, project.id)
             store.project_working_directory.assert_not_called()
 
     async def test_remote_agent_start_uses_repo_paths_by_instance_fallback(
@@ -910,15 +912,21 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
             store.get_project.return_value = project
             store.project_working_directory.return_value = None
             ctx = MagicMock(settings=settings, store=store)
-            ctx.require_service.return_value = fleet
+            ctx.services = {"fleet_registry": fleet}
+            ctx.require_service.side_effect = lambda name: ctx.services[name]
+            ctx.register_service.side_effect = lambda name, value: (
+                ctx.services.__setitem__(name, value)
+            )
             request = MagicMock()
             request.app.state.ctx = ctx
+            request.headers = {"idempotency-key": "mapped-cwd"}
             peer = AsyncMock(
                 return_value={"session": {"id": "remote-session", "title": "Remote"}}
             )
 
             with (
                 patch("pa.modules.fleet.require_user", return_value=object()),
+                patch("pa.modules.fleet.get_principal_id", return_value="user:local"),
                 patch("pa.modules.fleet._peer_agent_json", peer),
             ):
                 await start_remote_agent_work(
@@ -930,11 +938,12 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
                     ),
                 )
 
-            create_call = peer.await_args_list[0]
-            self.assertNotIn("cwd", create_call.kwargs["body"])
+            self.assertEqual(peer.await_count, 0)
+            record = next(iter(ctx.services["dispatch_store"].list()))
+            self.assertEqual(record.project_id, project.id)
             store.project_working_directory.assert_not_called()
 
-    async def test_dispatch_preserves_session_when_initial_prompt_fails(self) -> None:
+    async def test_dispatch_failure_preserves_allocated_session_for_retry(self) -> None:
         from fastapi import HTTPException
 
         from pa.modules.fleet import RemoteAgentStartBody, start_remote_agent_work
@@ -944,6 +953,7 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
                 data_dir=Path(tmp),
                 instance_id="controller-1",
                 instance_name="controller",
+                instance_url="http://controller:8080",
                 sync_token="secret",
             )
             fleet = FleetRegistry(settings.data_dir, settings.fleet_id)
@@ -956,9 +966,14 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
             )
             store = MagicMock()
             ctx = MagicMock(settings=settings, store=store)
-            ctx.require_service.return_value = fleet
+            ctx.services = {"fleet_registry": fleet}
+            ctx.require_service.side_effect = lambda name: ctx.services[name]
+            ctx.register_service.side_effect = lambda name, value: (
+                ctx.services.__setitem__(name, value)
+            )
             request = MagicMock()
             request.app.state.ctx = ctx
+            request.headers = {"idempotency-key": "prompt-failure"}
             peer = AsyncMock(
                 side_effect=[
                     {"session": {"id": "remote-session", "title": "Remote smoke"}},
@@ -968,6 +983,7 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
 
             with (
                 patch("pa.modules.fleet.require_user", return_value=object()),
+                patch("pa.modules.fleet.get_principal_id", return_value="user:local"),
                 patch("pa.modules.fleet._peer_agent_json", peer),
             ):
                 result = await start_remote_agent_work(
@@ -976,11 +992,29 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
                     RemoteAgentStartBody(title="Remote smoke", message="Start work"),
                 )
 
-            self.assertEqual(result["session"]["session"]["id"], "remote-session")
-            self.assertEqual(result["prompt_error"], "provider unavailable")
-            entry = store.add_knowledge.call_args.args[0]
-            self.assertIn("Initial prompt failed", entry.summary)
-            self.assertIn("prompt-error", entry.tags)
+            record = ctx.services["dispatch_store"].get(result["dispatch_id"])
+            app = MagicMock()
+            app.state.ctx = ctx
+            from pa.execution.dispatch import DispatchWorker
+            from pa.modules.fleet import _process_remote_dispatch
+
+            worker = DispatchWorker(
+                ctx.services["dispatch_store"],
+                lambda item: _process_remote_dispatch(app, item),
+            )
+            with (
+                patch(
+                    "pa.modules.fleet._peer_dispatch_json",
+                    AsyncMock(return_value={"resolvable": True}),
+                ),
+                patch("pa.modules.fleet._peer_agent_json", peer),
+            ):
+                await worker._execute(record)
+
+            self.assertEqual(record.session_id, "remote-session")
+            self.assertEqual(record.state, "failed")
+            self.assertIn("provider unavailable", record.last_error)
+            store.add_knowledge.assert_not_called()
 
     async def test_card_dispatch_does_not_reuse_another_hosts_repo_path(self) -> None:
         from pa.modules.fleet import _project_working_directory
