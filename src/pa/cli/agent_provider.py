@@ -16,7 +16,20 @@ from pa.acp.providers.resolve import list_provider_summaries
 from pa.config import get_settings
 from pa.fleet.registry import FleetRegistry
 
-agent_provider_app = typer.Typer(help="Manage ACP agent providers (Cursor, Codex, …)")
+agent_provider_app = typer.Typer(
+    help="Manage ACP agent providers (Cursor, Codex, OpenInterpreter, …)"
+)
+
+_OPENINTERPRETER_ENV_KEYS = {
+    "openai": "OPENAI_API_KEY",
+    "anthropic": "ANTHROPIC_API_KEY",
+    "kimi-for-coding": "KIMI_API_KEY",
+    "moonshotai": "MOONSHOT_API_KEY",
+    "deepseek": "DEEPSEEK_API_KEY",
+    "zai": "ZAI_API_KEY",
+    "zhipu": "ZHIPU_API_KEY",
+    "groq": "GROQ_API_KEY",
+}
 
 
 def _remote(
@@ -120,24 +133,78 @@ def configure_cmd(
     provider: Annotated[str, typer.Option("--provider", "-p")] = "codex",
     instance: Annotated[Optional[str], typer.Option("--instance")] = None,
     api_key: Annotated[
-        Optional[str], typer.Option("--api-key", help="CODEX_API_KEY / OPENAI_API_KEY")
+        Optional[str],
+        typer.Option(
+            "--api-key",
+            help="Provider API key; stored only on the target host",
+        ),
     ] = None,
     no_browser: Annotated[bool, typer.Option("--no-browser/--browser")] = True,
     env_json: Annotated[
         Optional[str], typer.Option("--env-json", help="Extra env as JSON object")
     ] = None,
+    secret_json: Annotated[
+        Optional[str],
+        typer.Option("--secret-json", help="Provider secrets as a JSON object"),
+    ] = None,
+    model: Annotated[Optional[str], typer.Option("--model")] = None,
+    model_provider: Annotated[
+        Optional[str], typer.Option("--model-provider")
+    ] = None,
+    model_provider_name: Annotated[
+        Optional[str], typer.Option("--provider-name")
+    ] = None,
+    model_provider_base_url: Annotated[
+        Optional[str], typer.Option("--provider-base-url")
+    ] = None,
+    model_provider_env_key: Annotated[
+        Optional[str], typer.Option("--provider-env-key")
+    ] = None,
+    model_provider_wire_api: Annotated[
+        Optional[str],
+        typer.Option(
+            "--provider-wire-api",
+            help="OpenInterpreter wire API: responses, chat, or messages",
+        ),
+    ] = None,
 ) -> None:
-    """Configure provider env and optional API key (stored only on target host)."""
+    """Configure ACP and model-provider settings on a local or fleet host."""
     env: dict[str, str] = {}
     if env_json:
         env.update(json.loads(env_json))
     secrets: dict[str, str] = {}
+    if secret_json:
+        parsed_secrets = json.loads(secret_json)
+        if not isinstance(parsed_secrets, dict):
+            raise typer.BadParameter("--secret-json must be a JSON object")
+        secrets.update({str(key): str(value) for key, value in parsed_secrets.items()})
     if api_key:
-        secrets["CODEX_API_KEY"] = api_key
+        if provider == "codex":
+            api_key_name = "CODEX_API_KEY"
+        elif provider == "openinterpreter":
+            api_key_name = model_provider_env_key or _OPENINTERPRETER_ENV_KEYS.get(
+                model_provider or "openai"
+            )
+            if not api_key_name:
+                raise typer.BadParameter(
+                    "--provider-env-key is required for this OpenInterpreter model provider"
+                )
+        else:
+            raise typer.BadParameter(
+                "--api-key is supported for codex/openinterpreter; "
+                "use --secret-json for other providers"
+            )
+        secrets[api_key_name] = api_key
     body = {
         "env": env,
         "secrets": secrets,
         "no_browser": no_browser if provider == "codex" else None,
+        "model": model,
+        "model_provider": model_provider,
+        "model_provider_name": model_provider_name,
+        "model_provider_base_url": model_provider_base_url,
+        "model_provider_env_key": model_provider_env_key,
+        "model_provider_wire_api": model_provider_wire_api,
     }
     if instance:
         data = _remote(

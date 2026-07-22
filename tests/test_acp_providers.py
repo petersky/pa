@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 import queue
+import subprocess
 import tempfile
 import threading
 import time
+import tomllib
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
@@ -17,6 +19,10 @@ from fastapi import HTTPException
 
 from pa.acp.providers.base import ProviderConfigureBody
 from pa.acp.providers.codex import _codex_auth_status
+from pa.acp.providers.openinterpreter import (
+    OpenInterpreterProvider,
+    _run_official_installer,
+)
 from pa.acp.providers.codex_auth import (
     CodexLoginJob,
     CodexLoginJobStore,
@@ -59,7 +65,11 @@ class AcpProviderTests(unittest.TestCase):
         ids = set(list_provider_ids())
         self.assertIn("cursor", ids)
         self.assertIn("codex", ids)
+        self.assertIn("openinterpreter", ids)
         self.assertEqual(get_provider("cursor").display_name, "Cursor")
+        self.assertEqual(
+            get_provider("openinterpreter").display_name, "OpenInterpreter"
+        )
 
     def test_surface_for_label(self) -> None:
         self.assertEqual(surface_for_label("default"), SURFACE_CHAT_DEFAULT)
@@ -173,6 +183,191 @@ class AcpProviderTests(unittest.TestCase):
             or cmd.endswith("\\npx"),
             f"unexpected command: {cmd!r}",
         )
+
+    def test_openinterpreter_spawn_uses_acp_and_managed_home(self) -> None:
+        settings = Settings(data_dir=self.data_dir, agent_provider="openinterpreter")
+        resolved = resolve_agent_provider(
+            settings, AgentInvocationContext(surface=SURFACE_CHAT_DEFAULT)
+        )
+        self.assertEqual(resolved.provider_id, "openinterpreter")
+        self.assertEqual(resolved.spec.args, ["acp"])
+        self.assertEqual(
+            resolved.spec.env["INTERPRETER_HOME"],
+            str(
+                self.data_dir
+                / "agent_providers"
+                / "openinterpreter"
+                / "home"
+            ),
+        )
+        self.assertEqual(
+            get_provider("openinterpreter")
+            .resolve_spawn(
+                data_dir=self.data_dir,
+                extra_env={"INTERPRETER_HOME": "/tmp/not-allowed"},
+            )
+            .env["INTERPRETER_HOME"],
+            str(
+                self.data_dir
+                / "agent_providers"
+                / "openinterpreter"
+                / "home"
+            ),
+        )
+
+    def test_openinterpreter_configure_writes_model_config_and_isolates_secret(
+        self,
+    ) -> None:
+        secret = "secret-never-return"
+        provider = OpenInterpreterProvider()
+        status = provider.configure(
+            self.data_dir,
+            ProviderConfigureBody(
+                model="acme-coder",
+                model_provider="acme",
+                model_provider_name="Acme",
+                model_provider_base_url="https://api.acme.example/v1",
+                model_provider_env_key="ACME_API_KEY",
+                model_provider_wire_api="chat",
+                secrets={"ACME_API_KEY": secret},
+            ),
+        )
+
+        config_path = (
+            self.data_dir
+            / "agent_providers"
+            / "openinterpreter"
+            / "home"
+            / "config.toml"
+        )
+        config = tomllib.loads(config_path.read_text())
+        self.assertEqual(config["model"], "acme-coder")
+        self.assertEqual(config["model_provider"], "acme")
+        self.assertEqual(
+            config["model_providers"]["acme"],
+            {
+                "name": "Acme",
+                "base_url": "https://api.acme.example/v1",
+                "env_key": "ACME_API_KEY",
+                "wire_api": "chat",
+            },
+        )
+        credentials = json.loads(
+            (self.data_dir / "integrations" / "openinterpreter.json").read_text()
+        )
+        self.assertEqual(credentials["ACME_API_KEY"], secret)
+        public_status = status.model_dump_json()
+        self.assertNotIn(secret, public_status)
+        self.assertEqual(status.meta["credential_keys"], ["ACME_API_KEY"])
+        self.assertEqual(
+            provider.resolve_spawn(data_dir=self.data_dir).env["ACME_API_KEY"],
+            secret,
+        )
+
+    def test_openinterpreter_rejects_unsafe_model_configuration(self) -> None:
+        provider = OpenInterpreterProvider()
+        with self.assertRaisesRegex(ValueError, "model_provider"):
+            provider.configure(
+                self.data_dir,
+                ProviderConfigureBody(
+                    model_provider='bad"]\nmalicious = "value',
+                ),
+            )
+        with self.assertRaisesRegex(ValueError, "INTERPRETER_HOME"):
+            provider.configure(
+                self.data_dir,
+                ProviderConfigureBody(env={"INTERPRETER_HOME": "/tmp/escape"}),
+            )
+        self.assertFalse(
+            (
+                self.data_dir
+                / "agent_providers"
+                / "openinterpreter"
+                / "home"
+                / "config.toml"
+            ).exists()
+        )
+
+    def test_openinterpreter_install_uses_official_installer(self) -> None:
+        provider = OpenInterpreterProvider()
+        completed = subprocess.CompletedProcess(["sh", "install.sh"], 0, "ok", "")
+        installed = Path("/opt/openinterpreter/interpreter")
+        with (
+            patch(
+                "pa.acp.providers.openinterpreter.resolve_executable",
+                side_effect=[None, installed],
+            ),
+            patch("pa.acp.providers.openinterpreter.shutil.which", return_value=None),
+            patch(
+                "pa.acp.providers.openinterpreter._run_official_installer",
+                return_value=completed,
+            ) as run_installer,
+            patch(
+                "pa.acp.providers.openinterpreter._version",
+                return_value="interpreter 1.2.3",
+            ),
+        ):
+            result = provider.install(self.data_dir)
+        self.assertTrue(result.ok)
+        self.assertEqual(result.command, str(installed))
+        run_installer.assert_called_once_with(
+            self.data_dir / "agent_providers" / "openinterpreter" / "home"
+        )
+
+    @unittest.skipIf(__import__("os").name == "nt", "Unix installer path")
+    def test_openinterpreter_official_installer_is_bounded_and_noninteractive(
+        self,
+    ) -> None:
+        response = MagicMock()
+        response.geturl.return_value = "https://www.openinterpreter.com/install"
+        response.read.return_value = b"#!/bin/sh\nexit 0\n"
+        response.__enter__.return_value = response
+        completed = subprocess.CompletedProcess(["sh", "install.sh"], 0, "", "")
+        with (
+            patch(
+                "pa.acp.providers.openinterpreter.urllib.request.urlopen",
+                return_value=response,
+            ),
+            patch(
+                "pa.acp.providers.openinterpreter.subprocess.run",
+                return_value=completed,
+            ) as run,
+        ):
+            result = _run_official_installer(self.data_dir / "interpreter-home")
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(run.call_args.args[0][0], "sh")
+        self.assertEqual(
+            run.call_args.kwargs["env"]["INTERPRETER_HOME"],
+            str(self.data_dir / "interpreter-home"),
+        )
+        self.assertEqual(
+            run.call_args.kwargs["env"]["OPEN_INTERPRETER_NONINTERACTIVE"], "1"
+        )
+
+    def test_openinterpreter_update_uses_self_update_command(self) -> None:
+        provider = OpenInterpreterProvider()
+        installed = Path("/opt/openinterpreter/interpreter")
+        completed = subprocess.CompletedProcess(
+            [str(installed), "update"], 0, "updated", ""
+        )
+        with (
+            patch(
+                "pa.acp.providers.openinterpreter.resolve_executable",
+                return_value=installed,
+            ),
+            patch(
+                "pa.acp.providers.openinterpreter.subprocess.run",
+                return_value=completed,
+            ) as run,
+            patch(
+                "pa.acp.providers.openinterpreter._version",
+                return_value="interpreter 1.2.4",
+            ),
+        ):
+            result = provider.update(self.data_dir)
+        self.assertTrue(result.ok)
+        self.assertEqual(result.version, "interpreter 1.2.4")
+        self.assertEqual(run.call_args.args[0], [str(installed), "update"])
 
     def test_command_override(self) -> None:
         settings = Settings(

@@ -222,7 +222,7 @@ PA is designed **agent-first**: agents can direct PA and be directed by it, incl
 | Interface | Role |
 |-----------|------|
 | `pa mcp` | Tool surface for any agent session |
-| ACP (provider subprocess) | Interactive chat; PA tools via MCP bridge. Built-ins: Cursor (`agent acp`), Codex (`codex-acp`). See [acp/](acp/README.md). |
+| ACP (provider subprocess) | Interactive chat; PA tools via MCP bridge. Built-ins: Cursor (`agent acp`), Codex (`codex-acp`), OpenInterpreter (`interpreter acp`). See [acp/](acp/README.md). |
 | `pa` CLI | Human/script operator |
 | Web UI | Human-friendly views of cards, projects, fleet |
 

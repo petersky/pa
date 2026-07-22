@@ -117,7 +117,7 @@ Environment variables (prefix `PA_`):
 | `PA_PORT` | `8080` | Server bind port |
 | `PA_PEERS` | — | Comma-separated peer URLs |
 | `PA_AGENT_ENABLED` | `true` | Connect to ACP agent on startup |
-| `PA_AGENT_PROVIDER` | `cursor` | Default ACP provider (`cursor` or `codex`) |
+| `PA_AGENT_PROVIDER` | `cursor` | Default ACP provider (`cursor`, `codex`, or `openinterpreter`) |
 | `PA_AGENT_COMMAND` | _(provider default)_ | Optional spawn command override |
 | `PA_AGENT_ARGS` | _(provider default)_ | Optional spawn args override (JSON array or comma-separated) |
 | `PA_DEBUG` | `false` | Debug logging, hook history, dev tools |

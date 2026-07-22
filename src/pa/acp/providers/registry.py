@@ -7,6 +7,7 @@ from typing import Iterable
 from pa.acp.providers.base import AgentProvider, AgentProviderId
 from pa.acp.providers.codex import CodexProvider
 from pa.acp.providers.cursor import CursorProvider
+from pa.acp.providers.openinterpreter import OpenInterpreterProvider
 
 _PROVIDERS: dict[str, AgentProvider] = {}
 
@@ -14,7 +15,7 @@ _PROVIDERS: dict[str, AgentProvider] = {}
 def _ensure_builtins() -> None:
     if _PROVIDERS:
         return
-    for provider in (CursorProvider(), CodexProvider()):
+    for provider in (CursorProvider(), CodexProvider(), OpenInterpreterProvider()):
         _PROVIDERS[provider.id] = provider
 
 
