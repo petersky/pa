@@ -221,12 +221,22 @@ class CardKind(StrEnum):
     CONCERN = "concern"
 
 
+class CardSummarySource(StrEnum):
+    FALLBACK = "fallback"
+    MANUAL = "manual"
+    AGENT = "agent"
+
+
 class Card(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     realm_id: str = "default"
     kind: CardKind = CardKind.TASK
     title: str
     body: str = ""
+    summary: str = ""
+    summary_source: CardSummarySource = CardSummarySource.FALLBACK
+    summary_updated_at: datetime | None = None
+    summary_stale: bool = False
     lane: CardLane = CardLane.INBOX
     parent_id: str | None = None
     project_id: str | None = None
@@ -249,6 +259,8 @@ class CardCreate(BaseModel):
     kind: CardKind = CardKind.TASK
     title: str
     body: str = ""
+    summary: str = ""
+    summary_source: CardSummarySource | None = None
     lane: CardLane = CardLane.INBOX
     parent_id: str | None = None
     project_id: str | None = None
@@ -260,6 +272,9 @@ class CardCreate(BaseModel):
 class CardUpdate(BaseModel):
     title: str | None = None
     body: str | None = None
+    summary: str | None = None
+    summary_source: CardSummarySource | None = None
+    summary_stale: bool | None = None
     lane: CardLane | None = None
     parent_id: str | None = None
     project_id: str | None = None

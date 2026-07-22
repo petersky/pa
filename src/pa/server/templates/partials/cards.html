@@ -1,42 +1,19 @@
+{% from "macros/cards.html" import compact_card %}
 {% if cards %}
-<ul class="item-list">
+<div class="compact-card-list">
   {% for card in cards %}
-  <li class="item item-{{ card.kind.value }}"
-      draggable="true"
-      data-card-id="{{ card.id }}"
-      data-realm="{{ card.realm_id }}">
-    <div class="item-meta">
-      <span class="badge">{{ card.kind.value }}</span>
-      <span class="status status-{{ card.lane.value }}">{{ card.lane.value }}</span>
-      {% if card.project_id %}<span class="badge muted">project</span>{% endif %}
-    </div>
-    <h3 class="card-title-btn"
-        role="button"
-        tabindex="0"
-        hx-get="/partials/cards/{{ card.id }}/detail?realm={{ card.realm_id }}"
-        hx-target="#card-detail"
-        hx-swap="innerHTML">{{ card.title }}</h3>
-    {% if card.body %}
-    <p>{{ card.body }}</p>
-    {% endif %}
-    {% if lanes %}
-    <div class="card-lane-actions">
-      {% for lane in lanes %}
-      {% if lane != card.lane %}
-      <button type="button" class="ghost small"
-              hx-post="/partials/cards/{{ card.id }}/move?realm={{ card.realm_id }}"
-              hx-vals='{"lane": "{{ lane.value }}"}'
-              hx-swap="none"
-              hx-on:htmx:after:request="if(event.detail.ctx && event.detail.ctx.response && event.detail.ctx.response.status < 400) htmx.trigger(document.body, 'boardRefresh')">
-        → {{ lane.value | capitalize }}
-      </button>
-      {% endif %}
-      {% endfor %}
-    </div>
-    {% endif %}
-  </li>
+    {{ compact_card(
+      card,
+      card_projects.get(card.id),
+      card_sessions.get(card.id),
+      movable=true,
+      lanes=lanes
+    ) }}
   {% endfor %}
-</ul>
+</div>
 {% else %}
-<p class="empty">No cards in this lane.</p>
+<div class="empty-state compact-empty">
+  <h3>No cards here</h3>
+  <p class="muted">Try another filter or capture the next piece of work.</p>
+</div>
 {% endif %}

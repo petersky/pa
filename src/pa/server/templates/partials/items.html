@@ -1,23 +1,10 @@
-{% if items %}
-<ul class="item-list">
-  {% for item in items %}
-  <li class="item item-{{ item.kind.value }}">
-    <div class="item-meta">
-      <span class="badge">{{ item.kind.value }}</span>
-      <span class="status status-{{ item.status.value }}">{{ item.status.value }}</span>
-    </div>
-    <h3 class="card-title-btn"
-        role="button"
-        tabindex="0"
-        hx-get="/partials/cards/{{ item.id }}/detail?realm={{ active_realm | default('default') }}"
-        hx-target="#card-detail"
-        hx-swap="innerHTML">{{ item.title }}</h3>
-    {% if item.body %}
-    <p>{{ item.body }}</p>
-    {% endif %}
-  </li>
+{% from "macros/cards.html" import compact_card %}
+{% if cards %}
+<div class="compact-card-list">
+  {% for card in cards %}
+    {{ compact_card(card, card_projects.get(card.id), card_sessions.get(card.id)) }}
   {% endfor %}
-</ul>
+</div>
 {% else %}
 <p class="empty">Nothing captured yet.</p>
 {% endif %}

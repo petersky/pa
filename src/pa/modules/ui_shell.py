@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
+from pa.auth.csrf import token_for_request
 from pa.auth.middleware import get_principal_id
 from pa.core.contracts import Module
 from pa.core.context import AppContext
@@ -27,7 +28,9 @@ def _user_id_from_request(request: Request) -> str | None:
 def _shell_context(request: Request) -> dict:
     ctx: AppContext = request.app.state.ctx
     settings = ctx.settings
-    prefs = get_preferences_store(settings.data_dir, user_id=_user_id_from_request(request)).load()
+    prefs = get_preferences_store(
+        settings.data_dir, user_id=_user_id_from_request(request)
+    ).load()
     agent = ctx.require_service("instance_agent")
     pages: PageRegistry = ctx.require_service("pages")
     assets = ctx.require_service("assets")
@@ -43,7 +46,7 @@ def _shell_context(request: Request) -> dict:
         "nav_pages": pages.nav_pages(),
         "asset_version": assets.version,
         "static_url": assets.url,
-        "csrf_token": request.cookies.get("pa_csrf", ""),
+        "csrf_token": token_for_request(request),
         "pa_version": __import__("pa").__version__,
         "build_id": f"{__import__('pa').__version__}+{assets.version}",
     }

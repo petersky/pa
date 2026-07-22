@@ -6,7 +6,7 @@ from fastapi import APIRouter, Form, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from pa.auth.cookies import use_secure_cookies
-from pa.auth.csrf import COOKIE_NAME
+from pa.auth.csrf import COOKIE_NAME, token_for_request
 from pa.auth.middleware import require_user
 from pa.auth.sessions import SessionManager
 from pa.auth.users import UserDirectory
@@ -68,7 +68,7 @@ def me(request: Request) -> dict:
 def login_page(request: Request) -> HTMLResponse:
     templates = request.app.state.templates
     assets = request.app.state.ctx.require_service("assets")
-    token = request.cookies.get(COOKIE_NAME, "")
+    token = token_for_request(request)
     return templates.TemplateResponse(
         request,
         "pages/login.html",

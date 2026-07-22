@@ -1,0 +1,49 @@
+{% macro compact_card(card, project=None, session=None, movable=false, lanes=[]) %}
+<article class="compact-card item-{{ card.kind.value }}"
+         {% if movable %}draggable="true"{% endif %}
+         data-card-id="{{ card.id }}"
+         data-realm="{{ card.realm_id }}"
+         data-card-lane="{{ card.lane.value }}">
+  <div class="compact-card-meta">
+    <span class="badge">{{ card.kind.value }}</span>
+    <span class="status status-{{ card.lane.value }}">{{ card.lane.value }}</span>
+    {% if project %}<span class="compact-card-project">{{ project.title }}</span>{% endif %}
+    {% if card.summary_stale %}
+    <span class="summary-stale" title="The source details changed after this summary was written">Summary needs review</span>
+    {% endif %}
+  </div>
+  <h3>
+    <a href="?realm={{ card.realm_id }}&card={{ card.id }}"
+       data-card-detail-link
+       data-card-id="{{ card.id }}"
+       data-card-realm="{{ card.realm_id }}">{{ card.title }}</a>
+  </h3>
+  <p class="compact-card-summary">{{ card.summary }}</p>
+  <footer class="compact-card-footer">
+    <span>
+      {% if session %}Agent {{ session.status }}
+      {% elif card.owner_principal %}{{ card.owner_principal }}
+      {% elif card.preferred_instance %}{{ card.preferred_instance }}
+      {% else %}Unassigned{% endif %}
+    </span>
+    <time datetime="{{ card.updated_at.isoformat() }}">
+      Updated {{ card.updated_at.strftime('%b %-d, %H:%M') }}
+    </time>
+    {% if movable %}
+    <details class="card-move-menu">
+      <summary>Move</summary>
+      <div role="menu">
+        {% for target_lane in lanes %}
+        {% if target_lane != card.lane %}
+        <button type="button" role="menuitem"
+                data-card-move-to="{{ target_lane.value }}">
+          {{ target_lane.value | capitalize }}
+        </button>
+        {% endif %}
+        {% endfor %}
+      </div>
+    </details>
+    {% endif %}
+  </footer>
+</article>
+{% endmacro %}

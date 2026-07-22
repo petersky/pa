@@ -58,6 +58,9 @@
   <main id="app-view" class="app-view">
     {% include include_template %}
   </main>
+  <dialog id="card-detail-dialog" class="card-detail-dialog" aria-label="Card details">
+    <div id="card-detail-dialog-content" data-card-dialog-content></div>
+  </dialog>
   {% if debug and dev_tools | default(true) %}
   <div id="debug-panel" hx-get="/partials/debug-panel" hx-trigger="load" hx-swap="innerHTML"></div>
   {% endif %}

@@ -1,69 +1,78 @@
 {% from "macros/layout.html" import page_layout %}
 
-{% set left %}
-<div class="panel">
-  <div class="panel-header"><h2>Realm</h2></div>
-  <nav class="sidebar-menu">
-    {% for r in realms %}
-    <a class="sidebar-menu-item {% if r == active_realm %}active{% endif %}"
-       href="/work?realm={{ r }}">{{ r }}</a>
-    {% endfor %}
-  </nav>
-  <div class="panel-header"><h2>Projects</h2></div>
-  <nav class="sidebar-menu">
-    <a class="sidebar-menu-item {% if not active_project %}active{% endif %}"
-       href="/work?realm={{ active_realm }}">All cards</a>
-    {% for p in projects %}
-    <a class="sidebar-menu-item {% if active_project == p.id %}active{% endif %}"
-       href="/work?realm={{ active_realm }}&project={{ p.id }}">{{ p.title }}</a>
-    {% endfor %}
-  </nav>
-</div>
-{% endset %}
-
 {% set main %}
-<div class="panel panel-fill">
-  <div class="panel-header">
-    <h2>Board — {{ active_realm }}</h2>
-    <a href="/" class="text-btn">+ Capture</a>
-  </div>
-  <div class="board-grid">
+<div class="work-space">
+  <header class="page-heading work-heading">
+    <div>
+      <p class="eyebrow">{{ active_realm }}</p>
+      <h1>Work</h1>
+      <p>Move cards through delivery while keeping context quiet and scannable.</p>
+    </div>
+    <a href="/?realm={{ active_realm }}#quick-capture-title" class="ghost">Capture card</a>
+  </header>
+
+  <form class="work-filters panel"
+        method="get" action="/work"
+        hx-get="/work" hx-target="#app-view" hx-push-url="true" hx-swap="innerHTML">
+    <input type="hidden" name="realm" value="{{ active_realm }}">
+    <label class="filter-search">
+      <span>Search</span>
+      <input type="search" name="q" value="{{ filters.q }}" placeholder="Title, summary, or details">
+    </label>
+    <label><span>Project</span><select name="project">
+      <option value="">All projects</option>
+      {% for project in projects %}<option value="{{ project.id }}" {% if filters.project == project.id %}selected{% endif %}>{{ project.title }}</option>{% endfor %}
+    </select></label>
+    <label><span>Kind</span><select name="kind">
+      <option value="">All kinds</option>
+      {% for kind in kinds %}<option value="{{ kind.value }}" {% if filters.kind == kind.value %}selected{% endif %}>{{ kind.value | capitalize }}</option>{% endfor %}
+    </select></label>
+    <label><span>Owner</span><select name="owner">
+      <option value="">Any owner</option>
+      {% for owner in owners %}<option value="{{ owner }}" {% if filters.owner == owner %}selected{% endif %}>{{ owner }}</option>{% endfor %}
+    </select></label>
+    <label><span>Instance</span><select name="instance">
+      <option value="">Any instance</option>
+      {% for instance in instances %}<option value="{{ instance }}" {% if filters.instance == instance %}selected{% endif %}>{{ instance }}</option>{% endfor %}
+    </select></label>
+    <label><span>Blocked state</span><select name="blocked">
+      <option value="">Any state</option>
+      <option value="blocked" {% if filters.blocked == 'blocked' %}selected{% endif %}>Blocked</option>
+      <option value="unblocked" {% if filters.blocked == 'unblocked' %}selected{% endif %}>Not blocked</option>
+    </select></label>
+    <label><span>Tag</span><select name="tag">
+      <option value="">Any tag</option>
+      {% for tag in tags %}<option value="{{ tag }}" {% if filters.tag == tag %}selected{% endif %}>{{ tag }}</option>{% endfor %}
+    </select></label>
+    <label><span>Updated</span><select name="updated">
+      <option value="">Any time</option>
+      <option value="1" {% if filters.updated == '1' %}selected{% endif %}>Past day</option>
+      <option value="7" {% if filters.updated == '7' %}selected{% endif %}>Past week</option>
+      <option value="30" {% if filters.updated == '30' %}selected{% endif %}>Past month</option>
+    </select></label>
+    <div class="filter-actions"><button type="submit">Apply filters</button><a href="/work?realm={{ active_realm }}" class="ghost">Reset</a></div>
+  </form>
+
+  <nav class="board-lane-switcher" aria-label="Board lane">
     {% for lane in lanes %}
-    <div class="board-column" data-lane="{{ lane.value }}">
-      <h3>{{ lane.value | capitalize }}</h3>
+    <button type="button" data-board-lane="{{ lane.value }}" aria-pressed="{{ 'true' if lane.value == 'active' else 'false' }}">{{ lane.value | capitalize }}</button>
+    {% endfor %}
+  </nav>
+
+  <section class="board-grid" aria-label="Work board" data-work-board>
+    {% for lane in lanes %}
+    <section class="board-column" data-lane="{{ lane.value }}" data-mobile-active="{{ 'true' if lane.value == 'active' else 'false' }}">
+      <header><h2>{{ lane.value | capitalize }}</h2><span class="muted" aria-hidden="true">•</span></header>
       <div class="board-column-body"
-           hx-get="/partials/cards?realm={{ active_realm }}{% if active_project %}&project={{ active_project }}{% endif %}&lane={{ lane.value }}"
+           hx-get="/partials/cards?{{ filter_query }}{% if filter_query %}&{% endif %}lane={{ lane.value }}"
            hx-trigger="load, boardRefresh from:body"
            hx-swap="innerHTML">
-        <p class="muted">Loading…</p>
+        <p class="muted" role="status">Loading {{ lane.value }} cards…</p>
       </div>
-    </div>
+    </section>
     {% endfor %}
-  </div>
+  </section>
 </div>
 {% endset %}
 
-{% set right %}
-<div class="panel">
-  <div class="panel-header"><h2>Card</h2></div>
-  <div id="card-detail" class="scroll-region">
-    {% include "partials/card-detail-empty.html" %}
-  </div>
-</div>
-<div class="panel">
-  <div class="panel-header"><h2>Filter by kind</h2></div>
-  <nav class="sidebar-menu">
-    {% for k in kinds %}
-    <button class="sidebar-menu-item"
-            hx-get="/partials/items?realm={{ active_realm }}&kind={{ k.value }}"
-            hx-target="#work-items-list"
-            hx-swap="innerHTML">{{ k.value | capitalize }}</button>
-    {% endfor %}
-  </nav>
-  <div id="work-items-list" class="scroll-region">
-    {% include "partials/items.html" %}
-  </div>
-</div>
-{% endset %}
-
-{{ page_layout(left=left, main=main, right=right, class='page-work') }}
+{{ page_layout(main=main, class='page-work') }}

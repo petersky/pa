@@ -1,70 +1,116 @@
 {% from "macros/layout.html" import page_layout %}
-
-{% set left %}
-<div class="panel">
-  <div class="panel-header"><h2>Capture</h2></div>
-  <form class="stack"
-        hx-post="/items"
-        hx-target="#home-items-list"
-        hx-swap="innerHTML"
-        hx-on:htmx:after:request="if(event.detail.ctx && event.detail.ctx.response && event.detail.ctx.response.status < 400) this.reset()">
-    <input type="hidden" name="csrf" value="{{ csrf_token }}">
-    <label>
-      Kind
-      <select name="kind" required>
-        {% for k in kinds %}
-        <option value="{{ k.value }}">{{ k.value | capitalize }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>
-      Title
-      <input type="text" name="title" required placeholder="What needs attention?">
-    </label>
-    <label>
-      Details
-      <textarea name="body" rows="4" placeholder="Context, intent, constraints…"></textarea>
-    </label>
-    <button type="submit">Add</button>
-  </form>
-</div>
-{% endset %}
+{% from "macros/cards.html" import compact_card %}
 
 {% set main %}
-<div class="panel">
-  <div class="panel-header">
-    <h2>Recent items</h2>
-    <div class="filters">
-      <button class="ghost" hx-get="/partials/items" hx-target="#home-items-list" hx-swap="innerHTML">All</button>
-      {% for k in kinds %}
-      <button class="ghost" hx-get="/partials/items?kind={{ k.value }}"
-              hx-target="#home-items-list" hx-swap="innerHTML">{{ k.value }}</button>
-      {% endfor %}
+<div class="command-center">
+  <header class="page-heading">
+    <div>
+      <p class="eyebrow">{{ active_realm }}</p>
+      <h1>What needs your attention?</h1>
+      <p>Capture work, unblock active agents, and review recent outcomes.</p>
     </div>
-  </div>
-  <div id="home-items-list">
-    {% include "partials/items.html" %}
+    <a class="ghost" href="/work?realm={{ active_realm }}">Open work board</a>
+  </header>
+
+  <section class="quick-capture panel" aria-labelledby="quick-capture-title">
+    <div class="panel-header">
+      <div>
+        <h2 id="quick-capture-title">Quick capture</h2>
+        <p class="muted">Create a card without leaving the command center.</p>
+      </div>
+    </div>
+    <form class="quick-capture-form"
+          hx-post="/items" hx-target="#app-view" hx-push-url="/" hx-swap="innerHTML">
+      <input type="hidden" name="csrf" value="{{ csrf_token }}">
+      <label>
+        <span>Kind</span>
+        <select name="kind" required>
+          {% for k in kinds %}<option value="{{ k.value }}">{{ k.value | capitalize }}</option>{% endfor %}
+        </select>
+      </label>
+      <label class="quick-capture-title">
+        <span>Title</span>
+        <input type="text" name="title" required placeholder="What needs attention?">
+      </label>
+      <label class="quick-capture-details">
+        <span>Details</span>
+        <textarea name="body" rows="2" placeholder="Context, intent, and constraints"></textarea>
+      </label>
+      <button type="submit">Add card</button>
+    </form>
+  </section>
+
+  <div class="command-center-grid">
+    <section class="panel command-section command-attention" aria-labelledby="needs-attention-title">
+      <div class="panel-header">
+        <div>
+          <p class="eyebrow">Unblock next</p>
+          <h2 id="needs-attention-title">Needs attention</h2>
+        </div>
+        <span class="section-count">{{ needs_attention | length }}</span>
+      </div>
+      {% if needs_attention %}
+      <div class="compact-card-list">
+        {% for card in needs_attention %}
+          {{ compact_card(card, card_projects.get(card.id), card_sessions.get(card.id)) }}
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="empty-state compact-empty"><h3>Nothing is blocked</h3><p class="muted">Waiting work and active concerns will appear here.</p></div>
+      {% endif %}
+    </section>
+
+    <section class="panel command-section" aria-labelledby="active-work-title">
+      <div class="panel-header">
+        <div>
+          <p class="eyebrow">In motion</p>
+          <h2 id="active-work-title">Active work</h2>
+        </div>
+        <span class="section-count">{{ active_work | length }}</span>
+      </div>
+      <div id="home-active-work">
+        {% if active_work %}
+        <div class="compact-card-list">
+          {% for card in active_work %}
+            {{ compact_card(card, card_projects.get(card.id), card_sessions.get(card.id)) }}
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state compact-empty"><h3>No active work</h3><p class="muted">Move a card to Active when execution begins.</p></div>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="panel command-section" aria-labelledby="recent-outcomes-title">
+      <div class="panel-header">
+        <div>
+          <p class="eyebrow">Recently completed</p>
+          <h2 id="recent-outcomes-title">Recent outcomes</h2>
+        </div>
+        <span class="section-count">{{ recent_outcomes | length }}</span>
+      </div>
+      {% if recent_outcomes %}
+      <div class="compact-card-list">
+        {% for card in recent_outcomes %}
+          {{ compact_card(card, card_projects.get(card.id), card_sessions.get(card.id)) }}
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="empty-state compact-empty"><h3>No outcomes yet</h3><p class="muted">Completed work will collect here for a quick review.</p></div>
+      {% endif %}
+    </section>
+
+    <aside class="panel command-health" aria-labelledby="system-health-title">
+      <div class="panel-header"><h2 id="system-health-title">Agent &amp; fleet health</h2></div>
+      <dl class="health-summary">
+        <div><dt>Local agent</dt><dd><span class="status status-{{ 'active' if agent_connected else 'waiting' }}">{{ 'Connected' if agent_connected else 'Offline' }}</span></dd></div>
+        <div><dt>This instance</dt><dd>{{ instance_name }}</dd></div>
+        <div><dt>Fleet instances</dt><dd>{{ fleet_instances | length }}</dd></div>
+      </dl>
+      <a class="text-btn" href="/fleet">Review fleet health</a>
+    </aside>
   </div>
 </div>
 {% endset %}
 
-{% set right %}
-<div class="panel">
-  <div class="panel-header"><h2>Card</h2></div>
-  <div id="card-detail" class="scroll-region">
-    {% include "partials/card-detail-empty.html" %}
-  </div>
-</div>
-<div class="panel">
-  <div class="panel-header">
-    <h2>Knowledge</h2>
-    <button class="ghost" hx-get="/partials/knowledge"
-            hx-target="#home-knowledge-list" hx-swap="innerHTML">Refresh</button>
-  </div>
-  <div id="home-knowledge-list">
-    {% include "partials/knowledge.html" %}
-  </div>
-</div>
-{% endset %}
-
-{{ page_layout(left=left, main=main, right=right) }}
+{{ page_layout(main=main, class='page-home-core') }}

@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+from urllib.parse import urlencode
+
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from pa.auth.csrf import token_for_request
 from pa.auth.middleware import get_principal_id
 from pa.config import get_settings
 from pa.core.contracts import Module
@@ -12,6 +16,7 @@ from pa.domain.models import (
     CardCreate,
     CardKind,
     CardLane,
+    CardSummarySource,
     CardUpdate,
     Item,
     ItemCreate,
@@ -53,24 +58,138 @@ def _pr_watch_context(request: Request, card_id: str) -> dict:
     }
 
 
+def _card_detail_context(request: Request, card) -> dict:
+    store = get_store()
+    realm_id = card.realm_id
+    project = (
+        store.get_project(card.project_id, realm_id=realm_id)
+        if card.project_id
+        else None
+    )
+    related_sessions = [
+        session for session in store.list_sessions() if session.card_id == card.id
+    ]
+    return {
+        "card": card,
+        "project": project,
+        "parent": (
+            store.get_card(card.parent_id, realm_id=realm_id)
+            if card.parent_id
+            else None
+        ),
+        "children": [
+            candidate
+            for candidate in store.list_cards(realm_id=realm_id)
+            if candidate.parent_id == card.id
+        ],
+        "related_sessions": related_sessions,
+        "current_session": next(
+            (session for session in related_sessions if session.status != "closed"),
+            None,
+        ),
+        "card_knowledge": store.list_knowledge(item_id=card.id, limit=10),
+        "lanes": list(CardLane),
+        "csrf_token": token_for_request(request),
+        "agent_enabled": request.app.state.ctx.settings.agent_enabled,
+        **_pr_watch_context(request, card.id),
+    }
+
+
 def _cards_context(
     request: Request, *, kind: CardKind | None = None, lane: CardLane | None = None
 ) -> dict:
     store = get_store()
     realm = _active_realm(request)
     project_id = _active_project(request)
+    if kind is None and request.query_params.get("kind"):
+        try:
+            kind = CardKind(request.query_params["kind"])
+        except ValueError:
+            kind = None
     cards = store.list_cards(
         realm_id=realm,
         kind=kind,
         lane=lane,
         project_id=project_id,
     )
+    query = request.query_params.get("q", "").strip()
+    owner = request.query_params.get("owner", "").strip()
+    instance = request.query_params.get("instance", "").strip()
+    blocked = request.query_params.get("blocked", "").strip()
+    tag = request.query_params.get("tag", "").strip()
+    updated = request.query_params.get("updated", "").strip()
+    all_cards = store.list_cards(realm_id=realm)
+    if query:
+        needle = query.casefold()
+        cards = [
+            card
+            for card in cards
+            if needle in " ".join((card.title, card.summary, card.body)).casefold()
+        ]
+    if owner:
+        cards = [card for card in cards if card.owner_principal == owner]
+    if instance:
+        cards = [card for card in cards if card.preferred_instance == instance]
+    if blocked == "blocked":
+        cards = [card for card in cards if card.lane == CardLane.WAITING]
+    elif blocked == "unblocked":
+        cards = [card for card in cards if card.lane != CardLane.WAITING]
+    if tag:
+        cards = [card for card in cards if tag in card.tags]
+    if updated:
+        try:
+            cutoff = datetime.now(UTC) - timedelta(days=int(updated))
+            cards = [card for card in cards if card.updated_at >= cutoff]
+        except ValueError:
+            updated = ""
+    projects = store.list_projects(realm_id=realm)
+    project_by_id = {project.id: project for project in projects}
+    sessions = store.list_sessions()
+    card_sessions = {}
+    for session in sessions:
+        if session.card_id and session.card_id not in card_sessions:
+            card_sessions[session.card_id] = session
+    filter_params = {
+        "realm": realm,
+        "project": project_id or "",
+        "q": query,
+        "kind": kind.value if kind else "",
+        "owner": owner,
+        "instance": instance,
+        "blocked": blocked,
+        "tag": tag,
+        "updated": updated,
+    }
     return {
         "cards": cards,
         "items": [Item.from_card(c) for c in cards],
         "kinds": list(CardKind),
         "lanes": list(CardLane),
-        "projects": store.list_projects(realm_id=realm),
+        "projects": projects,
+        "card_projects": {
+            card.id: project_by_id.get(card.project_id) for card in cards
+        },
+        "card_sessions": card_sessions,
+        "owners": sorted(
+            {card.owner_principal for card in all_cards if card.owner_principal}
+        ),
+        "instances": sorted(
+            {card.preferred_instance for card in all_cards if card.preferred_instance}
+        ),
+        "tags": sorted({tag for card in all_cards for tag in card.tags}),
+        "filters": {
+            "q": query,
+            "project": project_id or "",
+            "kind": kind.value if kind else "",
+            "owner": owner,
+            "instance": instance,
+            "blocked": blocked,
+            "tag": tag,
+            "updated": updated,
+        },
+        "filter_query": urlencode(
+            {key: value for key, value in filter_params.items() if value}
+        ),
         "realms": request.app.state.ctx.settings.subscribed_realms,
         "active_realm": realm,
         "active_project": project_id,
@@ -85,11 +204,25 @@ def _items_context(request: Request, *, kind: ItemKind | None = None) -> dict:
 
 
 def _home_context(request: Request) -> dict:
-    store = get_store()
     realm = _active_realm(request)
+    context = _cards_context(request)
+    cards = context["cards"]
+    ctx = request.app.state.ctx
+    agent = ctx.services.get("instance_agent")
+    fleet = ctx.services.get("fleet_registry")
     return {
-        **_cards_context(request),
-        "knowledge": store.list_knowledge(limit=10),
+        **context,
+        "needs_attention": [
+            card
+            for card in cards
+            if card.lane == CardLane.WAITING
+            or (card.kind == CardKind.CONCERN and card.lane != CardLane.DONE)
+        ][:6],
+        "active_work": [card for card in cards if card.lane == CardLane.ACTIVE][:8],
+        "recent_outcomes": [card for card in cards if card.lane == CardLane.DONE][:6],
+        "agent_connected": bool(agent and agent.connected),
+        "fleet_instances": fleet.list_instances() if fleet else [],
+        "instance_name": ctx.settings.instance_name,
         "active_realm": realm,
     }
 
@@ -212,14 +345,13 @@ def create_item_ui(
         principal_id=get_principal_id(request),
         instance_id=request.app.state.ctx.settings.instance_id,
     )
-    cards = get_store().list_cards(realm_id=realm)
-    items = [Item.from_card(c) for c in cards]
     if request.headers.get("HX-Request"):
-        return _templates(request).TemplateResponse(
-            request,
-            "partials/items.html",
-            {"items": items, "cards": cards},
-        )
+        from pa.modules.ui_shell import render_page
+
+        page = request.app.state.ctx.require_service("pages").get_by_path("/")
+        if not page:
+            raise HTTPException(status_code=404)
+        return render_page(request, page)
     return RedirectResponse(url=f"/?realm={realm}", status_code=303)
 
 
@@ -242,19 +374,11 @@ def create_card_ui(
 
 @ui_router.get("/partials/items", response_class=HTMLResponse)
 def items_partial(request: Request, kind: ItemKind | None = None) -> HTMLResponse:
-    realm = _active_realm(request)
-    cards = get_store().list_cards(
-        realm_id=realm,
-        kind=CardKind(kind.value) if kind else None,
-    )
+    context = _cards_context(request, kind=CardKind(kind.value) if kind else None)
     return _templates(request).TemplateResponse(
         request,
         "partials/items.html",
-        {
-            "items": [Item.from_card(c) for c in cards],
-            "cards": cards,
-            "active_realm": realm,
-        },
+        context,
     )
 
 
@@ -265,18 +389,11 @@ def cards_partial(
     realm: str | None = None,
     project: str | None = None,
 ) -> HTMLResponse:
-    realm_id = realm or _active_realm(request)
-    project_id = project or _active_project(request)
-    cards = get_store().list_cards(realm_id=realm_id, lane=lane, project_id=project_id)
+    context = _cards_context(request, lane=lane)
     return _templates(request).TemplateResponse(
         request,
         "partials/cards.html",
-        {
-            "cards": cards,
-            "lane": lane,
-            "lanes": list(CardLane),
-            "active_realm": realm_id,
-        },
+        {**context, "lane": lane},
     )
 
 
@@ -294,17 +411,14 @@ def card_detail_partial(
     request: Request, card_id: str, realm: str | None = None
 ) -> HTMLResponse:
     realm_id = realm or _active_realm(request)
-    card = get_store().get_card(card_id, realm_id=realm_id)
+    store = get_store()
+    card = store.get_card(card_id, realm_id=realm_id)
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
     return _templates(request).TemplateResponse(
         request,
         "partials/card-detail.html",
-        {
-            "card": card,
-            "lanes": list(CardLane),
-            "csrf_token": request.cookies.get("pa_csrf", ""),
-            "agent_enabled": request.app.state.ctx.settings.agent_enabled,
-            **_pr_watch_context(request, card_id),
-        },
+        _card_detail_context(request, card),
     )
 
 
@@ -314,6 +428,7 @@ def card_detail_update(
     card_id: str,
     title: str = Form(...),
     body: str = Form(""),
+    summary: str = Form(""),
     lane: CardLane = Form(...),
     realm: str | None = None,
 ) -> HTMLResponse:
@@ -321,21 +436,20 @@ def card_detail_update(
     settings = request.app.state.ctx.settings
     card = get_store().update_card(
         card_id,
-        CardUpdate(title=title, body=body, lane=lane),
+        CardUpdate(
+            title=title,
+            body=body,
+            summary=summary,
+            summary_source=CardSummarySource.MANUAL,
+            summary_stale=False,
+            lane=lane,
+        ),
         realm_id=realm_id,
         principal_id=get_principal_id(request),
         instance_id=settings.instance_id,
     )
     return _templates(request).TemplateResponse(
-        request,
-        "partials/card-detail.html",
-        {
-            "card": card,
-            "lanes": list(CardLane),
-            "csrf_token": request.cookies.get("pa_csrf", ""),
-            "agent_enabled": settings.agent_enabled,
-            **_pr_watch_context(request, card_id),
-        },
+        request, "partials/card-detail.html", _card_detail_context(request, card)
     )
 
 

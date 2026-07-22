@@ -8,6 +8,7 @@ from pa.core.contracts import Module
 from pa.core.context import AppContext
 from pa.core.ui.pages import PageDefinition, PageRegistry
 from pa.domain.models import (
+    CardLane,
     ProjectCreate,
     ProjectUpdate,
     RepositoryCheckout,
@@ -32,13 +33,21 @@ def _projects_context(request: Request) -> dict:
     realm = _active_realm(request)
     project_id = request.query_params.get("project")
     project = store.get_project(project_id, realm_id=realm) if project_id else None
+    cards = (
+        store.list_cards_for_project(project_id, realm_id=realm) if project_id else []
+    )
+    card_sessions = {}
+    for session in store.list_sessions():
+        if session.card_id and session.card_id not in card_sessions:
+            card_sessions[session.card_id] = session
     return {
         "projects": store.list_projects(realm_id=realm),
         "repositories": store.list_repositories(realm),
         "project": project,
-        "cards": store.list_cards_for_project(project_id, realm_id=realm)
-        if project_id
-        else [],
+        "cards": cards,
+        "card_projects": {card.id: project for card in cards},
+        "card_sessions": card_sessions,
+        "lanes": list(CardLane),
         "active_realm": realm,
         "realms": request.app.state.ctx.settings.subscribed_realms,
     }

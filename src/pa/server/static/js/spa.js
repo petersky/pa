@@ -61,6 +61,51 @@
     return meta && meta.content ? { "X-CSRF-Token": meta.content } : {};
   }
 
+  function moveCard(card, lane) {
+    if (!card || !lane || card.dataset.cardLane === lane) return Promise.resolve();
+    var cardId = card.dataset.cardId;
+    var realm = card.dataset.realm;
+    if (!cardId || !realm) return Promise.reject(new Error("Card context is missing"));
+
+    var originalParent = card.parentNode;
+    var originalNext = card.nextSibling;
+    var originalLane = card.dataset.cardLane || "";
+    var targetColumn = document.querySelector('.board-column[data-lane="' + CSS.escape(lane) + '"]');
+    var targetBody = targetColumn && targetColumn.querySelector(".board-column-body");
+    if (targetBody) {
+      var targetList = targetBody.querySelector(".compact-card-list");
+      if (!targetList) {
+        targetList = document.createElement("div");
+        targetList.className = "compact-card-list";
+        targetBody.replaceChildren(targetList);
+      }
+      targetList.appendChild(card);
+      card.dataset.cardLane = lane;
+      card.classList.add("is-moving");
+    }
+
+    var bodyParams = new URLSearchParams({ lane: lane });
+    return fetch("/partials/cards/" + encodeURIComponent(cardId) + "/move?realm=" + encodeURIComponent(realm), {
+      method: "POST",
+      credentials: "same-origin",
+      headers: Object.assign({ "Content-Type": "application/x-www-form-urlencoded" }, csrfHeader()),
+      body: bodyParams.toString(),
+    })
+      .then(function (resp) {
+        if (!resp.ok) throw new Error("Move failed");
+        document.body.dispatchEvent(new CustomEvent("boardRefresh"));
+      })
+      .catch(function (error) {
+        card.dataset.cardLane = originalLane;
+        if (originalParent) originalParent.insertBefore(card, originalNext);
+        showToast("Could not move card. Its original lane was restored.", "error");
+        throw error;
+      })
+      .finally(function () {
+        card.classList.remove("is-moving");
+      });
+  }
+
   function filesystemTarget(href) {
     var raw = String(href || "");
     var path = "";
@@ -181,30 +226,18 @@
         var fromLane = event.dataTransfer && event.dataTransfer.getData("text/pa-lane");
         if (!cardId || !realm || fromLane === lane) return;
 
-        var bodyParams = new URLSearchParams({ lane: lane });
-        fetch("/partials/cards/" + encodeURIComponent(cardId) + "/move?realm=" + encodeURIComponent(realm), {
-          method: "POST",
-          headers: Object.assign({ "Content-Type": "application/x-www-form-urlencoded" }, csrfHeader()),
-          body: bodyParams.toString(),
-        })
-          .then(function (resp) {
-            if (!resp.ok) throw new Error("Move failed");
-            document.body.dispatchEvent(new CustomEvent("boardRefresh"));
-          })
-          .catch(function () {
-            showToast("Could not move card", "error");
-          });
+        var card = document.querySelector('.compact-card[data-card-id="' + CSS.escape(cardId) + '"]');
+        moveCard(card, lane).catch(function () {});
       });
     });
 
-    scope.querySelectorAll(".item-list .item[draggable]").forEach(function (item) {
+    scope.querySelectorAll(".compact-card[draggable]").forEach(function (item) {
       if (item.dataset.dndBound) return;
       item.dataset.dndBound = "1";
       item.addEventListener("dragstart", function (event) {
         var cardId = item.dataset.cardId;
         var realm = item.dataset.realm;
-        var laneEl = item.closest(".board-column");
-        var lane = laneEl && laneEl.dataset.lane;
+        var lane = item.dataset.cardLane || "";
         if (!cardId || !realm || !event.dataTransfer) return;
         event.dataTransfer.setData("text/pa-card-id", cardId);
         event.dataTransfer.setData("text/pa-realm", realm);
@@ -219,6 +252,142 @@
         });
       });
     });
+
+    scope.querySelectorAll("[data-card-move-to]").forEach(function (button) {
+      if (button.dataset.moveBound) return;
+      button.dataset.moveBound = "1";
+      button.addEventListener("click", function () {
+        var card = button.closest(".compact-card");
+        var details = button.closest("details");
+        if (details) details.open = false;
+        button.disabled = true;
+        moveCard(card, button.dataset.cardMoveTo).catch(function () {}).finally(function () {
+          button.disabled = false;
+        });
+      });
+    });
+
+    scope.querySelectorAll("[data-board-lane]").forEach(function (button) {
+      if (button.dataset.laneBound) return;
+      button.dataset.laneBound = "1";
+      button.addEventListener("click", function () {
+        var lane = button.dataset.boardLane;
+        document.querySelectorAll("[data-board-lane]").forEach(function (candidate) {
+          candidate.setAttribute("aria-pressed", candidate === button ? "true" : "false");
+        });
+        document.querySelectorAll(".board-column").forEach(function (column) {
+          column.dataset.mobileActive = column.dataset.lane === lane ? "true" : "false";
+        });
+      });
+    });
+  }
+
+  var cardDialogOpener = null;
+  var cardDialogOwnsHistory = false;
+  var cardDialogRequest = null;
+  var cardDialogBackNavigation = false;
+
+  function cardDialog() {
+    return document.getElementById("card-detail-dialog");
+  }
+
+  function cardDialogContent() {
+    return document.getElementById("card-detail-dialog-content");
+  }
+
+  function showCardDialog() {
+    var dialog = cardDialog();
+    if (!dialog || dialog.open) return;
+    if (typeof dialog.showModal === "function") dialog.showModal();
+    else dialog.setAttribute("open", "");
+  }
+
+  function cardDetailUrl(cardId, realm) {
+    var params = new URLSearchParams({ realm: realm || "default" });
+    return "/partials/cards/" + encodeURIComponent(cardId) + "/detail?" + params.toString();
+  }
+
+  function renderCardDialogError(cardId, realm, message) {
+    var content = cardDialogContent();
+    if (!content) return;
+    content.innerHTML =
+      '<div class="card-dialog-state" role="alert"><h2>Card details unavailable</h2>' +
+      '<p>' + String(message || "The card could not be loaded.").replace(/[&<>]/g, function (char) {
+        return { "&": "&amp;", "<": "&lt;", ">": "&gt;" }[char];
+      }) + '</p><div class="form-actions"><button type="button" data-card-detail-retry>Retry</button>' +
+      '<button type="button" class="ghost" data-card-dialog-close>Close</button></div></div>';
+    var retry = content.querySelector("[data-card-detail-retry]");
+    if (retry) retry.addEventListener("click", function () {
+      loadCardDetail(cardId, realm, false);
+    });
+  }
+
+  function loadCardDetail(cardId, realm, pushHistory) {
+    var content = cardDialogContent();
+    if (!content || !cardId) return;
+    if (cardDialogRequest) cardDialogRequest.abort();
+    cardDialogRequest = new AbortController();
+    content.innerHTML = '<div class="card-dialog-state" role="status" aria-live="polite"><p>Loading card details…</p><button type="button" class="ghost" data-card-dialog-close>Close</button></div>';
+    showCardDialog();
+
+    if (pushHistory) {
+      var url = new URL(window.location.href);
+      url.searchParams.set("card", cardId);
+      if (realm) url.searchParams.set("realm", realm);
+      history.pushState({ paCard: cardId }, "", url);
+      cardDialogOwnsHistory = true;
+    }
+
+    fetch(cardDetailUrl(cardId, realm), {
+      credentials: "same-origin",
+      signal: cardDialogRequest.signal,
+    })
+      .then(function (response) {
+        if (!response.ok) throw new Error(response.status === 404 ? "This card no longer exists." : "Request failed.");
+        return response.text();
+      })
+      .then(function (html) {
+        content.innerHTML = html;
+        if (typeof htmx !== "undefined") htmx.process(content);
+        decorateLinks(content);
+        if (window.PAAgentChat && typeof window.PAAgentChat.mount === "function") {
+          window.PAAgentChat.mount(content);
+        }
+        var heading = content.querySelector("#card-detail-title");
+        if (heading) heading.focus({ preventScroll: true });
+      })
+      .catch(function (error) {
+        if (error.name !== "AbortError") renderCardDialogError(cardId, realm, error.message);
+      });
+  }
+
+  function closeCardDialog(updateHistory) {
+    var dialog = cardDialog();
+    if (cardDialogRequest) cardDialogRequest.abort();
+    cardDialogRequest = null;
+    if (dialog && dialog.open) dialog.close();
+    var content = cardDialogContent();
+    if (content) content.replaceChildren();
+    if (updateHistory && new URL(window.location.href).searchParams.has("card")) {
+      if (cardDialogOwnsHistory) {
+        cardDialogBackNavigation = true;
+        history.back();
+      }
+      else {
+        var url = new URL(window.location.href);
+        url.searchParams.delete("card");
+        history.replaceState({}, "", url);
+      }
+    }
+    cardDialogOwnsHistory = false;
+    if (cardDialogOpener && document.contains(cardDialogOpener)) cardDialogOpener.focus();
+    cardDialogOpener = null;
+  }
+
+  function openCardFromLocation() {
+    var url = new URL(window.location.href);
+    var cardId = url.searchParams.get("card");
+    if (cardId) loadCardDetail(cardId, url.searchParams.get("realm") || "default", false);
   }
 
   function initAgentReconnect() {
@@ -280,6 +449,18 @@
     if (target && target.classList.contains("board-column-body")) {
       initBoardDragDrop(target.closest(".board-grid") || document);
     }
+    if (target && target.id === "card-detail-dialog-content") {
+      if (!target.querySelector("[data-card-detail]")) {
+        closeCardDialog(true);
+        document.body.dispatchEvent(new CustomEvent("boardRefresh"));
+        return;
+      }
+      decorateLinks(target);
+      if (window.PAAgentChat && typeof window.PAAgentChat.mount === "function") {
+        window.PAAgentChat.mount(target);
+      }
+      document.body.dispatchEvent(new CustomEvent("boardRefresh"));
+    }
   });
 
   document.body.addEventListener("htmx:after:history:update", function () {
@@ -310,14 +491,85 @@
     showToast(message, "error");
   });
 
-  window.addEventListener("popstate", function () {
+  window.addEventListener("popstate", function (event) {
+    var url = new URL(window.location.href);
+    var cardId = url.searchParams.get("card");
+    if (cardId) {
+      cardDialogBackNavigation = false;
+      cardDialogOwnsHistory = !!(event.state && event.state.paCard);
+      loadCardDetail(cardId, url.searchParams.get("realm") || "default", false);
+      return;
+    }
+    if (cardDialogBackNavigation) {
+      cardDialogBackNavigation = false;
+      return;
+    }
+    if (cardDialog() && cardDialog().open) {
+      closeCardDialog(false);
+      return;
+    }
     if (typeof htmx === "undefined") return;
-    htmx.ajax("GET", window.location.pathname, {
+    htmx.ajax("GET", window.location.pathname + window.location.search, {
       target: "#app-view",
       swap: "innerHTML",
     });
     setActiveNav(window.location.pathname);
     updateTitle();
+  });
+
+  document.body.addEventListener("click", function (event) {
+    var detailLink = event.target.closest("[data-card-detail-link]");
+    if (detailLink) {
+      event.preventDefault();
+      cardDialogOpener = detailLink;
+      loadCardDetail(
+        detailLink.dataset.cardId,
+        detailLink.dataset.cardRealm || "default",
+        true
+      );
+      return;
+    }
+    if (event.target.closest("[data-card-dialog-close]")) {
+      closeCardDialog(true);
+      return;
+    }
+    var detail = event.target.closest("[data-card-detail]");
+    if (!detail) return;
+    if (event.target.closest("[data-card-edit-open]")) {
+      detail.querySelector("[data-card-edit]").hidden = false;
+      event.target.closest("[data-card-edit-open]").hidden = true;
+      var title = detail.querySelector("[data-card-edit] input[name='title']");
+      if (title) title.focus();
+      return;
+    }
+    if (event.target.closest("[data-card-edit-cancel]")) {
+      detail.querySelector("[data-card-edit]").hidden = true;
+      var editButton = detail.querySelector("[data-card-edit-open]");
+      if (editButton) {
+        editButton.hidden = false;
+        editButton.focus();
+      }
+      return;
+    }
+    var agentButton = event.target.closest("[data-card-agent-start]");
+    if (agentButton) {
+      var pane = detail.querySelector("[data-card-agent-pane]");
+      if (!pane) return;
+      pane.hidden = false;
+      if (window.PAAgentChat && typeof window.PAAgentChat.mount === "function") {
+        window.PAAgentChat.mount(pane);
+      }
+      var widget = pane.querySelector("[data-agent-chat]");
+      if (widget && widget._acw && !widget.dataset.explicitlyStarted) {
+        widget.dataset.explicitlyStarted = "1";
+        agentButton.disabled = true;
+        agentButton.textContent = widget.dataset.sessionId ? "Resuming…" : "Starting…";
+        widget._acw.init();
+        window.setTimeout(function () {
+          agentButton.hidden = true;
+        }, 250);
+      }
+    }
   });
 
   document.addEventListener("DOMContentLoaded", function () {
@@ -327,6 +579,14 @@
     initAgentReconnect();
     decorateLinks(document);
     checkServerBuild();
+    var dialog = cardDialog();
+    if (dialog) {
+      dialog.addEventListener("cancel", function (event) {
+        event.preventDefault();
+        closeCardDialog(true);
+      });
+    }
+    openCardFromLocation();
     window.setInterval(checkServerBuild, VERSION_POLL_MS);
   });
 })();
