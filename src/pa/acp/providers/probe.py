@@ -31,46 +31,42 @@ async def _probe_async(spec: AgentProviderSpec, *, timeout: float) -> dict[str, 
     class _ProbeStore:
         """Minimal stand-in; probe never persists sessions."""
 
-    prev = {k: os.environ.get(k) for k in spec.env}
+    command = spec.command
+    resolved = resolve_executable(command)
+    if resolved:
+        command = str(resolved)
+    child_env = {**os.environ, **spec.env}
+    client = PAClient(store=_ProbeStore())  # type: ignore[arg-type]
+    ctx = spawn_agent(
+        client,
+        command,
+        *list(spec.args or []),
+        env=child_env,
+    )
     try:
-        for k, v in spec.env.items():
-            os.environ[k] = v
-        command = spec.command
-        resolved = resolve_executable(command)
-        if resolved:
-            command = str(resolved)
-        client = PAClient(store=_ProbeStore())  # type: ignore[arg-type]
-        ctx = spawn_agent(client, command, *list(spec.args or []))
-        try:
-            conn, _proc = await asyncio.wait_for(ctx.__aenter__(), timeout=timeout)
-            init = await asyncio.wait_for(
-                conn.initialize(protocol_version=PROTOCOL_VERSION),
-                timeout=timeout,
-            )
-            caps = getattr(init, "agent_capabilities", None) or getattr(
-                init, "agentCapabilities", None
-            )
-            auth = getattr(init, "auth_methods", None) or getattr(init, "authMethods", None)
-            return {
-                "ok": True,
-                "provider_id": spec.id,
-                "protocol_version": PROTOCOL_VERSION,
-                "agent_capabilities": _plain(caps),
-                "auth_methods": _plain(auth),
-                "command": command,
-                "args": list(spec.args),
-            }
-        finally:
-            try:
-                await ctx.__aexit__(None, None, None)
-            except Exception:
-                pass
+        conn, _proc = await asyncio.wait_for(ctx.__aenter__(), timeout=timeout)
+        init = await asyncio.wait_for(
+            conn.initialize(protocol_version=PROTOCOL_VERSION),
+            timeout=timeout,
+        )
+        caps = getattr(init, "agent_capabilities", None) or getattr(
+            init, "agentCapabilities", None
+        )
+        auth = getattr(init, "auth_methods", None) or getattr(init, "authMethods", None)
+        return {
+            "ok": True,
+            "provider_id": spec.id,
+            "protocol_version": PROTOCOL_VERSION,
+            "agent_capabilities": _plain(caps),
+            "auth_methods": _plain(auth),
+            "command": command,
+            "args": list(spec.args),
+        }
     finally:
-        for k, old in prev.items():
-            if old is None:
-                os.environ.pop(k, None)
-            else:
-                os.environ[k] = old
+        try:
+            await ctx.__aexit__(None, None, None)
+        except Exception:
+            pass
 
 
 def _plain(value: Any) -> Any:

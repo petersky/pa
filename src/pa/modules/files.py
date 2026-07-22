@@ -293,7 +293,27 @@ def _file_context(request: Request, path: Path, root: Path, line: int | None, ba
 
 
 @router.get("/browse", response_class=HTMLResponse)
-def browse_files(request: Request, path: str, line: int | None = None, base: str | None = None) -> HTMLResponse:
+async def browse_files(
+    request: Request,
+    path: str,
+    line: int | None = None,
+    base: str | None = None,
+) -> HTMLResponse:
+    runtime = request.app.state.ctx.require_service("async_runtime")
+    return await runtime.run_blocking(
+        "files.browse_render",
+        _render_browser,
+        request,
+        path,
+        line,
+        base,
+        timeout=30.0,
+    )
+
+
+def _render_browser(
+    request: Request, path: str, line: int | None, base: str | None
+) -> HTMLResponse:
     resolved, root = _resolve_authorized_path(request, path)
     context = {
         "page": type("BrowsePage", (), {"label": "Files", "path": "/browse"})(),
@@ -333,7 +353,23 @@ def browse_files(request: Request, path: str, line: int | None = None, base: str
 
 
 @router.get("/api/files/raw")
-def raw_file(request: Request, path: str, download: bool = False) -> FileResponse:
+async def raw_file(
+    request: Request, path: str, download: bool = False
+) -> FileResponse:
+    runtime = request.app.state.ctx.require_service("async_runtime")
+    return await runtime.run_blocking(
+        "files.raw_resolve",
+        _raw_file_response,
+        request,
+        path,
+        download,
+        timeout=10.0,
+    )
+
+
+def _raw_file_response(
+    request: Request, path: str, download: bool
+) -> FileResponse:
     resolved, _ = _resolve_authorized_path(request, path)
     if not resolved.is_file():
         raise HTTPException(status_code=400, detail="Path is not a file")

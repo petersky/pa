@@ -42,7 +42,10 @@ async def create_binding(request: Request, body: dict) -> dict:
         direction=SyncDirection(body.get("direction", "bidirectional")),
         field_map=body.get("field_map", {}),
     )
-    registry.add_binding(binding)
+    runtime = request.app.state.ctx.require_service("async_runtime")
+    await runtime.run_blocking(
+        "integration.binding_write", registry.add_binding, binding
+    )
     await hooks.emit("integration.binding.created", binding=binding.model_dump(mode="json"))
     return binding.model_dump(mode="json")
 

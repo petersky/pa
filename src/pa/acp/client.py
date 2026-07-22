@@ -7,7 +7,7 @@ import json
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Awaitable, Callable
+from typing import TYPE_CHECKING, Any, Awaitable, Callable
 from uuid import uuid4
 
 from acp import PROTOCOL_VERSION, image_block, text_block
@@ -45,6 +45,9 @@ from pa.domain.store import Store
 from pa.instance.quiesce import ImageAttachment
 from pa.knowledge.capture import capture_from_updates
 from pa.packaging.paths import resolve_executable
+
+if TYPE_CHECKING:
+    from pa.core.async_runtime import AsyncRuntime
 
 logger = logging.getLogger(__name__)
 
@@ -223,13 +226,24 @@ class PAClient(Client):
         on_permission: PermissionHandler | None = None,
         wire_logger: WireLogger | None = None,
         auto_approve: bool = False,
+        async_runtime: AsyncRuntime | None = None,
     ) -> None:
         self.store = store
         self.on_update = on_update
         self.on_permission = on_permission
         self.wire_logger = wire_logger
         self.auto_approve = auto_approve
+        self.async_runtime = async_runtime
         self._updates: list[Any] = []
+
+    async def _offload(
+        self, operation: str, call, *args, timeout: float | None = None, **kwargs
+    ):
+        if self.async_runtime:
+            return await self.async_runtime.run_blocking(
+                operation, call, *args, timeout=timeout, **kwargs
+            )
+        return await asyncio.to_thread(call, *args, **kwargs)
 
     def _wire(self, direction: str, payload: dict[str, Any]) -> None:
         if self.wire_logger:
@@ -350,7 +364,9 @@ class PAClient(Client):
         target = Path(path)
         if not target.is_absolute():
             raise ValueError("ACP file paths must be absolute")
-        content = await asyncio.to_thread(target.read_text, encoding="utf-8")
+        content = await self._offload(
+            "acp.file_read", target.read_text, encoding="utf-8", timeout=30.0
+        )
         if line is not None or limit is not None:
             lines = content.splitlines(keepends=True)
             start = max((line or 1) - 1, 0)
@@ -381,7 +397,13 @@ class PAClient(Client):
         target = Path(path)
         if not target.is_absolute():
             raise ValueError("ACP file paths must be absolute")
-        await asyncio.to_thread(target.write_text, content, encoding="utf-8")
+        await self._offload(
+            "acp.file_write",
+            target.write_text,
+            content,
+            encoding="utf-8",
+            timeout=30.0,
+        )
         self._wire(
             "in",
             {
@@ -440,6 +462,8 @@ class AgentConnection:
         on_permission: PermissionHandler | None = None,
         wire_path: Path | None = None,
         auto_approve: bool = False,
+        async_runtime: AsyncRuntime | None = None,
+        extra_env: dict[str, str] | None = None,
     ) -> None:
         self.settings = settings
         self.store = store
@@ -449,6 +473,8 @@ class AgentConnection:
         self.on_permission = on_permission
         self.wire_path = wire_path
         self.auto_approve = auto_approve
+        self.async_runtime = async_runtime
+        self.extra_env = dict(extra_env or {})
         self._ctx = None
         self._conn: Any = None
         self._proc: Any = None
@@ -466,6 +492,18 @@ class AgentConnection:
         self.modes: dict[str, Any] | None = None
         self.config_options: list[Any] | None = None
         self.last_usage: dict[str, Any] | None = None
+        self._wire_lock = asyncio.Lock()
+        self._wire_tasks: set[asyncio.Task[None]] = set()
+        self._wire_task_limit = 1024
+
+    async def _offload(
+        self, operation: str, call, *args, timeout: float | None = None, **kwargs
+    ):
+        if self.async_runtime:
+            return await self.async_runtime.run_blocking(
+                operation, call, *args, timeout=timeout, **kwargs
+            )
+        return await asyncio.to_thread(call, *args, **kwargs)
 
     def _resolved_spec(self) -> AgentProviderSpec:
         if self.provider_spec is not None:
@@ -504,8 +542,39 @@ class AgentConnection:
         )
 
     def _wire_log(self, direction: str, message: dict[str, Any]) -> None:
-        if self._wire:
+        if not self._wire:
+            return
+        if not self.async_runtime:
             self._wire.log(direction, message)
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self._wire.log(direction, message)
+            return
+        if len(self._wire_tasks) >= self._wire_task_limit:
+            logger.error("ACP wire-log queue is full; dropping one diagnostic record")
+            return
+
+        async def write() -> None:
+            async with self._wire_lock:
+                assert self._wire is not None
+                await self._offload(
+                    "acp.wire_append",
+                    self._wire.log,
+                    direction,
+                    message,
+                    timeout=10.0,
+                )
+
+        task = loop.create_task(write(), name="pa-acp-wire-log")
+        self._wire_tasks.add(task)
+        task.add_done_callback(self._wire_tasks.discard)
+
+    async def _drain_wire_logs(self) -> None:
+        pending = set(self._wire_tasks)
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
     async def connect(
         self,
@@ -523,7 +592,9 @@ class AgentConnection:
             raise RuntimeError("Agent connection disabled (PA_AGENT_ENABLED=false)")
 
         if self.wire_path:
-            self._wire = WireJsonlLogger(self.wire_path)
+            self._wire = await self._offload(
+                "acp.wire_init", WireJsonlLogger, self.wire_path, timeout=10.0
+            )
 
         self._client = PAClient(
             self.store,
@@ -531,33 +602,32 @@ class AgentConnection:
             on_permission=self.on_permission,
             wire_logger=self._wire_log,
             auto_approve=self.auto_approve,
+            async_runtime=self.async_runtime,
         )
-        spec = self._resolved_spec()
+
+        def resolve_launch() -> tuple[AgentProviderSpec, str]:
+            spec = self._resolved_spec()
+            command = spec.command
+            resolved = resolve_executable(command)
+            return spec, str(resolved) if resolved else command
+
+        spec, command = await self._offload(
+            "acp.provider_resolve", resolve_launch, timeout=30.0
+        )
         self.agent_name = spec.id
-        command = spec.command
-        resolved = resolve_executable(command)
-        if resolved:
-            command = str(resolved)
-        # Apply provider env for the lifetime of this connection spawn.
         import os
 
-        prev_env: dict[str, str | None] = {}
-        for key, value in (spec.env or {}).items():
-            prev_env[key] = os.environ.get(key)
-            os.environ[key] = value
-        try:
-            self._ctx = spawn_agent(
-                self._client,
-                command,
-                *list(spec.args or []),
-            )
-            self._conn, self._proc = await self._ctx.__aenter__()  # noqa: SIM117
-        finally:
-            for key, old in prev_env.items():
-                if old is None:
-                    os.environ.pop(key, None)
-                else:
-                    os.environ[key] = old
+        # Pass a per-process environment. Mutating os.environ around an await
+        # races concurrent session spawns and can leak one principal's provider
+        # settings into another process.
+        child_env = {**os.environ, **(spec.env or {}), **self.extra_env}
+        self._ctx = spawn_agent(
+            self._client,
+            command,
+            *list(spec.args or []),
+            env=child_env,
+        )
+        self._conn, self._proc = await self._ctx.__aenter__()  # noqa: SIM117
         self._init_response = await self._conn.initialize(
             protocol_version=PROTOCOL_VERSION,
             client_capabilities=ClientCapabilities(
@@ -702,7 +772,9 @@ class AgentConnection:
             self.session.project_id = project_id
 
         self._apply_session_meta(session_meta)
-        self.store.save_session(self.session)
+        await self._offload(
+            "sqlite.agent_session_save", self.store.save_session, self.session
+        )
         return self.session
 
     def _apply_session_meta(self, meta: dict[str, Any]) -> None:
@@ -757,7 +829,9 @@ class AgentConnection:
             self.session.cwd = cwd
         self.session.status = "prompting"
         self.session.updated_at = datetime.now(UTC)
-        self.store.save_session(self.session)
+        await self._offload(
+            "sqlite.agent_session_save", self.store.save_session, self.session
+        )
 
         message_id = str(uuid4())
         self._wire_log(
@@ -792,11 +866,14 @@ class AgentConnection:
             raise
 
         updates = self._client.drain_updates() if self._client else []
-        capture_from_updates(
+        await self._offload(
+            "agent.knowledge_capture",
+            capture_from_updates,
             self.store,
             session_id=self.session.id,
             item_id=item_id,
             updates=updates,
+            timeout=60.0,
         )
 
         usage = usage_to_dict(getattr(response, "usage", None))
@@ -818,7 +895,9 @@ class AgentConnection:
 
         self.session.status = "idle"
         self.session.updated_at = datetime.now(UTC)
-        self.store.save_session(self.session)
+        await self._offload(
+            "sqlite.agent_session_save", self.store.save_session, self.session
+        )
         return stop_reason
 
     async def _mark_transport_dead(self) -> None:
@@ -831,7 +910,9 @@ class AgentConnection:
             if self.session and self.session.status not in {"closed", "quiesced"}:
                 self.session.status = "disconnected"
                 self.session.updated_at = datetime.now(UTC)
-                self.store.save_session(self.session)
+                await self._offload(
+                    "sqlite.agent_session_save", self.store.save_session, self.session
+                )
             if ctx is not None:
                 try:
                     await asyncio.wait_for(ctx.__aexit__(None, None, None), timeout=2.0)
@@ -1025,7 +1106,9 @@ class AgentConnection:
             self.session.config_json = config
             self.session.status = "configuring"
             self.session.updated_at = datetime.now(UTC)
-            self.store.save_session(self.session)
+            await self._offload(
+                "sqlite.agent_session_save", self.store.save_session, self.session
+            )
 
             try:
                 build_plan()
@@ -1034,7 +1117,9 @@ class AgentConnection:
                 applying["strategies"] = dict(strategies)
                 applying_config["configuration"] = applying
                 self.session.config_json = applying_config
-                self.store.save_session(self.session)
+                await self._offload(
+                    "sqlite.agent_session_save", self.store.save_session, self.session
+                )
                 for setting, strategy, target, value in actions:
                     if strategy == "dedicated" and target == "model":
                         await set_model(model_id=value, session_id=session_id)
@@ -1155,7 +1240,9 @@ class AgentConnection:
                     else ready_status
                 )
                 self.session.updated_at = datetime.now(UTC)
-                self.store.save_session(self.session)
+                await self._offload(
+                    "sqlite.agent_session_save", self.store.save_session, self.session
+                )
                 return effective
             except Exception as exc:
                 message = str(exc)
@@ -1177,7 +1264,9 @@ class AgentConnection:
                 self.session.config_json = failed_config
                 self.session.status = "configuration_failed"
                 self.session.updated_at = datetime.now(UTC)
-                self.store.save_session(self.session)
+                await self._offload(
+                    "sqlite.agent_session_save", self.store.save_session, self.session
+                )
                 if isinstance(exc, ACPConfigurationError):
                     raise
                 raise ACPConfigurationError(message) from exc
@@ -1192,7 +1281,10 @@ class AgentConnection:
                 await ctx.__aexit__(None, None, None)
         if self.session and self.session.status not in {"closed", "quiesced"}:
             self.session.status = "disconnected"
-            self.store.save_session(self.session)
+            await self._offload(
+                "sqlite.agent_session_save", self.store.save_session, self.session
+            )
+        await self._drain_wire_logs()
 
 
 def _agent_supports_resume(init_response: Any) -> bool:

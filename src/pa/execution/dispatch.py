@@ -9,13 +9,16 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from threading import RLock
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 import httpx
 from pydantic import BaseModel, Field
 
 from pa.core.io import atomic_write_json
+
+if TYPE_CHECKING:
+    from pa.core.async_runtime import AsyncRuntime
 
 logger = logging.getLogger(__name__)
 
@@ -316,20 +319,28 @@ class DispatchWorker:
         handler: Callable[[DispatchRecord], Awaitable[None]],
         *,
         concurrency: int = 4,
+        async_runtime: AsyncRuntime | None = None,
     ) -> None:
         self.store = store
         self.handler = handler
         self.concurrency = max(1, concurrency)
+        self.async_runtime = async_runtime
         self._runner: asyncio.Task[None] | None = None
         self._active: dict[str, asyncio.Task[None]] = {}
         self._wake = asyncio.Event()
         self._closing = False
 
     def start(self) -> None:
-        self.store.reconcile_interrupted()
         if not self._runner or self._runner.done():
             self._closing = False
             self._runner = asyncio.create_task(self._run())
+
+    async def _offload(self, operation: str, call, *args, **kwargs):
+        if self.async_runtime:
+            return await self.async_runtime.run_blocking(
+                operation, call, *args, **kwargs
+            )
+        return await asyncio.to_thread(call, *args, **kwargs)
 
     def wake(self) -> None:
         self._wake.set()
@@ -349,12 +360,18 @@ class DispatchWorker:
                 self._runner.cancel()
 
     async def _run(self) -> None:
+        await self._offload(
+            "dispatch.reconcile_interrupted", self.store.reconcile_interrupted
+        )
         while not self._closing:
             self._active = {
                 key: task for key, task in self._active.items() if not task.done()
             }
             available = self.concurrency - len(self._active)
-            for record in self.store.runnable():
+            runnable = await self._offload(
+                "dispatch.runnable_read", self.store.runnable
+            )
+            for record in runnable:
                 if available <= 0:
                     break
                 if record.dispatch_id in self._active:
@@ -377,7 +394,7 @@ class DispatchWorker:
 
     async def _execute(self, record: DispatchRecord) -> None:
         record.stage_attempts += 1
-        self.store.put(record)
+        await self._offload("dispatch.record_write", self.store.put, record)
         try:
             await self.handler(record)
         except asyncio.CancelledError:
@@ -392,7 +409,9 @@ class DispatchWorker:
                 code = str(detail.get("code") or code)
                 recoverable = bool(detail.get("recoverable", True))
                 message = str(detail.get("message") or detail)
-            self.store.fail(
+            await self._offload(
+                "dispatch.record_fail",
+                self.store.fail,
                 record,
                 message,
                 code=code,
@@ -405,14 +424,40 @@ class CompletionOutbox:
     """Retries completion until the authoritative origin acknowledges it."""
 
     def __init__(
-        self, store: DispatchStore, token: str, *, retry_seconds: float = 5.0
+        self,
+        store: DispatchStore,
+        token: str,
+        *,
+        retry_seconds: float = 5.0,
+        async_runtime: AsyncRuntime | None = None,
     ) -> None:
         self.store = store
         self.token = token
         self.retry_seconds = retry_seconds
+        self.async_runtime = async_runtime
         self._task: asyncio.Task[None] | None = None
         self._wake = asyncio.Event()
         self._closing = False
+        self._client: httpx.AsyncClient | None = None
+
+    async def _offload(self, operation: str, call, *args, **kwargs):
+        if self.async_runtime:
+            return await self.async_runtime.run_blocking(
+                operation, call, *args, **kwargs
+            )
+        return await asyncio.to_thread(call, *args, **kwargs)
+
+    def _http_client(self) -> httpx.AsyncClient:
+        if self._client is None:
+            self._client = httpx.AsyncClient(
+                timeout=httpx.Timeout(
+                    connect=3.0, read=10.0, write=10.0, pool=2.0
+                ),
+                limits=httpx.Limits(
+                    max_connections=4, max_keepalive_connections=2
+                ),
+            )
+        return self._client
 
     def start(self) -> None:
         if not self._task or self._task.done():
@@ -435,7 +480,9 @@ class CompletionOutbox:
 
     async def drain(self, timeout: float = 5.0) -> None:
         async def wait_empty() -> None:
-            while self.store.pending():
+            while await self._offload(
+                "dispatch.completion_pending_read", self.store.pending
+            ):
                 self._wake.set()
                 await asyncio.sleep(0.05)
 
@@ -453,10 +500,15 @@ class CompletionOutbox:
                 await asyncio.wait_for(self._task, timeout=1.0)
             except asyncio.TimeoutError:
                 self._task.cancel()
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
 
     async def _run(self) -> None:
         while not self._closing:
-            pending = self.store.pending()
+            pending = await self._offload(
+                "dispatch.completion_pending_read", self.store.pending
+            )
             if not pending:
                 self._wake.clear()
                 try:
@@ -470,31 +522,39 @@ class CompletionOutbox:
 
     async def _send(self, record: DispatchRecord) -> None:
         record.attempts += 1
-        self.store.put(record)
+        await self._offload("dispatch.record_write", self.store.put, record)
         headers = {"Idempotency-Key": record.mutation_id}
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.post(
-                    f"{record.authority_url.rstrip('/')}/api/fleet/dispatch/{record.dispatch_id}/complete",
-                    json={
-                        "mutation_id": record.mutation_id,
-                        "card_id": record.card_id,
-                        "realm_id": record.realm_id,
-                        "card_version": record.card_version,
-                        "source_instance_id": record.target_instance_id,
-                        "session_id": record.session_id,
-                        "result": record.completion_payload or {},
-                        "disposition": (record.completion_payload or {}).get(
-                            "card_disposition"
-                        ),
-                    },
-                    headers=headers,
+            request = self._http_client().post(
+                f"{record.authority_url.rstrip('/')}/api/fleet/dispatch/{record.dispatch_id}/complete",
+                json={
+                    "mutation_id": record.mutation_id,
+                    "card_id": record.card_id,
+                    "realm_id": record.realm_id,
+                    "card_version": record.card_version,
+                    "source_instance_id": record.target_instance_id,
+                    "session_id": record.session_id,
+                    "result": record.completion_payload or {},
+                    "disposition": (record.completion_payload or {}).get(
+                        "card_disposition"
+                    ),
+                },
+                headers=headers,
+            )
+            response = (
+                await self.async_runtime.observe(
+                    "http.dispatch_completion", request, timeout=15.0
                 )
+                if self.async_runtime
+                else await request
+            )
             if response.status_code in {200, 208}:
                 try:
-                    acknowledgement = response.json()
+                    acknowledgement = await self._offload(
+                        "dispatch.response_json", response.json
+                    )
                 except ValueError:
                     acknowledgement = {}
                 disposition = acknowledgement.get("card_disposition") or {}
@@ -505,7 +565,9 @@ class CompletionOutbox:
                     record.card_lane_after = disposition.get("lane_after")
                 record.acknowledged_at = datetime.now(UTC)
                 record.last_error = None
-                self.store.transition(
+                await self._offload(
+                    "dispatch.record_complete",
+                    self.store.transition,
                     record,
                     "completed",
                     "Authority acknowledged dispatch completion separately from card disposition.",
@@ -514,7 +576,7 @@ class CompletionOutbox:
                 record.last_error = (
                     f"HTTP {response.status_code}: {response.text[:500]}"
                 )
-                self.store.put(record)
+                await self._offload("dispatch.record_write", self.store.put, record)
         except httpx.HTTPError as exc:
             record.last_error = str(exc)
-            self.store.put(record)
+            await self._offload("dispatch.record_write", self.store.put, record)

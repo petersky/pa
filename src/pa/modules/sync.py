@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import base64
+from typing import Any, Callable
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -18,6 +20,25 @@ from pa.sync.infrastructure import get_event_log, get_object_store
 from pa.sync.object_store import ObjectStore
 
 router = APIRouter()
+
+
+async def _offload(
+    ctx: AppContext,
+    operation: str,
+    call: Callable[..., Any],
+    /,
+    *args: Any,
+    timeout: float = 30.0,
+    **kwargs: Any,
+) -> Any:
+    runtime = ctx.services.get("async_runtime")
+    if runtime:
+        return await runtime.run_blocking(
+            operation, call, *args, timeout=timeout, **kwargs
+        )
+    # Unit/embedded contexts created without a Kernel keep compatibility. Every
+    # real ASGI/MCP Kernel installs the bounded runtime before modules load.
+    return await asyncio.to_thread(call, *args, **kwargs)
 
 
 def _membership_principal(request: Request) -> str:
@@ -62,50 +83,18 @@ def _ensure_projection_at_head(store, log: EventLog, realm_id: str, head: str) -
         )
 
 
-@router.get("/sync/refs")
-def sync_refs(request: Request, realm: str | None = None) -> list[dict]:
-    log: EventLog = request.app.state.ctx.require_service("event_log")
-    refs = log.list_refs()
-    if realm:
-        refs = [r for r in refs if r.realm_id == realm]
-    return [r.model_dump() for r in refs]
-
-
-@router.post("/sync/have")
-def sync_have(request: Request, body: dict) -> dict:
-    realm_id = body.get("realm_id", "default")
-    _check_realm_access(request, realm_id)
-    store: ObjectStore = request.app.state.ctx.require_service("object_store")
-    remote_hashes = set(body.get("hashes", []))
-    local = set(store.list_hashes())
-    missing = list(local - remote_hashes)
-    return {"missing": missing}
-
-
-@router.post("/sync/get")
-def sync_get(request: Request, body: dict) -> dict:
-    store: ObjectStore = request.app.state.ctx.require_service("object_store")
-    hashes = body.get("hashes", [])
-    objects = {}
-    for h in hashes:
-        data = store.get(h)
-        if data:
-            objects[h] = base64.b64encode(data).decode()
-    return {"objects": objects}
-
-
-@router.post("/sync/push")
-async def sync_push(request: Request, body: dict) -> dict:
-    realm_id = body.get("realm_id", "default")
-    _check_realm_access(request, realm_id)
-    head_hash = body.get("head_hash", "")
-    objects_b64 = body.get("objects", {})
-    engine: SyncEngine = request.app.state.ctx.require_service("sync_engine")
-    log: EventLog = request.app.state.ctx.require_service("event_log")
-    store = get_store()
-
+def _apply_sync_push_local(
+    ctx: AppContext,
+    realm_id: str,
+    head_hash: str,
+    objects_b64: dict[str, str],
+) -> tuple[int, str, bool]:
+    """Apply a full object/ref/projection transaction in one worker."""
+    engine: SyncEngine = ctx.require_service("sync_engine")
+    log: EventLog = ctx.require_service("event_log")
+    store = ctx.store
     imported = engine.ingest_objects(objects_b64)
-    metrics: SyncMetrics = request.app.state.ctx.require_service("sync_metrics")
+    metrics: SyncMetrics = ctx.require_service("sync_metrics")
     metrics.record_pull(len(imported))
 
     head_changed = False
@@ -170,10 +159,82 @@ async def sync_push(request: Request, body: dict) -> dict:
                         "actual_head": exc.actual,
                     },
                 ) from exc
+    return len(imported), head_hash, head_changed
+
+
+def _sync_status_local(ctx: AppContext, realm_id: str) -> dict:
+    engine: SyncEngine = ctx.require_service("sync_engine")
+    metrics: SyncMetrics = ctx.require_service("sync_metrics")
+    status = engine.status(realm_id)
+    log: EventLog = ctx.require_service("event_log")
+    durable_head = log.get_head(realm_id)
+    projection_head = ctx.store.get_projection_head(realm_id)
+    status.update(
+        head=durable_head,
+        projection_head=projection_head,
+        consistent=durable_head == projection_head,
+        writer="server",
+        metrics=metrics.snapshot(),
+    )
+    return status
+
+
+@router.get("/sync/refs")
+def sync_refs(request: Request, realm: str | None = None) -> list[dict]:
+    log: EventLog = request.app.state.ctx.require_service("event_log")
+    refs = log.list_refs()
+    if realm:
+        refs = [r for r in refs if r.realm_id == realm]
+    return [r.model_dump() for r in refs]
+
+
+@router.post("/sync/have")
+def sync_have(request: Request, body: dict) -> dict:
+    realm_id = body.get("realm_id", "default")
+    _check_realm_access(request, realm_id)
+    store: ObjectStore = request.app.state.ctx.require_service("object_store")
+    remote_hashes = set(body.get("hashes", []))
+    local = set(store.list_hashes())
+    missing = list(local - remote_hashes)
+    return {"missing": missing}
+
+
+@router.post("/sync/get")
+def sync_get(request: Request, body: dict) -> dict:
+    store: ObjectStore = request.app.state.ctx.require_service("object_store")
+    hashes = body.get("hashes", [])
+    objects = {}
+    for h in hashes:
+        data = store.get(h)
+        if data:
+            objects[h] = base64.b64encode(data).decode()
+    return {"objects": objects}
+
+
+@router.post("/sync/push")
+async def sync_push(request: Request, body: dict) -> dict:
+    realm_id = body.get("realm_id", "default")
+    _check_realm_access(request, realm_id)
+    head_hash = body.get("head_hash", "")
+    objects_b64 = body.get("objects", {})
+    if not isinstance(objects_b64, dict):
+        raise HTTPException(status_code=400, detail="objects must be an object")
+    ctx: AppContext = request.app.state.ctx
+    imported, head_hash, head_changed = await _offload(
+        ctx,
+        "sync.push_transaction",
+        _apply_sync_push_local,
+        ctx,
+        realm_id,
+        head_hash,
+        objects_b64,
+        timeout=120.0,
+    )
 
     if head_changed:
+        engine: SyncEngine = ctx.require_service("sync_engine")
         await engine.notify_commit(realm_id)
-    return {"imported": len(imported), "head": head_hash}
+    return {"imported": imported, "head": head_hash}
 
 
 @router.post("/sync/relay")
@@ -196,23 +257,26 @@ async def sync_relay(request: Request, body: dict) -> dict:
         raise HTTPException(
             status_code=403, detail="Relay to local/metadata hosts is not allowed"
         )
-    import httpx
-
     headers = {}
     if settings.sync_token:
         headers["Authorization"] = f"Bearer {settings.sync_token}"
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.post(
-            f"{target_url.rstrip('/')}/api/sync/push",
-            json={
-                "realm_id": body.get("realm_id", "default"),
-                "head_hash": body.get("head_hash", ""),
-                "objects": body.get("objects", {}),
-            },
-            headers=headers,
-        )
-        resp.raise_for_status()
-        return resp.json()
+    headers["Content-Type"] = "application/json"
+    engine: SyncEngine = request.app.state.ctx.require_service("sync_engine")
+    resp = await engine._request(
+        "POST",
+        f"{target_url.rstrip('/')}/api/sync/push",
+        payload={
+            "realm_id": body.get("realm_id", "default"),
+            "head_hash": body.get("head_hash", ""),
+            "objects": body.get("objects", {}),
+        },
+        headers=headers,
+    )
+    resp.raise_for_status()
+    data = await engine._response_json(resp)
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=502, detail="Relay target returned invalid JSON")
+    return data
 
 
 @router.get("/sync/conflicts")
@@ -259,16 +323,34 @@ async def resolve_sync_conflicts(request: Request, body: dict) -> dict:
     realm_id = body.get("realm_id") or request.app.state.ctx.settings.primary_realm
     remote_head = body.get("remote_head", "")
     resolutions = body.get("resolutions") or []
+    if not isinstance(resolutions, list) or len(resolutions) > 1000:
+        raise HTTPException(
+            status_code=413, detail="resolutions must contain at most 1000 entries"
+        )
     _check_realm_access(request, realm_id)
-    log: EventLog = request.app.state.ctx.require_service("event_log")
-    local_head = log.get_head(realm_id)
-    remote_commit = log.get_commit(remote_head) if remote_head else None
+    ctx: AppContext = request.app.state.ctx
+    log: EventLog = ctx.require_service("event_log")
+    local_head, remote_commit = await _offload(
+        ctx,
+        "sync.resolve_heads_read",
+        lambda: (
+            log.get_head(realm_id),
+            log.get_commit(remote_head) if remote_head else None,
+        ),
+    )
     if not local_head or not remote_commit or remote_commit.realm_id != realm_id:
         raise HTTPException(status_code=400, detail="valid remote_head required")
     store = get_store()
-    with store.mutation():
-        _ensure_projection_at_head(store, log, realm_id, local_head)
-    compatible, health = log.compatible_histories(local_head, remote_head)
+
+    def prepare_resolution() -> tuple[bool, dict]:
+        with store.mutation():
+            _ensure_projection_at_head(store, log, realm_id, local_head)
+        return log.compatible_histories(local_head, remote_head)
+
+    compatible, health = await _offload(
+        ctx,
+        "sync.resolve_prepare", prepare_resolution, timeout=60.0
+    )
     if compatible:
         raise HTTPException(
             status_code=409, detail="histories do not require manual resolution"
@@ -321,7 +403,13 @@ async def resolve_sync_conflicts(request: Request, body: dict) -> dict:
         action = item.get("action", "update")
         fields = dict(item.get("fields") or {})
         if entity == "card":
-            current = store.get_card(entity_id, realm_id=realm_id)
+            current = await _offload(
+                ctx,
+                "sqlite.card_read",
+                store.get_card,
+                entity_id,
+                realm_id=realm_id,
+            )
             if action == "update" and not current:
                 raise HTTPException(
                     status_code=400,
@@ -363,7 +451,13 @@ async def resolve_sync_conflicts(request: Request, body: dict) -> dict:
                 )
             )
         else:
-            current = store.get_project(entity_id, realm_id=realm_id)
+            current = await _offload(
+                ctx,
+                "sqlite.project_read",
+                store.get_project,
+                entity_id,
+                realm_id=realm_id,
+            )
             if action == "update" and not current:
                 raise HTTPException(
                     status_code=400,
@@ -404,18 +498,25 @@ async def resolve_sync_conflicts(request: Request, body: dict) -> dict:
                     else fields,
                 )
             )
-    with store.mutation():
+    def commit_resolution():
         try:
-            merge = log.resolve_heads(
-                realm_id, local_head, remote_head, events, principal
-            )
+            with store.mutation():
+                merge = log.resolve_heads(
+                    realm_id, local_head, remote_head, events, principal
+                )
+                store.rebuild_from_log(realm_id)
+            return merge
         except StaleSyncHeadError as exc:
             raise HTTPException(
                 status_code=409,
                 detail={"code": "stale_sync_head", "actual_head": exc.actual},
             ) from exc
-        store.rebuild_from_log(realm_id)
-    engine: SyncEngine = request.app.state.ctx.require_service("sync_engine")
+
+    merge = await _offload(
+        ctx,
+        "sync.resolve_commit", commit_resolution, timeout=120.0
+    )
+    engine: SyncEngine = ctx.require_service("sync_engine")
     convergence = await engine.converge_realm(realm_id)
     return {
         "realm_id": realm_id,
@@ -428,21 +529,13 @@ async def resolve_sync_conflicts(request: Request, body: dict) -> dict:
 
 @router.get("/sync/status")
 async def sync_status(request: Request, realm: str | None = None) -> dict:
-    engine: SyncEngine = request.app.state.ctx.require_service("sync_engine")
-    metrics: SyncMetrics = request.app.state.ctx.require_service("sync_metrics")
-    realm_id = realm or request.app.state.ctx.settings.primary_realm
+    ctx: AppContext = request.app.state.ctx
+    realm_id = realm or ctx.settings.primary_realm
     _check_realm_access(request, realm_id)
-    status = engine.status(realm_id)
-    log: EventLog = request.app.state.ctx.require_service("event_log")
-    store = get_store()
-    durable_head = log.get_head(realm_id)
-    projection_head = store.get_projection_head(realm_id)
-    status["head"] = durable_head
-    status["projection_head"] = projection_head
-    status["consistent"] = durable_head == projection_head
-    status["writer"] = "server"
-    status["metrics"] = metrics.snapshot()
-    return status
+    return await _offload(
+        ctx,
+        "sync.status", _sync_status_local, ctx, realm_id, timeout=15.0
+    )
 
 
 @router.post("/sync/reconcile")
@@ -511,6 +604,7 @@ class SyncModule(Module):
             peer_table,
             membership,
             ctx.services.get("fleet_registry"),
+            ctx.require_service("async_runtime"),
         )
         ctx.register_service("sync_engine", engine)
 
@@ -532,21 +626,29 @@ class SyncModule(Module):
 
         event_log.append_event = append_with_sync  # type: ignore[method-assign]
 
-        store = get_store()
+        store = ctx.store
         def rebuild_projection(realm_id: str) -> None:
             with store.mutation():
                 store.rebuild_from_log(realm_id)
 
         engine.on_head_advanced(rebuild_projection)
-        for realm in settings.subscribed_realms:
-            durable_head = event_log.get_head(realm)
-            if durable_head and store.get_projection_head(realm) != durable_head:
-                if event_log.get_commit(durable_head):
-                    store.rebuild_from_log(realm)
-            advanced = await engine.anti_entropy(realm)
-            if advanced:
-                store.rebuild_from_log(realm)
+        runtime = ctx.require_service("async_runtime")
+
+        def repair_local_projections() -> None:
+            for realm in settings.subscribed_realms:
+                durable_head = event_log.get_head(realm)
+                if durable_head and store.get_projection_head(realm) != durable_head:
+                    if event_log.get_commit(durable_head):
+                        store.rebuild_from_log(realm)
+
+        # Local durability is restored before admission. Peer/DNS/network work is
+        # explicitly backgrounded so health and status endpoints become live.
+        await runtime.run_blocking(
+            "sync.startup_reconcile", repair_local_projections, timeout=120.0
+        )
         engine.start()
+        for realm in settings.subscribed_realms:
+            engine.request_convergence(realm)
 
     async def on_shutdown(self, app, ctx: AppContext) -> None:
         engine = ctx.services.get("sync_engine")
@@ -560,16 +662,25 @@ class SyncModule(Module):
         from pa.mcp.local_api import request_local_pa
 
         @mcp.tool()
-        def sync_status(realm: str = "default") -> dict:
+        async def sync_status(realm: str = "default") -> dict:
             """Check durable/projection sync consistency through the PA server."""
-            return request_local_pa(
-                ctx.settings, "GET", "/api/sync/status", params={"realm": realm}
+            return await _offload(
+                ctx,
+                "mcp.sync_status_http",
+                request_local_pa,
+                ctx.settings,
+                "GET",
+                "/api/sync/status",
+                params={"realm": realm},
             )
 
         @mcp.tool()
-        def sync_reconcile(realm: str = "default") -> dict:
+        async def sync_reconcile(realm: str = "default") -> dict:
             """Repair a stale local projection from its durable event-log head."""
-            return request_local_pa(
+            return await _offload(
+                ctx,
+                "mcp.sync_reconcile_http",
+                request_local_pa,
                 ctx.settings,
                 "POST",
                 "/api/sync/reconcile",
@@ -577,7 +688,7 @@ class SyncModule(Module):
             )
 
         @mcp.tool()
-        def resolve_sync_conflicts(
+        async def resolve_sync_conflicts(
             remote_head: str,
             resolutions: list[dict],
             realm: str = "default",
@@ -588,7 +699,10 @@ class SyncModule(Module):
             update for field conflicts; delete/archive or a full upsert for a
             delete-vs-edit conflict. Include every field reported as conflicting.
             """
-            return request_local_pa(
+            return await _offload(
+                ctx,
+                "mcp.sync_resolve_http",
+                request_local_pa,
                 ctx.settings,
                 "POST",
                 "/api/sync/conflicts/resolve",

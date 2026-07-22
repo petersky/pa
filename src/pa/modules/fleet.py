@@ -7,6 +7,7 @@ import hashlib
 import json
 import logging
 import re
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any, AsyncIterator
 from urllib.parse import quote
@@ -19,7 +20,7 @@ from pydantic import BaseModel, Field
 
 from pa.acp.configuration import SessionConfigurationRequest
 from pa.auth.middleware import get_principal_id, require_user
-from pa.config import get_settings
+from pa.core.async_runtime import AsyncRuntime
 from pa.core.contracts import Module
 from pa.core.context import AppContext
 from pa.core.io import atomic_write_json
@@ -56,13 +57,13 @@ from pa.fleet.registry import FleetRegistry
 from pa.fleet.remote_install import (
     RemoteInstallRequest,
     get_job_store,
-    start_install_job_background,
+    run_install_job,
 )
 from pa.fleet.update import (
     FleetUpdateJobStore,
     FleetUpdateRequest,
     TERMINAL_PHASES,
-    recover_update_jobs,
+    prepare_update_job_recovery,
     start_update_job,
 )
 from pa.network.peer_table import PeerTable
@@ -77,6 +78,63 @@ router = APIRouter()
 ui_router = APIRouter()
 _peer_update_task: asyncio.Task[Any] | None = None
 _peer_update_task_operation_id: str | None = None
+
+
+async def _offload_ctx(
+    ctx: AppContext,
+    operation: str,
+    call,
+    *args,
+    timeout: float | None = None,
+    **kwargs,
+):
+    runtime = ctx.services.get("async_runtime")
+    if isinstance(runtime, AsyncRuntime):
+        return await runtime.run_blocking(
+            operation, call, *args, timeout=timeout, **kwargs
+        )
+    return await asyncio.to_thread(call, *args, **kwargs)
+
+
+async def _offload_request(
+    request: Request, operation: str, call, *args, timeout=None, **kwargs
+):
+    return await _offload_ctx(
+        request.app.state.ctx,
+        operation,
+        call,
+        *args,
+        timeout=timeout,
+        **kwargs,
+    )
+
+
+async def _response_json(request: Request, response: httpx.Response) -> Any:
+    runtime = request.app.state.ctx.services.get("async_runtime")
+    if isinstance(runtime, AsyncRuntime):
+        return await runtime.run_blocking(
+            "fleet.response_json", response.json, timeout=3.0
+        )
+    return response.json()
+
+
+async def _fleet_http(request: Request, operation: str, awaitable, *, timeout: float):
+    runtime = request.app.state.ctx.services.get("async_runtime")
+    if isinstance(runtime, AsyncRuntime):
+        return await runtime.observe(operation, awaitable, timeout=timeout)
+    async with asyncio.timeout(timeout):
+        return await awaitable
+
+
+@asynccontextmanager
+async def _borrow_fleet_client(request: Request, *, timeout: float):
+    services = getattr(request.app.state.ctx, "services", None)
+    client = services.get("fleet_http_client") if isinstance(services, dict) else None
+    if client is not None:
+        yield client
+        return
+    async with httpx.AsyncClient(timeout=timeout) as owned:
+        yield owned
 
 
 def _peer_operation_path(settings, operation_id: str):
@@ -482,11 +540,20 @@ async def fleet_update_readiness(
         raise HTTPException(status_code=400, detail="Provide instance_url and/or host")
 
     try:
-        result = apply_reachability_settings(settings, **kwargs)
+        result = await _offload_request(
+            request,
+            "filesystem.fleet_reachability_write",
+            apply_reachability_settings,
+            settings,
+            **kwargs,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    fleet.register_self(
+    await _offload_request(
+        request,
+        "filesystem.fleet_registry_write",
+        fleet.register_self,
         settings.instance_id,
         settings.instance_name,
         owner_public_url(settings),
@@ -618,19 +685,21 @@ async def fleet_join(request: Request, body: dict) -> dict:
         raise HTTPException(status_code=400, detail="token and instance_id required")
 
     fleet: FleetRegistry = request.app.state.ctx.require_service("fleet_registry")
-    join = fleet.consume_join_token(token)
+    join = await _offload_request(
+        request, "filesystem.fleet_join_consume", fleet.consume_join_token, token
+    )
     if not join:
         raise HTTPException(status_code=400, detail="Invalid or expired join token")
 
-    settings = get_settings()
-    # Prefer live app settings when available (keeps in-memory peers/sync_token).
-    if hasattr(request.app.state, "ctx"):
-        settings = request.app.state.ctx.settings
+    settings = request.app.state.ctx.settings
     owner_url = owner_public_url(settings)
     peer_table: PeerTable = request.app.state.ctx.require_service("peer_table")
     realms = list(settings.subscribed_realms)
 
-    inst, sync_token = register_joiner_on_owner(
+    inst, sync_token = await _offload_request(
+        request,
+        "filesystem.fleet_join_register",
+        register_joiner_on_owner,
         fleet,
         peer_table,
         settings,
@@ -641,7 +710,12 @@ async def fleet_join(request: Request, body: dict) -> dict:
         capabilities=capabilities,
         realms=realms,
     )
-    owner_inst = fleet.get_instance(settings.instance_id)
+    owner_inst = await _offload_request(
+        request,
+        "filesystem.fleet_registry_read",
+        fleet.get_instance,
+        settings.instance_id,
+    )
     return {
         "fleet_id": join.fleet_id,
         "owner_url": owner_url,
@@ -687,7 +761,10 @@ async def register_remote(request: Request, body: dict) -> dict:
     if inst.url.lower().startswith(("javascript:", "data:", "vbscript:")):
         raise HTTPException(status_code=400, detail="Invalid instance URL scheme")
 
-    registered, sync_token = register_joiner_on_owner(
+    registered, sync_token = await _offload_request(
+        request,
+        "filesystem.fleet_join_register",
+        register_joiner_on_owner,
         fleet,
         peer_table,
         settings,
@@ -739,19 +816,26 @@ async def fleet_health(request: Request, instance_id: str | None = None) -> list
     if settings.sync_token:
         headers["Authorization"] = f"Bearer {settings.sync_token}"
 
-    async with httpx.AsyncClient(timeout=FLEET_DETAIL_TIMEOUT) as client:
+    async with _borrow_fleet_client(request, timeout=FLEET_DETAIL_TIMEOUT) as client:
 
         async def remote_get(url: str, *, timeout: float, headers=None):
-            return await asyncio.wait_for(
-                client.get(url, headers=headers, timeout=timeout), timeout=timeout
+            # httpx retains the strict transport deadline. This small wrapper
+            # allowance prevents a ready response from being classified as a
+            # network timeout solely because a loaded loop resumed it late.
+            scheduling_grace = min(0.05, max(0.015, timeout * 0.1))
+            return await _fleet_http(
+                request,
+                "http.fleet_health",
+                client.get(url, headers=headers, timeout=timeout),
+                timeout=timeout + scheduling_grace,
             )
 
-        async def dimension(coro, parser, *, timeout: float) -> tuple[str, Any]:
+        async def dimension(coro, parser) -> tuple[str, Any]:
             try:
-                response = await asyncio.wait_for(coro, timeout=timeout)
+                response = await coro
                 if response.status_code != 200:
                     return "error", None
-                return "up", parser(response.json())
+                return "up", parser(await _response_json(request, response))
             except TimeoutError, asyncio.TimeoutError:
                 return "timeout", None
             except httpx.HTTPError, ValueError, TypeError, AttributeError:
@@ -788,7 +872,9 @@ async def fleet_health(request: Request, instance_id: str | None = None) -> list
                     from pa.release.version import read_version
 
                     try:
-                        current_version = read_version()
+                        current_version = await _offload_request(
+                            request, "filesystem.release_version_read", read_version
+                        )
                     except OSError, RuntimeError, ValueError:
                         current_version = None
                         status_state = "error"
@@ -798,10 +884,11 @@ async def fleet_health(request: Request, instance_id: str | None = None) -> list
 
                     async def local_providers() -> tuple[str, list]:
                         try:
-                            value = await asyncio.wait_for(
-                                asyncio.to_thread(
-                                    list_provider_summaries, settings.data_dir
-                                ),
+                            value = await _offload_request(
+                                request,
+                                "fleet.provider_status",
+                                list_provider_summaries,
+                                settings.data_dir,
                                 timeout=FLEET_DETAIL_TIMEOUT,
                             )
                             return "up", value
@@ -815,8 +902,11 @@ async def fleet_health(request: Request, instance_id: str | None = None) -> list
                         from pa.update.runner import check_update
 
                         try:
-                            value = await asyncio.wait_for(
-                                asyncio.to_thread(check_update, settings),
+                            value = await _offload_request(
+                                request,
+                                "fleet.update_check",
+                                check_update,
+                                settings,
                                 timeout=FLEET_DETAIL_TIMEOUT,
                             )
                             return "up", value
@@ -846,7 +936,6 @@ async def fleet_health(request: Request, instance_id: str | None = None) -> list
                                 timeout=FLEET_DETAIL_TIMEOUT,
                             ),
                             lambda value: value if isinstance(value, list) else [],
-                            timeout=FLEET_DETAIL_TIMEOUT,
                         ),
                         dimension(
                             remote_get(
@@ -855,7 +944,6 @@ async def fleet_health(request: Request, instance_id: str | None = None) -> list
                                 timeout=FLEET_DETAIL_TIMEOUT,
                             ),
                             dict_payload,
-                            timeout=FLEET_DETAIL_TIMEOUT,
                         ),
                         dimension(
                             remote_get(
@@ -864,7 +952,6 @@ async def fleet_health(request: Request, instance_id: str | None = None) -> list
                                 timeout=FLEET_DETAIL_TIMEOUT,
                             ),
                             dict_payload,
-                            timeout=FLEET_DETAIL_TIMEOUT,
                         ),
                     )
                     providers_state, provider_data = provider_result
@@ -894,7 +981,9 @@ async def fleet_health(request: Request, instance_id: str | None = None) -> list
             return data
 
         tasks = [asyncio.create_task(check_one(inst)) for inst in instances]
-        done, pending = await asyncio.wait(tasks, timeout=FLEET_AGGREGATE_TIMEOUT)
+        done, pending = await asyncio.wait(
+            tasks, timeout=FLEET_AGGREGATE_TIMEOUT + 0.05
+        )
         completed: dict[asyncio.Task, dict] = {}
         failed: set[asyncio.Task] = set()
         for task in done:
@@ -937,7 +1026,12 @@ async def fleet_health(request: Request, instance_id: str | None = None) -> list
         inst.healthy = bool(live.get("healthy"))
         if inst.healthy:
             inst.last_seen = now
-        fleet.upsert_instance(inst)
+        await _offload_request(
+            request,
+            "filesystem.fleet_registry_write",
+            fleet.upsert_instance,
+            inst,
+        )
         live["last_seen"] = inst.last_seen.isoformat() if inst.last_seen else None
     return list(results)
 
@@ -982,8 +1076,24 @@ async def install_remote(request: Request, body: dict) -> dict:
     body.pop("password", None)
     body.pop("passphrase", None)
 
-    ensure_sync_token(settings)
-    job = start_install_job_background(settings, fleet, store, req)
+    await _offload_request(
+        request, "filesystem.fleet_sync_token", ensure_sync_token, settings
+    )
+    job = await _offload_request(
+        request, "fleet.install_job_create", store.create, req
+    )
+    asyncio.create_task(
+        run_install_job(
+            settings,
+            fleet,
+            store,
+            job,
+            req,
+            async_runtime=request.app.state.ctx.require_service("async_runtime"),
+            http_client=request.app.state.ctx.services.get("fleet_http_client"),
+        ),
+        name=f"pa-fleet-install-{job.job_id}",
+    )
     return {**job.to_public_dict(), "readiness_warnings": warnings}
 
 
@@ -1127,7 +1237,13 @@ async def peer_update(request: Request, body: dict) -> dict:
             detail="target_version is required for a fleet peer update",
         )
 
-    existing = _read_peer_operation(settings, operation_id)
+    existing = await _offload_request(
+        request,
+        "filesystem.fleet_peer_update_read",
+        _read_peer_operation,
+        settings,
+        operation_id,
+    )
     if existing:
         if existing.get("target_version") != target_version or (
             target_identity and existing.get("target_identity") != target_identity
@@ -1149,12 +1265,15 @@ async def peer_update(request: Request, body: dict) -> dict:
     from pa.update.runner import apply_update
 
     try:
-        release = await asyncio.to_thread(
+        release = await _offload_request(
+            request,
+            "fleet.release_resolve",
             resolve_release,
             channel,
             target_version,
             repo=settings.update_repo,
             revision=target_identity,
+            timeout=60.0,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1182,22 +1301,44 @@ async def peer_update(request: Request, body: dict) -> dict:
         "error": None,
     }
     if not existing:
-        _write_peer_operation(settings, operation_id, operation)
+        await _offload_request(
+            request,
+            "filesystem.fleet_peer_update_write",
+            _write_peer_operation,
+            settings,
+            operation_id,
+            operation,
+        )
 
     async def _install_and_restart() -> None:
         await asyncio.sleep(0.25)
         try:
-            exact_target = _peer_has_exact_release(settings, channel, release)
+            exact_target = await _offload_request(
+                request,
+                "filesystem.fleet_release_verify",
+                _peer_has_exact_release,
+                settings,
+                channel,
+                release,
+            )
             if not exact_target:
-                result = await asyncio.to_thread(
+                result = await _offload_request(
+                    request,
+                    "fleet.update_apply",
                     apply_update,
                     settings,
                     channel_name=channel,
                     restart=False,
                     release=release,
+                    timeout=900.0,
                 )
-                exact_target = result.upgrade_available or _peer_has_exact_release(
-                    settings, channel, release
+                exact_target = result.upgrade_available or await _offload_request(
+                    request,
+                    "filesystem.fleet_release_verify",
+                    _peer_has_exact_release,
+                    settings,
+                    channel,
+                    release,
                 )
                 installed_version = result.current
             else:
@@ -1212,18 +1353,37 @@ async def peer_update(request: Request, body: dict) -> dict:
                 "installed_version": installed_version,
                 "message": "Installation complete; preparing a host-managed restart",
             }
-            _write_peer_operation(settings, operation_id, installed_operation)
+            await _offload_request(
+                request,
+                "filesystem.fleet_peer_update_write",
+                _write_peer_operation,
+                settings,
+                operation_id,
+                installed_operation,
+            )
             restarting_operation = {
                 **installed_operation,
                 "status": "restarting",
                 "restart_stage": "requested",
                 "message": "Handing restart control to the host service manager",
             }
-            _write_peer_operation(settings, operation_id, restarting_operation)
+            await _offload_request(
+                request,
+                "filesystem.fleet_peer_update_write",
+                _write_peer_operation,
+                settings,
+                operation_id,
+                restarting_operation,
+            )
             from pa.cli import service as svc
             from pa.instance.quiesce import request_skip_quiesce
 
-            request_skip_quiesce(settings.data_dir)
+            await _offload_request(
+                request,
+                "filesystem.quiesce_marker_write",
+                request_skip_quiesce,
+                settings.data_dir,
+            )
 
             def restart_progress(message: str) -> None:
                 current = (
@@ -1235,15 +1395,30 @@ async def peer_update(request: Request, body: dict) -> dict:
                     {**current, "status": "restarting", "message": message},
                 )
 
-            await asyncio.to_thread(
+            await _offload_request(
+                request,
+                "lifecycle.service_restart",
                 svc.request_restart,
                 settings,
                 progress=restart_progress,
+                timeout=120.0,
             )
         except Exception as exc:
-            current = _read_peer_operation(settings, operation_id) or operation
+            current = (
+                await _offload_request(
+                    request,
+                    "filesystem.fleet_peer_update_read",
+                    _read_peer_operation,
+                    settings,
+                    operation_id,
+                )
+                or operation
+            )
             restart_was_requested = current.get("status") == "restarting"
-            _write_peer_operation(
+            await _offload_request(
+                request,
+                "filesystem.fleet_peer_update_write",
+                _write_peer_operation,
                 settings,
                 operation_id,
                 {
@@ -1288,7 +1463,14 @@ async def peer_update_check(request: Request, channel: str | None = None) -> dic
     settings = request.app.state.ctx.settings
     from pa.update.runner import check_update
 
-    result = await asyncio.to_thread(check_update, settings, channel_name=channel)
+    result = await _offload_request(
+        request,
+        "fleet.update_check",
+        check_update,
+        settings,
+        channel_name=channel,
+        timeout=60.0,
+    )
     return {
         "current_version": result.current,
         "available_version": result.latest,
@@ -1321,23 +1503,40 @@ async def fleet_instance_update_check(
     selected = (channel or settings.release_track or "release").strip()
     headers = _peer_headers(request)
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with _borrow_fleet_client(request, timeout=10.0) as client:
             status_resp, update_resp = await asyncio.gather(
-                client.get(f"{inst.url.rstrip('/')}/api/status", headers=headers),
-                client.get(
-                    f"{inst.url.rstrip('/')}/api/fleet/peer-update-check",
-                    headers=headers,
-                    params={"channel": selected},
+                _fleet_http(
+                    request,
+                    "http.fleet_update_check",
+                    client.get(
+                        f"{inst.url.rstrip('/')}/api/status",
+                        headers=headers,
+                        timeout=10.0,
+                    ),
+                    timeout=10.0,
+                ),
+                _fleet_http(
+                    request,
+                    "http.fleet_update_check",
+                    client.get(
+                        f"{inst.url.rstrip('/')}/api/fleet/peer-update-check",
+                        headers=headers,
+                        params={"channel": selected},
+                        timeout=10.0,
+                    ),
+                    timeout=10.0,
                 ),
             )
         status_resp.raise_for_status()
         update_resp.raise_for_status()
-    except httpx.HTTPError as exc:
+    except (httpx.HTTPError, TimeoutError) as exc:
         raise HTTPException(
             status_code=502, detail=f"Could not check peer update availability: {exc}"
         ) from exc
-    status_data = status_resp.json()
-    update_data = update_resp.json()
+    status_data, update_data = await asyncio.gather(
+        _response_json(request, status_resp),
+        _response_json(request, update_resp),
+    )
     return {
         "instance_id": inst.instance_id,
         "current_version": status_data.get("version"),
@@ -1363,7 +1562,14 @@ async def update_fleet_instance(
     inst = _fleet_instance_or_404(request, instance_id)
     store = _update_store(request)
     try:
-        job = store.create(inst, body, settings.release_track)
+        job = await _offload_request(
+            request,
+            "fleet.update_job_create",
+            store.create,
+            inst,
+            body,
+            settings.release_track,
+        )
     except RuntimeError as exc:
         raise HTTPException(
             status_code=409,
@@ -1372,7 +1578,13 @@ async def update_fleet_instance(
                 "job_id": str(exc),
             },
         ) from exc
-    start_update_job(settings, store, job)
+    start_update_job(
+        settings,
+        store,
+        job,
+        async_runtime=request.app.state.ctx.require_service("async_runtime"),
+        http_client=request.app.state.ctx.require_service("fleet_http_client"),
+    )
     return job.public_dict()
 
 
@@ -1430,11 +1642,18 @@ async def fleet_instance_update_events(request: Request, instance_id: str, job_i
                 return
             for event in store.events_after(job, cursor):
                 seq = int(event["seq"])
-                yield f"id: {seq}\nevent: phase\ndata: {json.dumps(event)}\n\n"
+                encoded = await _offload_request(
+                    request, "fleet.sse_json", json.dumps, event
+                )
+                yield f"id: {seq}\nevent: phase\ndata: {encoded}\n\n"
                 cursor = seq
-            yield f"event: status\ndata: {json.dumps(job.public_dict())}\n\n"
+            public = job.public_dict()
+            encoded = await _offload_request(
+                request, "fleet.sse_json", json.dumps, public
+            )
+            yield f"event: status\ndata: {encoded}\n\n"
             if job.phase in TERMINAL_PHASES:
-                yield f"event: done\ndata: {json.dumps(job.public_dict())}\n\n"
+                yield f"event: done\ndata: {encoded}\n\n"
                 return
             if await wait_for_shutdown(0.5):
                 return
@@ -1460,41 +1679,61 @@ async def _peer_agent_json(
 ) -> dict | list:
     inst = _fleet_instance_or_404(request, instance_id)
     url = f"{inst.url.rstrip('/')}/api/agent/{_agent_path(path)}"
+    client = request.app.state.ctx.services.get("fleet_http_client")
+    owns_client = client is None
+    client = client or httpx.AsyncClient(timeout=timeout)
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.request(
+        resp = await _fleet_http(
+            request,
+            "http.fleet_agent",
+            client.request(
                 method,
                 url,
                 headers=_peer_headers(request),
                 json=body,
-            )
+                timeout=timeout,
+            ),
+            timeout=timeout,
+        )
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail=f"Peer unreachable: {exc}") from exc
+    finally:
+        if owns_client:
+            await client.aclose()
     if resp.status_code >= 400:
         try:
-            detail = resp.json().get("detail")
+            decoded = await _response_json(request, resp)
+            detail = decoded.get("detail")
         except ValueError, AttributeError:
             detail = resp.text[:500]
         raise HTTPException(
             status_code=resp.status_code, detail=detail or "Peer request failed"
         )
-    return resp.json()
+    return await _response_json(request, resp)
 
 
 async def _peer_dispatch_json(
     request: Request, instance_id: str, body: dict[str, Any]
 ) -> dict:
     inst = _fleet_instance_or_404(request, instance_id)
+    client = request.app.state.ctx.services.get("fleet_http_client")
+    owns_client = client is None
+    client = client or httpx.AsyncClient(timeout=15.0)
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.post(
+        resp = await _fleet_http(
+            request,
+            "http.fleet_dispatch",
+            client.post(
                 f"{inst.url.rstrip('/')}/api/fleet/dispatch/materialize",
                 headers={
                     **_peer_headers(request),
                     "Idempotency-Key": str(body["mutation_id"]),
                 },
                 json=body,
-            )
+                timeout=15.0,
+            ),
+            timeout=15.0,
+        )
     except httpx.HTTPError as exc:
         raise HTTPException(
             status_code=502,
@@ -1504,13 +1743,17 @@ async def _peer_dispatch_json(
                 "recoverable": True,
             },
         ) from exc
+    finally:
+        if owns_client:
+            await client.aclose()
     if resp.status_code >= 400:
         try:
-            detail = resp.json().get("detail")
+            decoded = await _response_json(request, resp)
+            detail = decoded.get("detail")
         except ValueError, AttributeError:
             detail = resp.text[:500]
         raise HTTPException(status_code=resp.status_code, detail=detail)
-    return resp.json()
+    return await _response_json(request, resp)
 
 
 async def _assert_dispatch_sync_health(request: Request, realm_id: str) -> None:
@@ -1554,27 +1797,36 @@ async def _assert_dispatch_sync_health(request: Request, realm_id: str) -> None:
             },
         )
     log = request.app.state.ctx.require_service("event_log")
-    heads: dict[str, str | None] = {settings.instance_id: log.get_head(realm_id)}
+    local_head = await _offload_request(
+        request, "filesystem.sync_head_read", log.get_head, realm_id
+    )
+    heads: dict[str, str | None] = {settings.instance_id: local_head}
     headers = _peer_headers(request)
 
     async def read_peer_head(client: httpx.AsyncClient, peer_url: str):
         try:
-            response = await client.get(
-                f"{peer_url.rstrip('/')}/api/sync/refs",
-                params={"realm": realm_id},
-                headers=headers,
+            response = await _fleet_http(
+                request,
+                "http.fleet_sync_head",
+                client.get(
+                    f"{peer_url.rstrip('/')}/api/sync/refs",
+                    params={"realm": realm_id},
+                    headers=headers,
+                    timeout=5.0,
+                ),
+                timeout=5.0,
             )
             response.raise_for_status()
-            refs = response.json()
+            refs = await _response_json(request, response)
             head = next(
                 (r.get("head_hash") for r in refs if r.get("realm_id") == realm_id),
                 None,
             )
             return peer_url, head
-        except httpx.HTTPError, ValueError:
+        except httpx.HTTPError, TimeoutError, ValueError:
             return peer_url, None
 
-    async with httpx.AsyncClient(timeout=5.0) as client:
+    async with _borrow_fleet_client(request, timeout=5.0) as client:
         results = await asyncio.gather(
             *(read_peer_head(client, peer_url) for peer_url in settings.peers)
         )
@@ -1642,16 +1894,21 @@ def _dispatch_request(app) -> Request:
     return Request({"type": "http", "app": app, "headers": []})
 
 
-def _dispatch_cancelled(ledger: DispatchStore, record: DispatchRecord) -> bool:
-    current = ledger.get(record.dispatch_id)
-    if not current or not current.cancel_requested:
-        return False
-    ledger.transition(
-        current,
-        "cancelled",
-        "Dispatch cancelled before prompt acceptance.",
-    )
-    return True
+async def _dispatch_cancelled(
+    ctx: AppContext, ledger: DispatchStore, record: DispatchRecord
+) -> bool:
+    def check_and_transition() -> bool:
+        current = ledger.get(record.dispatch_id)
+        if not current or not current.cancel_requested:
+            return False
+        ledger.transition(
+            current,
+            "cancelled",
+            "Dispatch cancelled before prompt acceptance.",
+        )
+        return True
+
+    return await _offload_ctx(ctx, "dispatch.cancel_check", check_and_transition)
 
 
 async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
@@ -1662,13 +1919,26 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
     ledger: DispatchStore = ctx.require_service("dispatch_store")
     store = ctx.store
 
-    if _dispatch_cancelled(ledger, record):
+    if await _dispatch_cancelled(ctx, ledger, record):
         return
-    ledger.transition(record, "checking_sync", "Checking realm convergence.")
+    await _offload_ctx(
+        ctx,
+        "dispatch.record_write",
+        ledger.transition,
+        record,
+        "checking_sync",
+        "Checking realm convergence.",
+    )
     card = None
     if record.card_id:
         await _assert_dispatch_sync_health(request, record.realm_id)
-        card = store.get_card(record.card_id, realm_id=record.realm_id)
+        card = await _offload_ctx(
+            ctx,
+            "sqlite.card_read",
+            store.get_card,
+            record.card_id,
+            realm_id=record.realm_id,
+        )
         if not card:
             raise HTTPException(
                 status_code=409,
@@ -1682,11 +1952,14 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
         record.card_version = card.updated_at.isoformat()
         record.card_snapshot = card.model_dump(mode="json")
         record.project_id = record.project_id or card.project_id
-        ledger.put(record)
-    if _dispatch_cancelled(ledger, record):
+        await _offload_ctx(ctx, "dispatch.record_write", ledger.put, record)
+    if await _dispatch_cancelled(ctx, ledger, record):
         return
 
-    ledger.transition(
+    await _offload_ctx(
+        ctx,
+        "dispatch.record_write",
+        ledger.transition,
         record,
         "materializing",
         "Materializing the exact dispatch context on the target.",
@@ -1707,12 +1980,17 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
             "session_id": record.resume_session_id if record.resume_requested else None,
         },
     )
-    if _dispatch_cancelled(ledger, record):
+    if await _dispatch_cancelled(ctx, ledger, record):
         return
 
     payload = dict(record.request_payload)
-    ledger.transition(
-        record, "starting_session", "Allocating the remote execution session."
+    await _offload_ctx(
+        ctx,
+        "dispatch.record_write",
+        ledger.transition,
+        record,
+        "starting_session",
+        "Allocating the remote execution session.",
     )
     session_body: dict[str, Any] = {
         # Every fresh dispatch gets an identity that cannot collide with an old
@@ -1827,8 +2105,8 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
             },
         )
     record.session_id = session_id
-    ledger.put(record)
-    if _dispatch_cancelled(ledger, record):
+    await _offload_ctx(ctx, "dispatch.record_write", ledger.put, record)
+    if await _dispatch_cancelled(ctx, ledger, record):
         return
 
     message = str(payload.get("message") or "").strip()
@@ -1840,7 +2118,10 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
         ).text
     prompt_result: dict[str, Any] | None = None
     if message:
-        ledger.transition(
+        await _offload_ctx(
+            ctx,
+            "dispatch.record_write",
+            ledger.transition,
             record,
             "delivering_prompt",
             "Delivering and awaiting durable prompt acceptance.",
@@ -1877,7 +2158,7 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
             )
         record.prompt_acknowledged_at = datetime.now(UTC)
         record.prompt_ack = prompt_result
-        ledger.put(record)
+        await _offload_ctx(ctx, "dispatch.record_write", ledger.put, record)
     elif card:
         raise HTTPException(
             status_code=500,
@@ -1889,9 +2170,18 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
         )
 
     if card:
-        current_card = store.get_card(card.id, realm_id=record.realm_id)
+        current_card = await _offload_ctx(
+            ctx,
+            "sqlite.card_read",
+            store.get_card,
+            card.id,
+            realm_id=record.realm_id,
+        )
         if current_card and current_card.lane not in {CardLane.ACTIVE, CardLane.DONE}:
-            store.update_card(
+            await _offload_ctx(
+                ctx,
+                "sqlite.card_write",
+                store.update_card,
                 card.id,
                 CardUpdate(
                     lane=CardLane.ACTIVE,
@@ -1902,7 +2192,10 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
                 instance_id=settings.instance_id,
             )
     if not record.knowledge_recorded_at:
-        store.add_knowledge(
+        await _offload_ctx(
+            ctx,
+            "sqlite.knowledge_write",
+            store.add_knowledge,
             KnowledgeEntry(
                 session_id=session_id,
                 item_id=record.card_id,
@@ -1917,9 +2210,12 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
             )
         )
         record.knowledge_recorded_at = datetime.now(UTC)
-        ledger.put(record)
+        await _offload_ctx(ctx, "dispatch.record_write", ledger.put, record)
     if record.state != "completed":
-        ledger.transition(
+        await _offload_ctx(
+            ctx,
+            "dispatch.record_write",
+            ledger.transition,
             record,
             "running",
             "Prompt accepted by the intended remote session."
@@ -1945,11 +2241,31 @@ async def start_remote_agent_work(
     settings = ctx.settings
     store = ctx.store
     realm_id = settings.primary_realm
-    card = store.get_card(body.card_id, realm_id=realm_id) if body.card_id else None
+    card = (
+        await _offload_request(
+            request,
+            "sqlite.card_read",
+            store.get_card,
+            body.card_id,
+            realm_id=realm_id,
+        )
+        if body.card_id
+        else None
+    )
     if body.card_id and not card:
         raise HTTPException(status_code=404, detail="Card not found")
     project_id = body.project_id or (card.project_id if card else None)
-    project = store.get_project(project_id, realm_id=realm_id) if project_id else None
+    project = (
+        await _offload_request(
+            request,
+            "sqlite.project_read",
+            store.get_project,
+            project_id,
+            realm_id=realm_id,
+        )
+        if project_id
+        else None
+    )
     if project_id and not project:
         raise HTTPException(status_code=404, detail="Project not found")
     inst = _fleet_instance_or_404(request, instance_id)
@@ -1983,7 +2299,13 @@ async def start_remote_agent_work(
     if not idempotency_key:
         raise HTTPException(status_code=400, detail="Idempotency-Key cannot be empty")
     ledger = _dispatch_store(request)
-    existing = ledger.by_idempotency(instance_id, idempotency_key)
+    existing = await _offload_request(
+        request,
+        "dispatch.idempotency_read",
+        ledger.by_idempotency,
+        instance_id,
+        idempotency_key,
+    )
     if existing:
         if existing.request_fingerprint != fingerprint:
             raise HTTPException(
@@ -2021,7 +2343,14 @@ async def start_remote_agent_work(
         resume_requested=bool(body.resume_session_id),
         resume_session_id=body.resume_session_id,
     )
-    ledger.transition(record, "queued", "Dispatch admitted for background execution.")
+    await _offload_request(
+        request,
+        "dispatch.record_write",
+        ledger.transition,
+        record,
+        "queued",
+        "Dispatch admitted for background execution.",
+    )
     worker = ctx.services.get("dispatch_worker")
     if worker:
         worker.wake()
@@ -2120,21 +2449,32 @@ async def target_dispatches(request: Request, instance_id: str) -> list[dict[str
     """Expose the target's completion outbox alongside authority-side progress."""
     require_user(request)
     inst = _fleet_instance_or_404(request, instance_id)
+    client = request.app.state.ctx.services.get("fleet_http_client")
+    owns_client = client is None
+    client = client or httpx.AsyncClient(timeout=5.0)
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get(
+        response = await _fleet_http(
+            request,
+            "http.fleet_dispatch_status",
+            client.get(
                 f"{inst.url.rstrip('/')}/api/fleet/dispatch-jobs",
                 params={"target_instance_id": instance_id, "limit": 100},
                 headers=_peer_headers(request),
-            )
+                timeout=5.0,
+            ),
+            timeout=5.0,
+        )
         response.raise_for_status()
-        payload = response.json()
+        payload = await _response_json(request, response)
         return payload if isinstance(payload, list) else []
     except (httpx.HTTPError, ValueError) as exc:
         raise HTTPException(
             status_code=502,
             detail=f"Target dispatch status unavailable: {exc}",
         ) from exc
+    finally:
+        if owns_client:
+            await client.aclose()
 
 
 @router.api_route(
@@ -2232,7 +2572,7 @@ async def fleet_agent_proxy(
     )
 
 
-def _proxy_agent_providers(
+async def _proxy_agent_providers(
     request: Request,
     instance_id: str,
     method: str,
@@ -2246,43 +2586,60 @@ def _proxy_agent_providers(
     if settings.sync_token:
         headers["Authorization"] = f"Bearer {settings.sync_token}"
     url = f"{inst.url.rstrip('/')}/api/agent/providers{suffix}"
+    client = request.app.state.ctx.services.get("fleet_http_client")
+    owns_client = client is None
+    client = client or httpx.AsyncClient(
+        timeout=httpx.Timeout(120.0, connect=5.0),
+        limits=httpx.Limits(max_connections=8, max_keepalive_connections=4),
+    )
     try:
-        with httpx.Client(timeout=120.0) as client:
-            resp = client.request(method, url, headers=headers, json=body)
+        resp = await _fleet_http(
+            request,
+            "http.fleet_provider_proxy",
+            client.request(method, url, headers=headers, json=body, timeout=120.0),
+            timeout=125.0,
+        )
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail=f"Peer unreachable: {exc}") from exc
+    finally:
+        if owns_client:
+            await client.aclose()
     if resp.status_code >= 400:
         try:
-            payload = resp.json()
+            payload = await _response_json(request, resp)
             detail = (
                 payload.get("detail", payload) if isinstance(payload, dict) else payload
             )
         except ValueError:
             detail = resp.text[:500]
         raise HTTPException(status_code=resp.status_code, detail=detail)
-    return resp.json()
+    return await _response_json(request, resp)
 
 
 @router.get("/fleet/instances/{instance_id}/agent-providers")
-def fleet_agent_providers(request: Request, instance_id: str):
-    return _proxy_agent_providers(request, instance_id, "GET", "")
+async def fleet_agent_providers(request: Request, instance_id: str):
+    return await _proxy_agent_providers(request, instance_id, "GET", "")
 
 
 @router.get("/fleet/instances/{instance_id}/agent-providers/{provider_id}")
-def fleet_agent_provider(request: Request, instance_id: str, provider_id: str):
-    return _proxy_agent_providers(request, instance_id, "GET", f"/{provider_id}")
+async def fleet_agent_provider(request: Request, instance_id: str, provider_id: str):
+    return await _proxy_agent_providers(request, instance_id, "GET", f"/{provider_id}")
 
 
 @router.post("/fleet/instances/{instance_id}/agent-providers/{provider_id}/install")
-def fleet_agent_provider_install(request: Request, instance_id: str, provider_id: str):
-    return _proxy_agent_providers(
+async def fleet_agent_provider_install(
+    request: Request, instance_id: str, provider_id: str
+):
+    return await _proxy_agent_providers(
         request, instance_id, "POST", f"/{provider_id}/install"
     )
 
 
 @router.post("/fleet/instances/{instance_id}/agent-providers/{provider_id}/update")
-def fleet_agent_provider_update(request: Request, instance_id: str, provider_id: str):
-    return _proxy_agent_providers(
+async def fleet_agent_provider_update(
+    request: Request, instance_id: str, provider_id: str
+):
+    return await _proxy_agent_providers(
         request, instance_id, "POST", f"/{provider_id}/update"
     )
 
@@ -2291,21 +2648,25 @@ def fleet_agent_provider_update(request: Request, instance_id: str, provider_id:
 async def fleet_agent_provider_configure(
     request: Request, instance_id: str, provider_id: str, body: dict
 ):
-    return _proxy_agent_providers(
+    return await _proxy_agent_providers(
         request, instance_id, "POST", f"/{provider_id}/configure", body=body
     )
 
 
 @router.post("/fleet/instances/{instance_id}/agent-providers/{provider_id}/probe")
-def fleet_agent_provider_probe(request: Request, instance_id: str, provider_id: str):
-    return _proxy_agent_providers(request, instance_id, "POST", f"/{provider_id}/probe")
+async def fleet_agent_provider_probe(
+    request: Request, instance_id: str, provider_id: str
+):
+    return await _proxy_agent_providers(
+        request, instance_id, "POST", f"/{provider_id}/probe"
+    )
 
 
 @router.post("/fleet/instances/{instance_id}/agent-providers/{provider_id}/login-jobs")
 async def fleet_agent_provider_login_start(
     request: Request, instance_id: str, provider_id: str, body: dict
 ):
-    return _proxy_agent_providers(
+    return await _proxy_agent_providers(
         request, instance_id, "POST", f"/{provider_id}/login-jobs", body=body
     )
 
@@ -2313,10 +2674,10 @@ async def fleet_agent_provider_login_start(
 @router.post(
     "/fleet/instances/{instance_id}/agent-providers/{provider_id}/codex-cli/install"
 )
-def fleet_agent_provider_codex_cli_install(
+async def fleet_agent_provider_codex_cli_install(
     request: Request, instance_id: str, provider_id: str
 ):
-    return _proxy_agent_providers(
+    return await _proxy_agent_providers(
         request, instance_id, "POST", f"/{provider_id}/codex-cli/install"
     )
 
@@ -2324,10 +2685,10 @@ def fleet_agent_provider_codex_cli_install(
 @router.get(
     "/fleet/instances/{instance_id}/agent-providers/{provider_id}/login-jobs/{job_id}"
 )
-def fleet_agent_provider_login_status(
+async def fleet_agent_provider_login_status(
     request: Request, instance_id: str, provider_id: str, job_id: str
 ):
-    return _proxy_agent_providers(
+    return await _proxy_agent_providers(
         request, instance_id, "GET", f"/{provider_id}/login-jobs/{job_id}"
     )
 
@@ -2335,10 +2696,10 @@ def fleet_agent_provider_login_status(
 @router.get(
     "/fleet/instances/{instance_id}/agent-providers/{provider_id}/login-jobs/{job_id}/events"
 )
-def fleet_agent_provider_login_events(
+async def fleet_agent_provider_login_events(
     request: Request, instance_id: str, provider_id: str, job_id: str, after: int = 0
 ):
-    return _proxy_agent_providers(
+    return await _proxy_agent_providers(
         request,
         instance_id,
         "GET",
@@ -2349,10 +2710,10 @@ def fleet_agent_provider_login_events(
 @router.post(
     "/fleet/instances/{instance_id}/agent-providers/{provider_id}/login-jobs/{job_id}/cancel"
 )
-def fleet_agent_provider_login_cancel(
+async def fleet_agent_provider_login_cancel(
     request: Request, instance_id: str, provider_id: str, job_id: str
 ):
-    return _proxy_agent_providers(
+    return await _proxy_agent_providers(
         request, instance_id, "POST", f"/{provider_id}/login-jobs/{job_id}/cancel"
     )
 
@@ -2426,19 +2787,37 @@ class FleetModule(Module):
         )
 
     async def on_startup(self, app, ctx: AppContext) -> None:
-        recover_update_jobs(
-            ctx.settings,
+        async_runtime = ctx.require_service("async_runtime")
+        fleet_http_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(30.0, connect=5.0),
+            limits=httpx.Limits(max_connections=32, max_keepalive_connections=16),
+        )
+        ctx.register_service("fleet_http_client", fleet_http_client)
+        recoverable = await async_runtime.run_blocking(
+            "fleet.update_recovery",
+            prepare_update_job_recovery,
             ctx.require_service("fleet_registry"),
             ctx.require_service("fleet_update_job_store"),
         )
+        for job in recoverable:
+            start_update_job(
+                ctx.settings,
+                ctx.require_service("fleet_update_job_store"),
+                job,
+                async_runtime=async_runtime,
+                http_client=fleet_http_client,
+            )
         dispatch_worker = DispatchWorker(
             ctx.require_service("dispatch_store"),
             lambda record: _process_remote_dispatch(app, record),
+            async_runtime=async_runtime,
         )
         dispatch_worker.start()
         ctx.register_service("dispatch_worker", dispatch_worker)
         outbox = CompletionOutbox(
-            ctx.require_service("dispatch_store"), ctx.settings.sync_token
+            ctx.require_service("dispatch_store"),
+            ctx.settings.sync_token,
+            async_runtime=async_runtime,
         )
         outbox.start()
         ctx.register_service("completion_outbox", outbox)
@@ -2452,6 +2831,9 @@ class FleetModule(Module):
         outbox = ctx.services.get("completion_outbox")
         if outbox:
             await outbox.close(timeout=5.0)
+        client = ctx.services.get("fleet_http_client")
+        if client:
+            await client.aclose()
 
     def api_routers(self):
         return [("/api", router, ["fleet"])]

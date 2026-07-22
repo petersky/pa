@@ -1,4 +1,7 @@
+import asyncio
 import os
+import signal
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -84,6 +87,41 @@ class BrowserManagerTests(unittest.IsolatedAsyncioTestCase):
             result = await manager.attach("session-1", width=1600, height=1000)
         self.assertIs(result, attachment)
         resize.assert_awaited_once_with(1600, 1000, device_scale_factor=1)
+
+    async def test_cancelled_startup_terminates_the_browser_process_group(self):
+        started = asyncio.Event()
+
+        class WaitingClient:
+            async def get(self, _url):
+                started.set()
+                await asyncio.Event().wait()
+
+        process = SimpleNamespace(
+            pid=4321,
+            returncode=None,
+            wait=AsyncMock(return_value=0),
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            manager = BrowserManager(Path(tmp))
+            manager._client = WaitingClient()
+            with (
+                patch("pa.browser.manager._browser_executable", return_value="chrome"),
+                patch("pa.browser.manager._free_port", return_value=9222),
+                patch(
+                    "pa.browser.manager.asyncio.create_subprocess_exec",
+                    AsyncMock(return_value=process),
+                ),
+                patch("pa.browser.manager.os.killpg") as killpg,
+            ):
+                task = asyncio.create_task(manager.attach("session-cancel"))
+                await asyncio.wait_for(started.wait(), timeout=1)
+                task.cancel()
+                with self.assertRaises(asyncio.CancelledError):
+                    await task
+
+            killpg.assert_called_once_with(4321, signal.SIGTERM)
+            process.wait.assert_awaited_once()
+            self.assertNotIn("session-cancel", manager._attachments)
 
 
 class BrowserSessionRuntimeTests(unittest.IsolatedAsyncioTestCase):

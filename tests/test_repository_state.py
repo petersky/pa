@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import subprocess
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -15,6 +16,7 @@ from pa.repository.state import (
     RepositorySnapshotInput,
     RepositoryStateService,
 )
+from pa.core.async_runtime import AsyncRuntime
 
 
 def git(path: Path, *args: str) -> None:
@@ -54,6 +56,28 @@ def test_inspects_head_dirty_untracked_remotes_fetch_and_worktrees(
     assert result.snapshot.last_fetch_at is not None
     assert result.snapshot.worktrees[0].path == str(repo)
     assert service.list()[0].snapshot.instance_id == "macmini"
+
+
+def test_async_inspection_uses_cancellable_git_and_bounded_worker(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    make_repo(repo)
+    (repo / "untracked.txt").write_text("new\n")
+    service = RepositoryStateService(tmp_path / "data", "macmini")
+
+    async def run():
+        runtime = AsyncRuntime(max_workers=2, max_queue=2)
+        await runtime.start()
+        try:
+            result = await service.refresh_async(repo, runtime)
+            return result, runtime.snapshot()
+        finally:
+            await runtime.close()
+
+    result, metrics = asyncio.run(run())
+    assert result.state == "fresh"
+    assert result.snapshot.branch == "main"
+    assert result.snapshot.untracked == 1
+    assert metrics["operations"]["repository.snapshot_write"]["completed"] == 1
 
 
 def test_untracked_only_is_not_tracked_dirty(tmp_path: Path) -> None:

@@ -8,11 +8,12 @@ import logging
 import time
 from datetime import UTC, datetime
 from pathlib import Path
-from threading import RLock
+from threading import Lock, RLock
 from typing import Any
 
 import httpx
 
+from pa.core.async_runtime import AsyncRuntime
 from pa.core.io import atomic_write_json
 from pa.domain.models import FleetInstance
 from pa.execution.dispatch import TERMINAL_DISPATCH_STATES
@@ -33,6 +34,21 @@ DIMENSIONS = (
 DETAIL_TIMEOUT = 4.0
 REACHABILITY_TIMEOUT = 2.5
 GOOD_STATES = {"fresh", "stale"}
+
+
+def _runtime(ctx: Any) -> AsyncRuntime | None:
+    services = getattr(ctx, "services", None)
+    candidate = services.get("async_runtime") if isinstance(services, dict) else None
+    return candidate if isinstance(candidate, AsyncRuntime) else None
+
+
+async def _offload(ctx: Any, operation: str, call, *args, timeout=None, **kwargs):
+    runtime = _runtime(ctx)
+    if runtime:
+        return await runtime.run_blocking(
+            operation, call, *args, timeout=timeout, **kwargs
+        )
+    return await asyncio.to_thread(call, *args, **kwargs)
 
 
 def _now() -> str:
@@ -101,17 +117,19 @@ class FleetOverviewCache:
 
 
 _caches: dict[str, FleetOverviewCache] = {}
+_caches_lock = Lock()
 _probe_tasks: dict[tuple[str, str, str], asyncio.Task[dict[str, Any]]] = {}
 _probe_lock = asyncio.Lock()
 
 
 def cache_for(data_dir: Path) -> FleetOverviewCache:
-    key = str(data_dir.resolve())
-    cache = _caches.get(key)
-    if cache is None:
-        cache = FleetOverviewCache(data_dir)
-        _caches[key] = cache
-    return cache
+    key = str(data_dir)
+    with _caches_lock:
+        cache = _caches.get(key)
+        if cache is None:
+            cache = FleetOverviewCache(data_dir)
+            _caches[key] = cache
+        return cache
 
 
 def _cached_or_default(
@@ -283,11 +301,21 @@ def local_dimension(ctx: Any, dimension: str) -> Any:
 
 
 async def _json_get(
-    client: httpx.AsyncClient, url: str, headers: dict[str, str]
+    ctx: Any, client: httpx.AsyncClient, url: str, headers: dict[str, str]
 ) -> Any:
-    response = await client.get(url, headers=headers)
+    runtime = _runtime(ctx)
+    request = client.get(url, headers=headers)
+    response = (
+        await runtime.observe(
+            "http.fleet_overview", request, timeout=DETAIL_TIMEOUT
+        )
+        if runtime
+        else await request
+    )
     response.raise_for_status()
-    return response.json()
+    return await _offload(
+        ctx, "fleet.overview_response_json", response.json, timeout=2.0
+    )
 
 
 async def _probe(ctx: Any, inst: FleetInstance, dimension: str) -> dict[str, Any]:
@@ -296,19 +324,33 @@ async def _probe(ctx: Any, inst: FleetInstance, dimension: str) -> dict[str, Any
     timeout = REACHABILITY_TIMEOUT if dimension == "reachability" else DETAIL_TIMEOUT
     try:
         if is_local and dimension not in {"providers", "update"}:
-            value = local_dimension(ctx, dimension)
+            value = await _offload(
+                ctx,
+                f"fleet.overview.{dimension}",
+                local_dimension,
+                ctx,
+                dimension,
+                timeout=timeout,
+            )
         elif is_local and dimension == "providers":
             from pa.acp.providers.resolve import list_provider_summaries
 
-            value = await asyncio.wait_for(
-                asyncio.to_thread(list_provider_summaries, ctx.settings.data_dir),
+            value = await _offload(
+                ctx,
+                "fleet.overview.providers",
+                list_provider_summaries,
+                ctx.settings.data_dir,
                 timeout=timeout,
             )
         elif is_local and dimension == "update":
             from pa.update.runner import check_update
 
-            result = await asyncio.wait_for(
-                asyncio.to_thread(check_update, ctx.settings), timeout=timeout
+            result = await _offload(
+                ctx,
+                "fleet.overview.update",
+                check_update,
+                ctx.settings,
+                timeout=timeout,
             )
             value = {
                 "current_version": result.current,
@@ -321,22 +363,31 @@ async def _probe(ctx: Any, inst: FleetInstance, dimension: str) -> dict[str, Any
             if ctx.settings.sync_token:
                 headers["Authorization"] = f"Bearer {ctx.settings.sync_token}"
             base = inst.url.rstrip("/")
-            async with httpx.AsyncClient(timeout=timeout) as client:
+            client = ctx.services.get("fleet_http_client")
+            owns_client = client is None
+            client = client or httpx.AsyncClient(timeout=timeout)
+            try:
                 if dimension == "reachability":
-                    await _json_get(client, f"{base}/api/health", {})
+                    await _json_get(ctx, client, f"{base}/api/health", {})
                     value = {"health": "up"}
                 elif dimension == "status":
-                    value = await _json_get(client, f"{base}/api/status", headers)
+                    value = await _json_get(
+                        ctx, client, f"{base}/api/status", headers
+                    )
                 elif dimension == "providers":
                     value = await _json_get(
-                        client, f"{base}/api/agent/providers", headers
+                        ctx, client, f"{base}/api/agent/providers", headers
                     )
                 elif dimension == "update":
                     value = await _json_get(
-                        client, f"{base}/api/fleet/peer-update-check", headers
+                        ctx,
+                        client,
+                        f"{base}/api/fleet/peer-update-check",
+                        headers,
                     )
                 else:
                     payload = await _json_get(
+                        ctx,
                         client,
                         f"{base}/api/fleet/overview/local?dimension={dimension}",
                         headers,
@@ -344,6 +395,9 @@ async def _probe(ctx: Any, inst: FleetInstance, dimension: str) -> dict[str, Any
                     value = (
                         payload.get("value") if isinstance(payload, dict) else payload
                     )
+            finally:
+                if owns_client:
+                    await client.aclose()
         elapsed = (time.perf_counter() - started) * 1000
         return field("fresh", value, observed_at=_now(), duration_ms=elapsed)
     except TimeoutError, asyncio.TimeoutError, httpx.TimeoutException:
@@ -377,8 +431,12 @@ async def probe_dimension(
     force: bool = False,
 ) -> dict[str, Any]:
     """Single-flight a bounded probe and preserve the previous good value."""
-    cache = cache_for(ctx.settings.data_dir)
-    cached = cache.get(inst.instance_id, dimension)
+    cache = await _offload(
+        ctx, "fleet.overview_cache_read", cache_for, ctx.settings.data_dir
+    )
+    cached = await _offload(
+        ctx, "fleet.overview_cache_read", cache.get, inst.instance_id, dimension
+    )
     if cached and not force and cached.get("state") == "fresh":
         try:
             observed = datetime.fromisoformat(str(cached.get("observed_at")))
@@ -388,7 +446,7 @@ async def probe_dimension(
                 return {**cached, "cache_hit": True}
         except TypeError, ValueError:
             pass
-    key = (str(ctx.settings.data_dir.resolve()), inst.instance_id, dimension)
+    key = (str(ctx.settings.data_dir), inst.instance_id, dimension)
     async with _probe_lock:
         task = _probe_tasks.get(key)
         if task is None or task.done():
@@ -401,8 +459,24 @@ async def probe_dimension(
             async with _probe_lock:
                 if _probe_tasks.get(key) is task:
                     _probe_tasks.pop(key, None)
-    cache.put(inst.instance_id, dimension, result)
-    merged = cache.get(inst.instance_id, dimension) or result
+    await _offload(
+        ctx,
+        "fleet.overview_cache_write",
+        cache.put,
+        inst.instance_id,
+        dimension,
+        result,
+    )
+    merged = (
+        await _offload(
+            ctx,
+            "fleet.overview_cache_read",
+            cache.get,
+            inst.instance_id,
+            dimension,
+        )
+        or result
+    )
     logger.info(
         "fleet overview probe instance=%s dimension=%s state=%s duration_ms=%s",
         inst.instance_id,

@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import os
 from collections.abc import Awaitable, Callable
-from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 from uuid import uuid4
 
 from pa.acp.client import (
@@ -49,28 +49,15 @@ from pa.repository.workspace import (
     context_environment,
 )
 
+if TYPE_CHECKING:
+    from pa.core.async_runtime import AsyncRuntime
+
 logger = logging.getLogger(__name__)
 
 _RETRY_SECONDS = 30
 _QUIESCE_POLL_SECONDS = 0.4
 TRANSCRIPT_WINDOW_LIMIT = 1000
 PromptAction = Literal["append", "prepend", "interrupt"]
-
-
-@contextmanager
-def _agent_env_overlay(extra: dict[str, str]):
-    prev: dict[str, str | None] = {}
-    for key, value in extra.items():
-        prev[key] = os.environ.get(key)
-        os.environ[key] = value
-    try:
-        yield
-    finally:
-        for key, old in prev.items():
-            if old is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = old
 
 
 def _session_dir(data_dir: Path, session_id: str) -> Path:
@@ -88,8 +75,14 @@ class AgentSessionRuntime:
         session: AgentSession,
         *,
         agent_env: dict[str, str] | None = None,
+        initial_transcript_seq: int | None = None,
     ) -> None:
         self.manager = manager
+        self.async_runtime = (
+            manager.async_runtime
+            if isinstance(manager, AgentSessionManager)
+            else None
+        )
         self.settings = manager.settings
         self.store = manager.store
         self.session = session
@@ -104,10 +97,28 @@ class AgentSessionRuntime:
         self._subscribers: list[asyncio.Queue[dict[str, Any]]] = []
         self._pending_permissions: dict[str, asyncio.Future[Any]] = {}
         self._permission_requests: dict[str, dict[str, Any]] = {}
-        self._seq = self.store.next_transcript_seq(session.id) - 1
+        self._seq = (
+            initial_transcript_seq
+            if initial_transcript_seq is not None
+            else self.store.next_transcript_seq(session.id) - 1
+        )
         self._transcript_buffer: list[TranscriptEvent] = []
+        self._transcript_queue: asyncio.Queue[list[TranscriptEvent]] = asyncio.Queue(
+            maxsize=128
+        )
+        self._transcript_writer_task: asyncio.Task[None] | None = None
         self._closed = False
         self._turn_started_at: datetime | None = None
+
+    async def _offload(
+        self, operation: str, call, *args, timeout: float | None = None, **kwargs
+    ):
+        async_runtime = getattr(self, "async_runtime", None)
+        if async_runtime:
+            return await async_runtime.run_blocking(
+                operation, call, *args, timeout=timeout, **kwargs
+            )
+        return await asyncio.to_thread(call, *args, **kwargs)
 
     def _save_session_preserving_external_browser(self) -> None:
         persisted = self.store.get_session(self.session_id)
@@ -119,6 +130,12 @@ class AgentSessionRuntime:
             config["browser"] = persisted_browser
             self.session.config_json = config
         self.store.save_session(self.session)
+
+    async def _save_session_preserving_external_browser_async(self) -> None:
+        await self._offload(
+            "sqlite.agent_session_save",
+            self._save_session_preserving_external_browser,
+        )
 
     @property
     def session_id(self) -> str:
@@ -170,6 +187,11 @@ class AgentSessionRuntime:
             payload=payload,
         )
         self._transcript_buffer.append(te)
+        if len(self._transcript_buffer) > 4096:
+            self._queue_paused = True
+            raise RuntimeError(
+                "Transcript persistence backlog exceeded 4096 events; session paused"
+            )
         if len(self._transcript_buffer) >= 8:
             self._flush_transcript()
         event = {
@@ -186,13 +208,62 @@ class AgentSessionRuntime:
     def _flush_transcript(self) -> None:
         if not self._transcript_buffer:
             return
+        if not getattr(self, "async_runtime", None):
+            batch = list(self._transcript_buffer)
+            self._transcript_buffer.clear()
+            try:
+                self.store.append_transcript_events(batch)
+            except Exception:
+                logger.exception("Failed to persist transcript events")
+                self._transcript_buffer = batch + self._transcript_buffer
+            return
+        if self._transcript_queue.full():
+            return
         batch = list(self._transcript_buffer)
         self._transcript_buffer.clear()
+        self._transcript_queue.put_nowait(batch)
+        if not self._transcript_writer_task or self._transcript_writer_task.done():
+            self._transcript_writer_task = asyncio.create_task(
+                self._write_transcripts(),
+                name=f"pa-transcript-{self.session_id}",
+            )
+
+    async def _write_transcripts(self) -> None:
+        while not self._transcript_queue.empty():
+            batch = await self._transcript_queue.get()
+            delay = 0.05
+            try:
+                while True:
+                    try:
+                        await self._offload(
+                            "sqlite.transcript_append",
+                            self.store.append_transcript_events,
+                            batch,
+                            timeout=30.0,
+                        )
+                        break
+                    except asyncio.CancelledError:
+                        self._transcript_buffer = batch + self._transcript_buffer
+                        raise
+                    except Exception:
+                        logger.exception("Failed to persist transcript events; retrying")
+                        await asyncio.sleep(delay)
+                        delay = min(delay * 2, 2.0)
+            finally:
+                self._transcript_queue.task_done()
+            self._flush_transcript()
+
+    async def _drain_transcripts(self, *, timeout: float = 10.0) -> None:
+        self._flush_transcript()
+        if not getattr(self, "async_runtime", None):
+            return
         try:
-            self.store.append_transcript_events(batch)
-        except Exception:
-            logger.exception("Failed to persist transcript events")
-            self._transcript_buffer = batch + self._transcript_buffer
+            async with asyncio.timeout(timeout):
+                await self._transcript_queue.join()
+                self._flush_transcript()
+                await self._transcript_queue.join()
+        except TimeoutError:
+            logger.error("Timed out draining transcript for session %s", self.session_id)
 
     async def _on_acp_update(self, _external_session_id: str, update: Any) -> None:
         normalized = normalize_session_update(update)
@@ -201,7 +272,7 @@ class AgentSessionRuntime:
             metrics = dict(self.session.metrics_json or {})
             metrics["usage"] = normalized["usage"]
             self.session.metrics_json = metrics
-            self._save_session_preserving_external_browser()
+            await self._save_session_preserving_external_browser_async()
         configuration_state = (
             (self.session.config_json or {}).get("configuration") or {}
         ).get("state")
@@ -211,14 +282,14 @@ class AgentSessionRuntime:
             and configuration_state != "applying"
         ):
             self.session.mode_id = normalized["mode_id"]
-            self._save_session_preserving_external_browser()
+            await self._save_session_preserving_external_browser_async()
         if event_type == "config_option_update" and configuration_state != "applying":
             options = normalized.get("config_options")
             if options is not None:
                 cfg = dict(self.session.config_json or {})
                 cfg["options"] = options
                 self.session.config_json = cfg
-                self._save_session_preserving_external_browser()
+                await self._save_session_preserving_external_browser_async()
                 if self.connection:
                     self.connection.config_options = options
         self._append_transcript(event_type, normalized)
@@ -226,7 +297,7 @@ class AgentSessionRuntime:
     async def _on_permission(
         self, _external_session_id: str, request: dict[str, Any]
     ) -> Any:
-        if self.manager.should_auto_approve(self.session.principal_id):
+        if await self.manager.should_auto_approve_async(self.session.principal_id):
             options = request.get("options") or []
             option_id = None
             for kind in ("allow_always", "allow_once"):
@@ -284,7 +355,14 @@ class AgentSessionRuntime:
                 ),
             )
             self.agent_env.update(attachment.environment())
-        wire_path = _session_dir(self.settings.data_dir, self.session_id) / "wire.jsonl"
+        session_dir = await self._offload(
+            "agent.session_mkdir",
+            _session_dir,
+            self.settings.data_dir,
+            self.session_id,
+            timeout=10.0,
+        )
+        wire_path = session_dir / "wire.jsonl"
         provider_id = self.session.agent_name or DEFAULT_PROVIDER_ID
         if provider_id in {"instance", ""}:
             provider_id = DEFAULT_PROVIDER_ID
@@ -297,19 +375,20 @@ class AgentSessionRuntime:
             on_permission=self._on_permission,
             wire_path=wire_path,
             auto_approve=False,
+            async_runtime=self.async_runtime,
+            extra_env=self.agent_env,
         )
         try:
-            with _agent_env_overlay(self.agent_env):
-                self.session = await self.connection.connect(
-                    resume_external_id=resume_external_id,
-                    cwd=self.session.cwd,
-                    existing_session=self.session,
-                    title=self.session.title,
-                    label=self.session.label,
-                    principal_id=self.session.principal_id,
-                    card_id=self.session.card_id,
-                    project_id=self.session.project_id,
-                )
+            self.session = await self.connection.connect(
+                resume_external_id=resume_external_id,
+                cwd=self.session.cwd,
+                existing_session=self.session,
+                title=self.session.title,
+                label=self.session.label,
+                principal_id=self.session.principal_id,
+                card_id=self.session.card_id,
+                project_id=self.session.project_id,
+            )
             persisted = dict(
                 ((self.session.config_json or {}).get("configuration") or {}).get(
                     "requested"
@@ -337,6 +416,7 @@ class AgentSessionRuntime:
                 },
             )
             self._flush_transcript()
+            await self._drain_transcripts()
             try:
                 await self.connection.disconnect()
             except Exception:
@@ -347,12 +427,12 @@ class AgentSessionRuntime:
             self.connection = None
             if failed_configuration.get("state") == "failed":
                 self.session.status = "configuration_failed"
-                self._save_session_preserving_external_browser()
+                await self._save_session_preserving_external_browser_async()
             raise
         # Persist resolved provider id on the session.
         if self.connection and self.connection.agent_name:
             self.session.agent_name = self.connection.agent_name
-            self._save_session_preserving_external_browser()
+            await self._save_session_preserving_external_browser_async()
         self._queue_paused = queue_paused
         if queued_prompts:
             for item in queued_prompts:
@@ -369,6 +449,8 @@ class AgentSessionRuntime:
             },
         )
         self._flush_transcript()
+        await self._drain_transcripts()
+        await self._drain_transcripts()
         self._start_drain()
         return self.session
 
@@ -419,10 +501,13 @@ class AgentSessionRuntime:
             config["browser"] = {"attached": False}
             state = {"attached": False}
         self.session.config_json = config
-        self.store.save_session(self.session)
+        await self._offload(
+            "sqlite.agent_session_save", self.store.save_session, self.session
+        )
         await self.start(resume_external_id=external_id)
         self._append_transcript("browser_attachment_changed", state)
         self._flush_transcript()
+        await self._drain_transcripts()
         return state
 
     async def browser_state(self) -> dict:
@@ -459,9 +544,12 @@ class AgentSessionRuntime:
         )
         config["browser"] = browser_config
         self.session.config_json = config
-        self.store.save_session(self.session)
+        await self._offload(
+            "sqlite.agent_session_save", self.store.save_session, self.session
+        )
         self._append_transcript("browser_attachment_changed", state)
         self._flush_transcript()
+        await self._drain_transcripts()
         return state
 
     def _start_drain(self) -> None:
@@ -628,10 +716,10 @@ class AgentSessionRuntime:
         context = (self.session.config_json or {}).get("execution_context")
         if not context or not expected:
             return requested or expected
-        if (
-            requested
-            and Path(requested).expanduser().resolve() != Path(expected).resolve()
-        ):
+        normalize = lambda value: os.path.normcase(
+            os.path.abspath(os.path.expanduser(value))
+        )
+        if requested and normalize(requested) != normalize(expected):
             raise RuntimeError(
                 "Prompt cwd cannot override the session's leased workspace"
             )
@@ -658,25 +746,27 @@ class AgentSessionRuntime:
         item.cwd = self._validated_cwd(item.cwd)
         item.agent_env = self._merged_agent_env(item.agent_env)
         try:
-            await asyncio.to_thread(
-                self.manager.workspace_manager.renew_session, self.session_id
+            await self._offload(
+                "workspace.lease_renew",
+                self.manager.workspace_manager.renew_session,
+                self.session_id,
             )
         except Exception:
             logger.exception("Could not renew workspace lease for %s", self.session_id)
-        env = dict(item.agent_env or {})
-        if item.cwd:
-            env["PWD"] = item.cwd
         async with self._prompt_lock:
             self._in_flight = item
             self._turn_started_at = datetime.now(UTC)
             try:
-                composition = compose_session_prompt(
+                composition = await self._offload(
+                    "agent.prompt_compose",
+                    compose_session_prompt,
                     self.store,
                     self.settings,
                     self.session,
                     item.message,
                     card_id=item.card_id,
                     project_id=item.project_id,
+                    timeout=30.0,
                 )
                 prompt_audit = list(item.prompt_audit) + composition.audit_records()
                 from pa.prompts import PROMPTS
@@ -736,7 +826,7 @@ class AgentSessionRuntime:
                     audit_history[existing_index] = audit_entry
                 config["prompt_audit"] = audit_history[-50:]
                 self.session.config_json = config
-                self._save_session_preserving_external_browser()
+                await self._save_session_preserving_external_browser_async()
                 if first_attempt:
                     self._append_transcript(
                         "prompt_rendered", {"id": item.id, "prompts": prompt_audit}
@@ -751,24 +841,25 @@ class AgentSessionRuntime:
                         },
                     )
                 self._flush_transcript()
+                await self._drain_transcripts()
             except BaseException:
                 self._finish_turn_state()
                 raise
             try:
                 try:
-                    with _agent_env_overlay(env):
-                        stop_reason = await self.connection.prompt(
-                            composition.text,
-                            images=item.images,
-                            item_id=item.card_id,
-                            principal_id=item.principal_id,
-                            project_id=item.project_id,
-                            cwd=item.cwd,
-                        )
+                    stop_reason = await self.connection.prompt(
+                        composition.text,
+                        images=item.images,
+                        item_id=item.card_id,
+                        principal_id=item.principal_id,
+                        project_id=item.project_id,
+                        cwd=item.cwd,
+                    )
                 except Exception as exc:
                     if self._is_connection_loss(exc):
                         self._finish_turn_state()
                         self._notify_connection_lost(item, exc)
+                        await self._drain_transcripts()
                         return "connection_lost"
                     raise
                 usage = self.connection.last_usage if self.connection else None
@@ -776,7 +867,7 @@ class AgentSessionRuntime:
                     metrics = dict(self.session.metrics_json or {})
                     metrics["last_usage"] = usage
                     self.session.metrics_json = metrics
-                    self._save_session_preserving_external_browser()
+                    await self._save_session_preserving_external_browser_async()
                 # Clear snapshot-visible turn state before publishing the
                 # terminal event. A page refresh after turn_completed must see
                 # prompting=false and no per-turn start time.
@@ -790,16 +881,28 @@ class AgentSessionRuntime:
                     },
                 )
                 self._flush_transcript()
+                await self._drain_transcripts()
                 if self.manager.completion_handler and item.card_id:
                     try:
-                        result = self.manager.completion_handler(
-                            self.session_id,
-                            {
-                                "stop_reason": stop_reason,
-                                "usage": usage,
-                                "queued_prompt_id": item.id,
-                            },
-                        )
+                        payload = {
+                            "stop_reason": stop_reason,
+                            "usage": usage,
+                            "queued_prompt_id": item.id,
+                        }
+                        if inspect.iscoroutinefunction(
+                            self.manager.completion_handler
+                        ):
+                            result = self.manager.completion_handler(
+                                self.session_id, payload
+                            )
+                        else:
+                            result = await self._offload(
+                                "agent.completion_callback",
+                                self.manager.completion_handler,
+                                self.session_id,
+                                payload,
+                                timeout=30.0,
+                            )
                         if asyncio.iscoroutine(result):
                             await result
                     except Exception:
@@ -853,6 +956,7 @@ class AgentSessionRuntime:
                 logger.exception("Cancel failed for session %s", self.session_id)
         self._append_transcript("cancelled", {"pause_queue": pause_queue})
         self._flush_transcript()
+        await self._drain_transcripts()
 
     def pause_queue(self) -> None:
         self._queue_paused = True
@@ -917,7 +1021,9 @@ class AgentSessionRuntime:
         else:
             response = permission_cancelled()
         if remember and allow:
-            self.manager.set_auto_approve(True, scope=scope, principal_id=principal_id)
+            await self.manager.set_auto_approve_async(
+                True, scope=scope, principal_id=principal_id
+            )
         future.set_result(response)
         self._append_transcript(
             "permission_resolved",
@@ -928,6 +1034,7 @@ class AgentSessionRuntime:
             },
         )
         self._flush_transcript()
+        await self._drain_transcripts()
         return True
 
     async def set_model(self, model_id: str) -> None:
@@ -937,6 +1044,7 @@ class AgentSessionRuntime:
         self.session = self.connection.session or self.session
         self._append_transcript("model_changed", {"model_id": model_id})
         self._flush_transcript()
+        await self._drain_transcripts()
 
     async def configure(self, requested: SessionConfigurationRequest) -> dict[str, Any]:
         if not self.connection:
@@ -953,6 +1061,7 @@ class AgentSessionRuntime:
                 {"requested": requested.as_dict(), "effective": effective},
             )
             self._flush_transcript()
+            await self._drain_transcripts()
             return effective
 
     async def set_mode(self, mode_id: str) -> None:
@@ -962,6 +1071,7 @@ class AgentSessionRuntime:
         self.session = self.connection.session or self.session
         self._append_transcript("mode_changed", {"mode_id": mode_id})
         self._flush_transcript()
+        await self._drain_transcripts()
 
     async def set_config(self, config_id: str, value: str | bool) -> None:
         if not self.connection:
@@ -972,6 +1082,7 @@ class AgentSessionRuntime:
             "config_changed", {"config_id": config_id, "value": value}
         )
         self._flush_transcript()
+        await self._drain_transcripts()
 
     def snapshot(self) -> dict[str, Any]:
         self._flush_transcript()
@@ -1053,12 +1164,13 @@ class AgentSessionRuntime:
             self._permission_requests.pop(req_id, None)
         self._append_transcript("session_closed", {})
         self._flush_transcript()
+        await self._drain_transcripts()
         if self.connection:
             await self.connection.disconnect()
             self.connection = None
         self.session.status = "closed"
         self.session.updated_at = datetime.now(UTC)
-        self._save_session_preserving_external_browser()
+        await self._save_session_preserving_external_browser_async()
 
 
 class AgentSessionManager:
@@ -1075,11 +1187,38 @@ class AgentSessionManager:
         self._default_label = "default"
         self._lock = asyncio.Lock()
         self._label_locks: dict[str, asyncio.Lock] = {}
+        self.async_runtime: AsyncRuntime | None = None
         self.browser = BrowserManager(settings.data_dir)
         self.workspace_manager = WorkspaceManager(settings, store)
         self.completion_handler: (
             Callable[[str, dict[str, Any]], Awaitable[Any] | Any] | None
         ) = None
+
+    async def _offload(
+        self, operation: str, call, *args, timeout: float | None = None, **kwargs
+    ):
+        if self.async_runtime:
+            return await self.async_runtime.run_blocking(
+                operation, call, *args, timeout=timeout, **kwargs
+            )
+        return await asyncio.to_thread(call, *args, **kwargs)
+
+    async def _new_runtime(
+        self,
+        session: AgentSession,
+        *,
+        agent_env: dict[str, str] | None = None,
+    ) -> AgentSessionRuntime:
+        initial_seq = await self._offload(
+            "sqlite.transcript_sequence",
+            lambda: self.store.next_transcript_seq(session.id) - 1,
+        )
+        return AgentSessionRuntime(
+            self,
+            session,
+            agent_env=agent_env,
+            initial_transcript_seq=initial_seq,
+        )
 
     def label_lock(self, label: str) -> asyncio.Lock:
         return self._label_locks.setdefault(label, asyncio.Lock())
@@ -1103,34 +1242,43 @@ class AgentSessionManager:
             "retryable": True,
         }
         session.config_json = config
-        self.store.save_session(session)
+        await self._offload(
+            "sqlite.agent_session_save", self.store.save_session, session
+        )
         try:
             workspace = None
             if session.project_id:
-                project = self.store.get_project(session.project_id)
+                project = await self._offload(
+                    "sqlite.project_read", self.store.get_project, session.project_id
+                )
                 if project is None:
                     raise WorkspaceProvisioningError(
                         "Project is not available on this instance"
                     )
-                workspace = await asyncio.to_thread(
+                workspace = await self._offload(
+                    "workspace.project_provision",
                     self.workspace_manager.provision_project,
                     project_id=session.project_id,
                     session_id=session.id,
                     card_id=session.card_id,
                     realm_id=getattr(project, "realm_id", self.settings.primary_realm),
                     provider_id=provider_id,
+                    timeout=900.0,
                 )
                 if workspace is None:
                     raise WorkspaceProvisioningError(
                         "Project has no linked repositories to provision"
                     )
             if workspace is None:
-                workspace = self.workspace_manager.scratch_workspace(
+                workspace = await self._offload(
+                    "workspace.scratch_provision",
+                    self.workspace_manager.scratch_workspace,
                     session_id=session.id,
                     card_id=session.card_id,
                     project_id=session.project_id,
                     requested_cwd=requested_cwd,
                     provider_id=provider_id,
+                    timeout=120.0,
                 )
             context = workspace.execution_context(self.settings, provider_id)
             if authority_instance:
@@ -1145,7 +1293,9 @@ class AgentSessionManager:
             }
             session.config_json = config
             session.status = "connecting"
-            self.store.save_session(session)
+            await self._offload(
+                "sqlite.agent_session_save", self.store.save_session, session
+            )
             return context_environment(context)
         except Exception as exc:
             session.status = "provisioning_failed"
@@ -1162,7 +1312,9 @@ class AgentSessionManager:
             }
             session.config_json = config
             session.cwd = None
-            self.store.save_session(session)
+            await self._offload(
+                "sqlite.agent_session_save", self.store.save_session, session
+            )
             if isinstance(exc, WorkspaceProvisioningError):
                 raise
             raise WorkspaceProvisioningError(str(exc)) from exc
@@ -1286,14 +1438,45 @@ class AgentSessionManager:
             agent_auto_approve_permissions=value
         )
 
+    async def should_auto_approve_async(self, principal_id: str | None) -> bool:
+        return await self._offload(
+            "preferences.agent_auto_approve_read",
+            self.should_auto_approve,
+            principal_id,
+            timeout=10.0,
+        )
+
+    async def set_auto_approve_async(
+        self,
+        value: bool,
+        *,
+        scope: Literal["user", "global"] = "user",
+        principal_id: str | None = None,
+    ) -> None:
+        await self._offload(
+            "preferences.agent_auto_approve_write",
+            self.set_auto_approve,
+            value,
+            scope=scope,
+            principal_id=principal_id,
+            timeout=10.0,
+        )
+
     async def start(self, *, resume: bool | None = None) -> None:
         if resume is not None:
             self._resume_on_start = resume
-        snapshot = load_quiesce_snapshot(self.settings.data_dir)
         will_resume = self.settings.agent_enabled and self._resume_on_start
+        snapshot, persisted_sessions = await self._offload(
+            "agent.startup_state_read",
+            lambda: (
+                load_quiesce_snapshot(self.settings.data_dir),
+                self.store.list_sessions() if will_resume else [],
+            ),
+            timeout=30.0,
+        )
         active_session_ids = {
             session.id
-            for session in (self.store.list_sessions() if will_resume else [])
+            for session in persisted_sessions
             if session.status != "closed"
         }
         if will_resume and snapshot and snapshot.resume:
@@ -1301,15 +1484,21 @@ class AgentSessionManager:
                 item.session_id for item in snapshot.sessions if item.session_id
             )
         try:
-            await asyncio.to_thread(
+            await self._offload(
+                "workspace.collect_garbage",
                 self.workspace_manager.collect_garbage,
                 active_session_ids=active_session_ids,
+                timeout=120.0,
             )
         except Exception:
             logger.exception("Workspace garbage collection failed")
         if not self.settings.agent_enabled:
             if snapshot:
-                clear_quiesce_snapshot(self.settings.data_dir)
+                await self._offload(
+                    "agent.quiesce_snapshot_clear",
+                    clear_quiesce_snapshot,
+                    self.settings.data_dir,
+                )
             logger.info("Instance agent disabled")
             return
         self._accepting = True
@@ -1334,11 +1523,23 @@ class AgentSessionManager:
                             default._queue.append(item)
                         default._start_drain()
                 finally:
-                    clear_quiesce_snapshot(self.settings.data_dir)
+                    await self._offload(
+                        "agent.quiesce_snapshot_clear",
+                        clear_quiesce_snapshot,
+                        self.settings.data_dir,
+                    )
                 return
-            clear_quiesce_snapshot(self.settings.data_dir)
+            await self._offload(
+                "agent.quiesce_snapshot_clear",
+                clear_quiesce_snapshot,
+                self.settings.data_dir,
+            )
         elif snapshot:
-            clear_quiesce_snapshot(self.settings.data_dir)
+            await self._offload(
+                "agent.quiesce_snapshot_clear",
+                clear_quiesce_snapshot,
+                self.settings.data_dir,
+            )
 
         # Ensure a default session exists for the instance chat surface.
         try:
@@ -1351,7 +1552,13 @@ class AgentSessionManager:
     async def _resume_from_snapshot(
         self, snap: SessionSnapshot, full: QuiesceSnapshot
     ) -> AgentSessionRuntime:
-        existing = self.store.get_session(snap.session_id) if snap.session_id else None
+        existing = (
+            await self._offload(
+                "sqlite.agent_session_read", self.store.get_session, snap.session_id
+            )
+            if snap.session_id
+            else None
+        )
         session = existing or AgentSession(
             id=snap.session_id or str(uuid4()),
             agent_name=snap.agent_name or "instance",
@@ -1382,16 +1589,21 @@ class AgentSessionManager:
         if self._default_requires_provider_resolution(
             session.label, snap.external_session_id
         ):
-            resolved = resolve_agent_provider(
+            resolved = await self._offload(
+                "agent.provider_resolve",
+                resolve_agent_provider,
                 self.settings,
                 AgentInvocationContext(
                     surface=SURFACE_CHAT_DEFAULT,
                     principal_id=session.principal_id,
                 ),
+                timeout=30.0,
             )
             session.agent_name = resolved.provider_id
             provider_spec = resolved.spec
-            self.store.save_session(session)
+            await self._offload(
+                "sqlite.agent_session_save", self.store.save_session, session
+            )
         workspace_env = await self._prepare_workspace(
             session,
             requested_cwd=snap.cwd,
@@ -1399,7 +1611,7 @@ class AgentSessionManager:
         )
         if provider_spec is not None:
             provider_spec.env.update(workspace_env)
-        runtime = AgentSessionRuntime(self, session, agent_env=workspace_env)
+        runtime = await self._new_runtime(session, agent_env=workspace_env)
         queued = list(snap.queued_prompts)
         interrupted = snap.in_flight
         # Version-1 snapshots briefly encoded an interrupted turn as the first
@@ -1499,40 +1711,40 @@ class AgentSessionManager:
                 resume_external_id or existing.external_session_id,
             )
         )
-        # When resuming an existing session, keep its provider unless explicitly overridden.
-        if (
-            existing
-            and existing.agent_name
-            and existing.agent_name
-            not in {
-                "instance",
-                "",
-            }
-            and not provider_override
-            and not non_resumable_default
-        ):
-            provider_id = existing.agent_name
-            from pa.acp.providers.registry import get_provider
-            from pa.acp.providers.resolve import _spawn_overrides
+        def resolve_provider_spec():
+            # When resuming an existing session, keep its provider unless
+            # explicitly overridden. Provider discovery reads configuration and
+            # executable metadata, so the complete resolution stays off-loop.
+            if (
+                existing
+                and existing.agent_name
+                and existing.agent_name not in {"instance", ""}
+                and not provider_override
+                and not non_resumable_default
+            ):
+                provider_id = existing.agent_name
+                from pa.acp.providers.registry import get_provider
+                from pa.acp.providers.resolve import _spawn_overrides
 
-            cmd_o, args_o = _spawn_overrides(self.settings, provider_id)
-            resolved_spec = get_provider(provider_id).resolve_spawn(
-                command_override=cmd_o,
-                args_override=args_o,
-                extra_env=agent_env,
-                data_dir=self.settings.data_dir,
-            )
-            source = "session"
-        else:
+                cmd_o, args_o = _spawn_overrides(self.settings, provider_id)
+                spec = get_provider(provider_id).resolve_spawn(
+                    command_override=cmd_o,
+                    args_override=args_o,
+                    extra_env=agent_env,
+                    data_dir=self.settings.data_dir,
+                )
+                return provider_id, spec, "session"
             resolved = resolve_agent_provider(
                 self.settings,
                 ctx,
                 project_tool_config=project_tool_config,
                 extra_env=agent_env,
             )
-            provider_id = resolved.provider_id
-            resolved_spec = resolved.spec
-            source = resolved.source
+            return resolved.provider_id, resolved.spec, resolved.source
+
+        provider_id, resolved_spec, source = await self._offload(
+            "agent.provider_resolve", resolve_provider_spec, timeout=30.0
+        )
 
         session = existing or AgentSession(
             id=session_id or str(uuid4()),
@@ -1577,7 +1789,7 @@ class AgentSessionManager:
         effective_agent_env.update(workspace_env)
         resolved_spec.env.update(workspace_env)
 
-        runtime = AgentSessionRuntime(self, session, agent_env=effective_agent_env)
+        runtime = await self._new_runtime(session, agent_env=effective_agent_env)
         try:
             start_kwargs: dict[str, Any] = {
                 "resume_external_id": resume_external_id,
@@ -1597,15 +1809,19 @@ class AgentSessionManager:
                 if configuration.get("state") == "failed"
                 else "disconnected"
             )
-            self.store.save_session(session)
+            await self._offload(
+                "sqlite.agent_session_save", self.store.save_session, session
+            )
             try:
-                await asyncio.to_thread(
+                await self._offload(
+                    "workspace.session_fence",
                     self.workspace_manager.fence_session,
                     session.id,
                     stage="session_configuration"
                     if configuration.get("state") == "failed"
                     else "provider_startup",
                     error=str(exc),
+                    timeout=30.0,
                 )
             except Exception:
                 logger.exception(
@@ -1633,7 +1849,11 @@ class AgentSessionManager:
                     and not rt._closed
                 ):
                     return rt
-            existing = self.store.get_session_by_label(self._default_label)
+            existing = await self._offload(
+                "sqlite.agent_session_read",
+                self.store.get_session_by_label,
+                self._default_label,
+            )
             if existing and existing.id in self._runtimes:
                 rt = self._runtimes[existing.id]
                 if rt.connected and not rt._closed:
@@ -1764,10 +1984,13 @@ class AgentSessionManager:
                         None,
                     )
                     if runtime is None:
+                        persisted_sessions = await self._offload(
+                            "sqlite.agent_sessions_list", self.store.list_sessions
+                        )
                         existing = next(
                             (
                                 candidate
-                                for candidate in self.store.list_sessions()
+                                for candidate in persisted_sessions
                                 if matches_execution_scope(candidate)
                             ),
                             None,
@@ -1814,6 +2037,8 @@ class AgentSessionManager:
     async def stop(self) -> None:
         for runtime in list(self._runtimes.values()):
             try:
+                runtime._flush_transcript()
+                await runtime._drain_transcripts()
                 if runtime.connection:
                     await runtime.connection.disconnect()
             except Exception:
@@ -1866,8 +2091,13 @@ class AgentSessionManager:
             sessions.append(snap)
             runtime.session.status = "quiesced"
             runtime.session.updated_at = datetime.now(UTC)
-            self.store.save_session(runtime.session)
+            await self._offload(
+                "sqlite.agent_session_save",
+                self.store.save_session,
+                runtime.session,
+            )
             runtime._flush_transcript()
+            await runtime._drain_transcripts()
             if runtime.connection:
                 await runtime.connection.disconnect()
                 runtime.connection = None
@@ -1878,7 +2108,13 @@ class AgentSessionManager:
             sessions=sessions,
             queued_prompts=[],
         )
-        save_quiesce_snapshot(self.settings.data_dir, snapshot)
+        await self._offload(
+            "agent.quiesce_snapshot_write",
+            save_quiesce_snapshot,
+            self.settings.data_dir,
+            snapshot,
+            timeout=30.0,
+        )
         self._runtimes.clear()
 
         progress = QuiesceProgress(

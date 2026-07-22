@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 import httpx
@@ -21,6 +22,9 @@ import httpx
 from pa.config import Settings
 from pa.fleet.join import ensure_sync_token, owner_public_url
 from pa.fleet.registry import FleetRegistry
+
+if TYPE_CHECKING:
+    from pa.core.async_runtime import AsyncRuntime
 
 INSTALL_SCRIPT_URL = (
     "https://raw.githubusercontent.com/petersky/pa/main/scripts/install-remote.sh"
@@ -252,18 +256,36 @@ async def _run_remote_install(
     return process.exit_status if process.exit_status is not None else 1
 
 
-async def verify_remote_health(instance_url: str, *, timeout_s: float = 90.0) -> bool:
+async def verify_remote_health(
+    instance_url: str,
+    *,
+    timeout_s: float = 90.0,
+    client: httpx.AsyncClient | None = None,
+    async_runtime: AsyncRuntime | None = None,
+) -> bool:
     deadline = time.monotonic() + timeout_s
     url = f"{instance_url.rstrip('/')}/api/health"
-    async with httpx.AsyncClient(timeout=5.0) as client:
+    owns_client = client is None
+    client = client or httpx.AsyncClient(timeout=5.0)
+    try:
         while time.monotonic() < deadline:
             try:
-                resp = await client.get(url)
+                request = client.get(url, timeout=5.0)
+                resp = (
+                    await async_runtime.observe(
+                        "http.remote_install_health", request, timeout=6.0
+                    )
+                    if async_runtime
+                    else await request
+                )
                 if resp.status_code == 200:
                     return True
             except httpx.HTTPError:
                 pass
             await asyncio.sleep(2.0)
+    finally:
+        if owns_client:
+            await client.aclose()
     return False
 
 
@@ -273,29 +295,65 @@ async def run_install_job(
     store: InstallJobStore,
     job: InstallJob,
     req: RemoteInstallRequest,
+    *,
+    async_runtime: AsyncRuntime | None = None,
+    http_client: httpx.AsyncClient | None = None,
 ) -> InstallJob:
+    async def offload(operation: str, call, *args, **kwargs):
+        if async_runtime:
+            return await async_runtime.run_blocking(
+                operation, call, *args, **kwargs
+            )
+        return await asyncio.to_thread(call, *args, **kwargs)
+
+    async def persist() -> None:
+        await offload("fleet.install_job_write", store._persist, job)
+
     try:
         job.status = InstallJobStatus.CONNECTING
         job.append(f"Connecting to {req.user}@{req.host}:{req.port}…")
-        store._persist(job)
+        await persist()
 
-        sync_token = ensure_sync_token(settings)
-        join = fleet.create_join_token(created_by="remote-install")
+        sync_token = await offload(
+            "filesystem.fleet_sync_token", ensure_sync_token, settings
+        )
+        join = await offload(
+            "filesystem.fleet_join_token",
+            fleet.create_join_token,
+            created_by="remote-install",
+        )
         job.join_token = join.token
-        command = build_remote_command(settings, req, fleet_token=join.token)
+        command = await offload(
+            "filesystem.remote_install_command",
+            build_remote_command,
+            settings,
+            req,
+            fleet_token=join.token,
+        )
         # Ensure sync_token is referenced so linters know we persist it for the remote.
         _ = sync_token
 
         script_bytes: bytes | None = None
-        local_script = _local_install_script()
+        local_script = await offload(
+            "filesystem.remote_install_script", _local_install_script
+        )
         if local_script and not req.join_only:
-            script_bytes = local_script.read_bytes()
+            script_bytes = await offload(
+                "filesystem.remote_install_script", local_script.read_bytes
+            )
             job.append(f"Using local install script: {local_script.name}")
         else:
             job.append("Remote will fetch install-remote.sh from GitHub")
 
         try:
-            conn = await _connect_ssh(req)
+            connect = _connect_ssh(req)
+            if async_runtime:
+                conn = await async_runtime.observe(
+                    "network.remote_install_ssh", connect, timeout=30.0
+                )
+            else:
+                async with asyncio.timeout(30.0):
+                    conn = await connect
         except Exception as exc:
             msg = str(exc)
             if "Permission denied" in msg or "auth" in msg.lower():
@@ -304,41 +362,54 @@ async def run_install_job(
                 job.error = f"SSH connection failed: {exc}"
             job.status = InstallJobStatus.FAILED
             job.append(job.error)
-            store._persist(job)
+            await persist()
             return job
 
         async with conn:
             job.status = InstallJobStatus.INSTALLING if not req.join_only else InstallJobStatus.JOINING
             job.append("Connected. Running remote install…")
-            store._persist(job)
-            code = await _run_remote_install(conn, req, command, job, script_bytes=script_bytes)
+            await persist()
+            install = _run_remote_install(
+                conn, req, command, job, script_bytes=script_bytes
+            )
+            if async_runtime:
+                code = await async_runtime.observe(
+                    "subprocess.remote_install", install, timeout=900.0
+                )
+            else:
+                async with asyncio.timeout(900.0):
+                    code = await install
             if code != 0:
                 job.status = InstallJobStatus.FAILED
                 job.error = f"Remote command exited with code {code}"
                 job.append(job.error)
-                store._persist(job)
+                await persist()
                 return job
 
         job.status = InstallJobStatus.VERIFYING
         job.append(f"Verifying health at {req.instance_url}…")
-        store._persist(job)
-        ok = await verify_remote_health(req.instance_url)
+        await persist()
+        ok = await verify_remote_health(
+            req.instance_url,
+            client=http_client,
+            async_runtime=async_runtime,
+        )
         if not ok:
             job.status = InstallJobStatus.FAILED
             job.error = "Remote install finished but /api/health did not become ready in time."
             job.append(job.error)
-            store._persist(job)
+            await persist()
             return job
 
         job.status = InstallJobStatus.SUCCEEDED
         job.append("Remote instance is healthy and should appear in the fleet list.")
-        store._persist(job)
+        await persist()
         return job
     except Exception as exc:
         job.status = InstallJobStatus.FAILED
         job.error = str(exc)
         job.append(f"Failed: {exc}")
-        store._persist(job)
+        await persist()
         return job
 
 

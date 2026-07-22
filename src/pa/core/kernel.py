@@ -55,6 +55,20 @@ class Kernel:
                 hooks.enable_history(True)
 
             ctx = AppContext(settings=settings, hooks=hooks, store=get_store(settings))
+            from pa.core.async_runtime import AsyncRuntime
+
+            async_runtime = AsyncRuntime(
+                max_workers=settings.blocking_workers,
+                max_queue=settings.blocking_queue_limit,
+                default_timeout=settings.blocking_default_timeout,
+                slow_call_seconds=settings.blocking_slow_call_seconds,
+                lag_interval_seconds=settings.event_loop_probe_interval,
+            )
+            ctx.register_service(
+                "async_runtime",
+                async_runtime,
+            )
+            hooks.set_async_runtime(async_runtime)
             if writer_lock:
                 ctx.register_service("writer_lock", writer_lock)
             from pa.core.ui.pages import PageRegistry
@@ -83,13 +97,43 @@ class Kernel:
         from pa.network.peer_table import PeerTable
         from pa.network.registry import PeerRegistry
 
-        agent = get_instance_agent(self.ctx.settings, self.ctx.store)
+        async_runtime = self.ctx.require_service("async_runtime")
+        await async_runtime.start()
+        agent = await async_runtime.run_blocking(
+            "startup.agent_manager",
+            get_instance_agent,
+            self.ctx.settings,
+            self.ctx.store,
+            timeout=120.0,
+        )
+        agent.async_runtime = async_runtime
+        agent.browser.async_runtime = async_runtime
         import os
 
         resume_env = os.environ.get("PA_ACP_RESUME", "1").strip().lower()
         resume = resume_env not in {"0", "false", "no", "off"}
-        await agent.start(resume=resume)
+        agent._accepting = False
         self.ctx.register_service("instance_agent", agent)
+        lifecycle = {"phase": "starting", "error": None}
+        self.ctx.register_service("agent_lifecycle", lifecycle)
+
+        async def start_agent() -> None:
+            try:
+                await agent.start(resume=resume)
+                lifecycle["phase"] = "ready" if agent.connected else "idle"
+            except asyncio.CancelledError:
+                lifecycle["phase"] = "cancelled"
+                raise
+            except Exception as exc:
+                lifecycle.update(phase="error", error=str(exc)[:1000])
+                logger.exception("Background ACP startup failed")
+
+        import asyncio
+
+        agent_start_task = asyncio.create_task(
+            start_agent(), name="pa-agent-startup"
+        )
+        self.ctx.register_service("agent_start_task", agent_start_task)
         self.ctx.register_service("peer_registry", PeerRegistry(self.ctx.settings))
 
         event_log = self.ctx.services.get("event_log")
@@ -107,6 +151,7 @@ class Kernel:
                 fleet,
                 peer_table,
                 users,
+                async_runtime,
             )
             self.ctx.register_service("execution_router", router)
 
@@ -136,6 +181,13 @@ class Kernel:
             except asyncio.TimeoutError:
                 logger.error("Timed out shutting down module %s", entry.module.name)
 
+        agent_start_task = self.ctx.services.get("agent_start_task")
+        if agent_start_task and not agent_start_task.done():
+            agent_start_task.cancel()
+            try:
+                await asyncio.wait_for(agent_start_task, timeout=5.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                pass
         agent: AgentSessionManager | None = self.ctx.services.get("instance_agent")
         if agent:
             import os
@@ -166,6 +218,12 @@ class Kernel:
                 await asyncio.wait_for(agent.stop(), timeout=10.0)
             except asyncio.TimeoutError:
                 logger.error("Timed out stopping ACP/browser runtimes")
+        execution_router = self.ctx.services.get("execution_router")
+        if execution_router:
+            await execution_router.close()
+        async_runtime = self.ctx.services.get("async_runtime")
+        if async_runtime:
+            await async_runtime.close()
 
     def build_app(self) -> FastAPI:
         from contextlib import asynccontextmanager
@@ -241,8 +299,60 @@ class Kernel:
             self._install_debug_middleware(app)
 
         self._install_cache_middleware(app)
+        self._install_responsiveness_middleware(app)
+        self._install_runtime_error_handlers(app)
 
         return app
+
+    def _install_runtime_error_handlers(self, app: FastAPI) -> None:
+        from pa.core.async_runtime import (
+            AsyncRuntimeClosed,
+            BlockingOperationTimeout,
+            BlockingQueueFull,
+        )
+        from starlette.requests import Request
+        from starlette.responses import JSONResponse
+
+        async def overloaded(
+            _request: Request, exc: BlockingQueueFull | AsyncRuntimeClosed
+        ) -> JSONResponse:
+            return JSONResponse(
+                status_code=503,
+                content={"detail": str(exc), "code": "blocking_capacity_unavailable"},
+                headers={"Retry-After": "1"},
+            )
+
+        async def timed_out(
+            _request: Request, exc: BlockingOperationTimeout
+        ) -> JSONResponse:
+            return JSONResponse(
+                status_code=504,
+                content={"detail": str(exc), "code": "blocking_operation_timeout"},
+            )
+
+        app.add_exception_handler(BlockingQueueFull, overloaded)
+        app.add_exception_handler(AsyncRuntimeClosed, overloaded)
+        app.add_exception_handler(BlockingOperationTimeout, timed_out)
+
+    def _install_responsiveness_middleware(self, app: FastAPI) -> None:
+        import time
+
+        from starlette.requests import Request
+        from starlette.responses import Response
+
+        @app.middleware("http")
+        async def responsiveness(request: Request, call_next) -> Response:
+            started = time.perf_counter()
+            status = 500
+            try:
+                response = await call_next(request)
+                status = response.status_code
+                return response
+            finally:
+                elapsed_ms = (time.perf_counter() - started) * 1000
+                runtime = self.ctx.services.get("async_runtime")
+                if runtime:
+                    runtime.record_request(request.url.path, status, elapsed_ms)
 
     def _install_auth_middleware(self, app: FastAPI) -> None:
         from pa.auth.middleware import AuthMiddleware

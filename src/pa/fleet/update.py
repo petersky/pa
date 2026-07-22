@@ -7,11 +7,11 @@ import fcntl
 import hashlib
 import json
 import time  # noqa: F401 - retained for compatibility with workflow clock mocks
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 import httpx
@@ -19,6 +19,9 @@ from pydantic import BaseModel, Field, field_validator
 
 from pa.config import Settings
 from pa.core.io import atomic_write_json
+
+if TYPE_CHECKING:
+    from pa.core.async_runtime import AsyncRuntime
 from pa.fleet.registry import FleetRegistry
 from pa.update.channels import compare_versions
 from pa.update.registry import ReleaseTrack, normalize_track
@@ -204,29 +207,101 @@ def _headers(settings: Settings) -> dict[str, str]:
 
 
 async def _peer_json(
-    client: httpx.AsyncClient, method: str, url: str, settings: Settings, **kwargs: Any
+    client: httpx.AsyncClient,
+    method: str,
+    url: str,
+    settings: Settings,
+    *,
+    async_runtime: AsyncRuntime | None = None,
+    operation_timeout: float = 30.0,
+    **kwargs: Any,
 ) -> dict[str, Any]:
-    response = await client.request(method, url, headers=_headers(settings), **kwargs)
+    kwargs.setdefault("timeout", operation_timeout)
+    request = client.request(method, url, headers=_headers(settings), **kwargs)
+    response = (
+        await async_runtime.observe(
+            "http.fleet_update", request, timeout=operation_timeout
+        )
+        if async_runtime
+        else await request
+    )
     response.raise_for_status()
-    payload = response.json()
+    payload = (
+        await async_runtime.run_blocking(
+            "fleet.update_response_json", response.json, timeout=3.0
+        )
+        if async_runtime
+        else response.json()
+    )
     if not isinstance(payload, dict):
         raise RuntimeError("Peer returned an invalid response")
     return payload
 
 
+@asynccontextmanager
+async def _update_client(
+    client: httpx.AsyncClient | None, *, read_timeout: float
+):
+    if client is not None:
+        yield client
+        return
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(20.0, read=read_timeout)
+    ) as owned:
+        yield owned
+
+
 async def run_update_job(
-    settings: Settings, store: FleetUpdateJobStore, job: FleetUpdateJob
+    settings: Settings,
+    store: FleetUpdateJobStore,
+    job: FleetUpdateJob,
+    *,
+    async_runtime: AsyncRuntime | None = None,
+    http_client: httpx.AsyncClient | None = None,
 ) -> FleetUpdateJob:
     """Run or safely resume a controller job from durable state."""
     base = job.instance_url
+
+    async def offload(operation: str, call, *args, **kwargs):
+        if async_runtime:
+            return await async_runtime.run_blocking(
+                operation, call, *args, **kwargs
+            )
+        # Compatibility for direct library/CLI use. The server always injects
+        # AsyncRuntime; keeping the legacy path synchronous avoids silently
+        # borrowing asyncio's unbounded default executor.
+        return call(*args, **kwargs)
+
+    async def event(phase: UpdatePhase, message: str) -> None:
+        await offload("fleet.update_event_write", store.event, job, phase, message)
+
+    async def persist() -> None:
+        await offload("fleet.update_job_write", store.persist, job)
+
+    async def peer_json(
+        client: httpx.AsyncClient, method: str, url: str, **kwargs: Any
+    ) -> dict[str, Any]:
+        return await _peer_json(
+            client,
+            method,
+            url,
+            settings,
+            async_runtime=async_runtime,
+            **kwargs,
+        )
+
+    async def poll_peer_json(method: str, url: str, **kwargs: Any) -> dict[str, Any]:
+        async with _update_client(http_client, read_timeout=5.0) as client:
+            return await peer_json(client, method, url, **kwargs)
+
     try:
         if not settings.sync_token:
             raise RuntimeError("Fleet sync token is not configured")
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(20.0, read=max(job.quiesce_timeout + 10, 30))
+        async with _update_client(
+            http_client, read_timeout=max(job.quiesce_timeout + 10, 30)
         ) as client:
             if job.phase == UpdatePhase.PENDING:
-                status = await _peer_json(client, "GET", f"{base}/api/status", settings)
+                status = await peer_json(client, "GET", f"{base}/api/status")
                 if status.get("instance_id") != job.instance_id:
                     raise RuntimeError(
                         "Peer identity did not match the registered fleet instance"
@@ -243,11 +318,10 @@ async def run_update_job(
                 track = normalize_track(job.channel)
                 checked: dict[str, Any] | None = None
                 if not job.target_version or track == ReleaseTrack.DEV:
-                    checked = await _peer_json(
+                    checked = await peer_json(
                         client,
                         "GET",
                         f"{base}/api/fleet/peer-update-check",
-                        settings,
                         params={"channel": job.channel},
                     )
                     job.available_version = (
@@ -304,8 +378,7 @@ async def run_update_job(
                             f"Peer is {relation} requested version {job.expected_version} "
                             f"(current {job.current_version}); target_version must be newer"
                         )
-                store.event(
-                    job,
+                await event(
                     UpdatePhase.PREFLIGHT,
                     f"Preflight complete: {job.current_version} → {job.expected_version}",
                 )
@@ -314,7 +387,7 @@ async def run_update_job(
                 # Backfill jobs written by the first fleet-update release. An
                 # explicit target is already durable and safe to verify against.
                 job.expected_version = job.target_version
-                store.persist(job)
+                await persist()
 
             if not job.expected_version:
                 raise RuntimeError(
@@ -331,16 +404,16 @@ async def run_update_job(
                 )
 
             if job.phase == UpdatePhase.PREFLIGHT:
-                quiesce = await _peer_json(
+                quiesce = await peer_json(
                     client,
                     "POST",
                     f"{base}/api/agent/quiesce",
-                    settings,
                     json={
                         "reason": "fleet-update",
                         "timeout": job.quiesce_timeout,
                         "wait": True,
                     },
+                    operation_timeout=job.quiesce_timeout + 10,
                 )
                 if quiesce.get("error") and not job.force:
                     raise RuntimeError(
@@ -352,7 +425,7 @@ async def run_update_job(
                     message = (
                         f"Drain timed out; force policy accepted: {quiesce['error']}"
                     )
-                store.event(job, UpdatePhase.QUIESCING, message)
+                await event(UpdatePhase.QUIESCING, message)
 
             if job.phase == UpdatePhase.QUIESCING:
                 # Persist before dispatch. The operation id makes a retry from this
@@ -360,19 +433,17 @@ async def run_update_job(
                 job.install_deadline = datetime.now(UTC) + timedelta(
                     seconds=job.install_timeout
                 )
-                store.event(
-                    job,
+                await event(
                     UpdatePhase.INSTALLING,
                     f"Requesting installation of PA {job.expected_version}",
                 )
 
             if job.phase == UpdatePhase.INSTALLING:
                 try:
-                    result = await _peer_json(
+                    result = await peer_json(
                         client,
                         "POST",
                         f"{base}/api/fleet/peer-update",
-                        settings,
                         json={
                             "channel": job.channel,
                             "target_version": job.expected_version,
@@ -402,8 +473,7 @@ async def run_update_job(
                     # The service may close the response after accepting and restarting.
                     # A recovery retry uses the same operation id and target.
                     pass
-                store.event(
-                    job,
+                await event(
                     UpdatePhase.WAITING_INSTALL,
                     "Update accepted; waiting for installation to complete",
                 )
@@ -413,20 +483,16 @@ async def run_update_job(
                 job.install_deadline = datetime.now(UTC) + timedelta(
                     seconds=job.install_timeout
                 )
-                store.persist(job)
+                await persist()
             last_install_error = "peer has not reported install completion"
             install_attempt = 0
             last_operation_message = ""
             while datetime.now(UTC) < job.install_deadline:
                 install_attempt += 1
                 try:
-                    async with httpx.AsyncClient(timeout=5.0) as client:
-                        operation = await _peer_json(
-                            client,
-                            "GET",
-                            f"{base}/api/fleet/peer-update/{job.job_id}",
-                            settings,
-                        )
+                    operation = await poll_peer_json(
+                        "GET", f"{base}/api/fleet/peer-update/{job.job_id}"
+                    )
                     operation_status = str(operation.get("status") or "")
                     if operation_status == "failed":
                         raise RuntimeError(
@@ -435,7 +501,7 @@ async def run_update_job(
                     operation_message = str(operation.get("message") or "")
                     if operation_message and operation_message != last_operation_message:
                         last_operation_message = operation_message
-                        store.event(job, UpdatePhase.WAITING_INSTALL, operation_message)
+                        await event(UpdatePhase.WAITING_INSTALL, operation_message)
                     if operation_status in {
                         "installed",
                         "restarting",
@@ -451,8 +517,7 @@ async def run_update_job(
                                 "Restart command reported an error after installation; "
                                 "verifying peer health before declaring failure"
                             )
-                        store.event(
-                            job,
+                        await event(
                             UpdatePhase.RESTARTING,
                             restart_note,
                         )
@@ -461,16 +526,14 @@ async def run_update_job(
                         f"peer install status is {operation_status or 'unknown'}"
                     )
                     if install_attempt % 5 == 0 and not operation_message:
-                        store.event(
-                            job,
+                        await event(
                             UpdatePhase.WAITING_INSTALL,
                             f"Still waiting for installation ({last_install_error})",
                         )
                 except httpx.HTTPError as exc:
                     last_install_error = str(exc)
                     if install_attempt % 5 == 0:
-                        store.event(
-                            job,
+                        await event(
                             UpdatePhase.WAITING_INSTALL,
                             "Peer is temporarily unreachable while installation or "
                             f"restart is in progress (attempt {install_attempt})",
@@ -489,16 +552,13 @@ async def run_update_job(
             job.health_deadline = datetime.now(UTC) + timedelta(
                 seconds=job.health_timeout
             )
-            store.persist(job)
+            await persist()
         last_error = "peer did not become healthy"
         health_attempt = 0
         while datetime.now(UTC) < job.health_deadline:
             health_attempt += 1
             try:
-                async with httpx.AsyncClient(timeout=5.0) as client:
-                    status = await _peer_json(
-                        client, "GET", f"{base}/api/status", settings
-                    )
+                status = await poll_peer_json("GET", f"{base}/api/status")
                 if status.get("instance_id") != job.instance_id:
                     last_error = "peer identity changed after restart"
                 elif (
@@ -511,8 +571,7 @@ async def run_update_job(
                     job.verified_identity = (
                         str(status.get("install_revision") or "").lower() or None
                     )
-                    store.event(
-                        job,
+                    await event(
                         UpdatePhase.VERIFYING,
                         f"Peer reports version {job.verified_version or 'unknown'}",
                     )
@@ -565,8 +624,7 @@ async def run_update_job(
                     if not verified:
                         raise RuntimeError(f"Version verification failed: {last_error}")
                     job.completed_at = datetime.now(UTC)
-                    store.event(
-                        job,
+                    await event(
                         UpdatePhase.SUCCEEDED,
                         f"Verified PA {job.verified_version}",
                     )
@@ -578,8 +636,7 @@ async def run_update_job(
                     0,
                     int((job.health_deadline - datetime.now(UTC)).total_seconds()),
                 )
-                store.event(
-                    job,
+                await event(
                     UpdatePhase.RESTARTING,
                     f"Still waiting for peer health (attempt {health_attempt}, "
                     f"{remaining}s remaining): {last_error}",
@@ -594,14 +651,27 @@ async def run_update_job(
     except Exception as exc:
         job.error = str(exc)
         job.completed_at = datetime.now(UTC)
-        store.event(job, UpdatePhase.FAILED, f"Update failed: {exc}")
+        await event(UpdatePhase.FAILED, f"Update failed: {exc}")
         return job
 
 
 def start_update_job(
-    settings: Settings, store: FleetUpdateJobStore, job: FleetUpdateJob
+    settings: Settings,
+    store: FleetUpdateJobStore,
+    job: FleetUpdateJob,
+    *,
+    async_runtime: AsyncRuntime | None = None,
+    http_client: httpx.AsyncClient | None = None,
 ) -> None:
-    task = asyncio.create_task(run_update_job(settings, store, job))
+    task = asyncio.create_task(
+        run_update_job(
+            settings,
+            store,
+            job,
+            async_runtime=async_runtime,
+            http_client=http_client,
+        )
+    )
     store._tasks[job.job_id] = task
     task.add_done_callback(lambda _task: store._tasks.pop(job.job_id, None))
 
@@ -610,6 +680,15 @@ def recover_update_jobs(
     settings: Settings, fleet: FleetRegistry, store: FleetUpdateJobStore
 ) -> None:
     """Resume non-terminal controller jobs after a controller restart."""
+    for job in prepare_update_job_recovery(fleet, store):
+        start_update_job(settings, store, job)
+
+
+def prepare_update_job_recovery(
+    fleet: FleetRegistry, store: FleetUpdateJobStore
+) -> list[FleetUpdateJob]:
+    """Persist recovery decisions without creating tasks in a worker thread."""
+    resumable: list[FleetUpdateJob] = []
     for job in store.list():
         if job.phase in TERMINAL_PHASES or job.job_id in store._tasks:
             continue
@@ -619,4 +698,5 @@ def recover_update_jobs(
             store.event(job, UpdatePhase.FAILED, job.error)
             continue
         store.event(job, job.phase, "Controller restarted; resuming update workflow")
-        start_update_job(settings, store, job)
+        resumable.append(job)
+    return resumable
