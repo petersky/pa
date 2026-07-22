@@ -134,13 +134,16 @@ def update_repository_api(
 ) -> dict:
     settings = request.app.state.ctx.settings
     realm_id = realm or settings.primary_realm
-    repository = get_store().update_repository(
-        repository_id,
-        data,
-        realm_id=realm_id,
-        principal_id=get_principal_id(request),
-        instance_id=settings.instance_id,
-    )
+    try:
+        repository = get_store().update_repository(
+            repository_id,
+            data,
+            realm_id=realm_id,
+            principal_id=get_principal_id(request),
+            instance_id=settings.instance_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not repository:
         raise HTTPException(status_code=404, detail="Repository not found")
     return repository.model_dump(mode="json")

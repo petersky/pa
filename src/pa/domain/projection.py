@@ -332,6 +332,10 @@ class CardProjection:
                 self._replace_project_repositories_conn(
                     conn, row["id"], row["realm_id"], repos, instance_id
                 )
+            elif existing and repos:
+                conn.execute(
+                    "UPDATE projects SET repos='[]' WHERE id=?", (row["id"],)
+                )
 
     def apply_event(self, event: CardEvent) -> None:
         if event.type == EventType.CARD_CREATED:
@@ -428,9 +432,8 @@ class CardProjection:
             ).fetchone()
             if row:
                 conn.execute(
-                    "UPDATE repositories SET url=?, name=?, updated_at=? WHERE id=?",
+                    "UPDATE repositories SET name=?, updated_at=? WHERE id=?",
                     (
-                        p.get("url", row["url"]),
                         p.get("name", row["name"]),
                         event.timestamp.isoformat(),
                         p["id"],
@@ -440,6 +443,13 @@ class CardProjection:
     def _apply_repository_deleted(self, event: CardEvent) -> None:
         with self._conn() as conn:
             rid = event.payload["id"]
+            project_ids = [
+                row["project_id"]
+                for row in conn.execute(
+                    "SELECT project_id FROM project_repositories WHERE repository_id=?",
+                    (rid,),
+                ).fetchall()
+            ]
             conn.execute(
                 "DELETE FROM repository_checkouts WHERE repository_id=?", (rid,)
             )
@@ -450,6 +460,10 @@ class CardProjection:
                 "DELETE FROM repositories WHERE id=? AND realm_id=?",
                 (rid, event.realm_id),
             )
+            for project_id in project_ids:
+                conn.execute(
+                    "UPDATE projects SET repos='[]' WHERE id=?", (project_id,)
+                )
 
     def _apply_project_repository_linked(self, event: CardEvent) -> None:
         with self._conn() as conn:
@@ -467,6 +481,9 @@ class CardProjection:
             conn.execute(
                 "DELETE FROM project_repositories WHERE project_id=? AND repository_id=?",
                 (event.project_id, event.payload["repository_id"]),
+            )
+            conn.execute(
+                "UPDATE projects SET repos='[]' WHERE id=?", (event.project_id,)
             )
 
     def _apply_repository_checkout_set(self, event: CardEvent) -> None:
@@ -932,10 +949,10 @@ class CardProjection:
         repository = self.get_repository(repository_id, realm_id)
         if not repository:
             return None
-        payload = {
-            "id": repository_id,
-            **data.model_dump(exclude_unset=True, exclude_none=True),
-        }
+        updates = data.model_dump(exclude_unset=True, exclude_none=True)
+        if "url" in updates and updates["url"] != repository.url:
+            raise ValueError("repository URL is immutable")
+        payload = {"id": repository_id, **updates}
         self._repository_event(
             EventType.REPOSITORY_UPDATED, realm_id, payload, principal_id, instance_id
         )
@@ -1040,13 +1057,15 @@ class CardProjection:
         self, project_id: str, instance_id: str
     ) -> str | None:
         with self._conn() as conn:
-            row = conn.execute(
+            rows = conn.execute(
                 """SELECT rc.path FROM project_repositories pr
                    JOIN repository_checkouts rc ON rc.repository_id=pr.repository_id
-                   WHERE pr.project_id=? AND rc.instance_id=? ORDER BY rc.path LIMIT 1""",
+                   WHERE pr.project_id=? AND rc.instance_id=?""",
                 (project_id, instance_id),
-            ).fetchone()
-        return row["path"] if row else None
+            ).fetchall()
+        if len(rows) == 1:
+            return rows[0]["path"]
+        return None
 
     def list_repository_checkouts(self, repository_id: str) -> list[RepositoryCheckout]:
         with self._conn() as conn:
