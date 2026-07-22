@@ -891,6 +891,8 @@
       var providersEl = $("[data-fleet-providers]", tr);
       var currentEl = $("[data-fleet-current-version]", tr);
       var availableEl = $("[data-fleet-available-version]", tr);
+      var activeWorkEl = $("[data-fleet-active-work]", tr);
+      var lastSeenEl = $("[data-fleet-last-seen]", tr);
       var state = row.state || (row.healthy ? "up" : "down");
       var detailStates = [row.providers_state, row.status_state, row.update_state];
       if (state === "up" && detailStates.some(function (item) { return item && item !== "up"; })) state = "partial";
@@ -911,6 +913,17 @@
           (row.update_state === "up" ? "—" : (row.update_state || "error"));
         availableEl.classList.toggle("status-active", !!row.upgrade_available);
         availableEl.dataset.fleetTerminal = "1";
+      }
+      if (activeWorkEl) {
+        var activeCount = row.active_work_count;
+        if (activeCount == null) activeCount = row.active_sessions;
+        activeWorkEl.textContent = activeCount == null ? "Not reported" : String(activeCount);
+      }
+      if (lastSeenEl && row.last_seen) {
+        var seen = document.createElement("time");
+        seen.dateTime = row.last_seen;
+        seen.textContent = new Date(row.last_seen).toLocaleString();
+        lastSeenEl.replaceChildren(seen);
       }
       tr.dataset.updateChannel = row.update_channel || "release";
       tr.dataset.currentVersion = row.current_version || "";

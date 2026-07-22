@@ -26,35 +26,33 @@
       <h2>Overview</h2>
       <button class="ghost" type="button" id="pa-fleet-refresh">Refresh</button>
     </div>
-    <p class="muted">Fleet <code>{{ fleet_id }}</code> · Zone: {{ zone }} · Owner URL: <code>{{ owner_url }}</code></p>
+    <p class="muted">Fleet health, software, authentication, capabilities, and active work. Technical identifiers and endpoints are available in each machine’s details.</p>
 
     <h3>Instances</h3>
     {% if fleet_instances %}
     <table class="data-table" id="pa-fleet-instances">
       <thead>
-        <tr><th>Name</th><th>URL</th><th>Zone</th><th>Capabilities</th><th>Version</th><th>Available</th><th>ACP providers</th><th>Status</th><th></th></tr>
+        <tr><th>Machine</th><th>Health</th><th>Version</th><th>Authentication</th><th>Capabilities</th><th>Active work</th><th>Last seen</th><th>Actions</th></tr>
       </thead>
       <tbody>
         {% for inst in fleet_instances %}
         <tr data-fleet-instance="{{ inst.instance_id }}">
-          <td>{{ inst.name }}</td>
-          <td><a href="{{ inst.url }}" target="_blank" rel="noopener">{{ inst.url }}</a></td>
-          <td>{{ inst.zone }}</td>
-          <td>{{ inst.capabilities | join(', ') }}</td>
+          <td><strong>{{ inst.name }}</strong><details><summary class="muted small">Connection details</summary><dl><dt>Zone</dt><dd>{{ inst.zone }}</dd><dt>Instance ID</dt><dd><code>{{ inst.instance_id }}</code></dd><dt>Endpoint</dt><dd><a href="{{ inst.url }}" target="_blank" rel="noopener">{{ inst.url }}</a></dd></dl></details></td>
+          <td data-fleet-health{% if inst.instance_id == settings.instance_id %} data-fleet-terminal="1"{% endif %}>{% if inst.instance_id == settings.instance_id %}<span class="status status-active">Healthy</span>{% else %}<span class="muted small">Checking…</span>{% endif %}</td>
           <td data-fleet-current-version{% if inst.instance_id == settings.instance_id %} data-fleet-terminal="1"{% endif %}>
             {% if inst.instance_id == settings.instance_id %}{{ local_version }}{% else %}<span class="muted small">Checking…</span>{% endif %}
+            <span class="muted small" data-fleet-available-version></span>
           </td>
-          <td data-fleet-available-version><span class="muted small">Checking…</span></td>
           <td data-fleet-providers>
             <span class="muted small">Checking…</span>
           </td>
-          <td data-fleet-health{% if inst.instance_id == settings.instance_id %} data-fleet-terminal="1"{% endif %}>
-            {% if inst.instance_id == settings.instance_id %}<span class="status status-active">up</span>{% else %}<span class="muted small">Checking…</span>{% endif %}
-          </td>
+          <td>{{ inst.capabilities | join(', ') or 'None reported' }}</td>
+          <td data-fleet-active-work><span class="muted small">Checking…</span></td>
+          <td data-fleet-last-seen>{% if inst.last_seen %}<time datetime="{{ inst.last_seen.isoformat() }}">{{ inst.last_seen.strftime('%Y-%m-%d %H:%M') }}</time>{% else %}<span class="muted">Unknown</span>{% endif %}</td>
           <td>
             {% if inst.instance_id != settings.instance_id %}
-            <button type="button" class="ghost small" data-fleet-update="{{ inst.instance_id }}" data-instance-name="{{ inst.name }}">Update</button>
-            <button type="button" class="ghost danger small" data-fleet-remove="{{ inst.instance_id }}">Remove</button>
+            <button type="button" class="ghost small" data-fleet-update="{{ inst.instance_id }}" data-instance-name="{{ inst.name }}" aria-label="Update {{ inst.name }}">Update</button>
+            <button type="button" class="ghost danger small" data-fleet-remove="{{ inst.instance_id }}" aria-label="Remove {{ inst.name }} from fleet">Remove</button>
             {% else %}
             <span class="muted small">local</span>
             {% endif %}

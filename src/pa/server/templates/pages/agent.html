@@ -12,18 +12,18 @@
   <ul class="session-list" data-agent-session-list>
     {% if sessions %}
     {% for s in sessions %}
+    {% set detail = session_details.get(s.id, {}) %}
     <li class="{% if s.id == session_id %}active{% endif %}"
         data-session-id="{{ s.id }}"
         role="button"
         tabindex="0">
       <strong>{{ s.title or s.label or s.agent_name }}</strong>
-      <span class="muted">{{ s.status }}</span>
-      <span class="muted agent-session-runtime">
-        {{ s.agent_name }}{% if s.model_id %} · {{ s.model_id }}{% endif %}{% if s.mode_id %} · {{ s.mode_id }}{% endif %}
-      </span>
-      {% if s.config_json and s.config_json.get('values') %}
-      <span class="muted small agent-session-config">{{ s.config_json.get('values') | tojson }}</span>
-      {% endif %}
+      <span class="metadata-row"><span class="badge">{{ s.status }}</span>{% if detail.pending_approval %}<span class="badge status-waiting">Approval needed</span>{% endif %}</span>
+      <span class="muted agent-session-runtime">{{ detail.host }} · {{ s.agent_name }}{% if s.model_id %} · {{ s.model_id }}{% else %} · default model{% endif %}{% if s.mode_id %} · {{ s.mode_id }}{% endif %}</span>
+      {% if detail.card %}<a href="/work?card={{ detail.card.id }}">Card · {{ detail.card.title }}</a>{% endif %}
+      {% if detail.project %}<a href="/projects?project={{ detail.project.id }}">Project · {{ detail.project.title }}</a>{% endif %}
+      <span class="muted small">Elapsed {{ detail.elapsed }} · Last activity <time datetime="{{ s.updated_at.isoformat() }}">{{ s.updated_at.strftime('%Y-%m-%d %H:%M') }}</time></span>
+      <a class="text-btn small" href="/knowledge?session={{ s.id }}">Promote conclusion to memory</a>
       {% for watch in pr_watches_by_session.get(s.id, []) %}
       <a class="badge" href="/pull-requests?watch={{ watch.id }}"
          title="{{ watch.repository }}#{{ watch.pr_number }} PR supervision">
