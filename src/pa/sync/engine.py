@@ -499,12 +499,18 @@ class SyncEngine:
                 "status": "reachable",
                 "head": local_head,
             }
+            if local_head:
+                for item in instances:
+                    if item.get("status") == "reachable" and not item.get("head"):
+                        item["status"] = "missing_head"
             unavailable = any(
-                item.get("status") in {"unavailable", "invalid_response", "error"}
+                item.get("status")
+                in {"unavailable", "invalid_response", "error", "missing_head"}
                 for item in instances
             )
             mismatched = any(
-                item.get("head") and item.get("head") != local_head
+                item.get("status") == "reachable"
+                and item.get("head") != local_head
                 for item in instances
             )
             phase = (

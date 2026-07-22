@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from urllib.parse import urlsplit
 
 import httpx
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from pa.config import Settings, reset_settings
@@ -30,7 +31,7 @@ from pa.modules.fleet import (
     _assert_dispatch_sync_health,
     start_remote_agent_work,
 )
-from pa.modules.sync import resolve_sync_conflicts
+from pa.modules.sync import get_sync_convergence, resolve_sync_conflicts
 from pa.network.peer_table import PeerTable
 from pa.sync.engine import SyncEngine
 from pa.sync.event_log import EventLog, StaleSyncHeadError
@@ -73,6 +74,7 @@ class _SyncNetwork:
     def __init__(self, nodes: list[_Node]) -> None:
         self.nodes = {urlsplit(node.url).hostname: node for node in nodes}
         self.unavailable: set[str] = set()
+        self.omit_push_head: set[str] = set()
 
     def client(self, *args, **kwargs):
         return _SyncClient(self)
@@ -129,7 +131,11 @@ class _SyncNetwork:
                 )
             return httpx.Response(
                 200,
-                json={"head": node.log.get_head(body.get("realm_id", "default"))},
+                json={
+                    "head": None
+                    if host in self.omit_push_head
+                    else node.log.get_head(body.get("realm_id", "default"))
+                },
                 request=request,
             )
         raise AssertionError(f"Unexpected sync request: {method} {url}")
@@ -308,6 +314,21 @@ class RealmConvergenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(audit[0]["author_principal"], "user:local")
         self.assertEqual(set(audit[0]["parents"]), {conflict["local_head"], remote_head})
 
+    async def test_conflicts_from_every_divergent_peer_remain_reported(self) -> None:
+        card = self._shared_card()
+        self._update(self.authority, card.id, title="Authority")
+        self._update(self.target, card.id, title="Monica")
+        self._update(self.observer, card.id, title="Mac mini")
+
+        state = await self.authority.engine.converge_realm("default")
+
+        self.assertEqual(state["phase"], "conflict")
+        self.assertEqual(len({item["remote_head"] for item in state["conflicts"]}), 2)
+        self.assertEqual(
+            {item["peer"]["name"] for item in state["conflicts"]},
+            {"Monica", "Mac mini"},
+        )
+
     async def test_unavailable_peer_is_retried_and_eventually_adopts_merge(self) -> None:
         card = self._shared_card()
         self._update(self.authority, card.id, title="new")
@@ -405,6 +426,17 @@ class RealmConvergenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(attempts, 2)
         self.assertEqual(self.authority.log.get_head("default"), remote_head)
 
+    async def test_peer_that_omits_its_head_never_marks_realm_converged(self) -> None:
+        card = self._shared_card()
+        self._update(self.authority, card.id, title="must be acknowledged")
+        self.network.omit_push_head.add("target")
+
+        state = await self.authority.engine.converge_realm("default")
+
+        self.assertEqual(state["phase"], "degraded")
+        target = next(item for item in state["instances"] if item["name"] == "Monica")
+        self.assertEqual(target["status"], "missing_head")
+
     async def test_dispatch_health_succeeds_after_automatic_repair(self) -> None:
         card = self._shared_card()
         self._update(self.authority, card.id, title="authority")
@@ -471,6 +503,27 @@ class RealmSyncWebUiTests(unittest.TestCase):
         self.assertIn("/api/sync/conflicts/resolve", script)
         self.assertIn("Open realm sync recovery", script)
         self.assertIn("data-remote-dispatch-retry", script)
+        self.assertIn('id="pa-sync-conflict-head"', script)
+        self.assertIn("Other divergent peer heads remain queued", script)
+        refresh_handler = script.split('if (e.target.closest("#pa-sync-refresh"))', 1)[1]
+        self.assertIn("startSyncConvergence()", refresh_handler.split("return;", 1)[0])
+
+    def test_realm_sync_reads_require_membership(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            node = _Node(Path(tmp), "access-node", "Access node")
+            ctx = MagicMock()
+            ctx.settings = node.settings
+            ctx.services = {
+                "membership": node.membership,
+                "sync_engine": node.engine,
+            }
+            ctx.require_service.side_effect = lambda name: ctx.services[name]
+            request = MagicMock()
+            request.state = SimpleNamespace(principal_id="user:outsider")
+            request.app.state.ctx = ctx
+            with self.assertRaises(HTTPException) as raised:
+                get_sync_convergence(request, "default")
+            self.assertEqual(raised.exception.status_code, 403)
 
     def test_fleet_route_renders_recovery_surface_and_live_status_contract(self) -> None:
         reset_settings()

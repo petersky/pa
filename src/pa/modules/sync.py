@@ -220,6 +220,7 @@ async def sync_conflicts(request: Request, realm: str | None = None) -> dict:
     """Run a fresh anti-entropy pass and return actionable conflict details."""
     settings = request.app.state.ctx.settings
     realm_id = realm or settings.primary_realm
+    _check_realm_access(request, realm_id)
     engine: SyncEngine = request.app.state.ctx.require_service("sync_engine")
     state = await engine.converge_realm(realm_id)
     return {**state, "diverged": state["phase"] in {"conflict", "retrying"}}
@@ -239,6 +240,7 @@ async def start_sync_convergence(request: Request, body: dict) -> dict:
 @router.get("/sync/convergence")
 def get_sync_convergence(request: Request, realm: str | None = None) -> dict:
     realm_id = realm or request.app.state.ctx.settings.primary_realm
+    _check_realm_access(request, realm_id)
     engine: SyncEngine = request.app.state.ctx.require_service("sync_engine")
     return engine.convergence_status(realm_id)
 
@@ -246,6 +248,7 @@ def get_sync_convergence(request: Request, realm: str | None = None) -> dict:
 @router.get("/sync/audit")
 def sync_audit(request: Request, realm: str | None = None) -> dict:
     realm_id = realm or request.app.state.ctx.settings.primary_realm
+    _check_realm_access(request, realm_id)
     log: EventLog = request.app.state.ctx.require_service("event_log")
     return {"realm_id": realm_id, "entries": log.merge_audit(realm_id)}
 
@@ -416,7 +419,8 @@ async def resolve_sync_conflicts(request: Request, body: dict) -> dict:
     convergence = await engine.converge_realm(realm_id)
     return {
         "realm_id": realm_id,
-        "head": merge.hash,
+        "head": convergence["head"],
+        "resolution_head": merge.hash,
         "resolved": len(events),
         "convergence": convergence,
     }
@@ -427,6 +431,7 @@ async def sync_status(request: Request, realm: str | None = None) -> dict:
     engine: SyncEngine = request.app.state.ctx.require_service("sync_engine")
     metrics: SyncMetrics = request.app.state.ctx.require_service("sync_metrics")
     realm_id = realm or request.app.state.ctx.settings.primary_realm
+    _check_realm_access(request, realm_id)
     status = engine.status(realm_id)
     log: EventLog = request.app.state.ctx.require_service("event_log")
     store = get_store()

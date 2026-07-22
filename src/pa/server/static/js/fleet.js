@@ -102,7 +102,9 @@
   var remoteAuditSessionId = "";
   var remoteAuditEvents = [];
   var syncPollTimer = null;
+  var syncAllConflicts = [];
   var syncCurrentConflicts = [];
+  var syncSelectedRemoteHead = "";
 
   function syncRealm() {
     var root = $("#pa-fleet-root");
@@ -169,18 +171,44 @@
   function renderSyncConflicts(conflicts) {
     var panel = $("#pa-sync-conflicts");
     var fields = $("#pa-sync-resolution-fields");
-    syncCurrentConflicts = conflicts || [];
+    syncAllConflicts = conflicts || [];
+    syncCurrentConflicts = [];
     if (!panel || !fields) return;
-    panel.hidden = !syncCurrentConflicts.length;
-    if (!syncCurrentConflicts.length) {
+    panel.hidden = !syncAllConflicts.length;
+    if (!syncAllConflicts.length) {
       fields.innerHTML = "";
       return;
     }
-    var remoteHead = syncCurrentConflicts[0].remote_head;
-    syncCurrentConflicts = syncCurrentConflicts.filter(function (item) {
+    var remoteHeads = [];
+    syncAllConflicts.forEach(function (item) {
+      if (remoteHeads.indexOf(item.remote_head) === -1) remoteHeads.push(item.remote_head);
+    });
+    var remoteHead = remoteHeads.indexOf(syncSelectedRemoteHead) >= 0
+      ? syncSelectedRemoteHead : remoteHeads[0];
+    syncSelectedRemoteHead = remoteHead;
+    syncCurrentConflicts = syncAllConflicts.filter(function (item) {
       return item.remote_head === remoteHead;
     });
-    fields.innerHTML = syncCurrentConflicts.map(function (item, index) {
+    var peer = syncCurrentConflicts[0].peer || {};
+    var queue = '<p class="muted small">Resolving ' +
+      escapeHtml(peer.name || peer.instance_id || "peer") +
+      (remoteHeads.length > 1
+        ? ". Other divergent peer heads remain queued after this merge."
+        : ".") + "</p>";
+    if (remoteHeads.length > 1) {
+      queue += '<label>Peer history <select id="pa-sync-conflict-head">' +
+        remoteHeads.map(function (head) {
+          var item = syncAllConflicts.find(function (conflict) {
+            return conflict.remote_head === head;
+          }) || {};
+          var itemPeer = item.peer || {};
+          return '<option value="' + escapeHtml(head) + '"' +
+            (head === remoteHead ? " selected" : "") + ">" +
+            escapeHtml(itemPeer.name || itemPeer.instance_id || shortHead(head)) +
+            " · " + escapeHtml(shortHead(head)) + "</option>";
+        }).join("") + "</select></label>";
+    }
+    fields.innerHTML = queue + syncCurrentConflicts.map(function (item, index) {
       var local = item.local || {};
       var remote = item.remote || {};
       var localLabel = (local.instance_name || local.instance_id || "local") +
@@ -962,6 +990,11 @@
   });
 
   document.addEventListener("change", function (e) {
+    if (e.target && e.target.id === "pa-sync-conflict-head") {
+      syncSelectedRemoteHead = e.target.value || "";
+      renderSyncConflicts(syncAllConflicts);
+      return;
+    }
     if (!e.target || e.target.id !== "pa-remote-instance") return;
     remoteInstanceId = e.target.value || "";
     remoteAuditGeneration += 1;
@@ -1096,7 +1129,7 @@
 
     if (e.target.closest("#pa-sync-refresh")) {
       e.preventDefault();
-      loadSyncStatus(false).catch(function (err) {
+      startSyncConvergence().catch(function (err) {
         var progress = $("#pa-sync-progress");
         if (progress) progress.textContent = err.message;
       });

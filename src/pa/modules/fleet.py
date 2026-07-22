@@ -1342,7 +1342,7 @@ async def _assert_dispatch_sync_health(request: Request, realm_id: str) -> None:
             item.get("name") or item.get("instance_id")
             for item in instances
             if item.get("status")
-            in {"unavailable", "invalid_response", "error"}
+            in {"unavailable", "invalid_response", "error", "missing_head"}
         ]
         code = "sync_unavailable" if unavailable else "sync_conflict"
         raise HTTPException(
