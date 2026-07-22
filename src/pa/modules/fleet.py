@@ -1328,6 +1328,41 @@ async def _assert_dispatch_sync_health(request: Request, realm_id: str) -> None:
     settings = request.app.state.ctx.settings
     if not settings.peers:
         return
+    engine = request.app.state.ctx.services.get("sync_engine")
+    if engine:
+        state = await engine.converge_realm(realm_id)
+        if state.get("phase") == "converged":
+            return
+        instances = state.get("instances", [])
+        heads = {
+            item.get("name") or item.get("instance_id"): item.get("head")
+            for item in instances
+        }
+        unavailable = [
+            item.get("name") or item.get("instance_id")
+            for item in instances
+            if item.get("status")
+            in {"unavailable", "invalid_response", "error"}
+        ]
+        code = "sync_unavailable" if unavailable else "sync_conflict"
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": code,
+                "message": (
+                    "Dispatch blocked because one or more fleet instances are unavailable"
+                    if unavailable
+                    else "Dispatch blocked until realm heads converge"
+                ),
+                "realm_id": realm_id,
+                "heads": heads,
+                "unavailable": unavailable,
+                "conflicts": state.get("conflicts", []),
+                "recoverable": True,
+                "recovery_url": f"/fleet?section=sync&realm={quote(realm_id)}",
+                "retry_after_convergence": True,
+            },
+        )
     log = request.app.state.ctx.require_service("event_log")
     heads: dict[str, str | None] = {settings.instance_id: log.get_head(realm_id)}
     headers = _peer_headers(request)
@@ -1359,6 +1394,8 @@ async def _assert_dispatch_sync_health(request: Request, realm_id: str) -> None:
                 "heads": heads,
                 "unavailable": unavailable,
                 "recoverable": True,
+                "recovery_url": f"/fleet?section=sync&realm={quote(realm_id)}",
+                "retry_after_convergence": True,
             },
         )
     if len(known) > 1:
@@ -1369,6 +1406,9 @@ async def _assert_dispatch_sync_health(request: Request, realm_id: str) -> None:
                 "message": "Dispatch blocked until realm heads converge",
                 "realm_id": realm_id,
                 "heads": heads,
+                "recoverable": True,
+                "recovery_url": f"/fleet?section=sync&realm={quote(realm_id)}",
+                "retry_after_convergence": True,
             },
         )
 
@@ -1418,6 +1458,19 @@ async def start_remote_agent_work(
         raise HTTPException(status_code=404, detail="Card not found")
     if card:
         await _assert_dispatch_sync_health(request, realm_id)
+        # Convergence can advance and rebuild the authority projection. Dispatch
+        # the card version at the repaired head, not the pre-repair snapshot.
+        card = store.get_card(body.card_id, realm_id=realm_id)
+        if not card:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "card_changed_during_convergence",
+                    "message": "The card changed while realm sync converged; review and retry",
+                    "recoverable": True,
+                    "recovery_url": f"/fleet?section=sync&realm={quote(realm_id)}",
+                },
+            )
     project_id = body.project_id or (card.project_id if card else None)
     project = store.get_project(project_id, realm_id=realm_id) if project_id else None
     if project_id and not project:

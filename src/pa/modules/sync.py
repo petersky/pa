@@ -95,7 +95,7 @@ def sync_get(request: Request, body: dict) -> dict:
 
 
 @router.post("/sync/push")
-def sync_push(request: Request, body: dict) -> dict:
+async def sync_push(request: Request, body: dict) -> dict:
     realm_id = body.get("realm_id", "default")
     _check_realm_access(request, realm_id)
     head_hash = body.get("head_hash", "")
@@ -108,53 +108,71 @@ def sync_push(request: Request, body: dict) -> dict:
     metrics: SyncMetrics = request.app.state.ctx.require_service("sync_metrics")
     metrics.record_pull(len(imported))
 
+    head_changed = False
     if head_hash:
-        local_head = log.get_head(realm_id)
-        try:
-            if local_head and local_head != head_hash:
-                if log.is_ancestor(local_head, head_hash):
+        if not log.get_commit(head_hash):
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "missing_head_object",
+                    "realm_id": realm_id,
+                    "head": head_hash,
+                },
+            )
+        with store.mutation():
+            local_head = log.get_head(realm_id)
+            try:
+                if local_head and local_head != head_hash:
+                    if log.is_ancestor(local_head, head_hash):
+                        log.advance_ref(realm_id, head_hash, expected_head=local_head)
+                        store.rebuild_from_log(realm_id)
+                        head_changed = True
+                    elif log.is_ancestor(head_hash, local_head):
+                        head_hash = local_head
+                    else:
+                        compatible, health = log.compatible_histories(
+                            local_head, head_hash
+                        )
+                        if not compatible:
+                            raise HTTPException(
+                                status_code=409,
+                                detail={
+                                    "code": "sync_conflict",
+                                    "message": "Diverged histories modify incompatible fields; operator resolution required",
+                                    "realm_id": realm_id,
+                                    "local_head": local_head,
+                                    "remote_head": head_hash,
+                                    **health,
+                                },
+                            )
+                        merge = log.merge_heads(
+                            realm_id,
+                            local_head,
+                            head_hash,
+                            "sync:auto",
+                            expected_head=local_head,
+                        )
+                        head_hash = merge.hash
+                        store.rebuild_from_log(realm_id)
+                        head_changed = True
+                elif local_head != head_hash:
                     log.advance_ref(realm_id, head_hash, expected_head=local_head)
                     store.rebuild_from_log(realm_id)
-                elif log.is_ancestor(head_hash, local_head):
-                    head_hash = local_head
-                else:
-                    compatible, health = log.compatible_histories(local_head, head_hash)
-                    if not compatible:
-                        raise HTTPException(
-                            status_code=409,
-                            detail={
-                                "code": "sync_conflict",
-                                "message": "Diverged histories modify incompatible fields; operator resolution required",
-                                "realm_id": realm_id,
-                                "local_head": local_head,
-                                "remote_head": head_hash,
-                                **health,
-                            },
-                        )
-                    merge = log.merge_heads(
-                        realm_id,
-                        local_head,
-                        head_hash,
-                        "sync:auto",
-                        expected_head=local_head,
-                    )
-                    head_hash = merge.hash
-                    store.rebuild_from_log(realm_id)
-            elif local_head != head_hash:
-                log.advance_ref(realm_id, head_hash, expected_head=local_head)
-                store.rebuild_from_log(realm_id)
-        except StaleSyncHeadError as exc:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "code": "stale_sync_head",
-                    "message": "The local head changed during sync; retry against the new head",
-                    "realm_id": realm_id,
-                    "expected_head": exc.expected,
-                    "actual_head": exc.actual,
-                },
-            ) from exc
+                    head_changed = True
+            except StaleSyncHeadError as exc:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "stale_sync_head",
+                        "message": "The local head changed during sync; retry against the new head",
+                        "realm_id": realm_id,
+                        "expected_head": exc.expected,
+                        "actual_head": exc.actual,
+                    },
+                ) from exc
 
+    if head_changed:
+        await engine.notify_commit(realm_id)
     return {"imported": len(imported), "head": head_hash}
 
 
@@ -199,38 +217,37 @@ async def sync_relay(request: Request, body: dict) -> dict:
 
 @router.get("/sync/conflicts")
 async def sync_conflicts(request: Request, realm: str | None = None) -> dict:
-    """Report divergent heads across peers (for conflict UI)."""
-    import httpx
-
+    """Run a fresh anti-entropy pass and return actionable conflict details."""
     settings = request.app.state.ctx.settings
     realm_id = realm or settings.primary_realm
+    engine: SyncEngine = request.app.state.ctx.require_service("sync_engine")
+    state = await engine.converge_realm(realm_id)
+    return {**state, "diverged": state["phase"] in {"conflict", "retrying"}}
+
+
+@router.post("/sync/converge")
+async def start_sync_convergence(request: Request, body: dict) -> dict:
+    realm_id = body.get("realm_id") or request.app.state.ctx.settings.primary_realm
+    _check_realm_access(request, realm_id)
+    engine: SyncEngine = request.app.state.ctx.require_service("sync_engine")
+    task = engine.request_convergence(realm_id)
+    if body.get("wait"):
+        return await task
+    return engine.convergence_status(realm_id)
+
+
+@router.get("/sync/convergence")
+def get_sync_convergence(request: Request, realm: str | None = None) -> dict:
+    realm_id = realm or request.app.state.ctx.settings.primary_realm
+    engine: SyncEngine = request.app.state.ctx.require_service("sync_engine")
+    return engine.convergence_status(realm_id)
+
+
+@router.get("/sync/audit")
+def sync_audit(request: Request, realm: str | None = None) -> dict:
+    realm_id = realm or request.app.state.ctx.settings.primary_realm
     log: EventLog = request.app.state.ctx.require_service("event_log")
-    local_head = log.get_head(realm_id)
-    peer_heads: dict[str, str | None] = {settings.instance_id: local_head}
-    headers = {}
-    if settings.sync_token:
-        headers["Authorization"] = f"Bearer {settings.sync_token}"
-    async with httpx.AsyncClient(timeout=5.0) as client:
-        for peer_url in settings.peers:
-            try:
-                resp = await client.get(
-                    f"{peer_url.rstrip('/')}/api/sync/refs?realm={realm_id}",
-                    headers=headers,
-                )
-                resp.raise_for_status()
-                for ref in resp.json():
-                    if ref.get("realm_id") == realm_id:
-                        peer_heads[ref.get("instance_id", peer_url)] = ref.get(
-                            "head_hash"
-                        )
-            except httpx.HTTPError:
-                peer_heads[peer_url] = None
-    unique_heads = {h for h in peer_heads.values() if h}
-    return {
-        "realm_id": realm_id,
-        "diverged": len(unique_heads) > 1,
-        "heads": peer_heads,
-    }
+    return {"realm_id": realm_id, "entries": log.merge_audit(realm_id)}
 
 
 @router.post("/sync/conflicts/resolve")
@@ -275,7 +292,8 @@ async def resolve_sync_conflicts(request: Request, body: dict) -> dict:
         supplied[(entity, entity_id)] = item
     missing = []
     for conflict in health["conflicts"]:
-        entity, entity_id = conflict["entity"]
+        entity = conflict["entity"]
+        entity_id = conflict["id"]
         item = supplied.get((entity, entity_id))
         field = conflict["field"]
         if not item or (
@@ -395,8 +413,13 @@ async def resolve_sync_conflicts(request: Request, body: dict) -> dict:
             ) from exc
         store.rebuild_from_log(realm_id)
     engine: SyncEngine = request.app.state.ctx.require_service("sync_engine")
-    await engine.notify_commit(realm_id)
-    return {"realm_id": realm_id, "head": merge.hash, "resolved": len(events)}
+    convergence = await engine.converge_realm(realm_id)
+    return {
+        "realm_id": realm_id,
+        "head": merge.hash,
+        "resolved": len(events),
+        "convergence": convergence,
+    }
 
 
 @router.get("/sync/status")
@@ -476,7 +499,14 @@ class SyncModule(Module):
         event_log = ctx.require_service("event_log")
         membership = ctx.require_service("membership")
         peer_table = ctx.require_service("peer_table")
-        engine = SyncEngine(settings, obj_store, event_log, peer_table, membership)
+        engine = SyncEngine(
+            settings,
+            obj_store,
+            event_log,
+            peer_table,
+            membership,
+            ctx.services.get("fleet_registry"),
+        )
         ctx.register_service("sync_engine", engine)
 
         original_append = event_log.append_event
@@ -498,6 +528,11 @@ class SyncModule(Module):
         event_log.append_event = append_with_sync  # type: ignore[method-assign]
 
         store = get_store()
+        def rebuild_projection(realm_id: str) -> None:
+            with store.mutation():
+                store.rebuild_from_log(realm_id)
+
+        engine.on_head_advanced(rebuild_projection)
         for realm in settings.subscribed_realms:
             durable_head = event_log.get_head(realm)
             if durable_head and store.get_projection_head(realm) != durable_head:
@@ -506,6 +541,12 @@ class SyncModule(Module):
             advanced = await engine.anti_entropy(realm)
             if advanced:
                 store.rebuild_from_log(realm)
+        engine.start()
+
+    async def on_shutdown(self, app, ctx: AppContext) -> None:
+        engine = ctx.services.get("sync_engine")
+        if engine:
+            await engine.close()
 
     def api_routers(self):
         return [("/api", router, ["sync"])]
