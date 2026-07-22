@@ -261,6 +261,7 @@ class AgentSessionRestoreTests(unittest.TestCase):
             acp.new_session.assert_not_awaited()
             self.assertEqual(existing.status, "idle")
             self.assertEqual(connection.session_cwd, listed_cwd)
+            self.assertEqual(existing.cwd, listed_cwd)
 
     def test_skips_load_when_session_missing_from_list(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

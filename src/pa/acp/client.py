@@ -652,7 +652,8 @@ class AgentConnection:
                 )
 
         assert self.session is not None
-        self.session.cwd = session_cwd
+        # Prefer the cwd actually used for resume/load (may come from session/list).
+        self.session.cwd = self.session_cwd or session_cwd
         if title is not None:
             self.session.title = title
         if label is not None:
