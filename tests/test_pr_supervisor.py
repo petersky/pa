@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 
 from pa.config import Settings
 from pa.core.kernel import Kernel
-from pa.domain.models import AgentSession, CardLane
+from pa.domain.models import AgentSession, Card, CardLane
 from pa.domain.store import reset_store
 from pa.instance.agent_session import reset_instance_agent
 from pa.pr_supervisor.gating import build_executor_prompt, evaluate_gate
@@ -694,10 +694,13 @@ class PRSupervisorServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(health["authority_url"], "http://always-on-mini")
         self.assertIsNotNone(health["last_authority_success_at"])
 
-    async def test_merged_pr_updates_card_and_retires_watch(self) -> None:
+    async def test_merged_pr_without_stable_green_waits_and_retires_watch(self) -> None:
         merged = snapshot(
             state="merged",
             merge_commit_sha="c" * 40,
+        )
+        self.domain.get_card.return_value = Card(
+            id="card-1", title="guarded", lane=CardLane.ACTIVE
         )
         service = await self.make_service([merged])
         await service.run_once()
@@ -705,10 +708,46 @@ class PRSupervisorServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(current.status, PRWatchStatus.MERGED)
         update = self.domain.update_card.call_args
         self.assertEqual(update.args[0], "card-1")
-        self.assertEqual(update.args[1].lane, CardLane.DONE)
+        self.assertEqual(update.args[1].lane, CardLane.WAITING)
         self.assertEqual(current.state["merge_commit_sha"], "c" * 40)
-        self.assertEqual(current.state["card_lane"], "done")
+        self.assertEqual(current.state["card_lane"], "waiting")
+        self.assertEqual(current.state["card_disposition"]["status"], "downgraded")
         self.assertEqual(len(self.dispatcher.calls), 1)
+
+    async def test_stable_green_exact_head_and_merge_commit_complete_card(self) -> None:
+        open_green = snapshot()
+        merged = snapshot(state="merged", merge_commit_sha="c" * 40)
+        self.domain.get_card.return_value = Card(
+            id="card-1", title="guarded", lane=CardLane.WAITING
+        )
+        service = await self.make_service([open_green, merged])
+
+        await service.run_once()
+        self.store.schedule_now(watch_id="watch-1")
+        await service.run_once()
+
+        current = self.store.get_watch("watch-1")
+        self.assertEqual(current.status, PRWatchStatus.MERGED)
+        self.assertEqual(current.state["card_lane"], "done")
+        self.assertEqual(current.state["card_disposition"]["status"], "applied")
+        update = self.domain.update_card.call_args
+        self.assertEqual(update.args[1].lane, CardLane.DONE)
+
+    async def test_legacy_done_card_is_not_reopened_when_merge_evidence_is_old(
+        self,
+    ) -> None:
+        merged = snapshot(state="merged", merge_commit_sha=None)
+        self.domain.get_card.return_value = Card(
+            id="card-1", title="legacy done", lane=CardLane.DONE
+        )
+        service = await self.make_service([merged])
+
+        await service.run_once()
+
+        current = self.store.get_watch("watch-1")
+        self.assertEqual(current.state["card_lane"], "done")
+        self.assertEqual(current.state["card_disposition"]["status"], "preserved_done")
+        self.domain.update_card.assert_not_called()
 
     async def test_stale_terminal_fence_does_not_complete_card(self) -> None:
         merged = snapshot(state="merged", merge_commit_sha="c" * 40)

@@ -496,6 +496,20 @@
       var outboxText = state === "completion_pending"
         ? '<p class="muted small">Completion outbox attempt ' + escapeHtml(outbox.attempts || 0) +
           (outbox.last_error ? " · " + escapeHtml(outbox.last_error) : "") + "</p>" : "";
+      var turn = dispatch.agent_turn || {};
+      var transport = dispatch.dispatch_completion || {};
+      var card = dispatch.card_completion || {};
+      var lifecycle = '<p class="muted small">Agent turn: ' +
+        escapeHtml(turn.completed ? "completed" : "in progress") +
+        (turn.stop_reason ? " (" + escapeHtml(turn.stop_reason) + ")" : "") +
+        ' · Dispatch: ' + escapeHtml(transport.completed ? "completed" : "in progress") + "</p>";
+      var cardText = "";
+      if (dispatch.card_id && card.status && card.status !== "not_requested") {
+        cardText = '<p class="muted small">Card: ' +
+          escapeHtml(card.lane_after || card.lane_before || "unchanged") +
+          ' · Disposition: ' + escapeHtml(card.status) +
+          (card.reason ? " · " + escapeHtml(card.reason) : "") + "</p>";
+      }
       var actions = '<span class="form-actions">';
       if (dispatch.can_retry) actions += '<button type="button" class="ghost small" data-dispatch-retry="' +
         escapeHtml(dispatch.dispatch_id) + '">Retry</button>';
@@ -509,7 +523,8 @@
         '<span class="status status-' + badge + '">' + escapeHtml(remoteDispatchStageLabel(state)) + "</span>" +
         '<p class="muted small"><code>' + escapeHtml(dispatch.dispatch_id) + "</code>" +
         (latest ? " · " + escapeHtml(latest) : "") + "</p></div>" + actions + "</div>" +
-        error + outboxText + (terminal ? "" : '<progress></progress>') + "</li>";
+        error + lifecycle + cardText + outboxText +
+        (terminal ? "" : '<progress></progress>') + "</li>";
     }).join("");
   }
 

@@ -169,7 +169,7 @@ FIELD_SPECS: dict[str, FieldSpec] = {
     "agent_provider": FieldSpec(
         "agent_provider",
         "str",
-        "Default ACP provider (cursor, codex, …)",
+        "Default ACP provider (cursor, codex, openinterpreter, …)",
     ),
     "agent_command": FieldSpec(
         "agent_command",

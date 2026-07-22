@@ -6,8 +6,9 @@ PA is an **ACP client**: it spawns an ACP agent subprocess per session and speak
 |-------------|------------------|------------------|
 | `cursor` | Cursor CLI `agent acp` | [cursor.md](cursor.md) |
 | `codex` | `@agentclientprotocol/codex-acp` (`codex-acp`) | [codex.md](codex.md) |
+| `openinterpreter` | OpenInterpreter `interpreter acp` | [openinterpreter.md](openinterpreter.md) |
 
-Additional ACP servers (for example Snowflake Cortex Code `cortex acp serve`) can be added later by registering a provider and copying [_TEMPLATE.md](_TEMPLATE.md).
+Additional ACP servers can be added later by registering a provider and copying [_TEMPLATE.md](_TEMPLATE.md).
 
 ## How PA selects a provider
 
@@ -87,6 +88,7 @@ Update these docs whenever PA’s provider integration changes or upstream ACP s
    ```bash
    pa agent-provider probe --provider cursor
    pa agent-provider probe --provider codex
+   pa agent-provider probe --provider openinterpreter
    ```
 
    Capture `agent_capabilities` / `auth_methods` from the JSON into the provider doc (with a dated “Last verified” line).

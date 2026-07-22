@@ -39,6 +39,7 @@ from pa.execution.dispatch import (
     DispatchStore,
     DispatchWorker,
 )
+from pa.execution.disposition import decide_card_disposition
 from pa.fleet.join import (
     apply_reachability_settings,
     ensure_sync_token,
@@ -161,6 +162,7 @@ class DispatchCompletionBody(BaseModel):
     source_instance_id: str
     session_id: str | None = None
     result: dict[str, Any] = Field(default_factory=dict)
+    disposition: Any = None
 
 
 def _dispatch_store(request: Request) -> DispatchStore:
@@ -278,7 +280,17 @@ def complete_dispatch(
     ):
         raise HTTPException(status_code=409, detail={"code": "idempotency_conflict"})
     if record.state in {"completed", "acknowledged"}:
-        return {"dispatch_id": dispatch_id, "acknowledged": True, "duplicate": True}
+        return {
+            "dispatch_id": dispatch_id,
+            "acknowledged": True,
+            "duplicate": True,
+            "card_disposition": {
+                "status": record.card_disposition_status,
+                "lane_before": record.card_lane_before,
+                "lane_after": record.card_lane_after,
+                "reason": record.card_disposition_reason,
+            },
+        }
     if (
         body.source_instance_id != record.target_instance_id
         or body.card_id != record.card_id
@@ -326,19 +338,66 @@ def complete_dispatch(
                 "actual": card.updated_at.isoformat(),
             },
         )
-    if card and card.lane != CardLane.DONE:
+    watches = []
+    supervisor_store = request.app.state.ctx.services.get("pr_supervisor_store")
+    if card and supervisor_store:
+        watches = supervisor_store.list_watches(
+            realm_id=body.realm_id,
+            card_id=card.id,
+            include_retired=True,
+        )
+    decision = (
+        decide_card_disposition(
+            body.disposition,
+            current_lane=card.lane,
+            watches=watches,
+        )
+        if card
+        else None
+    )
+    if card and decision and decision.applied_lane != card.lane:
         request.app.state.ctx.store.update_card(
             card.id,
-            CardUpdate(lane=CardLane.DONE),
+            CardUpdate(lane=decision.applied_lane),
             realm_id=body.realm_id,
-            principal_id="fleet:completion",
+            principal_id="fleet:card-disposition",
             instance_id=request.app.state.ctx.settings.instance_id,
         )
     record.session_id = body.session_id
     record.completion_payload = body.result
+    record.card_disposition_payload = (
+        body.disposition if isinstance(body.disposition, dict) else None
+    )
+    record.card_disposition_status = decision.status if decision else "not_applicable"
+    record.card_disposition_reason = (
+        decision.reason if decision else "Dispatch completion was not linked to a card."
+    )
+    record.card_lane_before = card.lane.value if card else None
+    record.card_lane_after = decision.applied_lane.value if decision else None
     record.acknowledged_at = datetime.now(UTC)
-    ledger.transition(record, "completed", "Remote completion applied at authority.")
-    return {"dispatch_id": dispatch_id, "acknowledged": True, "duplicate": False}
+    ledger.transition(
+        record,
+        "completed",
+        "Dispatch completion acknowledged independently of card completion.",
+        detail={
+            "agent_turn_completed": True,
+            "card_disposition_status": record.card_disposition_status,
+            "card_lane_before": record.card_lane_before,
+            "card_lane_after": record.card_lane_after,
+            "reason": record.card_disposition_reason,
+        },
+    )
+    return {
+        "dispatch_id": dispatch_id,
+        "acknowledged": True,
+        "duplicate": False,
+        "card_disposition": {
+            "status": record.card_disposition_status,
+            "lane_before": record.card_lane_before,
+            "lane_after": record.card_lane_after,
+            "reason": record.card_disposition_reason,
+        },
+    }
 
 
 def _fleet_context(request: Request) -> dict:

@@ -1,5 +1,9 @@
 # Architecture
 
+Remote dispatch transport and business-level card completion use the versioned
+[card disposition contract](CARD_DISPOSITIONS.md). An agent turn ending never
+implies that its card is Done.
+
 PA is built as a **modular kernel** with clear boundaries. Core features are implemented as built-in modules; external packages extend PA through the same contracts and entry points.
 
 ## Layers
@@ -222,7 +226,7 @@ PA is designed **agent-first**: agents can direct PA and be directed by it, incl
 | Interface | Role |
 |-----------|------|
 | `pa mcp` | Tool surface for any agent session |
-| ACP (provider subprocess) | Interactive chat; PA tools via MCP bridge. Built-ins: Cursor (`agent acp`), Codex (`codex-acp`). See [acp/](acp/README.md). |
+| ACP (provider subprocess) | Interactive chat; PA tools via MCP bridge. Built-ins: Cursor (`agent acp`), Codex (`codex-acp`), OpenInterpreter (`interpreter acp`). See [acp/](acp/README.md). |
 | `pa` CLI | Human/script operator |
 | Web UI | Human-friendly views of cards, projects, fleet |
 

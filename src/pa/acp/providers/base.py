@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 class AgentProviderId(StrEnum):
     CURSOR = "cursor"
     CODEX = "codex"
+    OPENINTERPRETER = "openinterpreter"
 
 
 class AgentProviderSpec(BaseModel):
@@ -71,6 +72,12 @@ class ProviderConfigureBody(BaseModel):
     no_browser: bool | None = None
     codex_path: str | None = None
     initial_agent_mode: str | None = None
+    model: str | None = None
+    model_provider: str | None = None
+    model_provider_name: str | None = None
+    model_provider_base_url: str | None = None
+    model_provider_env_key: str | None = None
+    model_provider_wire_api: str | None = None
 
 
 @runtime_checkable

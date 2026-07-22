@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import random
 import re
@@ -12,6 +13,10 @@ from uuid import uuid4
 import httpx
 
 from pa.domain.models import CardLane, CardUpdate
+from pa.execution.disposition import (
+    decide_card_disposition,
+    disposition_for_merged_watch,
+)
 from pa.pr_supervisor.gating import (
     build_executor_prompt_rendered,
     evaluate_gate,
@@ -632,6 +637,22 @@ class PRSupervisor:
         self, watch: PRWatch, snapshot: PRSnapshot, grant: LeaseGrant
     ) -> None:
         state = self._safe_snapshot(snapshot)
+        prior_state = watch.state or {}
+        prior_gate = prior_state.get("gate") or {}
+        if (
+            prior_state.get("head_sha") == snapshot.head_sha
+            and prior_gate.get("green") is True
+        ):
+            state["stable_green_evidence"] = {
+                "green": True,
+                "head_sha": snapshot.head_sha,
+                "fingerprint": watch.condition_fingerprint,
+                "observed_at": prior_state.get("observed_at"),
+                "observations": watch.stable_head_observations,
+                "stable_head_since": watch.stable_head_since.isoformat()
+                if watch.stable_head_since
+                else None,
+            }
         state["supervisor_state"] = "retired_after_merge"
         state["card_lane"] = "pending" if watch.card_id else None
         gate = evaluate_gate(snapshot, watch.policy, stable_head=True)
@@ -684,14 +705,35 @@ class PRSupervisor:
     async def _complete_merged_card(self, watch: PRWatch | None) -> None:
         if not watch or not watch.card_id or watch.state.get("card_lane") == "done":
             return
-        try:
-            self.domain_store.update_card(
-                watch.card_id,
-                CardUpdate(lane=CardLane.DONE),
-                realm_id=watch.realm_id,
-                principal_id="instance:pr-supervisor",
-                instance_id=self.settings.instance_id,
+        card = self.domain_store.get_card(watch.card_id, realm_id=watch.realm_id)
+        if not card:
+            self._audit(
+                watch,
+                "card_completion_failed",
+                f"{watch.id}:card-completion:missing-card",
+                payload={"error": "linked card is missing"},
             )
+            self.store.increment_metric("card_completion_errors")
+            return
+        linked_watches = self.store.list_watches(
+            realm_id=watch.realm_id,
+            card_id=watch.card_id,
+            include_retired=True,
+        )
+        decision = decide_card_disposition(
+            disposition_for_merged_watch(watch),
+            current_lane=card.lane,
+            watches=linked_watches,
+        )
+        try:
+            if decision.applied_lane != card.lane:
+                self.domain_store.update_card(
+                    watch.card_id,
+                    CardUpdate(lane=decision.applied_lane),
+                    realm_id=watch.realm_id,
+                    principal_id="instance:pr-supervisor",
+                    instance_id=self.settings.instance_id,
+                )
         except Exception as exc:
             self._audit(
                 watch,
@@ -702,16 +744,37 @@ class PRSupervisor:
             self.store.increment_metric("card_completion_errors")
             return
         state = dict(watch.state)
-        state["card_lane"] = "done"
+        state["card_lane"] = decision.applied_lane.value
+        state["card_disposition"] = {
+            "contract": "pa.card-disposition/v1",
+            "status": decision.status,
+            "reason": decision.reason,
+            "requested_lane": decision.requested_lane.value
+            if decision.requested_lane
+            else None,
+            "applied_lane": decision.applied_lane.value,
+            "watch_id": decision.watch_id,
+        }
         completed = self.store.set_terminal(watch.id, PRWatchStatus.MERGED, state=state)
+        reason_hash = hashlib.sha256(decision.reason.encode()).hexdigest()[:12]
+        event_type = (
+            "card_completed"
+            if decision.applied_lane == CardLane.DONE
+            else "card_completion_blocked"
+        )
         self._audit(
             completed or watch,
-            "card_completed",
-            f"{watch.id}:card-completed",
-            payload={"card_id": watch.card_id, "lane": "done"},
+            event_type,
+            f"{watch.id}:card-disposition:{decision.status}:{reason_hash}",
+            payload={
+                "card_id": watch.card_id,
+                "lane": decision.applied_lane.value,
+                "status": decision.status,
+                "reason": decision.reason,
+            },
         )
         await self._replicate(completed)
-        if self.workspace_manager:
+        if decision.applied_lane == CardLane.DONE and self.workspace_manager:
             try:
                 self.workspace_manager.mark_card_completed(watch.card_id, merged=True)
             except Exception:

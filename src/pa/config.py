@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     oidc_client_id: str = ""
     oidc_client_secret: str = ""
 
-    # Primary ACP agent provider (`cursor` | `codex` | future ids)
+    # Primary ACP agent provider (`cursor` | `codex` | `openinterpreter`)
     agent_provider: str = "cursor"
     # Optional spawn overrides (None → use selected provider defaults)
     agent_command: str | None = None

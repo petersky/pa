@@ -28,6 +28,7 @@ from pa.modules.fleet import (
     materialize_dispatch,
     retry_dispatch,
 )
+from pa.pr_supervisor.models import PRWatch
 from pa.sync.event_log import EventLog
 from pa.sync.object_store import ObjectStore
 
@@ -133,6 +134,12 @@ class CompletionTests(unittest.TestCase):
                 card_version=card.updated_at.isoformat(),
                 source_instance_id="target",
                 session_id="session-1",
+                disposition={
+                    "contract": "pa.card-disposition/v1",
+                    "lane": "waiting",
+                    "outcome": "The agent turn ended with follow-up work remaining.",
+                    "evidence": {"integration_required": False},
+                },
             )
 
             first = complete_dispatch(request, "dispatch-1", body)
@@ -141,8 +148,9 @@ class CompletionTests(unittest.TestCase):
             self.assertFalse(first["duplicate"])
             self.assertTrue(second["duplicate"])
             store.update_card.assert_called_once()
+            self.assertEqual(store.update_card.call_args.args[1].lane, CardLane.WAITING)
 
-    def test_end_to_end_remote_completion_accepts_recorded_dispatch_transition(
+    def test_end_turn_accepts_dispatch_transition_without_marking_card_done(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -180,10 +188,180 @@ class CompletionTests(unittest.TestCase):
                     card_version=original.updated_at.isoformat(),
                     source_instance_id="target",
                     session_id="session-1",
+                    result={"stop_reason": "end_turn"},
                 ),
             )
             self.assertTrue(result["acknowledged"])
-            self.assertEqual(store.update_card.call_args.args[1].lane, CardLane.DONE)
+            self.assertEqual(result["card_disposition"]["status"], "absent")
+            self.assertEqual(result["card_disposition"]["lane_after"], "active")
+            store.update_card.assert_not_called()
+
+    def test_stale_card_version_is_rejected_before_disposition(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="authority")
+            original = Card(id="card-1", title="original")
+            changed = original.model_copy(
+                update={"title": "changed", "updated_at": datetime.now(UTC)}
+            )
+            store = MagicMock()
+            store.get_card.return_value = changed
+            ledger = DispatchStore(settings.data_dir)
+            ledger.put(
+                DispatchRecord(
+                    dispatch_id="dispatch-1",
+                    mutation_id="mutation-1",
+                    card_id=original.id,
+                    realm_id="default",
+                    card_version=original.updated_at.isoformat(),
+                    authority_instance_id="authority",
+                    authority_url="http://authority",
+                    target_instance_id="target",
+                    session_id="session-1",
+                    state="running",
+                )
+            )
+            request = request_for(settings, store, {"dispatch_store": ledger})
+            request.headers = {"idempotency-key": "mutation-1"}
+
+            with self.assertRaises(HTTPException) as raised:
+                complete_dispatch(
+                    request,
+                    "dispatch-1",
+                    DispatchCompletionBody(
+                        mutation_id="mutation-1",
+                        card_id=original.id,
+                        realm_id="default",
+                        card_version=original.updated_at.isoformat(),
+                        source_instance_id="target",
+                        session_id="session-1",
+                        disposition={
+                            "contract": "pa.card-disposition/v1",
+                            "lane": "done",
+                            "outcome": "done",
+                            "evidence": {"integration_required": False},
+                        },
+                    ),
+                )
+
+            self.assertEqual(
+                raised.exception.detail["code"], "authority_version_conflict"
+            )
+            self.assertEqual(ledger.get("dispatch-1").state, "running")
+            store.update_card.assert_not_called()
+
+    def test_completion_from_wrong_target_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="authority")
+            card = Card(id="card-1", title="target separation")
+            store = MagicMock()
+            store.get_card.return_value = card
+            ledger = DispatchStore(settings.data_dir)
+            ledger.put(
+                DispatchRecord(
+                    dispatch_id="dispatch-1",
+                    mutation_id="mutation-1",
+                    card_id=card.id,
+                    realm_id="default",
+                    card_version=card.updated_at.isoformat(),
+                    authority_instance_id="authority",
+                    authority_url="http://authority",
+                    target_instance_id="target-a",
+                    session_id="session-1",
+                    state="running",
+                )
+            )
+            request = request_for(settings, store, {"dispatch_store": ledger})
+            request.headers = {"idempotency-key": "mutation-1"}
+
+            with self.assertRaises(HTTPException) as raised:
+                complete_dispatch(
+                    request,
+                    "dispatch-1",
+                    DispatchCompletionBody(
+                        mutation_id="mutation-1",
+                        card_id=card.id,
+                        realm_id="default",
+                        card_version=card.updated_at.isoformat(),
+                        source_instance_id="target-b",
+                        session_id="session-1",
+                    ),
+                )
+
+            self.assertEqual(
+                raised.exception.detail["code"], "completion_dispatch_mismatch"
+            )
+            store.update_card.assert_not_called()
+
+    def test_end_turn_done_with_open_pr_is_downgraded_to_waiting(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="authority")
+            card = Card(id="card-1", title="open PR", lane=CardLane.ACTIVE)
+            store = MagicMock()
+            store.get_card.return_value = card
+            watch = PRWatch(
+                id="watch-1",
+                card_id=card.id,
+                repository="owner/repo",
+                pr_number=17,
+                pr_url="https://github.com/owner/repo/pull/17",
+                head_sha="a" * 40,
+                state={"state": "open", "mergeable_state": "clean"},
+            )
+            supervisor = MagicMock()
+            supervisor.list_watches.return_value = [watch]
+            ledger = DispatchStore(settings.data_dir)
+            ledger.put(
+                DispatchRecord(
+                    dispatch_id="dispatch-1",
+                    mutation_id="mutation-1",
+                    card_id=card.id,
+                    realm_id="default",
+                    card_version=card.updated_at.isoformat(),
+                    authority_instance_id="authority",
+                    authority_url="http://authority",
+                    target_instance_id="target",
+                    session_id="session-1",
+                    state="running",
+                )
+            )
+            request = request_for(
+                settings,
+                store,
+                {"dispatch_store": ledger, "pr_supervisor_store": supervisor},
+            )
+            request.headers = {"idempotency-key": "mutation-1"}
+
+            result = complete_dispatch(
+                request,
+                "dispatch-1",
+                DispatchCompletionBody(
+                    mutation_id="mutation-1",
+                    card_id=card.id,
+                    realm_id="default",
+                    card_version=card.updated_at.isoformat(),
+                    source_instance_id="target",
+                    session_id="session-1",
+                    result={"stop_reason": "end_turn"},
+                    disposition={
+                        "contract": "pa.card-disposition/v1",
+                        "lane": "done",
+                        "outcome": "The turn ended.",
+                        "evidence": {
+                            "integration_required": True,
+                            "pr_watch_id": watch.id,
+                            "watched_head_sha": watch.head_sha,
+                            "merge_commit_sha": "b" * 40,
+                        },
+                    },
+                ),
+            )
+
+            self.assertEqual(result["card_disposition"]["status"], "downgraded")
+            self.assertEqual(result["card_disposition"]["lane_after"], "waiting")
+            self.assertEqual(store.update_card.call_args.args[1].lane, CardLane.WAITING)
+            self.assertIn(
+                "not merged", ledger.get("dispatch-1").card_disposition_reason
+            )
 
 
 class RetryAndConflictTests(unittest.IsolatedAsyncioTestCase):
