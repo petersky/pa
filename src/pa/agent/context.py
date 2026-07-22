@@ -20,6 +20,52 @@ class PromptComposition(BaseModel):
         return [prompt.audit_record() for prompt in self.prompts]
 
 
+_CONTEXT_TRUNCATION_MARKER = "\n… [truncated to fit provider context]"
+_CONTEXT_SEPARATOR = "\n\n---\n\n"
+
+
+def _bounded_text(value: Any, limit: int) -> str:
+    text = str(value)
+    if len(text) <= limit:
+        return text
+    keep = max(0, limit - len(_CONTEXT_TRUNCATION_MARKER))
+    return text[:keep].rstrip() + _CONTEXT_TRUNCATION_MARKER
+
+
+def _fit_context_prompts(
+    prompts: list[RenderedPrompt], budget: int
+) -> list[RenderedPrompt]:
+    if budget < 0:
+        return prompts
+    result = list(prompts)
+    while len("\n\n".join(prompt.text for prompt in result)) > budget:
+        candidates = [
+            (len(prompt.text), index)
+            for index, prompt in enumerate(result)
+            if prompt.key in {"agent.context.project", "agent.context.card"}
+            and len(prompt.text) > 512 + len(_CONTEXT_TRUNCATION_MARKER)
+        ]
+        if not candidates:
+            break
+        _length, index = max(candidates)
+        prompt = result[index]
+        current_context = "\n\n".join(item.text for item in result)
+        overflow = len(current_context) - budget
+        keep = max(512, len(prompt.text) - overflow - len(_CONTEXT_TRUNCATION_MARKER))
+        text = prompt.text[:keep].rstrip() + _CONTEXT_TRUNCATION_MARKER
+        result[index] = prompt.model_copy(
+            update={
+                "text": text,
+                "character_count": len(text),
+                "truncated": True,
+                "original_character_count": (
+                    prompt.original_character_count or prompt.character_count
+                ),
+            }
+        )
+    return result
+
+
 def resolve_project_for_prompt(
     store: Store,
     *,
@@ -39,11 +85,17 @@ def resolve_project_for_prompt(
 def _project_values(project: Project) -> dict[str, Any]:
     policy = dict((project.tool_config or {}).get("pr_policy") or {})
     return {
-        "title": project.title,
-        "description": project.description or "(no project description)",
-        "agent_prompt": project.agent_prompt or "(no additional project instructions)",
-        "repositories": ", ".join(repo.url for repo in project.repos)
-        or "(no linked repositories)",
+        "title": _bounded_text(project.title, 4_000),
+        "description": _bounded_text(
+            project.description or "(no project description)", 32_000
+        ),
+        "agent_prompt": _bounded_text(
+            project.agent_prompt or "(no additional project instructions)", 64_000
+        ),
+        "repositories": _bounded_text(
+            ", ".join(repo.url for repo in project.repos) or "(no linked repositories)",
+            16_000,
+        ),
         "pr_ready_policy": (
             "ready for review"
             if policy.get("ready_by_default", True)
@@ -55,6 +107,13 @@ def _project_values(project: Project) -> dict[str, Any]:
         "merge_on_green": (
             "enabled" if policy.get("agent_merge_on_green", True) else "disabled"
         ),
+    }
+
+
+def _card_values(card: Card) -> dict[str, str]:
+    return {
+        "title": _bounded_text(card.title, 4_000),
+        "body": _bounded_text(card.body or "(no card body)", 120_000),
     }
 
 
@@ -77,7 +136,7 @@ def build_project_context_prefix(
         rendered.append(
             PROMPTS.render(
                 "agent.context.card",
-                {"card": {"title": card.title, "body": card.body or "(no card body)"}},
+                {"card": _card_values(card)},
                 provider=provider,
             ).text
         )
@@ -151,7 +210,7 @@ def compose_session_prompt(
         prompts.append(
             PROMPTS.render(
                 "agent.context.card",
-                {"card": {"title": card.title, "body": card.body or "(no card body)"}},
+                {"card": _card_values(card)},
                 provider=provider,
             )
         )
@@ -165,6 +224,10 @@ def compose_session_prompt(
             PROMPTS.render("agent.context.data_safety", provider=provider),
             PROMPTS.render("agent.context.browser", provider=provider),
         ]
+    )
+    wrapper_limit = PROMPTS.character_limit("agent.message.wrapper", provider=provider)
+    prompts = _fit_context_prompts(
+        prompts, wrapper_limit - len(message) - len(_CONTEXT_SEPARATOR)
     )
     context = "\n\n".join(prompt.text for prompt in prompts)
     wrapper = PROMPTS.render(

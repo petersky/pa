@@ -671,22 +671,36 @@ class AgentSessionRuntime:
                             )
                 config = dict(self.session.config_json or {})
                 audit_history = list(config.get("prompt_audit") or [])
-                audit_history.append({"prompt_id": item.id, "prompts": prompt_audit})
+                audit_entry = {"prompt_id": item.id, "prompts": prompt_audit}
+                existing_index = next(
+                    (
+                        index
+                        for index, entry in enumerate(audit_history)
+                        if entry.get("prompt_id") == item.id
+                    ),
+                    None,
+                )
+                first_attempt = existing_index is None
+                if first_attempt:
+                    audit_history.append(audit_entry)
+                else:
+                    audit_history[existing_index] = audit_entry
                 config["prompt_audit"] = audit_history[-50:]
                 self.session.config_json = config
                 self._save_session_preserving_external_browser()
-                self._append_transcript(
-                    "prompt_rendered", {"id": item.id, "prompts": prompt_audit}
-                )
-                self._append_transcript(
-                    "user_message",
-                    {
-                        "id": item.id,
-                        "message": item.message,
-                        "source": item.source,
-                        "images": [image.public_dict() for image in item.images],
-                    },
-                )
+                if first_attempt:
+                    self._append_transcript(
+                        "prompt_rendered", {"id": item.id, "prompts": prompt_audit}
+                    )
+                    self._append_transcript(
+                        "user_message",
+                        {
+                            "id": item.id,
+                            "message": item.message,
+                            "source": item.source,
+                            "images": [image.public_dict() for image in item.images],
+                        },
+                    )
                 self._flush_transcript()
             except BaseException:
                 self._finish_turn_state()
@@ -1311,17 +1325,18 @@ class AgentSessionManager:
         if interrupted is None and queued and queued[0].source == "in_flight":
             interrupted = queued.pop(0)
         if interrupted:
-            from pa.prompts import PROMPTS
+            if interrupted.source != "recovery":
+                from pa.prompts import PROMPTS
 
-            recovery = PROMPTS.render(
-                "session.recovery.resume", provider=session.agent_name
-            )
-            interrupted = interrupted.model_copy(
-                update={
-                    "message": f"{recovery.text}\n\n{interrupted.message}",
-                    "source": "recovery",
-                }
-            )
+                recovery = PROMPTS.render(
+                    "session.recovery.resume", provider=session.agent_name
+                )
+                interrupted = interrupted.model_copy(
+                    update={
+                        "message": f"{recovery.text}\n\n{interrupted.message}",
+                        "source": "recovery",
+                    }
+                )
             queued.insert(0, interrupted)
         for item in queued:
             item.cwd = session.cwd

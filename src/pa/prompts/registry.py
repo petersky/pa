@@ -98,6 +98,8 @@ class RenderedPrompt(BaseModel):
     text: str
     resolved_context: dict[str, Any]
     character_count: int
+    truncated: bool = False
+    original_character_count: int | None = None
 
     def audit_record(self) -> dict[str, Any]:
         return self.model_dump(exclude={"text"}, mode="json")
@@ -203,6 +205,21 @@ class PromptRegistry:
     def adapters(self) -> list[ProviderPromptAdapter]:
         return sorted(self._adapters.values(), key=lambda item: item.provider)
 
+    def character_limit(
+        self,
+        key: str,
+        *,
+        provider: str | None = None,
+        reserve_context: bool = False,
+    ) -> int:
+        definition = self.get(key)
+        provider_id = (provider or "default").strip().lower() or "default"
+        adapter = self._adapters.get(provider_id, self._adapters["default"])
+        provider_limit = adapter.max_characters
+        if reserve_context:
+            provider_limit -= adapter.context_reserve_characters
+        return min(definition.max_characters, provider_limit)
+
     def render(
         self,
         key: str,
@@ -239,11 +256,9 @@ class PromptRegistry:
 
         rendered = _PLACEHOLDER.sub(replace, definition.template).strip()
         provider_id = (provider or "default").strip().lower() or "default"
-        adapter = self._adapters.get(provider_id, self._adapters["default"])
-        provider_limit = adapter.max_characters
-        if reserve_context:
-            provider_limit -= adapter.context_reserve_characters
-        limit = min(definition.max_characters, provider_limit)
+        limit = self.character_limit(
+            key, provider=provider_id, reserve_context=reserve_context
+        )
         if len(rendered) > limit:
             raise PromptRenderError(
                 f"prompt {key} is {len(rendered)} characters; "

@@ -284,6 +284,50 @@ class PromptCompositionTests(unittest.TestCase):
             audit["agent.context.card"]["resolved_context"]["card"],
         )
 
+    def test_large_card_context_is_trimmed_to_the_exact_wrapper_budget(self) -> None:
+        store = MagicMock()
+        card = Card(
+            id="card-large",
+            title="Large card",
+            body="x" * 90_000,
+        )
+        store.get_card.return_value = card
+        store.get_project.return_value = None
+        settings = Settings(
+            data_dir=Path(tempfile.mkdtemp()),
+            instance_id="executor",
+            instance_name="Executor",
+        )
+        session = AgentSession(
+            id="session-large",
+            agent_name="cursor",
+            card_id=card.id,
+            cwd="/resolved/worktree",
+            config_json={
+                "execution_context": {
+                    "instance": {"id": "executor", "name": "Executor"},
+                    "cwd": "/resolved/worktree",
+                    "repositories": [],
+                }
+            },
+        )
+        message = "PA pull-request supervisor\n\n" + ("y" * 48_000)
+
+        result = compose_session_prompt(store, settings, session, message)
+
+        self.assertLessEqual(
+            len(result.text),
+            PROMPTS.character_limit("agent.message.wrapper", provider="cursor"),
+        )
+        card_prompt = next(
+            prompt for prompt in result.prompts if prompt.key == "agent.context.card"
+        )
+        self.assertTrue(card_prompt.truncated)
+        self.assertGreater(
+            card_prompt.original_character_count, card_prompt.character_count
+        )
+        self.assertIn("truncated to fit provider context", card_prompt.text)
+
     def test_composition_failure_does_not_leave_session_prompting(self) -> None:
         async def run() -> tuple[bool, object, list[tuple[bool, str | None]]]:
             with tempfile.TemporaryDirectory() as tmp:
@@ -344,6 +388,64 @@ class PromptCompositionTests(unittest.TestCase):
         self.assertIsNotNone(observed[0][1])
         self.assertFalse(prompting)
         prompt.assert_not_awaited()
+
+    def test_provider_retry_does_not_duplicate_audit_or_user_events(self) -> None:
+        async def run() -> tuple[AgentSession, list]:
+            with tempfile.TemporaryDirectory() as tmp:
+                store = MagicMock()
+                store.next_transcript_seq.return_value = 1
+                store.get_card.return_value = None
+                store.get_project.return_value = None
+                settings = Settings(data_dir=Path(tmp), instance_id="executor")
+                session = AgentSession(
+                    id="session-retry",
+                    agent_name="codex",
+                    cwd=str(Path(tmp) / "workspace"),
+                    config_json={
+                        "execution_context": {
+                            "instance": {"id": "executor", "name": "Executor"},
+                            "cwd": str(Path(tmp) / "workspace"),
+                            "repositories": [],
+                        }
+                    },
+                )
+                manager = AgentSessionManager(settings, store)
+                manager.workspace_manager.renew_session = MagicMock()
+                runtime = AgentSessionRuntime(manager, session)
+                connection = MagicMock()
+                connection.prompt = AsyncMock(
+                    side_effect=[RuntimeError("provider failed"), "end_turn"]
+                )
+                connection.last_usage = None
+                runtime.connection = connection
+                item = QueuedPrompt(
+                    id="prompt-retry",
+                    message="Retry this exact turn.",
+                    session_id=session.id,
+                    cwd=session.cwd,
+                )
+
+                with self.assertRaisesRegex(RuntimeError, "provider failed"):
+                    await runtime._run_prompt(item)
+                await runtime._run_prompt(item)
+                events = [
+                    event
+                    for call in store.append_transcript_events.call_args_list
+                    for event in call.args[0]
+                ]
+                return session, events
+
+        session, events = asyncio.run(run())
+        history = [
+            entry
+            for entry in session.config_json["prompt_audit"]
+            if entry["prompt_id"] == "prompt-retry"
+        ]
+        self.assertEqual(len(history), 1)
+        self.assertEqual(
+            sum(event.event_type == "prompt_rendered" for event in events), 1
+        )
+        self.assertEqual(sum(event.event_type == "user_message" for event in events), 1)
 
     def test_runtime_sends_composed_prompt_and_persists_exact_versions(self) -> None:
         async def run() -> tuple[str, AgentSession, list]:
