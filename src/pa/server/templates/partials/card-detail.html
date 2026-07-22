@@ -94,7 +94,11 @@
     </ul>
     {% endif %}
     {% if agent_enabled | default(true) %}
-    <div class="card-agent-pane" data-card-agent-pane hidden>
+    <div id="card-agent-pane-{{ card.id }}"
+         class="card-agent-pane"
+         data-card-agent-pane
+         hx-preserve="true"
+         hidden>
       {% with
           session_id=current_session.id if current_session else '',
           create_label='card:' ~ card.id,

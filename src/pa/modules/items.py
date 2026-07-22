@@ -16,7 +16,6 @@ from pa.domain.models import (
     CardCreate,
     CardKind,
     CardLane,
-    CardSummarySource,
     CardUpdate,
     Item,
     ItemCreate,
@@ -25,6 +24,7 @@ from pa.domain.models import (
     ItemUpdate,
 )
 from pa.domain.store import get_store
+from pa.domain.session_selection import preferred_sessions_by_card
 
 router = APIRouter()
 ui_router = APIRouter()
@@ -96,12 +96,16 @@ def _card_detail_context(request: Request, card) -> dict:
 
 
 def _cards_context(
-    request: Request, *, kind: CardKind | None = None, lane: CardLane | None = None
+    request: Request,
+    *,
+    kind: CardKind | None = None,
+    lane: CardLane | None = None,
+    apply_filters: bool = True,
 ) -> dict:
     store = get_store()
     realm = _active_realm(request)
-    project_id = _active_project(request)
-    if kind is None and request.query_params.get("kind"):
+    project_id = _active_project(request) if apply_filters else None
+    if apply_filters and kind is None and request.query_params.get("kind"):
         try:
             kind = CardKind(request.query_params["kind"])
         except ValueError:
@@ -112,12 +116,12 @@ def _cards_context(
         lane=lane,
         project_id=project_id,
     )
-    query = request.query_params.get("q", "").strip()
-    owner = request.query_params.get("owner", "").strip()
-    instance = request.query_params.get("instance", "").strip()
-    blocked = request.query_params.get("blocked", "").strip()
-    tag = request.query_params.get("tag", "").strip()
-    updated = request.query_params.get("updated", "").strip()
+    query = request.query_params.get("q", "").strip() if apply_filters else ""
+    owner = request.query_params.get("owner", "").strip() if apply_filters else ""
+    instance = request.query_params.get("instance", "").strip() if apply_filters else ""
+    blocked = request.query_params.get("blocked", "").strip() if apply_filters else ""
+    tag = request.query_params.get("tag", "").strip() if apply_filters else ""
+    updated = request.query_params.get("updated", "").strip() if apply_filters else ""
     all_cards = store.list_cards(realm_id=realm)
     if query:
         needle = query.casefold()
@@ -144,11 +148,7 @@ def _cards_context(
             updated = ""
     projects = store.list_projects(realm_id=realm)
     project_by_id = {project.id: project for project in projects}
-    sessions = store.list_sessions()
-    card_sessions = {}
-    for session in sessions:
-        if session.card_id and session.card_id not in card_sessions:
-            card_sessions[session.card_id] = session
+    card_sessions = preferred_sessions_by_card(store.list_sessions())
     filter_params = {
         "realm": realm,
         "project": project_id or "",
@@ -205,7 +205,7 @@ def _items_context(request: Request, *, kind: ItemKind | None = None) -> dict:
 
 def _home_context(request: Request) -> dict:
     realm = _active_realm(request)
-    context = _cards_context(request)
+    context = _cards_context(request, apply_filters=False)
     cards = context["cards"]
     ctx = request.app.state.ctx
     agent = ctx.services.get("instance_agent")
@@ -434,20 +434,28 @@ def card_detail_update(
 ) -> HTMLResponse:
     realm_id = realm or _active_realm(request)
     settings = request.app.state.ctx.settings
-    card = get_store().update_card(
+    store = get_store()
+    existing = store.get_card(card_id, realm_id=realm_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Card not found")
+    changes = {}
+    if title != existing.title:
+        changes["title"] = title
+    if body != existing.body:
+        changes["body"] = body
+    if summary.strip() != existing.summary:
+        changes["summary"] = summary
+    if lane != existing.lane:
+        changes["lane"] = lane
+    card = store.update_card(
         card_id,
-        CardUpdate(
-            title=title,
-            body=body,
-            summary=summary,
-            summary_source=CardSummarySource.MANUAL,
-            summary_stale=False,
-            lane=lane,
-        ),
+        CardUpdate(**changes),
         realm_id=realm_id,
         principal_id=get_principal_id(request),
         instance_id=settings.instance_id,
     )
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
     return _templates(request).TemplateResponse(
         request, "partials/card-detail.html", _card_detail_context(request, card)
     )

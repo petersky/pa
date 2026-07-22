@@ -16,6 +16,7 @@ from pa.domain.models import (
     RepositoryUpdate,
 )
 from pa.domain.store import get_store
+from pa.domain.session_selection import preferred_sessions_by_card
 
 router = APIRouter()
 ui_router = APIRouter()
@@ -36,10 +37,7 @@ def _projects_context(request: Request) -> dict:
     cards = (
         store.list_cards_for_project(project_id, realm_id=realm) if project_id else []
     )
-    card_sessions = {}
-    for session in store.list_sessions():
-        if session.card_id and session.card_id not in card_sessions:
-            card_sessions[session.card_id] = session
+    card_sessions = preferred_sessions_by_card(store.list_sessions())
     return {
         "projects": store.list_projects(realm_id=realm),
         "repositories": store.list_repositories(realm),

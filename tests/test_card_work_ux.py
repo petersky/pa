@@ -6,7 +6,7 @@ import re
 import sqlite3
 import tempfile
 import unittest
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -16,10 +16,13 @@ from pa.core.kernel import Kernel
 from pa.domain.card_summaries import MAX_CARD_SUMMARY_LENGTH, fallback_card_summary
 from pa.domain.models import (
     CardCreate,
+    CardLane,
     CardSummarySource,
     CardUpdate,
+    AgentSession,
 )
 from pa.domain.projection import CardProjection
+from pa.domain.session_selection import preferred_sessions_by_card
 from pa.domain.store import reset_store
 from pa.instance.agent_session import reset_instance_agent
 
@@ -126,6 +129,25 @@ class CardSummaryTests(unittest.TestCase):
             self.assertFalse(card.summary_stale)
             self.assertEqual(card.summary_updated_at.isoformat(), now)
 
+    def test_open_card_session_wins_over_a_newer_closed_session(self) -> None:
+        now = datetime.now(UTC)
+        closed = AgentSession(
+            agent_name="codex",
+            card_id="card-1",
+            status="closed",
+            updated_at=now,
+        )
+        open_session = AgentSession(
+            agent_name="codex",
+            card_id="card-1",
+            status="working",
+            updated_at=now - timedelta(minutes=5),
+        )
+
+        selected = preferred_sessions_by_card([closed, open_session])
+
+        self.assertEqual(selected["card-1"].id, open_session.id)
+
 
 class CoreWorkUiRouteTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -182,6 +204,65 @@ class CoreWorkUiRouteTests(unittest.TestCase):
                 detail.text.index("card-edit-surface"),
             )
 
+    def test_home_ignores_work_board_query_filters(self) -> None:
+        with TestClient(self.app) as client:
+            card = self.app.state.ctx.store.create_card(
+                CardCreate(
+                    title="Always visible command-center work",
+                    summary="Active regardless of stale board filters.",
+                    lane=CardLane.ACTIVE,
+                )
+            )
+
+            response = client.get("/?q=no-match&blocked=blocked&kind=concern")
+
+            self.assertEqual(response.status_code, 200)
+            self.assertIn(card.title, response.text)
+
+    def test_detail_save_preserves_summary_semantics_and_missing_cards_are_404(
+        self,
+    ) -> None:
+        with TestClient(self.app) as client:
+            card = self.app.state.ctx.store.create_card(
+                CardCreate(
+                    title="Curated card",
+                    body="Original details.",
+                    summary="A curated summary.",
+                    summary_source=CardSummarySource.MANUAL,
+                )
+            )
+            page = client.get("/")
+            token_match = re.search(
+                r'<meta name="csrf-token" content="([^"]+)"', page.text
+            )
+            assert token_match is not None
+            form = {
+                "title": card.title,
+                "body": "Changed source details.",
+                "summary": card.summary,
+                "lane": card.lane.value,
+            }
+
+            saved = client.post(
+                f"/partials/cards/{card.id}",
+                headers={"X-CSRF-Token": token_match.group(1)},
+                data=form,
+            )
+
+            self.assertEqual(saved.status_code, 200, saved.text)
+            self.assertIn("Summary needs review", saved.text)
+            updated = self.app.state.ctx.store.get_card(card.id)
+            assert updated is not None
+            self.assertEqual(updated.summary_source, CardSummarySource.MANUAL)
+            self.assertTrue(updated.summary_stale)
+
+            missing = client.post(
+                f"/partials/cards/{card.id}?realm=elsewhere",
+                headers={"X-CSRF-Token": token_match.group(1)},
+                data=form,
+            )
+            self.assertEqual(missing.status_code, 404)
+
     def test_work_filters_and_mobile_lane_controls_are_labeled(self) -> None:
         with TestClient(self.app) as client:
             response = client.get("/work?q=ship&blocked=blocked&updated=7")
@@ -226,6 +307,7 @@ class CoreWorkUiRouteTests(unittest.TestCase):
 
         self.assertIn("data-card-agent-start", detail)
         self.assertIn("auto_start=false", detail)
+        self.assertIn('hx-preserve="true"', detail)
         self.assertIn("Selecting a card never starts work", detail)
         self.assertIn("history.pushState({ paCard", script)
         self.assertIn("Could not move card. Its original lane was restored.", script)
