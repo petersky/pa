@@ -423,6 +423,7 @@ class AgentConnection:
         self.session_cwd: str | None = None
         self._resume_supported: bool = False
         self._load_supported: bool = False
+        self._list_supported: bool = False
         self._disconnect_lock = asyncio.Lock()
         self._init_response: Any = None
         self.models: dict[str, Any] | None = None
@@ -533,6 +534,7 @@ class AgentConnection:
         )
         self._resume_supported = _agent_supports_resume(self._init_response)
         self._load_supported = _agent_supports_load(self._init_response)
+        self._list_supported = _agent_supports_session_list(self._init_response)
         if spec.session_load_supported is False:
             self._load_supported = False
         elif spec.session_load_supported is True:
@@ -544,6 +546,7 @@ class AgentConnection:
                 "result": {
                     "resume_supported": self._resume_supported,
                     "load_supported": self._load_supported,
+                    "list_supported": self._list_supported,
                     "protocol_version": PROTOCOL_VERSION,
                 },
             },
@@ -563,35 +566,52 @@ class AgentConnection:
             else None
         )
         if resume_external_id and restore_method:
-            try:
-                restore = (
-                    self._conn.resume_session
-                    if restore_method == "session/resume"
-                    else self._conn.load_session
-                )
-                restore_resp = await restore(
-                    cwd=session_cwd,
+            load_cwd = session_cwd
+            skip_restore = False
+            if restore_method == "session/load" and self._list_supported:
+                resolved = await _resolve_session_load_target(
+                    self._conn,
                     session_id=resume_external_id,
-                    mcp_servers=mcp,
+                    cwd=session_cwd,
                 )
-                session_meta = extract_models_modes_config(restore_resp)
-                restored = True
-                self._wire_log(
-                    "out",
-                    {
-                        "method": restore_method,
-                        "params": {"session_id": resume_external_id, "cwd": session_cwd},
-                    },
-                )
-            except Exception as exc:
-                # Cursor and some agents advertise load/resume but reject with
-                # Invalid params; fall back without ERROR-level stack noise.
-                logger.warning(
-                    "ACP %s failed (%s); creating new session",
-                    restore_method,
-                    exc,
-                )
-                restored = False
+                if resolved is None:
+                    skip_restore = True
+                else:
+                    resume_external_id, load_cwd = resolved
+                    self.session_cwd = load_cwd
+            if not skip_restore:
+                try:
+                    restore = (
+                        self._conn.resume_session
+                        if restore_method == "session/resume"
+                        else self._conn.load_session
+                    )
+                    self._wire_log(
+                        "out",
+                        {
+                            "method": restore_method,
+                            "params": {
+                                "session_id": resume_external_id,
+                                "cwd": load_cwd,
+                            },
+                        },
+                    )
+                    restore_resp = await restore(
+                        cwd=load_cwd,
+                        session_id=resume_external_id,
+                        mcp_servers=mcp,
+                    )
+                    session_meta = extract_models_modes_config(restore_resp)
+                    restored = True
+                except Exception as exc:
+                    # Cursor wraps unknown session ids as Invalid params with
+                    # data.message "Session … not found"; fall back quietly.
+                    logger.warning(
+                        "ACP %s failed (%s); creating new session",
+                        restore_method,
+                        _format_acp_error(exc),
+                    )
+                    restored = False
 
         if restored:
             if existing_session:
@@ -632,7 +652,8 @@ class AgentConnection:
                 )
 
         assert self.session is not None
-        self.session.cwd = session_cwd
+        # Prefer the cwd actually used for resume/load (may come from session/list).
+        self.session.cwd = self.session_cwd or session_cwd
         if title is not None:
             self.session.title = title
         if label is not None:
@@ -878,3 +899,96 @@ def _agent_supports_load(init_response: Any) -> bool:
         if load is None:
             load = caps.get("load_session")
     return bool(load)
+
+
+def _format_acp_error(exc: BaseException) -> str:
+    data = getattr(exc, "data", None)
+    if data is None:
+        return str(exc)
+    return f"{exc} ({data})"
+
+
+def _agent_supports_session_list(init_response: Any) -> bool:
+    caps = getattr(init_response, "agent_capabilities", None) or getattr(
+        init_response, "agentCapabilities", None
+    )
+    if caps is None and isinstance(init_response, dict):
+        caps = init_response.get("agentCapabilities") or init_response.get(
+            "agent_capabilities"
+        )
+    if caps is None:
+        return False
+    session_caps = getattr(caps, "session_capabilities", None) or getattr(
+        caps, "sessionCapabilities", None
+    )
+    if session_caps is None and isinstance(caps, dict):
+        session_caps = caps.get("sessionCapabilities") or caps.get(
+            "session_capabilities"
+        )
+    if session_caps is None:
+        return False
+    listed = getattr(session_caps, "list", None)
+    if listed is None and isinstance(session_caps, dict):
+        listed = session_caps.get("list")
+    return listed is not None
+
+
+def _session_info_id(info: Any) -> str | None:
+    if info is None:
+        return None
+    sid = getattr(info, "session_id", None) or getattr(info, "sessionId", None)
+    if sid is None and isinstance(info, dict):
+        sid = info.get("sessionId") or info.get("session_id")
+    return str(sid) if sid else None
+
+
+def _session_info_cwd(info: Any) -> str | None:
+    if info is None:
+        return None
+    listed_cwd = getattr(info, "cwd", None)
+    if listed_cwd is None and isinstance(info, dict):
+        listed_cwd = info.get("cwd")
+    return str(listed_cwd) if listed_cwd else None
+
+
+async def _resolve_session_load_target(
+    conn: Any,
+    *,
+    session_id: str,
+    cwd: str,
+) -> tuple[str, str] | None:
+    """Resolve session/load params, or None when the session should not be loaded.
+
+    Cursor returns JSON-RPC Invalid params with ``Session "<id>" not found`` for
+    unknown / not-yet-persisted ids. When ``session/list`` is available, only load
+    ids that appear there and prefer the listed ``cwd``.
+    """
+    list_sessions = getattr(conn, "list_sessions", None)
+    if list_sessions is None:
+        return session_id, cwd
+    try:
+        listed = await list_sessions()
+    except Exception as exc:
+        logger.debug(
+            "ACP session/list failed (%s); attempting load with cwd=%s",
+            _format_acp_error(exc),
+            cwd,
+        )
+        return session_id, cwd
+
+    sessions = getattr(listed, "sessions", None)
+    if sessions is None and isinstance(listed, dict):
+        sessions = listed.get("sessions")
+    if sessions is None:
+        return session_id, cwd
+
+    for info in sessions:
+        if _session_info_id(info) != session_id:
+            continue
+        return session_id, _session_info_cwd(info) or cwd
+
+    logger.info(
+        "ACP session %s not present in session/list; creating new session",
+        session_id,
+    )
+    return None

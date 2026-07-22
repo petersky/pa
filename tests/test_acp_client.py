@@ -13,6 +13,8 @@ from pa.acp.client import (
     AgentConnection,
     PAClient,
     _agent_supports_load,
+    _agent_supports_session_list,
+    _resolve_session_load_target,
     _tolerated_client_method,
 )
 from pa.acp.providers.base import AgentProviderSpec
@@ -109,6 +111,24 @@ class AgentSessionRestoreTests(unittest.TestCase):
                 )
             )
         )
+        self.assertTrue(
+            _agent_supports_session_list(
+                {
+                    "agentCapabilities": {
+                        "sessionCapabilities": {"list": {}},
+                    }
+                }
+            )
+        )
+        self.assertFalse(
+            _agent_supports_session_list(
+                {
+                    "agentCapabilities": {
+                        "sessionCapabilities": {"resume": None},
+                    }
+                }
+            )
+        )
 
     def test_loads_existing_session_when_resume_is_not_supported(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -169,7 +189,81 @@ class AgentSessionRestoreTests(unittest.TestCase):
             self.assertTrue(capabilities.fs.write_text_file)
             self.assertEqual(existing.status, "idle")
 
-    def test_cursor_skips_session_load_despite_advertised_capability(self) -> None:
+    def test_loads_with_cwd_from_session_list(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = MagicMock()
+            listed_cwd = str(Path(tmp) / "project")
+            acp = MagicMock()
+            acp.initialize = AsyncMock(
+                return_value={
+                    "agentCapabilities": {
+                        "loadSession": True,
+                        "sessionCapabilities": {
+                            "resume": None,
+                            "list": {},
+                        },
+                    }
+                }
+            )
+            acp.list_sessions = AsyncMock(
+                return_value=SimpleNamespace(
+                    sessions=[
+                        SimpleNamespace(
+                            session_id="cursor-session",
+                            cwd=listed_cwd,
+                        )
+                    ]
+                )
+            )
+            acp.load_session = AsyncMock(return_value=SimpleNamespace())
+            acp.resume_session = AsyncMock()
+            acp.new_session = AsyncMock()
+            context = MagicMock()
+            context.__aenter__ = AsyncMock(return_value=(acp, MagicMock()))
+            context.__aexit__ = AsyncMock()
+            existing = AgentSession(
+                id="pa-session",
+                agent_name="cursor",
+                external_session_id="cursor-session",
+                status="disconnected",
+                cwd=str(Path(tmp)),
+            )
+            connection = AgentConnection(
+                Settings(data_dir=Path(tmp)),
+                store,
+                provider_spec=AgentProviderSpec(
+                    id="cursor",
+                    display_name="Cursor",
+                    command="agent",
+                ),
+            )
+
+            async def run() -> None:
+                with (
+                    patch("pa.acp.client.spawn_agent", return_value=context),
+                    patch("pa.acp.client.pa_mcp_servers", return_value=[]),
+                ):
+                    restored = await connection.connect(
+                        resume_external_id="cursor-session",
+                        cwd=str(Path(tmp)),
+                        existing_session=existing,
+                    )
+                self.assertIs(restored, existing)
+
+            asyncio.run(run())
+
+            acp.list_sessions.assert_awaited_once()
+            acp.load_session.assert_awaited_once_with(
+                cwd=listed_cwd,
+                session_id="cursor-session",
+                mcp_servers=[],
+            )
+            acp.new_session.assert_not_awaited()
+            self.assertEqual(existing.status, "idle")
+            self.assertEqual(connection.session_cwd, listed_cwd)
+            self.assertEqual(existing.cwd, listed_cwd)
+
+    def test_skips_load_when_session_missing_from_list(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = MagicMock()
             acp = MagicMock()
@@ -177,9 +271,22 @@ class AgentSessionRestoreTests(unittest.TestCase):
                 return_value={
                     "agentCapabilities": {
                         "loadSession": True,
-                        "sessionCapabilities": {"resume": None},
+                        "sessionCapabilities": {
+                            "resume": None,
+                            "list": {},
+                        },
                     }
                 }
+            )
+            acp.list_sessions = AsyncMock(
+                return_value=SimpleNamespace(
+                    sessions=[
+                        SimpleNamespace(
+                            session_id="other-session",
+                            cwd=str(Path(tmp)),
+                        )
+                    ]
+                )
             )
             acp.load_session = AsyncMock()
             acp.resume_session = AsyncMock()
@@ -192,7 +299,7 @@ class AgentSessionRestoreTests(unittest.TestCase):
             existing = AgentSession(
                 id="pa-session",
                 agent_name="cursor",
-                external_session_id="cursor-session",
+                external_session_id="stale-session",
                 status="disconnected",
             )
             connection = AgentConnection(
@@ -202,7 +309,6 @@ class AgentSessionRestoreTests(unittest.TestCase):
                     id="cursor",
                     display_name="Cursor",
                     command="agent",
-                    session_load_supported=False,
                 ),
             )
 
@@ -212,18 +318,48 @@ class AgentSessionRestoreTests(unittest.TestCase):
                     patch("pa.acp.client.pa_mcp_servers", return_value=[]),
                 ):
                     restored = await connection.connect(
-                        resume_external_id="cursor-session",
+                        resume_external_id="stale-session",
                         existing_session=existing,
                     )
                 self.assertIs(restored, existing)
 
             asyncio.run(run())
 
+            acp.list_sessions.assert_awaited_once()
             acp.load_session.assert_not_awaited()
-            acp.resume_session.assert_not_awaited()
             acp.new_session.assert_awaited_once()
             self.assertEqual(existing.external_session_id, "new-cursor-session")
             self.assertEqual(existing.status, "connected")
+
+    def test_resolve_session_load_target_helpers(self) -> None:
+        async def run() -> None:
+            listed = SimpleNamespace(
+                sessions=[
+                    {"sessionId": "abc", "cwd": "/work"},
+                    SimpleNamespace(session_id="xyz", cwd="/other"),
+                ]
+            )
+            conn = SimpleNamespace(list_sessions=AsyncMock(return_value=listed))
+            self.assertEqual(
+                await _resolve_session_load_target(
+                    conn, session_id="abc", cwd="/fallback"
+                ),
+                ("abc", "/work"),
+            )
+            self.assertIsNone(
+                await _resolve_session_load_target(
+                    conn, session_id="missing", cwd="/fallback"
+                )
+            )
+            # Attribute missing entirely → try load with the provided cwd.
+            self.assertEqual(
+                await _resolve_session_load_target(
+                    SimpleNamespace(), session_id="abc", cwd="/fallback"
+                ),
+                ("abc", "/fallback"),
+            )
+
+        asyncio.run(run())
 
 
 if __name__ == "__main__":

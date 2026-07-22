@@ -35,7 +35,7 @@ PA resolves `agent` via PATH / service PATH. Install/update: Cursor CLI itself (
 ## Resume / quiesce
 
 - PA quiesces sessions and attempts ACP resume when the agent advertises resume support.
-- **Limitation (upstream):** Cursor advertises `loadSession: true` but `session/load` returns `Invalid params` / session-not-found. PA’s Cursor provider sets `session_load_supported=False` and uses `session/new` after restart instead of attempting load.
+- Cursor advertises `loadSession: true` and supports `session/list`. On reconnect PA resolves the external id via `session/list`, loads with that session’s persisted `cwd`, and falls back to `session/new` when the id is absent (Cursor returns `Invalid params` / “Session not found” for unknown ids, including brand-new unprompted sessions).
 
 ## Client methods
 
