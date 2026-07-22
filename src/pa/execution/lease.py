@@ -45,6 +45,7 @@ class LeaseManager:
                 "holder_instance": holder_instance,
                 "holder_principal": holder_principal,
                 "expires_at": expires.isoformat(),
+                "updated_at": datetime.now(UTC).isoformat(),
             },
         )
         self.store.commit_event(event)
@@ -72,7 +73,7 @@ class LeaseManager:
             card_id=card_id,
             author_principal=principal_id,
             author_instance=self.instance_id,
-            payload={},
+            payload={"updated_at": datetime.now(UTC).isoformat()},
         )
         self.store.commit_event(event)
         return True
