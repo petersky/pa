@@ -7,7 +7,14 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from pa.acp.client import AgentConnection, PAClient, _agent_supports_load
+from acp.exceptions import RequestError
+
+from pa.acp.client import (
+    AgentConnection,
+    PAClient,
+    _agent_supports_load,
+    _tolerated_client_method,
+)
 from pa.acp.providers.base import AgentProviderSpec
 from pa.config import Settings
 from pa.domain.models import AgentSession
@@ -48,6 +55,47 @@ class PAClientFileSystemTests(unittest.TestCase):
         asyncio.run(run())
         self.assertEqual(wire.call_count, 2)
 
+    def test_tolerated_client_methods_include_cursor_and_elicitation(self) -> None:
+        self.assertTrue(_tolerated_client_method("cursor/update_todos"))
+        self.assertTrue(_tolerated_client_method("_cursor/update_todos"))
+        self.assertTrue(_tolerated_client_method("elicitation/create"))
+        self.assertFalse(_tolerated_client_method("session/update"))
+        self.assertFalse(_tolerated_client_method("fs/read_text_file"))
+
+    def test_on_connect_acknowledges_cursor_vendor_methods(self) -> None:
+        wire = MagicMock()
+        client = PAClient(MagicMock(), wire_logger=wire)
+        original = AsyncMock(side_effect=RequestError.method_not_found("cursor/update_todos"))
+        inner = SimpleNamespace(_handler=original)
+        conn = SimpleNamespace(_conn=inner)
+
+        client.on_connect(conn)
+
+        async def run() -> None:
+            result = await inner._handler(
+                "cursor/update_todos",
+                {"todos": [{"id": "1", "content": "x", "status": "pending"}]},
+                False,
+            )
+            self.assertEqual(result, {})
+
+        asyncio.run(run())
+        original.assert_awaited_once()
+        self.assertEqual(wire.call_args.args[0], "in")
+        self.assertEqual(wire.call_args.args[1]["method"], "_cursor/update_todos")
+
+    def test_on_connect_still_raises_unknown_methods(self) -> None:
+        client = PAClient(MagicMock())
+        original = AsyncMock(side_effect=RequestError.method_not_found("mystery/call"))
+        inner = SimpleNamespace(_handler=original)
+        client.on_connect(SimpleNamespace(_conn=inner))
+
+        async def run() -> None:
+            with self.assertRaises(RequestError):
+                await inner._handler("mystery/call", {}, False)
+
+        asyncio.run(run())
+
 
 class AgentSessionRestoreTests(unittest.TestCase):
     def test_load_capability_is_detected_in_dict_and_object_responses(self) -> None:
@@ -82,6 +130,67 @@ class AgentSessionRestoreTests(unittest.TestCase):
             context.__aexit__ = AsyncMock()
             existing = AgentSession(
                 id="pa-session",
+                agent_name="generic",
+                external_session_id="agent-session",
+                status="disconnected",
+            )
+            connection = AgentConnection(
+                Settings(data_dir=Path(tmp)),
+                store,
+                provider_spec=AgentProviderSpec(
+                    id="generic",
+                    display_name="Generic",
+                    command="agent",
+                ),
+            )
+
+            async def run() -> None:
+                with (
+                    patch("pa.acp.client.spawn_agent", return_value=context),
+                    patch("pa.acp.client.pa_mcp_servers", return_value=[]),
+                ):
+                    restored = await connection.connect(
+                        resume_external_id="agent-session",
+                        existing_session=existing,
+                    )
+                self.assertIs(restored, existing)
+
+            asyncio.run(run())
+
+            acp.load_session.assert_awaited_once_with(
+                cwd=str(Path(tmp)),
+                session_id="agent-session",
+                mcp_servers=[],
+            )
+            acp.resume_session.assert_not_awaited()
+            acp.new_session.assert_not_awaited()
+            capabilities = acp.initialize.await_args.kwargs["client_capabilities"]
+            self.assertTrue(capabilities.fs.read_text_file)
+            self.assertTrue(capabilities.fs.write_text_file)
+            self.assertEqual(existing.status, "idle")
+
+    def test_cursor_skips_session_load_despite_advertised_capability(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = MagicMock()
+            acp = MagicMock()
+            acp.initialize = AsyncMock(
+                return_value={
+                    "agentCapabilities": {
+                        "loadSession": True,
+                        "sessionCapabilities": {"resume": None},
+                    }
+                }
+            )
+            acp.load_session = AsyncMock()
+            acp.resume_session = AsyncMock()
+            acp.new_session = AsyncMock(
+                return_value=SimpleNamespace(session_id="new-cursor-session")
+            )
+            context = MagicMock()
+            context.__aenter__ = AsyncMock(return_value=(acp, MagicMock()))
+            context.__aexit__ = AsyncMock()
+            existing = AgentSession(
+                id="pa-session",
                 agent_name="cursor",
                 external_session_id="cursor-session",
                 status="disconnected",
@@ -93,6 +202,7 @@ class AgentSessionRestoreTests(unittest.TestCase):
                     id="cursor",
                     display_name="Cursor",
                     command="agent",
+                    session_load_supported=False,
                 ),
             )
 
@@ -109,17 +219,11 @@ class AgentSessionRestoreTests(unittest.TestCase):
 
             asyncio.run(run())
 
-            acp.load_session.assert_awaited_once_with(
-                cwd=str(Path(tmp)),
-                session_id="cursor-session",
-                mcp_servers=[],
-            )
+            acp.load_session.assert_not_awaited()
             acp.resume_session.assert_not_awaited()
-            acp.new_session.assert_not_awaited()
-            capabilities = acp.initialize.await_args.kwargs["client_capabilities"]
-            self.assertTrue(capabilities.fs.read_text_file)
-            self.assertTrue(capabilities.fs.write_text_file)
-            self.assertEqual(existing.status, "idle")
+            acp.new_session.assert_awaited_once()
+            self.assertEqual(existing.external_session_id, "new-cursor-session")
+            self.assertEqual(existing.status, "connected")
 
 
 if __name__ == "__main__":

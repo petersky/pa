@@ -10,6 +10,7 @@ from typing import Any, Awaitable, Callable
 from uuid import uuid4
 
 from acp import PROTOCOL_VERSION, image_block, text_block
+from acp.exceptions import RequestError
 from acp.interfaces import Client
 from acp.schema import (
     AllowedOutcome,
@@ -38,6 +39,17 @@ logger = logging.getLogger(__name__)
 UpdateHandler = Callable[[str, Any], Awaitable[None] | None]
 PermissionHandler = Callable[[str, dict[str, Any]], Awaitable[RequestPermissionResponse | dict[str, Any]]]
 WireLogger = Callable[[str, dict[str, Any]], None]
+
+# Cursor ACP sends vendor client methods (e.g. cursor/update_todos) without the
+# ACP `_` extension prefix. Treat those as optional acknowledgements.
+_TOLERATED_CLIENT_METHOD_PREFIXES = ("cursor/", "elicitation/")
+
+
+def _tolerated_client_method(method: str) -> bool:
+    if not isinstance(method, str) or not method:
+        return False
+    name = method[1:] if method.startswith("_") else method
+    return name.startswith(_TOLERATED_CLIENT_METHOD_PREFIXES)
 
 
 def permission_selected(option_id: str) -> RequestPermissionResponse:
@@ -195,6 +207,33 @@ class PAClient(Client):
                 self.wire_logger(direction, payload)
             except Exception:
                 logger.exception("Failed to write ACP wire log")
+
+    def on_connect(self, conn: Any) -> None:
+        """Acknowledge Cursor vendor methods that arrive without the `_` prefix.
+
+        The stock ACP client router only routes `_…` to ``ext_method``. Cursor
+        still emits ``cursor/update_todos`` (and related) as plain methods, which
+        otherwise surface as noisy ``Method not found`` background-task errors.
+        """
+        inner = getattr(conn, "_conn", None)
+        original = getattr(inner, "_handler", None)
+        if inner is None or original is None:
+            return
+
+        async def handler(method: str, params: Any, is_notification: bool) -> Any:
+            try:
+                return await original(method, params, is_notification)
+            except RequestError as exc:
+                if exc.code != -32601 or not _tolerated_client_method(method):
+                    raise
+                name = method[1:] if method.startswith("_") else method
+                payload = params if isinstance(params, dict) else {}
+                if is_notification:
+                    await self.ext_notification(name, payload)
+                    return None
+                return await self.ext_method(name, payload)
+
+        inner._handler = handler
 
     async def request_permission(
         self, options, session_id, tool_call, **kwargs: Any
@@ -494,6 +533,10 @@ class AgentConnection:
         )
         self._resume_supported = _agent_supports_resume(self._init_response)
         self._load_supported = _agent_supports_load(self._init_response)
+        if spec.session_load_supported is False:
+            self._load_supported = False
+        elif spec.session_load_supported is True:
+            self._load_supported = True
         self._wire_log(
             "out",
             {
@@ -540,8 +583,14 @@ class AgentConnection:
                         "params": {"session_id": resume_external_id, "cwd": session_cwd},
                     },
                 )
-            except Exception:
-                logger.exception("ACP %s failed; creating new session", restore_method)
+            except Exception as exc:
+                # Cursor and some agents advertise load/resume but reject with
+                # Invalid params; fall back without ERROR-level stack noise.
+                logger.warning(
+                    "ACP %s failed (%s); creating new session",
+                    restore_method,
+                    exc,
+                )
                 restored = False
 
         if restored:
