@@ -101,6 +101,193 @@
   var remoteAuditGeneration = 0;
   var remoteAuditSessionId = "";
   var remoteAuditEvents = [];
+  var syncPollTimer = null;
+  var syncAllConflicts = [];
+  var syncCurrentConflicts = [];
+  var syncSelectedRemoteHead = "";
+
+  function syncRealm() {
+    var root = $("#pa-fleet-root");
+    if (!root) return "default";
+    try {
+      return new URL(window.location.href).searchParams.get("realm") ||
+        root.dataset.primaryRealm || "default";
+    } catch (e) {
+      return root.dataset.primaryRealm || "default";
+    }
+  }
+
+  function shortHead(head) {
+    return head ? String(head).slice(0, 12) : "—";
+  }
+
+  function displayValue(value) {
+    if (value === undefined) return "not set";
+    if (value === null) return "null";
+    if (typeof value === "string") return value;
+    try { return JSON.stringify(value); } catch (e) { return String(value); }
+  }
+
+  function renderSyncState(state) {
+    var progress = $("#pa-sync-progress");
+    var tbody = $("#pa-sync-instances tbody");
+    var realm = $("#pa-sync-realm");
+    if (realm) realm.textContent = state.realm_id || syncRealm();
+    var labels = {
+      idle: "Waiting for the next automatic anti-entropy pass.",
+      checking: "Checking instance heads…",
+      exchanging: "Exchanging missing history objects…",
+      propagating: "Propagating the merged head to reachable instances…",
+      retrying: "A head changed during convergence; automatic retry is scheduled.",
+      converged: "Converged. Every reachable instance reports the same realm head.",
+      degraded: "Reachable instances are repaired; unavailable instances will retry automatically.",
+      conflict: "Convergence needs an operator decision for incompatible field edits.",
+    };
+    if (progress) {
+      progress.textContent = labels[state.phase] || (state.phase || "Checking…");
+      if (state.phase === "converged" && $("[data-remote-dispatch-retry]")) {
+        progress.innerHTML = escapeHtml(progress.textContent) +
+          ' <button type="button" class="primary small" data-sync-retry-dispatch>' +
+          "Return and retry dispatch</button>";
+      }
+    }
+    var instances = state.instances || [];
+    if (tbody) {
+      tbody.innerHTML = instances.length ? instances.map(function (item) {
+        var status = item.status || "unknown";
+        var badge = status === "reachable" ? "active" :
+          status === "conflict" ? "blocked" : "open";
+        return "<tr><td><strong>" + escapeHtml(item.name || item.instance_id) +
+          "</strong>" + (item.url ? '<br><span class="muted small">' +
+          escapeHtml(item.url) + "</span>" : "") + "</td><td><span class=\"status status-" +
+          badge + "\">" + escapeHtml(status) + "</span></td><td><code title=\"" +
+          escapeHtml(item.head || "") + "\">" + escapeHtml(shortHead(item.head)) +
+          "</code></td></tr>";
+      }).join("") : '<tr><td colspan="3" class="muted">No convergence pass has reported yet.</td></tr>';
+    }
+    renderSyncConflicts(state.conflicts || []);
+  }
+
+  function renderSyncConflicts(conflicts) {
+    var panel = $("#pa-sync-conflicts");
+    var fields = $("#pa-sync-resolution-fields");
+    syncAllConflicts = conflicts || [];
+    syncCurrentConflicts = [];
+    if (!panel || !fields) return;
+    panel.hidden = !syncAllConflicts.length;
+    if (!syncAllConflicts.length) {
+      fields.innerHTML = "";
+      return;
+    }
+    var remoteHeads = [];
+    syncAllConflicts.forEach(function (item) {
+      if (remoteHeads.indexOf(item.remote_head) === -1) remoteHeads.push(item.remote_head);
+    });
+    var remoteHead = remoteHeads.indexOf(syncSelectedRemoteHead) >= 0
+      ? syncSelectedRemoteHead : remoteHeads[0];
+    syncSelectedRemoteHead = remoteHead;
+    syncCurrentConflicts = syncAllConflicts.filter(function (item) {
+      return item.remote_head === remoteHead;
+    });
+    var peer = syncCurrentConflicts[0].peer || {};
+    var queue = '<p class="muted small">Resolving ' +
+      escapeHtml(peer.name || peer.instance_id || "peer") +
+      (remoteHeads.length > 1
+        ? ". Other divergent peer heads remain queued after this merge."
+        : ".") + "</p>";
+    if (remoteHeads.length > 1) {
+      queue += '<label>Peer history <select id="pa-sync-conflict-head">' +
+        remoteHeads.map(function (head) {
+          var item = syncAllConflicts.find(function (conflict) {
+            return conflict.remote_head === head;
+          }) || {};
+          var itemPeer = item.peer || {};
+          return '<option value="' + escapeHtml(head) + '"' +
+            (head === remoteHead ? " selected" : "") + ">" +
+            escapeHtml(itemPeer.name || itemPeer.instance_id || shortHead(head)) +
+            " · " + escapeHtml(shortHead(head)) + "</option>";
+        }).join("") + "</select></label>";
+    }
+    fields.innerHTML = queue + syncCurrentConflicts.map(function (item, index) {
+      var local = item.local || {};
+      var remote = item.remote || {};
+      var localLabel = (local.instance_name || local.instance_id || "local") +
+        ": " + displayValue(local.value);
+      var remoteLabel = (remote.instance_name || remote.instance_id ||
+        (item.peer && item.peer.name) || "peer") + ": " + displayValue(remote.value);
+      var title = item.entity + " " + item.id + " · " +
+        (item.field === "__terminal__" ? "delete/archive vs edit" : item.field);
+      return '<fieldset class="panel-inset" data-sync-conflict="' + index + '">' +
+        "<legend><strong>" + escapeHtml(title) + "</strong></legend>" +
+        '<label><input type="radio" name="sync-choice-' + index +
+        '" value="local" checked> ' + escapeHtml(localLabel) + "</label>" +
+        '<label><input type="radio" name="sync-choice-' + index +
+        '" value="remote"> ' + escapeHtml(remoteLabel) + "</label>" +
+        (item.field === "__terminal__" ? "" :
+          '<label><input type="radio" name="sync-choice-' + index +
+          '" value="custom"> Custom value <input data-sync-custom="' + index +
+          '" value="' + escapeHtml(displayValue(local.value)) + '"></label>') +
+        "</fieldset>";
+    }).join("");
+  }
+
+  function renderSyncAudit(data) {
+    var list = $("#pa-sync-audit");
+    if (!list) return;
+    var entries = (data && data.entries) || [];
+    list.innerHTML = entries.length ? entries.map(function (entry) {
+      return "<li><strong>" + escapeHtml(entry.mode || "automatic") +
+        " merge</strong> by " + escapeHtml(entry.author_principal || "sync:auto") +
+        ' <span class="muted">' + escapeHtml(entry.timestamp || "") +
+        " · <code>" + escapeHtml(shortHead(entry.head)) + "</code> · parents " +
+        (entry.parents || []).map(shortHead).map(escapeHtml).join(", ") +
+        "</span></li>";
+    }).join("") : '<li class="muted">No merge decisions recorded yet.</li>';
+  }
+
+  async function loadSyncStatus(startIfIdle) {
+    if (!$("#pa-sync-instances")) return;
+    var realm = syncRealm();
+    var state = await api("/api/sync/convergence?realm=" + encodeURIComponent(realm));
+    renderSyncState(state);
+    var audit = await api("/api/sync/audit?realm=" + encodeURIComponent(realm));
+    renderSyncAudit(audit);
+    if (startIfIdle && (!state.instances || !state.instances.length)) {
+      await startSyncConvergence();
+    }
+    return state;
+  }
+
+  async function startSyncConvergence() {
+    var realm = syncRealm();
+    var state = await api("/api/sync/converge", {
+      method: "POST", body: { realm_id: realm }
+    });
+    renderSyncState(state);
+    clearTimeout(syncPollTimer);
+    syncPollTimer = setTimeout(pollSyncConvergence, 350);
+  }
+
+  async function pollSyncConvergence() {
+    try {
+      var state = await loadSyncStatus(false);
+      if (state && state.running) {
+        syncPollTimer = setTimeout(pollSyncConvergence, 600);
+      }
+    } catch (err) {
+      var progress = $("#pa-sync-progress");
+      if (progress) progress.textContent = err.message;
+    }
+  }
+
+  function maybeLoadSyncStatus() {
+    if ($("#pa-sync-instances")) {
+      loadSyncStatus(true).catch(function (err) {
+        var progress = $("#pa-sync-progress");
+        if (progress) progress.textContent = err.message;
+      });
+    }
+  }
 
   function remoteApiBase(instanceId) {
     return "/api/fleet/instances/" + encodeURIComponent(instanceId) + "/agent";
@@ -776,6 +963,7 @@
   document.addEventListener("DOMContentLoaded", function () {
     maybeLoadLiveStatus();
     maybeLoadRemoteOperations();
+    maybeLoadSyncStatus();
   });
   document.body.addEventListener("htmx:afterSwap", function (evt) {
     var target = evt.target;
@@ -787,6 +975,7 @@
     ) {
       maybeLoadLiveStatus();
       maybeLoadRemoteOperations();
+      maybeLoadSyncStatus();
     }
   });
   document.body.addEventListener("htmx:beforeSwap", function (evt) {
@@ -801,6 +990,11 @@
   });
 
   document.addEventListener("change", function (e) {
+    if (e.target && e.target.id === "pa-sync-conflict-head") {
+      syncSelectedRemoteHead = e.target.value || "";
+      renderSyncConflicts(syncAllConflicts);
+      return;
+    }
     if (!e.target || e.target.id !== "pa-remote-instance") return;
     remoteInstanceId = e.target.value || "";
     remoteAuditGeneration += 1;
@@ -930,6 +1124,52 @@
     if (e.target.closest("#pa-remote-refresh")) {
       e.preventDefault();
       loadRemoteOperations();
+      return;
+    }
+
+    if (e.target.closest("#pa-sync-refresh")) {
+      e.preventDefault();
+      startSyncConvergence().catch(function (err) {
+        var progress = $("#pa-sync-progress");
+        if (progress) progress.textContent = err.message;
+      });
+      return;
+    }
+
+    if (e.target.closest("#pa-sync-converge")) {
+      e.preventDefault();
+      startSyncConvergence().catch(function (err) {
+        var progress = $("#pa-sync-progress");
+        if (progress) progress.textContent = err.message;
+      });
+      return;
+    }
+
+    var recoveryLink = e.target.closest("[data-sync-recovery-link]");
+    if (recoveryLink) {
+      e.preventDefault();
+      var syncSectionLink = $('[data-section-link="sync"]');
+      if (syncSectionLink) syncSectionLink.click();
+      startSyncConvergence().catch(function (err) {
+        var progress = $("#pa-sync-progress");
+        if (progress) progress.textContent = err.message;
+      });
+      return;
+    }
+
+    if (e.target.closest("[data-sync-retry-dispatch]")) {
+      e.preventDefault();
+      var operationsLink = $('[data-section-link="operations"]');
+      if (operationsLink) operationsLink.click();
+      var repairedForm = $("#pa-remote-start-form");
+      if (repairedForm) repairedForm.requestSubmit();
+      return;
+    }
+
+    if (e.target.closest("[data-remote-dispatch-retry]")) {
+      e.preventDefault();
+      var retryForm = $("#pa-remote-start-form");
+      if (retryForm) retryForm.requestSubmit();
       return;
     }
 
@@ -1194,12 +1434,86 @@
           dispatchInstanceId === remoteInstanceId &&
           form.isConnected &&
           remoteStatus
-        ) remoteStatus.textContent = err.message;
+        ) {
+          if (err.detail && err.detail.recovery_url) {
+            remoteStatus.innerHTML = escapeHtml(err.detail.message || err.message) +
+              ' <a href="' + escapeHtml(err.detail.recovery_url) +
+              '" data-sync-recovery-link>Open realm sync recovery</a> ' +
+              '<button type="button" class="ghost small" data-remote-dispatch-retry>' +
+              "Retry dispatch</button>";
+          } else {
+            remoteStatus.textContent = err.message;
+          }
+        }
       }).finally(function () {
         if (submit && submit.isConnected) submit.disabled = false;
         if (remoteInstanceSelect && remoteInstanceSelect.isConnected) {
           remoteInstanceSelect.disabled = false;
         }
+      });
+      return;
+    }
+
+    if (form.id === "pa-sync-resolution-form") {
+      e.preventDefault();
+      if (!syncCurrentConflicts.length) return;
+      var grouped = {};
+      try {
+        syncCurrentConflicts.forEach(function (item, index) {
+          var checked = form.querySelector('input[name="sync-choice-' + index + '"]:checked');
+          var choice = checked ? checked.value : "local";
+          var source = choice === "remote" ? item.remote : item.local;
+          var key = item.entity + ":" + item.id;
+          var resolution = grouped[key] || {
+            entity: item.entity, id: item.id, action: "update", fields: {}
+          };
+          if (item.field === "__terminal__") {
+            if (source.value === "card_deleted") {
+              resolution.action = "delete";
+              resolution.fields = {};
+            } else if (source.value === "project_archived") {
+              resolution.action = "archive";
+              resolution.fields = {};
+            } else {
+              if (!source.snapshot) throw new Error("The selected history has no restorable entity snapshot.");
+              resolution.action = "upsert";
+              resolution.fields = source.snapshot;
+            }
+          } else {
+            var value = source.value;
+            if (choice === "custom") {
+              var custom = form.querySelector('[data-sync-custom="' + index + '"]');
+              var raw = custom ? custom.value : "";
+              try { value = JSON.parse(raw); } catch (parseError) { value = raw; }
+            }
+            resolution.fields[item.field] = value;
+          }
+          grouped[key] = resolution;
+        });
+      } catch (buildError) {
+        var resolutionProgress = $("#pa-sync-progress");
+        if (resolutionProgress) resolutionProgress.textContent = buildError.message;
+        return;
+      }
+      var first = syncCurrentConflicts[0];
+      var submitResolution = form.querySelector('button[type="submit"]');
+      if (submitResolution) submitResolution.disabled = true;
+      var syncProgress = $("#pa-sync-progress");
+      if (syncProgress) syncProgress.textContent = "Recording an immutable merge decision…";
+      api("/api/sync/conflicts/resolve", {
+        method: "POST",
+        body: {
+          realm_id: syncRealm(),
+          remote_head: first.remote_head,
+          resolutions: Object.keys(grouped).map(function (key) { return grouped[key]; }),
+        },
+      }).then(function (result) {
+        renderSyncState(result.convergence || {});
+        return loadSyncStatus(false);
+      }).catch(function (err) {
+        if (syncProgress) syncProgress.textContent = err.message;
+      }).finally(function () {
+        if (submitResolution && submitResolution.isConnected) submitResolution.disabled = false;
       });
       return;
     }
