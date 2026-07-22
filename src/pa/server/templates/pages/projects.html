@@ -1,5 +1,6 @@
 {% from "macros/layout.html" import page_layout %}
 
+{% set selected_project = project.id if project else '' %}
 {% set main %}
 <div class="panel">
   <div class="panel-header">
@@ -30,11 +31,27 @@
 
   <details class="panel-inset">
     <summary>New repository</summary>
-    <form class="stack" hx-post="/projects/repositories" hx-target="#app-view" hx-swap="innerHTML">
-      <input type="hidden" name="realm" value="{{ active_realm }}">
+    <form class="stack"
+          hx-post="/projects/repositories?realm={{ active_realm }}&project={{ selected_project }}"
+          hx-target="#app-view"
+          hx-swap="innerHTML">
       <input type="hidden" name="csrf" value="{{ csrf_token }}">
       <label>Repository URL <input type="url" name="url" required placeholder="https://github.com/org/repo.git"></label>
       <label>Name <input type="text" name="name" placeholder="Optional display name"></label>
+      <label>Default branch <input type="text" name="default_branch" placeholder="main"></label>
+      <label>Remote name <input type="text" name="remote_name" value="origin"></label>
+      <label>Push URL <input type="url" name="push_url" placeholder="Defaults to repository URL"></label>
+      <label>Provider <input type="text" name="provider" placeholder="github"></label>
+      <label>Provider repository ID <input type="text" name="provider_repository_id" placeholder="Optional provider-native ID"></label>
+      <label>Provider metadata <textarea name="provider_metadata" rows="2" placeholder='{"owner":"org"}'></textarea></label>
+      <label>
+        Visibility
+        <select name="visibility">
+          <option value="realm">Realm</option>
+          <option value="private">Private</option>
+          <option value="public">Public</option>
+        </select>
+      </label>
       <button type="submit">Add repository</button>
     </form>
   </details>
@@ -49,22 +66,86 @@
       <pre class="code-block">{{ project.agent_prompt }}</pre>
     </details>
     {% endif %}
-    {% if project.repos %}
-    <p class="muted">Repos: {% for r in project.repos %}{{ r.url }}{% if r.branch %} ({{ r.branch }}){% endif %}{% if r.path %} — {{ r.path }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</p>
+
+    <h4>Linked repositories ({{ linked_repositories | length }})</h4>
+    {% if linked_repositories %}
+    <ul class="item-list">
+      {% for linked in linked_repositories %}
+      {% set repository = linked.repository %}
+      <li class="item">
+        <div class="panel-header">
+          <div>
+            <strong>{{ repository.name or repository.url }}</strong>
+            <span class="badge">{{ repository.status.value }}</span>
+            <span class="badge">{{ repository.visibility.value }}</span>
+          </div>
+          <form hx-post="/projects/{{ project.id }}/repositories/{{ repository.id }}/unlink?realm={{ active_realm }}&project={{ project.id }}"
+                hx-target="#app-view"
+                hx-swap="innerHTML">
+            <input type="hidden" name="csrf" value="{{ csrf_token }}">
+            <button type="submit" class="text-btn">Unlink</button>
+          </form>
+        </div>
+        <p class="muted">{{ repository.url }}{% if linked.link.branch %} · branch {{ linked.link.branch }}{% endif %}{% if repository.default_branch %} · default {{ repository.default_branch }}{% endif %}</p>
+        {% if linked.local_checkout %}
+        <p>Local checkout: <code>{{ linked.local_checkout.path }}</code>{% if linked.local_checkout.branch %} ({{ linked.local_checkout.branch }}){% endif %}</p>
+        <form hx-post="/projects/repositories/{{ repository.id }}/checkout/remove?realm={{ active_realm }}&project={{ project.id }}"
+              hx-target="#app-view"
+              hx-swap="innerHTML">
+          <input type="hidden" name="csrf" value="{{ csrf_token }}">
+          <button type="submit" class="text-btn">Remove local checkout</button>
+        </form>
+        {% else %}
+        <form class="stack"
+              hx-post="/projects/repositories/{{ repository.id }}/checkout?realm={{ active_realm }}&project={{ project.id }}"
+              hx-target="#app-view"
+              hx-swap="innerHTML">
+          <input type="hidden" name="csrf" value="{{ csrf_token }}">
+          <label>Checkout path on this instance <input name="path" required placeholder="/path/to/checkout"></label>
+          <label>Checked-out branch <input name="branch" value="{{ linked.link.branch or '' }}" placeholder="Optional"></label>
+          <button type="submit">Set local checkout</button>
+        </form>
+        {% endif %}
+        {% if linked.checkouts %}
+        <details>
+          <summary>Fleet checkouts ({{ linked.checkouts | length }})</summary>
+          <ul>
+            {% for checkout in linked.checkouts %}
+            <li><code>{{ checkout.instance_id }}</code>: {{ checkout.path }}{% if checkout.branch %} ({{ checkout.branch }}){% endif %}</li>
+            {% endfor %}
+          </ul>
+        </details>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="empty">No repositories linked to this project.</p>
     {% endif %}
-    {% if repositories %}
+
+    {% if available_repositories %}
     <details class="panel-inset">
       <summary>Link repository</summary>
-      <form class="stack" hx-post="/projects/{{ project.id }}/repositories" hx-target="#app-view" hx-swap="innerHTML">
-        <input type="hidden" name="realm" value="{{ active_realm }}">
+      <form class="stack"
+            hx-post="/projects/{{ project.id }}/repositories?realm={{ active_realm }}&project={{ project.id }}"
+            hx-target="#app-view"
+            hx-swap="innerHTML">
         <input type="hidden" name="csrf" value="{{ csrf_token }}">
-        <label>Repository <select name="repository_id">{% for r in repositories %}<option value="{{ r.id }}">{{ r.name or r.url }}</option>{% endfor %}</select></label>
+        <label>
+          Repository
+          <select name="repository_id">
+            {% for repository in available_repositories %}
+            <option value="{{ repository.id }}">{{ repository.name or repository.url }}</option>
+            {% endfor %}
+          </select>
+        </label>
         <label>Branch <input name="branch" placeholder="Optional"></label>
         <label>Checkout on this instance <input name="path" placeholder="Optional local path"></label>
         <button type="submit">Link repository</button>
       </form>
     </details>
     {% endif %}
+
     {% set pr_policy = (project.tool_config or {}).get('pr_policy', {}) %}
     <details class="panel-inset">
       <summary>Pull request policy</summary>
@@ -97,16 +178,84 @@
   </div>
   {% endif %}
 
+  <h3>Repository catalog ({{ repositories | length }})</h3>
+  {% if repositories %}
+  <ul class="item-list">
+    {% for repository in repositories %}
+    {% set remote = repository.remotes[0] if repository.remotes else none %}
+    <li class="item">
+      <div class="panel-header">
+        <div>
+          <strong>{{ repository.name or repository.url }}</strong>
+          <span class="badge">{{ repository.status.value }}</span>
+          <span class="badge">{{ repository.visibility.value }}</span>
+        </div>
+      </div>
+      <p class="muted">{{ repository.url }}{% if repository.provider %} · {{ repository.provider }}{% endif %}{% if repository.default_branch %} · default {{ repository.default_branch }}{% endif %}</p>
+      {% if repository.remotes %}
+      <ul class="muted">
+        {% for listed_remote in repository.remotes %}
+        <li>{{ listed_remote.name }}: {{ listed_remote.fetch_url }}{% if listed_remote.push_url and listed_remote.push_url != listed_remote.fetch_url %} → {{ listed_remote.push_url }}{% endif %}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      <details>
+        <summary>Edit repository</summary>
+        <form class="stack"
+              hx-post="/projects/repositories/{{ repository.id }}?realm={{ active_realm }}&project={{ selected_project }}"
+              hx-target="#app-view"
+              hx-swap="innerHTML">
+          <input type="hidden" name="csrf" value="{{ csrf_token }}">
+          <label>Name <input name="name" value="{{ repository.name }}"></label>
+          <label>Default branch <input name="default_branch" value="{{ repository.default_branch or '' }}"></label>
+          <label>Remote name <input name="remote_name" value="{{ remote.name if remote else 'origin' }}" required></label>
+          <label>Fetch URL <input type="url" name="fetch_url" value="{{ remote.fetch_url if remote else repository.url }}" required></label>
+          <label>Push URL <input type="url" name="push_url" value="{{ (remote.push_url if remote else repository.url) or '' }}"></label>
+          <label>Provider <input name="provider" value="{{ repository.provider }}"></label>
+          <label>Provider repository ID <input name="provider_repository_id" value="{{ repository.provider_repository_id or '' }}"></label>
+          <label>Provider metadata <textarea name="provider_metadata" rows="3">{{ repository.provider_metadata | tojson }}</textarea></label>
+          <label>
+            Visibility
+            <select name="visibility">
+              {% for visibility in ['private', 'realm', 'public'] %}
+              <option value="{{ visibility }}" {% if repository.visibility.value == visibility %}selected{% endif %}>{{ visibility | title }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>
+            Lifecycle
+            <select name="status">
+              <option value="active" {% if repository.status.value == 'active' %}selected{% endif %}>Active</option>
+              <option value="archived" {% if repository.status.value == 'archived' %}selected{% endif %}>Archived</option>
+            </select>
+          </label>
+          <button type="submit">Save repository</button>
+        </form>
+        <form hx-post="/projects/repositories/{{ repository.id }}/delete?realm={{ active_realm }}&project={{ selected_project }}"
+              hx-target="#app-view"
+              hx-swap="innerHTML"
+              hx-confirm="Delete this repository and all of its project links and checkout records?">
+          <input type="hidden" name="csrf" value="{{ csrf_token }}">
+          <button type="submit" class="text-btn">Delete repository</button>
+        </form>
+      </details>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="empty">No repositories yet. Add one above.</p>
+  {% endif %}
+
   <h3>All projects</h3>
   {% if projects %}
   <ul class="item-list">
-    {% for p in projects %}
+    {% for listed_project in projects %}
     <li class="item">
-      <a href="/projects?realm={{ active_realm }}&project={{ p.id }}">
-        <h3>{{ p.title }}</h3>
+      <a href="/projects?realm={{ active_realm }}&project={{ listed_project.id }}">
+        <h3>{{ listed_project.title }}</h3>
       </a>
-      <span class="badge">{{ p.status.value }}</span>
-      {% if p.description %}<p class="muted">{{ p.description[:120] }}{% if p.description|length > 120 %}…{% endif %}</p>{% endif %}
+      <span class="badge">{{ listed_project.status.value }}</span>
+      {% if listed_project.description %}<p class="muted">{{ listed_project.description[:120] }}{% if listed_project.description|length > 120 %}…{% endif %}</p>{% endif %}
     </li>
     {% endfor %}
   </ul>

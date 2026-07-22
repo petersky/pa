@@ -11,7 +11,10 @@ from pa.domain.models import (
     ProjectCreate,
     RepositoryCheckout,
     RepositoryCreate,
+    RepositoryRemote,
+    RepositoryStatus,
     RepositoryUpdate,
+    RepositoryVisibility,
 )
 from pa.domain.projection import CardProjection
 from pa.sync.event_log import EventLog
@@ -318,9 +321,7 @@ class RepositoryProjectionTests(unittest.TestCase):
                 )
             )
 
-            self.assertIsNone(
-                store.project_working_directory(project.id, "instance-a")
-            )
+            self.assertIsNone(store.project_working_directory(project.id, "instance-a"))
 
     def test_repository_url_is_immutable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -506,6 +507,124 @@ class RepositoryProjectionTests(unittest.TestCase):
             self.assertEqual(project.repos[0].url, url)
             self.assertEqual(project.repos[0].path, "/trim/path")
 
+    def test_repository_metadata_lifecycle_and_replay(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = self.projection(root)
+            repository = store.create_repository(
+                RepositoryCreate(
+                    url="https://example.test/org/catalog.git",
+                    name="Catalog",
+                    remotes=[
+                        RepositoryRemote(
+                            name="origin",
+                            fetch_url="https://example.test/org/catalog.git",
+                            push_url="ssh://git@example.test/org/catalog.git",
+                        ),
+                        RepositoryRemote(
+                            name="mirror",
+                            fetch_url="https://mirror.test/org/catalog.git",
+                        ),
+                    ],
+                    default_branch="main",
+                    provider="github",
+                    provider_repository_id="R_123",
+                    provider_metadata={"owner": "org", "numeric_id": 42},
+                    visibility=RepositoryVisibility.PRIVATE,
+                )
+            )
+
+            self.assertEqual(repository.default_branch, "main")
+            self.assertEqual(repository.remotes[1].name, "mirror")
+            self.assertEqual(repository.provider_metadata["numeric_id"], 42)
+            self.assertEqual(repository.visibility, RepositoryVisibility.PRIVATE)
+            self.assertEqual(repository.status, RepositoryStatus.ACTIVE)
+
+            archived = store.update_repository(
+                repository.id,
+                RepositoryUpdate(
+                    name="Catalog archived",
+                    status=RepositoryStatus.ARCHIVED,
+                    provider_metadata={"owner": "org", "archived": True},
+                ),
+            )
+            assert archived is not None
+            self.assertEqual(archived.status, RepositoryStatus.ARCHIVED)
+            self.assertIsNotNone(archived.archived_at)
+
+            store.rebuild_from_log("default")
+            replayed = store.get_repository(repository.id)
+            assert replayed is not None
+            self.assertEqual(replayed.name, "Catalog archived")
+            self.assertEqual(
+                replayed.remotes[0].push_url, "ssh://git@example.test/org/catalog.git"
+            )
+            self.assertEqual(replayed.provider_repository_id, "R_123")
+            self.assertTrue(replayed.provider_metadata["archived"])
+            self.assertEqual(replayed.visibility, RepositoryVisibility.PRIVATE)
+            self.assertEqual(replayed.status, RepositoryStatus.ARCHIVED)
+            self.assertIsNotNone(replayed.archived_at)
+
+            active = store.update_repository(
+                repository.id,
+                RepositoryUpdate(
+                    status=RepositoryStatus.ACTIVE,
+                    default_branch=None,
+                    provider_repository_id=None,
+                ),
+            )
+            assert active is not None
+            self.assertEqual(active.status, RepositoryStatus.ACTIVE)
+            self.assertIsNone(active.archived_at)
+            self.assertIsNone(active.default_branch)
+            self.assertIsNone(active.provider_repository_id)
+
+    def test_legacy_repository_rows_gain_safe_first_class_defaults(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            db = root / "pa.db"
+            now = datetime.now(UTC).isoformat()
+            conn = sqlite3.connect(db)
+            conn.executescript(
+                """
+                CREATE TABLE projects (
+                    id TEXT PRIMARY KEY, realm_id TEXT NOT NULL, title TEXT NOT NULL,
+                    description TEXT NOT NULL, status TEXT NOT NULL, memberships TEXT NOT NULL,
+                    repos TEXT NOT NULL, agent_prompt TEXT NOT NULL, tool_config TEXT NOT NULL,
+                    tags TEXT NOT NULL, created_by_principal TEXT, created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE repositories (
+                    id TEXT PRIMARY KEY, realm_id TEXT NOT NULL, url TEXT NOT NULL,
+                    name TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                    UNIQUE(realm_id, url)
+                );
+                """
+            )
+            conn.execute(
+                "INSERT INTO repositories VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    "legacy-repo",
+                    "default",
+                    "https://example.test/legacy.git",
+                    "Legacy",
+                    now,
+                    now,
+                ),
+            )
+            conn.commit()
+            conn.close()
+
+            repository = self.projection(root).get_repository("legacy-repo")
+            assert repository is not None
+            self.assertEqual(repository.remotes[0].name, "origin")
+            self.assertEqual(repository.remotes[0].fetch_url, repository.url)
+            self.assertEqual(repository.remotes[0].push_url, repository.url)
+            self.assertEqual(repository.provider_metadata, {})
+            self.assertEqual(repository.visibility, RepositoryVisibility.REALM)
+            self.assertEqual(repository.status, RepositoryStatus.ACTIVE)
+            self.assertIsNone(repository.archived_at)
+
 
 class RepositoryRouteTests(unittest.TestCase):
     def test_realm_catalog_and_instance_snapshots_use_distinct_routes(self) -> None:
@@ -532,6 +651,366 @@ class RepositoryRouteTests(unittest.TestCase):
                 snapshot_resp = client.get("/api/repositories")
                 self.assertEqual(snapshot_resp.status_code, 200)
                 self.assertIsInstance(snapshot_resp.json(), list)
+
+    def test_repository_api_crud_links_checkouts_and_metadata(self) -> None:
+        from fastapi.testclient import TestClient
+
+        from pa.config import Settings, reset_settings
+        from pa.core.kernel import Kernel
+        from pa.domain.store import reset_store
+
+        with tempfile.TemporaryDirectory() as tmp:
+            reset_settings()
+            reset_store()
+            settings = Settings(
+                data_dir=Path(tmp),
+                instance_id="test-instance",
+                agent_enabled=False,
+            )
+            app = Kernel.boot(settings=settings).build_app()
+            with TestClient(app) as client:
+                client.get("/api/health")
+                csrf = client.cookies.get("pa_csrf")
+                headers = {"X-CSRF-Token": csrf}
+
+                project_response = client.post(
+                    "/api/projects",
+                    json={"title": "API project"},
+                    headers=headers,
+                )
+                self.assertEqual(
+                    project_response.status_code, 201, project_response.text
+                )
+                project_id = project_response.json()["id"]
+
+                create_response = client.post(
+                    "/api/repositories",
+                    json={
+                        "url": "https://example.test/api.git",
+                        "name": "API repo",
+                        "remotes": [
+                            {
+                                "name": "origin",
+                                "fetch_url": "https://example.test/api.git",
+                                "push_url": "ssh://git@example.test/api.git",
+                            }
+                        ],
+                        "default_branch": "main",
+                        "provider": "github",
+                        "provider_repository_id": "R_api",
+                        "provider_metadata": {"owner": "example"},
+                        "visibility": "private",
+                    },
+                    headers=headers,
+                )
+                self.assertEqual(create_response.status_code, 201, create_response.text)
+                repository_id = create_response.json()["id"]
+                self.assertEqual(create_response.json()["remotes"][0]["name"], "origin")
+
+                invalid_create_response = client.post(
+                    "/api/repositories",
+                    json={"url": "   "},
+                    headers=headers,
+                )
+                self.assertEqual(
+                    invalid_create_response.status_code,
+                    400,
+                    invalid_create_response.text,
+                )
+                self.assertEqual(
+                    invalid_create_response.json()["detail"],
+                    "repository URL is required",
+                )
+
+                update_response = client.patch(
+                    f"/api/repositories/{repository_id}",
+                    json={
+                        "name": "API repo archived",
+                        "status": "archived",
+                        "provider_metadata": {"owner": "example", "archived": True},
+                    },
+                    headers=headers,
+                )
+                self.assertEqual(update_response.status_code, 200, update_response.text)
+                self.assertEqual(update_response.json()["status"], "archived")
+                self.assertIsNotNone(update_response.json()["archived_at"])
+
+                link_response = client.put(
+                    f"/api/projects/{project_id}/repositories/{repository_id}",
+                    json={"branch": "release"},
+                    headers=headers,
+                )
+                self.assertEqual(link_response.status_code, 200, link_response.text)
+                checkout_response = client.put(
+                    f"/api/repositories/{repository_id}/checkouts/test-instance",
+                    json={"path": "/work/api", "branch": "release"},
+                    headers=headers,
+                )
+                self.assertEqual(
+                    checkout_response.status_code, 200, checkout_response.text
+                )
+
+                links_response = client.get(f"/api/projects/{project_id}/repositories")
+                self.assertEqual(links_response.status_code, 200, links_response.text)
+                self.assertEqual(links_response.json()[0]["branch"], "release")
+                self.assertEqual(
+                    links_response.json()[0]["checkouts"][0]["path"], "/work/api"
+                )
+                self.assertTrue(
+                    links_response.json()[0]["repository"]["provider_metadata"][
+                        "archived"
+                    ]
+                )
+
+                compatibility_response = client.get(f"/api/projects/{project_id}")
+                self.assertEqual(
+                    compatibility_response.json()["repos"],
+                    [
+                        {
+                            "url": "https://example.test/api.git",
+                            "branch": "release",
+                            "path": "/work/api",
+                        }
+                    ],
+                )
+
+                delete_response = client.delete(
+                    f"/api/repositories/{repository_id}",
+                    headers=headers,
+                )
+                self.assertEqual(delete_response.status_code, 204, delete_response.text)
+                self.assertEqual(
+                    client.get(f"/api/projects/{project_id}/repositories").json(), []
+                )
+            reset_store()
+            reset_settings()
+
+    def test_repository_ui_manages_catalog_links_and_local_checkout(self) -> None:
+        from fastapi.testclient import TestClient
+
+        from pa.config import Settings, reset_settings
+        from pa.core.kernel import Kernel
+        from pa.domain.store import reset_store
+
+        with tempfile.TemporaryDirectory() as tmp:
+            reset_settings()
+            reset_store()
+            settings = Settings(
+                data_dir=Path(tmp),
+                instance_id="ui-instance",
+                agent_enabled=False,
+            )
+            app = Kernel.boot(settings=settings).build_app()
+            with TestClient(app) as client:
+                client.get("/api/health")
+                csrf = client.cookies.get("pa_csrf")
+                headers = {"X-CSRF-Token": csrf}
+                project_id = client.post(
+                    "/api/projects",
+                    json={"title": "UI project"},
+                    headers=headers,
+                ).json()["id"]
+                repository_id = client.post(
+                    "/api/repositories",
+                    json={
+                        "url": "https://example.test/ui.git",
+                        "name": "UI repo",
+                        "provider": "github",
+                        "provider_metadata": {"owner": "ui"},
+                        "remotes": [
+                            {
+                                "name": "origin",
+                                "fetch_url": "https://example.test/ui.git",
+                                "push_url": "https://example.test/ui.git",
+                            },
+                            {
+                                "name": "mirror",
+                                "fetch_url": "https://mirror.test/ui.git",
+                                "push_url": None,
+                            },
+                        ],
+                    },
+                    headers=headers,
+                ).json()["id"]
+                client.put(
+                    f"/api/projects/{project_id}/repositories/{repository_id}",
+                    json={"branch": "main"},
+                    headers=headers,
+                )
+
+                page = client.get(f"/projects?realm=default&project={project_id}")
+                self.assertEqual(page.status_code, 200, page.text)
+                self.assertIn("Repository catalog", page.text)
+                self.assertIn("Linked repositories", page.text)
+                self.assertIn(
+                    f"/projects/{project_id}/repositories/{repository_id}/unlink",
+                    page.text,
+                )
+                self.assertIn(
+                    f"/projects/repositories/{repository_id}/checkout",
+                    page.text,
+                )
+                self.assertIn("Provider metadata", page.text)
+
+                update_response = client.post(
+                    f"/projects/repositories/{repository_id}?realm=default&project={project_id}",
+                    data={
+                        "name": "UI repo archived",
+                        "default_branch": "trunk",
+                        "provider": "github",
+                        "provider_repository_id": "R_ui",
+                        "provider_metadata": '{"owner":"ui","managed":true}',
+                        "visibility": "public",
+                        "status": "archived",
+                        "remote_name": "upstream",
+                        "fetch_url": "https://example.test/ui-mirror.git",
+                        "push_url": "ssh://git@example.test/ui.git",
+                    },
+                    headers=headers,
+                )
+                self.assertEqual(update_response.status_code, 200, update_response.text)
+                updated = client.get(f"/api/repositories/{repository_id}").json()
+                self.assertEqual(updated["name"], "UI repo archived")
+                self.assertEqual(updated["default_branch"], "trunk")
+                self.assertEqual(updated["visibility"], "public")
+                self.assertEqual(updated["status"], "archived")
+                self.assertTrue(updated["provider_metadata"]["managed"])
+                self.assertEqual(updated["remotes"][0]["name"], "upstream")
+                self.assertEqual(updated["remotes"][1]["name"], "mirror")
+                self.assertEqual(
+                    updated["remotes"][1]["fetch_url"], "https://mirror.test/ui.git"
+                )
+
+                checkout_response = client.post(
+                    f"/projects/repositories/{repository_id}/checkout?realm=default&project={project_id}",
+                    data={"path": "/work/ui", "branch": "trunk"},
+                    headers=headers,
+                )
+                self.assertEqual(
+                    checkout_response.status_code, 200, checkout_response.text
+                )
+                self.assertEqual(
+                    client.get(f"/api/repositories/{repository_id}").json()[
+                        "checkouts"
+                    ][0]["path"],
+                    "/work/ui",
+                )
+
+                unlink_response = client.post(
+                    f"/projects/{project_id}/repositories/{repository_id}/unlink?realm=default&project={project_id}",
+                    headers=headers,
+                )
+                self.assertEqual(unlink_response.status_code, 200, unlink_response.text)
+                self.assertEqual(
+                    client.get(f"/api/projects/{project_id}/repositories").json(), []
+                )
+
+                delete_response = client.post(
+                    f"/projects/repositories/{repository_id}/delete?realm=default&project={project_id}",
+                    headers=headers,
+                )
+                self.assertEqual(delete_response.status_code, 200, delete_response.text)
+                self.assertEqual(
+                    client.get(f"/api/repositories/{repository_id}").status_code, 404
+                )
+            reset_store()
+            reset_settings()
+
+    def test_repository_mcp_tools_cover_first_class_workflows(self) -> None:
+        from unittest.mock import MagicMock, patch
+
+        from pa.modules.projects import ProjectsModule
+
+        class FakeMcp:
+            def __init__(self) -> None:
+                self.functions: dict[str, object] = {}
+
+            def tool(self):
+                def register(fn):
+                    self.functions[fn.__name__] = fn
+                    return fn
+
+                return register
+
+        mcp = FakeMcp()
+        ctx = MagicMock()
+        local_api = MagicMock(return_value={"id": "repo-1"})
+        with patch("pa.mcp.local_api.request_local_pa", local_api):
+            ProjectsModule().register_mcp(mcp, ctx)
+
+        expected = {
+            "list_repositories",
+            "get_repository",
+            "create_repository",
+            "update_repository",
+            "delete_repository",
+            "list_project_repositories",
+            "link_project_repository",
+            "unlink_project_repository",
+            "set_repository_checkout",
+            "remove_repository_checkout",
+        }
+        self.assertTrue(expected.issubset(mcp.functions))
+
+        result = mcp.functions["create_repository"](
+            "https://example.test/mcp.git",
+            name="MCP",
+            default_branch="main",
+            provider="github",
+            provider_metadata={"owner": "mcp"},
+            visibility="private",
+        )
+        self.assertEqual(result, {"id": "repo-1"})
+        local_api.assert_called_with(
+            ctx.settings,
+            "POST",
+            "/api/repositories",
+            json={
+                "realm_id": "default",
+                "url": "https://example.test/mcp.git",
+                "name": "MCP",
+                "remotes": [],
+                "default_branch": "main",
+                "provider": "github",
+                "provider_repository_id": None,
+                "provider_metadata": {"owner": "mcp"},
+                "visibility": "private",
+                "status": "active",
+            },
+        )
+
+        mcp.functions["update_repository"](
+            "repo-1",
+            name="MCP renamed",
+            clear_fields=["default_branch", "provider_repository_id"],
+        )
+        local_api.assert_called_with(
+            ctx.settings,
+            "PATCH",
+            "/api/repositories/repo-1",
+            params={"realm": "default"},
+            json={
+                "name": "MCP renamed",
+                "default_branch": None,
+                "provider_repository_id": None,
+            },
+            allow_not_found=True,
+        )
+        with self.assertRaisesRegex(ValueError, "Unsupported nullable"):
+            mcp.functions["update_repository"](
+                "repo-1", clear_fields=["visibility"]
+            )
+
+        mcp.functions["set_repository_checkout"](
+            "repo-1", "instance-a", "/work/mcp", branch="main"
+        )
+        local_api.assert_called_with(
+            ctx.settings,
+            "PUT",
+            "/api/repositories/repo-1/checkouts/instance-a",
+            params={"realm": "default"},
+            json={"path": "/work/mcp", "branch": "main"},
+        )
 
 
 if __name__ == "__main__":

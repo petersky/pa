@@ -237,6 +237,23 @@ class LocalMcpApiTests(unittest.TestCase):
                 )
             self.assertIsNone(result)
 
+    def test_no_content_mutation_returns_none(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), agent_enabled=False)
+            response = httpx.Response(
+                204,
+                request=httpx.Request(
+                    "DELETE", "http://127.0.0.1/api/repositories/repo-1"
+                ),
+            )
+            with patch("httpx.request", return_value=response):
+                result = request_local_pa(
+                    settings,
+                    "DELETE",
+                    "/api/repositories/repo-1",
+                )
+            self.assertIsNone(result)
+
 
 if __name__ == "__main__":
     unittest.main()
