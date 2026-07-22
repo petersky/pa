@@ -110,6 +110,47 @@ class RepositoryProjectionTests(unittest.TestCase):
                 store.list_repository_checkouts(repository.id)[0].branch, "main"
             )
 
+    def test_noop_unlink_preserves_legacy_repos_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = self.projection(root)
+            project = store.create_project(ProjectCreate(title="Noop unlink"))
+            linked_repo = store.create_repository(
+                RepositoryCreate(url="https://example.test/linked.git")
+            )
+            other_repo = store.create_repository(
+                RepositoryCreate(url="https://example.test/other.git")
+            )
+            store.link_project_repository(project.id, linked_repo.id)
+            stale = [
+                {
+                    "url": "https://example.test/ghost.git",
+                    "branch": "main",
+                    "path": "/ghost",
+                }
+            ]
+            conn = sqlite3.connect(root / "pa.db")
+            conn.execute(
+                "UPDATE projects SET repos=? WHERE id=?",
+                (json.dumps(stale), project.id),
+            )
+            conn.commit()
+            conn.close()
+
+            store.unlink_project_repository(project.id, other_repo.id)
+
+            conn = sqlite3.connect(root / "pa.db")
+            row = conn.execute(
+                "SELECT repos FROM projects WHERE id=?", (project.id,)
+            ).fetchone()
+            conn.close()
+            self.assertEqual(json.loads(row[0]), stale)
+            self.assertEqual(len(store.get_project(project.id).repos), 1)
+            self.assertEqual(
+                store.get_project(project.id).repos[0].url,
+                "https://example.test/linked.git",
+            )
+
     def test_unlink_clears_stale_legacy_repos_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

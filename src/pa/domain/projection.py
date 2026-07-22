@@ -491,13 +491,14 @@ class CardProjection:
 
     def _apply_project_repository_unlinked(self, event: CardEvent) -> None:
         with self._conn() as conn:
-            conn.execute(
+            cur = conn.execute(
                 "DELETE FROM project_repositories WHERE project_id=? AND repository_id=?",
                 (event.project_id, event.payload["repository_id"]),
             )
-            conn.execute(
-                "UPDATE projects SET repos='[]' WHERE id=?", (event.project_id,)
-            )
+            if cur.rowcount > 0:
+                conn.execute(
+                    "UPDATE projects SET repos='[]' WHERE id=?", (event.project_id,)
+                )
 
     def _apply_repository_checkout_set(self, event: CardEvent) -> None:
         p = event.payload
