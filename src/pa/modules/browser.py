@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import atexit
 import json
 import os
@@ -16,6 +17,7 @@ from pa.browser.cdp import CdpPage
 from pa.browser.manager import BrowserAttachment, BrowserManager
 from pa.core.context import AppContext
 from pa.core.contracts import Module
+from pa.core.async_runtime import AsyncRuntime
 
 router = APIRouter(prefix="/agent/sessions/{session_id}/browser")
 
@@ -133,9 +135,17 @@ async def browser_type(request: Request, session_id: str, body: TypeBody) -> dic
 class McpBrowserController:
     """Use a session-attached browser or own an agent-started headless browser."""
 
-    def __init__(self, data_dir: Path, store=None) -> None:
-        self.manager = BrowserManager(data_dir / "mcp-browser")
+    def __init__(
+        self,
+        data_dir: Path,
+        store=None,
+        async_runtime: AsyncRuntime | None = None,
+    ) -> None:
+        self.manager = BrowserManager(
+            data_dir / "mcp-browser", async_runtime=async_runtime
+        )
         self.store = store
+        self.async_runtime = async_runtime
         self.attachment: BrowserAttachment | None = None
         self.session_key = str(uuid4())
         self.attributes: dict[str, int | float] = {}
@@ -219,6 +229,18 @@ class McpBrowserController:
         session.config_json = config
         self.store.save_session(session)
 
+    async def persist_session_attributes_async(
+        self, *, url: str | None = None
+    ) -> None:
+        if self.async_runtime:
+            await self.async_runtime.run_blocking(
+                "browser.session_persist",
+                self.persist_session_attributes,
+                url=url,
+            )
+            return
+        await asyncio.to_thread(self.persist_session_attributes, url=url)
+
 
 _SNAPSHOT_JS = """(() => {
   const visible = el => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none'; };
@@ -248,7 +270,11 @@ class BrowserModule(Module):
         return [("/api", router, ["browser"])]
 
     def register_mcp(self, mcp, ctx: AppContext) -> None:
-        controller = McpBrowserController(ctx.settings.data_dir, ctx.store)
+        controller = McpBrowserController(
+            ctx.settings.data_dir,
+            ctx.store,
+            ctx.require_service("async_runtime"),
+        )
 
         @mcp.tool()
         async def browser_attach(
@@ -272,7 +298,7 @@ class BrowserModule(Module):
                 "height": height,
                 "device_scale_factor": device_scale_factor,
             }
-            controller.persist_session_attributes(
+            await controller.persist_session_attributes_async(
                 url=None if url == "about:blank" else url
             )
             return json.dumps(await controller.state())
@@ -288,7 +314,9 @@ class BrowserModule(Module):
             page = await controller.ensure_page()
             await page.navigate(url)
             state = await controller.state()
-            controller.persist_session_attributes(url=state.get("url") or url)
+            await controller.persist_session_attributes_async(
+                url=state.get("url") or url
+            )
             return json.dumps(await page.metadata())
 
         @mcp.tool()
@@ -313,7 +341,7 @@ class BrowserModule(Module):
                 "height": height,
                 "device_scale_factor": device_scale_factor,
             }
-            controller.persist_session_attributes()
+            await controller.persist_session_attributes_async()
             return json.dumps(await controller.state())
 
         @mcp.tool()

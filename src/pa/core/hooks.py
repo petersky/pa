@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import time
 from collections import deque
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
+
+from pa.core.async_runtime import AsyncRuntime
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +32,10 @@ class HookBus:
         self._handlers: dict[str, list[tuple[int, HookHandler]]] = {}
         self._history: deque[HookEvent] = deque(maxlen=history_size)
         self._record_history = False
+        self._async_runtime: AsyncRuntime | None = None
+
+    def set_async_runtime(self, runtime: AsyncRuntime) -> None:
+        self._async_runtime = runtime
 
     def enable_history(self, enabled: bool = True) -> None:
         self._record_history = enabled
@@ -56,9 +63,23 @@ class HookBus:
 
         for handler in handlers:
             try:
-                result = handler(**payload) if payload else handler()
-                if asyncio.iscoroutine(result):
+                if inspect.iscoroutinefunction(handler):
+                    result = handler(**payload) if payload else handler()
                     result = await result
+                elif self._async_runtime:
+                    result = await self._async_runtime.run_blocking(
+                        f"hook.{name}",
+                        handler,
+                        **payload,
+                    )
+                    # A sync plugin may return an awaitable. Resume it on the
+                    # event loop without sacrificing ordered hook delivery.
+                    if asyncio.iscoroutine(result):
+                        result = await result
+                else:
+                    result = handler(**payload) if payload else handler()
+                    if asyncio.iscoroutine(result):
+                        result = await result
                 event.results.append(result)
             except Exception as exc:
                 msg = f"{handler!r}: {exc}"

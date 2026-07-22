@@ -73,6 +73,13 @@ class Settings(BaseSettings):
     dev_tools: bool = False
     log_level: str = "INFO"
 
+    # Bounded compatibility executor and responsiveness telemetry.
+    blocking_workers: int = Field(default=8, ge=1, le=64)
+    blocking_queue_limit: int = Field(default=64, ge=0, le=4096)
+    blocking_default_timeout: float = Field(default=30.0, gt=0, le=3600)
+    blocking_slow_call_seconds: float = Field(default=0.5, gt=0, le=60)
+    event_loop_probe_interval: float = Field(default=0.1, gt=0, le=10)
+
     # UI defaults (user preferences file overrides appearance at runtime)
     default_theme_id: str = "pa"
 

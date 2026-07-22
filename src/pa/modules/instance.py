@@ -44,6 +44,17 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@router.get("/runtime")
+async def async_runtime_status(request: Request) -> dict:
+    """Cheap telemetry that remains independent of disk/network health."""
+    runtime = request.app.state.ctx.require_service("async_runtime")
+    snapshot = runtime.snapshot()
+    snapshot["lifecycle"] = dict(
+        request.app.state.ctx.services.get("agent_lifecycle") or {}
+    )
+    return snapshot
+
+
 @router.get("/status")
 def instance_status(request: Request) -> dict:
     kernel = request.app.state.kernel
@@ -101,11 +112,13 @@ def workspace_leases(request: Request, card_id: str | None = None) -> dict:
 
 
 @router.post("/repositories/inspect")
-def inspect_repository(request: Request, path: str = Query(...)) -> dict:
+async def inspect_repository(request: Request, path: str = Query(...)) -> dict:
     from pathlib import Path
 
     service = request.app.state.ctx.require_service("repository_state")
-    return service.refresh(Path(path)).model_dump(mode="json")
+    runtime = request.app.state.ctx.require_service("async_runtime")
+    result = await service.refresh_async(Path(path), runtime)
+    return result.model_dump(mode="json")
 
 
 @router.post("/repositories/reconcile")
@@ -341,33 +354,44 @@ class InstanceModule(Module):
             }
 
         @mcp.tool()
-        def repository_inspect(path: str) -> dict:
+        async def repository_inspect(path: str) -> dict:
             """Inspect and persist this instance's current Git repository state."""
             from pathlib import Path
 
             service = ctx.require_service("repository_state")
-            return service.refresh(Path(path)).model_dump(mode="json")
+            runtime = ctx.require_service("async_runtime")
+            result = await service.refresh_async(Path(path), runtime)
+            return result.model_dump(mode="json")
 
         @mcp.tool()
-        def repository_snapshots() -> list[dict]:
+        async def repository_snapshots() -> list[dict]:
             """List non-authoritative repository observations by instance."""
             service = ctx.require_service("repository_state")
+            runtime = ctx.require_service("async_runtime")
+            items = await runtime.run_blocking(
+                "repository.snapshots",
+                service.list,
+                unreachable_instances=_unreachable_repository_instances(ctx),
+            )
             return [
                 item.model_dump(mode="json")
-                for item in service.list(
-                    unreachable_instances=_unreachable_repository_instances(ctx)
-                )
+                for item in items
             ]
 
         @mcp.tool()
-        def workspace_leases(card_id: str | None = None) -> dict:
+        async def workspace_leases(card_id: str | None = None) -> dict:
             """List this instance's durable worktree leases and lifecycle metrics."""
             agent = ctx.require_service("instance_agent")
             manager = agent.workspace_manager
+            runtime = ctx.require_service("async_runtime")
+            leases, metrics = await runtime.run_blocking(
+                "workspace.list",
+                lambda: (manager.list(card_id=card_id), manager.metrics()),
+            )
             return {
                 "leases": [
                     lease.model_dump(mode="json")
-                    for lease in manager.list(card_id=card_id)
+                    for lease in leases
                 ],
-                "metrics": manager.metrics(),
+                "metrics": metrics,
             }
