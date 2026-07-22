@@ -596,6 +596,74 @@ class AgentChatSseTests(unittest.TestCase):
         )
         self.assertEqual(data["payload"]["text"], "thinking…")
 
+    def test_live_stream_exits_when_server_shutdown_begins(self) -> None:
+        from pa.server.shutdown import reset_shutdown_event, signal_shutdown
+
+        runtime = _FakeRuntime()
+        request = MagicMock()
+        request.headers = {}
+        request.query_params = {}
+        request.is_disconnected = AsyncMock(return_value=False)
+
+        async def run() -> None:
+            reset_shutdown_event()
+            with patch("pa.modules.agent_chat._runtime_or_404", return_value=runtime):
+                response = await session_events(request, "sess-shutdown")
+                next_chunk = asyncio.create_task(anext(response.body_iterator))
+                for _ in range(50):
+                    if runtime._subscribers:
+                        break
+                    await asyncio.sleep(0.01)
+                signal_shutdown()
+                with self.assertRaises(StopAsyncIteration):
+                    await asyncio.wait_for(next_chunk, timeout=1.0)
+                await response.body_iterator.aclose()
+            reset_shutdown_event()
+
+        asyncio.run(run())
+        self.assertEqual(runtime._subscribers, [])
+
+    def test_durable_catchup_stops_when_server_shutdown_begins(self) -> None:
+        from pa.server.shutdown import reset_shutdown_event, signal_shutdown
+
+        events = [
+            TranscriptEvent(
+                session_id="sess-catchup-shutdown",
+                seq=seq,
+                event_type="message",
+                payload={"text": str(seq)},
+            )
+            for seq in range(1, 2001)
+        ]
+        runtime = _FakeRuntime()
+        runtime.store = _FakeStore(events)
+        request = MagicMock()
+        request.headers = {}
+        request.query_params = {}
+        request.is_disconnected = AsyncMock(return_value=False)
+
+        async def run() -> list[int]:
+            reset_shutdown_event()
+            sequences: list[int] = []
+            with patch("pa.modules.agent_chat._runtime_or_404", return_value=runtime):
+                response = await session_events(request, "sess-catchup-shutdown")
+                async for chunk in response.body_iterator:
+                    text = chunk if isinstance(chunk, str) else chunk.decode()
+                    data = next(
+                        json.loads(line[5:].strip())
+                        for line in text.splitlines()
+                        if line.startswith("data:")
+                    )
+                    sequences.append(data["seq"])
+                    if len(sequences) == 5:
+                        signal_shutdown()
+                await response.body_iterator.aclose()
+            reset_shutdown_event()
+            return sequences
+
+        self.assertEqual(asyncio.run(run()), [1, 2, 3, 4, 5])
+        self.assertEqual(runtime._subscribers, [])
+
     def test_paginated_catchup_is_complete_ordered_and_deduplicates_live_overlap(
         self,
     ) -> None:
@@ -711,6 +779,67 @@ class AgentChatSseTests(unittest.TestCase):
         sequences = asyncio.run(run())
 
         self.assertEqual(sequences, list(range(1, 601)))
+        self.assertEqual(runtime.store.after_calls, [0, 3])
+        self.assertEqual(runtime._subscribers, [])
+
+    def test_live_gap_fill_stops_when_server_shutdown_begins(self) -> None:
+        from pa.server.shutdown import reset_shutdown_event, signal_shutdown
+
+        events = [
+            TranscriptEvent(
+                session_id="sess-gap-shutdown",
+                seq=seq,
+                event_type="message",
+                payload={"text": str(seq)},
+            )
+            for seq in range(1, 601)
+        ]
+
+        class _GrowingStore(_FakeStore):
+            def list_transcript_events(
+                self, session_id: str, *, after_seq: int = 0, limit: int = 500
+            ) -> list[Any]:
+                self.after_calls.append(after_seq)
+                visible = self._events[:3] if len(self.after_calls) == 1 else self._events
+                return [event for event in visible if event.seq > after_seq][:limit]
+
+        runtime = _FakeRuntime()
+        runtime.store = _GrowingStore(events)
+        runtime.queued_on_subscribe = [
+            {
+                "id": events[-1].id,
+                "seq": 600,
+                "type": "message",
+                "session_id": "sess-gap-shutdown",
+                "payload": {"text": "600"},
+                "created_at": events[-1].created_at.isoformat(),
+            }
+        ]
+        request = MagicMock()
+        request.headers = {}
+        request.query_params = {}
+        request.is_disconnected = AsyncMock(return_value=False)
+
+        async def run() -> list[int]:
+            reset_shutdown_event()
+            sequences: list[int] = []
+            with patch("pa.modules.agent_chat._runtime_or_404", return_value=runtime):
+                response = await session_events(request, "sess-gap-shutdown")
+                async for chunk in response.body_iterator:
+                    text = chunk if isinstance(chunk, str) else chunk.decode()
+                    data = next(
+                        json.loads(line[5:].strip())
+                        for line in text.splitlines()
+                        if line.startswith("data:")
+                    )
+                    sequences.append(data["seq"])
+                    if data["seq"] == 10:
+                        signal_shutdown()
+                await response.body_iterator.aclose()
+            reset_shutdown_event()
+            return sequences
+
+        self.assertEqual(asyncio.run(run()), list(range(1, 11)))
         self.assertEqual(runtime.store.after_calls, [0, 3])
         self.assertEqual(runtime._subscribers, [])
 

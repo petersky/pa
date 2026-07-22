@@ -72,5 +72,8 @@ def configure_logging(settings: Settings) -> None:
     root = logging.getLogger()
     root.handlers = [stderr, structured]
     root.setLevel(level)
+    # httpx logs every successful request at INFO. PA logs actionable transport
+    # and HTTP failures at their call sites, so keep routine 2xx traffic quiet.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     if settings.debug:
         logging.getLogger("pa").setLevel(logging.DEBUG)

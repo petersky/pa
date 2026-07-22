@@ -687,6 +687,7 @@ class FleetUpdateSSETests(unittest.IsolatedAsyncioTestCase):
             request.state.user = object()
             request.query_params = {"after": "500"}
             request.headers = {}
+            request.is_disconnected = AsyncMock(return_value=False)
             request.app.state.ctx.require_service.return_value = store
             response = await fleet_instance_update_events(request, "peer-1", job.job_id)
             chunks = []

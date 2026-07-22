@@ -176,6 +176,7 @@ class AutonomousHostControlsTests(unittest.TestCase):
             self.assertEqual(payload["message"], "health degraded api_key=[redacted]")
             self.assertNotIn("sk_test-secret-value", json.dumps(payload))
             self.assertEqual(payload["level"], "WARNING")
+            self.assertEqual(logging.getLogger("httpx").level, logging.WARNING)
 
     def test_service_only_no_start_preserves_authority_migration_barrier(self) -> None:
         from pa.cli.main import app

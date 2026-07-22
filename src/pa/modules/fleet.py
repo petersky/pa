@@ -809,6 +809,8 @@ def install_remote_status(request: Request, job_id: str) -> dict:
 
 @router.get("/fleet/install-remote/{job_id}/events")
 async def install_remote_events(request: Request, job_id: str):
+    from pa.server.shutdown import is_shutting_down, wait_for_shutdown
+
     require_user(request)
     store = get_job_store(request.app.state.ctx.settings)
     job = store.get(job_id)
@@ -818,6 +820,8 @@ async def install_remote_events(request: Request, job_id: str):
     async def event_stream():
         last_len = 0
         for _ in range(600):
+            if is_shutting_down() or await request.is_disconnected():
+                return
             current = store.get(job_id)
             if not current:
                 yield "event: error\ndata: missing\n\n"
@@ -832,7 +836,8 @@ async def install_remote_events(request: Request, job_id: str):
                     yield f"event: error\ndata: {current.error}\n\n"
                 yield f"event: done\ndata: {current.status.value}\n\n"
                 return
-            await asyncio.sleep(0.5)
+            if await wait_for_shutdown(0.5):
+                return
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
@@ -1209,6 +1214,8 @@ def fleet_instance_update_status(
 
 @router.get("/fleet/instances/{instance_id}/update/{job_id}/events")
 async def fleet_instance_update_events(request: Request, instance_id: str, job_id: str):
+    from pa.server.shutdown import is_shutting_down, wait_for_shutdown
+
     require_user(request)
     _update_job_or_404(request, instance_id, job_id)
     store = _update_store(request)
@@ -1225,6 +1232,8 @@ async def fleet_instance_update_events(request: Request, instance_id: str, job_i
     async def stream():
         cursor = initial_cursor
         while True:
+            if is_shutting_down() or await request.is_disconnected():
+                return
             job = store.get(job_id)
             if not job:
                 yield 'event: error\ndata: {"message":"job missing"}\n\n'
@@ -1237,7 +1246,8 @@ async def fleet_instance_update_events(request: Request, instance_id: str, job_i
             if job.phase in TERMINAL_PHASES:
                 yield f"event: done\ndata: {json.dumps(job.public_dict())}\n\n"
                 return
-            await asyncio.sleep(0.5)
+            if await wait_for_shutdown(0.5):
+                return
 
     return StreamingResponse(stream(), media_type="text/event-stream")
 
@@ -1621,11 +1631,22 @@ async def fleet_agent_proxy(
     }
     content_type = upstream.headers.get("content-type", "")
     if content_type.startswith("text/event-stream"):
+        from pa.server.shutdown import wait_for_shutdown_or
 
         async def relay() -> AsyncIterator[bytes]:
             try:
                 try:
-                    async for chunk in upstream.aiter_raw():
+                    iterator = upstream.aiter_raw().__aiter__()
+                    while True:
+                        try:
+                            stopping, chunk = await wait_for_shutdown_or(
+                                anext(iterator)
+                            )
+                        except StopAsyncIteration:
+                            break
+                        if stopping:
+                            break
+                        assert chunk is not None
                         yield chunk
                 except httpx.RemoteProtocolError:
                     # A peer restart can end an unbounded SSE response without a

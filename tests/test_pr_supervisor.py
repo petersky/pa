@@ -523,8 +523,10 @@ class _FakeGitHub:
         self.credentials = GitHubCredentials(token="fixture-token")
         self.snapshots = snapshots
         self.calls = 0
+        self.probe_calls = 0
 
     async def probe(self, instance_id: str) -> GitHubCapability:
+        self.probe_calls += 1
         return GitHubCapability(instance_id=instance_id, authenticated=True)
 
     async def snapshot(
@@ -595,6 +597,43 @@ class PRSupervisorServiceTests(unittest.IsolatedAsyncioTestCase):
         await service.run_once()
         self.assertEqual(len(self.dispatcher.calls), 1)
         self.assertIn("independently re-fetch", self.dispatcher.calls[0][1].lower())
+
+    async def test_successful_capability_probe_is_not_repeated_every_minute(self) -> None:
+        github = _FakeGitHub([snapshot()])
+        service = PRSupervisor(
+            self.settings,
+            self.domain,
+            supervisor_store=self.store,
+            github_client=github,
+            dispatcher=self.dispatcher,
+        )
+
+        await service.refresh_capability(force=True)
+        service._capability_heartbeat_at = None
+        await service.refresh_capability()
+
+        self.assertEqual(github.probe_calls, 1)
+
+    async def test_credential_change_reprobes_immediately(self) -> None:
+        github = _FakeGitHub([snapshot()])
+        service = PRSupervisor(
+            self.settings,
+            self.domain,
+            supervisor_store=self.store,
+            github_client=github,
+            dispatcher=self.dispatcher,
+        )
+        first = GitHubCredentials(token="first", token_source="instance_file")
+        second = GitHubCredentials(token="second", token_source="instance_file")
+
+        with patch(
+            "pa.pr_supervisor.service.GitHubCredentials.load",
+            side_effect=[first, second],
+        ):
+            await service.refresh_capability(force=True)
+            await service.refresh_capability()
+
+        self.assertEqual(github.probe_calls, 2)
 
     async def test_condition_change_rearms_same_failure(self) -> None:
         failed = snapshot(conclusion="failure")

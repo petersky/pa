@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from pathlib import Path
@@ -504,6 +503,8 @@ def get_session_snapshot(request: Request, session_id: str) -> dict:
 
 @router.get("/sessions/{session_id}/events")
 async def session_events(request: Request, session_id: str) -> StreamingResponse:
+    from pa.server.shutdown import is_shutting_down, wait_for_shutdown_or
+
     runtime = _runtime_or_404(request, session_id)
     last_event_id = request.headers.get("Last-Event-ID")
     after_seq = 0
@@ -528,6 +529,8 @@ async def session_events(request: Request, session_id: str) -> StreamingResponse
         try:
             runtime._flush_transcript()
             while True:
+                if is_shutting_down():
+                    return
                 page = runtime.store.list_transcript_events(
                     session_id,
                     after_seq=cursor,
@@ -536,6 +539,8 @@ async def session_events(request: Request, session_id: str) -> StreamingResponse
                 if not page:
                     break
                 for te in page:
+                    if is_shutting_down():
+                        return
                     if te.seq <= cursor:
                         continue
                     payload = {
@@ -552,13 +557,18 @@ async def session_events(request: Request, session_id: str) -> StreamingResponse
                     break
 
             while True:
-                if await request.is_disconnected():
+                if is_shutting_down() or await request.is_disconnected():
                     break
                 try:
-                    event = await asyncio.wait_for(queue.get(), timeout=15.0)
-                except asyncio.TimeoutError:
+                    stopping, event = await wait_for_shutdown_or(
+                        queue.get(), timeout=15.0
+                    )
+                except TimeoutError:
                     yield ": keepalive\n\n"
                     continue
+                if stopping:
+                    break
+                assert event is not None
                 seq = int(event.get("seq") or 0)
                 if seq and seq <= cursor:
                     continue
@@ -568,6 +578,8 @@ async def session_events(request: Request, session_id: str) -> StreamingResponse
                     # emitting the retained live event.
                     runtime._flush_transcript()
                     while cursor < seq - 1:
+                        if is_shutting_down():
+                            return
                         gap_page = runtime.store.list_transcript_events(
                             session_id,
                             after_seq=cursor,
@@ -577,6 +589,8 @@ async def session_events(request: Request, session_id: str) -> StreamingResponse
                             break
                         previous_cursor = cursor
                         for te in gap_page:
+                            if is_shutting_down():
+                                return
                             if te.seq <= cursor:
                                 continue
                             payload = {
