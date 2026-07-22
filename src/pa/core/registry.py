@@ -70,6 +70,7 @@ class ModuleRegistry:
         from pa.modules.integrations import IntegrationsModule
         from pa.modules.instance import InstanceModule
         from pa.modules.items import ItemsModule
+        from pa.modules.orchestration import OrchestrationModule
         from pa.modules.projects import ProjectsModule
         from pa.modules.pr_supervisor import PRSupervisorModule
         from pa.modules.sync import SyncModule
@@ -86,6 +87,7 @@ class ModuleRegistry:
             PRSupervisorModule(),
             TrustModule(),
             ItemsModule(),
+            OrchestrationModule(),
             InstanceModule(),
             AgentChatModule(),
             BrowserModule(),
