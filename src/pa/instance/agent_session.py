@@ -18,6 +18,7 @@ from pa.acp.client import (
     permission_cancelled,
     permission_selected,
 )
+from pa.agent.context import compose_session_prompt
 from pa.acp.providers.registry import DEFAULT_PROVIDER_ID
 from pa.acp.providers.resolve import resolve_agent_provider
 from pa.acp.surfaces import (
@@ -458,6 +459,7 @@ class AgentSessionRuntime:
         cwd: str | None = None,
         agent_env: dict[str, str] | None = None,
         source: str = "api",
+        prompt_audit: list[dict[str, Any]] | None = None,
     ) -> QueuedPrompt:
         cwd = self._validated_cwd(cwd)
         item = QueuedPrompt(
@@ -470,6 +472,7 @@ class AgentSessionRuntime:
             cwd=cwd,
             agent_env=self._merged_agent_env(agent_env),
             source=source,
+            prompt_audit=list(prompt_audit or []),
         )
         if action == "prepend":
             self._queue.insert(0, item)
@@ -617,6 +620,63 @@ class AgentSessionRuntime:
         async with self._prompt_lock:
             self._in_flight = item
             self._turn_started_at = datetime.now(UTC)
+            composition = compose_session_prompt(
+                self.store,
+                self.settings,
+                self.session,
+                item.message,
+                card_id=item.card_id,
+                project_id=item.project_id,
+            )
+            prompt_audit = list(item.prompt_audit) + composition.audit_records()
+            from pa.prompts import PROMPTS
+
+            remote_default = PROMPTS.render(
+                "dispatch.remote.default", provider=self.session.agent_name
+            )
+            if item.message == remote_default.text:
+                prompt_audit.insert(0, remote_default.audit_record())
+            if item.source == "recovery":
+                definition = PROMPTS.get("session.recovery.resume")
+                prompt_audit.insert(
+                    0,
+                    {
+                        "key": definition.key,
+                        "version": definition.version,
+                        "source": definition.source,
+                        "scope": definition.scope,
+                        "provider": self.session.agent_name,
+                        "resolved_context": {},
+                    },
+                )
+            if item.source == "pr-supervisor":
+                for key in (
+                    "pr_supervisor.action.required",
+                    "pr_supervisor.action.green",
+                    "pr_supervisor.action.merged",
+                ):
+                    definition = PROMPTS.get(key)
+                    if definition.template in item.message:
+                        prompt_audit.insert(
+                            0,
+                            {
+                                "key": definition.key,
+                                "version": definition.version,
+                                "source": definition.source,
+                                "scope": definition.scope,
+                                "provider": self.session.agent_name,
+                                "resolved_context": {},
+                            },
+                        )
+            config = dict(self.session.config_json or {})
+            audit_history = list(config.get("prompt_audit") or [])
+            audit_history.append({"prompt_id": item.id, "prompts": prompt_audit})
+            config["prompt_audit"] = audit_history[-50:]
+            self.session.config_json = config
+            self._save_session_preserving_external_browser()
+            self._append_transcript(
+                "prompt_rendered", {"id": item.id, "prompts": prompt_audit}
+            )
             self._append_transcript(
                 "user_message",
                 {
@@ -631,7 +691,7 @@ class AgentSessionRuntime:
                 try:
                     with _agent_env_overlay(env):
                         stop_reason = await self.connection.prompt(
-                            item.message,
+                            composition.text,
                             images=item.images,
                             item_id=item.card_id,
                             principal_id=item.principal_id,
@@ -966,9 +1026,7 @@ class AgentSessionManager:
                     project_id=session.project_id,
                     session_id=session.id,
                     card_id=session.card_id,
-                    realm_id=getattr(
-                        project, "realm_id", self.settings.primary_realm
-                    ),
+                    realm_id=getattr(project, "realm_id", self.settings.primary_realm),
                     provider_id=provider_id,
                 )
                 if workspace is None:
@@ -1239,6 +1297,13 @@ class AgentSessionManager:
         runtime = AgentSessionRuntime(self, session, agent_env=workspace_env)
         queued = list(snap.queued_prompts)
         if snap.in_flight:
+            from pa.prompts import PROMPTS
+
+            recovery = PROMPTS.render(
+                "session.recovery.resume", provider=session.agent_name
+            )
+            snap.in_flight.message = f"{recovery.text}\n\n{snap.in_flight.message}"
+            snap.in_flight.source = "recovery"
             queued.insert(0, snap.in_flight)
         for item in queued:
             item.cwd = session.cwd

@@ -6,6 +6,7 @@
   {{ section_nav([
     ('appearance', 'Appearance'),
     ('agent', 'Agent defaults'),
+    ('prompts', 'Prompts'),
     ('instance', 'Instance'),
   ], active='agent') }}
 </div>
@@ -128,6 +129,86 @@
       <p class="muted small" id="pa-agent-prefs-status" hidden></p>
     </form>
   </div>
+</section>
+
+<section class="hidden stack" data-section="prompts" hidden>
+  <div class="panel">
+    <div class="panel-header">
+      <div>
+        <h2>Prompts</h2>
+        <p class="muted small">Effective built-in PA prompts. Previews use clearly synthetic context and never session secrets.</p>
+      </div>
+    </div>
+    <div class="prompt-toolbar" role="search" aria-label="Filter prompts">
+      <label>
+        <span>Search prompts</span>
+        <input type="search" id="pa-prompt-search" placeholder="Key, purpose, or variable" autocomplete="off">
+      </label>
+      <label>
+        <span>Scope</span>
+        <select id="pa-prompt-scope">
+          <option value="">All scopes</option>
+          {% for scope in prompt_catalog | map(attribute='scope') | unique | sort %}
+          <option value="{{ scope }}">{{ scope }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <p class="muted small" id="pa-prompt-count" aria-live="polite">{{ prompt_catalog | length }} prompts</p>
+  </div>
+
+  <div class="prompt-catalog" id="pa-prompt-catalog">
+    {% for prompt in prompt_catalog %}
+    <article class="panel prompt-card"
+             data-prompt-row
+             data-prompt-scope="{{ prompt.scope }}"
+             data-prompt-search="{{ (prompt.key ~ ' ' ~ prompt.purpose ~ ' ' ~ (prompt.variables | map(attribute='name') | join(' '))) | lower }}">
+      <div class="panel-header prompt-card-header">
+        <div>
+          <h3><code>{{ prompt.key }}</code></h3>
+          <p>{{ prompt.purpose }}</p>
+        </div>
+        <button type="button"
+                class="secondary small"
+                data-copy-prompt="prompt-preview-{{ loop.index }}"
+                aria-label="Copy rendered preview for {{ prompt.key }}">Copy preview</button>
+      </div>
+      <dl class="settings-dl prompt-meta">
+        <dt>Version</dt><dd>{{ prompt.version }}</dd>
+        <dt>Scope</dt><dd>{{ prompt.scope }}</dd>
+        <dt>Provenance</dt><dd>{{ prompt.provenance }} · <code>{{ prompt.source }}</code></dd>
+        <dt>Mutability</dt><dd>Read-only; no override is configured</dd>
+      </dl>
+      <details>
+        <summary>Variable schema ({{ prompt.variables | length }})</summary>
+        {% if prompt.variables %}
+        <ul class="prompt-variable-list">
+          {% for variable in prompt.variables %}
+          <li><code>{{ variable.name }}</code> · {{ variable.type }} · {{ 'required' if variable.required else 'optional' }} — {{ variable.description }}</li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="muted small">No variables.</p>
+        {% endif %}
+      </details>
+      <details open>
+        <summary>Rendered preview <span class="muted">(synthetic context)</span></summary>
+        <pre id="prompt-preview-{{ loop.index }}" class="prompt-preview" tabindex="0">{{ prompt.preview }}</pre>
+      </details>
+    </article>
+    {% endfor %}
+  </div>
+
+  <div class="panel">
+    <div class="panel-header"><h3>Provider context limits</h3></div>
+    <dl class="settings-dl">
+      {% for adapter in prompt_adapters %}
+      <dt>{{ adapter.provider }}</dt>
+      <dd>{{ adapter.max_characters }} characters · adapter v{{ adapter.version }} · {{ adapter.source }}</dd>
+      {% endfor %}
+    </dl>
+  </div>
+  <p id="pa-prompt-copy-status" class="visually-hidden" aria-live="polite"></p>
 </section>
 
 <section class="hidden" data-section="instance" hidden>
@@ -362,6 +443,44 @@
         status.textContent = "Failed to save preferences.";
       }
     }
+  });
+})();
+</script>
+
+<script>
+(function () {
+  var search = document.getElementById("pa-prompt-search");
+  var scope = document.getElementById("pa-prompt-scope");
+  var rows = Array.from(document.querySelectorAll("[data-prompt-row]"));
+  var count = document.getElementById("pa-prompt-count");
+  function filterPrompts() {
+    var query = (search && search.value || "").trim().toLowerCase();
+    var wantedScope = scope && scope.value || "";
+    var visible = 0;
+    rows.forEach(function (row) {
+      var matches = (!query || row.dataset.promptSearch.indexOf(query) !== -1) &&
+        (!wantedScope || row.dataset.promptScope === wantedScope);
+      row.hidden = !matches;
+      if (matches) visible += 1;
+    });
+    if (count) count.textContent = visible + (visible === 1 ? " prompt" : " prompts");
+  }
+  if (search) search.addEventListener("input", filterPrompts);
+  if (scope) scope.addEventListener("change", filterPrompts);
+  document.querySelectorAll("[data-copy-prompt]").forEach(function (button) {
+    button.addEventListener("click", async function () {
+      var target = document.getElementById(button.dataset.copyPrompt);
+      if (!target) return;
+      var status = document.getElementById("pa-prompt-copy-status");
+      try {
+        await navigator.clipboard.writeText(target.textContent);
+        button.textContent = "Copied";
+        if (status) status.textContent = "Rendered prompt copied.";
+        window.setTimeout(function () { button.textContent = "Copy preview"; }, 1200);
+      } catch (_) {
+        if (status) status.textContent = "Copy failed. Select the preview text manually.";
+      }
+    });
   });
 })();
 </script>

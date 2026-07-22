@@ -123,7 +123,9 @@ class FleetRegistryReloadTests(unittest.TestCase):
         self.assertEqual(raised.exception.status_code, 409)
         self.assertEqual(raised.exception.detail["job_id"], "job-1")
 
-    def test_device_login_ui_supports_local_proxy_resume_and_success_refresh(self) -> None:
+    def test_device_login_ui_supports_local_proxy_resume_and_success_refresh(
+        self,
+    ) -> None:
         source = Path("src/pa/server/static/js/fleet.js").read_text()
         self.assertIn('return "/api/agent/providers/codex/login-jobs"', source)
         self.assertIn('data-codex-login-resume="', source)
@@ -566,7 +568,9 @@ class FleetHealthParallelTests(unittest.IsolatedAsyncioTestCase):
             # health + providers + status + update check for each instance
             self.assertEqual(mock_client.get.await_count, 8)
 
-    async def test_slow_peer_and_detail_timeouts_are_terminal_and_isolated(self) -> None:
+    async def test_slow_peer_and_detail_timeouts_are_terminal_and_isolated(
+        self,
+    ) -> None:
         import asyncio
         from pa.modules.fleet import fleet_health
 
@@ -574,10 +578,13 @@ class FleetHealthParallelTests(unittest.IsolatedAsyncioTestCase):
             settings = Settings(data_dir=Path(tmp), instance_id="local")
             fleet = FleetRegistry(settings.data_dir, settings.fleet_id)
             for instance_id in ("fast", "hung"):
-                fleet.upsert_instance(FleetInstance(
-                    instance_id=instance_id, name=instance_id,
-                    url=f"http://{instance_id}:8080",
-                ))
+                fleet.upsert_instance(
+                    FleetInstance(
+                        instance_id=instance_id,
+                        name=instance_id,
+                        url=f"http://{instance_id}:8080",
+                    )
+                )
             ctx = MagicMock(settings=settings)
             ctx.require_service.return_value = fleet
             request = MagicMock()
@@ -585,8 +592,12 @@ class FleetHealthParallelTests(unittest.IsolatedAsyncioTestCase):
 
             class Resp:
                 status_code = 200
-                def __init__(self, payload=None): self.payload = payload or {}
-                def json(self): return self.payload
+
+                def __init__(self, payload=None):
+                    self.payload = payload or {}
+
+                def json(self):
+                    return self.payload
 
             async def get(url, **_kwargs):
                 if "hung" in url:
@@ -624,13 +635,18 @@ class FleetHealthParallelTests(unittest.IsolatedAsyncioTestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(
-                data_dir=Path(tmp), instance_id="local",
+                data_dir=Path(tmp),
+                instance_id="local",
                 instance_url="http://broken.invalid:8080",
             )
             fleet = FleetRegistry(settings.data_dir, settings.fleet_id)
-            fleet.upsert_instance(FleetInstance(
-                instance_id="local", name="local", url=settings.instance_url,
-            ))
+            fleet.upsert_instance(
+                FleetInstance(
+                    instance_id="local",
+                    name="local",
+                    url=settings.instance_url,
+                )
+            )
             ctx = MagicMock(settings=settings)
             ctx.require_service.return_value = fleet
             request = MagicMock()
@@ -642,8 +658,12 @@ class FleetHealthParallelTests(unittest.IsolatedAsyncioTestCase):
             with (
                 patch("pa.modules.fleet.require_user"),
                 patch("pa.modules.fleet.httpx.AsyncClient", return_value=client),
-                patch("pa.acp.providers.resolve.list_provider_summaries", return_value=[]),
-                patch("pa.update.runner.check_update", side_effect=RuntimeError("offline")),
+                patch(
+                    "pa.acp.providers.resolve.list_provider_summaries", return_value=[]
+                ),
+                patch(
+                    "pa.update.runner.check_update", side_effect=RuntimeError("offline")
+                ),
             ):
                 rows = await fleet_health(request)
             self.assertEqual(rows[0]["state"], "up")
@@ -669,7 +689,9 @@ class FleetUpdateUiTests(unittest.TestCase):
         self.assertIn("if (liveStatusRequest) return liveStatusRequest", script)
         self.assertIn('document.body.addEventListener("htmx:beforeSwap"', script)
         self.assertIn("liveStatusController.abort()", script)
-        self.assertIn('terminalLiveFailure("Health check timed out", "timeout")', script)
+        self.assertIn(
+            'terminalLiveFailure("Health check timed out", "timeout")', script
+        )
         self.assertIn('["up", "down", "partial", "error", "timeout"]', script)
         self.assertIn("if (seq !== liveStatusSeq) return", script)
         self.assertIn("!el.dataset.fleetTerminal", script)
@@ -776,10 +798,14 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
                 result["dispatch"]["dispatch_id"],
             )
             prompt_call = peer.await_args_list[1]
-            self.assertIn(
-                "# Card: Implement remote control",
+            self.assertEqual(
                 prompt_call.kwargs["body"]["message"],
+                "Work on this card autonomously. Report progress, blockers, "
+                "and the final result.",
             )
+            self.assertNotIn("/Users/petersky", prompt_call.kwargs["body"]["message"])
+            # Target-side composition waits for the target workspace; no
+            # controller-local project path enters the remote prompt.
             store.update_card.assert_called_once()
             store.add_knowledge.assert_called_once()
 

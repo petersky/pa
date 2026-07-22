@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from pa.release.version import ROOT, tag_for_version
+from pa.prompts import PROMPTS
 
 TEMPLATE_PATH = ROOT / "docs" / "RELEASE_NOTES_TEMPLATE.md"
 RELEASES_DIR = ROOT / "releases"
@@ -94,20 +95,10 @@ def render_template(
 
 
 def build_agent_prompt(prefilled_template: str) -> str:
-    return f"""You are writing release notes for the PA project.
-
-Fill in the template below. Rules:
-- Keep the exact markdown heading structure (# title, ## sections).
-- Replace placeholder bullets with real items from the changelog.
-- Remove sections that have no content (e.g. omit ## Fixed if nothing fixed).
-- Keep ## Changelog at the end; you may trim redundant entries already summarized above.
-- Do not invent features not supported by the changelog.
-- Output ONLY the completed release notes markdown, no preamble or code fences.
-
-Template to complete:
-
-{prefilled_template}
-"""
+    return PROMPTS.render(
+        "release.notes.generate",
+        {"release": {"prefilled_template": prefilled_template}},
+    ).text
 
 
 def resolve_agent_timeout(timeout: float | None = None) -> float:
@@ -144,7 +135,11 @@ def invoke_agent(
     args = shlex.split(args_str)
     timeout_s = resolve_agent_timeout(timeout)
 
-    use_stdin = os.environ.get("PA_RELEASE_AGENT_USE_STDIN", "").lower() in {"1", "true", "yes"}
+    use_stdin = os.environ.get("PA_RELEASE_AGENT_USE_STDIN", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
     argv = [cmd, *args] if use_stdin else [cmd, *args, prompt]
     run_kwargs: dict = {
         "cwd": ROOT,

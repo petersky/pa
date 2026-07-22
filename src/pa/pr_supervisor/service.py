@@ -11,14 +11,14 @@ from uuid import uuid4
 
 import httpx
 
-from pa.agent.context import augment_message_with_context
 from pa.domain.models import CardLane, CardUpdate
 from pa.pr_supervisor.gating import (
-    build_executor_prompt,
+    build_executor_prompt_rendered,
     evaluate_gate,
     redact_external_value,
 )
 from pa.pr_supervisor.github import GitHubClient, GitHubCredentials
+from pa.prompts import RenderedPrompt
 from pa.pr_supervisor.models import (
     GateResult,
     GitHubCapability,
@@ -61,13 +61,21 @@ class ExecutorDispatcher:
         self.peer_table = peer_table
         self.http_client = http_client
 
-    async def dispatch(self, watch: PRWatch, event_key: str, prompt: str) -> str:
+    async def dispatch(
+        self, watch: PRWatch, event_key: str, prompt: str | RenderedPrompt
+    ) -> str:
+        prompt_text = prompt.text if isinstance(prompt, RenderedPrompt) else prompt
+        prompt_audit = (
+            [prompt.audit_record()] if isinstance(prompt, RenderedPrompt) else []
+        )
         target = watch.originating_instance_id
         if target and target != self.settings.instance_id:
             url = self._instance_url(target)
             if url:
                 try:
-                    result = await self._remote_dispatch(url, watch, event_key, prompt)
+                    result = await self._remote_dispatch(
+                        url, watch, event_key, prompt_text, prompt_audit
+                    )
                     return str(result.get("state") or "queued")
                 except (httpx.ConnectError, RuntimeError) as exc:
                     logger.warning(
@@ -89,10 +97,17 @@ class ExecutorDispatcher:
                         exc,
                     )
                     raise
-        return await self.dispatch_local(watch, event_key, prompt)
+        return await self.dispatch_local(
+            watch, event_key, prompt_text, prompt_audit=prompt_audit
+        )
 
     async def _remote_dispatch(
-        self, url: str, watch: PRWatch, event_key: str, prompt: str
+        self,
+        url: str,
+        watch: PRWatch,
+        event_key: str,
+        prompt: str,
+        prompt_audit: list[dict[str, Any]],
     ) -> dict[str, Any]:
         headers: dict[str, str] = {}
         if self.settings.sync_token:
@@ -107,6 +122,7 @@ class ExecutorDispatcher:
                     "watch": watch.model_dump(mode="json"),
                     "event_key": event_key,
                     "prompt": prompt,
+                    "prompt_audit": prompt_audit,
                 },
             )
             if response.status_code >= 400:
@@ -118,7 +134,14 @@ class ExecutorDispatcher:
             if owns:
                 await client.aclose()
 
-    async def dispatch_local(self, watch: PRWatch, event_key: str, prompt: str) -> str:
+    async def dispatch_local(
+        self,
+        watch: PRWatch,
+        event_key: str,
+        prompt: str,
+        *,
+        prompt_audit: list[dict[str, Any]] | None = None,
+    ) -> str:
         if not self.store.claim_dispatch(
             event_key,
             watch.id,
@@ -181,21 +204,15 @@ class ExecutorDispatcher:
                     project_tool_config=project.tool_config if project else None,
                     surface="execution",
                 )
-            message = augment_message_with_context(
-                self.domain_store,
-                prompt,
-                card_id=watch.card_id,
-                project_id=watch.project_id,
-                realm_id=watch.realm_id,
-            )
             runtime.enqueue(
-                message,
+                prompt,
                 action="append",
                 card_id=watch.card_id,
                 project_id=watch.project_id,
                 principal_id=runtime.session.principal_id or "user:local",
                 cwd=watch.executor_cwd or runtime.session.cwd,
                 source="pr-supervisor",
+                prompt_audit=prompt_audit,
             )
             self.store.finish_dispatch(
                 event_key, state="queued", detail=runtime.session_id
@@ -324,8 +341,7 @@ class PRSupervisor:
             or credentials_changed
             or not self._capability
             or not self._capability_checked_at
-            or now - self._capability_checked_at
-            >= timedelta(seconds=probe_seconds)
+            or now - self._capability_checked_at >= timedelta(seconds=probe_seconds)
         )
         if probe_due:
             self._capability = await self.github.probe(self.settings.instance_id)
@@ -340,9 +356,7 @@ class PRSupervisor:
         if heartbeat_due:
             # Heartbeats keep fleet eligibility fresh without treating every
             # heartbeat as a reason to call GitHub's /user endpoint.
-            self._capability = self._capability.model_copy(
-                update={"checked_at": now}
-            )
+            self._capability = self._capability.model_copy(update={"checked_at": now})
             self.store.save_capability(self._capability)
             await self._heartbeat_authority(self._capability)
             self._capability_heartbeat_at = now
@@ -590,7 +604,13 @@ class PRSupervisor:
             fingerprint=gate.fingerprint,
             payload={"reasons": gate.reasons},
         )
-        prompt = build_executor_prompt(watch, snapshot, gate, green=green)
+        prompt = build_executor_prompt_rendered(
+            watch,
+            snapshot,
+            gate,
+            green=green,
+            provider=watch.originating_agent or "default",
+        )
         try:
             state = await self.dispatcher.dispatch(watch, event_key, prompt)
             logger.info(
@@ -639,7 +659,14 @@ class PRSupervisor:
         self.store.increment_metric("merged_watches")
         await self._replicate(terminal)
         await self._complete_merged_card(terminal)
-        prompt = build_executor_prompt(watch, snapshot, gate, green=False, merged=True)
+        prompt = build_executor_prompt_rendered(
+            watch,
+            snapshot,
+            gate,
+            green=False,
+            merged=True,
+            provider=watch.originating_agent or "default",
+        )
         try:
             await self.dispatcher.dispatch(watch, event_key, prompt)
         except Exception:
