@@ -475,10 +475,10 @@ def card_detail_partial(
 def card_detail_update(
     request: Request,
     card_id: str,
-    title: str = Form(...),
-    body: str = Form(""),
-    summary: str = Form(""),
-    lane: CardLane = Form(...),
+    title: str | None = Form(None),
+    body: str | None = Form(None),
+    summary: str | None = Form(None),
+    lane: CardLane | None = Form(None),
     realm: str | None = None,
 ) -> HTMLResponse:
     realm_id = realm or _active_realm(request)
@@ -488,13 +488,13 @@ def card_detail_update(
     if not existing:
         raise HTTPException(status_code=404, detail="Card not found")
     changes = {}
-    if title != existing.title:
+    if title is not None and title != existing.title:
         changes["title"] = title
-    if body != existing.body:
+    if body is not None and body != existing.body:
         changes["body"] = body
-    if summary.strip() != existing.summary:
+    if summary is not None and summary.strip() != existing.summary:
         changes["summary"] = summary
-    if lane != existing.lane:
+    if lane is not None and lane != existing.lane:
         changes["lane"] = lane
     card = existing
     if changes:

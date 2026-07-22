@@ -18,7 +18,9 @@
        data-card-id="{{ card.id }}"
        data-card-realm="{{ card.realm_id }}">{{ card.title }}</a>
   </h3>
-  <p class="compact-card-summary">{{ card.summary }}</p>
+  <div class="card-markdown compact-card-summary" data-card-markdown>
+    <span hidden data-card-markdown-source>{{ card.summary | tojson }}</span>
+  </div>
   <footer class="compact-card-footer">
     <span>
       {% if session %}Agent {{ session.status }}

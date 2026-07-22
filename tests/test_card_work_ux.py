@@ -272,11 +272,10 @@ class CoreWorkUiRouteTests(unittest.TestCase):
             detail = client.get(f"/partials/cards/{card.id}/detail")
             self.assertEqual(detail.status_code, 200)
             self.assertIn("FULL BODY MUST STAY OUT OF COLLECTIONS", detail.text)
-            self.assertIn("data-card-edit", detail.text)
-            self.assertLess(
-                detail.text.index("card-detail-section"),
-                detail.text.index("card-edit-surface"),
-            )
+            self.assertIn("data-inline-edit-field", detail.text)
+            self.assertIn("data-card-markdown", detail.text)
+            self.assertNotIn("card-edit-surface", detail.text)
+            self.assertNotIn("data-card-edit-open", detail.text)
 
     def test_memory_page_is_curated_filterable_and_not_a_transcript_dump(self) -> None:
         with TestClient(self.app) as client:
@@ -396,6 +395,44 @@ class CoreWorkUiRouteTests(unittest.TestCase):
             )
             self.assertEqual(missing.status_code, 404)
 
+    def test_detail_inline_forms_update_only_the_submitted_field(self) -> None:
+        with TestClient(self.app) as client:
+            card = self.app.state.ctx.store.create_card(
+                CardCreate(
+                    title="Inline editing",
+                    body="Original **details**.",
+                    summary="Original *summary*.",
+                    summary_source=CardSummarySource.MANUAL,
+                )
+            )
+            page = client.get("/")
+            token_match = re.search(
+                r'<meta name="csrf-token" content="([^"]+)"', page.text
+            )
+            assert token_match is not None
+
+            saved = client.post(
+                f"/partials/cards/{card.id}",
+                headers={"X-CSRF-Token": token_match.group(1)},
+                data={
+                    "body": (
+                        "Updated details with "
+                        "![media](https://example.test/a.png)"
+                    )
+                },
+            )
+
+            self.assertEqual(saved.status_code, 200, saved.text)
+            updated = self.app.state.ctx.store.get_card(card.id)
+            assert updated is not None
+            self.assertEqual(updated.title, card.title)
+            self.assertEqual(updated.summary, card.summary)
+            self.assertEqual(updated.lane, card.lane)
+            self.assertIn("Updated details with", updated.body)
+            self.assertIn('data-markdown-tab="edit"', saved.text)
+            self.assertIn('data-markdown-tab="preview"', saved.text)
+            self.assertIn("data-markdown-preview", saved.text)
+
     def test_work_filters_and_mobile_lane_controls_are_labeled(self) -> None:
         with TestClient(self.app) as client:
             response = client.get("/work?q=ship&blocked=blocked&updated=7")
@@ -436,13 +473,22 @@ class CoreWorkUiRouteTests(unittest.TestCase):
         root = Path(__file__).parents[1] / "src" / "pa" / "server"
         detail = (root / "templates" / "partials" / "card-detail.html").read_text()
         script = (root / "static" / "js" / "spa.js").read_text()
+        markdown = (root / "static" / "js" / "agent-chat.js").read_text()
         css = (root / "static" / "style.css").read_text()
 
         self.assertIn("data-card-agent-start", detail)
         self.assertIn("auto_start=false", detail)
         self.assertIn('hx-preserve="true"', detail)
         self.assertIn("Selecting a card never starts work", detail)
+        self.assertIn("data-inline-edit-open", detail)
+        self.assertIn('data-markdown-tab="edit"', detail)
+        self.assertIn('data-markdown-tab="preview"', detail)
+        self.assertNotIn("card-edit-surface", detail)
         self.assertIn("history.pushState({ paCard", script)
+        self.assertIn("renderCardMarkdown", script)
+        self.assertIn("renderMarkdownInto(preview", script)
+        self.assertIn('ADD_TAGS: ["audio", "iframe", "picture", "source", "track", "video"]', markdown)
+        self.assertIn('"sandbox",', markdown)
         self.assertIn("Could not move card. Its original lane was restored.", script)
         self.assertIn("@media (max-width: 1000px)", css)
         self.assertIn("@media (max-width: 700px)", css)
