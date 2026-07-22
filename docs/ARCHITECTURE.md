@@ -1,5 +1,9 @@
 # Architecture
 
+Remote dispatch transport and business-level card completion use the versioned
+[card disposition contract](CARD_DISPOSITIONS.md). An agent turn ending never
+implies that its card is Done.
+
 PA is built as a **modular kernel** with clear boundaries. Core features are implemented as built-in modules; external packages extend PA through the same contracts and entry points.
 
 ## Layers

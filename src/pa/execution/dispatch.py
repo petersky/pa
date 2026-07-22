@@ -83,6 +83,11 @@ class DispatchRecord(BaseModel):
     prompt_ack: dict[str, Any] | None = None
     knowledge_recorded_at: datetime | None = None
     completion_payload: dict[str, Any] | None = None
+    card_disposition_payload: dict[str, Any] | None = None
+    card_disposition_status: str | None = None
+    card_disposition_reason: str | None = None
+    card_lane_before: str | None = None
+    card_lane_after: str | None = None
     acknowledged_at: datetime | None = None
     events: list[DispatchEvent] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -106,6 +111,22 @@ class DispatchRecord(BaseModel):
             if self.state == "completion_pending"
             else None,
         }
+        data["agent_turn"] = {
+            "completed": self.completion_payload is not None,
+            "stop_reason": (self.completion_payload or {}).get("stop_reason"),
+        }
+        data["dispatch_completion"] = {
+            "completed": self.state in {"completed", "acknowledged"},
+            "acknowledged_at": self.acknowledged_at.isoformat()
+            if self.acknowledged_at
+            else None,
+        }
+        data["card_completion"] = {
+            "status": self.card_disposition_status or "not_requested",
+            "lane_before": self.card_lane_before,
+            "lane_after": self.card_lane_after,
+            "reason": self.card_disposition_reason,
+        }
         return data
 
 
@@ -127,6 +148,22 @@ class DispatchStore:
             }
         except OSError, ValueError:
             self._records = {}
+            return
+        migrated = False
+        for record in self._records.values():
+            if (
+                record.card_id
+                and record.state in {"completed", "acknowledged"}
+                and record.card_disposition_status is None
+            ):
+                record.card_disposition_status = "legacy_unrecorded"
+                record.card_disposition_reason = (
+                    "This dispatch completed before the card-disposition contract; "
+                    "the stored card lane was left unchanged."
+                )
+                migrated = True
+        if migrated:
+            self._save()
 
     def _save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -391,7 +428,7 @@ class CompletionOutbox:
         self.store.transition(
             record,
             "completion_pending",
-            "Completion queued for asynchronous delivery to the authority.",
+            "Agent turn completed; dispatch completion queued for delivery to the authority.",
         )
         self._wake.set()
         return True
@@ -449,16 +486,29 @@ class CompletionOutbox:
                         "source_instance_id": record.target_instance_id,
                         "session_id": record.session_id,
                         "result": record.completion_payload or {},
+                        "disposition": (record.completion_payload or {}).get(
+                            "card_disposition"
+                        ),
                     },
                     headers=headers,
                 )
             if response.status_code in {200, 208}:
+                try:
+                    acknowledgement = response.json()
+                except ValueError:
+                    acknowledgement = {}
+                disposition = acknowledgement.get("card_disposition") or {}
+                if isinstance(disposition, dict):
+                    record.card_disposition_status = disposition.get("status")
+                    record.card_disposition_reason = disposition.get("reason")
+                    record.card_lane_before = disposition.get("lane_before")
+                    record.card_lane_after = disposition.get("lane_after")
                 record.acknowledged_at = datetime.now(UTC)
                 record.last_error = None
                 self.store.transition(
                     record,
                     "completed",
-                    "Authority acknowledged remote completion.",
+                    "Authority acknowledged dispatch completion separately from card disposition.",
                 )
             else:
                 record.last_error = (

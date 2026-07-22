@@ -140,7 +140,8 @@ class MacMiniAutonomySmokeTest(unittest.TestCase):
             )
             self.assertTrue(ack["acknowledged"])
             self.assertEqual(ledger.get("dispatch-smoke").state, "completed")
-            authority_store.update_card.assert_called_once()
+            self.assertEqual(ack["card_disposition"]["status"], "absent")
+            authority_store.update_card.assert_not_called()
 
             subprocess.run(
                 ["git", "-C", str(repository), "worktree", "remove", str(worktree)],
