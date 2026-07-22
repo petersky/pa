@@ -41,8 +41,6 @@ class CursorProvider:
             args=list(_DEFAULT_ARGS),
             docs_key="cursor",
             install_method="path",
-            # Cursor advertises loadSession but session/load returns Invalid params.
-            session_load_supported=False,
             capability_notes="Cursor CLI ACP server. See docs/acp/cursor.md.",
         )
 
