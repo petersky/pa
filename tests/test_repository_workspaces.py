@@ -12,7 +12,8 @@ import pytest
 
 from pa.config import Settings
 from pa.acp.providers.base import AgentProviderSpec
-from pa.domain.models import ProjectRepository, Repository
+from pa.domain.models import AgentSession, ProjectRepository, Repository
+from pa.instance.quiesce import QuiesceSnapshot, SessionSnapshot
 from pa.repository.workspace import (
     LinkedRepository,
     RepositoryPolicy,
@@ -308,7 +309,14 @@ def test_declared_setup_and_submodule_defaults_are_explicit(tmp_path: Path) -> N
         partial_clone=False,
         submodules="none",
         lfs=False,
-        setup_commands=[["git", "config", "pa.setup-complete", "true"]],
+        setup_commands=[
+            ["git", "config", "pa.setup-complete", "true"],
+            [
+                "sh",
+                "-c",
+                'printf "%s" "$PA_DEPENDENCY_CACHE" > dependency-cache.txt',
+            ],
+        ],
     )
 
     lease = manager.provision_repository(
@@ -320,6 +328,11 @@ def test_declared_setup_and_submodule_defaults_are_explicit(tmp_path: Path) -> N
             Path(lease.worktree_path), "config", "--get", "pa.setup-complete"
         ).stdout.strip()
         == "true"
+    )
+    expected_cache = manager.dependency_root / manager._entity_key("session-1")
+    assert (
+        Path(lease.worktree_path, "dependency-cache.txt").read_text()
+        == str(expected_cache)
     )
 
 
@@ -502,3 +515,199 @@ def test_agent_session_records_retryable_provisioning_failure(tmp_path: Path) ->
     assert session.status == "provisioning_failed"
     assert session.config_json["provisioning"]["retryable"] is True
     assert "credentials" in session.config_json["provisioning"]["error"]
+
+
+def test_project_session_uses_project_realm_and_requires_repository(
+    tmp_path: Path,
+) -> None:
+    workspace_manager, _, _ = manager_for(tmp_path)
+    settings = workspace_manager.settings
+    store = workspace_manager.store
+    project = SimpleNamespace(realm_id="shared", tool_config={}, repos=[])
+    store.get_project.return_value = project
+    manager = AgentSessionManager(settings, store)
+    spec = AgentProviderSpec(id="codex", display_name="Codex", command="codex-acp")
+    resolved = SimpleNamespace(provider_id="codex", spec=spec, source="instance")
+
+    async def run_success() -> None:
+        with (
+            patch(
+                "pa.instance.agent_session.resolve_agent_provider",
+                return_value=resolved,
+            ),
+            patch.object(AgentSessionRuntime, "start", new=AsyncMock()),
+        ):
+            await manager.create_session(
+                project_id="project-1", provider_override="codex"
+            )
+
+    asyncio.run(run_success())
+    assert any(
+        call.kwargs.get("realm_id") == "shared"
+        for call in store.list_project_repositories.call_args_list
+    )
+
+    store.list_project_repositories.return_value = []
+
+    async def run_missing() -> None:
+        with patch(
+            "pa.instance.agent_session.resolve_agent_provider", return_value=resolved
+        ):
+            await manager.create_session(
+                project_id="project-1", provider_override="codex"
+            )
+
+    with pytest.raises(WorkspaceProvisioningError, match="no linked repositories"):
+        asyncio.run(run_missing())
+
+
+def test_failed_reprovision_clears_stale_cwd_and_execution_fence(
+    tmp_path: Path,
+) -> None:
+    workspace_manager, _, _ = manager_for(tmp_path)
+    store = workspace_manager.store
+    bad = Repository(
+        id="repo-bad", url="https://user:secret@github.com/org/private.git"
+    )
+    store.list_project_repositories.return_value = [
+        (
+            bad,
+            ProjectRepository(
+                project_id="project-1", repository_id=bad.id, branch="main"
+            ),
+        )
+    ]
+    existing = AgentSession(
+        id="existing",
+        agent_name="codex",
+        status="disconnected",
+        cwd="/stale/worktree",
+        project_id="project-1",
+        config_json={"execution_context": {"fencing_token": 41}},
+    )
+    manager = AgentSessionManager(workspace_manager.settings, store)
+    spec = AgentProviderSpec(id="codex", display_name="Codex", command="codex-acp")
+    resolved = SimpleNamespace(provider_id="codex", spec=spec, source="instance")
+
+    async def run() -> None:
+        with patch(
+            "pa.instance.agent_session.resolve_agent_provider", return_value=resolved
+        ):
+            await manager.create_session(
+                existing=existing,
+                cwd="/caller/override",
+                project_id="project-1",
+                provider_override="codex",
+            )
+
+    with pytest.raises(WorkspaceProvisioningError, match="credentials"):
+        asyncio.run(run())
+    saved = store.save_session.call_args.args[0]
+    assert saved.cwd is None
+    assert "execution_context" not in saved.config_json
+    assert saved.config_json["provisioning"]["state"] == "failed"
+
+
+def test_startup_gc_protects_open_persisted_sessions(tmp_path: Path) -> None:
+    workspace_manager, _, _ = manager_for(tmp_path)
+    store = workspace_manager.store
+    store.list_sessions.return_value = [
+        AgentSession(id="open", agent_name="codex", status="disconnected"),
+        AgentSession(id="closed", agent_name="codex", status="closed"),
+    ]
+    manager = AgentSessionManager(workspace_manager.settings, store)
+    manager.workspace_manager.collect_garbage = MagicMock(return_value={})
+    manager.attach_default = AsyncMock()
+
+    with patch("pa.instance.agent_session.load_quiesce_snapshot", return_value=None):
+        asyncio.run(manager.start())
+
+    manager.workspace_manager.collect_garbage.assert_called_once_with(
+        active_session_ids={"open"}
+    )
+
+
+def test_stale_quiesce_snapshot_does_not_block_gc_when_agent_disabled(
+    tmp_path: Path,
+) -> None:
+    workspace_manager, _, _ = manager_for(tmp_path)
+    workspace_manager.settings.agent_enabled = False
+    manager = AgentSessionManager(workspace_manager.settings, workspace_manager.store)
+    manager.workspace_manager.collect_garbage = MagicMock(return_value={})
+    snapshot = QuiesceSnapshot(
+        sessions=[SessionSnapshot(session_id="stale-session")]
+    )
+
+    with (
+        patch(
+            "pa.instance.agent_session.load_quiesce_snapshot",
+            return_value=snapshot,
+        ),
+        patch("pa.instance.agent_session.clear_quiesce_snapshot") as clear,
+    ):
+        asyncio.run(manager.start())
+
+    manager.workspace_manager.collect_garbage.assert_called_once_with(
+        active_session_ids=set()
+    )
+    clear.assert_called_once_with(workspace_manager.settings.data_dir)
+
+
+def test_execution_surface_reuses_live_and_persisted_card_session(
+    tmp_path: Path,
+) -> None:
+    workspace_manager, _, _ = manager_for(tmp_path)
+    manager = AgentSessionManager(workspace_manager.settings, workspace_manager.store)
+    session = AgentSession(
+        id="execution-session",
+        agent_name="codex",
+        label="execution",
+        card_id="card-1",
+        project_id="project-1",
+        status="connected",
+    )
+    runtime = SimpleNamespace(
+        session=session,
+        connected=True,
+        _closed=False,
+        prompt=AsyncMock(return_value="ok"),
+    )
+    manager._runtimes[session.id] = runtime
+    manager.create_session = AsyncMock()
+
+    async def run_live() -> None:
+        await manager.prompt(
+            "first",
+            item_id="card-1",
+            project_id="project-1",
+            surface="execution",
+        )
+        await manager.prompt(
+            "second",
+            item_id="card-1",
+            surface="execution",
+        )
+
+    asyncio.run(run_live())
+    assert runtime.prompt.await_count == 2
+    manager.create_session.assert_not_awaited()
+
+    manager._runtimes.clear()
+    session.status = "disconnected"
+    workspace_manager.store.list_sessions.return_value = [session]
+    resumed_runtime = SimpleNamespace(prompt=AsyncMock(return_value="resumed"))
+    manager.create_session = AsyncMock(return_value=resumed_runtime)
+
+    asyncio.run(
+        manager.prompt(
+            "resume",
+            item_id="card-1",
+            project_id="project-1",
+            surface="execution",
+        )
+    )
+    manager.create_session.assert_awaited_once()
+    kwargs = manager.create_session.await_args.kwargs
+    assert kwargs["existing"] is session
+    assert kwargs["card_id"] == "card-1"
+    assert kwargs["project_id"] == "project-1"

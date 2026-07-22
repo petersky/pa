@@ -541,8 +541,11 @@ class WorkspaceManager:
         session_key = self._entity_key(session_id)
         card_key = self._entity_key(card_id or "standalone")
         worktree_path = self.worktree_root / card_key / session_key / repo_key
+        dependency_cache = self.dependency_root / session_key
         self._assert_managed_path(cache_path)
         self._assert_managed_path(worktree_path)
+        self._assert_managed_path(dependency_cache)
+        dependency_cache.mkdir(parents=True, exist_ok=True)
         branch = f"pa/{card_key}-{session_key}-{repo_key[-8:]}"
         with self._repository_lock(repo_key):
             return self._provision_repository_locked(
@@ -555,6 +558,7 @@ class WorkspaceManager:
                 project_id=project_id,
                 session_id=session_id,
                 card_id=card_id,
+                dependency_cache=dependency_cache,
             )
 
     def _provision_repository_locked(
@@ -569,6 +573,7 @@ class WorkspaceManager:
         project_id: str,
         session_id: str,
         card_id: str | None,
+        dependency_cache: Path,
     ) -> WorkspaceLease:
         repository = linked.repository
         self._increment_metric("provision_attempts")
@@ -626,7 +631,7 @@ class WorkspaceManager:
                 lease,
                 recover_incomplete=previous_state == "provisioning",
             )
-            self._apply_policy(worktree_path, linked.policy)
+            self._apply_policy(worktree_path, linked.policy, dependency_cache)
             dirty, untracked = self._status(worktree_path)
             lease.dirty = dirty
             lease.untracked = untracked
@@ -820,7 +825,12 @@ class WorkspaceManager:
                 "Leased worktree is detached or on the wrong branch"
             )
 
-    def _apply_policy(self, worktree_path: Path, policy: RepositoryPolicy) -> None:
+    def _apply_policy(
+        self,
+        worktree_path: Path,
+        policy: RepositoryPolicy,
+        dependency_cache: Path,
+    ) -> None:
         if policy.submodules == "checkout":
             self._git(
                 "-C",
@@ -834,7 +844,7 @@ class WorkspaceManager:
         if policy.lfs:
             self._git("-C", str(worktree_path), "lfs", "pull", timeout=900)
         env = os.environ.copy()
-        env["PA_DEPENDENCY_CACHE"] = str(self.dependency_root)
+        env["PA_DEPENDENCY_CACHE"] = str(dependency_cache)
         for command in policy.setup_commands:
             try:
                 result = subprocess.run(

@@ -956,14 +956,25 @@ class AgentSessionManager:
         try:
             workspace = None
             if session.project_id:
+                project = self.store.get_project(session.project_id)
+                if project is None:
+                    raise WorkspaceProvisioningError(
+                        "Project is not available on this instance"
+                    )
                 workspace = await asyncio.to_thread(
                     self.workspace_manager.provision_project,
                     project_id=session.project_id,
                     session_id=session.id,
                     card_id=session.card_id,
-                    realm_id=self.settings.primary_realm,
+                    realm_id=getattr(
+                        project, "realm_id", self.settings.primary_realm
+                    ),
                     provider_id=provider_id,
                 )
+                if workspace is None:
+                    raise WorkspaceProvisioningError(
+                        "Project has no linked repositories to provision"
+                    )
             if workspace is None:
                 workspace = self.workspace_manager.scratch_workspace(
                     session_id=session.id,
@@ -988,6 +999,7 @@ class AgentSessionManager:
         except Exception as exc:
             session.status = "provisioning_failed"
             config = dict(session.config_json or {})
+            config.pop("execution_context", None)
             config["provisioning"] = {
                 "state": "failed",
                 "stage": "workspace",
@@ -995,6 +1007,7 @@ class AgentSessionManager:
                 "error": str(exc)[:1000],
             }
             session.config_json = config
+            session.cwd = None
             self.store.save_session(session)
             if isinstance(exc, WorkspaceProvisioningError):
                 raise
@@ -1120,12 +1133,19 @@ class AgentSessionManager:
         )
 
     async def start(self, *, resume: bool | None = None) -> None:
+        if resume is not None:
+            self._resume_on_start = resume
         snapshot = load_quiesce_snapshot(self.settings.data_dir)
+        will_resume = self.settings.agent_enabled and self._resume_on_start
         active_session_ids = {
-            item.session_id
-            for item in (snapshot.sessions if snapshot else [])
-            if item.session_id
+            session.id
+            for session in (self.store.list_sessions() if will_resume else [])
+            if session.status != "closed"
         }
+        if will_resume and snapshot and snapshot.resume:
+            active_session_ids.update(
+                item.session_id for item in snapshot.sessions if item.session_id
+            )
         try:
             await asyncio.to_thread(
                 self.workspace_manager.collect_garbage,
@@ -1134,30 +1154,37 @@ class AgentSessionManager:
         except Exception:
             logger.exception("Workspace garbage collection failed")
         if not self.settings.agent_enabled:
+            if snapshot:
+                clear_quiesce_snapshot(self.settings.data_dir)
             logger.info("Instance agent disabled")
             return
-        if resume is not None:
-            self._resume_on_start = resume
         self._accepting = True
         self._quiescing = False
 
-        if self._resume_on_start:
-            if snapshot and snapshot.resume and snapshot.sessions:
-                for sess in snapshot.sessions:
-                    try:
-                        await self._resume_from_snapshot(sess, snapshot)
-                    except Exception as exc:
-                        self._last_error = str(exc)
-                        logger.exception("Failed to resume session %s", sess.session_id)
-                # Legacy top-level queue → default session
-                if snapshot.queued_prompts:
-                    default = await self.attach_default()
-                    for item in snapshot.queued_prompts:
-                        item.session_id = default.session_id
-                        default._queue.append(item)
-                    default._start_drain()
-                clear_quiesce_snapshot(self.settings.data_dir)
+        if self._resume_on_start and snapshot and snapshot.resume:
+            if snapshot.sessions or snapshot.queued_prompts:
+                try:
+                    for sess in snapshot.sessions:
+                        try:
+                            await self._resume_from_snapshot(sess, snapshot)
+                        except Exception as exc:
+                            self._last_error = str(exc)
+                            logger.exception(
+                                "Failed to resume session %s", sess.session_id
+                            )
+                    # Legacy top-level queue → default session
+                    if snapshot.queued_prompts:
+                        default = await self.attach_default()
+                        for item in snapshot.queued_prompts:
+                            item.session_id = default.session_id
+                            default._queue.append(item)
+                        default._start_drain()
+                finally:
+                    clear_quiesce_snapshot(self.settings.data_dir)
                 return
+            clear_quiesce_snapshot(self.settings.data_dir)
+        elif snapshot:
+            clear_quiesce_snapshot(self.settings.data_dir)
 
         # Ensure a default session exists for the instance chat surface.
         try:
@@ -1341,8 +1368,6 @@ class AgentSessionManager:
                 session.label = label
             if title is not None:
                 session.title = title
-            if cwd is not None:
-                session.cwd = cwd
             if principal_id is not None:
                 session.principal_id = principal_id
             if card_id is not None:
@@ -1490,17 +1515,67 @@ class AgentSessionManager:
                 raise RuntimeError(f"Unknown session: {session_id}")
         else:
             if surface == SURFACE_EXECUTION:
-                runtime = await self.create_session(
-                    label="execution",
-                    title="Execution",
-                    cwd=cwd,
-                    principal_id=principal_id,
-                    project_id=project_id,
-                    card_id=item_id,
-                    agent_env=agent_env,
-                    surface=SURFACE_EXECUTION,
-                    provider_override=provider_override,
+                scope_key = (
+                    f"execution:card:{item_id}"
+                    if item_id
+                    else f"execution:project:{project_id or 'standalone'}"
                 )
+
+                def matches_execution_scope(candidate: AgentSession) -> bool:
+                    if candidate.label != "execution" or candidate.status == "closed":
+                        return False
+                    if item_id:
+                        return candidate.card_id == item_id
+                    if project_id:
+                        return (
+                            candidate.card_id is None
+                            and candidate.project_id == project_id
+                        )
+                    return candidate.card_id is None and candidate.project_id is None
+
+                async with self.label_lock(scope_key):
+                    runtime = next(
+                        (
+                            candidate
+                            for candidate in self._runtimes.values()
+                            if matches_execution_scope(candidate.session)
+                            and candidate.connected
+                            and not candidate._closed
+                        ),
+                        None,
+                    )
+                    if runtime is None:
+                        existing = next(
+                            (
+                                candidate
+                                for candidate in self.store.list_sessions()
+                                if matches_execution_scope(candidate)
+                            ),
+                            None,
+                        )
+                        runtime = await self.create_session(
+                            label="execution",
+                            title="Execution",
+                            cwd=cwd,
+                            principal_id=principal_id,
+                            project_id=project_id,
+                            card_id=item_id,
+                            agent_env=agent_env,
+                            existing=existing,
+                            resume_external_id=(
+                                existing.external_session_id if existing else None
+                            ),
+                            surface=SURFACE_EXECUTION,
+                            provider_override=provider_override,
+                        )
+                    elif (
+                        project_id
+                        and runtime.session.project_id
+                        and project_id != runtime.session.project_id
+                    ):
+                        raise RuntimeError(
+                            "Execution session is fenced to a different project"
+                        )
             else:
                 runtime = await self.attach_default(
                     principal_id=principal_id,
