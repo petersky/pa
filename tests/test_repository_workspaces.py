@@ -125,6 +125,37 @@ def test_retry_is_idempotent_and_preserves_dirty_resume(tmp_path: Path) -> None:
     assert (Path(resumed.worktree_path) / "resume.txt").read_text() == "keep me\n"
 
 
+def test_startup_failure_fences_lease_and_retry_preserves_worktree(
+    tmp_path: Path,
+) -> None:
+    manager, _, linked = manager_for(tmp_path)
+    first = manager.provision_repository(
+        linked, project_id="project-1", session_id="session-1", card_id="card-1"
+    )
+    evidence = Path(first.worktree_path) / "startup-audit.txt"
+    evidence.write_text("preserve\n")
+
+    assert (
+        manager.fence_session(
+            "session-1", stage="session_configuration", error="unsupported model"
+        )
+        == 1
+    )
+    fenced = manager.get(linked.repository.id, "session-1")
+    assert fenced is not None
+    assert fenced.state == "failed"
+    assert fenced.stage == "session_configuration"
+    assert fenced.fencing_token > first.fencing_token
+    assert "unsupported model" in (fenced.error or "")
+
+    retried = manager.provision_repository(
+        linked, project_id="project-1", session_id="session-1", card_id="card-1"
+    )
+    assert retried.state == "ready"
+    assert retried.fencing_token == fenced.fencing_token
+    assert evidence.read_text() == "preserve\n"
+
+
 def test_concurrent_sessions_get_distinct_worktrees_and_fences(tmp_path: Path) -> None:
     manager, _, linked = manager_for(tmp_path)
 

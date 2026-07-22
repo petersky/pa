@@ -73,6 +73,10 @@ From upstream feature list (confirm with probe):
 - Shell command, file change, permission request, MCP tool call, terminal output, reasoning, plan, web search, image generation/view, token usage, review events.
 - Client-provided MCP servers (stdio and HTTP).
 - Model, reasoning effort, fast mode, approval, and sandbox configuration.
+- Current `codex-acp` builds may advertise model and reasoning as session config
+  options rather than relying on unstable dedicated model setters. PA discovers
+  those option ids and verifies their returned `currentValue`; selectors such as
+  `gpt-5.6-sol[high]` are admitted as model `gpt-5.6-sol` plus reasoning `high`.
 - Slash commands: `/status`, `/mcp`, `/skills`, `/review`, `/review-branch`, `/review-commit`, `/compact`, `/logout`, plus configured skills.
 - Modes: `read-only`, `agent`, `agent-full-access` via `INITIAL_AGENT_MODE`.
 

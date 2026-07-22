@@ -541,7 +541,12 @@ class AgentChatSseTests(unittest.TestCase):
         runtime.session.model_id = "gpt-test"
         runtime.session.mode_id = "code"
         runtime.session.config_json = {
-            "values": {"reasoningEffort": "high", "approvalPolicy": "on-request"}
+            "values": {"reasoningEffort": "high", "approvalPolicy": "on-request"},
+            "configuration": {
+                "state": "ready",
+                "requested": {"model_id": "gpt-test", "reasoning": "high"},
+                "effective": {"model_id": "gpt-test", "reasoning": "high"},
+            },
         }
         runtime.session.updated_at.isoformat.return_value = "2026-07-17T00:00:00Z"
 
@@ -555,6 +560,10 @@ class AgentChatSseTests(unittest.TestCase):
         self.assertEqual(sessions[0]["agent_name"], "codex")
         self.assertEqual(sessions[0]["model_id"], "gpt-test")
         self.assertEqual(sessions[0]["mode_id"], "code")
+        self.assertEqual(sessions[0]["requested_model_id"], "gpt-test")
+        self.assertEqual(sessions[0]["requested_reasoning"], "high")
+        self.assertEqual(sessions[0]["effective_reasoning"], "high")
+        self.assertEqual(sessions[0]["configuration_state"], "ready")
         self.assertEqual(
             sessions[0]["config_json"]["values"]["reasoningEffort"], "high"
         )

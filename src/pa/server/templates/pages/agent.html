@@ -20,6 +20,10 @@
       <strong>{{ s.title or s.label or s.agent_name }}</strong>
       <span class="metadata-row"><span class="badge">{{ s.status }}</span>{% if detail.pending_approval %}<span class="badge status-waiting">Approval needed</span>{% endif %}</span>
       <span class="muted agent-session-runtime">{{ detail.host }} · {{ s.agent_name }}{% if s.model_id %} · {{ s.model_id }}{% else %} · default model{% endif %}{% if s.mode_id %} · {{ s.mode_id }}{% endif %}</span>
+      {% set admission = (s.config_json or {}).get('configuration', {}) %}
+      {% set requested = admission.get('requested', {}) %}
+      {% set effective = admission.get('effective', {}) %}
+      {% if requested or effective %}<span class="muted small agent-session-config">requested: {{ requested.get('model_id') or 'default model' }}{% if requested.get('reasoning') %} · reasoning {{ requested.get('reasoning') }}{% endif %} · effective: {{ effective.get('model_id') or s.model_id or 'default model' }}{% if effective.get('reasoning') %} · reasoning {{ effective.get('reasoning') }}{% endif %} · {{ admission.get('state', 'unknown') }}</span>{% endif %}
       {% if detail.card %}<a href="/work?card={{ detail.card.id }}">Card · {{ detail.card.title }}</a>{% endif %}
       {% if detail.project %}<a href="/projects?project={{ detail.project.id }}">Project · {{ detail.project.title }}</a>{% endif %}
       <span class="muted small">Elapsed {{ detail.elapsed }} · Last activity <time datetime="{{ s.updated_at.isoformat() }}">{{ s.updated_at.strftime('%Y-%m-%d %H:%M') }}</time></span>

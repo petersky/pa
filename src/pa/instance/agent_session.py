@@ -18,6 +18,7 @@ from pa.acp.client import (
     permission_cancelled,
     permission_selected,
 )
+from pa.acp.configuration import SessionConfigurationRequest
 from pa.agent.context import compose_session_prompt
 from pa.acp.providers.registry import DEFAULT_PROVIDER_ID
 from pa.acp.providers.resolve import resolve_agent_provider
@@ -201,10 +202,17 @@ class AgentSessionRuntime:
             metrics["usage"] = normalized["usage"]
             self.session.metrics_json = metrics
             self._save_session_preserving_external_browser()
-        if event_type == "current_mode_update" and normalized.get("mode_id"):
+        configuration_state = (
+            (self.session.config_json or {}).get("configuration") or {}
+        ).get("state")
+        if (
+            event_type == "current_mode_update"
+            and normalized.get("mode_id")
+            and configuration_state != "applying"
+        ):
             self.session.mode_id = normalized["mode_id"]
             self._save_session_preserving_external_browser()
-        if event_type == "config_option_update":
+        if event_type == "config_option_update" and configuration_state != "applying":
             options = normalized.get("config_options")
             if options is not None:
                 cfg = dict(self.session.config_json or {})
@@ -262,6 +270,7 @@ class AgentSessionRuntime:
         queued_prompts: list[QueuedPrompt] | None = None,
         queue_paused: bool = False,
         provider_spec=None,
+        initial_configuration: SessionConfigurationRequest | None = None,
     ) -> AgentSession:
         browser_config = dict((self.session.config_json or {}).get("browser") or {})
         if browser_config.get("attached"):
@@ -289,17 +298,57 @@ class AgentSessionRuntime:
             wire_path=wire_path,
             auto_approve=False,
         )
-        with _agent_env_overlay(self.agent_env):
-            self.session = await self.connection.connect(
-                resume_external_id=resume_external_id,
-                cwd=self.session.cwd,
-                existing_session=self.session,
-                title=self.session.title,
-                label=self.session.label,
-                principal_id=self.session.principal_id,
-                card_id=self.session.card_id,
-                project_id=self.session.project_id,
+        try:
+            with _agent_env_overlay(self.agent_env):
+                self.session = await self.connection.connect(
+                    resume_external_id=resume_external_id,
+                    cwd=self.session.cwd,
+                    existing_session=self.session,
+                    title=self.session.title,
+                    label=self.session.label,
+                    principal_id=self.session.principal_id,
+                    card_id=self.session.card_id,
+                    project_id=self.session.project_id,
+                )
+            persisted = dict(
+                ((self.session.config_json or {}).get("configuration") or {}).get(
+                    "requested"
+                )
+                or {}
             )
+            configuration = initial_configuration
+            if configuration is None and persisted:
+                configuration = SessionConfigurationRequest.from_dict(persisted)
+            if configuration is not None and not configuration.empty:
+                await self.connection.configure(configuration, force=True)
+                self.session = self.connection.session or self.session
+        except Exception as exc:
+            failed_configuration = dict(
+                ((self.session.config_json or {}).get("configuration") or {})
+            )
+            self._append_transcript(
+                "session_admission_failed",
+                {
+                    "stage": "configuration"
+                    if failed_configuration.get("state") == "failed"
+                    else "provider_startup",
+                    "error": str(exc)[:1000],
+                    "configuration": failed_configuration,
+                },
+            )
+            self._flush_transcript()
+            try:
+                await self.connection.disconnect()
+            except Exception:
+                logger.exception(
+                    "Failed to terminate provider after startup failure for %s",
+                    self.session_id,
+                )
+            self.connection = None
+            if failed_configuration.get("state") == "failed":
+                self.session.status = "configuration_failed"
+                self._save_session_preserving_external_browser()
+            raise
         # Persist resolved provider id on the session.
         if self.connection and self.connection.agent_name:
             self.session.agent_name = self.connection.agent_name
@@ -889,6 +938,23 @@ class AgentSessionRuntime:
         self._append_transcript("model_changed", {"model_id": model_id})
         self._flush_transcript()
 
+    async def configure(self, requested: SessionConfigurationRequest) -> dict[str, Any]:
+        if not self.connection:
+            raise RuntimeError("Session not connected")
+        if self.prompting:
+            raise RuntimeError(
+                "Wait for the current turn to finish before changing session configuration"
+            )
+        async with self._prompt_lock:
+            effective = await self.connection.configure(requested, merge=True)
+            self.session = self.connection.session or self.session
+            self._append_transcript(
+                "configuration_changed",
+                {"requested": requested.as_dict(), "effective": effective},
+            )
+            self._flush_transcript()
+            return effective
+
     async def set_mode(self, mode_id: str) -> None:
         if not self.connection:
             raise RuntimeError("Session not connected")
@@ -916,6 +982,9 @@ class AgentSessionRuntime:
         has_older = len(events) > TRANSCRIPT_WINDOW_LIMIT
         events = events[-TRANSCRIPT_WINDOW_LIMIT:]
         conn = self.connection
+        configuration = dict(
+            ((self.session.config_json or {}).get("configuration") or {})
+        )
         return {
             "session": self.session.model_dump(mode="json"),
             "connected": self.connected,
@@ -928,6 +997,7 @@ class AgentSessionRuntime:
             "models": conn.models if conn else None,
             "modes": conn.modes if conn else None,
             "config_options": conn.config_options if conn else None,
+            "configuration": configuration,
             "metrics": self.session.metrics_json,
             "turn_started_at": self._turn_started_at.isoformat()
             if self._turn_started_at
@@ -959,6 +1029,9 @@ class AgentSessionRuntime:
             label=self.session.label,
             model_id=self.session.model_id,
             mode_id=self.session.mode_id,
+            configuration=dict(
+                ((self.session.config_json or {}).get("configuration") or {})
+            ),
             card_id=self.session.card_id or self.session.item_id,
             project_id=self.session.project_id,
             principal_id=self.session.principal_id,
@@ -1289,6 +1362,9 @@ class AgentSessionManager:
             label=snap.label,
             model_id=snap.model_id,
             mode_id=snap.mode_id,
+            config_json={"configuration": dict(snap.configuration)}
+            if snap.configuration
+            else {},
             card_id=snap.card_id,
             project_id=snap.project_id,
             principal_id=snap.principal_id,
@@ -1296,6 +1372,12 @@ class AgentSessionManager:
         session.cwd = snap.cwd or session.cwd
         session.label = snap.label or session.label
         session.title = snap.title or session.title
+        if snap.configuration and not (
+            (session.config_json or {}).get("configuration")
+        ):
+            config = dict(session.config_json or {})
+            config["configuration"] = dict(snap.configuration)
+            session.config_json = config
         provider_spec = None
         if self._default_requires_provider_resolution(
             session.label, snap.external_session_id
@@ -1388,6 +1470,7 @@ class AgentSessionManager:
         surface: str | None = None,
         provider_override: str | None = None,
         project_tool_config: dict | None = None,
+        initial_configuration: SessionConfigurationRequest | None = None,
     ) -> AgentSessionRuntime:
         if not self.settings.agent_enabled:
             raise RuntimeError("Agent disabled")
@@ -1496,15 +1579,39 @@ class AgentSessionManager:
 
         runtime = AgentSessionRuntime(self, session, agent_env=effective_agent_env)
         try:
-            await runtime.start(
-                resume_external_id=resume_external_id,
-                provider_spec=resolved_spec,
-            )
+            start_kwargs: dict[str, Any] = {
+                "resume_external_id": resume_external_id,
+                "provider_spec": resolved_spec,
+            }
+            if initial_configuration is not None:
+                start_kwargs["initial_configuration"] = initial_configuration
+            await runtime.start(**start_kwargs)
             self._last_error = None
         except Exception as exc:
             self._last_error = str(exc)
-            session.status = "disconnected"
+            configuration = dict(
+                ((session.config_json or {}).get("configuration") or {})
+            )
+            session.status = (
+                "configuration_failed"
+                if configuration.get("state") == "failed"
+                else "disconnected"
+            )
             self.store.save_session(session)
+            try:
+                await asyncio.to_thread(
+                    self.workspace_manager.fence_session,
+                    session.id,
+                    stage="session_configuration"
+                    if configuration.get("state") == "failed"
+                    else "provider_startup",
+                    error=str(exc),
+                )
+            except Exception:
+                logger.exception(
+                    "Could not fence workspace after session startup failure for %s",
+                    session.id,
+                )
             raise
         self._runtimes[runtime.session_id] = runtime
         return runtime
@@ -1516,6 +1623,7 @@ class AgentSessionManager:
         cwd: str | None = None,
         agent_env: dict[str, str] | None = None,
         provider_override: str | None = None,
+        initial_configuration: SessionConfigurationRequest | None = None,
     ) -> AgentSessionRuntime:
         async with self._lock:
             for rt in self._runtimes.values():
@@ -1544,6 +1652,7 @@ class AgentSessionManager:
                 ),
                 surface=SURFACE_CHAT_DEFAULT,
                 provider_override=provider_override,
+                initial_configuration=initial_configuration,
             )
 
     def enqueue_prompt(

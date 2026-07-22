@@ -927,6 +927,26 @@ class WorkspaceManager:
             )
             return cursor.rowcount
 
+    def fence_session(self, session_id: str, *, stage: str, error: str) -> int:
+        """Fence leases after provider admission fails, retaining them for retry/audit."""
+        leases = [
+            lease
+            for lease in self.list()
+            if lease.session_id == session_id and lease.state != "cleaned"
+        ]
+        now = datetime.now(UTC)
+        for lease in leases:
+            lease.fencing_token = self._next_fence(lease.repository_id)
+            lease.state = "failed"
+            lease.stage = stage
+            lease.error = self._redact_error(str(error))[:1000]
+            lease.updated_at = now
+            lease.expires_at = now + self.LEASE_TTL
+            self._save(lease)
+        if leases:
+            self._increment_metric("fenced_startup_failures", len(leases))
+        return len(leases)
+
     def collect_garbage(
         self,
         *,
