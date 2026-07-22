@@ -3,8 +3,16 @@ from __future__ import annotations
 import subprocess
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
-from pa.repository.state import RepositorySnapshot, RepositoryStateService
+import pytest
+from pydantic import ValidationError
+
+from pa.repository.state import (
+    RepositorySnapshot,
+    RepositorySnapshotInput,
+    RepositoryStateService,
+)
 
 
 def git(path: Path, *args: str) -> None:
@@ -62,6 +70,26 @@ def test_missing_repo_is_error_and_is_not_persisted(tmp_path: Path) -> None:
     assert service.list() == []
 
 
+def test_fetch_head_stat_error_returns_structured_error(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    make_repo(repo)
+    (repo / ".git" / "FETCH_HEAD").write_text("")
+    original_stat = Path.stat
+
+    def fail_fetch_head(path: Path, *args, **kwargs):
+        if path.name == "FETCH_HEAD":
+            raise OSError("metadata unavailable")
+        return original_stat(path, *args, **kwargs)
+
+    service = RepositoryStateService(tmp_path / "data", "macmini")
+    with patch.object(Path, "stat", fail_fetch_head):
+        result = service.refresh(repo)
+
+    assert result.state == "error"
+    assert "Could not read FETCH_HEAD metadata" in result.state_reason
+    assert service.list() == []
+
+
 def test_reconcile_keeps_newest_observation_per_instance_and_repo(
     tmp_path: Path,
 ) -> None:
@@ -79,6 +107,33 @@ def test_reconcile_keeps_newest_observation_per_instance_and_repo(
     service.reconcile([newer])
     service.reconcile([older])
     assert service.list()[0].snapshot.head == "new"
+
+
+def test_reconcile_marks_unhealthy_instance_unreachable(tmp_path: Path) -> None:
+    service = RepositoryStateService(tmp_path, "local")
+    incoming = RepositorySnapshot(
+        repository_id="repo", path="/repo", instance_id="peer"
+    )
+    result = service.reconcile([incoming], unreachable_instances={"peer"})
+    assert result[0].state == "unreachable"
+
+
+def test_reconcile_input_requires_observed_at() -> None:
+    with pytest.raises(ValidationError):
+        RepositorySnapshotInput.model_validate(
+            {"repository_id": "repo", "path": "/repo", "instance_id": "peer"}
+        )
+
+    observed_at = datetime.now(UTC) - timedelta(hours=1)
+    incoming = RepositorySnapshotInput.model_validate(
+        {
+            "repository_id": "repo",
+            "path": "/repo",
+            "instance_id": "peer",
+            "observed_at": observed_at.isoformat(),
+        }
+    )
+    assert incoming.observed_at == observed_at
 
 
 def test_presentation_surfaces_stale_unreachable_and_error(tmp_path: Path) -> None:

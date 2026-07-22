@@ -49,6 +49,12 @@ class RepositorySnapshot(BaseModel):
     inspection_error: str | None = None
 
 
+class RepositorySnapshotInput(RepositorySnapshot):
+    """A reconciled observation must carry its source observation time."""
+
+    observed_at: datetime
+
+
 class RepositoryObservation(BaseModel):
     snapshot: RepositorySnapshot
     state: Literal["fresh", "stale", "unreachable", "error"] = "fresh"
@@ -156,11 +162,16 @@ class GitInspector:
         if not common_dir.is_absolute():
             common_dir = (root / common_dir).resolve()
         fetch_head = common_dir / "FETCH_HEAD"
-        fetched = (
-            datetime.fromtimestamp(fetch_head.stat().st_mtime, UTC)
-            if fetch_head.exists()
-            else None
-        )
+        try:
+            fetched = (
+                datetime.fromtimestamp(fetch_head.stat().st_mtime, UTC)
+                if fetch_head.exists()
+                else None
+            )
+        except OSError as exc:
+            raise GitInspectionError(
+                f"Could not read FETCH_HEAD metadata: {exc}"
+            ) from exc
 
         worktrees = self._parse_worktrees(
             self._run(root, "worktree", "list", "--porcelain")
@@ -286,7 +297,10 @@ class RepositoryStateService:
         return self.present(snapshot)
 
     def reconcile(
-        self, incoming: list[RepositorySnapshot]
+        self,
+        incoming: list[RepositorySnapshot],
+        *,
+        unreachable_instances: set[str] | None = None,
     ) -> list[RepositoryObservation]:
         """Merge newer observations; never apply snapshot data to a repository."""
         snapshots = self.store.load()
@@ -296,7 +310,11 @@ class RepositoryStateService:
             if existing is None or snapshot.observed_at > existing.observed_at:
                 snapshots[key] = snapshot
         self.store.save(snapshots)
-        return [self.present(item) for item in snapshots.values()]
+        unreachable_instances = unreachable_instances or set()
+        return [
+            self.present(item, unreachable=item.instance_id in unreachable_instances)
+            for item in snapshots.values()
+        ]
 
     def list(
         self, *, unreachable_instances: set[str] | None = None

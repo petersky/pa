@@ -11,6 +11,7 @@ from pa.config import get_settings
 from pa.core.contracts import Module
 from pa.core.context import AppContext
 from pa.instance.quiesce import QuiesceProgress
+from pa.repository.state import RepositorySnapshotInput
 
 router = APIRouter()
 
@@ -25,7 +26,16 @@ class QuiesceRequest(BaseModel):
 
 
 class RepositoryReconcileRequest(BaseModel):
-    snapshots: list[dict] = Field(default_factory=list)
+    snapshots: list[RepositorySnapshotInput] = Field(default_factory=list)
+
+
+def _unreachable_repository_instances(ctx: AppContext) -> set[str]:
+    fleet = ctx.services.get("fleet_registry")
+    return {
+        item.instance_id
+        for item in (fleet.list_instances() if fleet else [])
+        if not item.healthy
+    }
 
 
 @router.get("/health")
@@ -66,16 +76,13 @@ async def list_peers(request: Request) -> list[dict]:
 
 @router.get("/repositories")
 def repository_snapshots(request: Request) -> list[dict]:
-    service = request.app.state.ctx.require_service("repository_state")
-    fleet = request.app.state.ctx.services.get("fleet_registry")
-    unreachable = {
-        item.instance_id
-        for item in (fleet.list_instances() if fleet else [])
-        if not item.healthy
-    }
+    ctx = request.app.state.ctx
+    service = ctx.require_service("repository_state")
     return [
         item.model_dump(mode="json")
-        for item in service.list(unreachable_instances=unreachable)
+        for item in service.list(
+            unreachable_instances=_unreachable_repository_instances(ctx)
+        )
     ]
 
 
@@ -93,9 +100,19 @@ def reconcile_repository_snapshots(
 ) -> list[dict]:
     from pa.repository.state import RepositorySnapshot
 
-    service = request.app.state.ctx.require_service("repository_state")
-    snapshots = [RepositorySnapshot.model_validate(value) for value in body.snapshots]
-    return [item.model_dump(mode="json") for item in service.reconcile(snapshots)]
+    ctx = request.app.state.ctx
+    service = ctx.require_service("repository_state")
+    snapshots = [
+        RepositorySnapshot.model_validate(value.model_dump())
+        for value in body.snapshots
+    ]
+    return [
+        item.model_dump(mode="json")
+        for item in service.reconcile(
+            snapshots,
+            unreachable_instances=_unreachable_repository_instances(ctx),
+        )
+    ]
 
 
 @router.get("/sessions")
@@ -332,13 +349,9 @@ class InstanceModule(Module):
         def repository_snapshots() -> list[dict]:
             """List non-authoritative repository observations by instance."""
             service = ctx.require_service("repository_state")
-            fleet = ctx.services.get("fleet_registry")
-            unreachable = {
-                item.instance_id
-                for item in (fleet.list_instances() if fleet else [])
-                if not item.healthy
-            }
             return [
                 item.model_dump(mode="json")
-                for item in service.list(unreachable_instances=unreachable)
+                for item in service.list(
+                    unreachable_instances=_unreachable_repository_instances(ctx)
+                )
             ]
