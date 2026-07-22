@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, model_validator
 
+from pa.acp.configuration import ACPConfigurationError, SessionConfigurationRequest
 from pa.auth.middleware import get_principal_id
 from pa.core.contracts import Module
 from pa.core.preferences import get_preferences_store
@@ -98,23 +99,48 @@ def _config_option_id(runtime, requested: str) -> str:
     return "reasoning_effort" if requested == "effort" else requested
 
 
+def _configuration_request(
+    body: CreateSessionBody, defaults=None
+) -> SessionConfigurationRequest:
+    config = dict(defaults.config if defaults else {})
+    config.update(body.config)
+    return SessionConfigurationRequest.from_values(
+        model_id=body.model_id or (defaults.model_id if defaults else None),
+        mode_id=body.mode_id or (defaults.mode_id if defaults else None),
+        reasoning=body.effort or (defaults.effort if defaults else None),
+        config=config,
+    )
+
+
 async def _apply_initial_options(
     runtime, body: CreateSessionBody, defaults=None
 ) -> None:
-    model_id = body.model_id or (defaults.model_id if defaults else None)
-    mode_id = body.mode_id or (defaults.mode_id if defaults else None)
-    effort = body.effort or (defaults.effort if defaults else None)
-    if model_id:
-        await runtime.set_model(model_id)
-    if mode_id:
-        await runtime.set_mode(mode_id)
-    config = dict(defaults.config if defaults else {})
-    config.update(body.config)
-    if effort:
-        config[_config_option_id(runtime, "effort")] = effort
-    elif "reasoning_effort" in config:
-        config[_config_option_id(runtime, "effort")] = config.pop("reasoning_effort")
-    for config_id, value in config.items():
+    requested = _configuration_request(body, defaults)
+    if requested.empty:
+        return
+    session = getattr(runtime, "session", None)
+    diagnostic = dict(
+        ((getattr(session, "config_json", None) or {}).get("configuration") or {})
+    )
+    if (
+        diagnostic.get("state") == "ready"
+        and diagnostic.get("requested") == requested.as_dict()
+    ):
+        return
+    configure = getattr(type(runtime), "configure", None)
+    if callable(configure):
+        await runtime.configure(requested)
+        return
+
+    # Compatibility for embedders/tests providing the older runtime surface.
+    if requested.model_id:
+        await runtime.set_model(requested.model_id)
+    if requested.mode_id:
+        await runtime.set_mode(requested.mode_id)
+    legacy_config = dict(requested.config)
+    if requested.reasoning:
+        legacy_config[_config_option_id(runtime, "effort")] = requested.reasoning
+    for config_id, value in legacy_config.items():
         await runtime.set_config(config_id, value)
 
 
@@ -234,6 +260,40 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
         if project and getattr(project, "tool_config", None):
             project_tool_config = dict(project.tool_config)
     try:
+        explicit_configuration = _configuration_request(body)
+    except ACPConfigurationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    new_session_defaults = None
+    if isinstance(settings.data_dir, (str, Path)):
+        inherited_provider, _ = resolve_provider_id(
+            settings,
+            AgentInvocationContext(
+                surface=surface,
+                principal_id=principal_id,
+                card_id=body.card_id,
+                project_id=body.project_id,
+            ),
+            project_tool_config=project_tool_config,
+        )
+        requested_provider, _ = resolve_provider_id(
+            settings,
+            AgentInvocationContext(
+                surface=surface,
+                principal_id=principal_id,
+                card_id=body.card_id,
+                project_id=body.project_id,
+                provider_override=body.provider,
+            ),
+            project_tool_config=project_tool_config,
+        )
+        defaults_provider = surface_defaults.provider or inherited_provider
+        if defaults_provider.strip().lower() == requested_provider.strip().lower():
+            new_session_defaults = surface_defaults
+    try:
+        new_session_configuration = _configuration_request(body, new_session_defaults)
+    except ACPConfigurationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    try:
         if dispatch_record:
             linked_session_id = dispatch_record.session_id
             linked_runtime = mgr.get(linked_session_id) if linked_session_id else None
@@ -254,6 +314,7 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                         surface=surface,
                         provider_override=body.provider,
                         project_tool_config=project_tool_config,
+                        initial_configuration=new_session_configuration,
                     )
                     created_runtime = True
                 elif not stored or stored.status in {"closed", "quiesced"}:
@@ -279,6 +340,11 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                         surface=surface,
                         provider_override=body.provider,
                         project_tool_config=project_tool_config,
+                        initial_configuration=(
+                            explicit_configuration
+                            if not explicit_configuration.empty
+                            else None
+                        ),
                     )
                     created_runtime = True
             elif body.resume:
@@ -302,6 +368,7 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                     surface=surface,
                     provider_override=body.provider,
                     project_tool_config=project_tool_config,
+                    initial_configuration=new_session_configuration,
                 )
                 created_runtime = True
         elif body.attach_default or body.label == "default":
@@ -310,6 +377,13 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                 principal_id=principal_id,
                 cwd=body.cwd,
                 provider_override=body.provider,
+                initial_configuration=(
+                    new_session_configuration
+                    if new_logical_session
+                    else explicit_configuration
+                    if not explicit_configuration.empty
+                    else None
+                ),
             )
         elif body.label:
             # Reuse a live/persisted session with the same label (e.g. card:{id}).
@@ -337,6 +411,11 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                             surface=surface,
                             provider_override=body.provider,
                             project_tool_config=project_tool_config,
+                            initial_configuration=(
+                                explicit_configuration
+                                if not explicit_configuration.empty
+                                else None
+                            ),
                         )
                         created_runtime = True
                     else:
@@ -350,6 +429,7 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                             surface=surface,
                             provider_override=body.provider,
                             project_tool_config=project_tool_config,
+                            initial_configuration=new_session_configuration,
                         )
                         created_runtime = True
                 else:
@@ -366,6 +446,7 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                 surface=surface,
                 provider_override=body.provider,
                 project_tool_config=project_tool_config,
+                initial_configuration=new_session_configuration,
             )
             created_runtime = True
         actual_provider = str(
@@ -449,7 +530,12 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
             dispatch_record,
             "starting_session",
             "Remote session linked to dispatch.",
-            detail={"session_id": runtime.session_id},
+            detail={
+                "session_id": runtime.session_id,
+                "configuration": dict(
+                    ((runtime.session.config_json or {}).get("configuration") or {})
+                ),
+            },
         )
     return runtime.snapshot()
 
@@ -468,6 +554,27 @@ def list_agent_sessions(request: Request) -> list[dict]:
             "prompting": rt.prompting,
             "model_id": rt.session.model_id,
             "mode_id": rt.session.mode_id,
+            "requested_model_id": (
+                (rt.session.config_json or {})
+                .get("configuration", {})
+                .get("requested", {})
+                .get("model_id")
+            ),
+            "requested_reasoning": (
+                (rt.session.config_json or {})
+                .get("configuration", {})
+                .get("requested", {})
+                .get("reasoning")
+            ),
+            "effective_reasoning": (
+                (rt.session.config_json or {})
+                .get("configuration", {})
+                .get("effective", {})
+                .get("reasoning")
+            ),
+            "configuration_state": (
+                (rt.session.config_json or {}).get("configuration", {}).get("state")
+            ),
             "config_json": rt.session.config_json,
             "queue_length": len(rt._queue),
             "last_seq": rt._seq,

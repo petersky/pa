@@ -41,6 +41,37 @@ Optional spawn overrides: `PA_AGENT_COMMAND` / `PA_AGENT_ARGS` (when set) replac
 
 Secrets stay on the target host (`~/.pa/integrations/{provider}.json`); they are never sync’d across the fleet.
 
+## Session configuration compatibility and admission
+
+PA treats model, mode, reasoning/thought level, and provider configuration as a
+single startup admission step. A session cannot accept its first prompt until all
+requested values have been applied and confirmed by the ACP agent.
+
+- A trailing selector such as `model-id[high]` is split generically into model
+  `model-id` and reasoning `high`; PA does not maintain provider-specific model-id
+  tables. An explicit, conflicting reasoning value is rejected.
+- When the session advertises ACP model or mode state and the installed client has
+  the corresponding dedicated setter, PA uses that setter. If the runtime method
+  is absent, PA falls back to an agent-advertised semantic `model` or `mode`
+  configuration option.
+- Reasoning is always a separate advertised configuration option. PA recognizes
+  semantic category/id/name variants for reasoning, thought, thinking, level, and
+  effort, while preserving the provider's actual option id.
+- `session/set_config_option` must return the full option state with the requested
+  value as `currentValue`. PA records that confirmed value, not merely the request.
+- Unsupported, ambiguous, rejected, or unconfirmed settings fail admission with an
+  actionable compatibility error. PA terminates the provider, fences repository
+  leases, retains the failed attempt in session diagnostics, and does not deliver
+  the prompt.
+- Retries reuse the stable PA session/worktree identity and reapply the persisted
+  requested configuration. Restart recovery does the same before queued prompts
+  resume. Requested and effective values are visible in session snapshots, lists,
+  history, the Agent UI, and remote dispatch diagnostics.
+
+Providers can therefore expose legacy dedicated setters, modern config options,
+both (dedicated setters win), or neither (explicit configuration is rejected before
+work is shown as running).
+
 ## Maintaining capability knowledge
 
 Update these docs whenever PA’s provider integration changes or upstream ACP servers ship material capability changes.

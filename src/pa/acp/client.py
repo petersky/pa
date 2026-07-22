@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import inspect
 import json
 import logging
@@ -23,6 +24,17 @@ from acp.schema import (
 )
 
 from pa.acp.mcp_config import pa_mcp_servers
+from pa.acp.configuration import (
+    ACPConfigurationError,
+    SessionConfigurationRequest,
+    advertised_state_values,
+    find_option,
+    find_option_by_id,
+    option_current_value,
+    option_id,
+    state_current_value,
+    validate_option_value,
+)
 from pa.acp.providers.base import AgentProviderSpec
 from pa.acp.providers.registry import DEFAULT_PROVIDER_ID, get_provider
 from pa.acp.providers.resolve import _spawn_overrides
@@ -37,7 +49,9 @@ from pa.packaging.paths import resolve_executable
 logger = logging.getLogger(__name__)
 
 UpdateHandler = Callable[[str, Any], Awaitable[None] | None]
-PermissionHandler = Callable[[str, dict[str, Any]], Awaitable[RequestPermissionResponse | dict[str, Any]]]
+PermissionHandler = Callable[
+    [str, dict[str, Any]], Awaitable[RequestPermissionResponse | dict[str, Any]]
+]
 WireLogger = Callable[[str, dict[str, Any]], None]
 
 # Cursor ACP sends vendor client methods (e.g. cursor/update_todos) without the
@@ -53,7 +67,9 @@ def _tolerated_client_method(method: str) -> bool:
 
 
 def permission_selected(option_id: str) -> RequestPermissionResponse:
-    return RequestPermissionResponse(outcome=AllowedOutcome(outcome="selected", option_id=option_id))
+    return RequestPermissionResponse(
+        outcome=AllowedOutcome(outcome="selected", option_id=option_id)
+    )
 
 
 def permission_cancelled() -> RequestPermissionResponse:
@@ -79,7 +95,9 @@ def _to_plain(value: Any) -> Any:
 
 def _session_update_type(update: Any) -> str:
     if isinstance(update, dict):
-        return str(update.get("sessionUpdate") or update.get("session_update") or "unknown")
+        return str(
+            update.get("sessionUpdate") or update.get("session_update") or "unknown"
+        )
     return str(
         getattr(update, "session_update", None)
         or getattr(update, "sessionUpdate", None)
@@ -109,14 +127,22 @@ def normalize_session_update(update: Any) -> dict[str, Any]:
     payload: dict[str, Any] = {"type": update_type, "raw": plain}
 
     if isinstance(plain, dict):
-        if update_type in {"agent_message_chunk", "agent_thought_chunk", "user_message_chunk"}:
+        if update_type in {
+            "agent_message_chunk",
+            "agent_thought_chunk",
+            "user_message_chunk",
+        }:
             payload["text"] = _content_text(plain.get("content"))
             payload["message_id"] = plain.get("messageId") or plain.get("message_id")
             meta = plain.get("_meta") or {}
             codex_meta = meta.get("codex") or {} if isinstance(meta, dict) else {}
-            payload["phase"] = codex_meta.get("phase") if isinstance(codex_meta, dict) else None
+            payload["phase"] = (
+                codex_meta.get("phase") if isinstance(codex_meta, dict) else None
+            )
         elif update_type in {"tool_call", "tool_call_update"}:
-            payload["tool_call_id"] = plain.get("toolCallId") or plain.get("tool_call_id")
+            payload["tool_call_id"] = plain.get("toolCallId") or plain.get(
+                "tool_call_id"
+            )
             payload["title"] = plain.get("title")
             payload["status"] = plain.get("status")
             payload["kind"] = plain.get("kind")
@@ -129,9 +155,13 @@ def normalize_session_update(update: Any) -> dict[str, Any]:
         elif update_type == "usage_update":
             payload["usage"] = plain.get("usage") or plain
         elif update_type == "current_mode_update":
-            payload["mode_id"] = plain.get("currentModeId") or plain.get("current_mode_id")
+            payload["mode_id"] = plain.get("currentModeId") or plain.get(
+                "current_mode_id"
+            )
         elif update_type == "config_option_update":
-            payload["config_options"] = plain.get("configOptions") or plain.get("config_options")
+            payload["config_options"] = plain.get("configOptions") or plain.get(
+                "config_options"
+            )
 
     return payload
 
@@ -330,7 +360,12 @@ class PAClient(Client):
             "in",
             {
                 "method": "fs/read_text_file",
-                "params": {"session_id": session_id, "path": path, "line": line, "limit": limit},
+                "params": {
+                    "session_id": session_id,
+                    "path": path,
+                    "line": line,
+                    "limit": limit,
+                },
             },
         )
         return ReadTextFileResponse(content=content)
@@ -425,6 +460,7 @@ class AgentConnection:
         self._load_supported: bool = False
         self._list_supported: bool = False
         self._disconnect_lock = asyncio.Lock()
+        self._configuration_lock = asyncio.Lock()
         self._init_response: Any = None
         self.models: dict[str, Any] | None = None
         self.modes: dict[str, Any] | None = None
@@ -456,8 +492,7 @@ class AgentConnection:
             return False
         inner = getattr(conn, "_conn", conn)
         return not (
-            getattr(inner, "_closed", False)
-            or getattr(inner, "_disconnected", False)
+            getattr(inner, "_closed", False) or getattr(inner, "_disconnected", False)
         )
 
     @property
@@ -701,6 +736,14 @@ class AgentConnection:
     ) -> str:
         if not self._conn or not self.session or not self.session.external_session_id:
             raise RuntimeError("Not connected to agent")
+        configuration = dict(
+            ((self.session.config_json or {}).get("configuration") or {})
+        )
+        if configuration.get("state") in {"applying", "failed"}:
+            raise ACPConfigurationError(
+                "ACP session configuration is not confirmed; the prompt was not delivered. "
+                "Retry session admission after resolving the provider compatibility error."
+            )
 
         if item_id:
             self.session.item_id = item_id
@@ -791,9 +834,7 @@ class AgentConnection:
                 self.store.save_session(self.session)
             if ctx is not None:
                 try:
-                    await asyncio.wait_for(
-                        ctx.__aexit__(None, None, None), timeout=2.0
-                    )
+                    await asyncio.wait_for(ctx.__aexit__(None, None, None), timeout=2.0)
                 except Exception:
                     logger.debug(
                         "ACP transport cleanup after death failed", exc_info=True
@@ -812,42 +853,334 @@ class AgentConnection:
         await self._conn.cancel(session_id=self.session.external_session_id)
 
     async def set_model(self, model_id: str) -> None:
-        if not self._conn or not self.session or not self.session.external_session_id:
-            raise RuntimeError("Not connected to agent")
-        await self._conn.set_session_model(
-            model_id=model_id,
-            session_id=self.session.external_session_id,
+        await self.configure(
+            SessionConfigurationRequest.from_values(model_id=model_id), merge=True
         )
-        self.session.model_id = model_id
-        self.session.updated_at = datetime.now(UTC)
-        self.store.save_session(self.session)
 
     async def set_mode(self, mode_id: str) -> None:
-        if not self._conn or not self.session or not self.session.external_session_id:
-            raise RuntimeError("Not connected to agent")
-        await self._conn.set_session_mode(
-            mode_id=mode_id,
-            session_id=self.session.external_session_id,
+        await self.configure(
+            SessionConfigurationRequest.from_values(mode_id=mode_id), merge=True
         )
-        self.session.mode_id = mode_id
-        self.session.updated_at = datetime.now(UTC)
-        self.store.save_session(self.session)
 
     async def set_config(self, config_id: str, value: str | bool) -> None:
+        await self.configure(
+            SessionConfigurationRequest.from_values(config={config_id: value}),
+            merge=True,
+        )
+
+    async def configure(
+        self,
+        requested: SessionConfigurationRequest,
+        *,
+        merge: bool = False,
+        force: bool = False,
+    ) -> dict[str, Any]:
+        """Apply and verify one complete configuration behind an admission barrier."""
         if not self._conn or not self.session or not self.session.external_session_id:
             raise RuntimeError("Not connected to agent")
-        await self._conn.set_config_option(
-            config_id=config_id,
-            session_id=self.session.external_session_id,
-            value=value,
-        )
-        config = dict(self.session.config_json or {})
-        values = dict(config.get("values") or {})
-        values[config_id] = value
-        config["values"] = values
-        self.session.config_json = config
-        self.session.updated_at = datetime.now(UTC)
-        self.store.save_session(self.session)
+        if requested.empty:
+            return {}
+
+        async with self._configuration_lock:
+            config = dict(self.session.config_json or {})
+            previous = dict(config.get("configuration") or {})
+            previous_request = SessionConfigurationRequest.from_dict(
+                previous.get("requested")
+            )
+            desired = previous_request.merged(requested) if merge else requested
+            requested_dict = desired.as_dict()
+            if (
+                not force
+                and previous.get("state") == "ready"
+                and previous.get("requested") == requested_dict
+            ):
+                return dict(previous.get("effective") or {})
+
+            options = [
+                dict(item)
+                for item in (_to_plain(self.config_options) or [])
+                if isinstance(item, dict)
+            ]
+            working_options = copy.deepcopy(options)
+            working_models = copy.deepcopy(self.models)
+            working_modes = copy.deepcopy(self.modes)
+            set_config_option = getattr(self._conn, "set_config_option", None)
+            set_model = getattr(self._conn, "set_session_model", None)
+            set_mode = getattr(self._conn, "set_session_mode", None)
+            config_supported = callable(set_config_option)
+            session_id = self.session.external_session_id
+
+            actions: list[tuple[str, str, str, str | bool]] = []
+            strategies: dict[str, str] = {}
+            bound_options: dict[str, tuple[str | bool, str]] = {}
+
+            def bind_option(
+                setting: str,
+                option: dict[str, Any] | None,
+                value: str | bool,
+            ) -> None:
+                if option is None or not config_supported:
+                    advertised = "no matching advertised config option"
+                    if option is not None:
+                        advertised = "the client has no set_config_option method"
+                    raise ACPConfigurationError(
+                        "ACP configuration compatibility error: the agent cannot apply "
+                        f"requested {setting} {value!r} ({advertised}). Upgrade the ACP "
+                        "client/provider or choose an advertised session option."
+                    )
+                oid = option_id(option)
+                assert oid is not None
+                validate_option_value(option, value, label=setting)
+                existing = bound_options.get(oid)
+                if existing and existing[0] != value:
+                    raise ACPConfigurationError(
+                        "ACP configuration compatibility error: configuration option "
+                        f"{oid!r} received conflicting values {existing[0]!r} and {value!r}."
+                    )
+                if not existing:
+                    bound_options[oid] = (value, setting)
+                    actions.append((setting, "config", oid, value))
+                strategies[setting] = f"config:{oid}"
+
+            def build_plan() -> None:
+                if desired.model_id:
+                    advertised_models = advertised_state_values(
+                        self.models,
+                        collection_names=("availableModels", "available_models"),
+                        id_names=("modelId", "model_id", "id"),
+                    )
+                    if self.models is not None and callable(set_model):
+                        if (
+                            advertised_models
+                            and desired.model_id not in advertised_models
+                        ):
+                            supported = ", ".join(sorted(advertised_models))
+                            raise ACPConfigurationError(
+                                "ACP configuration compatibility error: requested model "
+                                f"{desired.model_id!r} is not advertised by the agent. "
+                                f"Supported models: {supported}."
+                            )
+                        actions.append(
+                            ("model", "dedicated", "model", desired.model_id)
+                        )
+                        strategies["model"] = "dedicated:set_session_model"
+                    else:
+                        bind_option(
+                            "model",
+                            find_option(options, "model"),
+                            desired.model_id,
+                        )
+
+                if desired.mode_id:
+                    advertised_modes = advertised_state_values(
+                        self.modes,
+                        collection_names=("availableModes", "available_modes"),
+                        id_names=("id", "modeId", "mode_id"),
+                    )
+                    if self.modes is not None and callable(set_mode):
+                        if advertised_modes and desired.mode_id not in advertised_modes:
+                            supported = ", ".join(sorted(advertised_modes))
+                            raise ACPConfigurationError(
+                                "ACP configuration compatibility error: requested mode "
+                                f"{desired.mode_id!r} is not advertised by the agent. "
+                                f"Supported modes: {supported}."
+                            )
+                        actions.append(("mode", "dedicated", "mode", desired.mode_id))
+                        strategies["mode"] = "dedicated:set_session_mode"
+                    else:
+                        bind_option(
+                            "mode", find_option(options, "mode"), desired.mode_id
+                        )
+
+                if desired.reasoning:
+                    bind_option(
+                        "reasoning",
+                        find_option(options, "reasoning"),
+                        desired.reasoning,
+                    )
+
+                for config_id, value in sorted(desired.config.items()):
+                    bind_option(
+                        f"config {config_id!r}",
+                        find_option_by_id(options, config_id),
+                        value,
+                    )
+
+            history = list(previous.get("history") or [])
+            if previous:
+                history.append(
+                    {key: value for key, value in previous.items() if key != "history"}
+                )
+            history = history[-20:]
+            attempt = int(previous.get("attempt") or 0) + 1
+            ready_status = self.session.status
+            config["configuration"] = {
+                "state": "applying",
+                "attempt": attempt,
+                "requested": requested_dict,
+                "strategies": strategies,
+                "history": history,
+                "started_at": datetime.now(UTC).isoformat(),
+            }
+            self.session.config_json = config
+            self.session.status = "configuring"
+            self.session.updated_at = datetime.now(UTC)
+            self.store.save_session(self.session)
+
+            try:
+                build_plan()
+                applying_config = dict(self.session.config_json or {})
+                applying = dict(applying_config.get("configuration") or {})
+                applying["strategies"] = dict(strategies)
+                applying_config["configuration"] = applying
+                self.session.config_json = applying_config
+                self.store.save_session(self.session)
+                for setting, strategy, target, value in actions:
+                    if strategy == "dedicated" and target == "model":
+                        await set_model(model_id=value, session_id=session_id)
+                        if isinstance(working_models, dict):
+                            if "currentModelId" in working_models:
+                                working_models["currentModelId"] = value
+                            else:
+                                working_models["current_model_id"] = value
+                        continue
+                    if strategy == "dedicated" and target == "mode":
+                        await set_mode(mode_id=value, session_id=session_id)
+                        if isinstance(working_modes, dict):
+                            if "currentModeId" in working_modes:
+                                working_modes["currentModeId"] = value
+                            else:
+                                working_modes["current_mode_id"] = value
+                        continue
+                    response = await set_config_option(
+                        config_id=target,
+                        session_id=session_id,
+                        value=value,
+                    )
+                    plain = _to_plain(response)
+                    response_options = (
+                        plain.get("configOptions") or plain.get("config_options")
+                        if isinstance(plain, dict)
+                        else None
+                    )
+                    if response_options is None:
+                        raise ACPConfigurationError(
+                            "ACP configuration compatibility error: the agent accepted "
+                            f"{setting}, but did not return configuration state to verify it."
+                        )
+                    verified_options = [
+                        dict(item)
+                        for item in response_options
+                        if isinstance(item, dict)
+                    ]
+                    verified = find_option_by_id(verified_options, target)
+                    effective_value = (
+                        option_current_value(verified) if verified is not None else None
+                    )
+                    if verified is None or effective_value != value:
+                        raise ACPConfigurationError(
+                            "ACP configuration compatibility error: the agent did not "
+                            f"confirm {setting}={value!r}; effective value was "
+                            f"{effective_value!r}."
+                        )
+                    working_options = verified_options
+
+                effective_values = {
+                    oid: option_current_value(option)
+                    for option in working_options
+                    if (oid := option_id(option)) is not None
+                    and option_current_value(option) is not None
+                }
+                effective_model = state_current_value(
+                    working_models,
+                    ("currentModelId", "current_model_id"),
+                )
+                effective_mode = state_current_value(
+                    working_modes,
+                    ("currentModeId", "current_mode_id"),
+                )
+                model_option = None
+                mode_option = None
+                reasoning_option = None
+                if desired.model_id and strategies.get("model", "").startswith(
+                    "config:"
+                ):
+                    model_option = find_option(working_options, "model")
+                    effective_model = (
+                        option_current_value(model_option) if model_option else None
+                    )
+                if desired.mode_id and strategies.get("mode", "").startswith("config:"):
+                    mode_option = find_option(working_options, "mode")
+                    effective_mode = (
+                        option_current_value(mode_option) if mode_option else None
+                    )
+                if desired.reasoning:
+                    reasoning_option = find_option(working_options, "reasoning")
+                effective_reasoning = (
+                    option_current_value(reasoning_option) if reasoning_option else None
+                )
+                effective = {
+                    "model_id": effective_model,
+                    "mode_id": effective_mode,
+                    "reasoning": effective_reasoning,
+                    "config": effective_values,
+                }
+                config = dict(self.session.config_json or {})
+                config["values"] = effective_values
+                config["options"] = working_options
+                if working_models is not None:
+                    config["models"] = working_models
+                if working_modes is not None:
+                    config["modes"] = working_modes
+                config["configuration"] = {
+                    "state": "ready",
+                    "attempt": attempt,
+                    "requested": requested_dict,
+                    "effective": effective,
+                    "strategies": strategies,
+                    "history": history,
+                    "confirmed_at": datetime.now(UTC).isoformat(),
+                }
+                self.models = working_models
+                self.modes = working_modes
+                self.config_options = working_options
+                if effective_model:
+                    self.session.model_id = str(effective_model)
+                if effective_mode:
+                    self.session.mode_id = str(effective_mode)
+                self.session.config_json = config
+                self.session.status = (
+                    "idle"
+                    if ready_status in {"configuration_failed", "disconnected"}
+                    else ready_status
+                )
+                self.session.updated_at = datetime.now(UTC)
+                self.store.save_session(self.session)
+                return effective
+            except Exception as exc:
+                message = str(exc)
+                if not isinstance(exc, ACPConfigurationError):
+                    message = (
+                        "ACP configuration compatibility error: the provider failed while "
+                        f"applying requested session settings: {exc}"
+                    )
+                failed_config = dict(self.session.config_json or {})
+                failed_config["configuration"] = {
+                    "state": "failed",
+                    "attempt": attempt,
+                    "requested": requested_dict,
+                    "strategies": strategies,
+                    "history": history,
+                    "failed_at": datetime.now(UTC).isoformat(),
+                    "error": message[:1000],
+                }
+                self.session.config_json = failed_config
+                self.session.status = "configuration_failed"
+                self.session.updated_at = datetime.now(UTC)
+                self.store.save_session(self.session)
+                if isinstance(exc, ACPConfigurationError):
+                    raise
+                raise ACPConfigurationError(message) from exc
 
     async def disconnect(self) -> None:
         async with self._disconnect_lock:
@@ -867,14 +1200,18 @@ def _agent_supports_resume(init_response: Any) -> bool:
         init_response, "agentCapabilities", None
     )
     if caps is None and isinstance(init_response, dict):
-        caps = init_response.get("agentCapabilities") or init_response.get("agent_capabilities")
+        caps = init_response.get("agentCapabilities") or init_response.get(
+            "agent_capabilities"
+        )
     if caps is None:
         return False
     session_caps = getattr(caps, "session_capabilities", None) or getattr(
         caps, "sessionCapabilities", None
     )
     if session_caps is None and isinstance(caps, dict):
-        session_caps = caps.get("sessionCapabilities") or caps.get("session_capabilities")
+        session_caps = caps.get("sessionCapabilities") or caps.get(
+            "session_capabilities"
+        )
     if session_caps is None:
         return False
     resume = getattr(session_caps, "resume", None)
@@ -888,7 +1225,9 @@ def _agent_supports_load(init_response: Any) -> bool:
         init_response, "agentCapabilities", None
     )
     if caps is None and isinstance(init_response, dict):
-        caps = init_response.get("agentCapabilities") or init_response.get("agent_capabilities")
+        caps = init_response.get("agentCapabilities") or init_response.get(
+            "agent_capabilities"
+        )
     if caps is None:
         return False
     load = getattr(caps, "load_session", None)

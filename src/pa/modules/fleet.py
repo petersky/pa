@@ -17,6 +17,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 
+from pa.acp.configuration import SessionConfigurationRequest
 from pa.auth.middleware import get_principal_id, require_user
 from pa.config import get_settings
 from pa.core.contracts import Module
@@ -1622,6 +1623,66 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
     session_id = session.get("id") if isinstance(session, dict) else None
     if not session_id:
         raise HTTPException(status_code=502, detail="Peer did not return a session id")
+    requested_configuration = SessionConfigurationRequest.from_values(
+        model_id=payload.get("model_id"),
+        mode_id=payload.get("mode_id"),
+        reasoning=payload.get("effort"),
+        config=payload.get("config") or {},
+    )
+    confirmed_configuration: dict[str, Any] = {}
+    if not requested_configuration.empty:
+        configuration = snapshot.get("configuration")
+        if not isinstance(configuration, dict):
+            session_config = (
+                session.get("config_json") if isinstance(session, dict) else {}
+            )
+            configuration = dict((session_config or {}).get("configuration") or {})
+        confirmed_configuration = dict(configuration)
+        effective = dict(configuration.get("effective") or {})
+        mismatches: list[str] = []
+        if configuration.get("state") != "ready":
+            mismatches.append(f"state={configuration.get('state')!r}")
+        if (
+            requested_configuration.model_id
+            and effective.get("model_id") != requested_configuration.model_id
+        ):
+            mismatches.append(
+                f"model={effective.get('model_id')!r} (requested "
+                f"{requested_configuration.model_id!r})"
+            )
+        if (
+            requested_configuration.mode_id
+            and effective.get("mode_id") != requested_configuration.mode_id
+        ):
+            mismatches.append(
+                f"mode={effective.get('mode_id')!r} (requested "
+                f"{requested_configuration.mode_id!r})"
+            )
+        if (
+            requested_configuration.reasoning
+            and effective.get("reasoning") != requested_configuration.reasoning
+        ):
+            mismatches.append(
+                f"reasoning={effective.get('reasoning')!r} (requested "
+                f"{requested_configuration.reasoning!r})"
+            )
+        effective_config = dict(effective.get("config") or {})
+        for config_id, value in requested_configuration.config.items():
+            if effective_config.get(config_id) != value:
+                mismatches.append(
+                    f"config {config_id}={effective_config.get(config_id)!r} "
+                    f"(requested {value!r})"
+                )
+        if mismatches:
+            raise HTTPException(
+                status_code=502,
+                detail={
+                    "code": "remote_configuration_unconfirmed",
+                    "message": "The remote agent did not confirm the requested session configuration; no prompt was delivered.",
+                    "mismatches": mismatches,
+                    "recoverable": True,
+                },
+            )
     if record.resume_requested and session_id != record.resume_session_id:
         raise HTTPException(
             status_code=409,
@@ -1732,7 +1793,11 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
             "Prompt accepted by the intended remote session."
             if message
             else "Remote session started.",
-            detail={"session_id": session_id, "prompt": prompt_result or {}},
+            detail={
+                "session_id": session_id,
+                "prompt": prompt_result or {},
+                "configuration": confirmed_configuration,
+            },
         )
 
 

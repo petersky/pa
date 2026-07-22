@@ -93,6 +93,7 @@ class SessionSnapshot(BaseModel):
     label: str | None = None
     model_id: str | None = None
     mode_id: str | None = None
+    configuration: dict[str, Any] = Field(default_factory=dict)
     card_id: str | None = None
     project_id: str | None = None
     principal_id: str | None = None

@@ -1872,6 +1872,30 @@
   }
 
   function sessionConfigSummary(config) {
+    const admission = config && config.configuration;
+    if (admission && (admission.requested || admission.effective)) {
+      const requested = admission.requested || {};
+      const effective = admission.effective || {};
+      const requestedParts = [
+        requested.model_id && ("model " + requested.model_id),
+        requested.mode_id && ("mode " + requested.mode_id),
+        requested.reasoning && ("reasoning " + requested.reasoning)
+      ].filter(Boolean);
+      const effectiveParts = [
+        effective.model_id && ("model " + effective.model_id),
+        effective.mode_id && ("mode " + effective.mode_id),
+        effective.reasoning && ("reasoning " + effective.reasoning)
+      ].filter(Boolean);
+      const summary = [
+        requestedParts.length && ("requested: " + requestedParts.join(", ")),
+        effectiveParts.length && ("effective: " + effectiveParts.join(", ")),
+        admission.state && ("state: " + admission.state)
+      ].filter(Boolean).join(" · ");
+      if (summary) {
+        return '<span class="muted small agent-session-config">' +
+          escapeHtml(summary) + "</span>";
+      }
+    }
     const values = config && config.values;
     if (!values || !Object.keys(values).length) return "";
     return '<span class="muted small agent-session-config">' + escapeHtml(

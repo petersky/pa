@@ -393,6 +393,46 @@ class DurableDispatchJobTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotEqual(create_body["label"], "card:card-1")
             domain.add_knowledge.assert_called_once()
 
+    async def test_remote_proxy_rejects_unconfirmed_config_before_prompt(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            app, ledger, domain = self._job_app(Path(tmp))
+            record = self._record(
+                request_payload={
+                    "message": "Do the work",
+                    "model_id": "gpt-5.6-sol[high]",
+                }
+            )
+            ledger.transition(record, "queued", "admitted")
+            peer_agent = AsyncMock(
+                return_value={
+                    "session": {"id": "session-new"},
+                    "configuration": {
+                        "state": "ready",
+                        "effective": {
+                            "model_id": "provider-default",
+                            "reasoning": "medium",
+                        },
+                    },
+                }
+            )
+            with (
+                patch(
+                    "pa.modules.fleet._peer_dispatch_json",
+                    AsyncMock(return_value={"resolvable": True}),
+                ),
+                patch("pa.modules.fleet._peer_agent_json", peer_agent),
+            ):
+                with self.assertRaises(HTTPException) as raised:
+                    await _process_remote_dispatch(app, record)
+
+            self.assertEqual(raised.exception.status_code, 502)
+            self.assertEqual(
+                raised.exception.detail["code"],
+                "remote_configuration_unconfirmed",
+            )
+            self.assertEqual(peer_agent.await_count, 1)
+            domain.add_knowledge.assert_not_called()
+
     async def test_missing_prompt_ack_is_retryable_and_keeps_exact_session(
         self,
     ) -> None:
