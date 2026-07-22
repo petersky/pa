@@ -23,45 +23,108 @@
 
   <section data-section="overview">
     <div class="panel-header">
-      <h2>Overview</h2>
-      <button class="ghost" type="button" id="pa-fleet-refresh">Refresh</button>
+      <div>
+        <h2>Fleet activity</h2>
+        <p class="muted small">Cached state appears immediately; independent fields refresh in the background.</p>
+      </div>
+      <button class="ghost" type="button" id="pa-fleet-refresh">Refresh all</button>
     </div>
-    <p class="muted">Fleet health, software, authentication, capabilities, and active work. Technical identifiers and endpoints are available in each machine’s details.</p>
-
-    <h3>Instances</h3>
     {% if fleet_instances %}
-    <table class="data-table" id="pa-fleet-instances">
+    <script type="application/json" id="pa-fleet-overview-data">{{ fleet_overview | tojson }}</script>
+    <div class="fleet-overview-grid">
+      <div class="fleet-topology-panel">
+        <div class="fleet-topology-heading">
+          <div>
+            <h3 id="pa-fleet-topology-title">Topology</h3>
+            <p class="muted small">Arrows are dispatch or sync routes; loop markers are repository placement or PR supervision.</p>
+          </div>
+          <span class="muted small" id="pa-fleet-refresh-progress" aria-live="polite">Last-known state</span>
+        </div>
+        <div id="pa-fleet-topology"
+             class="fleet-topology"
+             role="group"
+             aria-labelledby="pa-fleet-topology-title">
+          <svg viewBox="0 0 960 420" role="img" aria-label="Fleet instance and activity topology"></svg>
+          <noscript><p class="notice">The graphical topology needs JavaScript. The complete accessible table and route list remain available below.</p></noscript>
+        </div>
+        <details class="fleet-route-equivalent">
+          <summary>Route and placement list</summary>
+          <ul id="pa-fleet-edge-list">
+            {% for edge in fleet_overview.edges %}
+            <li>
+              <button type="button" class="ghost small" data-fleet-edge="{{ edge.id }}">
+                {{ edge.kind }} · {{ edge.label }} · {{ edge.status }}
+              </button>
+            </li>
+            {% else %}
+            <li class="muted">No routes reported.</li>
+            {% endfor %}
+          </ul>
+        </details>
+      </div>
+      <aside class="fleet-detail-panel" id="pa-fleet-detail" aria-live="polite" aria-label="Selected fleet detail">
+        <h3>Inspect activity</h3>
+        <p class="muted">Select a machine or route for cards, sessions, dispatches, watches, repositories, worktrees, timestamps, and actionable errors.</p>
+      </aside>
+    </div>
+
+    <div class="fleet-table-heading">
+      <h3>Accessible instance list</h3>
+      <p class="muted small" id="pa-fleet-live-status" aria-live="polite">Showing cached and local state.</p>
+    </div>
+    <div class="fleet-table-scroll">
+    <table class="data-table fleet-instance-table" id="pa-fleet-instances">
       <thead>
-        <tr><th>Machine</th><th>Health</th><th>Version</th><th>Authentication</th><th>Capabilities</th><th>Active work</th><th>Last seen</th><th>Actions</th></tr>
+        <tr><th>Machine</th><th>Health &amp; sync</th><th>Software</th><th>Authentication</th><th>Activity</th><th>Freshness</th><th>Actions</th></tr>
       </thead>
       <tbody>
-        {% for inst in fleet_instances %}
-        <tr data-fleet-instance="{{ inst.instance_id }}">
-          <td><strong>{{ inst.name }}</strong><details><summary class="muted small">Connection details</summary><dl><dt>Zone</dt><dd>{{ inst.zone }}</dd><dt>Instance ID</dt><dd><code>{{ inst.instance_id }}</code></dd><dt>Endpoint</dt><dd><a href="{{ inst.url }}" target="_blank" rel="noopener">{{ inst.url }}</a></dd></dl></details></td>
-          <td data-fleet-health{% if inst.instance_id == settings.instance_id %} data-fleet-terminal="1"{% endif %}>{% if inst.instance_id == settings.instance_id %}<span class="status status-active">Healthy</span>{% else %}<span class="muted small">Checking…</span>{% endif %}</td>
-          <td data-fleet-current-version{% if inst.instance_id == settings.instance_id %} data-fleet-terminal="1"{% endif %}>
-            {% if inst.instance_id == settings.instance_id %}{{ local_version }}{% else %}<span class="muted small">Checking…</span>{% endif %}
-            <span class="muted small" data-fleet-available-version></span>
-          </td>
-          <td data-fleet-providers>
-            <span class="muted small">Checking…</span>
-          </td>
-          <td>{{ inst.capabilities | join(', ') or 'None reported' }}</td>
-          <td data-fleet-active-work><span class="muted small">Checking…</span></td>
-          <td data-fleet-last-seen>{% if inst.last_seen %}<time datetime="{{ inst.last_seen.isoformat() }}">{{ inst.last_seen.strftime('%Y-%m-%d %H:%M') }}</time>{% else %}<span class="muted">Unknown</span>{% endif %}</td>
+        {% for node in fleet_overview.nodes %}
+        {% set inst = node %}
+        {% set dims = node.dimensions %}
+        {% set reach = dims.reachability %}
+        {% set status = dims.status %}
+        {% set update = dims.update %}
+        {% set providers = dims.providers %}
+        {% set activity = dims.activity %}
+        {% set sync = dims.sync %}
+        <tr data-fleet-instance="{{ node.id }}" tabindex="0">
           <td>
-            {% if inst.instance_id != settings.instance_id %}
-            <button type="button" class="ghost small" data-fleet-update="{{ inst.instance_id }}" data-instance-name="{{ inst.name }}" aria-label="Update {{ inst.name }}">Update</button>
-            <button type="button" class="ghost danger small" data-fleet-remove="{{ inst.instance_id }}" aria-label="Remove {{ inst.name }} from fleet">Remove</button>
-            {% else %}
-            <span class="muted small">local</span>
-            {% endif %}
+            <button type="button" class="fleet-machine-select" data-fleet-node="{{ node.id }}"><strong>{{ node.name }}</strong>{% if node.local %}<span class="badge">local</span>{% endif %}</button>
+            <span class="muted small">{{ node.zone }}</span>
+            <details><summary class="muted small">Connection details</summary><dl><dt>Instance ID</dt><dd><code>{{ node.id }}</code></dd><dt>Endpoint</dt><dd><a href="{{ node.url }}" target="_blank" rel="noopener">{{ node.url }}</a></dd><dt>Capabilities</dt><dd>{{ node.capabilities | join(', ') or 'None reported' }}</dd></dl></details>
+          </td>
+          <td>
+            <div data-fleet-health class="fleet-field fleet-field-{{ reach.state }}">
+              <span class="status {% if reach.value and reach.value.health == 'up' %}status-active{% else %}status-blocked{% endif %}">{{ reach.value.health if reach.value else reach.state }}</span>
+            </div>
+            <div data-fleet-sync class="muted small">{{ 'in sync' if sync.value and sync.value.consistent else sync.state }}</div>
+          </td>
+          <td>
+            <div data-fleet-current-version class="fleet-field fleet-field-{{ status.state }}">{{ status.value.version if status.value and status.value.version else status.state }}</div>
+            <div data-fleet-available-version class="muted small">{% if update.value and update.value.available_version %}{{ update.value.available_version }}{% else %}{{ update.state }}{% endif %}</div>
+          </td>
+          <td data-fleet-providers class="fleet-field fleet-field-{{ providers.state }}">
+            {% if providers.value %}
+              {% for provider in providers.value %}<span class="badge">{{ provider.display_name or provider.id }} · {{ 'ready' if provider.available else 'unavailable' }}</span>{% endfor %}
+            {% else %}<span class="muted">{{ providers.state }}</span>{% endif %}
+          </td>
+          <td data-fleet-active-work class="fleet-field fleet-field-{{ activity.state }}">
+            <strong>{{ activity.value.state if activity.value and activity.value.state else activity.state }}</strong>
+            <span class="muted small">{{ activity.value.summary if activity.value and activity.value.summary else 'No activity detail yet' }}</span>
+          </td>
+          <td data-fleet-freshness>
+            <span class="fleet-freshness fleet-field-{{ reach.state }}">{{ reach.state }}</span>
+            {% if reach.observed_at %}<time class="muted small" datetime="{{ reach.observed_at }}">{{ reach.observed_at }}</time>{% endif %}
+          </td>
+          <td>
+            <button type="button" class="ghost small" data-fleet-retry-instance="{{ node.id }}">Retry</button>
+            {% if not node.local %}<button type="button" class="ghost small" data-fleet-update="{{ node.id }}" data-instance-name="{{ node.name }}" aria-label="Update {{ inst.name }}">Update</button><button type="button" class="ghost danger small" data-fleet-remove="{{ node.id }}" aria-label="Remove {{ inst.name }} from fleet">Remove</button>{% endif %}
           </td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
-    <p class="muted small" id="pa-fleet-live-status" aria-live="polite">Checking instance health…</p>
+    </div>
     <div class="panel-inset stack" id="pa-codex-login-panel" hidden>
       <div class="panel-header"><h3>Sign in with ChatGPT</h3></div>
       <p class="muted small">This starts Codex device authentication on the selected instance as the PA service user. Credentials stay on that instance.</p>

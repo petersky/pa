@@ -5,6 +5,269 @@
   line-height: 1.45;
 }
 
+/* Fleet overview — one state model rendered as topology and accessible list. */
+.fleet-overview-grid {
+  display: grid;
+  grid-template-columns: minmax(32rem, 1.7fr) minmax(18rem, 0.8fr);
+  gap: 1rem;
+  align-items: stretch;
+  margin: 0.75rem 0 1rem;
+}
+
+.fleet-topology-panel,
+.fleet-detail-panel {
+  min-width: 0;
+  border: 1px solid var(--pa-border);
+  border-radius: 10px;
+  background: var(--pa-surface);
+}
+
+.fleet-topology-heading,
+.fleet-table-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.fleet-topology-heading {
+  padding: 0.75rem 0.85rem 0;
+}
+
+.fleet-topology-heading h3,
+.fleet-table-heading h3,
+.fleet-topology-heading p,
+.fleet-table-heading p {
+  margin: 0;
+}
+
+.fleet-topology {
+  width: 100%;
+  min-height: 25rem;
+  overflow: auto;
+}
+
+.fleet-topology svg {
+  display: block;
+  width: 100%;
+  min-width: 34rem;
+  height: auto;
+  min-height: 25rem;
+}
+
+.fleet-node,
+.fleet-edge {
+  cursor: pointer;
+  outline: none;
+}
+
+.fleet-node rect {
+  fill: var(--pa-surface);
+  stroke: var(--pa-border);
+  stroke-width: 3;
+}
+
+.fleet-node text {
+  fill: var(--pa-text);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.fleet-node .fleet-node-name {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.fleet-node .fleet-node-freshness {
+  fill: var(--pa-text-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.fleet-node .fleet-node-readiness { font-size: 10.5px; }
+
+.fleet-node-local rect { stroke-width: 5; }
+.fleet-node-fresh rect { stroke: var(--pa-ok); }
+.fleet-node-stale rect { stroke: var(--pa-accent); stroke-dasharray: 8 4; }
+.fleet-node-timeout rect { stroke: var(--pa-danger); stroke-dasharray: 3 4; }
+.fleet-node-error rect,
+.fleet-node-down rect { stroke: var(--pa-danger); }
+.fleet-node-unavailable rect { stroke: var(--pa-text-muted); stroke-dasharray: 2 6; }
+
+.fleet-node:focus rect,
+.fleet-node:hover rect,
+.fleet-edge:focus line,
+.fleet-edge:focus path,
+.fleet-edge:hover line,
+.fleet-edge:hover path {
+  stroke: var(--pa-focus);
+  stroke-width: 5;
+}
+
+.fleet-edge line,
+.fleet-edge path {
+  fill: none;
+  stroke: var(--pa-accent);
+  stroke-width: 3;
+  marker-end: url(#fleet-arrow);
+}
+
+.fleet-edge text {
+  fill: var(--pa-text-muted);
+  font-size: 11px;
+  paint-order: stroke;
+  stroke: var(--pa-surface);
+  stroke-width: 4px;
+}
+
+.fleet-edge-degraded line,
+.fleet-edge-degraded path { stroke: var(--pa-danger); stroke-dasharray: 8 5; }
+.fleet-edge-stale line,
+.fleet-edge-stale path { stroke: var(--pa-accent); stroke-dasharray: 8 5; }
+.fleet-edge-unavailable line,
+.fleet-edge-unavailable path { stroke: var(--pa-text-muted); stroke-dasharray: 2 7; }
+
+.fleet-route-equivalent {
+  margin: 0 0.85rem 0.85rem;
+}
+
+.fleet-route-equivalent ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.25rem;
+}
+
+.fleet-detail-panel {
+  padding: 0.85rem;
+  max-height: 31rem;
+  overflow: auto;
+}
+
+.fleet-detail-panel > h3:first-child { margin-top: 0; }
+.fleet-detail-panel pre {
+  max-height: 16rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.75rem;
+}
+
+.fleet-detail-list {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.25rem 0.75rem;
+}
+
+.fleet-detail-list dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.fleet-diagnostic-error {
+  border-left: 4px solid var(--pa-danger);
+  padding: 0.45rem 0.65rem;
+  background: color-mix(in srgb, var(--pa-danger) 8%, transparent);
+}
+
+.fleet-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.fleet-instance-table { min-width: 62rem; }
+.fleet-instance-table td { vertical-align: top; }
+.fleet-instance-table [data-fleet-active-work] > *,
+.fleet-instance-table [data-fleet-freshness] > * {
+  display: block;
+  margin-bottom: 0.2rem;
+}
+
+.fleet-machine-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--pa-text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.fleet-machine-select:hover,
+.fleet-machine-select:focus { color: var(--pa-accent); }
+
+.fleet-freshness {
+  display: inline-flex;
+  width: max-content;
+  padding: 0.08rem 0.4rem;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+
+.fleet-field-fresh { color: var(--pa-ok); }
+.fleet-field-stale { color: var(--pa-accent); }
+.fleet-field-timeout,
+.fleet-field-error { color: var(--pa-danger); }
+.fleet-field-unavailable { color: var(--pa-text-muted); }
+
+@media (max-width: 1050px) {
+  .fleet-overview-grid { grid-template-columns: 1fr; }
+  .fleet-detail-panel { max-height: 24rem; }
+}
+
+@media (max-width: 900px) {
+  .fleet-topology { min-height: 19rem; }
+  .fleet-topology svg {
+    min-width: 20rem;
+    min-height: 19rem;
+  }
+  .fleet-topology svg.fleet-topology-multi { min-width: 44rem; }
+  .fleet-topology-heading,
+  .fleet-table-heading { display: grid; }
+  .fleet-table-scroll { overflow: visible; }
+  .fleet-instance-table,
+  .fleet-instance-table tbody,
+  .fleet-instance-table tr,
+  .fleet-instance-table td {
+    display: block;
+    min-width: 0;
+    width: 100%;
+  }
+  .fleet-instance-table thead { display: none; }
+  .fleet-instance-table tr {
+    border: 1px solid var(--pa-border);
+    border-radius: 8px;
+    margin: 0 0 0.75rem;
+    padding: 0.35rem;
+  }
+  .fleet-instance-table td {
+    display: grid;
+    grid-template-columns: 7rem minmax(0, 1fr);
+    gap: 0.5rem;
+    border: 0;
+    padding: 0.4rem;
+  }
+  .fleet-instance-table td::before {
+    color: var(--pa-text-muted);
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+  .fleet-instance-table td:nth-child(1)::before { content: "Machine"; }
+  .fleet-instance-table td:nth-child(2)::before { content: "Health & sync"; }
+  .fleet-instance-table td:nth-child(3)::before { content: "Software"; }
+  .fleet-instance-table td:nth-child(4)::before { content: "Authentication"; }
+  .fleet-instance-table td:nth-child(5)::before { content: "Activity"; }
+  .fleet-instance-table td:nth-child(6)::before { content: "Freshness"; }
+  .fleet-instance-table td:nth-child(7)::before { content: "Actions"; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fleet-node,
+  .fleet-edge { transition: none !important; animation: none !important; }
+}
+
 .pa-remote-instance-select {
   display: grid;
   grid-template-columns: 7rem minmax(0, 30rem);

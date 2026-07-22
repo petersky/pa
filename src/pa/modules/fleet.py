@@ -14,7 +14,7 @@ from uuid import uuid4
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 from pa.acp.configuration import SessionConfigurationRequest
@@ -51,6 +51,7 @@ from pa.fleet.join import (
     unwire_instance_peers,
 )
 from pa.fleet.membership import MembershipStore
+from pa.fleet.overview import DIMENSIONS, build_overview, probe_dimension
 from pa.fleet.registry import FleetRegistry
 from pa.fleet.remote_install import (
     RemoteInstallRequest,
@@ -420,12 +421,15 @@ def _fleet_context(request: Request) -> dict:
             settings.subscribed_realms[0] if settings.subscribed_realms else "personal"
         )
     )
+    instances = list(fleet.list_instances())
+    routes = peer_table.all_routes()
     return {
-        "fleet_instances": fleet.list_instances(),
+        "fleet_instances": instances,
+        "fleet_overview": build_overview(ctx, instances, routes),
         "local_version": __import__("pa").__version__,
         "realms": membership.list_realms(),
         "memberships": membership.list_memberships(),
-        "peer_routes": peer_table.all_routes(),
+        "peer_routes": routes,
         "settings": settings,
         "fleet_id": settings.fleet_id,
         "zone": settings.zone,
@@ -531,6 +535,75 @@ def fleet_ensure_sync_token(request: Request) -> dict:
 def list_fleet_instances(request: Request) -> list[dict]:
     fleet: FleetRegistry = request.app.state.ctx.require_service("fleet_registry")
     return [i.model_dump(mode="json") for i in fleet.list_instances()]
+
+
+def _overview_instance(request: Request, instance_id: str) -> FleetInstance:
+    ctx = request.app.state.ctx
+    fleet: FleetRegistry = ctx.require_service("fleet_registry")
+    inst = fleet.get_instance(instance_id)
+    if inst:
+        return inst
+    if instance_id == ctx.settings.instance_id:
+        return FleetInstance(
+            instance_id=ctx.settings.instance_id,
+            name=ctx.settings.instance_name,
+            url=owner_public_url(ctx.settings),
+            zone=ctx.settings.zone,
+            capabilities=list(ctx.settings.capabilities),
+            healthy=True,
+        )
+    raise HTTPException(status_code=404, detail="Fleet instance not found")
+
+
+@router.get("/fleet/overview")
+def fleet_overview(request: Request) -> dict:
+    """Return cached-first normalized state used by both overview renderings."""
+    require_user(request)
+    ctx = request.app.state.ctx
+    fleet: FleetRegistry = ctx.require_service("fleet_registry")
+    peer_table: PeerTable = ctx.require_service("peer_table")
+    return build_overview(ctx, list(fleet.list_instances()), peer_table.all_routes())
+
+
+@router.get("/fleet/overview/local")
+async def fleet_overview_local(request: Request, dimension: str) -> dict:
+    """Expose one bounded local dimension to another authenticated fleet peer."""
+    if dimension not in DIMENSIONS:
+        raise HTTPException(status_code=422, detail="Unknown fleet overview dimension")
+    ctx = request.app.state.ctx
+    inst = _overview_instance(request, ctx.settings.instance_id)
+    value = await probe_dimension(ctx, inst, dimension)
+    return {"instance_id": inst.instance_id, "dimension": dimension, **value}
+
+
+@router.get("/fleet/overview/dimension")
+async def fleet_overview_dimension(
+    request: Request,
+    instance_id: str,
+    dimension: str,
+    generation: int = 0,
+    retry: bool = False,
+) -> Response:
+    """Probe exactly one field with a strict deadline and observable timing."""
+    require_user(request)
+    if dimension not in DIMENSIONS:
+        raise HTTPException(status_code=422, detail="Unknown fleet overview dimension")
+    ctx = request.app.state.ctx
+    inst = _overview_instance(request, instance_id)
+    value = await probe_dimension(ctx, inst, dimension, force=retry)
+    duration = value.get("duration_ms") or 0
+    return JSONResponse(
+        {
+            "instance_id": instance_id,
+            "dimension": dimension,
+            "generation": generation,
+            **value,
+        },
+        headers={
+            "Server-Timing": f'fleet-{dimension};dur={duration};desc="{inst.name}"',
+            "X-Fleet-Generation": str(generation),
+        },
+    )
 
 
 @router.post("/fleet/join")

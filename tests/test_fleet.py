@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import asyncio
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -470,6 +472,51 @@ class FleetPageLazyLoadTests(unittest.TestCase):
         self.assertNotIn("provider_status", data)
         self.assertTrue(data["has_sync_token"])
 
+    def test_fleet_page_and_dimension_endpoint_render_normalized_contract(
+        self,
+    ) -> None:
+        from fastapi.testclient import TestClient
+
+        from pa.core.kernel import Kernel
+        from pa.domain.store import reset_store
+        from pa.instance.agent_session import reset_instance_agent
+
+        reset_store()
+        reset_instance_agent()
+        settings = Settings(
+            data_dir=self.data_dir,
+            instance_id="local-1",
+            instance_name="owner",
+            instance_url="http://owner:8080",
+            agent_enabled=False,
+            peers=[],
+        )
+        try:
+            app = Kernel.boot(settings=settings).build_app()
+            with TestClient(app) as client:
+                page = client.get("/fleet")
+                self.assertEqual(page.status_code, 200, page.text)
+                self.assertIn("pa-fleet-overview-data", page.text)
+                self.assertIn("pa-fleet-topology", page.text)
+                self.assertNotIn("Checking…", page.text)
+
+                dimension = client.get(
+                    "/api/fleet/overview/dimension",
+                    params={
+                        "instance_id": "local-1",
+                        "dimension": "reachability",
+                        "generation": 17,
+                    },
+                )
+                self.assertEqual(dimension.status_code, 200, dimension.text)
+                self.assertEqual(dimension.json()["state"], "fresh")
+                self.assertEqual(dimension.json()["generation"], 17)
+                self.assertIn("fleet-reachability", dimension.headers["server-timing"])
+                self.assertEqual(dimension.headers["x-fleet-generation"], "17")
+        finally:
+            reset_instance_agent()
+            reset_store()
+
 
 class FleetHealthParallelTests(unittest.IsolatedAsyncioTestCase):
     async def test_health_probes_in_parallel_and_includes_providers(self) -> None:
@@ -671,13 +718,210 @@ class FleetHealthParallelTests(unittest.IsolatedAsyncioTestCase):
             client.get.assert_not_awaited()
 
 
+class FleetOverviewTests(unittest.IsolatedAsyncioTestCase):
+    async def test_dimension_probes_are_single_flight_and_keep_last_good_value(
+        self,
+    ) -> None:
+        from pa.fleet.overview import (
+            cache_for,
+            field,
+            probe_dimension,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="local")
+            ctx = MagicMock(settings=settings)
+            inst = FleetInstance(
+                instance_id="remote",
+                name="remote",
+                url="http://remote:8080",
+            )
+            started = asyncio.Event()
+            release = asyncio.Event()
+            calls = 0
+
+            async def slow_probe(*_args):
+                nonlocal calls
+                calls += 1
+                started.set()
+                await release.wait()
+                return field(
+                    "fresh",
+                    {"health": "up"},
+                    observed_at="2026-07-22T12:00:00+00:00",
+                    duration_ms=12,
+                )
+
+            with patch("pa.fleet.overview._probe", side_effect=slow_probe):
+                first = asyncio.create_task(
+                    probe_dimension(ctx, inst, "reachability", force=True)
+                )
+                second = asyncio.create_task(
+                    probe_dimension(ctx, inst, "reachability", force=True)
+                )
+                await started.wait()
+                release.set()
+                results = await asyncio.gather(first, second)
+
+            self.assertEqual(calls, 1)
+            self.assertEqual(results[0]["value"], {"health": "up"})
+            self.assertEqual(results[1]["value"], {"health": "up"})
+
+            with patch(
+                "pa.fleet.overview._probe",
+                new=AsyncMock(
+                    return_value=field(
+                        "timeout", None, duration_ms=2500, error="deadline"
+                    )
+                ),
+            ):
+                timed_out = await probe_dimension(ctx, inst, "reachability", force=True)
+
+            self.assertEqual(timed_out["state"], "timeout")
+            self.assertEqual(timed_out["value"], {"health": "up"})
+            persisted = cache_for(settings.data_dir).get("remote", "reachability")
+            self.assertEqual(persisted["value"], {"health": "up"})
+
+    def test_topology_uses_same_nodes_for_routes_updates_and_supervisor(self) -> None:
+        from pa.fleet.overview import build_overview
+        from pa.fleet.update import UpdatePhase
+        from pa.network.peer_table import PeerRoute
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                data_dir=Path(tmp),
+                instance_id="local",
+                instance_name="owner",
+                instance_url="http://owner:8080",
+            )
+            ctx = MagicMock(settings=settings)
+            ctx.store.list_sessions.return_value = []
+            ctx.store.list_repositories.return_value = []
+            ctx.store.get_projection_head.return_value = "head"
+            ctx.services = {}
+
+            update = MagicMock()
+            update.instance_id = "remote"
+            update.phase = UpdatePhase.RESTARTING
+            update.public_dict.return_value = {
+                "job_id": "update-1",
+                "phase": "restarting",
+            }
+            update_store = MagicMock()
+            update_store.list.return_value = [update]
+
+            watch = MagicMock()
+            watch.id = "watch-1"
+            watch.owner_instance_id = "remote"
+            watch.originating_instance_id = "local"
+            watch.repository = "petersky/pa"
+            watch.pr_number = 99
+            watch.last_error = None
+            watch.model_dump.return_value = {
+                "id": "watch-1",
+                "owner_instance_id": "remote",
+            }
+            supervisor_store = MagicMock()
+            supervisor_store.list_watches.return_value = [watch]
+            ctx.services.update(
+                fleet_update_job_store=update_store,
+                pr_supervisor_store=supervisor_store,
+            )
+            instances = [
+                FleetInstance(
+                    instance_id="local",
+                    name="owner",
+                    url="http://owner:8080",
+                ),
+                FleetInstance(
+                    instance_id="remote",
+                    name="worker",
+                    url="http://worker:8080",
+                ),
+            ]
+            routes = [
+                PeerRoute(
+                    realm_id="default",
+                    target_url="http://worker:8080",
+                    target_instance_id="remote",
+                )
+            ]
+
+            overview = build_overview(ctx, instances, routes)
+
+            self.assertEqual(
+                {node["id"] for node in overview["nodes"]}, {"local", "remote"}
+            )
+            self.assertEqual(
+                {edge["kind"] for edge in overview["edges"]},
+                {"sync", "supervisor"},
+            )
+            remote = next(node for node in overview["nodes"] if node["id"] == "remote")
+            self.assertEqual(
+                remote["dimensions"]["activity"]["value"]["state"], "starting"
+            )
+            supervisor = next(
+                edge for edge in overview["edges"] if edge["kind"] == "supervisor"
+            )
+            self.assertEqual(
+                (supervisor["source"], supervisor["target"]), ("remote", "local")
+            )
+
+    def test_local_activity_reports_multiple_sessions_cards_and_queue(self) -> None:
+        from pa.domain.models import AgentSession
+        from pa.fleet.overview import local_dimension
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="local")
+            ctx = MagicMock(settings=settings)
+            manager = MagicMock()
+            manager.progress.return_value = SimpleNamespace(
+                model_dump=lambda mode: {
+                    "phase": "prompting",
+                    "active_sessions": 2,
+                    "queued_prompts": 1,
+                    "quiescing": False,
+                    "prompting": True,
+                    "message": "2 ACP sessions working, 1 queued",
+                }
+            )
+            manager.list_runtimes.return_value = []
+            ctx.services = {"instance_agent": manager}
+            ctx.store.list_sessions.return_value = [
+                AgentSession(
+                    id="session-1",
+                    agent_name="codex",
+                    card_id="card-1",
+                    status="working",
+                    title="First card",
+                ),
+                AgentSession(
+                    id="session-2",
+                    agent_name="codex",
+                    card_id="card-2",
+                    status="idle",
+                    title="Second card",
+                ),
+            ]
+
+            activity = local_dimension(ctx, "activity")
+
+            self.assertEqual(activity["state"], "working")
+            self.assertEqual(activity["active_sessions"], 2)
+            self.assertEqual(activity["queued_prompts"], 1)
+            self.assertEqual(
+                {session["card_id"] for session in activity["sessions"]},
+                {"card-1", "card-2"},
+            )
+
+
 class FleetUpdateUiTests(unittest.TestCase):
     def test_update_form_uses_peer_track_and_rechecks_selected_channel(self) -> None:
         root = Path(__file__).parents[1]
         script = (root / "src/pa/server/static/js/fleet.js").read_text()
         template = (root / "src/pa/server/templates/pages/fleet.html").read_text()
-        self.assertIn("row.update_channel", script)
-        self.assertIn("row.dataset.updateChannel", script)
+        self.assertIn("updateValue.channel", script)
+        self.assertIn("tr.dataset.updateChannel", script)
         self.assertIn("/update-check?channel=", script)
         self.assertIn("refreshFleetUpdateCheck().then", script)
         self.assertIn('name="install_timeout"', template)
@@ -686,19 +930,38 @@ class FleetUpdateUiTests(unittest.TestCase):
         root = Path(__file__).parents[1]
         script = (root / "src/pa/server/static/js/fleet.js").read_text()
         template = (root / "src/pa/server/templates/pages/fleet.html").read_text()
-        self.assertIn("if (liveStatusRequest) return liveStatusRequest", script)
+        self.assertIn(
+            "if (liveStatusRequest && !force) return liveStatusRequest", script
+        )
         self.assertIn('document.body.addEventListener("htmx:beforeSwap"', script)
         self.assertIn("liveStatusController.abort()", script)
-        self.assertIn(
-            'terminalLiveFailure("Health check timed out", "timeout")', script
-        )
-        self.assertIn('["up", "down", "partial", "error", "timeout"]', script)
+        self.assertIn("var concurrency = Math.min(4, work.length)", script)
+        self.assertIn("browser deadline exceeded", script)
+        self.assertIn("/api/fleet/overview/dimension", script)
+        self.assertIn("function edgeVisualStatus(edge)", script)
+        self.assertIn("providerLabel", script)
         self.assertIn("if (seq !== liveStatusSeq) return", script)
-        self.assertIn("!el.dataset.fleetTerminal", script)
+        self.assertIn("patch.generation !== seq", script)
+        self.assertIn("Object.assign({}, previous", script)
         self.assertIn("Health check failed", script)
-        self.assertIn('row.status_state === "up" ? "—"', script)
-        self.assertIn('row.update_state === "up" ? "—"', script)
+        self.assertIn("performance.measure", script)
         self.assertIn('id="pa-fleet-refresh"', template)
+
+    def test_topology_is_accessible_responsive_and_has_no_js_equivalent(self) -> None:
+        root = Path(__file__).parents[1]
+        script = (root / "src/pa/server/static/js/fleet.js").read_text()
+        template = (root / "src/pa/server/templates/pages/fleet.html").read_text()
+        style = (root / "src/pa/server/static/style.css").read_text()
+        self.assertIn('aria-label="Fleet instance and activity topology"', template)
+        self.assertIn("<noscript>", template)
+        self.assertIn('id="pa-fleet-edge-list"', template)
+        self.assertIn('id="pa-fleet-instances"', template)
+        self.assertIn('tabindex="0" role="button"', script)
+        self.assertIn('event.key !== "Enter" && event.key !== " "', script)
+        self.assertIn("@media (max-width: 1050px)", style)
+        self.assertIn("@media (max-width: 900px)", style)
+        self.assertIn("@media (prefers-reduced-motion: reduce)", style)
+        self.assertIn(".fleet-edge-stale line", style)
 
 
 class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):

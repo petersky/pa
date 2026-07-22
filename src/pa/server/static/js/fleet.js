@@ -833,7 +833,7 @@
   }
 
   function healthHtml(state) {
-    var terminal = ["up", "down", "partial", "error", "timeout"];
+    var terminal = ["up", "down", "partial", "error", "timeout", "unavailable", "stale"];
     state = terminal.indexOf(state) >= 0 ? state : "error";
     return '<span class="status ' + (state === "up" ? "status-active" : "status-blocked") +
       '">' + escapeHtml(state) + "</span>";
@@ -842,6 +842,8 @@
   function setLiveBanner(text) {
     var el = $("#pa-fleet-live-status");
     if (el) el.textContent = text || "";
+    var progress = $("#pa-fleet-refresh-progress");
+    if (progress) progress.textContent = text || "";
   }
 
   var codexLoginInstance = "";
@@ -880,70 +882,315 @@
     }
   }
 
-  function resetLivePlaceholders(force) {
-    $all("#pa-fleet-instances [data-fleet-health]").forEach(function (el) {
-      if (force || !el.dataset.fleetTerminal) el.innerHTML = '<span class="muted small">Checking…</span>';
-    });
-    $all("#pa-fleet-instances [data-fleet-providers]").forEach(function (el) {
-      if (force || !el.dataset.fleetTerminal) el.innerHTML = '<span class="muted small">Checking…</span>';
-    });
-    $all("#pa-fleet-instances [data-fleet-current-version], #pa-fleet-instances [data-fleet-available-version]").forEach(function (el) {
-      if (force || !el.dataset.fleetTerminal) el.innerHTML = '<span class="muted small">Checking…</span>';
-    });
-    setLiveBanner("Checking instance health…");
+  var fleetOverview = null;
+  var selectedFleetItem = null;
+
+  function readFleetOverview() {
+    var source = $("#pa-fleet-overview-data");
+    if (!source) return null;
+    try {
+      return JSON.parse(source.textContent || "{}");
+    } catch (err) {
+      setLiveBanner("Cached overview could not be decoded · Use Refresh to retry.");
+      return null;
+    }
   }
 
-  function applyLiveStatus(rows, partial) {
-    var byId = {};
-    (rows || []).forEach(function (row) {
-      if (row && row.instance_id) byId[row.instance_id] = row;
+  function fieldValue(node, name) {
+    return node && node.dimensions && node.dimensions[name]
+      ? node.dimensions[name]
+      : { state: "unavailable", value: null, observed_at: null, error: null };
+  }
+
+  function worstFreshness(node) {
+    var order = { error: 5, timeout: 4, unavailable: 3, stale: 2, fresh: 1 };
+    var worst = "fresh";
+    Object.keys(node.dimensions || {}).forEach(function (name) {
+      var item = node.dimensions[name] || {};
+      if ((order[item.state] || 5) > (order[worst] || 1)) worst = item.state || "error";
     });
-    $all("#pa-fleet-instances tr[data-fleet-instance]").forEach(function (tr) {
-      var row = byId[tr.getAttribute("data-fleet-instance")];
-      if (!row && partial) return;
-      if (!row) row = { state: "error", providers_state: "error", status_state: "error", update_state: "error" };
-      var healthEl = $("[data-fleet-health]", tr);
-      var providersEl = $("[data-fleet-providers]", tr);
-      var currentEl = $("[data-fleet-current-version]", tr);
-      var availableEl = $("[data-fleet-available-version]", tr);
-      var activeWorkEl = $("[data-fleet-active-work]", tr);
-      var lastSeenEl = $("[data-fleet-last-seen]", tr);
-      var state = row.state || (row.healthy ? "up" : "down");
-      var detailStates = [row.providers_state, row.status_state, row.update_state];
-      if (state === "up" && detailStates.some(function (item) { return item && item !== "up"; })) state = "partial";
-      if (healthEl) { healthEl.innerHTML = healthHtml(state); healthEl.dataset.fleetTerminal = "1"; }
-      if (providersEl) {
-        providersEl.innerHTML = row.providers_state === "up"
-          ? providersHtml(row.providers || [], row.instance_id)
-          : '<span class="status status-blocked">' + escapeHtml(row.providers_state || "error") + '</span>';
-        providersEl.dataset.fleetTerminal = "1";
-      }
-      if (currentEl) {
-        currentEl.textContent = row.current_version ||
-          (row.status_state === "up" ? "—" : (row.status_state || "error"));
-        currentEl.dataset.fleetTerminal = "1";
-      }
-      if (availableEl) {
-        availableEl.textContent = row.available_version ||
-          (row.update_state === "up" ? "—" : (row.update_state || "error"));
-        availableEl.classList.toggle("status-active", !!row.upgrade_available);
-        availableEl.dataset.fleetTerminal = "1";
-      }
-      if (activeWorkEl) {
-        var activeCount = row.active_work_count;
-        if (activeCount == null) activeCount = row.active_sessions;
-        activeWorkEl.textContent = activeCount == null ? "Not reported" : String(activeCount);
-      }
-      if (lastSeenEl && row.last_seen) {
-        var seen = document.createElement("time");
-        seen.dateTime = row.last_seen;
-        seen.textContent = new Date(row.last_seen).toLocaleString();
-        lastSeenEl.replaceChildren(seen);
-      }
-      tr.dataset.updateChannel = row.update_channel || "release";
-      tr.dataset.currentVersion = row.current_version || "";
-      tr.dataset.availableVersion = row.available_version || "";
+    return worst;
+  }
+
+  function activityLabel(value) {
+    value = value || {};
+    var count = (value.sessions || []).length + (value.dispatches || []).length;
+    var state = value.state || "unavailable";
+    return count > 1 ? state + " +" + (count - 1) : state;
+  }
+
+  function setFieldState(element, state) {
+    if (!element) return;
+    ["fresh", "stale", "timeout", "error", "unavailable"].forEach(function (name) {
+      element.classList.toggle("fleet-field-" + name, state === name);
     });
+  }
+
+  function renderFleetRow(node) {
+    var tr = $('#pa-fleet-instances tr[data-fleet-instance="' + CSS.escape(node.id) + '"]');
+    if (!tr) return;
+    var reach = fieldValue(node, "reachability");
+    var status = fieldValue(node, "status");
+    var update = fieldValue(node, "update");
+    var providers = fieldValue(node, "providers");
+    var activity = fieldValue(node, "activity");
+    var sync = fieldValue(node, "sync");
+    var reachValue = reach.value || {};
+    var health = reachValue.health || reach.state;
+    var healthEl = $("[data-fleet-health]", tr);
+    if (healthEl) {
+      healthEl.innerHTML = healthHtml(health);
+      setFieldState(healthEl, reach.state);
+      healthEl.dataset.fleetTerminal = "1";
+    }
+    var syncEl = $("[data-fleet-sync]", tr);
+    if (syncEl) {
+      syncEl.textContent = sync.value
+        ? (sync.value.consistent ? "in sync" : "head mismatch")
+        : sync.state;
+      setFieldState(syncEl, sync.state);
+    }
+    var currentEl = $("[data-fleet-current-version]", tr);
+    if (currentEl) {
+      currentEl.textContent = status.value && status.value.version
+        ? status.value.version
+        : status.state;
+      setFieldState(currentEl, status.state);
+      currentEl.dataset.fleetTerminal = "1";
+    }
+    var availableEl = $("[data-fleet-available-version]", tr);
+    if (availableEl) {
+      var available = update.value && (update.value.available_version || update.value.latest);
+      availableEl.textContent = available || update.state;
+      availableEl.classList.toggle("status-active", !!(update.value && update.value.upgrade_available));
+      setFieldState(availableEl, update.state);
+      availableEl.dataset.fleetTerminal = "1";
+    }
+    var providersEl = $("[data-fleet-providers]", tr);
+    if (providersEl) {
+      providersEl.innerHTML = providers.value
+        ? providersHtml(providers.value, node.id)
+        : '<span class="muted">' + escapeHtml(providers.state) + "</span>";
+      setFieldState(providersEl, providers.state);
+      providersEl.dataset.fleetTerminal = "1";
+    }
+    var activityEl = $("[data-fleet-active-work]", tr);
+    if (activityEl) {
+      var activityValue = activity.value || {};
+      activityEl.innerHTML = "<strong>" + escapeHtml(activityLabel(activityValue)) +
+        '</strong><span class="muted small">' +
+        escapeHtml(activityValue.summary || "No activity detail yet") + "</span>";
+      setFieldState(activityEl, activity.state);
+    }
+    var freshnessEl = $("[data-fleet-freshness]", tr);
+    if (freshnessEl) {
+      var freshness = worstFreshness(node);
+      var refreshing = Object.keys(node.dimensions || {}).some(function (name) {
+        return node.dimensions[name].refreshing;
+      });
+      var observed = reach.observed_at || status.observed_at;
+      freshnessEl.innerHTML = '<span class="fleet-freshness fleet-field-' +
+        escapeHtml(freshness) + '">' + escapeHtml(refreshing ? freshness + " · refreshing" : freshness) +
+        "</span>" + (observed ? '<time class="muted small" datetime="' +
+          escapeHtml(observed) + '">' + escapeHtml(new Date(observed).toLocaleString()) + "</time>" : "");
+    }
+    var statusValue = status.value || {};
+    var updateValue = update.value || {};
+    tr.dataset.updateChannel = updateValue.channel || statusValue.release_track || "release";
+    tr.dataset.currentVersion = statusValue.version || "";
+    tr.dataset.availableVersion = updateValue.available_version || "";
+  }
+
+  function nodeById(id) {
+    return (fleetOverview && fleetOverview.nodes || []).find(function (node) {
+      return node.id === id;
+    });
+  }
+
+  function edgeById(id) {
+    return (fleetOverview && fleetOverview.edges || []).find(function (edge) {
+      return edge.id === id;
+    });
+  }
+
+  function edgeVisualStatus(edge) {
+    var target = edge && edge.target && nodeById(edge.target);
+    if (!target) return edge && edge.status || "unavailable";
+    var reach = fieldValue(target, "reachability");
+    var health = reach.value && reach.value.health;
+    if (health && health !== "up") {
+      return health === "unknown" ? "unavailable" : "degraded";
+    }
+    if (reach.state === "error" || reach.state === "timeout") return "degraded";
+    if (reach.state === "unavailable") return "unavailable";
+    if (worstFreshness(target) === "stale") return "stale";
+    return edge.status || "healthy";
+  }
+
+  function renderFleetEdgeList() {
+    var list = $("#pa-fleet-edge-list");
+    if (!list || !fleetOverview) return;
+    var edges = fleetOverview.edges || [];
+    list.innerHTML = edges.length ? edges.map(function (edge) {
+      var status = edgeVisualStatus(edge);
+      return '<li><button type="button" class="link-button" data-fleet-edge="' +
+        escapeHtml(edge.id) + '">' + escapeHtml(edge.kind + ": " +
+          (edge.source || "external") + " → " + (edge.target || "external") +
+          " · " + status) + "</button></li>";
+    }).join("") : '<li class="muted">No registered routes.</li>';
+  }
+
+  function renderFleetDetail(kind, id) {
+    var panel = $("#pa-fleet-detail");
+    if (!panel || !fleetOverview) return;
+    selectedFleetItem = { kind: kind, id: id };
+    if (kind === "edge") {
+      var edge = edgeById(id);
+      if (!edge) return;
+      panel.innerHTML = "<h3>" + escapeHtml(edge.kind + " route") + "</h3>" +
+        "<p><strong>" + escapeHtml(edge.label || edge.id) + "</strong></p>" +
+        '<dl class="fleet-detail-list"><dt>Direction</dt><dd>' +
+        escapeHtml((edge.source || "external") + " → " + (edge.target || "external")) +
+        "</dd><dt>Status</dt><dd>" + escapeHtml(edgeVisualStatus(edge)) +
+        "</dd></dl><details><summary>Exact route detail</summary><pre>" +
+        escapeHtml(JSON.stringify(edge.details || {}, null, 2)) + "</pre></details>";
+      return;
+    }
+    var node = nodeById(id);
+    if (!node) return;
+    var sections = Object.keys(node.dimensions || {}).map(function (name) {
+      var item = node.dimensions[name] || {};
+      var timing = item.duration_ms == null ? "" : " · " + item.duration_ms + " ms";
+      var error = item.error
+        ? '<p class="fleet-diagnostic-error">Action: retry ' + escapeHtml(name) +
+          " after checking the peer route. " + escapeHtml(item.error) + "</p>"
+        : "";
+      return '<details><summary><strong>' + escapeHtml(name) + "</strong> · " +
+        escapeHtml(item.state || "unavailable") + escapeHtml(timing) +
+        '</summary><p class="muted small">' +
+        escapeHtml(item.observed_at ? new Date(item.observed_at).toLocaleString() : "Never observed") +
+        "</p>" + error + "<pre>" + escapeHtml(JSON.stringify(item.value, null, 2)) +
+        "</pre></details>";
+    }).join("");
+    panel.innerHTML = "<h3>" + escapeHtml(node.name) + "</h3><p>" +
+      escapeHtml(activityLabel(fieldValue(node, "activity").value)) +
+      ' · <span class="fleet-freshness fleet-field-' + escapeHtml(worstFreshness(node)) +
+      '">' + escapeHtml(worstFreshness(node)) + "</span></p>" +
+      '<dl class="fleet-detail-list"><dt>Instance</dt><dd><code>' + escapeHtml(node.id) +
+      "</code></dd><dt>Endpoint</dt><dd>" + escapeHtml(node.url) +
+      "</dd><dt>Zone</dt><dd>" + escapeHtml(node.zone || "default") +
+      "</dd></dl>" + sections;
+  }
+
+  function topologyStatus(node) {
+    var reach = fieldValue(node, "reachability");
+    var health = reach.value && reach.value.health;
+    if (health !== "up") return health === "unknown" ? reach.state : (health || reach.state);
+    return worstFreshness(node);
+  }
+
+  function renderFleetTopology() {
+    var host = $("#pa-fleet-topology");
+    var svg = host && $("svg", host);
+    if (!svg || !fleetOverview) return;
+    var nodes = fleetOverview.nodes || [];
+    var edges = fleetOverview.edges || [];
+    var compactSingle = nodes.length === 1 && window.innerWidth <= 600;
+    svg.setAttribute("viewBox", compactSingle ? "300 100 360 220" : "0 0 960 420");
+    svg.classList.toggle("fleet-topology-multi", nodes.length > 1);
+    var positions = {};
+    nodes.forEach(function (node, index) {
+      if (nodes.length === 1) {
+        positions[node.id] = { x: 480, y: 210 };
+        return;
+      }
+      var angle = -Math.PI / 2 + (Math.PI * 2 * index / nodes.length);
+      positions[node.id] = { x: 480 + Math.cos(angle) * 310, y: 210 + Math.sin(angle) * 130 };
+    });
+    var parts = [
+      '<defs><marker id="fleet-arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z"></path></marker></defs>'
+    ];
+    edges.forEach(function (edge) {
+      var from = positions[edge.source];
+      var to = positions[edge.target];
+      if (!from || !to) return;
+      var visualStatus = edgeVisualStatus(edge);
+      var label = escapeHtml(edge.kind + " · " + (edge.label || visualStatus) +
+        " · " + visualStatus);
+      if (edge.source === edge.target) {
+        parts.push('<g class="fleet-edge fleet-edge-' + escapeHtml(visualStatus) +
+          '" data-fleet-edge="' + escapeHtml(edge.id) + '" tabindex="0" role="button" aria-label="' +
+          label + '"><title>' + label + '</title><path d="M ' + (from.x + 58) + " " +
+          (from.y - 28) + " C " + (from.x + 115) + " " + (from.y - 92) + ", " +
+          (from.x - 115) + " " + (from.y - 92) + ", " + (from.x - 58) + " " +
+          (from.y - 28) + '"></path><text x="' + from.x + '" y="' + (from.y - 82) +
+          '" text-anchor="middle">' + escapeHtml(edge.kind) + "</text></g>");
+      } else {
+        var midX = (from.x + to.x) / 2;
+        var midY = (from.y + to.y) / 2;
+        parts.push('<g class="fleet-edge fleet-edge-' + escapeHtml(visualStatus) +
+          '" data-fleet-edge="' + escapeHtml(edge.id) + '" tabindex="0" role="button" aria-label="' +
+          label + '"><title>' + label + '</title><line x1="' + from.x + '" y1="' + from.y +
+          '" x2="' + to.x + '" y2="' + to.y + '"></line><text x="' + midX + '" y="' +
+          (midY - 8) + '" text-anchor="middle">' + escapeHtml(edge.kind) + "</text></g>");
+      }
+    });
+    nodes.forEach(function (node) {
+      var pos = positions[node.id];
+      var reach = fieldValue(node, "reachability");
+      var status = fieldValue(node, "status");
+      var sync = fieldValue(node, "sync");
+      var activity = fieldValue(node, "activity");
+      var providers = fieldValue(node, "providers");
+      var update = fieldValue(node, "update");
+      var health = reach.value && reach.value.health || reach.state;
+      var mark = health === "up" ? "✓" : (health === "unknown" ? "?" : "!");
+      var version = status.value && status.value.version || status.state;
+      var syncLabel = sync.value ? (sync.value.consistent ? "heads aligned" : "head mismatch") : sync.state;
+      var providerValues = Array.isArray(providers.value) ? providers.value : [];
+      var readyProviders = providerValues.filter(function (provider) {
+        var needsAuth = provider.auth_method && provider.auth_method !== "none";
+        return provider.available !== false && (!needsAuth || provider.auth_configured !== false);
+      }).length;
+      var providerLabel = providerValues.length
+        ? readyProviders + "/" + providerValues.length + " providers ready"
+        : "providers " + providers.state;
+      var updateLabel = update.value && update.value.upgrade_available
+        ? "update " + (update.value.available_version || update.value.latest || "available")
+        : "update " + update.state;
+      var visualProviderLabel = providerValues.length
+        ? readyProviders + "/" + providerValues.length + " auth"
+        : "auth " + providers.state;
+      var visualUpdateLabel = update.value && update.value.upgrade_available
+        ? "upgrade " + (update.value.available_version || update.value.latest || "available")
+        : (update.state === "fresh" ? "current" : update.state);
+      var title = node.name + ": " + health + ", " + activityLabel(activity.value) +
+        ", version " + version + ", " + updateLabel + ", sync " + syncLabel +
+        ", " + providerLabel + ", freshness " + worstFreshness(node);
+      parts.push('<g class="fleet-node fleet-node-' + escapeHtml(topologyStatus(node)) +
+        (node.local ? " fleet-node-local" : "") + '" data-fleet-node="' + escapeHtml(node.id) +
+        '" tabindex="0" role="button" aria-label="' + escapeHtml(title) + '"><title>' +
+        escapeHtml(title) + '</title><rect x="' + (pos.x - 94) + '" y="' + (pos.y - 58) +
+        '" width="188" height="116" rx="14"></rect><text class="fleet-node-name" x="' +
+        pos.x + '" y="' + (pos.y - 34) + '" text-anchor="middle">' + escapeHtml(mark + " " + node.name) +
+        '</text><text x="' + pos.x + '" y="' + (pos.y - 10) + '" text-anchor="middle">' +
+        escapeHtml(activityLabel(activity.value)) + '</text><text x="' + pos.x + '" y="' +
+        (pos.y + 10) + '" text-anchor="middle">' + escapeHtml("v" + version + " · " + syncLabel) +
+        '</text><text class="fleet-node-readiness" x="' + pos.x + '" y="' +
+        (pos.y + 30) + '" text-anchor="middle">' +
+        escapeHtml(visualProviderLabel + " · " + visualUpdateLabel) +
+        '</text><text class="fleet-node-freshness" x="' + pos.x + '" y="' + (pos.y + 49) +
+        '" text-anchor="middle">' + escapeHtml(worstFreshness(node)) + "</text></g>");
+    });
+    svg.innerHTML = parts.join("");
+    renderFleetEdgeList();
+  }
+
+  function renderFleetOverview() {
+    if (!fleetOverview) return;
+    (fleetOverview.nodes || []).forEach(renderFleetRow);
+    renderFleetTopology();
+    if (selectedFleetItem) renderFleetDetail(selectedFleetItem.kind, selectedFleetItem.id);
   }
 
   var fleetUpdateName = "";
@@ -1003,68 +1250,145 @@
 
   function terminalLiveFailure(message, state) {
     if (!$("#pa-fleet-root")) return;
-    $all("#pa-fleet-instances tr[data-fleet-instance]").forEach(function (tr) {
-      var health = $("[data-fleet-health]", tr);
-      var providers = $("[data-fleet-providers]", tr);
-      if (health && !health.dataset.fleetTerminal) { health.innerHTML = healthHtml(state); health.dataset.fleetTerminal = "1"; }
-      if (providers && !providers.dataset.fleetTerminal) { providers.textContent = "—"; providers.dataset.fleetTerminal = "1"; }
-      $all("[data-fleet-current-version], [data-fleet-available-version]", tr).forEach(function (el) {
-        if (!el.dataset.fleetTerminal) { el.textContent = "—"; el.dataset.fleetTerminal = "1"; }
+    (fleetOverview && fleetOverview.nodes || []).forEach(function (node) {
+      Object.keys(node.dimensions || {}).forEach(function (name) {
+        var previous = node.dimensions[name];
+        if (previous.refreshing) node.dimensions[name] = Object.assign({}, previous, {
+          state: state, refreshing: false, error: message
+        });
       });
     });
+    renderFleetOverview();
     setLiveBanner((message || "Health check failed") + " · Use Refresh to retry.");
   }
 
-  function loadLiveStatus() {
+  function abortLiveStatus() {
+    liveStatusSeq += 1;
+    if (liveStatusController) liveStatusController.abort();
+    clearTimeout(liveStatusTimer);
+    liveStatusTimer = null;
+    liveStatusRequest = null;
+    liveStatusController = null;
+  }
+
+  function loadLiveStatus(force, onlyInstance) {
     var root = $("#pa-fleet-root");
     var table = $("#pa-fleet-instances");
     if (!root || !table) return Promise.resolve();
-    if (liveStatusRequest) return liveStatusRequest;
-
+    if (liveStatusRequest && !force) return liveStatusRequest;
+    if (liveStatusRequest) abortLiveStatus();
+    if (!fleetOverview) fleetOverview = readFleetOverview();
+    if (!fleetOverview) {
+      terminalLiveFailure("Health check failed", "error");
+      return Promise.resolve();
+    }
     var seq = ++liveStatusSeq;
-    resetLivePlaceholders(false);
     liveStatusController = typeof AbortController === "function" ? new AbortController() : null;
-    var instanceIds = $all("#pa-fleet-instances tr[data-fleet-instance]").map(function (tr) {
-      return tr.getAttribute("data-fleet-instance");
+    api(
+      "/api/fleet/overview",
+      liveStatusController ? { signal: liveStatusController.signal } : {}
+    ).then(function (snapshot) {
+      if (seq !== liveStatusSeq || !snapshot) return;
+      fleetOverview.edges = snapshot.edges || [];
+      (snapshot.nodes || []).forEach(function (freshNode) {
+        var existing = nodeById(freshNode.id);
+        if (!existing) {
+          fleetOverview.nodes.push(freshNode);
+          return;
+        }
+        existing.name = freshNode.name;
+        existing.url = freshNode.url;
+        existing.zone = freshNode.zone;
+        existing.capabilities = freshNode.capabilities;
+      });
+      renderFleetTopology();
+    }).catch(function (error) {
+      if (error.name !== "AbortError" && seq === liveStatusSeq) {
+        setLiveBanner("Relationship refresh failed · status fields are still refreshing.");
+      }
     });
-    var localId = root.dataset.localId || "";
-    instanceIds.sort(function (left, right) {
-      if (left === localId) return -1;
-      if (right === localId) return 1;
-      return 0;
+    var nodes = (fleetOverview.nodes || []).filter(function (node) {
+      return !onlyInstance || node.id === onlyInstance;
     });
-    var completed = 0;
-    var up = 0;
-    liveStatusTimer = setTimeout(function () {
-      if (seq !== liveStatusSeq) return;
-      if (liveStatusController) liveStatusController.abort();
-      terminalLiveFailure("Health check timed out", "timeout");
-    }, 12000);
-    var requests = instanceIds.map(function (instanceId) {
-      var path = "/api/fleet/health?instance_id=" + encodeURIComponent(instanceId);
-      return api(path, liveStatusController ? { signal: liveStatusController.signal } : {}).then(function (rows) {
-        if (seq !== liveStatusSeq) return;
-        applyLiveStatus(rows, true);
-        completed += 1;
-        if (rows && rows[0] && rows[0].healthy) up += 1;
-        setLiveBanner("Checked " + completed + " of " + instanceIds.length +
-          " instances · " + up + " up");
-      }).catch(function (err) {
-        if (seq !== liveStatusSeq) return;
-        var state = err.name === "AbortError" ? "timeout" : "error";
-        applyLiveStatus([{
-          instance_id: instanceId,
-          state: state,
-          providers_state: state,
-          status_state: state,
-          update_state: state,
-        }], true);
-        completed += 1;
-        setLiveBanner("Checked " + completed + " of " + instanceIds.length +
-          " instances · " + up + " up");
+    var dimensions = fleetOverview.dimensions || [
+      "reachability", "status", "providers", "update", "activity", "sync", "repositories", "supervisor"
+    ];
+    var work = [];
+    nodes.forEach(function (node) {
+      dimensions.forEach(function (dimension) {
+        var previous = fieldValue(node, dimension);
+        node.dimensions[dimension] = Object.assign({}, previous, { refreshing: true });
+        work.push({ node: node, dimension: dimension });
       });
     });
-    liveStatusRequest = Promise.all(requests).finally(function () {
+    renderFleetOverview();
+    var completed = 0;
+    var started = performance.now();
+    setLiveBanner("Refreshing 0 of " + work.length + " fields…");
+
+    async function runOne(item) {
+      var controller = typeof AbortController === "function" ? new AbortController() : null;
+      var timedOut = false;
+      var timeout = item.dimension === "reachability" ? 3500 : 5500;
+      var timer = setTimeout(function () {
+        timedOut = true;
+        if (controller) controller.abort();
+      }, timeout);
+      if (liveStatusController && controller) {
+        liveStatusController.signal.addEventListener("abort", function () {
+          controller.abort();
+        }, { once: true });
+      }
+      var path = "/api/fleet/overview/dimension?instance_id=" +
+        encodeURIComponent(item.node.id) + "&dimension=" +
+        encodeURIComponent(item.dimension) + "&generation=" + seq +
+        (force ? "&retry=true" : "");
+      var mark = "fleet:" + seq + ":" + item.node.id + ":" + item.dimension;
+      if (performance.mark) performance.mark(mark + ":start");
+      try {
+        var patch = await api(path, controller ? { signal: controller.signal } : {});
+        if (seq !== liveStatusSeq || patch.generation !== seq) return;
+        item.node.dimensions[item.dimension] = Object.assign({}, patch, { refreshing: false });
+      } catch (err) {
+        if (seq !== liveStatusSeq) return;
+        var previous = fieldValue(item.node, item.dimension);
+        item.node.dimensions[item.dimension] = Object.assign({}, previous, {
+          state: timedOut ? "timeout" : "error",
+          refreshing: false,
+          error: timedOut ? item.dimension + " browser deadline exceeded" : err.message
+        });
+      } finally {
+        clearTimeout(timer);
+        if (performance.mark && performance.measure) {
+          try {
+            performance.mark(mark + ":end");
+            performance.measure(mark, mark + ":start", mark + ":end");
+          } catch (ignore) {}
+        }
+        if (seq === liveStatusSeq) {
+          completed += 1;
+          renderFleetRow(item.node);
+          renderFleetTopology();
+          if (selectedFleetItem && selectedFleetItem.id === item.node.id) {
+            renderFleetDetail("node", item.node.id);
+          }
+          setLiveBanner("Refreshed " + completed + " of " + work.length +
+            " fields · " + Math.round(performance.now() - started) + " ms");
+        }
+      }
+    }
+
+    var cursor = 0;
+    async function worker() {
+      while (cursor < work.length && seq === liveStatusSeq) {
+        var item = work[cursor++];
+        await runOne(item);
+      }
+    }
+    var workers = [];
+    var concurrency = Math.min(4, work.length);
+    for (var index = 0; index < concurrency; index += 1) workers.push(worker());
+    liveStatusRequest = Promise.all(workers).finally(function () {
       if (seq !== liveStatusSeq) return;
       clearTimeout(liveStatusTimer);
       liveStatusTimer = null;
@@ -1075,13 +1399,21 @@
   }
 
   function maybeLoadLiveStatus() {
-    if ($("#pa-fleet-root")) loadLiveStatus();
+    if (!$("#pa-fleet-root")) return;
+    fleetOverview = readFleetOverview();
+    renderFleetOverview();
+    loadLiveStatus(false);
   }
 
   document.addEventListener("DOMContentLoaded", function () {
     maybeLoadLiveStatus();
     maybeLoadRemoteOperations();
     maybeLoadSyncStatus();
+  });
+  var fleetResizeTimer = null;
+  window.addEventListener("resize", function () {
+    clearTimeout(fleetResizeTimer);
+    fleetResizeTimer = setTimeout(renderFleetTopology, 80);
   });
   document.body.addEventListener("htmx:afterSwap", function (evt) {
     var target = evt.target;
@@ -1099,12 +1431,18 @@
   document.body.addEventListener("htmx:beforeSwap", function (evt) {
     var target = evt.target;
     if (target && target.id === "app-view" && liveStatusRequest) {
-      liveStatusSeq += 1;
-      if (liveStatusController) liveStatusController.abort();
-      clearTimeout(liveStatusTimer);
-      liveStatusRequest = null;
-      liveStatusController = null;
+      abortLiveStatus();
     }
+  });
+
+  document.addEventListener("keydown", function (event) {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    var node = event.target.closest && event.target.closest("[data-fleet-node]");
+    var edge = event.target.closest && event.target.closest("[data-fleet-edge]");
+    if (!node && !edge) return;
+    event.preventDefault();
+    if (node) renderFleetDetail("node", node.getAttribute("data-fleet-node"));
+    if (edge) renderFleetDetail("edge", edge.getAttribute("data-fleet-edge"));
   });
 
   document.addEventListener("change", function (e) {
@@ -1151,6 +1489,22 @@
   }
 
   document.addEventListener("click", function (e) {
+    var topologyNode = e.target.closest("[data-fleet-node]");
+    if (topologyNode) {
+      renderFleetDetail("node", topologyNode.getAttribute("data-fleet-node"));
+      return;
+    }
+    var topologyEdge = e.target.closest("[data-fleet-edge]");
+    if (topologyEdge) {
+      renderFleetDetail("edge", topologyEdge.getAttribute("data-fleet-edge"));
+      return;
+    }
+    var instanceRetry = e.target.closest("[data-fleet-retry-instance]");
+    if (instanceRetry) {
+      e.preventDefault();
+      loadLiveStatus(true, instanceRetry.getAttribute("data-fleet-retry-instance"));
+      return;
+    }
     var cliInstallButton = e.target.closest("[data-codex-cli-install]");
     if (cliInstallButton) {
       var cliInstance = cliInstallButton.getAttribute("data-codex-cli-install") || "";
@@ -1363,7 +1717,7 @@
     if (e.target.closest("#pa-fleet-refresh")) {
       e.preventDefault();
       if ($("#pa-fleet-instances")) {
-        loadLiveStatus();
+        loadLiveStatus(true);
       } else {
         refreshFleetPage();
       }
