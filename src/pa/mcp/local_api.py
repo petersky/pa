@@ -36,6 +36,8 @@ def request_local_pa(
         if allow_not_found and response.status_code == 404:
             return None
         response.raise_for_status()
+        if response.status_code == 204:
+            return None
         return response.json()
     except httpx.HTTPError as exc:
         raise LocalPAServerUnavailable(

@@ -181,9 +181,24 @@ See [MULTI_MACHINE.md](MULTI_MACHINE.md) for Tailscale fleet onboarding.
 A **Project** is a realm-scoped container for cards with its own metadata:
 
 - Description, tags, memberships
-- Associated repositories (`ProjectRepo`)
-- Realm catalog: `GET /api/realm/repositories` lists synchronized repository records
+- Many-to-many repository links with a project-specific requested branch
 - Default `agent_prompt` and `tool_config` injected when agents work on project cards
+
+Repositories are synchronized, first-class realm resources. A repository records
+its canonical URL, named fetch/push remotes, default branch, provider identity and
+metadata, visibility, and active/archived lifecycle. Local checkout paths remain
+separate per fleet instance. `GET /api/realm/repositories` lists the catalog;
+`GET /api/projects/{project_id}/repositories` returns normalized links and
+checkout state. The Projects UI provides catalog CRUD, lifecycle, linking, and
+local-checkout management.
+
+The Projects MCP module exposes the same repository CRUD, project-link, and
+per-instance checkout operations to agents through the local single-writer
+HTTP API.
+
+Legacy `Project.repos` remains a read-compatible projection. Existing JSON rows
+are migrated idempotently into repositories, project links, and per-instance
+checkouts without dropping URLs, branches, or paths.
 
 Cards link via `project_id`. Use `CardKind.PROJECT` only for legacy work-item taxonomy — prefer the Project entity for grouping.
 
