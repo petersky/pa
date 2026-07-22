@@ -162,16 +162,12 @@ class GitInspector:
         if not common_dir.is_absolute():
             common_dir = (root / common_dir).resolve()
         fetch_head = common_dir / "FETCH_HEAD"
-        try:
-            fetched = (
-                datetime.fromtimestamp(fetch_head.stat().st_mtime, UTC)
-                if fetch_head.exists()
-                else None
-            )
-        except OSError as exc:
-            raise GitInspectionError(
-                f"Could not read FETCH_HEAD metadata: {exc}"
-            ) from exc
+        fetched = None
+        if fetch_head.exists():
+            try:
+                fetched = datetime.fromtimestamp(fetch_head.stat().st_mtime, UTC)
+            except OSError:
+                fetched = None
 
         worktrees = self._parse_worktrees(
             self._run(root, "worktree", "list", "--porcelain")
@@ -229,6 +225,19 @@ class GitInspector:
             elif key in {"detached", "bare"}:
                 current[key] = True
         return parsed
+
+    def resolve_repository_id(self, path: Path) -> str:
+        requested = path.expanduser().resolve()
+        try:
+            common_dir_raw = self._run(
+                requested, "rev-parse", "--git-common-dir"
+            ).strip()
+            common_dir = Path(common_dir_raw)
+            if not common_dir.is_absolute():
+                common_dir = (requested / common_dir).resolve()
+            return str(common_dir.resolve())
+        except GitInspectionError:
+            return str(requested)
 
 
 class RepositoryStateStore:
@@ -302,7 +311,7 @@ class RepositoryStateService:
                 )
             else:
                 snapshot = RepositorySnapshot(
-                    repository_id=str(requested),
+                    repository_id=self.inspector.resolve_repository_id(requested),
                     path=str(requested),
                     instance_id=self.instance_id,
                     inspection_error=str(exc),

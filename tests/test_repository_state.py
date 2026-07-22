@@ -9,6 +9,7 @@ import pytest
 from pydantic import ValidationError
 
 from pa.repository.state import (
+    GitInspector,
     GitInspectionError,
     RepositorySnapshot,
     RepositorySnapshotInput,
@@ -55,14 +56,6 @@ def test_inspects_head_dirty_untracked_remotes_fetch_and_worktrees(
     assert service.list()[0].snapshot.instance_id == "macmini"
 
 
-def test_redacts_passwords_from_remote_urls(tmp_path: Path) -> None:
-    repo = tmp_path / "repo"
-    make_repo(repo)
-    git(repo, "remote", "add", "origin", "https://user:secret@example.test/repo.git")
-    result = RepositoryStateService(tmp_path / "data", "macmini").refresh(repo)
-    assert result.snapshot.remotes[0].fetch_url == "https://user@example.test/repo.git"
-
-
 def test_untracked_only_is_not_tracked_dirty(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     make_repo(repo)
@@ -74,12 +67,64 @@ def test_untracked_only_is_not_tracked_dirty(tmp_path: Path) -> None:
     assert result.snapshot.untracked == 1
 
 
+def test_fetch_head_stat_oserror_is_tolerated(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    make_repo(repo)
+    (repo / ".git" / "FETCH_HEAD").write_text("")
+    original_stat = Path.stat
+
+    def bad_stat(self: Path, *args: object, **kwargs: object) -> object:
+        if self.name == "FETCH_HEAD":
+            raise OSError("permission denied")
+        return original_stat(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", bad_stat)
+
+    result = RepositoryStateService(tmp_path / "data", "macmini").refresh(repo)
+
+    assert result.state == "fresh"
+    assert result.snapshot.last_fetch_at is None
+
+
+def test_redacts_passwords_from_remote_urls(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    make_repo(repo)
+    git(repo, "remote", "add", "origin", "https://user:secret@example.test/repo.git")
+    result = RepositoryStateService(tmp_path / "data", "macmini").refresh(repo)
+    assert result.snapshot.remotes[0].fetch_url == "https://user@example.test/repo.git"
+
+
 def test_missing_repo_is_persisted_as_error(tmp_path: Path) -> None:
     service = RepositoryStateService(tmp_path / "data", "macmini")
-    result = service.refresh(tmp_path / "missing")
+    missing = tmp_path / "missing"
+    result = service.refresh(missing)
     assert result.state == "error"
     assert result.snapshot.inspection_error
-    assert service.list()[0].state == "error"
+    listed = service.list()
+    assert len(listed) == 1
+    assert listed[0].state == "error"
+    assert listed[0].snapshot.repository_id == str(missing.resolve())
+
+
+def test_error_snapshot_uses_git_common_dir_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    make_repo(repo)
+    service = RepositoryStateService(tmp_path / "data", "macmini")
+
+    def fail_inspect(self: GitInspector, path: Path, instance_id: str) -> RepositorySnapshot:
+        raise GitInspectionError("broken")
+
+    monkeypatch.setattr(GitInspector, "inspect", fail_inspect)
+
+    result = service.refresh(repo)
+    common_dir = str((repo / ".git").resolve())
+
+    assert result.snapshot.repository_id == common_dir
+    assert service.list()[0].snapshot.repository_id == common_dir
 
 
 def test_successful_refresh_replaces_path_keyed_error(tmp_path: Path) -> None:
@@ -95,26 +140,6 @@ def test_successful_refresh_replaces_path_keyed_error(tmp_path: Path) -> None:
     assert len(listed) == 1
     assert listed[0].state == "fresh"
     assert listed[0].snapshot.repository_id == successful.snapshot.repository_id
-
-
-def test_fetch_head_stat_error_returns_structured_error(tmp_path: Path) -> None:
-    repo = tmp_path / "repo"
-    make_repo(repo)
-    (repo / ".git" / "FETCH_HEAD").write_text("")
-    original_stat = Path.stat
-
-    def fail_fetch_head(path: Path, *args, **kwargs):
-        if path.name == "FETCH_HEAD":
-            raise OSError("metadata unavailable")
-        return original_stat(path, *args, **kwargs)
-
-    service = RepositoryStateService(tmp_path / "data", "macmini")
-    with patch.object(Path, "stat", fail_fetch_head):
-        result = service.refresh(repo)
-
-    assert result.state == "error"
-    assert "Could not read FETCH_HEAD metadata" in result.state_reason
-    assert service.list()[0].state == "error"
 
 
 def test_failed_refresh_replaces_prior_path_observation_with_error(
@@ -162,7 +187,10 @@ def test_reconcile_keeps_newest_observation_per_instance_and_repo(
 def test_reconcile_marks_unhealthy_instance_unreachable(tmp_path: Path) -> None:
     service = RepositoryStateService(tmp_path, "local")
     incoming = RepositorySnapshot(
-        repository_id="repo", path="/repo", instance_id="peer"
+        repository_id="repo",
+        path="/repo",
+        instance_id="peer",
+        observed_at=datetime.now(UTC),
     )
     result = service.reconcile([incoming], unreachable_instances={"peer"})
     assert result[0].state == "unreachable"
