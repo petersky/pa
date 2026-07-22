@@ -529,6 +529,8 @@ async def session_events(request: Request, session_id: str) -> StreamingResponse
         try:
             runtime._flush_transcript()
             while True:
+                if is_shutting_down():
+                    return
                 page = runtime.store.list_transcript_events(
                     session_id,
                     after_seq=cursor,
@@ -537,6 +539,8 @@ async def session_events(request: Request, session_id: str) -> StreamingResponse
                 if not page:
                     break
                 for te in page:
+                    if is_shutting_down():
+                        return
                     if te.seq <= cursor:
                         continue
                     payload = {
@@ -574,6 +578,8 @@ async def session_events(request: Request, session_id: str) -> StreamingResponse
                     # emitting the retained live event.
                     runtime._flush_transcript()
                     while cursor < seq - 1:
+                        if is_shutting_down():
+                            return
                         gap_page = runtime.store.list_transcript_events(
                             session_id,
                             after_seq=cursor,
@@ -583,6 +589,8 @@ async def session_events(request: Request, session_id: str) -> StreamingResponse
                             break
                         previous_cursor = cursor
                         for te in gap_page:
+                            if is_shutting_down():
+                                return
                             if te.seq <= cursor:
                                 continue
                             payload = {
