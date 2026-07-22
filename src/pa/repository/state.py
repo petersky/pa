@@ -365,15 +365,15 @@ class RepositoryStateService:
     def present(
         self, snapshot: RepositorySnapshot, *, unreachable: bool = False
     ) -> RepositoryObservation:
-        if snapshot.inspection_error:
-            return RepositoryObservation(
-                snapshot=snapshot, state="error", state_reason=snapshot.inspection_error
-            )
         if unreachable:
             return RepositoryObservation(
                 snapshot=snapshot,
                 state="unreachable",
                 state_reason="instance unreachable",
+            )
+        if snapshot.inspection_error:
+            return RepositoryObservation(
+                snapshot=snapshot, state="error", state_reason=snapshot.inspection_error
             )
         age = datetime.now(UTC) - snapshot.observed_at
         if age > self.stale_after:

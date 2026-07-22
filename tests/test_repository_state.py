@@ -228,6 +228,7 @@ def test_presentation_surfaces_stale_unreachable_and_error(tmp_path: Path) -> No
     assert service.present(stale, unreachable=True).state == "unreachable"
     failed = stale.model_copy(update={"inspection_error": "not a repository"})
     assert service.present(failed).state == "error"
+    assert service.present(failed, unreachable=True).state == "unreachable"
 
 
 def test_unreachable_repository_instances_excludes_local(tmp_path: Path) -> None:
