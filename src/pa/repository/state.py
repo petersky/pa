@@ -313,6 +313,13 @@ class RepositoryStateService:
                 snapshot=snapshot, state="error", state_reason=str(exc)
             )
         snapshots = self.store.load()
+        for key, existing in list(snapshots.items()):
+            if (
+                key != self._key(snapshot)
+                and existing.instance_id == self.instance_id
+                and Path(existing.path).expanduser().resolve() == requested
+            ):
+                del snapshots[key]
         snapshots[self._key(snapshot)] = snapshot
         self.store.save(snapshots)
         return self.present(snapshot)

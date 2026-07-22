@@ -82,6 +82,21 @@ def test_missing_repo_is_persisted_as_error(tmp_path: Path) -> None:
     assert service.list()[0].state == "error"
 
 
+def test_successful_refresh_replaces_path_keyed_error(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    service = RepositoryStateService(tmp_path / "data", "macmini")
+    assert service.refresh(repo).state == "error"
+    make_repo(repo)
+
+    successful = service.refresh(repo)
+
+    listed = service.list()
+    assert successful.state == "fresh"
+    assert len(listed) == 1
+    assert listed[0].state == "fresh"
+    assert listed[0].snapshot.repository_id == successful.snapshot.repository_id
+
+
 def test_fetch_head_stat_error_returns_structured_error(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     make_repo(repo)
