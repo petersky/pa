@@ -76,6 +76,7 @@ class FleetRegistryReloadTests(unittest.TestCase):
         request = MagicMock()
         with patch(
             "pa.modules.fleet._proxy_agent_providers",
+            new_callable=AsyncMock,
             return_value={"job_id": "remote-job", "state": "pending"},
         ) as proxy:
             result = __import__("asyncio").run(
@@ -87,7 +88,7 @@ class FleetRegistryReloadTests(unittest.TestCase):
                 )
             )
         self.assertEqual(result["job_id"], "remote-job")
-        proxy.assert_called_once_with(
+        proxy.assert_awaited_once_with(
             request,
             "peer-1",
             "POST",
@@ -103,6 +104,7 @@ class FleetRegistryReloadTests(unittest.TestCase):
         )
         ctx = MagicMock()
         ctx.settings = settings
+        ctx.services = {}
         ctx.require_service.return_value = fleet
         request = MagicMock()
         request.app.state.ctx = ctx
@@ -111,16 +113,21 @@ class FleetRegistryReloadTests(unittest.TestCase):
         response.json.return_value = {
             "detail": {"message": "A Codex login is already active", "job_id": "job-1"}
         }
-        client = MagicMock()
-        client.__enter__.return_value = client
+        client = AsyncMock()
         client.request.return_value = response
         with (
             patch("pa.modules.fleet.require_user"),
-            patch("pa.modules.fleet.httpx.Client", return_value=client),
+            patch("pa.modules.fleet.httpx.AsyncClient", return_value=client),
             self.assertRaises(HTTPException) as raised,
         ):
-            _proxy_agent_providers(
-                request, "peer-1", "POST", "/codex/login-jobs", body={"consent": True}
+            asyncio.run(
+                _proxy_agent_providers(
+                    request,
+                    "peer-1",
+                    "POST",
+                    "/codex/login-jobs",
+                    body={"consent": True},
+                )
             )
         self.assertEqual(raised.exception.status_code, 409)
         self.assertEqual(raised.exception.detail["job_id"], "job-1")

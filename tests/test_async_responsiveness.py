@@ -22,12 +22,17 @@ from pa.config import Settings
 from pa.core.kernel import Kernel
 from pa.domain.models import AgentSession
 from pa.execution.dispatch import DispatchWorker
+from pa.fleet.overview import probe_dimension
 from pa.instance.agent_session import AgentSessionManager, AgentSessionRuntime
+from pa.modules.agent_providers import list_local_providers
+from pa.modules.files import browse_files
+from pa.modules.instance import health
 from pa.modules.sync import router as sync_router
 from pa.pr_supervisor.github import GitHubCredentials
 from pa.pr_supervisor.models import GitHubCapability, PRWatch
 from pa.pr_supervisor.service import PRSupervisor
 from pa.pr_supervisor.store import PRSupervisorStore
+from pa.domain.models import FleetInstance
 
 
 class _Context:
@@ -380,6 +385,101 @@ class WorkerResponsivenessTests(unittest.IsolatedAsyncioTestCase):
 
             self.assertLess(startup_ms, 25)
             await service.stop()
+
+    async def test_fleet_local_dimension_sqlite_stall_keeps_ui_responsive(self) -> None:
+        release = threading.Event()
+        entered = threading.Event()
+        store = MagicMock()
+
+        def blocked_sessions():
+            entered.set()
+            release.wait(1)
+            return []
+
+        store.list_sessions.side_effect = blocked_sessions
+        store.get_projection_head.return_value = "head"
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="local")
+            ctx = SimpleNamespace(
+                settings=settings,
+                store=store,
+                services={"async_runtime": self.runtime},
+                require_service=lambda name: (
+                    self.runtime if name == "async_runtime" else None
+                ),
+            )
+            inst = FleetInstance(
+                instance_id="local", name="local", url="http://local"
+            )
+            task = asyncio.create_task(
+                probe_dimension(ctx, inst, "activity", force=True)
+            )
+            await asyncio.to_thread(entered.wait, 1)
+
+            started = time.perf_counter()
+            await asyncio.sleep(0)
+            unrelated_ms = (time.perf_counter() - started) * 1000
+
+            self.assertLess(unrelated_ms, 25)
+            release.set()
+            result = await task
+            self.assertEqual(result["state"], "fresh")
+
+    async def test_provider_discovery_stall_keeps_health_responsive(self) -> None:
+        release = threading.Event()
+        entered = threading.Event()
+
+        def blocked_discovery(_data_dir):
+            entered.set()
+            release.wait(1)
+            return []
+
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = SimpleNamespace(
+                settings=SimpleNamespace(data_dir=Path(tmp)),
+                require_service=lambda name: self.runtime,
+            )
+            request = MagicMock()
+            request.app.state.ctx = ctx
+            with patch(
+                "pa.modules.agent_providers.list_provider_summaries",
+                side_effect=blocked_discovery,
+            ):
+                task = asyncio.create_task(list_local_providers(request))
+                await asyncio.to_thread(entered.wait, 1)
+
+                started = time.perf_counter()
+                response = await health()
+                unrelated_ms = (time.perf_counter() - started) * 1000
+
+                self.assertEqual(response, {"status": "ok"})
+                self.assertLess(unrelated_ms, 25)
+                release.set()
+                self.assertEqual(await task, [])
+
+    async def test_file_render_stall_keeps_health_responsive(self) -> None:
+        release = threading.Event()
+        entered = threading.Event()
+
+        def blocked_render(*_args):
+            entered.set()
+            release.wait(1)
+            return HTMLResponse("ready")
+
+        request = MagicMock()
+        request.app.state.ctx.require_service.return_value = self.runtime
+        with patch("pa.modules.files._render_browser", side_effect=blocked_render):
+            task = asyncio.create_task(browse_files(request, "/slow"))
+            await asyncio.to_thread(entered.wait, 1)
+
+            started = time.perf_counter()
+            response = await health()
+            unrelated_ms = (time.perf_counter() - started) * 1000
+
+            self.assertEqual(response, {"status": "ok"})
+            self.assertLess(unrelated_ms, 25)
+            release.set()
+            self.assertEqual((await task).status_code, 200)
 
 
 if __name__ == "__main__":

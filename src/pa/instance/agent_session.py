@@ -113,8 +113,9 @@ class AgentSessionRuntime:
     async def _offload(
         self, operation: str, call, *args, timeout: float | None = None, **kwargs
     ):
-        if self.async_runtime:
-            return await self.async_runtime.run_blocking(
+        async_runtime = getattr(self, "async_runtime", None)
+        if async_runtime:
+            return await async_runtime.run_blocking(
                 operation, call, *args, timeout=timeout, **kwargs
             )
         return await asyncio.to_thread(call, *args, **kwargs)
@@ -207,7 +208,7 @@ class AgentSessionRuntime:
     def _flush_transcript(self) -> None:
         if not self._transcript_buffer:
             return
-        if not self.async_runtime:
+        if not getattr(self, "async_runtime", None):
             batch = list(self._transcript_buffer)
             self._transcript_buffer.clear()
             try:
@@ -254,7 +255,7 @@ class AgentSessionRuntime:
 
     async def _drain_transcripts(self, *, timeout: float = 10.0) -> None:
         self._flush_transcript()
-        if not self.async_runtime:
+        if not getattr(self, "async_runtime", None):
             return
         try:
             async with asyncio.timeout(timeout):

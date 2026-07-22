@@ -544,6 +544,7 @@ class PRSupervisorModule(Module):
         from pa.mcp.local_api import request_local_pa
 
         store: PRSupervisorStore = ctx.require_service("pr_supervisor_store")
+        async_runtime = ctx.require_service("async_runtime")
 
         @mcp.tool()
         def list_pr_watches(
@@ -587,10 +588,10 @@ class PRSupervisorModule(Module):
             executor_cwd: str | None = None,
         ) -> dict[str, Any]:
             """Create a durable, fleet-supervised PR watch."""
-            service = ctx.services.get("pr_supervisor") or PRSupervisor(
-                ctx.settings, ctx.store, supervisor_store=store
-            )
-            policy = resolve_policy(
+            service: PRSupervisor = ctx.require_service("pr_supervisor")
+            policy = await async_runtime.run_blocking(
+                "pr_supervisor.resolve_policy",
+                resolve_policy,
                 ctx.store,
                 project_id=project_id,
                 realm_id=realm,
@@ -616,9 +617,7 @@ class PRSupervisorModule(Module):
         @mcp.tool()
         async def refresh_pr_watch(watch_id: str) -> dict[str, Any]:
             """Schedule an immediate refresh for an active PR watch."""
-            service = ctx.services.get("pr_supervisor") or PRSupervisor(
-                ctx.settings, ctx.store, supervisor_store=store
-            )
+            service: PRSupervisor = ctx.require_service("pr_supervisor")
             return {
                 "watch_id": watch_id,
                 "scheduled": bool(await service.refresh_watch(watch_id)),
@@ -627,9 +626,7 @@ class PRSupervisorModule(Module):
         @mcp.tool()
         async def retire_pr_watch(watch_id: str) -> dict[str, Any] | None:
             """Retire a PR watch without deleting its audit history."""
-            service = ctx.services.get("pr_supervisor") or PRSupervisor(
-                ctx.settings, ctx.store, supervisor_store=store
-            )
+            service: PRSupervisor = ctx.require_service("pr_supervisor")
             watch = await service.retire_watch(watch_id)
             return watch.model_dump(mode="json") if watch else None
 
@@ -648,10 +645,10 @@ class PRSupervisorModule(Module):
             draft: bool | None = None,
         ) -> dict[str, Any]:
             """Open a PR ready for review by policy and immediately supervise it."""
-            service = ctx.services.get("pr_supervisor") or PRSupervisor(
-                ctx.settings, ctx.store, supervisor_store=store
-            )
-            policy = resolve_policy(
+            service: PRSupervisor = ctx.require_service("pr_supervisor")
+            policy = await async_runtime.run_blocking(
+                "pr_supervisor.resolve_policy",
+                resolve_policy,
                 ctx.store,
                 project_id=project_id,
                 realm_id=realm,

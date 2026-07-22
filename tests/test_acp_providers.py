@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import os
 import queue
 import subprocess
 import tempfile
@@ -13,11 +15,12 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import HTTPException
 
-from pa.acp.providers.base import ProviderConfigureBody
+from pa.acp.providers.base import AgentProviderSpec, ProviderConfigureBody
 from pa.acp.providers.codex import _codex_auth_status
 from pa.acp.providers.openinterpreter import (
     OpenInterpreterProvider,
@@ -48,8 +51,15 @@ from pa.acp.surfaces import (
     surface_for_label,
 )
 from pa.config import Settings
+from pa.core.async_runtime import BlockingQueueFull
 from pa.core.preferences import SurfaceAgentPrefs, get_preferences_store
-from pa.modules.agent_providers import LoginBody, start_provider_login
+from pa.core.subprocesses import ProcessResult
+from pa.modules.agent_providers import (
+    LoginBody,
+    ProviderActionGate,
+    _run_provider_action,
+    start_provider_login,
+)
 
 
 class AcpProviderTests(unittest.TestCase):
@@ -877,20 +887,128 @@ class AcpProviderTests(unittest.TestCase):
             patch("pa.modules.agent_providers.resolve_codex_cli") as resolve,
             self.assertRaises(HTTPException) as raised,
         ):
-            start_provider_login(request, "codex", LoginBody(consent=False))
+            asyncio.run(
+                start_provider_login(request, "codex", LoginBody(consent=False))
+            )
         self.assertEqual(raised.exception.status_code, 400)
         resolve.assert_not_called()
 
     def test_login_api_missing_cli_is_actionable(self) -> None:
         request = MagicMock()
         request.app.state.ctx.settings.data_dir = self.data_dir
+        runtime = MagicMock()
+
+        def run_blocking(_operation, call, *args, **kwargs):
+            kwargs.pop("timeout", None)
+            return call(*args, **kwargs)
+
+        runtime.run_blocking = AsyncMock(side_effect=run_blocking)
+        request.app.state.ctx.require_service.return_value = runtime
         with (
             patch("pa.modules.agent_providers.resolve_codex_cli", return_value=None),
             self.assertRaises(HTTPException) as raised,
         ):
-            start_provider_login(request, "codex", LoginBody(consent=True))
+            asyncio.run(
+                start_provider_login(request, "codex", LoginBody(consent=True))
+            )
         self.assertEqual(raised.exception.status_code, 409)
         self.assertIn("not installed", str(raised.exception.detail))
+
+    def test_provider_action_uses_observed_process_result(self) -> None:
+        async def observe(_operation, awaitable, *, timeout):
+            self.assertEqual(timeout, 65.0)
+            return await awaitable
+
+        runtime = SimpleNamespace(observe=observe)
+        process_result = ProcessResult(
+            args=("python",),
+            returncode=0,
+            stdout='PA_PROVIDER_RESULT={"ok":true,"provider_id":"codex"}\n',
+            stderr="",
+        )
+        with patch(
+            "pa.modules.agent_providers.run_process",
+            new=AsyncMock(return_value=process_result),
+        ) as process:
+            result = asyncio.run(
+                _run_provider_action(
+                    self.data_dir,
+                    "codex",
+                    "probe",
+                    timeout=60.0,
+                    async_runtime=runtime,
+                )
+            )
+        self.assertTrue(result["ok"])
+        self.assertEqual(process.await_count, 1)
+
+    def test_provider_action_gate_bounds_active_and_queued_work(self) -> None:
+        async def exercise() -> None:
+            gate = ProviderActionGate(max_active=1, max_queue=1)
+            release = asyncio.Event()
+            entered = asyncio.Event()
+
+            async def hold() -> None:
+                async with gate.slot():
+                    entered.set()
+                    await release.wait()
+
+            async def wait() -> None:
+                async with gate.slot():
+                    return
+
+            active = asyncio.create_task(hold())
+            await entered.wait()
+            queued = asyncio.create_task(wait())
+            await asyncio.sleep(0)
+            self.assertEqual(gate.snapshot()["queued"], 1)
+            with self.assertRaises(BlockingQueueFull):
+                async with gate.slot():
+                    pass
+            release.set()
+            await asyncio.gather(active, queued)
+            self.assertEqual(gate.snapshot()["active"], 0)
+
+        asyncio.run(exercise())
+
+    def test_probe_passes_isolated_child_environment(self) -> None:
+        from pa.acp.providers.probe import _probe_async
+
+        key = "PA_TEST_PROBE_ENV_ISOLATION"
+        spec = AgentProviderSpec(
+            id="test",
+            display_name="Test",
+            command="test-agent",
+            env={key: "child-only"},
+        )
+        connection = SimpleNamespace(
+            initialize=AsyncMock(
+                return_value=SimpleNamespace(
+                    agent_capabilities={},
+                    auth_methods=[],
+                )
+            )
+        )
+        context = MagicMock()
+        context.__aenter__ = AsyncMock(return_value=(connection, object()))
+        context.__aexit__ = AsyncMock(return_value=None)
+        captured: dict = {}
+
+        def spawn(_client, _command, *_args, **kwargs):
+            captured.update(kwargs)
+            return context
+
+        with (
+            patch.dict(os.environ, {}, clear=False),
+            patch("pa.acp.transport.spawn_agent", side_effect=spawn),
+            patch("pa.packaging.paths.resolve_executable", return_value=None),
+        ):
+            os.environ.pop(key, None)
+            result = asyncio.run(_probe_async(spec, timeout=1.0))
+            self.assertNotIn(key, os.environ)
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(captured["env"][key], "child-only")
 
     def test_unknown_provider_raises(self) -> None:
         with self.assertRaises(KeyError):

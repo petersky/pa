@@ -40,7 +40,7 @@ def _unreachable_repository_instances(ctx: AppContext) -> set[str]:
 
 
 @router.get("/health")
-def health() -> dict[str, str]:
+async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
@@ -52,6 +52,25 @@ async def async_runtime_status(request: Request) -> dict:
     snapshot["lifecycle"] = dict(
         request.app.state.ctx.services.get("agent_lifecycle") or {}
     )
+    agent = request.app.state.ctx.services.get("instance_agent")
+    runtimes = agent.list_runtimes() if agent else []
+    snapshot["queues"] = {
+        "agent_transcript_batches": sum(
+            item._transcript_queue.qsize() for item in runtimes
+        ),
+        "agent_transcript_buffered_events": sum(
+            len(item._transcript_buffer) for item in runtimes
+        ),
+        "agent_prompts": sum(len(item._queue) for item in runtimes),
+        "dispatch_active": len(
+            request.app.state.ctx.services.get("dispatch_worker")._active
+        )
+        if request.app.state.ctx.services.get("dispatch_worker")
+        else 0,
+    }
+    provider_gate = request.app.state.ctx.services.get("provider_action_gate")
+    if provider_gate:
+        snapshot["queues"]["provider_actions"] = provider_gate.snapshot()
     return snapshot
 
 

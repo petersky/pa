@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import subprocess
 import tempfile
 import unittest
@@ -33,10 +34,18 @@ class FileBrowserTests(unittest.TestCase):
         self.store = MagicMock()
         self.store.list_sessions.return_value = []
         self.store.list_projects.return_value = []
+        self.runtime = SimpleNamespace()
+
+        async def run_blocking(_operation, call, *args, **kwargs):
+            kwargs.pop("timeout", None)
+            return call(*args, **kwargs)
+
+        self.runtime.run_blocking = run_blocking
         app = Starlette()
         app.state.ctx = SimpleNamespace(
             settings=SimpleNamespace(data_dir=self.root, auth_required=False),
             store=self.store,
+            require_service=lambda _name: self.runtime,
         )
         self.request = Request(
             {"type": "http", "method": "GET", "path": "/browse", "headers": [], "app": app}
@@ -144,7 +153,7 @@ class FileBrowserTests(unittest.TestCase):
         self.assertEqual(context["text"], "# Hello\n")
         self.assertIn("path=", context["breadcrumbs"][-1]["url"])
 
-        response = raw_file(self.request, str(path))
+        response = asyncio.run(raw_file(self.request, str(path)))
         self.assertIn("sandbox", response.headers["content-security-policy"])
         self.assertEqual(response.headers["x-content-type-options"], "nosniff")
 
@@ -154,6 +163,7 @@ class FileBrowserTests(unittest.TestCase):
         settings = Settings(data_dir=self.root, agent_enabled=False)
         ctx = AppContext(settings=settings, hooks=MagicMock(), store=self.store)
         ctx.register_service("instance_agent", SimpleNamespace(connected=False))
+        ctx.register_service("async_runtime", self.runtime)
         ctx.register_service("pages", PageRegistry())
         ctx.register_service(
             "assets",
@@ -163,12 +173,12 @@ class FileBrowserTests(unittest.TestCase):
         templates_root = Path(__file__).parents[1] / "src" / "pa" / "server" / "templates"
         self.request.app.state.templates = Jinja2Templates(directory=str(templates_root))
 
-        file_response = browse_files(self.request, str(path))
+        file_response = asyncio.run(browse_files(self.request, str(path)))
         file_html = file_response.body.decode()
         self.assertIn("data-file-markdown", file_html)
         self.assertIn("file-browser.js", file_html)
 
-        directory_response = browse_files(self.request, str(self.root))
+        directory_response = asyncio.run(browse_files(self.request, str(self.root)))
         directory_html = directory_response.body.decode()
         self.assertIn("README.md", directory_html)
         self.assertIn("file-entry", directory_html)
