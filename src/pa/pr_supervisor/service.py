@@ -235,6 +235,7 @@ class PRSupervisor:
         github_client: GitHubClient | None = None,
         dispatcher: ExecutorDispatcher | None = None,
         agent_manager=None,
+        workspace_manager=None,
         fleet_registry=None,
         peer_table=None,
         http_client: httpx.AsyncClient | None = None,
@@ -252,6 +253,9 @@ class PRSupervisor:
         )
         self.github = github_client or GitHubClient(self.credentials)
         self.http_client = http_client
+        self.workspace_manager = workspace_manager or getattr(
+            agent_manager, "workspace_manager", None
+        )
         self.dispatcher = dispatcher or ExecutorDispatcher(
             settings,
             domain_store,
@@ -680,6 +684,15 @@ class PRSupervisor:
             payload={"card_id": watch.card_id, "lane": "done"},
         )
         await self._replicate(completed)
+        if self.workspace_manager:
+            try:
+                self.workspace_manager.mark_card_completed(watch.card_id, merged=True)
+            except Exception:
+                # Merged-card completion is authoritative; cleanup eligibility is
+                # recoverable and must not roll the card back out of Done.
+                logger.exception(
+                    "Could not mark workspaces completed for card=%s", watch.card_id
+                )
 
     def _predict_stable(self, watch: PRWatch, snapshot: PRSnapshot, now) -> bool:
         if watch.head_sha != snapshot.head_sha:

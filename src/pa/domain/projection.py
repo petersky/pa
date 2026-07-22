@@ -33,6 +33,7 @@ from pa.domain.models import (
     ProjectCreate,
     ProjectMembership,
     ProjectRepo,
+    ProjectRepository,
     ProjectStatus,
     ProjectUpdate,
     Repository,
@@ -1060,6 +1061,38 @@ class CardProjection:
                 (repository_id, realm_id),
             ).fetchone()
         return Repository(**dict(row)) if row else None
+
+    def list_project_repositories(
+        self, project_id: str, *, realm_id: str = "default"
+    ) -> list[tuple[Repository, ProjectRepository]]:
+        """Return normalized repository links, including their requested branches."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                """SELECT r.*, pr.branch AS project_branch
+                   FROM project_repositories pr
+                   JOIN repositories r ON r.id=pr.repository_id
+                   WHERE pr.project_id=? AND r.realm_id=?
+                   ORDER BY r.url""",
+                (project_id, realm_id),
+            ).fetchall()
+        return [
+            (
+                Repository(
+                    id=row["id"],
+                    realm_id=row["realm_id"],
+                    url=row["url"],
+                    name=row["name"],
+                    created_at=row["created_at"],
+                    updated_at=row["updated_at"],
+                ),
+                ProjectRepository(
+                    project_id=project_id,
+                    repository_id=row["id"],
+                    branch=row["project_branch"],
+                ),
+            )
+            for row in rows
+        ]
 
     def _repository_event(
         self,

@@ -288,6 +288,33 @@ class AgentSessionLiveEventTests(unittest.TestCase):
 
         self.assertTrue(runtime.prompting)
 
+    def test_managed_session_rejects_prompt_cwd_override(self) -> None:
+        runtime = AgentSessionRuntime.__new__(AgentSessionRuntime)
+        runtime.session = AgentSession(
+            id="session-managed",
+            agent_name="codex",
+            cwd="/workspace/leased",
+            config_json={"execution_context": {"version": 1}},
+        )
+
+        self.assertEqual(runtime._validated_cwd(None), "/workspace/leased")
+        with self.assertRaisesRegex(RuntimeError, "cannot override"):
+            runtime._validated_cwd("/tmp/escape")
+
+    def test_managed_session_environment_cannot_be_overridden_per_turn(self) -> None:
+        runtime = AgentSessionRuntime.__new__(AgentSessionRuntime)
+        runtime.agent_env = {
+            "PA_EXECUTION_CONTEXT": '{"version":1}',
+            "PA_WORKSPACE_ROOT": "/workspace/leased",
+        }
+
+        merged = runtime._merged_agent_env(
+            {"TOKEN": "user-secret", "PA_WORKSPACE_ROOT": "/tmp/escape"}
+        )
+
+        self.assertEqual(merged["TOKEN"], "user-secret")
+        self.assertEqual(merged["PA_WORKSPACE_ROOT"], "/workspace/leased")
+
     def test_full_queue_keeps_newest_event_and_subscriber(self):
         runtime = AgentSessionRuntime.__new__(AgentSessionRuntime)
         runtime.session = Mock(id="session-1")

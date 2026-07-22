@@ -41,12 +41,15 @@ class ExecutionRouter:
         return {}
 
     def _user_data_dir(self, principal_id: str) -> str:
+        assert self.settings.workspace_root is not None
         if principal_id.startswith("user:"):
             uid = principal_id[5:]
-            path = self.settings.users_dir / uid
+            path = self.settings.workspace_root / "users" / uid
             path.mkdir(parents=True, exist_ok=True)
             return str(path)
-        return str(self.settings.data_dir)
+        path = self.settings.workspace_root / "users" / "local"
+        path.mkdir(parents=True, exist_ok=True)
+        return str(path)
 
     async def prompt(
         self,

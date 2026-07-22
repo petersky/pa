@@ -87,6 +87,19 @@ def repository_snapshots(request: Request) -> list[dict]:
     ]
 
 
+@router.get("/workspaces")
+def workspace_leases(request: Request, card_id: str | None = None) -> dict:
+    """Expose durable local provisioning state and counters for diagnosis."""
+    agent = request.app.state.ctx.require_service("instance_agent")
+    manager = agent.workspace_manager
+    return {
+        "leases": [
+            lease.model_dump(mode="json") for lease in manager.list(card_id=card_id)
+        ],
+        "metrics": manager.metrics(),
+    }
+
+
 @router.post("/repositories/inspect")
 def inspect_repository(request: Request, path: str = Query(...)) -> dict:
     from pathlib import Path
@@ -356,3 +369,16 @@ class InstanceModule(Module):
                     unreachable_instances=_unreachable_repository_instances(ctx)
                 )
             ]
+
+        @mcp.tool()
+        def workspace_leases(card_id: str | None = None) -> dict:
+            """List this instance's durable worktree leases and lifecycle metrics."""
+            agent = ctx.require_service("instance_agent")
+            manager = agent.workspace_manager
+            return {
+                "leases": [
+                    lease.model_dump(mode="json")
+                    for lease in manager.list(card_id=card_id)
+                ],
+                "metrics": manager.metrics(),
+            }
