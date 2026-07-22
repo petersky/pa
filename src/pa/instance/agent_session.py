@@ -1533,6 +1533,16 @@ class AgentSessionManager:
                         )
                     return candidate.card_id is None and candidate.project_id is None
 
+                def verify_project_fence(candidate: AgentSession) -> None:
+                    if (
+                        project_id
+                        and candidate.project_id
+                        and project_id != candidate.project_id
+                    ):
+                        raise RuntimeError(
+                            "Execution session is fenced to a different project"
+                        )
+
                 async with self.label_lock(scope_key):
                     runtime = next(
                         (
@@ -1553,6 +1563,8 @@ class AgentSessionManager:
                             ),
                             None,
                         )
+                        if existing:
+                            verify_project_fence(existing)
                         runtime = await self.create_session(
                             label="execution",
                             title="Execution",
@@ -1568,14 +1580,8 @@ class AgentSessionManager:
                             surface=SURFACE_EXECUTION,
                             provider_override=provider_override,
                         )
-                    elif (
-                        project_id
-                        and runtime.session.project_id
-                        and project_id != runtime.session.project_id
-                    ):
-                        raise RuntimeError(
-                            "Execution session is fenced to a different project"
-                        )
+                    else:
+                        verify_project_fence(runtime.session)
             else:
                 runtime = await self.attach_default(
                     principal_id=principal_id,

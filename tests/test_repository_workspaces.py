@@ -711,3 +711,16 @@ def test_execution_surface_reuses_live_and_persisted_card_session(
     assert kwargs["existing"] is session
     assert kwargs["card_id"] == "card-1"
     assert kwargs["project_id"] == "project-1"
+
+    manager.create_session.reset_mock()
+    with pytest.raises(RuntimeError, match="fenced to a different project"):
+        asyncio.run(
+            manager.prompt(
+                "wrong project",
+                item_id="card-1",
+                project_id="project-2",
+                surface="execution",
+            )
+        )
+    manager.create_session.assert_not_awaited()
+    assert session.project_id == "project-1"
