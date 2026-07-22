@@ -307,14 +307,15 @@ class CardProjection:
         now = datetime.now(UTC).isoformat()
         for raw in repos:
             repo = ProjectRepo.model_validate(raw)
-            repository_id = self._repository_id(realm_id, repo.url)
+            url = repo.url.strip()
+            repository_id = self._repository_id(realm_id, url)
             conn.execute(
                 "INSERT OR IGNORE INTO repositories (id, realm_id, url, name, created_at, updated_at) VALUES (?, ?, ?, '', ?, ?)",
-                (repository_id, realm_id, repo.url, now, now),
+                (repository_id, realm_id, url, now, now),
             )
             actual = conn.execute(
                 "SELECT id FROM repositories WHERE realm_id=? AND url=?",
-                (realm_id, repo.url),
+                (realm_id, url),
             ).fetchone()["id"]
             conn.execute(
                 "INSERT OR REPLACE INTO project_repositories (project_id, repository_id, branch) VALUES (?, ?, ?)",
@@ -581,21 +582,40 @@ class CardProjection:
                 project.memberships = [
                     ProjectMembership.model_validate(m) for m in value
                 ]
-            elif key == "repos" and value is not None:
-                project.repos = [ProjectRepo.model_validate(r) for r in value]
+            elif key == "repos":
+                continue
             elif hasattr(project, key):
                 setattr(project, key, value)
         project.updated_at = datetime.now(UTC)
         self._upsert_project(project)
         if "repos" in event.payload:
             with self._conn() as conn:
-                self._replace_project_repositories_conn(
-                    conn,
-                    project.id,
-                    project.realm_id,
-                    event.payload["repos"] or [],
-                    event.author_instance,
-                )
+                has_normalized = conn.execute(
+                    "SELECT 1 FROM project_repositories WHERE project_id=? LIMIT 1",
+                    (project.id,),
+                ).fetchone()
+                if has_normalized:
+                    conn.execute(
+                        "UPDATE projects SET repos='[]' WHERE id=?", (project.id,)
+                    )
+                else:
+                    repos = event.payload.get("repos") or []
+                    if repos:
+                        project.repos = [
+                            ProjectRepo.model_validate(r) for r in repos
+                        ]
+                        self._replace_project_repositories_conn(
+                            conn,
+                            project.id,
+                            project.realm_id,
+                            repos,
+                            event.author_instance,
+                        )
+                    else:
+                        project.repos = []
+                        conn.execute(
+                            "UPDATE projects SET repos='[]' WHERE id=?", (project.id,)
+                        )
 
     def _apply_project_archived(self, event: CardEvent) -> None:
         if not event.project_id:

@@ -1463,13 +1463,7 @@ async def start_remote_agent_work(
     session_body: dict[str, Any] = {
         "label": f"card:{card.id}" if card else None,
         "title": body.title or (card.title if card else "Remote agent session"),
-        "cwd": body.cwd
-        or normalized_cwd
-        or _project_working_directory(
-            project,
-            instance_id=instance_id,
-            instance_name=inst.name,
-        ),
+        "cwd": body.cwd or normalized_cwd,
         "card_id": card.id if card else None,
         "project_id": project_id,
         "provider": body.provider,

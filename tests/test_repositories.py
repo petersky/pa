@@ -6,6 +6,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from pa.domain.models import (
+    CardEvent,
+    EventType,
     ProjectCreate,
     RepositoryCheckout,
     RepositoryCreate,
@@ -320,6 +322,115 @@ class RepositoryProjectionTests(unittest.TestCase):
             self.assertIn("repository_created", kinds)
             self.assertIn("project_repository_linked", kinds)
             self.assertIn("repository_checkout_set", kinds)
+
+    def test_project_updated_preserves_normalized_repository_links(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = self.projection(Path(tmp))
+            project = store.create_project(ProjectCreate(title="Linked"))
+            repo = store.create_repository(
+                RepositoryCreate(url="https://example.test/linked.git")
+            )
+            store.link_project_repository(project.id, repo.id, branch="main")
+
+            store.apply_event(
+                CardEvent(
+                    type=EventType.PROJECT_UPDATED,
+                    realm_id="default",
+                    project_id=project.id,
+                    author_principal="user:local",
+                    author_instance="instance-a",
+                    payload={
+                        "repos": [
+                            {
+                                "url": "https://example.test/stale-legacy.git",
+                                "branch": "main",
+                                "path": "/stale",
+                            }
+                        ]
+                    },
+                )
+            )
+
+            linked = store.get_project(project.id).repos
+            self.assertEqual(len(linked), 1)
+            self.assertEqual(linked[0].url, "https://example.test/linked.git")
+            conn = sqlite3.connect(Path(tmp) / "pa.db")
+            row = conn.execute(
+                "SELECT repos FROM projects WHERE id=?", (project.id,)
+            ).fetchone()
+            conn.close()
+            self.assertEqual(json.loads(row[0]), [])
+
+    def test_replace_project_repositories_strips_url_whitespace(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            db = root / "pa.db"
+            now = datetime.now(UTC).isoformat()
+            conn = sqlite3.connect(db)
+            conn.executescript(
+                """
+                CREATE TABLE projects (
+                    id TEXT PRIMARY KEY, realm_id TEXT NOT NULL, title TEXT NOT NULL,
+                    description TEXT NOT NULL, status TEXT NOT NULL, memberships TEXT NOT NULL,
+                    repos TEXT NOT NULL, agent_prompt TEXT NOT NULL, tool_config TEXT NOT NULL,
+                    tags TEXT NOT NULL, created_by_principal TEXT, created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE repositories (
+                    id TEXT PRIMARY KEY, realm_id TEXT NOT NULL, url TEXT NOT NULL,
+                    name TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                    UNIQUE(realm_id, url)
+                );
+                CREATE TABLE project_repositories (
+                    project_id TEXT NOT NULL, repository_id TEXT NOT NULL, branch TEXT,
+                    PRIMARY KEY (project_id, repository_id)
+                );
+                CREATE TABLE repository_checkouts (
+                    repository_id TEXT NOT NULL, instance_id TEXT NOT NULL, path TEXT NOT NULL,
+                    branch TEXT, PRIMARY KEY (repository_id, instance_id)
+                );
+                """
+            )
+            conn.execute(
+                "INSERT INTO projects VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    "legacy",
+                    "default",
+                    "Legacy",
+                    "",
+                    "active",
+                    "[]",
+                    "[]",
+                    "",
+                    "{}",
+                    "[]",
+                    None,
+                    now,
+                    now,
+                ),
+            )
+            url = "https://example.test/trim.git"
+            conn.execute(
+                "INSERT INTO repositories VALUES (?, ?, ?, ?, ?, ?)",
+                ("repo-1", "default", url, "", now, now),
+            )
+            conn.commit()
+            conn.close()
+
+            store = self.projection(root, "legacy-host")
+            with store._conn() as conn:
+                store._replace_project_repositories_conn(
+                    conn,
+                    "legacy",
+                    "default",
+                    [{"url": f"{url} ", "branch": "main", "path": "/trim/path"}],
+                    "legacy-host",
+                )
+
+            project = store.get_project("legacy")
+            self.assertEqual(len(project.repos), 1)
+            self.assertEqual(project.repos[0].url, url)
+            self.assertEqual(project.repos[0].path, "/trim/path")
 
 
 if __name__ == "__main__":
