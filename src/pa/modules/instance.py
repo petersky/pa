@@ -31,10 +31,11 @@ class RepositoryReconcileRequest(BaseModel):
 
 def _unreachable_repository_instances(ctx: AppContext) -> set[str]:
     fleet = ctx.services.get("fleet_registry")
+    local_id = ctx.settings.instance_id
     return {
         item.instance_id
         for item in (fleet.list_instances() if fleet else [])
-        if not item.healthy
+        if not item.healthy and item.instance_id != local_id
     }
 
 

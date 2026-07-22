@@ -228,3 +228,36 @@ def test_presentation_surfaces_stale_unreachable_and_error(tmp_path: Path) -> No
     assert service.present(stale, unreachable=True).state == "unreachable"
     failed = stale.model_copy(update={"inspection_error": "not a repository"})
     assert service.present(failed).state == "error"
+
+
+def test_unreachable_repository_instances_excludes_local(tmp_path: Path) -> None:
+    from unittest.mock import MagicMock
+
+    from pa.config import Settings
+    from pa.domain.models import FleetInstance
+    from pa.fleet.registry import FleetRegistry
+    from pa.modules.instance import _unreachable_repository_instances
+
+    settings = Settings(data_dir=tmp_path, instance_id="local")
+    fleet = FleetRegistry(tmp_path, settings.fleet_id)
+    fleet.upsert_instance(
+        FleetInstance(
+            instance_id="local",
+            name="local",
+            url="http://local:8080",
+            healthy=False,
+        )
+    )
+    fleet.upsert_instance(
+        FleetInstance(
+            instance_id="peer",
+            name="peer",
+            url="http://peer:8080",
+            healthy=False,
+        )
+    )
+    ctx = MagicMock()
+    ctx.settings = settings
+    ctx.services = {"fleet_registry": fleet}
+
+    assert _unreachable_repository_instances(ctx) == {"peer"}
