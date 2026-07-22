@@ -54,7 +54,7 @@ class Kernel:
             if settings.debug:
                 hooks.enable_history(True)
 
-            ctx = AppContext(settings=settings, hooks=hooks, store=get_store())
+            ctx = AppContext(settings=settings, hooks=hooks, store=get_store(settings))
             if writer_lock:
                 ctx.register_service("writer_lock", writer_lock)
             from pa.core.ui.pages import PageRegistry

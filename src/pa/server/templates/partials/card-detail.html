@@ -1,88 +1,141 @@
-{% if card %}
-<div class="card-detail">
-  <div class="panel-header">
-    <h2>Edit card</h2>
-    <button type="button" class="ghost"
-            hx-get="/partials/card-detail-empty"
-            hx-target="#card-detail"
-            hx-swap="innerHTML">Close</button>
-  </div>
-  <form class="stack"
-        hx-post="/partials/cards/{{ card.id }}?realm={{ card.realm_id }}"
-        hx-target:inherited="#card-detail"
-        hx-swap:inherited="innerHTML">
-    <input type="hidden" name="csrf" value="{{ csrf_token }}">
-    <label>
-      Title
-      <input type="text" name="title" value="{{ card.title }}" required>
-    </label>
-    <label>
-      Body
-      <textarea name="body" rows="4">{{ card.body }}</textarea>
-    </label>
-    <label>
-      Lane
-      <select name="lane">
-        {% for lane in lanes %}
-        <option value="{{ lane.value }}" {% if card.lane == lane %}selected{% endif %}>
-          {{ lane.value | capitalize }}
-        </option>
-        {% endfor %}
-      </select>
-    </label>
-    <div class="form-actions">
-      <button type="submit">Save</button>
-      <button type="button" class="ghost danger"
-              hx-delete="/partials/cards/{{ card.id }}?realm={{ card.realm_id }}"
-              hx-confirm="Delete this card?">Delete</button>
+<article class="card-detail" data-card-detail data-card-id="{{ card.id }}">
+  <header class="card-detail-header">
+    <div>
+      <div class="compact-card-meta">
+        <span class="badge">{{ card.kind.value }}</span>
+        <span class="status status-{{ card.lane.value }}">{{ card.lane.value }}</span>
+        {% if card.summary_stale %}<span class="summary-stale">Summary needs review</span>{% endif %}
+      </div>
+      <h2 id="card-detail-title" tabindex="-1">{{ card.title }}</h2>
+      {% if project %}<a href="/projects?realm={{ card.realm_id }}&project={{ project.id }}">{{ project.title }}</a>{% endif %}
     </div>
-  </form>
-  <p class="muted">Kind: {{ card.kind.value }} · ID: {{ card.id[:8] }}…</p>
+    <div class="card-detail-actions">
+      <button type="button" class="ghost" data-card-edit-open>Edit</button>
+      <button type="button" class="ghost" data-card-dialog-close aria-label="Close card details">Close</button>
+    </div>
+  </header>
+
+  <section class="card-detail-section" aria-labelledby="card-summary-title">
+    <div class="section-heading-inline">
+      <h3 id="card-summary-title">Summary</h3>
+      <span class="muted">{{ card.summary_source.value }}{% if card.summary_updated_at %} · {{ card.summary_updated_at.strftime('%b %-d, %Y') }}{% endif %}</span>
+    </div>
+    <p class="card-detail-summary">{{ card.summary }}</p>
+  </section>
+
+  <section class="card-detail-section" aria-labelledby="card-details-title">
+    <h3 id="card-details-title">Details</h3>
+    {% if card.body %}<div class="card-detail-body">{{ card.body }}</div>{% else %}<p class="muted">No additional details.</p>{% endif %}
+  </section>
+
+  <div class="card-detail-grid">
+    <section class="card-detail-section" aria-labelledby="card-metadata-title">
+      <h3 id="card-metadata-title">Metadata</h3>
+      <dl class="detail-list">
+        <div><dt>Owner</dt><dd>{{ card.owner_principal or 'Unassigned' }}</dd></div>
+        <div><dt>Instance</dt><dd>{{ card.preferred_instance or 'Any eligible instance' }}</dd></div>
+        <div><dt>Updated</dt><dd><time datetime="{{ card.updated_at.isoformat() }}">{{ card.updated_at.strftime('%Y-%m-%d %H:%M') }}</time></dd></div>
+        <div><dt>Created</dt><dd><time datetime="{{ card.created_at.isoformat() }}">{{ card.created_at.strftime('%Y-%m-%d %H:%M') }}</time></dd></div>
+        {% if card.tags %}<div><dt>Tags</dt><dd>{{ card.tags | join(', ') }}</dd></div>{% endif %}
+      </dl>
+    </section>
+
+    <section class="card-detail-section" aria-labelledby="card-related-title">
+      <h3 id="card-related-title">Related work</h3>
+      {% if parent %}<p>Parent: <a href="?realm={{ parent.realm_id }}&card={{ parent.id }}" data-card-detail-link data-card-id="{{ parent.id }}" data-card-realm="{{ parent.realm_id }}">{{ parent.title }}</a></p>{% endif %}
+      {% if project and project.repos %}
+      <p class="muted">Repositories</p>
+      <ul class="detail-link-list">
+        {% for repo in project.repos %}<li><a href="{{ repo.url }}" target="_blank" rel="noopener">{{ repo.url }}</a>{% if repo.branch %} · {{ repo.branch }}{% endif %}</li>{% endfor %}
+      </ul>
+      {% endif %}
+      {% if children %}
+      <ul class="detail-link-list">
+        {% for child in children %}<li><a href="?realm={{ child.realm_id }}&card={{ child.id }}" data-card-detail-link data-card-id="{{ child.id }}" data-card-realm="{{ child.realm_id }}">{{ child.title }}</a></li>{% endfor %}
+      </ul>
+      {% elif not parent %}<p class="muted">No parent or dependent cards linked.</p>{% endif %}
+    </section>
+  </div>
+
+  <section class="card-detail-section" aria-labelledby="card-activity-title">
+    <h3 id="card-activity-title">Activity</h3>
+    <ol class="activity-timeline">
+      <li><span>Card created</span><time datetime="{{ card.created_at.isoformat() }}">{{ card.created_at.strftime('%b %-d, %H:%M') }}</time></li>
+      {% if card.updated_at != card.created_at %}<li><span>Card updated</span><time datetime="{{ card.updated_at.isoformat() }}">{{ card.updated_at.strftime('%b %-d, %H:%M') }}</time></li>{% endif %}
+      {% for entry in card_knowledge %}<li><span>{{ entry.summary }}</span><time datetime="{{ entry.created_at.isoformat() }}">{{ entry.created_at.strftime('%b %-d, %H:%M') }}</time></li>{% endfor %}
+    </ol>
+  </section>
 
   {% if pr_watches %}
-  <div class="panel-inset">
-    <div class="panel-header">
-      <h3>Pull request supervision</h3>
-      <a class="text-btn" href="/pull-requests?realm={{ card.realm_id }}&watch={{ pr_watches[0].id }}">History</a>
+  <section class="card-detail-section" aria-labelledby="card-artifacts-title">
+    <div class="section-heading-inline"><h3 id="card-artifacts-title">Artifacts &amp; pull requests</h3><a href="/pull-requests?realm={{ card.realm_id }}&watch={{ pr_watches[0].id }}">Audit history</a></div>
+    <div class="artifact-list">
+      {% for watch in pr_watches %}
+      <article>
+        <a href="{{ watch.pr_url }}" target="_blank" rel="noopener">{{ watch.repository }}#{{ watch.pr_number }}</a>
+        <span class="badge">{{ watch.status.value }}</span>
+        {% if watch.last_error %}<p class="danger">{{ watch.last_error }}</p>{% endif %}
+      </article>
+      {% endfor %}
     </div>
-    {% for watch in pr_watches %}
-    <div class="item">
-      <a href="{{ watch.pr_url }}" target="_blank" rel="noopener">
-        {{ watch.repository }}#{{ watch.pr_number }}
-      </a>
-      <span class="badge">{{ watch.status.value }}</span>
-      {% if watch.state.get('supervisor_state') %}
-      <p class="muted">{{ watch.state.get('supervisor_state') }}</p>
-      {% endif %}
-      {% if watch.last_error %}<p class="danger">{{ watch.last_error }}</p>{% endif %}
-      <p class="muted">
-        Head {{ (watch.head_sha or 'unknown')[:12] }} · owner {{ watch.owner_instance_id or 'unassigned' }}
-      </p>
-    </div>
-    {% endfor %}
-  </div>
+  </section>
   {% endif %}
 
-  {% if agent_enabled | default(true) %}
-  <div class="card-agent-pane">
-    <div class="panel-header"><h2>Agent</h2></div>
-    {% with
-        session_id='',
-        create_label='card:' ~ card.id,
-        card_id=card.id,
-        show_model=true,
-        show_mode=true,
-        show_thinking=false,
-        show_system_prompts=false,
-        show_queue=false,
-        show_metrics=false,
-        compact=true
-    %}
-      {% include "partials/agent/chat-widget.html" %}
-    {% endwith %}
-  </div>
-  {% endif %}
-</div>
-{% else %}
-<p class="empty">Card not found.</p>
-{% endif %}
+  <section class="card-detail-section" aria-labelledby="card-agent-title">
+    <div class="section-heading-inline">
+      <div><h3 id="card-agent-title">Agent</h3><p class="muted">Selecting a card never starts work. Start or resume explicitly.</p></div>
+      {% if agent_enabled | default(true) %}
+      <button type="button" data-card-agent-start>{{ 'Resume agent' if current_session else 'Start agent' }}</button>
+      {% endif %}
+    </div>
+    {% if related_sessions %}
+    <ul class="detail-link-list session-links">
+      {% for session in related_sessions %}<li><a href="/agent?session={{ session.id }}">{{ session.title or session.label or 'Card agent' }}</a> <span class="status status-{{ session.status }}">{{ session.status }}</span></li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% if agent_enabled | default(true) %}
+    <div id="card-agent-pane-{{ card.id }}"
+         class="card-agent-pane"
+         data-card-agent-pane
+         hx-preserve="true"
+         hidden>
+      {% with
+          session_id=current_session.id if current_session else '',
+          create_label='card:' ~ card.id,
+          card_id=card.id,
+          show_model=true,
+          show_mode=true,
+          show_thinking=false,
+          show_system_prompts=false,
+          show_queue=false,
+          show_metrics=false,
+          compact=true,
+          auto_start=false
+      %}
+        {% include "partials/agent/chat-widget.html" %}
+      {% endwith %}
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="card-edit-surface" data-card-edit hidden aria-labelledby="card-edit-title">
+    <div class="section-heading-inline"><h3 id="card-edit-title">Edit card</h3><button type="button" class="ghost" data-card-edit-cancel>Cancel</button></div>
+    <form class="stack"
+          hx-post="/partials/cards/{{ card.id }}?realm={{ card.realm_id }}"
+          hx-target="#card-detail-dialog-content"
+          hx-swap="innerHTML">
+      <input type="hidden" name="csrf" value="{{ csrf_token }}">
+      <label>Title<input type="text" name="title" value="{{ card.title }}" required></label>
+      <label>Summary<textarea name="summary" rows="3">{{ card.summary }}</textarea><small>Editing the summary records manual provenance.</small></label>
+      <label>Details<textarea name="body" rows="8">{{ card.body }}</textarea></label>
+      <label>Lane<select name="lane">{% for lane in lanes %}<option value="{{ lane.value }}" {% if card.lane == lane %}selected{% endif %}>{{ lane.value | capitalize }}</option>{% endfor %}</select></label>
+      <div class="form-actions">
+        <button type="submit">Save changes</button>
+        <button type="button" class="ghost danger"
+                hx-delete="/partials/cards/{{ card.id }}?realm={{ card.realm_id }}"
+                hx-target="#card-detail-dialog-content"
+                hx-confirm="Delete this card permanently?">Delete card</button>
+      </div>
+    </form>
+  </section>
+</article>

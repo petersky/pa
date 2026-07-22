@@ -120,6 +120,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
         request.state.user = None
         request.state.user_authenticated = False
         request.state.instance_authenticated = False
+        cookie_csrf = request.cookies.get(COOKIE_NAME)
+        request.state.csrf_token = cookie_csrf or generate_token()
 
         path = request.url.path
         is_public = _is_public(path)
@@ -185,11 +187,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         response = await call_next(request)
 
-        if not request.cookies.get(COOKIE_NAME):
-            token = generate_token()
+        if not cookie_csrf:
             response.set_cookie(
                 COOKIE_NAME,
-                token,
+                request.state.csrf_token,
                 httponly=False,
                 samesite="lax",
                 secure=use_secure_cookies(request, self.settings),

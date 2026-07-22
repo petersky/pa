@@ -12,6 +12,7 @@ from functools import wraps
 from typing import Callable, Iterator, TypeVar
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
+from pa.domain.card_summaries import fallback_card_summary
 from pa.domain.models import (
     AgentSession,
     Card,
@@ -19,6 +20,7 @@ from pa.domain.models import (
     CardEvent,
     CardKind,
     CardLane,
+    CardSummarySource,
     CardUpdate,
     EventType,
     Item,
@@ -102,6 +104,10 @@ class CardProjection:
                     kind TEXT NOT NULL DEFAULT 'task',
                     title TEXT NOT NULL,
                     body TEXT NOT NULL DEFAULT '',
+                    summary TEXT NOT NULL DEFAULT '',
+                    summary_source TEXT NOT NULL DEFAULT 'fallback',
+                    summary_updated_at TEXT,
+                    summary_stale INTEGER NOT NULL DEFAULT 0,
                     lane TEXT NOT NULL DEFAULT 'inbox',
                     parent_id TEXT,
                     tags TEXT NOT NULL DEFAULT '[]',
@@ -211,6 +217,27 @@ class CardProjection:
         }
         if "project_id" not in card_cols:
             conn.execute("ALTER TABLE cards ADD COLUMN project_id TEXT")
+        for col, decl in (
+            ("summary", "TEXT NOT NULL DEFAULT ''"),
+            ("summary_source", "TEXT NOT NULL DEFAULT 'fallback'"),
+            ("summary_updated_at", "TEXT"),
+            ("summary_stale", "INTEGER NOT NULL DEFAULT 0"),
+        ):
+            if col not in card_cols:
+                conn.execute(f"ALTER TABLE cards ADD COLUMN {col} {decl}")
+        for row in conn.execute(
+            "SELECT id, body, summary, updated_at FROM cards"
+        ).fetchall():
+            if not (row["summary"] or "").strip():
+                conn.execute(
+                    """
+                    UPDATE cards
+                    SET summary=?, summary_source='fallback',
+                        summary_updated_at=updated_at, summary_stale=0
+                    WHERE id=?
+                    """,
+                    (fallback_card_summary(row["body"]), row["id"]),
+                )
 
         session_cols = {
             row[1]
@@ -346,9 +373,7 @@ class CardProjection:
                     conn, row["id"], row["realm_id"], repos, instance_id
                 )
             elif existing and repos:
-                conn.execute(
-                    "UPDATE projects SET repos='[]' WHERE id=?", (row["id"],)
-                )
+                conn.execute("UPDATE projects SET repos='[]' WHERE id=?", (row["id"],))
 
     def apply_event(self, event: CardEvent) -> None:
         if event.type == EventType.CARD_CREATED:
@@ -474,9 +499,7 @@ class CardProjection:
                 (rid, event.realm_id),
             )
             for project_id in project_ids:
-                conn.execute(
-                    "UPDATE projects SET repos='[]' WHERE id=?", (project_id,)
-                )
+                conn.execute("UPDATE projects SET repos='[]' WHERE id=?", (project_id,))
 
     def _apply_project_repository_linked(self, event: CardEvent) -> None:
         with self._conn() as conn:
@@ -520,12 +543,22 @@ class CardProjection:
         p = event.payload
         created_at = _coerce_datetime(p.get("created_at")) or datetime.now(UTC)
         updated_at = _coerce_datetime(p.get("updated_at")) or created_at
+        summary = (p.get("summary") or "").strip() or fallback_card_summary(
+            p.get("body", "")
+        )
         card = Card(
             id=p.get("id", event.card_id or str(uuid4())),
             realm_id=event.realm_id,
             kind=CardKind(p.get("kind", "task")),
             title=p.get("title", ""),
             body=p.get("body", ""),
+            summary=summary,
+            summary_source=CardSummarySource(
+                p.get("summary_source", CardSummarySource.FALLBACK.value)
+            ),
+            summary_updated_at=_coerce_datetime(p.get("summary_updated_at"))
+            or updated_at,
+            summary_stale=bool(p.get("summary_stale", False)),
             lane=CardLane(p.get("lane", "inbox")),
             parent_id=p.get("parent_id"),
             project_id=p.get("project_id"),
@@ -610,9 +643,7 @@ class CardProjection:
                         "UPDATE projects SET repos='[]' WHERE id=?", (project.id,)
                     )
                 else:
-                    project.repos = [
-                        ProjectRepo.model_validate(r) for r in repos
-                    ]
+                    project.repos = [ProjectRepo.model_validate(r) for r in repos]
                     self._replace_project_repositories_conn(
                         conn,
                         project.id,
@@ -637,19 +668,40 @@ class CardProjection:
         card = self.get_card(event.card_id, realm_id=event.realm_id)
         if not card:
             return
-        for key, value in event.payload.items():
-            if key in {"created_at", "updated_at", "lease_expires_at"}:
+        payload = event.payload
+        if "body" in payload and "summary" not in payload:
+            if card.summary_source == CardSummarySource.FALLBACK:
+                card.summary = fallback_card_summary(payload.get("body", ""))
+                card.summary_updated_at = _coerce_datetime(
+                    payload.get("updated_at")
+                ) or datetime.now(UTC)
+                card.summary_stale = False
+            else:
+                card.summary_stale = True
+        for key, value in payload.items():
+            if key in {
+                "created_at",
+                "updated_at",
+                "lease_expires_at",
+                "summary_updated_at",
+            }:
                 continue
             if key == "lane":
                 card.lane = CardLane(value)
+            elif key == "summary_source":
+                card.summary_source = CardSummarySource(value)
             elif hasattr(card, key):
                 setattr(card, key, value)
-        if "lease_expires_at" in event.payload:
-            card.lease_expires_at = _coerce_datetime(event.payload.get("lease_expires_at"))
+        if "lease_expires_at" in payload:
+            card.lease_expires_at = _coerce_datetime(payload.get("lease_expires_at"))
+        if "summary_updated_at" in payload:
+            card.summary_updated_at = _coerce_datetime(
+                payload.get("summary_updated_at")
+            )
         # Prefer the authority stamp carried in the event so synced peers keep
         # an identical card_version for fleet dispatch materialization.
-        card.updated_at = (
-            _coerce_datetime(event.payload.get("updated_at")) or datetime.now(UTC)
+        card.updated_at = _coerce_datetime(payload.get("updated_at")) or datetime.now(
+            UTC
         )
         self._upsert_card(card)
 
@@ -681,9 +733,9 @@ class CardProjection:
         card.lease_expires_at = (
             datetime.fromisoformat(exp) if isinstance(exp, str) and exp else None
         )
-        card.updated_at = (
-            _coerce_datetime(event.payload.get("updated_at")) or datetime.now(UTC)
-        )
+        card.updated_at = _coerce_datetime(
+            event.payload.get("updated_at")
+        ) or datetime.now(UTC)
         self._upsert_card(card)
 
     def _apply_lease_release(self, event: CardEvent) -> None:
@@ -695,9 +747,9 @@ class CardProjection:
         card.lease_holder_instance = None
         card.lease_holder_principal = None
         card.lease_expires_at = None
-        card.updated_at = (
-            _coerce_datetime(event.payload.get("updated_at")) or datetime.now(UTC)
-        )
+        card.updated_at = _coerce_datetime(
+            event.payload.get("updated_at")
+        ) or datetime.now(UTC)
         self._upsert_card(card)
 
     def _upsert_card(self, card: Card) -> None:
@@ -705,11 +757,12 @@ class CardProjection:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO cards
-                (id, realm_id, kind, title, body, lane, parent_id, project_id, tags, visibility,
+                (id, realm_id, kind, title, body, summary, summary_source,
+                 summary_updated_at, summary_stale, lane, parent_id, project_id, tags, visibility,
                  owner_principal, preferred_instance, preferred_capabilities,
                  lease_holder_instance, lease_holder_principal, lease_expires_at,
                  created_by_principal, created_by_instance, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     card.id,
@@ -717,6 +770,12 @@ class CardProjection:
                     card.kind.value,
                     card.title,
                     card.body,
+                    card.summary,
+                    card.summary_source.value,
+                    card.summary_updated_at.isoformat()
+                    if card.summary_updated_at
+                    else None,
+                    int(card.summary_stale),
                     card.lane.value,
                     card.parent_id,
                     card.project_id,
@@ -746,11 +805,20 @@ class CardProjection:
         instance_id: str = "local",
         via_log: bool = True,
     ) -> Card:
+        now = datetime.now(UTC)
+        supplied_summary = data.summary.strip()
         card = Card(
             realm_id=data.realm_id,
             kind=data.kind,
             title=data.title,
             body=data.body,
+            summary=supplied_summary or fallback_card_summary(data.body),
+            summary_source=(
+                data.summary_source or CardSummarySource.MANUAL
+                if supplied_summary
+                else CardSummarySource.FALLBACK
+            ),
+            summary_updated_at=now,
             lane=data.lane,
             parent_id=data.parent_id,
             project_id=data.project_id,
@@ -827,16 +895,48 @@ class CardProjection:
         if not card:
             return None
         updates = data.model_dump(exclude_unset=True)
+        now = datetime.now(UTC)
         payload = {}
         for key, value in updates.items():
             if key == "lane" and value is not None:
                 payload["lane"] = value.value if hasattr(value, "value") else value
+            elif key == "summary_source" and value is not None:
+                payload["summary_source"] = (
+                    value.value if hasattr(value, "value") else value
+                )
             elif value is not None:
                 payload[key] = value
+        if data.body is not None and data.summary is None:
+            if card.summary_source == CardSummarySource.FALLBACK:
+                payload.update(
+                    summary=fallback_card_summary(data.body),
+                    summary_source=CardSummarySource.FALLBACK.value,
+                    summary_stale=False,
+                    summary_updated_at=now.isoformat(),
+                )
+            else:
+                payload["summary_stale"] = True
+        if data.summary is not None:
+            supplied_summary = data.summary.strip()
+            payload.update(
+                summary=supplied_summary
+                or fallback_card_summary(
+                    data.body if data.body is not None else card.body
+                ),
+                summary_source=(
+                    payload.get("summary_source") or CardSummarySource.MANUAL.value
+                    if supplied_summary
+                    else CardSummarySource.FALLBACK.value
+                ),
+                summary_stale=(
+                    data.summary_stale if data.summary_stale is not None else False
+                ),
+                summary_updated_at=now.isoformat(),
+            )
         if self.event_log and payload:
             # Stamp the authority version into the durable event so every peer
             # projects the same updated_at used for dispatch card_version checks.
-            payload["updated_at"] = datetime.now(UTC).isoformat()
+            payload["updated_at"] = now.isoformat()
             event = CardEvent(
                 type=EventType.CARD_UPDATED,
                 realm_id=realm_id,
@@ -847,10 +947,14 @@ class CardProjection:
             )
             self.commit_event(event)
             return self.get_card(card_id, realm_id=realm_id)
-        for key, value in updates.items():
-            if value is not None:
+        for key, value in payload.items():
+            if key == "summary_updated_at":
+                card.summary_updated_at = _coerce_datetime(value)
+            elif key == "summary_source":
+                card.summary_source = CardSummarySource(value)
+            elif key != "updated_at" and value is not None and hasattr(card, key):
                 setattr(card, key, value)
-        card.updated_at = datetime.now(UTC)
+        card.updated_at = now
         self._upsert_card(card)
         return card
 
@@ -1528,6 +1632,22 @@ class CardProjection:
             kind=CardKind(row["kind"]),
             title=row["title"],
             body=row["body"],
+            summary=row["summary"]
+            if "summary" in keys
+            else fallback_card_summary(row["body"]),
+            summary_source=CardSummarySource(
+                row["summary_source"]
+                if "summary_source" in keys
+                else CardSummarySource.FALLBACK.value
+            ),
+            summary_updated_at=(
+                datetime.fromisoformat(row["summary_updated_at"])
+                if "summary_updated_at" in keys and row["summary_updated_at"]
+                else datetime.fromisoformat(row["updated_at"])
+            ),
+            summary_stale=bool(row["summary_stale"])
+            if "summary_stale" in keys
+            else False,
             lane=CardLane(row["lane"]),
             parent_id=row["parent_id"],
             project_id=row["project_id"] if "project_id" in keys else None,

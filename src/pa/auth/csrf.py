@@ -14,6 +14,14 @@ def generate_token() -> str:
     return secrets.token_urlsafe(32)
 
 
+def token_for_request(request: Request) -> str:
+    """Return the token selected by middleware, including on a first request."""
+
+    return str(
+        getattr(request.state, "csrf_token", "") or request.cookies.get(COOKIE_NAME, "")
+    )
+
+
 def token_from_request(request: Request) -> str | None:
     header = request.headers.get(HEADER_NAME)
     if header:
