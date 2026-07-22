@@ -475,6 +475,9 @@ class PRSupervisorModule(Module):
             ctx.store,
             supervisor_store=ctx.require_service("pr_supervisor_store"),
             agent_manager=ctx.services.get("instance_agent"),
+            workspace_manager=getattr(
+                ctx.services.get("instance_agent"), "workspace_manager", None
+            ),
             fleet_registry=ctx.services.get("fleet_registry"),
             peer_table=ctx.services.get("peer_table"),
         )

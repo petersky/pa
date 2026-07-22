@@ -350,6 +350,63 @@ class AgentChatSseTests(unittest.TestCase):
         runtime.close.assert_not_awaited()
         self.assertIn(runtime.session_id, manager._runtimes)
 
+    def test_duplicate_labeled_session_creation_is_serialized(self) -> None:
+        runtime = MagicMock()
+        runtime._closed = False
+        runtime.session_id = "sess-only"
+        runtime.session = AgentSession(
+            id="sess-only", agent_name="codex", label="card:123"
+        )
+        runtime.connection.config_options = []
+        runtime.snapshot.return_value = {"session": {"id": "sess-only"}}
+
+        class Manager:
+            def __init__(self) -> None:
+                self.store = MagicMock()
+                self.store.get_session_by_label.return_value = None
+                self._runtimes: dict[str, MagicMock] = {}
+                self._locks: dict[str, asyncio.Lock] = {}
+                self.create_calls = 0
+
+            def label_lock(self, label: str) -> asyncio.Lock:
+                return self._locks.setdefault(label, asyncio.Lock())
+
+            def list_runtimes(self) -> list[MagicMock]:
+                return list(self._runtimes.values())
+
+            async def create_session(self, **_kwargs) -> MagicMock:
+                self.create_calls += 1
+                await asyncio.sleep(0.01)
+                self._runtimes[runtime.session_id] = runtime
+                return runtime
+
+        manager = Manager()
+        request = MagicMock()
+
+        async def run() -> list[dict]:
+            with (
+                patch("pa.modules.agent_chat._manager", return_value=manager),
+                patch(
+                    "pa.modules.agent_chat.get_principal_id",
+                    return_value="user:local",
+                ),
+            ):
+                return await asyncio.gather(
+                    create_session(request, CreateSessionBody(label="card:123")),
+                    create_session(request, CreateSessionBody(label="card:123")),
+                )
+
+        results = asyncio.run(run())
+
+        self.assertEqual(manager.create_calls, 1)
+        self.assertEqual(
+            [result["session"]["id"] for result in results],
+            [
+                "sess-only",
+                "sess-only",
+            ],
+        )
+
     def test_session_list_exposes_provider_for_option_lookup(self) -> None:
         runtime = MagicMock()
         runtime._closed = False

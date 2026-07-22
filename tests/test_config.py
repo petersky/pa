@@ -86,8 +86,30 @@ class DataDirIsolationTests(unittest.TestCase):
         self.assertNotEqual(settings.fleet_id, "production-fleet")
         self.assertEqual(settings.peers, [])
         self.assertEqual(settings.sync_token, "")
+        self.assertEqual(
+            settings.workspace_root,
+            (
+                self.isolated_data_dir.parent
+                / f"{self.isolated_data_dir.name}-workspaces"
+            ).resolve(),
+        )
+        self.assertFalse(settings.workspace_root.is_relative_to(settings.data_dir))
         self.assertFalse((self.isolated_data_dir / "config.json").exists())
         self.assert_production_config_unchanged()
+
+    def test_workspace_root_must_be_outside_data_dir(self) -> None:
+        with self.assertRaisesRegex(ValueError, "outside data_dir"):
+            from pa.config import Settings
+
+            Settings(
+                data_dir=self.isolated_data_dir,
+                workspace_root=self.isolated_data_dir / "agents",
+            )
+        with self.assertRaisesRegex(ValueError, "outside data_dir"):
+            Settings(
+                data_dir=self.isolated_data_dir,
+                workspace_root=self.isolated_data_dir.parent,
+            )
 
     def test_init_uses_pa_data_dir_without_touching_default_config(self) -> None:
         from pa.cli.main import app

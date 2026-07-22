@@ -768,10 +768,8 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
             )
             create_call = peer.await_args_list[0]
             self.assertEqual(create_call.args[3], "sessions")
-            self.assertEqual(
-                create_call.kwargs["body"]["cwd"],
-                "/srv/pa/remote",
-            )
+            self.assertNotIn("cwd", create_call.kwargs["body"])
+            store.project_working_directory.assert_not_called()
             self.assertEqual(create_call.kwargs["body"]["label"], "card:card-1")
             self.assertEqual(
                 create_call.kwargs["body"]["dispatch_id"],
@@ -844,9 +842,7 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
 
             create_call = peer.await_args_list[0]
             self.assertNotIn("cwd", create_call.kwargs["body"])
-            store.project_working_directory.assert_called_once_with(
-                project.id, "mini-1"
-            )
+            store.project_working_directory.assert_not_called()
 
     async def test_remote_agent_start_uses_repo_paths_by_instance_fallback(
         self,
@@ -909,7 +905,8 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
                 )
 
             create_call = peer.await_args_list[0]
-            self.assertEqual(create_call.kwargs["body"]["cwd"], "/srv/pa/remote")
+            self.assertNotIn("cwd", create_call.kwargs["body"])
+            store.project_working_directory.assert_not_called()
 
     async def test_dispatch_preserves_session_when_initial_prompt_fails(self) -> None:
         from fastapi import HTTPException

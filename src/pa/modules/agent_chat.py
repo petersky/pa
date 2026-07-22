@@ -190,6 +190,8 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
     new_logical_session = True
     if body.project_id:
         project = mgr.store.get_project(body.project_id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
         if project and getattr(project, "tool_config", None):
             project_tool_config = dict(project.tool_config)
     try:
@@ -202,45 +204,48 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
             )
         elif body.label:
             # Reuse a live/persisted session with the same label (e.g. card:{id}).
-            existing = None
-            for rt in mgr.list_runtimes():
-                if rt.session.label == body.label and not getattr(rt, "_closed", False):
-                    existing = rt
-                    break
-            if existing is None:
-                stored = mgr.store.get_session_by_label(body.label)
-                if stored and stored.status not in {"closed", "quiesced"}:
-                    new_logical_session = False
-                    runtime = await mgr.create_session(
-                        label=body.label,
-                        title=body.title or stored.title,
-                        cwd=body.cwd or stored.cwd,
-                        principal_id=principal_id or stored.principal_id,
-                        card_id=body.card_id or stored.card_id,
-                        project_id=body.project_id or stored.project_id,
-                        existing=stored,
-                        resume_external_id=stored.external_session_id,
-                        surface=surface,
-                        provider_override=body.provider,
-                        project_tool_config=project_tool_config,
-                    )
-                    created_runtime = True
+            async with mgr.label_lock(body.label):
+                existing = None
+                for rt in mgr.list_runtimes():
+                    if rt.session.label == body.label and not getattr(
+                        rt, "_closed", False
+                    ):
+                        existing = rt
+                        break
+                if existing is None:
+                    stored = mgr.store.get_session_by_label(body.label)
+                    if stored and stored.status not in {"closed", "quiesced"}:
+                        new_logical_session = False
+                        runtime = await mgr.create_session(
+                            label=body.label,
+                            title=body.title or stored.title,
+                            cwd=body.cwd or stored.cwd,
+                            principal_id=principal_id or stored.principal_id,
+                            card_id=body.card_id or stored.card_id,
+                            project_id=body.project_id or stored.project_id,
+                            existing=stored,
+                            resume_external_id=stored.external_session_id,
+                            surface=surface,
+                            provider_override=body.provider,
+                            project_tool_config=project_tool_config,
+                        )
+                        created_runtime = True
+                    else:
+                        runtime = await mgr.create_session(
+                            label=body.label,
+                            title=body.title,
+                            cwd=body.cwd,
+                            principal_id=principal_id,
+                            card_id=body.card_id,
+                            project_id=body.project_id,
+                            surface=surface,
+                            provider_override=body.provider,
+                            project_tool_config=project_tool_config,
+                        )
+                        created_runtime = True
                 else:
-                    runtime = await mgr.create_session(
-                        label=body.label,
-                        title=body.title,
-                        cwd=body.cwd,
-                        principal_id=principal_id,
-                        card_id=body.card_id,
-                        project_id=body.project_id,
-                        surface=surface,
-                        provider_override=body.provider,
-                        project_tool_config=project_tool_config,
-                    )
-                    created_runtime = True
-            else:
-                new_logical_session = False
-                runtime = existing
+                    new_logical_session = False
+                    runtime = existing
         else:
             runtime = await mgr.create_session(
                 label=body.label,

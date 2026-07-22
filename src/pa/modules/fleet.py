@@ -1420,6 +1420,8 @@ async def start_remote_agent_work(
         await _assert_dispatch_sync_health(request, realm_id)
     project_id = body.project_id or (card.project_id if card else None)
     project = store.get_project(project_id, realm_id=realm_id) if project_id else None
+    if project_id and not project:
+        raise HTTPException(status_code=404, detail="Project not found")
     inst = _fleet_instance_or_404(request, instance_id)
 
     dispatch_body = None
@@ -1464,24 +1466,12 @@ async def start_remote_agent_work(
         # blocks actionably and can never leave an orphan agent session.
         await _peer_dispatch_json(request, instance_id, dispatch_body)
 
-    normalized_cwd = (
-        store.project_working_directory(project_id, instance_id) if project_id else None
-    )
-    if not isinstance(normalized_cwd, str):
-        normalized_cwd = None
-    if not normalized_cwd and project:
-        tool_config = project.tool_config or {}
-        paths_by_instance = tool_config.get("repo_paths_by_instance") or {}
-        mapped_path = paths_by_instance.get(instance_id) or paths_by_instance.get(
-            inst.name
-        )
-        if mapped_path:
-            normalized_cwd = str(mapped_path)
-
     session_body: dict[str, Any] = {
         "label": f"card:{card.id}" if card else None,
         "title": body.title or (card.title if card else "Remote agent session"),
-        "cwd": body.cwd or normalized_cwd,
+        # Linked projects are materialized by the target instance. Controller-side
+        # checkout paths are host-local and must never select a remote agent cwd.
+        "cwd": body.cwd if not project_id else None,
         "card_id": card.id if card else None,
         "project_id": project_id,
         "provider": body.provider,
