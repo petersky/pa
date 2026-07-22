@@ -66,11 +66,34 @@
     if (window.marked && window.DOMPurify) {
       try {
         const html = window.marked.parse(raw, { breaks: true });
-        return window.DOMPurify.sanitize(html, {
+        const sanitized = window.DOMPurify.sanitize(html, {
           USE_PROFILES: { html: true },
+          ADD_TAGS: ["audio", "iframe", "picture", "source", "track", "video"],
+          ADD_ATTR: [
+            "allow", "allowfullscreen", "controls", "loading", "poster", "preload",
+            "referrerpolicy", "sandbox", "srcset"
+          ],
           FORBID_TAGS: ["style", "form", "input", "button", "textarea", "select", "option"],
           FORBID_ATTR: ["style"]
         });
+        if (typeof document === "undefined" || typeof document.createElement !== "function") {
+          return sanitized;
+        }
+        const media = document.createElement("template");
+        media.innerHTML = sanitized;
+        media.content.querySelectorAll("iframe").forEach(function (frame) {
+          const sandbox = ["allow-forms", "allow-popups", "allow-presentation", "allow-scripts"];
+          try {
+            const source = new URL(frame.getAttribute("src") || "", window.location.href);
+            if (source.origin !== window.location.origin) sandbox.push("allow-same-origin");
+          } catch (_) {
+            /* retain the stricter sandbox for malformed or relative sources */
+          }
+          frame.setAttribute("loading", "lazy");
+          frame.setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
+          frame.setAttribute("sandbox", sandbox.join(" "));
+        });
+        return media.innerHTML;
       } catch (_) {
         /* fall through */
       }
