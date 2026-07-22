@@ -58,7 +58,9 @@ class ImageAttachment(BaseModel):
 class QueuedPrompt(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     message: str
-    images: list[ImageAttachment] = Field(default_factory=list, max_length=MAX_PROMPT_IMAGES)
+    images: list[ImageAttachment] = Field(
+        default_factory=list, max_length=MAX_PROMPT_IMAGES
+    )
     session_id: str | None = None
     card_id: str | None = None
     project_id: str | None = None
@@ -67,6 +69,7 @@ class QueuedPrompt(BaseModel):
     agent_env: dict[str, str] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     source: str = "api"
+    prompt_audit: list[dict[str, Any]] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_total_image_size(self) -> QueuedPrompt:
@@ -117,7 +120,9 @@ class QuiesceSnapshot(BaseModel):
 
     @property
     def queued_count(self) -> int:
-        per_session = sum(len(s.queued_prompts) for s in self.sessions)
+        per_session = sum(
+            len(s.queued_prompts) + (1 if s.in_flight else 0) for s in self.sessions
+        )
         return per_session + len(self.queued_prompts)
 
 
@@ -151,7 +156,7 @@ def load_quiesce_snapshot(data_dir: Path) -> QuiesceSnapshot | None:
         return None
     try:
         return QuiesceSnapshot.model_validate_json(path.read_text())
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError, ValueError:
         return None
 
 

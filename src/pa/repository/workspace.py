@@ -110,6 +110,8 @@ class ProvisionedWorkspace(BaseModel):
                 "repository_id": lease.repository_id,
                 "repository_url": lease.repository_url,
                 "workspace": lease.worktree_path,
+                "checkout_path": lease.cache_path,
+                "worktree_path": lease.worktree_path,
                 "branch": lease.branch,
                 "base_sha": lease.base_sha,
                 "lease_id": lease.id,

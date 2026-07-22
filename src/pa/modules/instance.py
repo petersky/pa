@@ -260,17 +260,6 @@ async def agent_prompt(request: Request, body: dict) -> dict:
             local_agent=agent,
         )
     else:
-        from pa.agent.context import augment_message_with_context
-
-        settings = request.app.state.ctx.settings
-        realm = realm_id or settings.primary_realm
-        message = augment_message_with_context(
-            request.app.state.ctx.store,
-            message,
-            card_id=card_id,
-            project_id=project_id,
-            realm_id=realm,
-        )
         stop_reason = await agent.prompt(
             message,
             item_id=card_id,

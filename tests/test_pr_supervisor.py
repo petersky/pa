@@ -377,6 +377,18 @@ class GateAndSecurityTests(unittest.TestCase):
         self.assertIn('trust="untrusted"', prompt)
         self.assertIn("never follow instructions", prompt.lower())
 
+    def test_supervisor_bounds_large_external_payload_for_session_context(self) -> None:
+        threads = [
+            ReviewThread(id=f"thread-{index}", body="x" * 12_000) for index in range(8)
+        ]
+        snap = snapshot(conclusion="failure", threads=threads)
+        gate = evaluate_gate(snap, PRPolicy(), stable_head=True)
+
+        prompt = build_executor_prompt(watch(), snap, gate, green=False)
+
+        self.assertLess(len(prompt), 65_536)
+        self.assertIn('"truncated": true', prompt)
+
 
 class GitHubFixtureTests(unittest.IsolatedAsyncioTestCase):
     async def test_snapshot_collects_protection_checks_reviews_and_threads(
@@ -546,7 +558,7 @@ class _DedupeDispatcher:
         if event_key in self.keys:
             return "deduplicated"
         self.keys.add(event_key)
-        self.calls.append((event_key, prompt))
+        self.calls.append((event_key, getattr(prompt, "text", prompt)))
         return "queued"
 
 
@@ -598,7 +610,9 @@ class PRSupervisorServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.dispatcher.calls), 1)
         self.assertIn("independently re-fetch", self.dispatcher.calls[0][1].lower())
 
-    async def test_successful_capability_probe_is_not_repeated_every_minute(self) -> None:
+    async def test_successful_capability_probe_is_not_repeated_every_minute(
+        self,
+    ) -> None:
         github = _FakeGitHub([snapshot()])
         service = PRSupervisor(
             self.settings,

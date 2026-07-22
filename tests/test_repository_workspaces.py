@@ -330,9 +330,8 @@ def test_declared_setup_and_submodule_defaults_are_explicit(tmp_path: Path) -> N
         == "true"
     )
     expected_cache = manager.dependency_root / manager._entity_key("session-1")
-    assert (
-        Path(lease.worktree_path, "dependency-cache.txt").read_text()
-        == str(expected_cache)
+    assert Path(lease.worktree_path, "dependency-cache.txt").read_text() == str(
+        expected_cache
     )
 
 
@@ -476,6 +475,26 @@ def test_agent_session_provisions_before_provider_start_and_persists_context(
     assert Path(runtime.session.cwd).is_dir()
     assert spec.env["PA_EXECUTION_CONTEXT"]
     start.assert_awaited_once()
+
+
+def test_workspace_reprovision_preserves_remote_authority(tmp_path: Path) -> None:
+    workspace_manager, _, _ = manager_for(tmp_path)
+    manager = AgentSessionManager(workspace_manager.settings, workspace_manager.store)
+    authority = {"id": "authority-1", "name": "Authority One"}
+    session = AgentSession(
+        id="remote-session",
+        agent_name="codex",
+        card_id="card-1",
+        project_id="project-1",
+        config_json={"execution_context": {"authority_instance": authority}},
+    )
+
+    asyncio.run(
+        manager._prepare_workspace(session, requested_cwd=None, provider_id="codex")
+    )
+
+    assert session.config_json["execution_context"]["authority_instance"] == authority
+    assert session.config_json["execution_context"]["instance"]["id"] == "instance-1"
 
 
 def test_agent_session_records_retryable_provisioning_failure(tmp_path: Path) -> None:
@@ -634,9 +653,7 @@ def test_stale_quiesce_snapshot_does_not_block_gc_when_agent_disabled(
     workspace_manager.settings.agent_enabled = False
     manager = AgentSessionManager(workspace_manager.settings, workspace_manager.store)
     manager.workspace_manager.collect_garbage = MagicMock(return_value={})
-    snapshot = QuiesceSnapshot(
-        sessions=[SessionSnapshot(session_id="stale-session")]
-    )
+    snapshot = QuiesceSnapshot(sessions=[SessionSnapshot(session_id="stale-session")])
 
     with (
         patch(

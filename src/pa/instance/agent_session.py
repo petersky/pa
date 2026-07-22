@@ -18,6 +18,7 @@ from pa.acp.client import (
     permission_cancelled,
     permission_selected,
 )
+from pa.agent.context import compose_session_prompt
 from pa.acp.providers.registry import DEFAULT_PROVIDER_ID
 from pa.acp.providers.resolve import resolve_agent_provider
 from pa.acp.surfaces import (
@@ -458,6 +459,7 @@ class AgentSessionRuntime:
         cwd: str | None = None,
         agent_env: dict[str, str] | None = None,
         source: str = "api",
+        prompt_audit: list[dict[str, Any]] | None = None,
     ) -> QueuedPrompt:
         cwd = self._validated_cwd(cwd)
         item = QueuedPrompt(
@@ -470,6 +472,7 @@ class AgentSessionRuntime:
             cwd=cwd,
             agent_env=self._merged_agent_env(agent_env),
             source=source,
+            prompt_audit=list(prompt_audit or []),
         )
         if action == "prepend":
             self._queue.insert(0, item)
@@ -617,21 +620,96 @@ class AgentSessionRuntime:
         async with self._prompt_lock:
             self._in_flight = item
             self._turn_started_at = datetime.now(UTC)
-            self._append_transcript(
-                "user_message",
-                {
-                    "id": item.id,
-                    "message": item.message,
-                    "source": item.source,
-                    "images": [image.public_dict() for image in item.images],
-                },
-            )
-            self._flush_transcript()
+            try:
+                composition = compose_session_prompt(
+                    self.store,
+                    self.settings,
+                    self.session,
+                    item.message,
+                    card_id=item.card_id,
+                    project_id=item.project_id,
+                )
+                prompt_audit = list(item.prompt_audit) + composition.audit_records()
+                from pa.prompts import PROMPTS
+
+                remote_default = PROMPTS.render(
+                    "dispatch.remote.default", provider=self.session.agent_name
+                )
+                if item.message == remote_default.text:
+                    prompt_audit.insert(0, remote_default.audit_record())
+                if item.source == "recovery":
+                    definition = PROMPTS.get("session.recovery.resume")
+                    prompt_audit.insert(
+                        0,
+                        {
+                            "key": definition.key,
+                            "version": definition.version,
+                            "source": definition.source,
+                            "scope": definition.scope,
+                            "provider": self.session.agent_name,
+                            "resolved_context": {},
+                        },
+                    )
+                if item.source == "pr-supervisor":
+                    for key in (
+                        "pr_supervisor.action.required",
+                        "pr_supervisor.action.green",
+                        "pr_supervisor.action.merged",
+                    ):
+                        definition = PROMPTS.get(key)
+                        if definition.template in item.message:
+                            prompt_audit.insert(
+                                0,
+                                {
+                                    "key": definition.key,
+                                    "version": definition.version,
+                                    "source": definition.source,
+                                    "scope": definition.scope,
+                                    "provider": self.session.agent_name,
+                                    "resolved_context": {},
+                                },
+                            )
+                config = dict(self.session.config_json or {})
+                audit_history = list(config.get("prompt_audit") or [])
+                audit_entry = {"prompt_id": item.id, "prompts": prompt_audit}
+                existing_index = next(
+                    (
+                        index
+                        for index, entry in enumerate(audit_history)
+                        if entry.get("prompt_id") == item.id
+                    ),
+                    None,
+                )
+                first_attempt = existing_index is None
+                if first_attempt:
+                    audit_history.append(audit_entry)
+                else:
+                    audit_history[existing_index] = audit_entry
+                config["prompt_audit"] = audit_history[-50:]
+                self.session.config_json = config
+                self._save_session_preserving_external_browser()
+                if first_attempt:
+                    self._append_transcript(
+                        "prompt_rendered", {"id": item.id, "prompts": prompt_audit}
+                    )
+                    self._append_transcript(
+                        "user_message",
+                        {
+                            "id": item.id,
+                            "message": item.message,
+                            "source": item.source,
+                            "images": [image.public_dict() for image in item.images],
+                        },
+                    )
+                self._flush_transcript()
+            except BaseException:
+                self._finish_turn_state()
+                raise
             try:
                 try:
                     with _agent_env_overlay(env):
                         stop_reason = await self.connection.prompt(
-                            item.message,
+                            composition.text,
                             images=item.images,
                             item_id=item.card_id,
                             principal_id=item.principal_id,
@@ -870,9 +948,6 @@ class AgentSessionRuntime:
         }
 
     def to_session_snapshot(self) -> SessionSnapshot:
-        queued = list(self._queue)
-        if self._in_flight:
-            queued = [self._in_flight, *queued]
         return SessionSnapshot(
             session_id=self.session.id,
             external_session_id=self.session.external_session_id,
@@ -889,8 +964,8 @@ class AgentSessionRuntime:
             principal_id=self.session.principal_id,
             prompting=False,
             queue_paused=self._queue_paused,
-            queued_prompts=queued,
-            in_flight=None,
+            queued_prompts=list(self._queue),
+            in_flight=self._in_flight,
         )
 
     async def close(self) -> None:
@@ -944,6 +1019,9 @@ class AgentSessionManager:
         provider_id: str,
     ) -> dict[str, str]:
         """Provision or recover the durable workspace before spawning a provider."""
+        prior_config = dict(session.config_json or {})
+        prior_context = dict(prior_config.get("execution_context") or {})
+        authority_instance = prior_context.get("authority_instance")
         session.status = "provisioning"
         config = dict(session.config_json or {})
         config["provisioning"] = {
@@ -966,9 +1044,7 @@ class AgentSessionManager:
                     project_id=session.project_id,
                     session_id=session.id,
                     card_id=session.card_id,
-                    realm_id=getattr(
-                        project, "realm_id", self.settings.primary_realm
-                    ),
+                    realm_id=getattr(project, "realm_id", self.settings.primary_realm),
                     provider_id=provider_id,
                 )
                 if workspace is None:
@@ -984,6 +1060,8 @@ class AgentSessionManager:
                     provider_id=provider_id,
                 )
             context = workspace.execution_context(self.settings, provider_id)
+            if authority_instance:
+                context["authority_instance"] = authority_instance
             session.cwd = workspace.cwd
             config = dict(session.config_json or {})
             config["execution_context"] = context
@@ -999,7 +1077,10 @@ class AgentSessionManager:
         except Exception as exc:
             session.status = "provisioning_failed"
             config = dict(session.config_json or {})
-            config.pop("execution_context", None)
+            if authority_instance:
+                config["execution_context"] = {"authority_instance": authority_instance}
+            else:
+                config.pop("execution_context", None)
             config["provisioning"] = {
                 "state": "failed",
                 "stage": "workspace",
@@ -1238,8 +1319,25 @@ class AgentSessionManager:
             provider_spec.env.update(workspace_env)
         runtime = AgentSessionRuntime(self, session, agent_env=workspace_env)
         queued = list(snap.queued_prompts)
-        if snap.in_flight:
-            queued.insert(0, snap.in_flight)
+        interrupted = snap.in_flight
+        # Version-1 snapshots briefly encoded an interrupted turn as the first
+        # queued item. Preserve recovery semantics when reading those files.
+        if interrupted is None and queued and queued[0].source == "in_flight":
+            interrupted = queued.pop(0)
+        if interrupted:
+            if interrupted.source != "recovery":
+                from pa.prompts import PROMPTS
+
+                recovery = PROMPTS.render(
+                    "session.recovery.resume", provider=session.agent_name
+                )
+                interrupted = interrupted.model_copy(
+                    update={
+                        "message": f"{recovery.text}\n\n{interrupted.message}",
+                        "source": "recovery",
+                    }
+                )
+            queued.insert(0, interrupted)
         for item in queued:
             item.cwd = session.cwd
             merged_env = dict(item.agent_env or {})

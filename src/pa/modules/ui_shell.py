@@ -10,6 +10,7 @@ from pa.core.context import AppContext
 from pa.core.preferences import get_preferences_store
 from pa.core.ui.pages import PageDefinition, PageRegistry
 from pa.modules.theme import get_theme_catalog
+from pa.prompts import PROMPTS
 
 router = APIRouter()
 
@@ -83,6 +84,10 @@ def _settings_context(request: Request) -> dict:
         "settings": settings,
         "status": status,
         "themes": get_theme_catalog(),
+        "prompt_catalog": PROMPTS.catalog(provider=settings.agent_provider),
+        "prompt_adapters": [
+            item.model_dump(mode="json") for item in PROMPTS.adapters()
+        ],
     }
 
 

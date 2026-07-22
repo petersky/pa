@@ -95,7 +95,9 @@ def _config_option_id(runtime, requested: str) -> str:
     return "reasoning_effort" if requested == "effort" else requested
 
 
-async def _apply_initial_options(runtime, body: CreateSessionBody, defaults=None) -> None:
+async def _apply_initial_options(
+    runtime, body: CreateSessionBody, defaults=None
+) -> None:
     model_id = body.model_id or (defaults.model_id if defaults else None)
     mode_id = body.mode_id or (defaults.mode_id if defaults else None)
     effort = body.effort or (defaults.effort if defaults else None)
@@ -108,9 +110,7 @@ async def _apply_initial_options(runtime, body: CreateSessionBody, defaults=None
     if effort:
         config[_config_option_id(runtime, "effort")] = effort
     elif "reasoning_effort" in config:
-        config[_config_option_id(runtime, "effort")] = config.pop(
-            "reasoning_effort"
-        )
+        config[_config_option_id(runtime, "effort")] = config.pop("reasoning_effort")
     for config_id, value in config.items():
         await runtime.set_config(config_id, value)
 
@@ -290,9 +290,7 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
             else None
         )
         try:
-            await _apply_initial_options(
-                runtime, body, initial_defaults
-            )
+            await _apply_initial_options(runtime, body, initial_defaults)
         except Exception:
             if created_runtime:
                 try:
@@ -319,6 +317,15 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                 detail={"code": "dispatch_not_materialized", "recoverable": True},
             )
         record.session_id = runtime.session_id
+        config = dict(runtime.session.config_json or {})
+        execution = dict(config.get("execution_context") or {})
+        execution["authority_instance"] = {
+            "id": record.authority_instance_id,
+            "name": record.authority_instance_name or record.authority_instance_id,
+        }
+        config["execution_context"] = execution
+        runtime.session.config_json = config
+        mgr.store.save_session(runtime.session)
         record.state = "dispatched"
         dispatch_store.put(record)
     return runtime.snapshot()
@@ -363,8 +370,7 @@ def get_provider_options(request: Request, provider_id: str) -> dict:
 
     def session_is_visible(session) -> bool:
         return (
-            not auth_required
-            or getattr(session, "principal_id", None) == principal_id
+            not auth_required or getattr(session, "principal_id", None) == principal_id
         )
 
     for runtime in mgr.list_runtimes():

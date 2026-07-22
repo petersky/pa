@@ -6,7 +6,6 @@ import logging
 
 import httpx
 
-from pa.agent.context import augment_message_with_context
 from pa.auth.users import UserDirectory
 from pa.config import Settings
 from pa.domain.models import FleetInstance
@@ -63,14 +62,6 @@ class ExecutionRouter:
         local_agent,
     ) -> str:
         realm_id = realm_id or self.settings.primary_realm
-        message = augment_message_with_context(
-            self.leases.store,
-            message,
-            card_id=card_id,
-            project_id=project_id,
-            realm_id=realm_id,
-        )
-
         lease_held = False
         if card_id:
             if not self.leases.grant(
@@ -79,7 +70,9 @@ class ExecutionRouter:
                 holder_instance=self.settings.instance_id,
                 holder_principal=principal_id,
             ):
-                target = await self._resolve_target(card_id, realm_id, target_instance_id)
+                target = await self._resolve_target(
+                    card_id, realm_id, target_instance_id
+                )
                 if target and target != self.settings.instance_id:
                     return await self._remote_prompt(
                         target,
