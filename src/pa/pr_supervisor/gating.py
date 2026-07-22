@@ -154,7 +154,9 @@ def redact_external_value(value: Any) -> Any:
     return value
 
 
-def _external_payload(snapshot: PRSnapshot, gate: GateResult) -> str:
+def _external_payload(
+    snapshot: PRSnapshot, gate: GateResult, *, limit: int = 48_000
+) -> str:
     data = {
         "pull_request": {
             "title": redact_external_text(snapshot.title),
@@ -187,7 +189,37 @@ def _external_payload(snapshot: PRSnapshot, gate: GateResult) -> str:
         ],
     }
     # Escaping angle brackets prevents external text from closing our delimiter.
-    return json.dumps(data, indent=2, ensure_ascii=False).replace("<", "\\u003c")
+    encoded = json.dumps(data, indent=2, ensure_ascii=False).replace("<", "\\u003c")
+    if len(encoded) <= limit:
+        return encoded
+
+    # Keep the delimiter payload valid JSON while bounding arbitrarily large check
+    # and review collections. Binary search accounts for JSON escaping overhead.
+    low, high = 0, len(encoded)
+    while low < high:
+        midpoint = (low + high + 1) // 2
+        bounded = json.dumps(
+            {
+                "truncated": True,
+                "notice": "External GitHub data exceeded the supervisor prompt budget.",
+                "excerpt": encoded[:midpoint],
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+        if len(bounded) <= limit:
+            low = midpoint
+        else:
+            high = midpoint - 1
+    return json.dumps(
+        {
+            "truncated": True,
+            "notice": "External GitHub data exceeded the supervisor prompt budget.",
+            "excerpt": encoded[:low],
+        },
+        indent=2,
+        ensure_ascii=False,
+    )
 
 
 def build_executor_prompt_rendered(
@@ -230,6 +262,7 @@ def build_executor_prompt_rendered(
             "github": {"external_content": _external_payload(snapshot, gate)},
         },
         provider=provider,
+        reserve_context=True,
     )
 
 

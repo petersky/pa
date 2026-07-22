@@ -204,7 +204,7 @@
     <dl class="settings-dl">
       {% for adapter in prompt_adapters %}
       <dt>{{ adapter.provider }}</dt>
-      <dd>{{ adapter.max_characters }} characters · adapter v{{ adapter.version }} · {{ adapter.source }}</dd>
+      <dd>{{ adapter.max_characters }} characters · {{ adapter.context_reserve_characters }} reserved for context · adapter v{{ adapter.version }} · {{ adapter.source }}</dd>
       {% endfor %}
     </dl>
   </div>

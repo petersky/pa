@@ -78,8 +78,15 @@ class PromptDefinition(BaseModel):
 class ProviderPromptAdapter(BaseModel):
     provider: str
     max_characters: int
+    context_reserve_characters: int = Field(default=0, ge=0)
     source: str = "pa:builtin"
     version: int = 1
+
+    @model_validator(mode="after")
+    def validate_context_reserve(self) -> ProviderPromptAdapter:
+        if self.context_reserve_characters >= self.max_characters:
+            raise ValueError("prompt context reserve must be smaller than the limit")
+        return self
 
 
 class RenderedPrompt(BaseModel):
@@ -163,10 +170,20 @@ class PromptRegistry:
         self._definitions: dict[str, PromptDefinition] = {}
         self._adapters: dict[str, ProviderPromptAdapter] = {
             "default": ProviderPromptAdapter(
-                provider="default", max_characters=131_072
+                provider="default",
+                max_characters=131_072,
+                context_reserve_characters=65_536,
             ),
-            "cursor": ProviderPromptAdapter(provider="cursor", max_characters=131_072),
-            "codex": ProviderPromptAdapter(provider="codex", max_characters=262_144),
+            "cursor": ProviderPromptAdapter(
+                provider="cursor",
+                max_characters=131_072,
+                context_reserve_characters=65_536,
+            ),
+            "codex": ProviderPromptAdapter(
+                provider="codex",
+                max_characters=262_144,
+                context_reserve_characters=131_072,
+            ),
         }
 
     def register(self, definition: PromptDefinition) -> None:
@@ -192,6 +209,7 @@ class PromptRegistry:
         context: Mapping[str, Any] | None = None,
         *,
         provider: str | None = None,
+        reserve_context: bool = False,
     ) -> RenderedPrompt:
         definition = self.get(key)
         supplied = context or {}
@@ -222,7 +240,10 @@ class PromptRegistry:
         rendered = _PLACEHOLDER.sub(replace, definition.template).strip()
         provider_id = (provider or "default").strip().lower() or "default"
         adapter = self._adapters.get(provider_id, self._adapters["default"])
-        limit = min(definition.max_characters, adapter.max_characters)
+        provider_limit = adapter.max_characters
+        if reserve_context:
+            provider_limit -= adapter.context_reserve_characters
+        limit = min(definition.max_characters, provider_limit)
         if len(rendered) > limit:
             raise PromptRenderError(
                 f"prompt {key} is {len(rendered)} characters; "

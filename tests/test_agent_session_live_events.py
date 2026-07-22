@@ -9,7 +9,7 @@ from pa.acp.client import AgentConnection
 from pa.config import Settings
 from pa.domain.models import AgentSession, TranscriptEvent
 from pa.instance.agent_session import AgentSessionManager, AgentSessionRuntime
-from pa.instance.quiesce import QuiesceSnapshot, SessionSnapshot
+from pa.instance.quiesce import QueuedPrompt, QuiesceSnapshot, SessionSnapshot
 
 
 class _TranscriptStore:
@@ -172,11 +172,46 @@ class AgentSessionLiveEventTests(unittest.TestCase):
                 provider_spec=resolved.spec,
             )
 
+    def test_interrupted_snapshot_is_requeued_with_recovery_prompt(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = MagicMock()
+            session = AgentSession(
+                id="session-recovery",
+                agent_name="codex",
+                label="card:card-1",
+                cwd=str(Path(tmp) / "workspace"),
+            )
+            store.get_session.return_value = session
+            manager = AgentSessionManager(Settings(data_dir=Path(tmp)), store)
+            manager._prepare_workspace = AsyncMock(return_value={})
+            runtime = AgentSessionRuntime(manager, session)
+            runtime._queue = []
+            runtime._in_flight = QueuedPrompt(
+                id="prompt-interrupted",
+                message="Continue this work.",
+                source="in_flight",
+            )
+            snapshot = runtime.to_session_snapshot()
+
+            self.assertEqual(snapshot.in_flight.id, "prompt-interrupted")
+            self.assertEqual(snapshot.queued_prompts, [])
+
+            async def run():
+                with patch.object(
+                    AgentSessionRuntime, "start", new=AsyncMock()
+                ) as start:
+                    await manager._resume_from_snapshot(snapshot, QuiesceSnapshot())
+                return start
+
+            start = asyncio.run(run())
+            queued = start.await_args.kwargs["queued_prompts"]
+            self.assertEqual(queued[0].source, "recovery")
+            self.assertIn("PA recovered this queued turn", queued[0].message)
+            self.assertIn("Continue this work.", queued[0].message)
+
     def test_concurrent_disconnect_only_exits_transport_once(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            connection = AgentConnection(
-                Settings(data_dir=Path(tmp)), MagicMock()
-            )
+            connection = AgentConnection(Settings(data_dir=Path(tmp)), MagicMock())
             context = MagicMock()
             context.__aexit__ = AsyncMock()
             connection._ctx = context
@@ -193,9 +228,7 @@ class AgentSessionLiveEventTests(unittest.TestCase):
 
     def test_mark_transport_dead_uses_disconnect_lock(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            connection = AgentConnection(
-                Settings(data_dir=Path(tmp)), MagicMock()
-            )
+            connection = AgentConnection(Settings(data_dir=Path(tmp)), MagicMock())
             context = MagicMock()
             context.__aexit__ = AsyncMock()
             connection._ctx = context
@@ -216,9 +249,7 @@ class AgentSessionLiveEventTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             store = MagicMock()
             connection = AgentConnection(Settings(data_dir=Path(tmp)), store)
-            connection.session = AgentSession(
-                agent_name="codex", status="prompting"
-            )
+            connection.session = AgentSession(agent_name="codex", status="prompting")
             cleanup_started = asyncio.Event()
             allow_cleanup = asyncio.Event()
 
@@ -327,6 +358,4 @@ class AgentSessionLiveEventTests(unittest.TestCase):
 
         self.assertEqual(runtime._subscribers, [subscriber])
         self.assertEqual(subscriber.get_nowait(), {"seq": 2})
-        self.assertEqual(
-            subscriber.get_nowait(), {"seq": 3, "type": "turn_completed"}
-        )
+        self.assertEqual(subscriber.get_nowait(), {"seq": 3, "type": "turn_completed"})
