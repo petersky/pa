@@ -402,6 +402,39 @@ class RepositoryProjectionTests(unittest.TestCase):
             conn.close()
             self.assertEqual(json.loads(row[0]), [])
 
+    def test_project_updated_empty_repos_clears_normalized_links(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = self.projection(Path(tmp))
+            project = store.create_project(ProjectCreate(title="Linked"))
+            repo = store.create_repository(
+                RepositoryCreate(url="https://example.test/linked.git")
+            )
+            store.link_project_repository(project.id, repo.id, branch="main")
+
+            store.apply_event(
+                CardEvent(
+                    type=EventType.PROJECT_UPDATED,
+                    realm_id="default",
+                    project_id=project.id,
+                    author_principal="user:local",
+                    author_instance="instance-a",
+                    payload={"repos": []},
+                )
+            )
+
+            self.assertEqual(store.get_project(project.id).repos, [])
+            conn = sqlite3.connect(Path(tmp) / "pa.db")
+            count = conn.execute(
+                "SELECT COUNT(*) FROM project_repositories WHERE project_id=?",
+                (project.id,),
+            ).fetchone()[0]
+            row = conn.execute(
+                "SELECT repos FROM projects WHERE id=?", (project.id,)
+            ).fetchone()
+            conn.close()
+            self.assertEqual(count, 0)
+            self.assertEqual(json.loads(row[0]), [])
+
     def test_replace_project_repositories_strips_url_whitespace(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -472,6 +505,33 @@ class RepositoryProjectionTests(unittest.TestCase):
             self.assertEqual(len(project.repos), 1)
             self.assertEqual(project.repos[0].url, url)
             self.assertEqual(project.repos[0].path, "/trim/path")
+
+
+class RepositoryRouteTests(unittest.TestCase):
+    def test_realm_catalog_and_instance_snapshots_use_distinct_routes(self) -> None:
+        from fastapi.testclient import TestClient
+
+        from pa.config import Settings, reset_settings
+        from pa.core.kernel import Kernel
+        from pa.domain.store import reset_store
+
+        with tempfile.TemporaryDirectory() as tmp:
+            reset_settings()
+            reset_store()
+            settings = Settings(
+                data_dir=Path(tmp),
+                instance_id="test-instance",
+                agent_enabled=False,
+            )
+            app = Kernel.boot(settings=settings).build_app()
+            with TestClient(app) as client:
+                realm_resp = client.get("/api/realm/repositories")
+                self.assertEqual(realm_resp.status_code, 200)
+                self.assertIsInstance(realm_resp.json(), list)
+
+                snapshot_resp = client.get("/api/repositories")
+                self.assertEqual(snapshot_resp.status_code, 200)
+                self.assertIsInstance(snapshot_resp.json(), list)
 
 
 if __name__ == "__main__":

@@ -590,33 +590,36 @@ class CardProjection:
         project.updated_at = datetime.now(UTC)
         self._upsert_project(project)
         if "repos" in event.payload:
+            repos = event.payload.get("repos") or []
             with self._conn() as conn:
                 has_normalized = conn.execute(
                     "SELECT 1 FROM project_repositories WHERE project_id=? LIMIT 1",
                     (project.id,),
                 ).fetchone()
-                if has_normalized:
+                if not repos:
+                    conn.execute(
+                        "DELETE FROM project_repositories WHERE project_id = ?",
+                        (project.id,),
+                    )
+                    project.repos = []
+                    conn.execute(
+                        "UPDATE projects SET repos='[]' WHERE id=?", (project.id,)
+                    )
+                elif has_normalized:
                     conn.execute(
                         "UPDATE projects SET repos='[]' WHERE id=?", (project.id,)
                     )
                 else:
-                    repos = event.payload.get("repos") or []
-                    if repos:
-                        project.repos = [
-                            ProjectRepo.model_validate(r) for r in repos
-                        ]
-                        self._replace_project_repositories_conn(
-                            conn,
-                            project.id,
-                            project.realm_id,
-                            repos,
-                            event.author_instance,
-                        )
-                    else:
-                        project.repos = []
-                        conn.execute(
-                            "UPDATE projects SET repos='[]' WHERE id=?", (project.id,)
-                        )
+                    project.repos = [
+                        ProjectRepo.model_validate(r) for r in repos
+                    ]
+                    self._replace_project_repositories_conn(
+                        conn,
+                        project.id,
+                        project.realm_id,
+                        repos,
+                        event.author_instance,
+                    )
 
     def _apply_project_archived(self, event: CardEvent) -> None:
         if not event.project_id:

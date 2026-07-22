@@ -94,7 +94,7 @@ def update_project_api(
     return project.model_dump(mode="json")
 
 
-@router.get("/repositories")
+@router.get("/realm/repositories")
 def list_repositories_api(request: Request, realm: str | None = None) -> list[dict]:
     realm_id = realm or request.app.state.ctx.settings.primary_realm
     return [r.model_dump(mode="json") for r in get_store().list_repositories(realm_id)]
@@ -343,14 +343,15 @@ def link_repository_ui(
     realm_id = realm or _active_realm(request)
     settings = request.app.state.ctx.settings
     store = get_store()
-    store.link_project_repository(
+    if not store.link_project_repository(
         project_id,
         repository_id,
         branch=branch or None,
         realm_id=realm_id,
         principal_id=get_principal_id(request),
         instance_id=settings.instance_id,
-    )
+    ):
+        raise HTTPException(status_code=404, detail="Project or repository not found")
     if path:
         store.set_repository_checkout(
             RepositoryCheckout(

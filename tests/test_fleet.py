@@ -848,6 +848,69 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
                 project.id, "mini-1"
             )
 
+    async def test_remote_agent_start_uses_repo_paths_by_instance_fallback(
+        self,
+    ) -> None:
+        from pa.modules.fleet import RemoteAgentStartBody, start_remote_agent_work
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                data_dir=Path(tmp),
+                instance_id="controller-1",
+                instance_name="controller",
+                instance_url="http://controller:8080",
+                primary_realm="default",
+                sync_token="secret",
+            )
+            fleet = FleetRegistry(settings.data_dir, settings.fleet_id)
+            fleet.upsert_instance(
+                FleetInstance(
+                    instance_id="mini-1",
+                    name="macmini",
+                    url="http://mini:8080",
+                )
+            )
+            project = Project(
+                id="project-1",
+                title="PA Core",
+                repos=[
+                    ProjectRepo(
+                        url="https://github.com/petersky/pa.git",
+                        path="/Users/petersky/repos/petersky/pa",
+                    )
+                ],
+                tool_config={
+                    "development_instance": "macmini",
+                    "repo_paths_by_instance": {"mini-1": "/srv/pa/remote"},
+                },
+            )
+            store = MagicMock()
+            store.get_project.return_value = project
+            store.project_working_directory.return_value = None
+            ctx = MagicMock(settings=settings, store=store)
+            ctx.require_service.return_value = fleet
+            request = MagicMock()
+            request.app.state.ctx = ctx
+            peer = AsyncMock(
+                return_value={"session": {"id": "remote-session", "title": "Remote"}}
+            )
+
+            with (
+                patch("pa.modules.fleet.require_user", return_value=object()),
+                patch("pa.modules.fleet._peer_agent_json", peer),
+            ):
+                await start_remote_agent_work(
+                    request,
+                    "mini-1",
+                    RemoteAgentStartBody(
+                        project_id=project.id,
+                        title="Remote smoke",
+                    ),
+                )
+
+            create_call = peer.await_args_list[0]
+            self.assertEqual(create_call.kwargs["body"]["cwd"], "/srv/pa/remote")
+
     async def test_dispatch_preserves_session_when_initial_prompt_fails(self) -> None:
         from fastapi import HTTPException
 

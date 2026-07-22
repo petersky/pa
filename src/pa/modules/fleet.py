@@ -1459,6 +1459,14 @@ async def start_remote_agent_work(
     )
     if not isinstance(normalized_cwd, str):
         normalized_cwd = None
+    if not normalized_cwd and project:
+        tool_config = project.tool_config or {}
+        paths_by_instance = tool_config.get("repo_paths_by_instance") or {}
+        mapped_path = paths_by_instance.get(instance_id) or paths_by_instance.get(
+            inst.name
+        )
+        if mapped_path:
+            normalized_cwd = str(mapped_path)
 
     session_body: dict[str, Any] = {
         "label": f"card:{card.id}" if card else None,
