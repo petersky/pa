@@ -12,7 +12,12 @@ from pa.core.contracts import Module
 from pa.core.context import AppContext
 from pa.core.ui.pages import PageDefinition, PageRegistry
 from pa.domain.models import Project, ProjectUpdate
-from pa.pr_supervisor.github import GitHubAPIError, verify_webhook_signature
+from pa.pr_supervisor.github import (
+    GitHubAPIError,
+    GitHubClient,
+    GitHubCredentials,
+    verify_webhook_signature,
+)
 from pa.pr_supervisor.models import (
     GitHubCapability,
     PRPolicy,
@@ -34,6 +39,11 @@ def _service(request: Request) -> PRSupervisor:
 
 def _store(request: Request) -> PRSupervisorStore:
     return request.app.state.ctx.require_service("pr_supervisor_store")
+
+
+async def _offload(request: Request, operation: str, call, *args, **kwargs):
+    runtime = request.app.state.ctx.require_service("async_runtime")
+    return await runtime.run_blocking(operation, call, *args, **kwargs)
 
 
 def resolve_policy(
@@ -101,12 +111,18 @@ async def create_watch(request: Request, body: dict[str, Any]) -> dict[str, Any]
     repository = str(body.get("repository") or "")
     if not repository:
         raise HTTPException(status_code=400, detail="repository required")
-    policy = body.get("policy") or resolve_policy(
-        request.app.state.ctx.store,
-        project_id=body.get("project_id"),
-        realm_id=realm_id,
-        repository=repository,
-    ).model_dump(mode="json")
+    policy = body.get("policy")
+    if not policy:
+        resolved = await _offload(
+            request,
+            "sqlite.pr_policy_read",
+            resolve_policy,
+            request.app.state.ctx.store,
+            project_id=body.get("project_id"),
+            realm_id=realm_id,
+            repository=repository,
+        )
+        policy = resolved.model_dump(mode="json")
     try:
         watch = PRWatch(
             realm_id=realm_id,
@@ -177,7 +193,10 @@ async def create_pull_request(request: Request, body: dict[str, Any]) -> dict[st
         raise HTTPException(
             status_code=400, detail="repository, title, and head are required"
         )
-    policy = resolve_policy(
+    policy = await _offload(
+        request,
+        "sqlite.pr_policy_read",
+        resolve_policy,
         request.app.state.ctx.store,
         project_id=project_id,
         realm_id=realm_id,
@@ -359,7 +378,9 @@ def heartbeat(request: Request, body: dict[str, Any]) -> dict[str, Any]:
 async def dispatch_executor(request: Request, body: dict[str, Any]) -> dict[str, Any]:
     service = _service(request)
     watch = PRWatch.model_validate(body.get("watch") or {})
-    service.store.upsert_watch(watch)
+    await service._offload(
+        "sqlite.pr_supervisor_watch_write", service.store.upsert_watch, watch
+    )
     event_key = str(body.get("event_key") or "")
     prompt = str(body.get("prompt") or "")
     if not event_key or not prompt:
@@ -380,12 +401,20 @@ async def github_webhook(request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=413, detail="Webhook payload too large")
     service = _service(request)
     signature = request.headers.get("x-hub-signature-256")
-    if not verify_webhook_signature(
-        body, service.credentials.webhook_secret, signature
-    ):
+    verified = await _offload(
+        request,
+        "pr_supervisor.webhook_verify",
+        verify_webhook_signature,
+        body,
+        service.credentials.webhook_secret,
+        signature,
+    )
+    if not verified:
         raise HTTPException(status_code=401, detail="Invalid webhook signature")
     try:
-        payload = json.loads(body)
+        payload = await _offload(
+            request, "pr_supervisor.webhook_json", json.loads, body
+        )
     except json.JSONDecodeError as exc:
         raise HTTPException(status_code=400, detail="Invalid JSON") from exc
     count = await service.handle_webhook(
@@ -475,16 +504,27 @@ class PRSupervisorModule(Module):
         )
 
     async def on_startup(self, app, ctx: AppContext) -> None:
+        async_runtime = ctx.require_service("async_runtime")
+        credentials = await async_runtime.run_blocking(
+            "filesystem.github_credentials_read",
+            GitHubCredentials.load,
+            ctx.settings.data_dir,
+        )
         service = PRSupervisor(
             ctx.settings,
             ctx.store,
             supervisor_store=ctx.require_service("pr_supervisor_store"),
+            github_client=GitHubClient(
+                credentials,
+                async_runtime=async_runtime,
+            ),
             agent_manager=ctx.services.get("instance_agent"),
             workspace_manager=getattr(
                 ctx.services.get("instance_agent"), "workspace_manager", None
             ),
             fleet_registry=ctx.services.get("fleet_registry"),
             peer_table=ctx.services.get("peer_table"),
+            async_runtime=async_runtime,
         )
         ctx.register_service("pr_supervisor", service)
         await service.start()

@@ -106,6 +106,7 @@ class Kernel:
             self.ctx.store,
             timeout=120.0,
         )
+        agent.async_runtime = async_runtime
         agent.browser.async_runtime = async_runtime
         import os
 

@@ -7,7 +7,7 @@ import unittest
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 from fastapi import FastAPI
@@ -20,7 +20,14 @@ from pa.core.async_runtime import (
 )
 from pa.config import Settings
 from pa.core.kernel import Kernel
+from pa.domain.models import AgentSession
+from pa.execution.dispatch import DispatchWorker
+from pa.instance.agent_session import AgentSessionManager, AgentSessionRuntime
 from pa.modules.sync import router as sync_router
+from pa.pr_supervisor.github import GitHubCredentials
+from pa.pr_supervisor.models import GitHubCapability, PRWatch
+from pa.pr_supervisor.service import PRSupervisor
+from pa.pr_supervisor.store import PRSupervisorStore
 
 
 class _Context:
@@ -215,6 +222,164 @@ class RuntimeFailureResponseTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(overloaded_response.status_code, 503)
         self.assertEqual(overloaded_response.headers["retry-after"], "1")
         self.assertEqual(timeout_response.status_code, 504)
+
+
+class WorkerResponsivenessTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
+        self.runtime = AsyncRuntime(
+            max_workers=4,
+            max_queue=8,
+            default_timeout=1,
+            lag_interval_seconds=0.005,
+            slow_call_seconds=1,
+        )
+        await self.runtime.start()
+
+    async def asyncTearDown(self) -> None:
+        await self.runtime.close()
+
+    async def test_transcript_sqlite_stall_does_not_delay_agent_or_sse_work(
+        self,
+    ) -> None:
+        release = threading.Event()
+        entered = threading.Event()
+        store = MagicMock()
+
+        def blocked_append(_events) -> None:
+            entered.set()
+            release.wait(1)
+
+        store.append_transcript_events.side_effect = blocked_append
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                data_dir=Path(tmp) / "data",
+                workspace_root=Path(tmp) / "workspaces",
+            )
+            manager = AgentSessionManager(settings, store)
+            manager.async_runtime = self.runtime
+            session = AgentSession(id="session-blocked", agent_name="codex")
+            runtime = AgentSessionRuntime(
+                manager, session, initial_transcript_seq=0
+            )
+            runtime._append_transcript("output", {"text": "one"})
+            runtime._flush_transcript()
+            await asyncio.to_thread(entered.wait, 1)
+
+            started = time.perf_counter()
+            live_event = runtime._append_transcript("output", {"text": "two"})
+            await asyncio.sleep(0)
+            unrelated_ms = (time.perf_counter() - started) * 1000
+
+            self.assertEqual(live_event["seq"], 2)
+            self.assertLess(unrelated_ms, 25)
+            release.set()
+            await runtime._drain_transcripts()
+            self.assertEqual(store.append_transcript_events.call_count, 2)
+
+    async def test_dispatch_reconciliation_stall_keeps_loop_responsive(self) -> None:
+        release = threading.Event()
+        entered = threading.Event()
+        store = MagicMock()
+
+        def blocked_reconcile() -> None:
+            entered.set()
+            release.wait(1)
+
+        store.reconcile_interrupted.side_effect = blocked_reconcile
+        store.runnable.return_value = []
+        worker = DispatchWorker(
+            store, AsyncMock(), async_runtime=self.runtime
+        )
+        worker.start()
+        await asyncio.to_thread(entered.wait, 1)
+
+        started = time.perf_counter()
+        await asyncio.sleep(0)
+        unrelated_ms = (time.perf_counter() - started) * 1000
+
+        self.assertLess(unrelated_ms, 25)
+        release.set()
+        await worker.close()
+
+    async def test_pr_supervisor_store_stall_keeps_health_work_responsive(self) -> None:
+        release = threading.Event()
+        entered = threading.Event()
+        store = MagicMock()
+        watch = PRWatch(
+            repository="owner/repo",
+            pr_number=1,
+            pr_url="https://github.com/owner/repo/pull/1",
+        )
+
+        def blocked_upsert(value):
+            entered.set()
+            release.wait(1)
+            return value
+
+        store.upsert_watch.side_effect = blocked_upsert
+        store.append_event.return_value = True
+        github = SimpleNamespace(
+            credentials=GitHubCredentials(token="test"),
+            _provided_client=None,
+            async_runtime=None,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="instance-a")
+            service = PRSupervisor(
+                settings,
+                MagicMock(),
+                supervisor_store=store,
+                github_client=github,
+                dispatcher=MagicMock(),
+                async_runtime=self.runtime,
+            )
+            task = asyncio.create_task(
+                service.register_watch(watch, replicate=False)
+            )
+            await asyncio.to_thread(entered.wait, 1)
+
+            started = time.perf_counter()
+            await asyncio.sleep(0)
+            unrelated_ms = (time.perf_counter() - started) * 1000
+
+            self.assertLess(unrelated_ms, 25)
+            release.set()
+            self.assertIs(await task, watch)
+            await service.stop()
+
+    async def test_pr_supervisor_start_does_not_wait_for_provider_network(self) -> None:
+        entered = asyncio.Event()
+
+        class SlowGitHub:
+            credentials = GitHubCredentials(token="test")
+            _provided_client = None
+            async_runtime = None
+
+            async def probe(self, _instance_id):
+                entered.set()
+                await asyncio.Event().wait()
+                return GitHubCapability(instance_id="instance-a")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="instance-a")
+            store = PRSupervisorStore(Path(tmp) / "supervisor.db")
+            domain = MagicMock()
+            domain.list_cards.return_value = []
+            service = PRSupervisor(
+                settings,
+                domain,
+                supervisor_store=store,
+                github_client=SlowGitHub(),
+                dispatcher=MagicMock(),
+                async_runtime=self.runtime,
+            )
+            started = time.perf_counter()
+            await service.start()
+            startup_ms = (time.perf_counter() - started) * 1000
+            await entered.wait()
+
+            self.assertLess(startup_ms, 25)
+            await service.stop()
 
 
 if __name__ == "__main__":

@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import inspect
 import logging
 import random
 import re
 from datetime import timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 from uuid import uuid4
 
@@ -37,6 +38,9 @@ from pa.pr_supervisor.models import (
 )
 from pa.pr_supervisor.store import PRSupervisorStore, StaleFenceError
 
+if TYPE_CHECKING:
+    from pa.core.async_runtime import AsyncRuntime
+
 logger = logging.getLogger(__name__)
 
 _PR_URL = re.compile(
@@ -57,6 +61,7 @@ class ExecutorDispatcher:
         fleet_registry=None,
         peer_table=None,
         http_client: httpx.AsyncClient | None = None,
+        async_runtime: AsyncRuntime | None = None,
     ) -> None:
         self.settings = settings
         self.domain_store = domain_store
@@ -65,6 +70,14 @@ class ExecutorDispatcher:
         self.fleet = fleet_registry
         self.peer_table = peer_table
         self.http_client = http_client
+        self.async_runtime = async_runtime
+
+    async def _offload(self, operation: str, call, *args, **kwargs):
+        if self.async_runtime:
+            return await self.async_runtime.run_blocking(
+                operation, call, *args, **kwargs
+            )
+        return await asyncio.to_thread(call, *args, **kwargs)
 
     async def dispatch(
         self, watch: PRWatch, event_key: str, prompt: str | RenderedPrompt
@@ -134,7 +147,7 @@ class ExecutorDispatcher:
                 raise RuntimeError(
                     f"executor dispatch returned HTTP {response.status_code}"
                 )
-            return response.json()
+            return await self._offload("pr_supervisor.response_json", response.json)
         finally:
             if owns:
                 await client.aclose()
@@ -147,7 +160,9 @@ class ExecutorDispatcher:
         *,
         prompt_audit: list[dict[str, Any]] | None = None,
     ) -> str:
-        if not self.store.claim_dispatch(
+        if not await self._offload(
+            "pr_supervisor.dispatch_claim",
+            self.store.claim_dispatch,
             event_key,
             watch.id,
             target_instance_id=self.settings.instance_id,
@@ -155,8 +170,12 @@ class ExecutorDispatcher:
         ):
             return "deduplicated"
         if not self.agent:
-            self.store.finish_dispatch(
-                event_key, state="failed", detail="instance agent unavailable"
+            await self._offload(
+                "pr_supervisor.dispatch_finish",
+                self.store.finish_dispatch,
+                event_key,
+                state="failed",
+                detail="instance agent unavailable",
             )
             raise RuntimeError("instance agent unavailable")
         try:
@@ -164,15 +183,21 @@ class ExecutorDispatcher:
             session = None
             if watch.originating_session_id:
                 runtime = self.agent.get(watch.originating_session_id)
-                session = self.domain_store.get_session(watch.originating_session_id)
+                session = await self._offload(
+                    "sqlite.agent_session_read",
+                    self.domain_store.get_session,
+                    watch.originating_session_id,
+                )
             if runtime is None and watch.card_id:
                 for candidate in self.agent.list_runtimes():
                     if candidate.session.card_id == watch.card_id:
                         runtime = candidate
                         break
                 if session is None:
-                    session = self.domain_store.get_session_by_label(
-                        f"card:{watch.card_id}"
+                    session = await self._offload(
+                        "sqlite.agent_session_read",
+                        self.domain_store.get_session_by_label,
+                        f"card:{watch.card_id}",
                     )
             if runtime is None and session and session.status != "closed":
                 try:
@@ -193,8 +218,11 @@ class ExecutorDispatcher:
                     )
             if runtime is None:
                 project = (
-                    self.domain_store.get_project(
-                        watch.project_id, realm_id=watch.realm_id
+                    await self._offload(
+                        "sqlite.project_read",
+                        self.domain_store.get_project,
+                        watch.project_id,
+                        realm_id=watch.realm_id,
                     )
                     if watch.project_id
                     else None
@@ -219,13 +247,28 @@ class ExecutorDispatcher:
                 source="pr-supervisor",
                 prompt_audit=prompt_audit,
             )
-            self.store.finish_dispatch(
-                event_key, state="queued", detail=runtime.session_id
-            )
-            self.store.increment_metric("executor_prompts")
+            drain = getattr(runtime, "_drain_transcripts", None)
+            if drain:
+                drained = drain()
+                if inspect.isawaitable(drained):
+                    await drained
+
+            def finish_dispatch() -> None:
+                self.store.finish_dispatch(
+                    event_key, state="queued", detail=runtime.session_id
+                )
+                self.store.increment_metric("executor_prompts")
+
+            await self._offload("pr_supervisor.dispatch_finish", finish_dispatch)
             return "queued"
         except Exception as exc:
-            self.store.finish_dispatch(event_key, state="failed", detail=str(exc))
+            await self._offload(
+                "pr_supervisor.dispatch_finish",
+                self.store.finish_dispatch,
+                event_key,
+                state="failed",
+                detail=str(exc),
+            )
             raise
 
     def _instance_url(self, instance_id: str) -> str | None:
@@ -261,6 +304,7 @@ class PRSupervisor:
         fleet_registry=None,
         peer_table=None,
         http_client: httpx.AsyncClient | None = None,
+        async_runtime: AsyncRuntime | None = None,
         rng: random.Random | None = None,
     ) -> None:
         self.settings = settings
@@ -273,8 +317,21 @@ class PRSupervisor:
             if github_client
             else GitHubCredentials.load(settings.data_dir)
         )
-        self.github = github_client or GitHubClient(self.credentials)
-        self.http_client = http_client
+        self.async_runtime = async_runtime
+        self._owns_http_client = http_client is None
+        self.http_client = http_client or httpx.AsyncClient(
+            timeout=httpx.Timeout(15.0, connect=5.0),
+            limits=httpx.Limits(max_connections=16, max_keepalive_connections=8),
+        )
+        if github_client and getattr(github_client, "_provided_client", None) is None:
+            github_client._provided_client = self.http_client
+            if hasattr(github_client, "async_runtime"):
+                github_client.async_runtime = async_runtime
+        self.github = github_client or GitHubClient(
+            self.credentials,
+            client=self.http_client,
+            async_runtime=async_runtime,
+        )
         self.workspace_manager = workspace_manager or getattr(
             agent_manager, "workspace_manager", None
         )
@@ -285,7 +342,8 @@ class PRSupervisor:
             agent_manager=agent_manager,
             fleet_registry=fleet_registry,
             peer_table=peer_table,
-            http_client=http_client,
+            http_client=self.http_client,
+            async_runtime=async_runtime,
         )
         self.rng = rng or random.Random()
         self._task: asyncio.Task | None = None
@@ -296,6 +354,21 @@ class PRSupervisor:
         self._authority_last_success_at = None
         self._authority_last_error: str | None = None
 
+    async def _offload(self, operation: str, call, *args, **kwargs):
+        if self.async_runtime:
+            return await self.async_runtime.run_blocking(
+                operation, call, *args, **kwargs
+            )
+        return await asyncio.to_thread(call, *args, **kwargs)
+
+    async def _observe(self, operation: str, awaitable, *, timeout: float = 15.0):
+        if self.async_runtime:
+            return await self.async_runtime.observe(
+                operation, awaitable, timeout=timeout
+            )
+        async with asyncio.timeout(timeout):
+            return await awaitable
+
     @property
     def capability(self) -> GitHubCapability:
         return self._capability or self.credentials.capability(
@@ -304,8 +377,6 @@ class PRSupervisor:
 
     async def start(self) -> None:
         self._stopping = False
-        await self.refresh_capability(force=True)
-        await self.migrate_discoverable_associations()
         if not self._task or self._task.done():
             self._task = asyncio.create_task(self._run_loop(), name="pa-pr-supervisor")
 
@@ -318,8 +389,22 @@ class PRSupervisor:
             except asyncio.CancelledError:
                 pass
             self._task = None
+        if self._owns_http_client:
+            await self.http_client.aclose()
 
     async def _run_loop(self) -> None:
+        try:
+            await self.refresh_capability(force=True)
+            await self.migrate_discoverable_associations()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("PR supervisor startup reconciliation failed")
+            await self._offload(
+                "sqlite.pr_supervisor_metric",
+                self.store.increment_metric,
+                "loop_errors",
+            )
         while not self._stopping:
             try:
                 await self.run_once()
@@ -327,12 +412,20 @@ class PRSupervisor:
                 raise
             except Exception:
                 logger.exception("PR supervisor loop failed")
-                self.store.increment_metric("loop_errors")
+                await self._offload(
+                    "sqlite.pr_supervisor_metric",
+                    self.store.increment_metric,
+                    "loop_errors",
+                )
             await asyncio.sleep(self.LOOP_SECONDS)
 
     async def refresh_capability(self, *, force: bool = False) -> GitHubCapability:
         now = utcnow()
-        credentials = GitHubCredentials.load(self.settings.data_dir)
+        credentials = await self._offload(
+            "filesystem.github_credentials_read",
+            GitHubCredentials.load,
+            self.settings.data_dir,
+        )
         credentials_changed = credentials != self.credentials
         self.credentials = credentials
         self.github.credentials = credentials
@@ -362,7 +455,11 @@ class PRSupervisor:
             # Heartbeats keep fleet eligibility fresh without treating every
             # heartbeat as a reason to call GitHub's /user endpoint.
             self._capability = self._capability.model_copy(update={"checked_at": now})
-            self.store.save_capability(self._capability)
+            await self._offload(
+                "sqlite.pr_supervisor_capability_write",
+                self.store.save_capability,
+                self._capability,
+            )
             await self._heartbeat_authority(self._capability)
             self._capability_heartbeat_at = now
         return self._capability
@@ -370,7 +467,9 @@ class PRSupervisor:
     async def run_once(self) -> None:
         capability = await self.refresh_capability()
         await self._reconcile_merged_cards()
-        due = self.store.list_due()
+        due = await self._offload(
+            "sqlite.pr_supervisor_due_read", self.store.list_due
+        )
         if not due:
             return
         for watch in due:
@@ -380,13 +479,15 @@ class PRSupervisor:
                     next_poll = utcnow() + timedelta(
                         seconds=watch.policy.poll_max_seconds
                     )
-                    self.store.mark_error(
+                    await self._offload(
+                        "sqlite.pr_supervisor_watch_write",
+                        self.store.mark_error,
                         watch.id,
                         "No eligible authenticated PA instance can access this repository",
                         next_poll_at=next_poll,
                         visible_state="no_eligible_authenticated_instance",
                     )
-                    self._audit(
+                    await self._audit(
                         watch,
                         "capability_missing",
                         f"{watch.id}:capability:none",
@@ -399,7 +500,9 @@ class PRSupervisor:
             grant = await self._acquire_lease(watch, capability)
             if not grant.acquired:
                 continue
-            current = self.store.get_watch(watch.id)
+            current = await self._offload(
+                "sqlite.pr_supervisor_watch_read", self.store.get_watch, watch.id
+            )
             if current:
                 await self._process_watch(current, grant)
 
@@ -414,8 +517,10 @@ class PRSupervisor:
                 "github:authenticated",
                 f"github:repo:{watch.repository}",
             ]
-        stored = self.store.upsert_watch(watch)
-        self._audit(
+        stored = await self._offload(
+            "sqlite.pr_supervisor_watch_write", self.store.upsert_watch, watch
+        )
+        await self._audit(
             stored,
             "watch_created",
             f"{stored.id}:created",
@@ -435,20 +540,33 @@ class PRSupervisor:
         return stored
 
     async def refresh_watch(self, watch_id: str) -> PRWatch | None:
-        if not self.store.schedule_now(watch_id=watch_id):
+        if not await self._offload(
+            "sqlite.pr_supervisor_watch_write",
+            self.store.schedule_now,
+            watch_id=watch_id,
+        ):
             return None
-        watch = self.store.get_watch(watch_id)
+        watch = await self._offload(
+            "sqlite.pr_supervisor_watch_read", self.store.get_watch, watch_id
+        )
         await self._replicate(watch)
         return watch
 
     async def retire_watch(self, watch_id: str) -> PRWatch | None:
-        current = self.store.get_watch(watch_id)
+        current = await self._offload(
+            "sqlite.pr_supervisor_watch_read", self.store.get_watch, watch_id
+        )
         if not current:
             return None
         if current.status in {PRWatchStatus.MERGED, PRWatchStatus.CLOSED}:
             return current
-        watch = self.store.set_terminal(watch_id, PRWatchStatus.RETIRED)
-        self._audit(
+        watch = await self._offload(
+            "sqlite.pr_supervisor_watch_write",
+            self.store.set_terminal,
+            watch_id,
+            PRWatchStatus.RETIRED,
+        )
+        await self._audit(
             watch,
             "watch_retired",
             f"{watch.id}:retired:{watch.updated_at.isoformat()}",
@@ -460,13 +578,21 @@ class PRSupervisor:
     async def _process_watch(self, watch: PRWatch, grant: LeaseGrant) -> None:
         now = utcnow()
         try:
-            snapshot = await self.github.snapshot(
-                watch.repository, watch.pr_number, policy=watch.policy
+            snapshot = await self._observe(
+                "http.github_snapshot",
+                self.github.snapshot(
+                    watch.repository, watch.pr_number, policy=watch.policy
+                ),
+                timeout=60.0,
             )
-            self.store.increment_metric("polls")
+            await self._offload(
+                "sqlite.pr_supervisor_metric",
+                self.store.increment_metric,
+                "polls",
+            )
             if snapshot.stale:
                 next_poll = now + timedelta(seconds=watch.policy.poll_min_seconds)
-                self._audit(
+                await self._audit(
                     watch,
                     "stale_head_discarded",
                     f"{watch.id}:stale:{snapshot.head_sha}:{snapshot.confirmed_head_sha}",
@@ -476,7 +602,9 @@ class PRSupervisor:
                         "confirmed_head": snapshot.confirmed_head_sha,
                     },
                 )
-                self.store.mark_error(
+                await self._offload(
+                    "sqlite.pr_supervisor_watch_write",
+                    self.store.mark_error,
                     watch.id,
                     "Head changed during observation; stale result discarded",
                     next_poll_at=next_poll,
@@ -484,21 +612,26 @@ class PRSupervisor:
                     fence_token=grant.fence_token,
                     visible_state="stale_head_repoll",
                 )
-                await self._replicate(self.store.get_watch(watch.id))
+                current = await self._offload(
+                    "sqlite.pr_supervisor_watch_read", self.store.get_watch, watch.id
+                )
+                await self._replicate(current)
                 return
             if snapshot.merged:
                 await self._handle_merged(watch, snapshot, grant)
                 return
             if snapshot.closed:
                 state = self._safe_snapshot(snapshot)
-                self._audit(
+                await self._audit(
                     watch,
                     "pull_request_closed",
                     f"{watch.id}:{snapshot.head_sha}:closed",
                     head_sha=snapshot.head_sha,
                     payload={"url": snapshot.url},
                 )
-                terminal = self.store.set_terminal(
+                terminal = await self._offload(
+                    "sqlite.pr_supervisor_watch_write",
+                    self.store.set_terminal,
                     watch.id,
                     PRWatchStatus.CLOSED,
                     state=state,
@@ -513,7 +646,9 @@ class PRSupervisor:
             changed = gate.fingerprint != watch.condition_fingerprint
             attempt = 0 if changed else min(watch.poll_attempt + 1, 16)
             next_poll = self._next_poll(watch.policy, attempt)
-            updated = self.store.update_observation(
+            updated = await self._offload(
+                "sqlite.pr_supervisor_observation_write",
+                self.store.update_observation,
                 watch.id,
                 owner_instance_id=self.settings.instance_id,
                 fence_token=grant.fence_token,
@@ -525,7 +660,7 @@ class PRSupervisor:
                 poll_attempt=attempt,
                 now=now,
             )
-            self._audit(
+            await self._audit(
                 updated,
                 "observation",
                 f"{watch.id}:poll:{uuid4()}",
@@ -562,20 +697,26 @@ class PRSupervisor:
             await self._replicate(updated)
         except StaleFenceError:
             logger.info("PR supervisor lost fence watch=%s", watch.id)
-            self.store.increment_metric("stale_fences")
+            await self._offload(
+                "sqlite.pr_supervisor_metric",
+                self.store.increment_metric,
+                "stale_fences",
+            )
         except Exception as exc:
             delay = self._next_poll(watch.policy, watch.poll_attempt + 1)
             message = str(exc)
             logger.warning("PR supervisor poll failed watch=%s: %s", watch.id, message)
             try:
-                errored = self.store.mark_error(
+                errored = await self._offload(
+                    "sqlite.pr_supervisor_watch_write",
+                    self.store.mark_error,
                     watch.id,
                     message,
                     next_poll_at=delay,
                     owner_instance_id=self.settings.instance_id,
                     fence_token=grant.fence_token,
                 )
-                self._audit(
+                await self._audit(
                     watch,
                     "poll_error",
                     f"{watch.id}:error:{watch.poll_attempt + 1}:{uuid4()}",
@@ -586,7 +727,11 @@ class PRSupervisor:
                 )
                 await self._replicate(errored)
             except StaleFenceError:
-                self.store.increment_metric("stale_fences")
+                await self._offload(
+                    "sqlite.pr_supervisor_metric",
+                    self.store.increment_metric,
+                    "stale_fences",
+                )
 
     async def _notify(
         self,
@@ -601,7 +746,7 @@ class PRSupervisor:
             f"{watch.id}:{snapshot.head_sha}:{gate.fingerprint}:"
             f"{watch.condition_version}:{kind}"
         )
-        self._audit(
+        await self._audit(
             watch,
             kind,
             event_key,
@@ -631,7 +776,11 @@ class PRSupervisor:
                 kind,
                 exc,
             )
-            self.store.increment_metric("dispatch_errors")
+            await self._offload(
+                "sqlite.pr_supervisor_metric",
+                self.store.increment_metric,
+                "dispatch_errors",
+            )
 
     async def _handle_merged(
         self, watch: PRWatch, snapshot: PRSnapshot, grant: LeaseGrant
@@ -660,7 +809,7 @@ class PRSupervisor:
             f"{watch.id}:{snapshot.head_sha}:merged:"
             f"{snapshot.merge_commit_sha or 'unknown'}"
         )
-        self._audit(
+        await self._audit(
             watch,
             "merged",
             event_key,
@@ -670,14 +819,20 @@ class PRSupervisor:
                 "card_lane": "pending" if watch.card_id else None,
             },
         )
-        terminal = self.store.set_terminal(
+        terminal = await self._offload(
+            "sqlite.pr_supervisor_watch_write",
+            self.store.set_terminal,
             watch.id,
             PRWatchStatus.MERGED,
             state=state,
             owner_instance_id=self.settings.instance_id,
             fence_token=grant.fence_token,
         )
-        self.store.increment_metric("merged_watches")
+        await self._offload(
+            "sqlite.pr_supervisor_metric",
+            self.store.increment_metric,
+            "merged_watches",
+        )
         await self._replicate(terminal)
         await self._complete_merged_card(terminal)
         prompt = build_executor_prompt_rendered(
@@ -694,7 +849,12 @@ class PRSupervisor:
             logger.exception("Could not notify executor after merge watch=%s", watch.id)
 
     async def _reconcile_merged_cards(self) -> None:
-        for watch in self.store.list_watches(include_retired=True):
+        watches = await self._offload(
+            "sqlite.pr_supervisor_watch_read",
+            self.store.list_watches,
+            include_retired=True,
+        )
+        for watch in watches:
             if (
                 watch.status == PRWatchStatus.MERGED
                 and watch.card_id
@@ -705,17 +865,28 @@ class PRSupervisor:
     async def _complete_merged_card(self, watch: PRWatch | None) -> None:
         if not watch or not watch.card_id or watch.state.get("card_lane") == "done":
             return
-        card = self.domain_store.get_card(watch.card_id, realm_id=watch.realm_id)
+        card = await self._offload(
+            "sqlite.card_read",
+            self.domain_store.get_card,
+            watch.card_id,
+            realm_id=watch.realm_id,
+        )
         if not card:
-            self._audit(
+            await self._audit(
                 watch,
                 "card_completion_failed",
                 f"{watch.id}:card-completion:missing-card",
                 payload={"error": "linked card is missing"},
             )
-            self.store.increment_metric("card_completion_errors")
+            await self._offload(
+                "sqlite.pr_supervisor_metric",
+                self.store.increment_metric,
+                "card_completion_errors",
+            )
             return
-        linked_watches = self.store.list_watches(
+        linked_watches = await self._offload(
+            "sqlite.pr_supervisor_watch_read",
+            self.store.list_watches,
             realm_id=watch.realm_id,
             card_id=watch.card_id,
             include_retired=True,
@@ -727,7 +898,9 @@ class PRSupervisor:
         )
         try:
             if decision.applied_lane != card.lane:
-                self.domain_store.update_card(
+                await self._offload(
+                    "sqlite.card_write",
+                    self.domain_store.update_card,
                     watch.card_id,
                     CardUpdate(lane=decision.applied_lane),
                     realm_id=watch.realm_id,
@@ -735,13 +908,17 @@ class PRSupervisor:
                     instance_id=self.settings.instance_id,
                 )
         except Exception as exc:
-            self._audit(
+            await self._audit(
                 watch,
                 "card_completion_failed",
                 f"{watch.id}:card-completion:{watch.updated_at.isoformat()}",
                 payload={"error": str(exc)[:1000]},
             )
-            self.store.increment_metric("card_completion_errors")
+            await self._offload(
+                "sqlite.pr_supervisor_metric",
+                self.store.increment_metric,
+                "card_completion_errors",
+            )
             return
         state = dict(watch.state)
         state["card_lane"] = decision.applied_lane.value
@@ -755,14 +932,20 @@ class PRSupervisor:
             "applied_lane": decision.applied_lane.value,
             "watch_id": decision.watch_id,
         }
-        completed = self.store.set_terminal(watch.id, PRWatchStatus.MERGED, state=state)
+        completed = await self._offload(
+            "sqlite.pr_supervisor_watch_write",
+            self.store.set_terminal,
+            watch.id,
+            PRWatchStatus.MERGED,
+            state=state,
+        )
         reason_hash = hashlib.sha256(decision.reason.encode()).hexdigest()[:12]
         event_type = (
             "card_completed"
             if decision.applied_lane == CardLane.DONE
             else "card_completion_blocked"
         )
-        self._audit(
+        await self._audit(
             completed or watch,
             event_type,
             f"{watch.id}:card-disposition:{decision.status}:{reason_hash}",
@@ -776,7 +959,12 @@ class PRSupervisor:
         await self._replicate(completed)
         if decision.applied_lane == CardLane.DONE and self.workspace_manager:
             try:
-                self.workspace_manager.mark_card_completed(watch.card_id, merged=True)
+                await self._offload(
+                    "filesystem.workspace_completion",
+                    self.workspace_manager.mark_card_completed,
+                    watch.card_id,
+                    merged=True,
+                )
             except Exception:
                 # Merged-card completion is authoritative; cleanup eligibility is
                 # recoverable and must not roll the card back out of Done.
@@ -812,7 +1000,7 @@ class PRSupervisor:
             data["gate"] = gate.model_dump(mode="json")
         return redact_external_value(data)
 
-    def _audit(
+    async def _audit(
         self,
         watch: PRWatch,
         event_type: str,
@@ -823,16 +1011,19 @@ class PRSupervisor:
         source: str = "supervisor",
         payload: dict[str, Any] | None = None,
     ) -> bool:
-        return self.store.append_event(
-            PRWatchEvent(
-                watch_id=watch.id,
-                event_key=event_key,
-                event_type=event_type,
-                head_sha=head_sha or watch.head_sha,
-                condition_fingerprint=fingerprint,
-                source=source,
-                payload=redact_external_value(payload or {}),
-            )
+        event = PRWatchEvent(
+            watch_id=watch.id,
+            event_key=event_key,
+            event_type=event_type,
+            head_sha=head_sha or watch.head_sha,
+            condition_fingerprint=fingerprint,
+            source=source,
+            payload=redact_external_value(payload or {}),
+        )
+        return await self._offload(
+            "sqlite.pr_supervisor_event_write",
+            self.store.append_event,
+            event,
         )
 
     async def _acquire_lease(
@@ -840,7 +1031,9 @@ class PRSupervisor:
     ) -> LeaseGrant:
         authority = self._authority_url()
         if not authority:
-            return self.store.try_acquire_lease(
+            return await self._offload(
+                "sqlite.pr_supervisor_lease_write",
+                self.store.try_acquire_lease,
                 watch.id,
                 self.settings.instance_id,
                 ttl_seconds=self.LEASE_TTL_SECONDS,
@@ -863,11 +1056,18 @@ class PRSupervisor:
                 watch.owner_instance_id = grant.owner_instance_id
                 watch.fence_token = grant.fence_token
                 watch.lease_expires_at = grant.expires_at
-                self.store.upsert_watch(watch, preserve_lease=False)
+                await self._offload(
+                    "sqlite.pr_supervisor_watch_write",
+                    self.store.upsert_watch,
+                    watch,
+                    preserve_lease=False,
+                )
             return grant
         except (httpx.HTTPError, RuntimeError, ValueError) as exc:
             self._authority_last_error = str(exc)[:500]
-            self.store.mark_error(
+            await self._offload(
+                "sqlite.pr_supervisor_watch_write",
+                self.store.mark_error,
                 watch.id,
                 f"Fleet lease authority unavailable: {exc}",
                 next_poll_at=utcnow()
@@ -909,13 +1109,12 @@ class PRSupervisor:
                 ]
             except httpx.HTTPError, RuntimeError, ValueError:
                 return []
-        return [
-            capability
-            for capability in self.store.list_capabilities(
-                fresh_seconds=self.CAPABILITY_TTL_SECONDS
-            )
-            if capability.supports(repository)
-        ]
+        capabilities = await self._offload(
+            "sqlite.pr_supervisor_capability_read",
+            self.store.list_capabilities,
+            fresh_seconds=self.CAPABILITY_TTL_SECONDS,
+        )
+        return [item for item in capabilities if item.supports(repository)]
 
     async def _replicate(self, watch: PRWatch | None) -> None:
         if not watch:
@@ -933,7 +1132,12 @@ class PRSupervisor:
         )
         failures = sum(1 for result in results if isinstance(result, Exception))
         if failures:
-            self.store.increment_metric("replication_errors", failures)
+            await self._offload(
+                "sqlite.pr_supervisor_metric",
+                self.store.increment_metric,
+                "replication_errors",
+                failures,
+            )
 
     async def _broadcast_retirement(self, watch: PRWatch) -> None:
         urls = self._fleet_urls()
@@ -955,7 +1159,12 @@ class PRSupervisor:
         )
         failures = sum(1 for result in results if isinstance(result, Exception))
         if failures:
-            self.store.increment_metric("replication_errors", failures)
+            await self._offload(
+                "sqlite.pr_supervisor_metric",
+                self.store.increment_metric,
+                "replication_errors",
+                failures,
+            )
 
     def _fleet_urls(self) -> set[str]:
         urls = set(self.settings.peers)
@@ -1016,45 +1225,55 @@ class PRSupervisor:
         headers: dict[str, str] = {}
         if self.settings.sync_token:
             headers["Authorization"] = f"Bearer {self.settings.sync_token}"
-        owns = self.http_client is None
-        client = self.http_client or httpx.AsyncClient(timeout=15.0)
-        try:
-            response = await client.post(url, headers=headers, json=payload)
-            if response.status_code >= 400:
-                raise RuntimeError(f"HTTP {response.status_code}")
-            return response.json()
-        finally:
-            if owns:
-                await client.aclose()
+        response = await self._observe(
+            "http.pr_supervisor_peer",
+            self.http_client.post(url, headers=headers, json=payload),
+        )
+        if response.status_code >= 400:
+            raise RuntimeError(f"HTTP {response.status_code}")
+        return await self._offload(
+            "pr_supervisor.response_json", response.json
+        )
 
     async def _get_json(self, url: str) -> dict[str, Any]:
         headers: dict[str, str] = {}
         if self.settings.sync_token:
             headers["Authorization"] = f"Bearer {self.settings.sync_token}"
-        owns = self.http_client is None
-        client = self.http_client or httpx.AsyncClient(timeout=15.0)
-        try:
-            response = await client.get(url, headers=headers)
-            if response.status_code >= 400:
-                raise RuntimeError(f"HTTP {response.status_code}")
-            return response.json()
-        finally:
-            if owns:
-                await client.aclose()
+        response = await self._observe(
+            "http.pr_supervisor_peer",
+            self.http_client.get(url, headers=headers),
+        )
+        if response.status_code >= 400:
+            raise RuntimeError(f"HTTP {response.status_code}")
+        return await self._offload(
+            "pr_supervisor.response_json", response.json
+        )
 
     async def migrate_discoverable_associations(self) -> int:
         migrated = 0
-        for card in self.domain_store.list_cards():
+        cards = await self._offload(
+            "sqlite.card_read", self.domain_store.list_cards
+        )
+        for card in cards:
             if card.lane == CardLane.DONE:
                 continue
             for match in _PR_URL.finditer(card.body or ""):
                 repository = match.group("repository")
                 number = int(match.group("number"))
-                if self.store.find_watch(card.realm_id, repository, number):
+                if await self._offload(
+                    "sqlite.pr_supervisor_watch_read",
+                    self.store.find_watch,
+                    card.realm_id,
+                    repository,
+                    number,
+                ):
                     continue
                 project = (
-                    self.domain_store.get_project(
-                        card.project_id, realm_id=card.realm_id
+                    await self._offload(
+                        "sqlite.project_read",
+                        self.domain_store.get_project,
+                        card.project_id,
+                        realm_id=card.realm_id,
                     )
                     if card.project_id
                     else None
@@ -1082,7 +1301,12 @@ class PRSupervisor:
                 )
                 migrated += 1
         if migrated:
-            self.store.increment_metric("migrated_watches", migrated)
+            await self._offload(
+                "sqlite.pr_supervisor_metric",
+                self.store.increment_metric,
+                "migrated_watches",
+                migrated,
+            )
         return migrated
 
     async def handle_webhook(
@@ -1112,19 +1336,35 @@ class PRSupervisor:
         }
         if event_name not in supported:
             return 0
-        watches = self.store.find_watches(repository, number)
+        watches = await self._offload(
+            "sqlite.pr_supervisor_watch_read",
+            self.store.find_watches,
+            repository,
+            number,
+        )
         count = 0
         for watch in watches:
-            count += self.store.schedule_now(watch_id=watch.id)
-            self._audit(
+            count += await self._offload(
+                "sqlite.pr_supervisor_watch_write",
+                self.store.schedule_now,
+                watch_id=watch.id,
+            )
+            await self._audit(
                 watch,
                 "webhook_received",
                 f"{watch.id}:webhook:{delivery_id}",
                 source="github_webhook",
                 payload={"event": event_name, "action": payload.get("action")},
             )
-            await self._replicate(self.store.get_watch(watch.id))
-        self.store.increment_metric("webhooks")
+            current = await self._offload(
+                "sqlite.pr_supervisor_watch_read", self.store.get_watch, watch.id
+            )
+            await self._replicate(current)
+        await self._offload(
+            "sqlite.pr_supervisor_metric",
+            self.store.increment_metric,
+            "webhooks",
+        )
         return count
 
 

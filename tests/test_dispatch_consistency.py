@@ -387,7 +387,7 @@ class RetryAndConflictTests(unittest.IsolatedAsyncioTestCase):
             outbox = CompletionOutbox(ledger, "secret", retry_seconds=0.01)
             outbox.queue("session-1", {"stop_reason": "end_turn"})
             with patch("pa.execution.dispatch.httpx.AsyncClient") as client:
-                client.return_value.__aenter__.return_value.post = AsyncMock(
+                client.return_value.post = AsyncMock(
                     side_effect=httpx.ConnectError("offline")
                 )
                 await outbox._send(ledger.get("dispatch-1"))

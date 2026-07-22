@@ -6,10 +6,13 @@ import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
 
 import httpx
+
+if TYPE_CHECKING:
+    from pa.core.async_runtime import AsyncRuntime
 
 from pa.pr_supervisor.models import (
     GitHubCapability,
@@ -106,6 +109,7 @@ class GitHubClient:
         credentials: GitHubCredentials,
         *,
         client: httpx.AsyncClient | None = None,
+        async_runtime: AsyncRuntime | None = None,
         api_url: str = "https://api.github.com",
         graphql_url: str = "https://api.github.com/graphql",
     ) -> None:
@@ -113,6 +117,25 @@ class GitHubClient:
         self.api_url = api_url.rstrip("/")
         self.graphql_url = graphql_url
         self._provided_client = client
+        self.async_runtime = async_runtime
+
+    async def _decode(self, response: httpx.Response) -> Any:
+        if self.async_runtime:
+            return await self.async_runtime.run_blocking(
+                "pr_supervisor.github_response_json",
+                response.json,
+                timeout=5.0,
+            )
+        return response.json()
+
+    async def _send(self, awaitable):
+        if self.async_runtime:
+            return await self.async_runtime.observe(
+                "http.github",
+                awaitable,
+                timeout=20.0,
+            )
+        return await awaitable
 
     def _headers(self) -> dict[str, str]:
         headers = {
@@ -137,23 +160,25 @@ class GitHubClient:
         owns = self._provided_client is None
         client = self._provided_client or httpx.AsyncClient(timeout=20.0)
         try:
-            response = await client.request(
-                method,
-                f"{self.api_url}{path}",
-                headers=self._headers(),
-                json=json_body,
+            response = await self._send(
+                client.request(
+                    method,
+                    f"{self.api_url}{path}",
+                    headers=self._headers(),
+                    json=json_body,
+                )
             )
             if response.status_code not in allowed_statuses:
                 detail = ""
                 try:
-                    data = response.json()
+                    data = await self._decode(response)
                     detail = str(data.get("message") or "")
                 except (ValueError, AttributeError):
                     detail = response.text[:500]
                 raise GitHubAPIError(response.status_code, operation, detail)
             if response.status_code == 204:
                 return response.status_code, None
-            return response.status_code, response.json()
+            return response.status_code, await self._decode(response)
         finally:
             if owns:
                 await client.aclose()
@@ -418,17 +443,23 @@ class GitHubClient:
         owns = self._provided_client is None
         client = self._provided_client or httpx.AsyncClient(timeout=20.0)
         try:
-            response = await client.post(
-                self.graphql_url,
-                headers=self._headers(),
-                json={
-                    "query": query,
-                    "variables": {"owner": owner, "name": name, "number": number},
-                },
+            response = await self._send(
+                client.post(
+                    self.graphql_url,
+                    headers=self._headers(),
+                    json={
+                        "query": query,
+                        "variables": {
+                            "owner": owner,
+                            "name": name,
+                            "number": number,
+                        },
+                    },
+                )
             )
             if response.status_code != 200:
                 return {}, [], False
-            payload = response.json()
+            payload = await self._decode(response)
             if payload.get("errors"):
                 return {}, [], False
             pr = (
