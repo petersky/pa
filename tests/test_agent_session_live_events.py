@@ -209,6 +209,28 @@ class AgentSessionLiveEventTests(unittest.TestCase):
             self.assertIn("PA recovered this queued turn", queued[0].message)
             self.assertIn("Continue this work.", queued[0].message)
 
+            repeated = SessionSnapshot(
+                session_id=session.id,
+                agent_name="codex",
+                label=session.label,
+                cwd=session.cwd,
+                in_flight=queued[0],
+            )
+
+            async def run_again():
+                with patch.object(
+                    AgentSessionRuntime, "start", new=AsyncMock()
+                ) as second_start:
+                    await manager._resume_from_snapshot(repeated, QuiesceSnapshot())
+                return second_start
+
+            second_start = asyncio.run(run_again())
+            recovered_again = second_start.await_args.kwargs["queued_prompts"][0]
+            self.assertEqual(recovered_again.source, "recovery")
+            self.assertEqual(
+                recovered_again.message.count("PA recovered this queued turn"), 1
+            )
+
     def test_concurrent_disconnect_only_exits_transport_once(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             connection = AgentConnection(Settings(data_dir=Path(tmp)), MagicMock())
