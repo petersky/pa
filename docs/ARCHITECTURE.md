@@ -165,6 +165,15 @@ CLI: `pa fleet list`, `pa fleet join-token`, `pa fleet join`, `pa fleet install-
 
 Web UI: `/fleet` guided wizard (SSH push-install, join tokens, register/remove, realm invites).
 
+Repository state is an instance-local observation, not synchronized domain truth.
+`POST /api/repositories/inspect` runs bounded, non-interactive, read-only Git
+commands and records HEAD/branch/upstream divergence, dirty and untracked state,
+remotes, last fetch time, and linked worktrees. `GET /api/repositories` presents
+the latest observations per instance/repository and explicitly marks stale,
+unreachable, or inspection-error results. Reconciliation only merges newer
+observation envelopes; it never changes a repository or resolves Git state from
+a stored snapshot.
+
 See [MULTI_MACHINE.md](MULTI_MACHINE.md) for Tailscale fleet onboarding.
 
 ## Projects

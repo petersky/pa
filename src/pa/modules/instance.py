@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from pa.auth.middleware import get_principal_id
@@ -22,6 +22,10 @@ class QuiesceRequest(BaseModel):
     reason: str = "restart"
     timeout: float = Field(default=300.0, ge=1.0, le=3600.0)
     wait: bool = False
+
+
+class RepositoryReconcileRequest(BaseModel):
+    snapshots: list[dict] = Field(default_factory=list)
 
 
 @router.get("/health")
@@ -58,6 +62,40 @@ async def list_peers(request: Request) -> list[dict]:
     registry = request.app.state.ctx.require_service("peer_registry")
     peers = await registry.discover_peers()
     return [p.model_dump() for p in peers]
+
+
+@router.get("/repositories")
+def repository_snapshots(request: Request) -> list[dict]:
+    service = request.app.state.ctx.require_service("repository_state")
+    fleet = request.app.state.ctx.services.get("fleet_registry")
+    unreachable = {
+        item.instance_id
+        for item in (fleet.list_instances() if fleet else [])
+        if not item.healthy
+    }
+    return [
+        item.model_dump(mode="json")
+        for item in service.list(unreachable_instances=unreachable)
+    ]
+
+
+@router.post("/repositories/inspect")
+def inspect_repository(request: Request, path: str = Query(...)) -> dict:
+    from pathlib import Path
+
+    service = request.app.state.ctx.require_service("repository_state")
+    return service.refresh(Path(path)).model_dump(mode="json")
+
+
+@router.post("/repositories/reconcile")
+def reconcile_repository_snapshots(
+    request: Request, body: RepositoryReconcileRequest
+) -> list[dict]:
+    from pa.repository.state import RepositorySnapshot
+
+    service = request.app.state.ctx.require_service("repository_state")
+    snapshots = [RepositorySnapshot.model_validate(value) for value in body.snapshots]
+    return [item.model_dump(mode="json") for item in service.reconcile(snapshots)]
 
 
 @router.get("/sessions")
@@ -253,6 +291,14 @@ class InstanceModule(Module):
     def description(self) -> str:
         return "Instance identity, health, peers, and agent session API"
 
+    def on_load(self, ctx: AppContext) -> None:
+        from pa.repository.state import RepositoryStateService
+
+        ctx.register_service(
+            "repository_state",
+            RepositoryStateService(ctx.settings.data_dir, ctx.settings.instance_id),
+        )
+
     def api_routers(self):
         return [("/api", router, ["instance"])]
 
@@ -273,3 +319,26 @@ class InstanceModule(Module):
                 "port": settings.port,
                 "peers": settings.peers,
             }
+
+        @mcp.tool()
+        def repository_inspect(path: str) -> dict:
+            """Inspect and persist this instance's current Git repository state."""
+            from pathlib import Path
+
+            service = ctx.require_service("repository_state")
+            return service.refresh(Path(path)).model_dump(mode="json")
+
+        @mcp.tool()
+        def repository_snapshots() -> list[dict]:
+            """List non-authoritative repository observations by instance."""
+            service = ctx.require_service("repository_state")
+            fleet = ctx.services.get("fleet_registry")
+            unreachable = {
+                item.instance_id
+                for item in (fleet.list_instances() if fleet else [])
+                if not item.healthy
+            }
+            return [
+                item.model_dump(mode="json")
+                for item in service.list(unreachable_instances=unreachable)
+            ]

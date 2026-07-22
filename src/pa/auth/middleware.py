@@ -41,6 +41,8 @@ FLEET_INSTANCE_ROUTES = {
     ("POST", "/api/agent/quiesce"),
     ("GET", "/api/fleet/peer-update-check"),
     ("POST", "/api/fleet/peer-update"),
+    ("GET", "/api/repositories"),
+    ("POST", "/api/repositories/reconcile"),
 }
 
 CSRF_EXEMPT_PATHS = {
