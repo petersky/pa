@@ -1,35 +1,62 @@
 {% from "macros/layout.html" import page_layout %}
 
-{% set left %}
-<div class="panel">
-  <div class="panel-header"><h2>Sources</h2></div>
-  <nav class="sidebar-menu">
-    <button class="sidebar-menu-item active"
-            hx-get="/partials/knowledge"
-            hx-target="#knowledge-main-list"
-            hx-swap="innerHTML">All sessions</button>
-  </nav>
-</div>
-{% endset %}
-
 {% set main %}
-<div class="panel panel-fill">
-  <div class="panel-header">
-    <h2>Knowledge</h2>
-    <button class="ghost" hx-get="/partials/knowledge"
-            hx-target="#knowledge-main-list" hx-swap="innerHTML">Refresh</button>
-  </div>
-  <div id="knowledge-main-list" class="scroll-region">
+<div class="panel panel-fill memory-workspace">
+  <header class="panel-header page-heading">
+    <div>
+      <h1>Memory &amp; decisions</h1>
+      <p class="muted">Curated facts, decisions, constraints, runbooks, and learnings. Session transcripts stay in session audit history until explicitly promoted.</p>
+    </div>
+    <details class="panel-inset memory-capture">
+      <summary>Add memory</summary>
+      <form class="stack" hx-post="/partials/knowledge" hx-target="#knowledge-main-list" hx-swap="innerHTML">
+        <input type="hidden" name="csrf" value="{{ csrf_token }}">
+        <input type="hidden" name="session_id" value="{{ promote_session_id }}">
+        {% if promote_session_id %}<p class="muted">Promoting a conclusion from session <code>{{ promote_session_id }}</code>. Write the durable conclusion—not the raw transcript.</p>{% endif %}
+        <label>Content <textarea name="summary" rows="4" required placeholder="Record the durable fact or decision, including why it matters."></textarea></label>
+        <div class="filter-grid">
+          <label>Type
+            <select name="kind">{% for value in knowledge_kinds %}<option value="{{ value.value }}">{{ value.value | title }}</option>{% endfor %}</select>
+          </label>
+          <label>Scope
+            <select name="scope">
+              <option value="realm">Realm</option>
+              {% for project in projects %}<option value="project:{{ project.id }}">Project · {{ project.title }}</option>{% endfor %}
+              {% for card in cards %}<option value="card:{{ card.id }}">Card · {{ card.title }}</option>{% endfor %}
+            </select>
+          </label>
+          <label>Confidence <input type="number" name="confidence" min="0" max="1" step="0.1" placeholder="0–1"></label>
+          <label>Owner <input name="owner" placeholder="Defaults to you"></label>
+        </div>
+        <label>Source link <input type="url" name="source_url" placeholder="https://…"></label>
+        <div class="filter-grid">
+          <label>Review on <input type="datetime-local" name="review_at"></label>
+          <label>Expire on <input type="datetime-local" name="expires_at"></label>
+        </div>
+        <label>Supersedes memory ID <input name="supersedes_id" placeholder="Optional earlier entry ID"></label>
+        <label>Tags <input name="tags" placeholder="comma, separated"></label>
+        <button type="submit">Save memory</button>
+      </form>
+    </details>
+  </header>
+
+  <form class="work-filters" method="get" action="/knowledge" aria-label="Filter memories">
+    <input type="hidden" name="realm" value="{{ active_realm }}">
+    <label>Search <input type="search" name="q" value="{{ knowledge_filters.q }}" placeholder="Content, owner, or tag"></label>
+    <label>Type
+      <select name="kind"><option value="">All types</option>{% for value in knowledge_kinds %}<option value="{{ value.value }}" {% if knowledge_filters.kind == value.value %}selected{% endif %}>{{ value.value | title }}</option>{% endfor %}</select>
+    </label>
+    <label>Lifecycle
+      <select name="status"><option value="">All states</option>{% for value in knowledge_statuses %}<option value="{{ value.value }}" {% if knowledge_filters.status == value.value %}selected{% endif %}>{{ value.value | title }}</option>{% endfor %}</select>
+    </label>
+    <label>Scope <input name="scope" value="{{ knowledge_filters.scope }}" placeholder="realm, project:…, card:…"></label>
+    <div class="form-actions"><button type="submit">Apply</button><a class="text-btn" href="/knowledge?realm={{ active_realm }}">Clear</a></div>
+  </form>
+
+  <div id="knowledge-main-list" class="scroll-region" aria-live="polite">
     {% include "partials/knowledge.html" %}
   </div>
 </div>
 {% endset %}
 
-{% set right %}
-<div class="panel">
-  <div class="panel-header"><h2>Linked items</h2></div>
-  <p class="muted">{{ items | length }} items tracked. Knowledge entries link to sessions and items as agents work.</p>
-</div>
-{% endset %}
-
-{{ page_layout(left=left, main=main, right=right, class='page-knowledge') }}
+{{ page_layout(main=main, class='page-knowledge') }}

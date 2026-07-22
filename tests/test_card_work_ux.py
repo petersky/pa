@@ -20,6 +20,11 @@ from pa.domain.models import (
     CardSummarySource,
     CardUpdate,
     AgentSession,
+    KnowledgeEntry,
+    KnowledgeKind,
+    KnowledgeStatus,
+    KnowledgeUpdate,
+    ProjectCreate,
 )
 from pa.domain.projection import CardProjection
 from pa.domain.session_selection import preferred_sessions_by_card
@@ -149,6 +154,75 @@ class CardSummaryTests(unittest.TestCase):
         self.assertEqual(selected["card-1"].id, open_session.id)
 
 
+class CuratedKnowledgeTests(unittest.TestCase):
+    def test_memory_metadata_filters_and_lifecycle_are_durable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = CardProjection(Path(tmp) / "pa.db")
+            decision = store.add_knowledge(
+                KnowledgeEntry(
+                    summary="Use progressive disclosure for collection views.",
+                    kind=KnowledgeKind.DECISION,
+                    source="manual",
+                    source_url="https://example.test/decision",
+                    scope="project:pa",
+                    owner="user:designer",
+                    confidence=0.9,
+                    tags=["ux", "navigation"],
+                )
+            )
+            store.add_knowledge(
+                KnowledgeEntry(
+                    summary="Unrelated archived note", status=KnowledgeStatus.ARCHIVED
+                )
+            )
+
+            active = store.list_knowledge(search="disclosure", kind="decision")
+            self.assertEqual([entry.id for entry in active], [decision.id])
+            self.assertEqual(active[0].scope, "project:pa")
+            self.assertEqual(active[0].confidence, 0.9)
+            duplicate = store.add_knowledge(
+                KnowledgeEntry(
+                    summary="  use progressive disclosure for collection views. ",
+                    kind=KnowledgeKind.DECISION,
+                    scope="project:pa",
+                )
+            )
+            self.assertEqual(duplicate.id, decision.id)
+
+            archived = store.update_knowledge(
+                decision.id, KnowledgeUpdate(status=KnowledgeStatus.ARCHIVED)
+            )
+            assert archived is not None
+            self.assertEqual(archived.status, KnowledgeStatus.ARCHIVED)
+            self.assertEqual(store.list_knowledge(), [])
+
+    def test_legacy_knowledge_schema_is_migrated_without_losing_content(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "pa.db"
+            now = datetime.now(UTC).isoformat()
+            conn = sqlite3.connect(db)
+            conn.execute(
+                """CREATE TABLE knowledge (
+                    id TEXT PRIMARY KEY, session_id TEXT, item_id TEXT, card_id TEXT,
+                    summary TEXT NOT NULL, source TEXT NOT NULL, tags TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )"""
+            )
+            conn.execute(
+                "INSERT INTO knowledge VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                ("legacy", "session", None, None, "Keep this", "session", "[]", now),
+            )
+            conn.commit()
+            conn.close()
+
+            migrated = CardProjection(db).get_knowledge("legacy")
+            assert migrated is not None
+            self.assertEqual(migrated.summary, "Keep this")
+            self.assertEqual(migrated.kind, KnowledgeKind.MEMORY)
+            self.assertEqual(migrated.status, KnowledgeStatus.ACTIVE)
+            self.assertEqual(migrated.updated_at.isoformat(), now)
+
+
 class CoreWorkUiRouteTests(unittest.TestCase):
     def setUp(self) -> None:
         reset_settings()
@@ -203,6 +277,54 @@ class CoreWorkUiRouteTests(unittest.TestCase):
                 detail.text.index("card-detail-section"),
                 detail.text.index("card-edit-surface"),
             )
+
+    def test_memory_page_is_curated_filterable_and_not_a_transcript_dump(self) -> None:
+        with TestClient(self.app) as client:
+            self.app.state.ctx.store.add_knowledge(
+                KnowledgeEntry(
+                    summary="Keep the durable decision visible.",
+                    kind=KnowledgeKind.DECISION,
+                    source="promoted",
+                    session_id="audit-session",
+                )
+            )
+            response = client.get("/knowledge?kind=decision")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Memory &amp; decisions", response.text)
+        self.assertIn("Keep the durable decision visible.", response.text)
+        self.assertIn("Session audit", response.text)
+        self.assertIn(
+            "Session transcripts stay in session audit history", response.text
+        )
+        self.assertNotIn("All sessions", response.text)
+        self.assertNotIn("page-sidebar-right", response.text)
+
+    def test_project_overview_has_progress_work_agents_and_explicit_settings(
+        self,
+    ) -> None:
+        with TestClient(self.app) as client:
+            project = self.app.state.ctx.store.create_project(
+                ProjectCreate(
+                    title="Orchestration UX", description="Make work legible."
+                )
+            )
+            self.app.state.ctx.store.create_card(
+                CardCreate(
+                    title="Blocked navigation work",
+                    summary="Waiting on a decision.",
+                    project_id=project.id,
+                    lane=CardLane.WAITING,
+                )
+            )
+            response = client.get(f"/projects?project={project.id}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Project health", response.text)
+        self.assertIn("Edit project settings", response.text)
+        self.assertIn("Blocked navigation work", response.text)
+        self.assertIn("Linked repositories &amp; worktrees", response.text)
+        self.assertIn("Agents &amp; pull requests", response.text)
 
     def test_home_ignores_work_board_query_filters(self) -> None:
         with TestClient(self.app) as client:
@@ -326,6 +448,24 @@ class CoreWorkUiRouteTests(unittest.TestCase):
         self.assertIn("@media (max-width: 700px)", css)
         self.assertIn("width: 100vw", css)
         self.assertIn("prefers-reduced-motion", css)
+
+    def test_core_icon_controls_and_async_surfaces_have_accessible_names(self) -> None:
+        root = Path(__file__).parents[1] / "src" / "pa" / "server" / "templates"
+        chrome = (root / "partials" / "chrome-actions.html").read_text()
+        agent = (root / "partials" / "agent" / "chat-widget.html").read_text()
+        memory = (root / "pages" / "knowledge.html").read_text()
+        fleet = (root / "pages" / "fleet.html").read_text()
+
+        self.assertIn('aria-label="Reconnect agent"', chrome)
+        self.assertIn('aria-label="Toggle theme appearance"', chrome)
+        self.assertIn('aria-label="Settings"', chrome)
+        self.assertIn('aria-label="Tool activity"', agent)
+        self.assertIn('aria-label="Session plans"', agent)
+        self.assertIn('aria-live="polite"', memory)
+        self.assertIn('aria-label="Filter memories"', memory)
+        self.assertIn('aria-live="polite"', fleet)
+        self.assertIn('aria-label="Update {{ inst.name }}"', fleet)
+        self.assertIn('aria-label="Remove {{ inst.name }} from fleet"', fleet)
 
 
 if __name__ == "__main__":

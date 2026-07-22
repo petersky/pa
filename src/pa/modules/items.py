@@ -22,6 +22,10 @@ from pa.domain.models import (
     ItemKind,
     ItemStatus,
     ItemUpdate,
+    KnowledgeEntry,
+    KnowledgeKind,
+    KnowledgeStatus,
+    KnowledgeUpdate,
 )
 from pa.domain.store import get_store
 from pa.domain.session_selection import preferred_sessions_by_card
@@ -230,10 +234,26 @@ def _home_context(request: Request) -> dict:
 def _knowledge_context(request: Request) -> dict:
     store = get_store()
     realm = _active_realm(request)
+    query = request.query_params.get("q", "").strip()
+    kind = request.query_params.get("kind", "").strip() or None
+    status = request.query_params.get("status", "active").strip() or None
+    scope = request.query_params.get("scope", "").strip() or None
     return {
-        "knowledge": store.list_knowledge(limit=50),
+        "knowledge": store.list_knowledge(
+            limit=100, search=query or None, kind=kind, status=status, scope=scope
+        ),
         "cards": store.list_cards(realm_id=realm),
         "items": store.list_cards(realm_id=realm),
+        "projects": store.list_projects(realm_id=realm),
+        "knowledge_kinds": list(KnowledgeKind),
+        "knowledge_statuses": list(KnowledgeStatus),
+        "knowledge_filters": {
+            "q": query,
+            "kind": kind or "",
+            "status": status or "",
+            "scope": scope or "",
+        },
+        "promote_session_id": request.query_params.get("session", ""),
         "realms": get_settings().subscribed_realms,
         "active_realm": realm,
     }
@@ -327,9 +347,38 @@ def delete_item(item_id: str) -> None:
 
 
 @router.get("/knowledge")
-def list_knowledge(item_id: str | None = None, limit: int = 50) -> list[dict]:
-    entries = get_store().list_knowledge(item_id=item_id, limit=limit)
+def list_knowledge(
+    item_id: str | None = None,
+    limit: int = 50,
+    q: str | None = None,
+    kind: KnowledgeKind | None = None,
+    status: KnowledgeStatus | None = KnowledgeStatus.ACTIVE,
+    scope: str | None = None,
+) -> list[dict]:
+    entries = get_store().list_knowledge(
+        item_id=item_id,
+        limit=limit,
+        search=q,
+        kind=kind.value if kind else None,
+        status=status.value if status else None,
+        scope=scope,
+    )
     return [entry.model_dump(mode="json") for entry in entries]
+
+
+@router.post("/knowledge", status_code=201)
+def create_knowledge(request: Request, data: KnowledgeEntry) -> dict:
+    if not data.owner:
+        data.owner = get_principal_id(request)
+    return get_store().add_knowledge(data).model_dump(mode="json")
+
+
+@router.patch("/knowledge/{entry_id}")
+def update_knowledge(entry_id: str, data: KnowledgeUpdate) -> dict:
+    entry = get_store().update_knowledge(entry_id, data)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Memory not found")
+    return entry.model_dump(mode="json")
 
 
 @ui_router.post("/items", response_model=None)
@@ -505,12 +554,60 @@ def card_lane_move(
 
 @ui_router.get("/partials/knowledge", response_class=HTMLResponse)
 def knowledge_partial(request: Request) -> HTMLResponse:
-    knowledge = get_store().list_knowledge(limit=20)
+    context = _knowledge_context(request)
     return _templates(request).TemplateResponse(
         request,
         "partials/knowledge.html",
-        {"knowledge": knowledge},
+        context,
     )
+
+
+@ui_router.post("/partials/knowledge", response_class=HTMLResponse)
+def create_knowledge_ui(
+    request: Request,
+    summary: str = Form(...),
+    kind: KnowledgeKind = Form(KnowledgeKind.MEMORY),
+    scope: str = Form("realm"),
+    source_url: str = Form(""),
+    owner: str = Form(""),
+    confidence: str = Form(""),
+    card_id: str = Form(""),
+    session_id: str = Form(""),
+    supersedes_id: str = Form(""),
+    review_at: datetime | None = Form(None),
+    expires_at: datetime | None = Form(None),
+    tags: str = Form(""),
+) -> HTMLResponse:
+    get_store().add_knowledge(
+        KnowledgeEntry(
+            summary=summary.strip(),
+            kind=kind,
+            scope=scope.strip() or "realm",
+            source="promoted" if session_id else "manual",
+            source_url=source_url.strip() or None,
+            owner=owner.strip() or get_principal_id(request),
+            confidence=float(confidence) if confidence.strip() else None,
+            card_id=card_id or None,
+            item_id=card_id or None,
+            session_id=session_id or None,
+            supersedes_id=supersedes_id or None,
+            review_at=review_at,
+            expires_at=expires_at,
+            tags=[tag.strip() for tag in tags.split(",") if tag.strip()],
+        )
+    )
+    return knowledge_partial(request)
+
+
+@ui_router.post("/partials/knowledge/{entry_id}/status", response_class=HTMLResponse)
+def update_knowledge_status_ui(
+    request: Request,
+    entry_id: str,
+    status: KnowledgeStatus = Form(...),
+) -> HTMLResponse:
+    if not get_store().update_knowledge(entry_id, KnowledgeUpdate(status=status)):
+        raise HTTPException(status_code=404, detail="Memory not found")
+    return knowledge_partial(request)
 
 
 class ItemsModule(Module):
@@ -554,7 +651,7 @@ class ItemsModule(Module):
             PageDefinition(
                 id="knowledge",
                 path="/knowledge",
-                label="Knowledge",
+                label="Memory",
                 icon="knowledge",
                 template="pages/knowledge.html",
                 nav_order=20,
@@ -627,7 +724,7 @@ class ItemsModule(Module):
 
         @mcp.tool()
         def list_knowledge(item_id: str | None = None, limit: int = 20) -> list[dict]:
-            """List captured knowledge from agent sessions."""
+            """List curated durable memories and decisions."""
             return request_local_pa(
                 ctx.settings,
                 "GET",

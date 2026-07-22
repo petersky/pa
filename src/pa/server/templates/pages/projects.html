@@ -58,8 +58,32 @@
 
   {% if project %}
   <div class="panel" style="margin-bottom: 1rem;">
-    <h3>{{ project.title }}</h3>
-    {% if project.description %}<p>{{ project.description }}</p>{% endif %}
+    <header class="page-heading">
+      <div>
+        <div class="metadata-row"><span class="badge">{{ project.status.value }}</span>{% for tag in project.tags %}<span class="badge">{{ tag }}</span>{% endfor %}</div>
+        <h1>{{ project.title }}</h1>
+        {% if project.description %}<p>{{ project.description }}</p>{% else %}<p class="muted">Add a goal and success context so people and agents can make aligned decisions.</p>{% endif %}
+      </div>
+      <details class="panel-inset">
+        <summary>Edit project settings</summary>
+        <form class="stack" hx-post="/projects/{{ project.id }}?realm={{ active_realm }}&project={{ project.id }}" hx-target="#app-view" hx-swap="innerHTML">
+          <input type="hidden" name="csrf" value="{{ csrf_token }}">
+          <label>Project title <input name="title" value="{{ project.title }}" required></label>
+          <label>Goal and description <textarea name="description" rows="4">{{ project.description }}</textarea></label>
+          <label>Project instructions <textarea name="agent_prompt" rows="5">{{ project.agent_prompt }}</textarea></label>
+          <label>Tags <input name="tags" value="{{ project.tags | join(', ') }}"></label>
+          <label>Lifecycle <select name="status"><option value="active" {% if project.status.value == 'active' %}selected{% endif %}>Active</option><option value="archived" {% if project.status.value == 'archived' %}selected{% endif %}>Archived</option></select></label>
+          <button type="submit">Save project</button>
+        </form>
+      </details>
+    </header>
+
+    <section class="project-health" aria-label="Project health">
+      <div><strong>{{ progress_percent }}%</strong><span class="muted">complete · {{ done_count }} of {{ cards | length }} cards</span></div>
+      <div><strong>{{ active_cards | length }}</strong><span class="muted">active</span></div>
+      <div><strong>{{ blocked_cards | length }}</strong><span class="muted">blocked</span></div>
+      <div><strong>{{ project_sessions | length }}</strong><span class="muted">agent sessions</span></div>
+    </section>
     {% if project.agent_prompt %}
     <details>
       <summary>Agent prompt</summary>
@@ -67,7 +91,7 @@
     </details>
     {% endif %}
 
-    <h4>Linked repositories ({{ linked_repositories | length }})</h4>
+    <h2>Linked repositories &amp; worktrees ({{ linked_repositories | length }})</h2>
     {% if linked_repositories %}
     <ul class="item-list">
       {% for linked in linked_repositories %}
@@ -173,8 +197,25 @@
         <button type="submit">Save PR policy</button>
       </form>
     </details>
-    <h4>Cards ({{ cards | length }})</h4>
-    {% include "partials/cards.html" %}
+    <h2>Work overview</h2>
+    {% if not cards %}
+    <div class="empty-state"><h3>No work is linked yet</h3><p class="muted">Create a card from Home or Work, then assign it to this project to start tracking progress.</p><a class="button" href="/?realm={{ active_realm }}">Create a card</a></div>
+    {% else %}
+      <h3>Blocked ({{ blocked_cards | length }})</h3>
+      {% with cards=blocked_cards %}{% include "partials/cards.html" %}{% endwith %}
+      <h3>Active ({{ active_cards | length }})</h3>
+      {% with cards=active_cards %}{% include "partials/cards.html" %}{% endwith %}
+      <h3>Recently updated</h3>
+      {% with cards=recent_cards %}{% include "partials/cards.html" %}{% endwith %}
+    {% endif %}
+
+    <h2>Agents &amp; pull requests</h2>
+    {% if project_sessions or pr_watches %}
+    <ul class="item-list">
+      {% for session in project_sessions %}<li class="item"><a href="/agent?session={{ session.id }}"><strong>{{ session.title or session.label or session.agent_name }}</strong></a><span class="badge">{{ session.status }}</span><p class="muted">Last activity {{ session.updated_at.strftime('%Y-%m-%d %H:%M') }}</p></li>{% endfor %}
+      {% for watch in pr_watches %}<li class="item"><a href="/pull-requests?watch={{ watch.id }}"><strong>{{ watch.repository }} #{{ watch.pr_number }}</strong></a><span class="badge">{{ watch.status.value }}</span></li>{% endfor %}
+    </ul>
+    {% else %}<p class="empty">No related agent sessions or supervised pull requests yet.</p>{% endif %}
   </div>
   {% endif %}
 

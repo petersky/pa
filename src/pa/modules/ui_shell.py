@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
@@ -96,8 +98,36 @@ def _agent_context(request: Request) -> dict:
     agent = ctx.require_service("instance_agent")
     runtimes = agent.list_runtimes() if hasattr(agent, "list_runtimes") else []
     live = [rt.session for rt in runtimes if not getattr(rt, "_closed", False)]
-    default = next((s for s in live if s.label == "default"), live[0] if live else None)
+    selected_id = request.query_params.get("session")
+    default = next((s for s in live if s.id == selected_id), None)
+    if not default:
+        default = next(
+            (s for s in live if s.label == "default"), live[0] if live else None
+        )
     sessions = live or ctx.store.list_sessions()[:8]
+    cards = {card.id: card for card in ctx.store.list_cards()}
+    projects = {project.id: project for project in ctx.store.list_projects()}
+    now = datetime.now(UTC)
+    session_details = {}
+    for session in sessions:
+        elapsed = max(0, int((now - session.created_at).total_seconds()))
+        if elapsed >= 3600:
+            elapsed_label = f"{elapsed // 3600}h {(elapsed % 3600) // 60}m"
+        elif elapsed >= 60:
+            elapsed_label = f"{elapsed // 60}m"
+        else:
+            elapsed_label = f"{elapsed}s"
+        config = session.config_json or {}
+        session_details[session.id] = {
+            "card": cards.get(session.card_id),
+            "project": projects.get(session.project_id),
+            "host": config.get("instance_name") or ctx.settings.instance_name,
+            "elapsed": elapsed_label,
+            "pending_approval": bool(
+                (session.metrics_json or {}).get("pending_approval")
+                or config.get("pending_approval")
+            ),
+        }
     watches_by_session: dict[str, list] = {session.id: [] for session in sessions}
     supervisor_store = ctx.services.get("pr_supervisor_store")
     if supervisor_store:
@@ -112,6 +142,7 @@ def _agent_context(request: Request) -> dict:
         "agent_enabled": ctx.settings.agent_enabled,
         "sessions": sessions,
         "session_id": default.id if default else "",
+        "session_details": session_details,
         "pr_watches_by_session": watches_by_session,
     }
 

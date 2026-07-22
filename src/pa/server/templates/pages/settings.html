@@ -363,6 +363,13 @@
     if (provider) provider.addEventListener("change", function () { loadDefaultOptions(container, false); });
     loadDefaultOptions(container, true);
   });
+  form.addEventListener("change", function () {
+    var status = document.getElementById("pa-agent-prefs-status");
+    if (status) {
+      status.hidden = false;
+      status.textContent = "Unsaved changes.";
+    }
+  });
   form.user_provider.addEventListener("change", function () {
     defaultContainers.filter(function (container) {
       return container.dataset.settingsDefaultsScope === "user" &&

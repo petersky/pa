@@ -1,12 +1,41 @@
 {% if knowledge %}
-<ul class="knowledge-list">
+<ul class="knowledge-list memory-list">
   {% for entry in knowledge %}
-  <li>
+  <li class="memory-entry">
+    <div class="memory-entry-header">
+      <div class="metadata-row">
+        <span class="badge">{{ entry.kind.value }}</span>
+        <span class="badge status-{{ entry.status.value }}">{{ entry.status.value }}</span>
+        <span class="muted">{{ entry.scope }}</span>
+      </div>
+      <time class="muted" datetime="{{ entry.updated_at.isoformat() }}">Updated {{ entry.updated_at.strftime('%Y-%m-%d') }}</time>
+    </div>
     <p>{{ entry.summary }}</p>
-    <small>{{ entry.source }} · {{ entry.created_at.strftime('%Y-%m-%d %H:%M') }}</small>
+    <div class="metadata-row muted">
+      {% if entry.owner %}<span>Owner: {{ entry.owner }}</span>{% endif %}
+      {% if entry.confidence is not none %}<span>Confidence: {{ (entry.confidence * 100) | int }}%</span>{% endif %}
+      <span>Source: {{ entry.source }}</span>
+      {% if entry.source_url %}<a href="{{ entry.source_url }}" target="_blank" rel="noopener">Open source</a>{% endif %}
+      {% if entry.session_id %}<a href="/agent?session={{ entry.session_id }}">Session audit</a>{% endif %}
+      {% if entry.review_at %}<span>Review {{ entry.review_at.strftime('%Y-%m-%d') }}</span>{% endif %}
+      {% if entry.expires_at %}<span>Expires {{ entry.expires_at.strftime('%Y-%m-%d') }}</span>{% endif %}
+      {% if entry.supersedes_id %}<span>Supersedes <code>{{ entry.supersedes_id }}</code></span>{% endif %}
+    </div>
+    {% if entry.tags %}<div class="metadata-row">{% for tag in entry.tags %}<span class="badge">{{ tag }}</span>{% endfor %}</div>{% endif %}
+    <form class="inline-form" hx-post="/partials/knowledge/{{ entry.id }}/status" hx-target="#knowledge-main-list" hx-swap="innerHTML">
+      <input type="hidden" name="csrf" value="{{ csrf_token }}">
+      <label class="sr-only" for="memory-status-{{ entry.id }}">Lifecycle for this memory</label>
+      <select id="memory-status-{{ entry.id }}" name="status">
+        {% for value in knowledge_statuses %}<option value="{{ value.value }}" {% if entry.status == value %}selected{% endif %}>{{ value.value | title }}</option>{% endfor %}
+      </select>
+      <button type="submit" class="ghost small">Update lifecycle</button>
+    </form>
   </li>
   {% endfor %}
 </ul>
 {% else %}
-<p class="empty">No knowledge captured yet.</p>
+<div class="empty-state">
+  <h2>No curated memory matches</h2>
+  <p class="muted">Add a durable fact or decision, or promote a useful conclusion from a session audit. Raw transcripts are intentionally not imported.</p>
+</div>
 {% endif %}

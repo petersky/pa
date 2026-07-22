@@ -501,6 +501,21 @@ class TranscriptEvent(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
+class KnowledgeKind(StrEnum):
+    MEMORY = "memory"
+    DECISION = "decision"
+    CONSTRAINT = "constraint"
+    RUNBOOK = "runbook"
+    LEARNING = "learning"
+
+
+class KnowledgeStatus(StrEnum):
+    ACTIVE = "active"
+    REVIEW = "review"
+    ARCHIVED = "archived"
+    SUPERSEDED = "superseded"
+
+
 class KnowledgeEntry(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     session_id: str | None = None
@@ -508,8 +523,33 @@ class KnowledgeEntry(BaseModel):
     card_id: str | None = None
     summary: str
     source: str = "session"
+    source_url: str | None = None
+    kind: KnowledgeKind = KnowledgeKind.MEMORY
+    status: KnowledgeStatus = KnowledgeStatus.ACTIVE
+    scope: str = "realm"
+    owner: str | None = None
+    confidence: float | None = Field(default=None, ge=0, le=1)
+    supersedes_id: str | None = None
+    review_at: datetime | None = None
+    expires_at: datetime | None = None
     tags: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class KnowledgeUpdate(BaseModel):
+    summary: str | None = None
+    source: str | None = None
+    source_url: str | None = None
+    kind: KnowledgeKind | None = None
+    status: KnowledgeStatus | None = None
+    scope: str | None = None
+    owner: str | None = None
+    confidence: float | None = Field(default=None, ge=0, le=1)
+    supersedes_id: str | None = None
+    review_at: datetime | None = None
+    expires_at: datetime | None = None
+    tags: list[str] | None = None
 
 
 class InstanceInfo(BaseModel):
