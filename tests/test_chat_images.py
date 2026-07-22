@@ -6,6 +6,7 @@ import asyncio
 import base64
 import shutil
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -15,6 +16,7 @@ from jinja2 import Environment, FileSystemLoader
 from pydantic import ValidationError
 
 from pa.acp.client import AgentConnection
+from pa.execution.dispatch import DispatchRecord, DispatchStore
 from pa.instance.quiesce import ImageAttachment, QueuedPrompt
 from pa.modules.agent_chat import PromptBody, session_prompt
 
@@ -39,9 +41,10 @@ class ImageAttachmentTests(unittest.TestCase):
         queued = QueuedPrompt(message="", images=body.images)
 
         self.assertEqual(body.message, "")
-        self.assertEqual(queued.public_dict()["images"], [
-            {"name": "pixel.png", "mime_type": "image/png"}
-        ])
+        self.assertEqual(
+            queued.public_dict()["images"],
+            [{"name": "pixel.png", "mime_type": "image/png"}],
+        )
         self.assertNotIn("data", queued.public_dict()["images"][0])
 
 
@@ -80,7 +83,9 @@ class ChatPromptEndpointTests(unittest.TestCase):
         async def run() -> dict:
             with (
                 patch("pa.modules.agent_chat._runtime_or_404", return_value=runtime),
-                patch("pa.modules.agent_chat.get_principal_id", return_value="user:test"),
+                patch(
+                    "pa.modules.agent_chat.get_principal_id", return_value="user:test"
+                ),
             ):
                 return await session_prompt(
                     MagicMock(),
@@ -91,12 +96,61 @@ class ChatPromptEndpointTests(unittest.TestCase):
         result = asyncio.run(run())
         self.assertTrue(result["started"])
         runtime.prompt.assert_awaited_once()
-        self.assertEqual(runtime.prompt.await_args.kwargs["images"][0].name, "pixel.png")
+        self.assertEqual(
+            runtime.prompt.await_args.kwargs["images"][0].name, "pixel.png"
+        )
+
+    def test_duplicate_dispatch_delivery_returns_original_ack_without_requeue(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = DispatchStore(Path(tmp))
+            ledger.put(
+                DispatchRecord(
+                    dispatch_id="dispatch-1",
+                    mutation_id="mutation-1",
+                    request_payload={"message": "work"},
+                    authority_instance_id="authority",
+                    authority_url="http://authority",
+                    target_instance_id="target",
+                    session_id="session-1",
+                    state="running",
+                    prompt_ack={
+                        "event_type": "queue_enqueued",
+                        "event_id": "event-1",
+                        "event_seq": 7,
+                        "prompt_id": "prompt-1",
+                    },
+                )
+            )
+            runtime = MagicMock()
+            runtime.prompt = AsyncMock()
+            runtime._queue = []
+            request = MagicMock()
+            request.app.state.ctx.services = {"dispatch_store": ledger}
+
+            async def run() -> dict:
+                with patch(
+                    "pa.modules.agent_chat._runtime_or_404", return_value=runtime
+                ):
+                    return await session_prompt(
+                        request,
+                        "session-1",
+                        PromptBody(message="work", dispatch_id="dispatch-1"),
+                    )
+
+            result = asyncio.run(run())
+            self.assertTrue(result["accepted"])
+            self.assertTrue(result["duplicate"])
+            self.assertEqual(result["prompt_id"], "prompt-1")
+            runtime.prompt.assert_not_awaited()
 
 
 class ChatWidgetTemplateTests(unittest.TestCase):
     def test_shared_widget_exposes_drop_target_and_attach_control(self) -> None:
-        template_root = Path(__file__).parents[1] / "src" / "pa" / "server" / "templates"
+        template_root = (
+            Path(__file__).parents[1] / "src" / "pa" / "server" / "templates"
+        )
         env = Environment(loader=FileSystemLoader(template_root), autoescape=True)
         html = env.get_template("partials/agent/chat-widget.html").render()
 
@@ -126,7 +180,9 @@ class ChatWidgetTemplateTests(unittest.TestCase):
         self.assertIn('data-api-base="/api/agent"', html)
         self.assertIn('data-auto-start="1"', html)
 
-    @unittest.skipUnless(shutil.which("node"), "node is required for chat UI behavior tests")
+    @unittest.skipUnless(
+        shutil.which("node"), "node is required for chat UI behavior tests"
+    )
     def test_tool_ids_with_newlines_do_not_become_css_selectors(self) -> None:
         script_path = (
             Path(__file__).parents[1]
@@ -169,7 +225,9 @@ widget.upsertTool({ tool_call_id: id, status: "completed" });
             text=True,
         )
 
-    @unittest.skipUnless(shutil.which("node"), "node is required for chat UI behavior tests")
+    @unittest.skipUnless(
+        shutil.which("node"), "node is required for chat UI behavior tests"
+    )
     def test_transcript_dedup_scroll_follow_and_prepend_anchor(self) -> None:
         script_path = (
             Path(__file__).parents[1]
@@ -223,8 +281,12 @@ assert.strictEqual(window.PAAgentChat.anchoredScrollTop(75, 400, 650), 325);
             text=True,
         )
 
-    @unittest.skipUnless(shutil.which("node"), "node is required for chat UI behavior tests")
-    def test_user_markdown_is_sanitized_and_preserves_supported_formatting(self) -> None:
+    @unittest.skipUnless(
+        shutil.which("node"), "node is required for chat UI behavior tests"
+    )
+    def test_user_markdown_is_sanitized_and_preserves_supported_formatting(
+        self,
+    ) -> None:
         script_path = (
             Path(__file__).parents[1]
             / "src"
@@ -276,7 +338,9 @@ assert.ok(!html.includes("javascript:"));
             text=True,
         )
 
-    @unittest.skipUnless(shutil.which("node"), "node is required for chat UI behavior tests")
+    @unittest.skipUnless(
+        shutil.which("node"), "node is required for chat UI behavior tests"
+    )
     def test_optimistic_user_bubble_dedupes_multiline_and_keeps_images(self) -> None:
         script_path = (
             Path(__file__).parents[1]
@@ -417,8 +481,12 @@ assert.strictEqual(widget.els.messages.children.length, 1, "SSE should not dupli
             text=True,
         )
 
-    @unittest.skipUnless(shutil.which("node"), "node is required for chat UI behavior tests")
-    def test_older_paging_retries_exhausts_and_keeps_concurrent_live_events(self) -> None:
+    @unittest.skipUnless(
+        shutil.which("node"), "node is required for chat UI behavior tests"
+    )
+    def test_older_paging_retries_exhausts_and_keeps_concurrent_live_events(
+        self,
+    ) -> None:
         script_path = (
             Path(__file__).parents[1]
             / "src"
@@ -498,7 +566,9 @@ setImmediate(function () {
         )
 
     def test_agent_page_starts_new_sessions_from_a_configuration_dialog(self) -> None:
-        template_root = Path(__file__).parents[1] / "src" / "pa" / "server" / "templates"
+        template_root = (
+            Path(__file__).parents[1] / "src" / "pa" / "server" / "templates"
+        )
         source = (template_root / "pages" / "agent.html").read_text()
 
         self.assertIn("data-agent-new-dialog", source)
@@ -521,12 +591,12 @@ setImmediate(function () {
         self.assertIn("populateSelect", script)
         self.assertIn("markSettingsDirty", script)
         self.assertIn("applySettings", script)
-        self.assertIn('const modelId = this.els.model.value;', script)
-        self.assertIn('const modeId = this.els.mode.value;', script)
-        self.assertIn('errors.push(error)', script)
-        self.assertIn('this.settingsPending = pending;', script)
-        self.assertIn('if (this.settingsPending)', script)
-        self.assertIn('No changes to apply.', script)
+        self.assertIn("const modelId = this.els.model.value;", script)
+        self.assertIn("const modeId = this.els.mode.value;", script)
+        self.assertIn("errors.push(error)", script)
+        self.assertIn("this.settingsPending = pending;", script)
+        self.assertIn("if (this.settingsPending)", script)
+        self.assertIn("No changes to apply.", script)
         self.assertIn("Discard unsaved Agent settings changes", script)
         self.assertIn("sessionConfigSummary", script)
         self.assertGreaterEqual(script.count("self.applyOptionSnapshot(snap);"), 2)
@@ -544,7 +614,7 @@ setImmediate(function () {
         self.assertIn("data-settings-default-mode", source)
         self.assertIn("data-settings-default-effort", source)
         self.assertIn('surfaces["chat.default"]', source)
-        self.assertIn('globalSurfaces', source)
+        self.assertIn("globalSurfaces", source)
         self.assertIn("/api/agent/provider-options/", source)
 
     def test_chat_links_open_externally_or_use_the_file_browser(self) -> None:
@@ -571,6 +641,8 @@ setImmediate(function () {
         self.assertIn("pa-remote-start-form", template)
         self.assertIn("pa-remote-session-list", template)
         self.assertIn("pa-remote-history-list", template)
+        self.assertIn("pa-remote-dispatch-list", template)
+        self.assertIn('name="resume_session_id"', template)
         self.assertIn("auto_start=false", template)
         self.assertIn("watchRemoteSessions", fleet_script)
         self.assertIn("new Notification", fleet_script)
@@ -582,6 +654,12 @@ setImmediate(function () {
         self.assertIn("var generation = ++remoteLoadGeneration;", fleet_script)
         self.assertIn("instanceId !== remoteInstanceId", fleet_script)
         self.assertIn("var dispatchInstanceId = remoteInstanceId;", fleet_script)
+        self.assertIn('"Idempotency-Key": admission.key', fleet_script)
+        self.assertIn("function loadRemoteDispatches(instanceId)", fleet_script)
+        self.assertIn('completion_pending: "Completion pending"', fleet_script)
+        self.assertIn("data-dispatch-retry", fleet_script)
+        self.assertIn("data-dispatch-cancel", fleet_script)
+        self.assertNotIn("remoteInstanceSelect.disabled = true", fleet_script)
         self.assertIn("loadOlderRemoteAudit", fleet_script)
         self.assertIn("data-remote-audit-older", fleet_script)
         self.assertNotIn("setTimeout(loadRemoteOperations", fleet_script)

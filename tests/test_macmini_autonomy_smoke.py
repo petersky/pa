@@ -116,7 +116,7 @@ class MacMiniAutonomySmokeTest(unittest.TestCase):
                     authority_url="http://authority.invalid",
                     target_instance_id="target",
                     session_id=session["id"],
-                    state="dispatched",
+                    state="running",
                 )
             )
             authority = _request(
@@ -139,7 +139,7 @@ class MacMiniAutonomySmokeTest(unittest.TestCase):
                 ),
             )
             self.assertTrue(ack["acknowledged"])
-            self.assertEqual(ledger.get("dispatch-smoke").state, "acknowledged")
+            self.assertEqual(ledger.get("dispatch-smoke").state, "completed")
             authority_store.update_card.assert_called_once()
 
             subprocess.run(

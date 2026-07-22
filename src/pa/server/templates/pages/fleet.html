@@ -148,6 +148,7 @@
               </select>
             </label>
             <label>Working directory <input name="cwd" placeholder="Project repository or instance default" autocomplete="off"></label>
+            <label>Resume session ID <input name="resume_session_id" placeholder="Leave empty to create a fresh execution session" autocomplete="off"></label>
             <label>Initial instruction
               <textarea name="message" rows="4" placeholder="For a card, PA supplies the card and project context automatically."></textarea>
             </label>
@@ -156,6 +157,14 @@
             </div>
           </form>
         </details>
+
+        <div>
+          <h3>Dispatch progress</h3>
+          <p class="muted small">Durable jobs continue across page reloads and PA restarts.</p>
+          <ul class="item-list compact" id="pa-remote-dispatch-list" aria-live="polite">
+            <li class="muted">Choose an instance.</li>
+          </ul>
+        </div>
 
         <div>
           <h3>Live sessions</h3>

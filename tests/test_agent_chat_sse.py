@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -14,6 +15,7 @@ from fastapi import HTTPException
 
 from pa.acp.client import normalize_session_update
 from pa.domain.models import AgentSession, TranscriptEvent
+from pa.execution.dispatch import DispatchRecord, DispatchStore
 from pa.modules.agent_chat import (
     CreateSessionBody,
     _apply_initial_options,
@@ -115,9 +117,7 @@ class AgentChatSseTests(unittest.TestCase):
 
         with (
             patch("pa.modules.agent_chat._manager", return_value=manager),
-            patch(
-                "pa.modules.agent_chat.get_principal_id", return_value="user:local"
-            ),
+            patch("pa.modules.agent_chat.get_principal_id", return_value="user:local"),
             patch("pa.acp.providers.registry.get_provider", return_value=MagicMock()),
         ):
             result = get_provider_options(request, "codex")
@@ -130,18 +130,12 @@ class AgentChatSseTests(unittest.TestCase):
     def test_provider_options_exclude_other_users_sessions(self) -> None:
         other_live = MagicMock()
         other_live._closed = False
-        other_live.session = AgentSession(
-            agent_name="codex", principal_id="user:other"
-        )
-        other_live.connection.models = {
-            "availableModels": [{"modelId": "other-live"}]
-        }
+        other_live.session = AgentSession(agent_name="codex", principal_id="user:other")
+        other_live.connection.models = {"availableModels": [{"modelId": "other-live"}]}
         own_cached = AgentSession(
             agent_name="codex",
             principal_id="user:local",
-            config_json={
-                "models": {"availableModels": [{"modelId": "own-cached"}]}
-            },
+            config_json={"models": {"availableModels": [{"modelId": "own-cached"}]}},
         )
         manager = MagicMock()
         manager.list_runtimes.return_value = [other_live]
@@ -154,9 +148,7 @@ class AgentChatSseTests(unittest.TestCase):
 
         with (
             patch("pa.modules.agent_chat._manager", return_value=manager),
-            patch(
-                "pa.modules.agent_chat.get_principal_id", return_value="user:local"
-            ),
+            patch("pa.modules.agent_chat.get_principal_id", return_value="user:local"),
             patch("pa.acp.providers.registry.get_provider", return_value=MagicMock()),
         ):
             result = get_provider_options(request, "codex")
@@ -192,7 +184,9 @@ class AgentChatSseTests(unittest.TestCase):
         async def run() -> dict:
             with (
                 patch("pa.modules.agent_chat._manager", return_value=manager),
-                patch("pa.modules.agent_chat.get_principal_id", return_value="user:local"),
+                patch(
+                    "pa.modules.agent_chat.get_principal_id", return_value="user:local"
+                ),
             ):
                 return await create_session(request, body)
 
@@ -231,7 +225,9 @@ class AgentChatSseTests(unittest.TestCase):
         async def run() -> dict:
             with (
                 patch("pa.modules.agent_chat._manager", return_value=manager),
-                patch("pa.modules.agent_chat.get_principal_id", return_value="user:local"),
+                patch(
+                    "pa.modules.agent_chat.get_principal_id", return_value="user:local"
+                ),
                 patch(
                     "pa.acp.providers.resolve.resolve_surface_preferences",
                     return_value=defaults,
@@ -274,7 +270,9 @@ class AgentChatSseTests(unittest.TestCase):
         async def run() -> dict:
             with (
                 patch("pa.modules.agent_chat._manager", return_value=manager),
-                patch("pa.modules.agent_chat.get_principal_id", return_value="user:local"),
+                patch(
+                    "pa.modules.agent_chat.get_principal_id", return_value="user:local"
+                ),
                 patch(
                     "pa.acp.providers.resolve.resolve_surface_preferences",
                     return_value=defaults,
@@ -310,7 +308,9 @@ class AgentChatSseTests(unittest.TestCase):
         async def run() -> None:
             with (
                 patch("pa.modules.agent_chat._manager", return_value=manager),
-                patch("pa.modules.agent_chat.get_principal_id", return_value="user:local"),
+                patch(
+                    "pa.modules.agent_chat.get_principal_id", return_value="user:local"
+                ),
             ):
                 await create_session(request, body)
 
@@ -339,7 +339,9 @@ class AgentChatSseTests(unittest.TestCase):
         async def run() -> None:
             with (
                 patch("pa.modules.agent_chat._manager", return_value=manager),
-                patch("pa.modules.agent_chat.get_principal_id", return_value="user:local"),
+                patch(
+                    "pa.modules.agent_chat.get_principal_id", return_value="user:local"
+                ),
             ):
                 await create_session(request, body)
 
@@ -406,6 +408,123 @@ class AgentChatSseTests(unittest.TestCase):
                 "sess-only",
             ],
         )
+
+    def test_fresh_dispatch_ignores_old_card_label_and_retry_reuses_exact_link(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = DispatchStore(Path(tmp))
+            record = DispatchRecord(
+                dispatch_id="dispatch-1",
+                mutation_id="mutation-1",
+                card_id="card-1",
+                request_payload={"message": "work"},
+                authority_instance_id="authority",
+                authority_url="http://authority",
+                target_instance_id="target",
+                state="materializing",
+            )
+            ledger.put(record)
+            runtime = MagicMock()
+            runtime._closed = False
+            runtime.session_id = "session-new"
+            runtime.session = AgentSession(
+                id="session-new",
+                agent_name="codex",
+                label="card:card-1:dispatch:dispatch-1",
+            )
+            runtime.connection.config_options = []
+            runtime.set_model = AsyncMock()
+            runtime.set_mode = AsyncMock()
+            runtime.set_config = AsyncMock()
+            runtime.snapshot.return_value = {"session": {"id": "session-new"}}
+            old_runtime = MagicMock()
+            old_runtime._closed = False
+            old_runtime.session.label = "card:card-1"
+
+            manager = MagicMock()
+            manager.create_session = AsyncMock(return_value=runtime)
+            manager.list_runtimes.return_value = [old_runtime]
+            manager.get.return_value = None
+            manager.store.get_session.return_value = None
+            manager.store.save_session = MagicMock()
+            request = MagicMock()
+            request.app.state.ctx.settings = SimpleNamespace(data_dir=None)
+            request.app.state.ctx.services = {"dispatch_store": ledger}
+            body = CreateSessionBody(
+                label="card:card-1:dispatch:dispatch-1",
+                card_id="card-1",
+                dispatch_id="dispatch-1",
+            )
+
+            async def first() -> dict:
+                with (
+                    patch("pa.modules.agent_chat._manager", return_value=manager),
+                    patch("pa.modules.agent_chat.uuid4", return_value="session-new"),
+                    patch(
+                        "pa.modules.agent_chat.get_principal_id",
+                        return_value="user:local",
+                    ),
+                ):
+                    return await create_session(request, body)
+
+            result = asyncio.run(first())
+            self.assertEqual(result["session"]["id"], "session-new")
+            manager.create_session.assert_awaited_once()
+            self.assertEqual(
+                manager.create_session.await_args.kwargs["session_id"], "session-new"
+            )
+            self.assertEqual(record.session_id, "session-new")
+
+            manager.create_session.reset_mock()
+            manager.get.return_value = runtime
+            result = asyncio.run(first())
+            self.assertEqual(result["session"]["id"], "session-new")
+            manager.create_session.assert_not_awaited()
+
+    def test_resume_requires_exact_session_linked_during_materialization(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = DispatchStore(Path(tmp))
+            ledger.put(
+                DispatchRecord(
+                    dispatch_id="dispatch-1",
+                    mutation_id="mutation-1",
+                    request_payload={"message": "resume"},
+                    authority_instance_id="authority",
+                    authority_url="http://authority",
+                    target_instance_id="target",
+                    session_id="session-expected",
+                    resume_requested=True,
+                    resume_session_id="session-expected",
+                )
+            )
+            request = MagicMock()
+            request.app.state.ctx.settings = SimpleNamespace(data_dir=None)
+            request.app.state.ctx.services = {"dispatch_store": ledger}
+            manager = MagicMock()
+
+            async def run() -> None:
+                with (
+                    patch("pa.modules.agent_chat._manager", return_value=manager),
+                    patch(
+                        "pa.modules.agent_chat.get_principal_id",
+                        return_value="user:local",
+                    ),
+                ):
+                    await create_session(
+                        request,
+                        CreateSessionBody(
+                            dispatch_id="dispatch-1",
+                            resume=True,
+                            resume_session_id="session-wrong",
+                        ),
+                    )
+
+            with self.assertRaises(HTTPException) as raised:
+                asyncio.run(run())
+            self.assertEqual(raised.exception.status_code, 409)
+            self.assertEqual(raised.exception.detail["code"], "resume_session_mismatch")
+            manager.create_session.assert_not_called()
 
     def test_session_list_exposes_provider_for_option_lookup(self) -> None:
         runtime = MagicMock()
@@ -543,9 +662,7 @@ class AgentChatSseTests(unittest.TestCase):
         request.app.state.ctx.settings.instance_name = "macmini"
 
         with patch("pa.modules.agent_chat._manager", return_value=manager):
-            page = get_agent_session_history(
-                request, session.id, before_seq=3, limit=2
-            )
+            page = get_agent_session_history(request, session.id, before_seq=3, limit=2)
 
         self.assertEqual([event["seq"] for event in page["events"]], [1, 2])
         self.assertFalse(page["page"]["has_older"])
@@ -588,7 +705,9 @@ class AgentChatSseTests(unittest.TestCase):
                 chunks: list[str] = []
                 try:
                     async for chunk in resp.body_iterator:
-                        chunks.append(chunk if isinstance(chunk, str) else chunk.decode())
+                        chunks.append(
+                            chunk if isinstance(chunk, str) else chunk.decode()
+                        )
                         if any("data:" in c for c in chunks):
                             break
                 finally:
@@ -636,7 +755,9 @@ class AgentChatSseTests(unittest.TestCase):
                 chunks: list[str] = []
                 try:
                     async for chunk in resp.body_iterator:
-                        chunks.append(chunk if isinstance(chunk, str) else chunk.decode())
+                        chunks.append(
+                            chunk if isinstance(chunk, str) else chunk.decode()
+                        )
                         if any("agent_thought_chunk" in c for c in chunks):
                             break
                 finally:
@@ -797,7 +918,9 @@ class AgentChatSseTests(unittest.TestCase):
                 self, session_id: str, *, after_seq: int = 0, limit: int = 500
             ) -> list[Any]:
                 self.after_calls.append(after_seq)
-                visible = self._events[:3] if len(self.after_calls) == 1 else self._events
+                visible = (
+                    self._events[:3] if len(self.after_calls) == 1 else self._events
+                )
                 return [event for event in visible if event.seq > after_seq][:limit]
 
         runtime = _FakeRuntime()
@@ -857,7 +980,9 @@ class AgentChatSseTests(unittest.TestCase):
                 self, session_id: str, *, after_seq: int = 0, limit: int = 500
             ) -> list[Any]:
                 self.after_calls.append(after_seq)
-                visible = self._events[:3] if len(self.after_calls) == 1 else self._events
+                visible = (
+                    self._events[:3] if len(self.after_calls) == 1 else self._events
+                )
                 return [event for event in visible if event.seq > after_seq][:limit]
 
         runtime = _FakeRuntime()

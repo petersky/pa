@@ -1375,6 +1375,7 @@ class AgentSessionManager:
     async def create_session(
         self,
         *,
+        session_id: str | None = None,
         label: str | None = None,
         title: str | None = None,
         cwd: str | None = None,
@@ -1451,6 +1452,7 @@ class AgentSessionManager:
             source = resolved.source
 
         session = existing or AgentSession(
+            id=session_id or str(uuid4()),
             agent_name=provider_id,
             status="provisioning",
             cwd=None,
