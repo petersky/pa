@@ -26,6 +26,9 @@ class AgentProviderSpec(BaseModel):
     install_method: str = "path"  # path | npm | npx
     npm_package: str | None = None
     prefer_new_session_on_resume_failure: bool = True
+    # When False, skip ACP session/load even if the agent advertises loadSession.
+    # Cursor currently advertises load support but rejects load with Invalid params.
+    session_load_supported: bool | None = None
     capability_notes: str = ""
 
 

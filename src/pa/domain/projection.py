@@ -45,6 +45,18 @@ from pa.sync.event_log import EventLog
 T = TypeVar("T")
 
 
+def _coerce_datetime(value: object) -> datetime | None:
+    """Parse event-payload timestamps without inventing a new wall-clock time."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=UTC)
+    if isinstance(value, str):
+        parsed = datetime.fromisoformat(value)
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+    return None
+
+
 def serialized_mutation(method: Callable[..., T]) -> Callable[..., T]:
     """Keep ref advancement, projection application, and checkpoint ordered."""
 
@@ -504,6 +516,8 @@ class CardProjection:
 
     def _apply_created(self, event: CardEvent) -> None:
         p = event.payload
+        created_at = _coerce_datetime(p.get("created_at")) or datetime.now(UTC)
+        updated_at = _coerce_datetime(p.get("updated_at")) or created_at
         card = Card(
             id=p.get("id", event.card_id or str(uuid4())),
             realm_id=event.realm_id,
@@ -516,8 +530,14 @@ class CardProjection:
             tags=p.get("tags", []),
             preferred_instance=p.get("preferred_instance"),
             preferred_capabilities=p.get("preferred_capabilities", []),
-            created_by_principal=event.author_principal,
-            created_by_instance=event.author_instance,
+            lease_holder_instance=p.get("lease_holder_instance"),
+            lease_holder_principal=p.get("lease_holder_principal"),
+            lease_expires_at=_coerce_datetime(p.get("lease_expires_at")),
+            created_by_principal=p.get("created_by_principal")
+            or event.author_principal,
+            created_by_instance=p.get("created_by_instance") or event.author_instance,
+            created_at=created_at,
+            updated_at=updated_at,
         )
         self._upsert_card(card)
 
@@ -594,11 +614,19 @@ class CardProjection:
         if not card:
             return
         for key, value in event.payload.items():
+            if key in {"created_at", "updated_at", "lease_expires_at"}:
+                continue
             if key == "lane":
                 card.lane = CardLane(value)
             elif hasattr(card, key):
                 setattr(card, key, value)
-        card.updated_at = datetime.now(UTC)
+        if "lease_expires_at" in event.payload:
+            card.lease_expires_at = _coerce_datetime(event.payload.get("lease_expires_at"))
+        # Prefer the authority stamp carried in the event so synced peers keep
+        # an identical card_version for fleet dispatch materialization.
+        card.updated_at = (
+            _coerce_datetime(event.payload.get("updated_at")) or datetime.now(UTC)
+        )
         self._upsert_card(card)
 
     def _apply_deleted(self, event: CardEvent) -> None:
@@ -626,8 +654,12 @@ class CardProjection:
         card.lease_holder_instance = event.payload.get("holder_instance")
         card.lease_holder_principal = event.payload.get("holder_principal")
         exp = event.payload.get("expires_at")
-        card.lease_expires_at = datetime.fromisoformat(exp) if exp else None
-        card.updated_at = datetime.now(UTC)
+        card.lease_expires_at = (
+            datetime.fromisoformat(exp) if isinstance(exp, str) and exp else None
+        )
+        card.updated_at = (
+            _coerce_datetime(event.payload.get("updated_at")) or datetime.now(UTC)
+        )
         self._upsert_card(card)
 
     def _apply_lease_release(self, event: CardEvent) -> None:
@@ -639,7 +671,9 @@ class CardProjection:
         card.lease_holder_instance = None
         card.lease_holder_principal = None
         card.lease_expires_at = None
-        card.updated_at = datetime.now(UTC)
+        card.updated_at = (
+            _coerce_datetime(event.payload.get("updated_at")) or datetime.now(UTC)
+        )
         self._upsert_card(card)
 
     def _upsert_card(self, card: Card) -> None:
@@ -776,6 +810,9 @@ class CardProjection:
             elif value is not None:
                 payload[key] = value
         if self.event_log and payload:
+            # Stamp the authority version into the durable event so every peer
+            # projects the same updated_at used for dispatch card_version checks.
+            payload["updated_at"] = datetime.now(UTC).isoformat()
             event = CardEvent(
                 type=EventType.CARD_UPDATED,
                 realm_id=realm_id,
