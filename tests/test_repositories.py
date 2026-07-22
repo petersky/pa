@@ -707,6 +707,21 @@ class RepositoryRouteTests(unittest.TestCase):
                 repository_id = create_response.json()["id"]
                 self.assertEqual(create_response.json()["remotes"][0]["name"], "origin")
 
+                invalid_create_response = client.post(
+                    "/api/repositories",
+                    json={"url": "   "},
+                    headers=headers,
+                )
+                self.assertEqual(
+                    invalid_create_response.status_code,
+                    400,
+                    invalid_create_response.text,
+                )
+                self.assertEqual(
+                    invalid_create_response.json()["detail"],
+                    "repository URL is required",
+                )
+
                 update_response = client.patch(
                     f"/api/repositories/{repository_id}",
                     json={
@@ -963,6 +978,28 @@ class RepositoryRouteTests(unittest.TestCase):
                 "status": "active",
             },
         )
+
+        mcp.functions["update_repository"](
+            "repo-1",
+            name="MCP renamed",
+            clear_fields=["default_branch", "provider_repository_id"],
+        )
+        local_api.assert_called_with(
+            ctx.settings,
+            "PATCH",
+            "/api/repositories/repo-1",
+            params={"realm": "default"},
+            json={
+                "name": "MCP renamed",
+                "default_branch": None,
+                "provider_repository_id": None,
+            },
+            allow_not_found=True,
+        )
+        with self.assertRaisesRegex(ValueError, "Unsupported nullable"):
+            mcp.functions["update_repository"](
+                "repo-1", clear_fields=["visibility"]
+            )
 
         mcp.functions["set_repository_checkout"](
             "repo-1", "instance-a", "/work/mcp", branch="main"

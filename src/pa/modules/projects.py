@@ -162,9 +162,14 @@ def list_repositories_api(request: Request, realm: str | None = None) -> list[di
 @router.post("/repositories", status_code=201)
 def create_repository_api(request: Request, data: RepositoryCreate) -> dict:
     settings = request.app.state.ctx.settings
-    repository = get_store().create_repository(
-        data, principal_id=get_principal_id(request), instance_id=settings.instance_id
-    )
+    try:
+        repository = get_store().create_repository(
+            data,
+            principal_id=get_principal_id(request),
+            instance_id=settings.instance_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return repository.model_dump(mode="json")
 
 
@@ -789,9 +794,10 @@ class ProjectsModule(Module):
             provider_metadata: dict | None = None,
             visibility: str | None = None,
             status: str | None = None,
+            clear_fields: list[str] | None = None,
             realm: str = "default",
         ) -> dict | None:
-            """Update repository metadata or lifecycle."""
+            """Update metadata or lifecycle; clear nullable fields by name."""
             fields = {
                 "name": name,
                 "remotes": remotes,
@@ -802,12 +808,20 @@ class ProjectsModule(Module):
                 "visibility": visibility,
                 "status": status,
             }
+            nullable_fields = {"default_branch", "provider_repository_id"}
+            requested_clears = set(clear_fields or [])
+            unsupported = requested_clears - nullable_fields
+            if unsupported:
+                names = ", ".join(sorted(unsupported))
+                raise ValueError(f"Unsupported nullable repository fields: {names}")
+            payload = {key: value for key, value in fields.items() if value is not None}
+            payload.update({key: None for key in requested_clears})
             return request_local_pa(
                 ctx.settings,
                 "PATCH",
                 f"/api/repositories/{repository_id}",
                 params={"realm": realm},
-                json={key: value for key, value in fields.items() if value is not None},
+                json=payload,
                 allow_not_found=True,
             )
 
