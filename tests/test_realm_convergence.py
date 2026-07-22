@@ -75,6 +75,7 @@ class _SyncNetwork:
         self.nodes = {urlsplit(node.url).hostname: node for node in nodes}
         self.unavailable: set[str] = set()
         self.omit_push_head: set[str] = set()
+        self.reject_push: set[str] = set()
 
     def client(self, *args, **kwargs):
         return _SyncClient(self)
@@ -113,6 +114,20 @@ class _SyncNetwork:
             )
             return httpx.Response(200, json=refs, request=request)
         if path == "/api/sync/push":
+            if host in self.reject_push:
+                return httpx.Response(
+                    409,
+                    json={
+                        "detail": {
+                            "code": "sync_conflict",
+                            "local_head": node.log.get_head(
+                                body.get("realm_id", "default")
+                            ),
+                            "conflicts": [],
+                        }
+                    },
+                    request=request,
+                )
             node.engine.ingest_objects(body.get("objects", {}))
             result = node.engine._reconcile_remote_head(
                 body.get("realm_id", "default"), body["head_hash"]
@@ -436,6 +451,19 @@ class RealmConvergenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(state["phase"], "degraded")
         target = next(item for item in state["instances"] if item["name"] == "Monica")
         self.assertEqual(target["status"], "missing_head")
+
+    async def test_peer_that_rejects_propagation_never_marks_realm_converged(
+        self,
+    ) -> None:
+        card = self._shared_card()
+        self._update(self.authority, card.id, title="racing update")
+        self.network.reject_push.add("target")
+
+        state = await self.authority.engine.converge_realm("default")
+
+        self.assertEqual(state["phase"], "retrying")
+        target = next(item for item in state["instances"] if item["name"] == "Monica")
+        self.assertEqual(target["status"], "conflict")
 
     async def test_dispatch_health_succeeds_after_automatic_repair(self) -> None:
         card = self._shared_card()

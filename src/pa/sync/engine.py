@@ -508,6 +508,9 @@ class SyncEngine:
                 in {"unavailable", "invalid_response", "error", "missing_head"}
                 for item in instances
             )
+            push_conflict = any(
+                item.get("status") == "conflict" for item in instances
+            )
             mismatched = any(
                 item.get("status") == "reachable"
                 and item.get("head") != local_head
@@ -519,7 +522,7 @@ class SyncEngine:
                 else "degraded"
                 if unavailable
                 else "retrying"
-                if mismatched
+                if mismatched or push_conflict
                 else "converged"
             )
             return self._set_state(
