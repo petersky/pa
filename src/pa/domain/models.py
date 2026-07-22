@@ -129,11 +129,36 @@ class ProjectRepo(BaseModel):
     path: str | None = None
 
 
+class RepositoryVisibility(StrEnum):
+    PRIVATE = "private"
+    REALM = "realm"
+    PUBLIC = "public"
+
+
+class RepositoryStatus(StrEnum):
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+
+
+class RepositoryRemote(BaseModel):
+    name: str = "origin"
+    fetch_url: str
+    push_url: str | None = None
+
+
 class Repository(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     realm_id: str = "default"
     url: str
     name: str = ""
+    remotes: list[RepositoryRemote] = Field(default_factory=list)
+    default_branch: str | None = None
+    provider: str = ""
+    provider_repository_id: str | None = None
+    provider_metadata: dict = Field(default_factory=dict)
+    visibility: RepositoryVisibility = RepositoryVisibility.REALM
+    status: RepositoryStatus = RepositoryStatus.ACTIVE
+    archived_at: datetime | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
@@ -142,11 +167,25 @@ class RepositoryCreate(BaseModel):
     realm_id: str = "default"
     url: str
     name: str = ""
+    remotes: list[RepositoryRemote] = Field(default_factory=list)
+    default_branch: str | None = None
+    provider: str = ""
+    provider_repository_id: str | None = None
+    provider_metadata: dict = Field(default_factory=dict)
+    visibility: RepositoryVisibility = RepositoryVisibility.REALM
+    status: RepositoryStatus = RepositoryStatus.ACTIVE
 
 
 class RepositoryUpdate(BaseModel):
     url: str | None = None
     name: str | None = None
+    remotes: list[RepositoryRemote] | None = None
+    default_branch: str | None = None
+    provider: str | None = None
+    provider_repository_id: str | None = None
+    provider_metadata: dict | None = None
+    visibility: RepositoryVisibility | None = None
+    status: RepositoryStatus | None = None
 
 
 class ProjectRepository(BaseModel):

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
@@ -13,6 +15,8 @@ from pa.domain.models import (
     ProjectUpdate,
     RepositoryCheckout,
     RepositoryCreate,
+    RepositoryRemote,
+    RepositoryStatus,
     RepositoryUpdate,
 )
 from pa.domain.store import get_store
@@ -29,6 +33,22 @@ def _active_realm(request: Request) -> str:
     )
 
 
+def _provider_metadata(value: str) -> dict:
+    if not value.strip():
+        return {}
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(
+            status_code=400, detail="Provider metadata must be valid JSON"
+        ) from exc
+    if not isinstance(parsed, dict):
+        raise HTTPException(
+            status_code=400, detail="Provider metadata must be a JSON object"
+        )
+    return parsed
+
+
 def _projects_context(request: Request) -> dict:
     store = get_store()
     realm = _active_realm(request)
@@ -37,10 +57,42 @@ def _projects_context(request: Request) -> dict:
     cards = (
         store.list_cards_for_project(project_id, realm_id=realm) if project_id else []
     )
+    repositories = store.list_repositories(realm)
+    linked_repositories = []
+    linked_ids: set[str] = set()
+    if project:
+        for repository, link in store.list_project_repositories(
+            project.id, realm_id=realm
+        ):
+            checkouts = store.list_repository_checkouts(repository.id)
+            linked_ids.add(repository.id)
+            linked_repositories.append(
+                {
+                    "repository": repository,
+                    "link": link,
+                    "checkouts": checkouts,
+                    "local_checkout": next(
+                        (
+                            checkout
+                            for checkout in checkouts
+                            if checkout.instance_id
+                            == request.app.state.ctx.settings.instance_id
+                        ),
+                        None,
+                    ),
+                }
+            )
     card_sessions = preferred_sessions_by_card(store.list_sessions())
     return {
         "projects": store.list_projects(realm_id=realm),
-        "repositories": store.list_repositories(realm),
+        "repositories": repositories,
+        "linked_repositories": linked_repositories,
+        "available_repositories": [
+            repository
+            for repository in repositories
+            if repository.id not in linked_ids
+            and repository.status == RepositoryStatus.ACTIVE
+        ],
         "project": project,
         "cards": cards,
         "card_projects": {card.id: project for card in cards},
@@ -169,6 +221,29 @@ def delete_repository_api(
         instance_id=settings.instance_id,
     ):
         raise HTTPException(status_code=404, detail="Repository not found")
+
+
+@router.get("/projects/{project_id}/repositories")
+def list_project_repositories_api(
+    request: Request, project_id: str, realm: str | None = None
+) -> list[dict]:
+    realm_id = realm or request.app.state.ctx.settings.primary_realm
+    store = get_store()
+    if not store.get_project(project_id, realm_id):
+        raise HTTPException(status_code=404, detail="Project not found")
+    return [
+        {
+            "repository": repository.model_dump(mode="json"),
+            "branch": link.branch,
+            "checkouts": [
+                checkout.model_dump(mode="json")
+                for checkout in store.list_repository_checkouts(repository.id)
+            ],
+        }
+        for repository, link in store.list_project_repositories(
+            project_id, realm_id=realm_id
+        )
+    ]
 
 
 @router.put("/projects/{project_id}/repositories/{repository_id}")
@@ -321,6 +396,13 @@ def create_repository_ui(
     request: Request,
     url: str = Form(...),
     name: str = Form(""),
+    default_branch: str = Form(""),
+    provider: str = Form(""),
+    provider_repository_id: str = Form(""),
+    provider_metadata: str = Form(""),
+    visibility: str = Form("realm"),
+    remote_name: str = Form("origin"),
+    push_url: str = Form(""),
     realm: str | None = None,
 ) -> HTMLResponse:
     from pa.modules.ui_shell import render_page
@@ -328,7 +410,23 @@ def create_repository_ui(
     realm_id = realm or _active_realm(request)
     settings = request.app.state.ctx.settings
     get_store().create_repository(
-        RepositoryCreate(realm_id=realm_id, url=url, name=name),
+        RepositoryCreate(
+            realm_id=realm_id,
+            url=url,
+            name=name,
+            remotes=[
+                RepositoryRemote(
+                    name=remote_name or "origin",
+                    fetch_url=url,
+                    push_url=push_url or url,
+                )
+            ],
+            default_branch=default_branch or None,
+            provider=provider,
+            provider_repository_id=provider_repository_id or None,
+            provider_metadata=_provider_metadata(provider_metadata),
+            visibility=visibility,
+        ),
         principal_id=get_principal_id(request),
         instance_id=settings.instance_id,
     )
@@ -371,6 +469,159 @@ def link_repository_ui(
             principal_id=get_principal_id(request),
             instance_id=settings.instance_id,
         )
+    page = request.app.state.ctx.require_service("pages").get_by_path("/projects")
+    return render_page(request, page)
+
+
+@ui_router.post("/projects/repositories/{repository_id}")
+def update_repository_ui(
+    request: Request,
+    repository_id: str,
+    name: str = Form(""),
+    default_branch: str = Form(""),
+    provider: str = Form(""),
+    provider_repository_id: str = Form(""),
+    provider_metadata: str = Form(""),
+    visibility: str = Form("realm"),
+    status: str = Form("active"),
+    remote_name: str = Form("origin"),
+    fetch_url: str = Form(...),
+    push_url: str = Form(""),
+    realm: str | None = None,
+) -> HTMLResponse:
+    from pa.modules.ui_shell import render_page
+
+    realm_id = realm or _active_realm(request)
+    settings = request.app.state.ctx.settings
+    store = get_store()
+    current = store.get_repository(repository_id, realm_id)
+    if not current:
+        raise HTTPException(status_code=404, detail="Repository not found")
+    primary_remote = RepositoryRemote(
+        name=remote_name or "origin",
+        fetch_url=fetch_url,
+        push_url=push_url or fetch_url,
+    )
+    repository = store.update_repository(
+        repository_id,
+        RepositoryUpdate(
+            name=name,
+            remotes=[primary_remote, *current.remotes[1:]],
+            default_branch=default_branch or None,
+            provider=provider,
+            provider_repository_id=provider_repository_id or None,
+            provider_metadata=_provider_metadata(provider_metadata),
+            visibility=visibility,
+            status=status,
+        ),
+        realm_id=realm_id,
+        principal_id=get_principal_id(request),
+        instance_id=settings.instance_id,
+    )
+    if not repository:
+        raise HTTPException(status_code=404, detail="Repository not found")
+    page = request.app.state.ctx.require_service("pages").get_by_path("/projects")
+    return render_page(request, page)
+
+
+@ui_router.post("/projects/repositories/{repository_id}/delete")
+def delete_repository_ui(
+    request: Request,
+    repository_id: str,
+    realm: str | None = None,
+) -> HTMLResponse:
+    from pa.modules.ui_shell import render_page
+
+    realm_id = realm or _active_realm(request)
+    settings = request.app.state.ctx.settings
+    if not get_store().delete_repository(
+        repository_id,
+        realm_id=realm_id,
+        principal_id=get_principal_id(request),
+        instance_id=settings.instance_id,
+    ):
+        raise HTTPException(status_code=404, detail="Repository not found")
+    page = request.app.state.ctx.require_service("pages").get_by_path("/projects")
+    return render_page(request, page)
+
+
+@ui_router.post("/projects/{project_id}/repositories/{repository_id}/unlink")
+def unlink_repository_ui(
+    request: Request,
+    project_id: str,
+    repository_id: str,
+    realm: str | None = None,
+) -> HTMLResponse:
+    from pa.modules.ui_shell import render_page
+
+    realm_id = realm or _active_realm(request)
+    settings = request.app.state.ctx.settings
+    store = get_store()
+    if not store.get_project(project_id, realm_id) or not store.get_repository(
+        repository_id, realm_id
+    ):
+        raise HTTPException(status_code=404, detail="Project or repository not found")
+    store.unlink_project_repository(
+        project_id,
+        repository_id,
+        realm_id=realm_id,
+        principal_id=get_principal_id(request),
+        instance_id=settings.instance_id,
+    )
+    page = request.app.state.ctx.require_service("pages").get_by_path("/projects")
+    return render_page(request, page)
+
+
+@ui_router.post("/projects/repositories/{repository_id}/checkout")
+def set_repository_checkout_ui(
+    request: Request,
+    repository_id: str,
+    path: str = Form(...),
+    branch: str = Form(""),
+    realm: str | None = None,
+) -> HTMLResponse:
+    from pa.modules.ui_shell import render_page
+
+    realm_id = realm or _active_realm(request)
+    settings = request.app.state.ctx.settings
+    store = get_store()
+    if not store.get_repository(repository_id, realm_id):
+        raise HTTPException(status_code=404, detail="Repository not found")
+    store.set_repository_checkout(
+        RepositoryCheckout(
+            repository_id=repository_id,
+            instance_id=settings.instance_id,
+            path=path,
+            branch=branch or None,
+        ),
+        realm_id=realm_id,
+        principal_id=get_principal_id(request),
+        instance_id=settings.instance_id,
+    )
+    page = request.app.state.ctx.require_service("pages").get_by_path("/projects")
+    return render_page(request, page)
+
+
+@ui_router.post("/projects/repositories/{repository_id}/checkout/remove")
+def remove_repository_checkout_ui(
+    request: Request,
+    repository_id: str,
+    realm: str | None = None,
+) -> HTMLResponse:
+    from pa.modules.ui_shell import render_page
+
+    realm_id = realm or _active_realm(request)
+    settings = request.app.state.ctx.settings
+    store = get_store()
+    if not store.get_repository(repository_id, realm_id):
+        raise HTTPException(status_code=404, detail="Repository not found")
+    store.remove_repository_checkout(
+        repository_id,
+        settings.instance_id,
+        realm_id=realm_id,
+        principal_id=get_principal_id(request),
+        instance_id=settings.instance_id,
+    )
     page = request.app.state.ctx.require_service("pages").get_by_path("/projects")
     return render_page(request, page)
 
@@ -472,6 +723,175 @@ class ProjectsModule(Module):
                     }.items()
                     if value is not None
                 },
+            )
+
+        @mcp.tool()
+        def list_repositories(realm: str = "default") -> list[dict]:
+            """List synchronized first-class repositories in a realm."""
+            return request_local_pa(
+                ctx.settings,
+                "GET",
+                "/api/realm/repositories",
+                params={"realm": realm},
+            )
+
+        @mcp.tool()
+        def get_repository(repository_id: str, realm: str = "default") -> dict | None:
+            """Get repository metadata and per-instance checkouts."""
+            return request_local_pa(
+                ctx.settings,
+                "GET",
+                f"/api/repositories/{repository_id}",
+                params={"realm": realm},
+                allow_not_found=True,
+            )
+
+        @mcp.tool()
+        def create_repository(
+            url: str,
+            name: str = "",
+            realm: str = "default",
+            remotes: list[dict] | None = None,
+            default_branch: str | None = None,
+            provider: str = "",
+            provider_repository_id: str | None = None,
+            provider_metadata: dict | None = None,
+            visibility: str = "realm",
+            status: str = "active",
+        ) -> dict:
+            """Create a synchronized first-class repository."""
+            return request_local_pa(
+                ctx.settings,
+                "POST",
+                "/api/repositories",
+                json={
+                    "realm_id": realm,
+                    "url": url,
+                    "name": name,
+                    "remotes": remotes or [],
+                    "default_branch": default_branch,
+                    "provider": provider,
+                    "provider_repository_id": provider_repository_id,
+                    "provider_metadata": provider_metadata or {},
+                    "visibility": visibility,
+                    "status": status,
+                },
+            )
+
+        @mcp.tool()
+        def update_repository(
+            repository_id: str,
+            name: str | None = None,
+            remotes: list[dict] | None = None,
+            default_branch: str | None = None,
+            provider: str | None = None,
+            provider_repository_id: str | None = None,
+            provider_metadata: dict | None = None,
+            visibility: str | None = None,
+            status: str | None = None,
+            realm: str = "default",
+        ) -> dict | None:
+            """Update repository metadata or lifecycle."""
+            fields = {
+                "name": name,
+                "remotes": remotes,
+                "default_branch": default_branch,
+                "provider": provider,
+                "provider_repository_id": provider_repository_id,
+                "provider_metadata": provider_metadata,
+                "visibility": visibility,
+                "status": status,
+            }
+            return request_local_pa(
+                ctx.settings,
+                "PATCH",
+                f"/api/repositories/{repository_id}",
+                params={"realm": realm},
+                json={key: value for key, value in fields.items() if value is not None},
+                allow_not_found=True,
+            )
+
+        @mcp.tool()
+        def delete_repository(repository_id: str, realm: str = "default") -> None:
+            """Delete a repository and its project links and checkout records."""
+            return request_local_pa(
+                ctx.settings,
+                "DELETE",
+                f"/api/repositories/{repository_id}",
+                params={"realm": realm},
+            )
+
+        @mcp.tool()
+        def list_project_repositories(
+            project_id: str, realm: str = "default"
+        ) -> list[dict]:
+            """List normalized repositories linked to a project."""
+            return request_local_pa(
+                ctx.settings,
+                "GET",
+                f"/api/projects/{project_id}/repositories",
+                params={"realm": realm},
+            )
+
+        @mcp.tool()
+        def link_project_repository(
+            project_id: str,
+            repository_id: str,
+            branch: str | None = None,
+            realm: str = "default",
+        ) -> dict:
+            """Link a repository to a project with an optional requested branch."""
+            return request_local_pa(
+                ctx.settings,
+                "PUT",
+                f"/api/projects/{project_id}/repositories/{repository_id}",
+                params={"realm": realm},
+                json={"branch": branch},
+            )
+
+        @mcp.tool()
+        def unlink_project_repository(
+            project_id: str,
+            repository_id: str,
+            realm: str = "default",
+        ) -> None:
+            """Unlink a repository from a project."""
+            return request_local_pa(
+                ctx.settings,
+                "DELETE",
+                f"/api/projects/{project_id}/repositories/{repository_id}",
+                params={"realm": realm},
+            )
+
+        @mcp.tool()
+        def set_repository_checkout(
+            repository_id: str,
+            checkout_instance_id: str,
+            path: str,
+            branch: str | None = None,
+            realm: str = "default",
+        ) -> dict:
+            """Set a repository checkout for one fleet instance."""
+            return request_local_pa(
+                ctx.settings,
+                "PUT",
+                f"/api/repositories/{repository_id}/checkouts/{checkout_instance_id}",
+                params={"realm": realm},
+                json={"path": path, "branch": branch},
+            )
+
+        @mcp.tool()
+        def remove_repository_checkout(
+            repository_id: str,
+            checkout_instance_id: str,
+            realm: str = "default",
+        ) -> None:
+            """Remove a repository checkout for one fleet instance."""
+            return request_local_pa(
+                ctx.settings,
+                "DELETE",
+                f"/api/repositories/{repository_id}/checkouts/{checkout_instance_id}",
+                params={"realm": realm},
             )
 
         @mcp.tool()

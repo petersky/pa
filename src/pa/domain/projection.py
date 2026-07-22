@@ -39,7 +39,10 @@ from pa.domain.models import (
     Repository,
     RepositoryCheckout,
     RepositoryCreate,
+    RepositoryRemote,
+    RepositoryStatus,
     RepositoryUpdate,
+    RepositoryVisibility,
     TranscriptEvent,
     _STATUS_TO_LANE,
 )
@@ -146,6 +149,11 @@ class CardProjection:
                 CREATE TABLE IF NOT EXISTS repositories (
                     id TEXT PRIMARY KEY, realm_id TEXT NOT NULL DEFAULT 'default',
                     url TEXT NOT NULL, name TEXT NOT NULL DEFAULT '',
+                    remotes TEXT NOT NULL DEFAULT '[]', default_branch TEXT,
+                    provider TEXT NOT NULL DEFAULT '', provider_repository_id TEXT,
+                    provider_metadata TEXT NOT NULL DEFAULT '{}',
+                    visibility TEXT NOT NULL DEFAULT 'realm',
+                    status TEXT NOT NULL DEFAULT 'active', archived_at TEXT,
                     created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
                     UNIQUE(realm_id, url)
                 );
@@ -294,6 +302,42 @@ class CardProjection:
                 "UPDATE knowledge SET card_id = item_id WHERE card_id IS NULL AND item_id IS NOT NULL"
             )
 
+        repository_cols = {
+            row[1] for row in conn.execute("PRAGMA table_info(repositories)").fetchall()
+        }
+        for col, decl in (
+            ("remotes", "TEXT NOT NULL DEFAULT '[]'"),
+            ("default_branch", "TEXT"),
+            ("provider", "TEXT NOT NULL DEFAULT ''"),
+            ("provider_repository_id", "TEXT"),
+            ("provider_metadata", "TEXT NOT NULL DEFAULT '{}'"),
+            ("visibility", "TEXT NOT NULL DEFAULT 'realm'"),
+            ("status", "TEXT NOT NULL DEFAULT 'active'"),
+            ("archived_at", "TEXT"),
+        ):
+            if col not in repository_cols:
+                conn.execute(f"ALTER TABLE repositories ADD COLUMN {col} {decl}")
+        for row in conn.execute("SELECT id, url, remotes FROM repositories").fetchall():
+            if not json.loads(row["remotes"] or "[]"):
+                conn.execute(
+                    "UPDATE repositories SET remotes=? WHERE id=?",
+                    (
+                        json.dumps(
+                            [
+                                {
+                                    "name": "origin",
+                                    "fetch_url": row["url"],
+                                    "push_url": row["url"],
+                                }
+                            ]
+                        ),
+                        row["id"],
+                    ),
+                )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_repositories_realm_status ON repositories(realm_id, status)"
+        )
+
     def _migrate_items_to_cards(self, conn: sqlite3.Connection) -> None:
         rows = conn.execute("SELECT * FROM items").fetchall()
         lane_map = {
@@ -326,6 +370,21 @@ class CardProjection:
     def _repository_id(self, realm_id: str, url: str) -> str:
         return str(uuid5(NAMESPACE_URL, f"pa:{realm_id}:{url.strip()}"))
 
+    @staticmethod
+    def _default_repository_remotes(url: str) -> list[RepositoryRemote]:
+        return [RepositoryRemote(name="origin", fetch_url=url, push_url=url)]
+
+    @staticmethod
+    def _repository_from_row(row: sqlite3.Row) -> Repository:
+        data = dict(row)
+        data.pop("project_branch", None)
+        data["remotes"] = [
+            RepositoryRemote.model_validate(remote)
+            for remote in json.loads(data.get("remotes") or "[]")
+        ]
+        data["provider_metadata"] = json.loads(data.get("provider_metadata") or "{}")
+        return Repository(**data)
+
     def _replace_project_repositories_conn(
         self, conn, project_id: str, realm_id: str, repos: list, instance_id: str
     ) -> None:
@@ -338,8 +397,20 @@ class CardProjection:
             url = repo.url.strip()
             repository_id = self._repository_id(realm_id, url)
             conn.execute(
-                "INSERT OR IGNORE INTO repositories (id, realm_id, url, name, created_at, updated_at) VALUES (?, ?, ?, '', ?, ?)",
-                (repository_id, realm_id, url, now, now),
+                "INSERT OR IGNORE INTO repositories (id, realm_id, url, name, remotes, created_at, updated_at) VALUES (?, ?, ?, '', ?, ?, ?)",
+                (
+                    repository_id,
+                    realm_id,
+                    url,
+                    json.dumps(
+                        [
+                            remote.model_dump(mode="json")
+                            for remote in self._default_repository_remotes(url)
+                        ]
+                    ),
+                    now,
+                    now,
+                ),
             )
             actual = conn.execute(
                 "SELECT id FROM repositories WHERE realm_id=? AND url=?",
@@ -449,14 +520,27 @@ class CardProjection:
     def _apply_repository_created(self, event: CardEvent) -> None:
         p = event.payload
         now = p.get("created_at") or event.timestamp.isoformat()
+        url = p["url"].strip()
+        remotes = p.get("remotes") or [
+            remote.model_dump(mode="json")
+            for remote in self._default_repository_remotes(url)
+        ]
         with self._conn() as conn:
             conn.execute(
-                "INSERT OR IGNORE INTO repositories (id, realm_id, url, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT OR IGNORE INTO repositories (id, realm_id, url, name, remotes, default_branch, provider, provider_repository_id, provider_metadata, visibility, status, archived_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     p["id"],
                     event.realm_id,
-                    p["url"],
+                    url,
                     p.get("name", ""),
+                    json.dumps(remotes),
+                    p.get("default_branch"),
+                    p.get("provider", ""),
+                    p.get("provider_repository_id"),
+                    json.dumps(p.get("provider_metadata") or {}),
+                    p.get("visibility", RepositoryVisibility.REALM.value),
+                    p.get("status", RepositoryStatus.ACTIVE.value),
+                    p.get("archived_at"),
                     now,
                     p.get("updated_at", now),
                 ),
@@ -471,9 +555,19 @@ class CardProjection:
             ).fetchone()
             if row:
                 conn.execute(
-                    "UPDATE repositories SET name=?, updated_at=? WHERE id=?",
+                    "UPDATE repositories SET name=?, remotes=?, default_branch=?, provider=?, provider_repository_id=?, provider_metadata=?, visibility=?, status=?, archived_at=?, updated_at=? WHERE id=?",
                     (
                         p.get("name", row["name"]),
+                        json.dumps(p["remotes"]) if "remotes" in p else row["remotes"],
+                        p.get("default_branch", row["default_branch"]),
+                        p.get("provider", row["provider"]),
+                        p.get("provider_repository_id", row["provider_repository_id"]),
+                        json.dumps(p["provider_metadata"])
+                        if "provider_metadata" in p
+                        else row["provider_metadata"],
+                        p.get("visibility", row["visibility"]),
+                        p.get("status", row["status"]),
+                        p.get("archived_at", row["archived_at"]),
                         event.timestamp.isoformat(),
                         p["id"],
                     ),
@@ -1050,7 +1144,7 @@ class CardProjection:
                 "SELECT * FROM repositories WHERE realm_id=? ORDER BY name, url",
                 (realm_id,),
             ).fetchall()
-        return [Repository(**dict(row)) for row in rows]
+        return [self._repository_from_row(row) for row in rows]
 
     def get_repository(
         self, repository_id: str, realm_id: str = "default"
@@ -1060,7 +1154,7 @@ class CardProjection:
                 "SELECT * FROM repositories WHERE id=? AND realm_id=?",
                 (repository_id, realm_id),
             ).fetchone()
-        return Repository(**dict(row)) if row else None
+        return self._repository_from_row(row) if row else None
 
     def list_project_repositories(
         self, project_id: str, *, realm_id: str = "default"
@@ -1077,14 +1171,7 @@ class CardProjection:
             ).fetchall()
         return [
             (
-                Repository(
-                    id=row["id"],
-                    realm_id=row["realm_id"],
-                    url=row["url"],
-                    name=row["name"],
-                    created_at=row["created_at"],
-                    updated_at=row["updated_at"],
-                ),
+                self._repository_from_row(row),
                 ProjectRepository(
                     project_id=project_id,
                     repository_id=row["id"],
@@ -1123,9 +1210,19 @@ class CardProjection:
         principal_id: str = "user:local",
         instance_id: str = "local",
     ) -> Repository:
-        repository = Repository(
-            id=self._repository_id(data.realm_id, data.url), **data.model_dump()
-        )
+        url = data.url.strip()
+        if not url:
+            raise ValueError("repository URL is required")
+        payload = data.model_dump(mode="json")
+        payload["url"] = url
+        if not payload["remotes"]:
+            payload["remotes"] = [
+                remote.model_dump(mode="json")
+                for remote in self._default_repository_remotes(url)
+            ]
+        if payload["status"] == RepositoryStatus.ARCHIVED.value:
+            payload["archived_at"] = datetime.now(UTC).isoformat()
+        repository = Repository(id=self._repository_id(data.realm_id, url), **payload)
         self._repository_event(
             EventType.REPOSITORY_CREATED,
             data.realm_id,
@@ -1147,9 +1244,31 @@ class CardProjection:
         repository = self.get_repository(repository_id, realm_id)
         if not repository:
             return None
-        updates = data.model_dump(exclude_unset=True, exclude_none=True)
-        if "url" in updates and updates["url"] != repository.url:
+        updates = data.model_dump(exclude_unset=True, mode="json")
+        new_url = updates.pop("url", None)
+        if new_url is not None and new_url.strip() != repository.url:
             raise ValueError("repository URL is immutable")
+        for key in (
+            "name",
+            "remotes",
+            "provider",
+            "provider_metadata",
+            "visibility",
+            "status",
+        ):
+            if updates.get(key) is None:
+                updates.pop(key, None)
+        if "remotes" in updates and not updates["remotes"]:
+            updates["remotes"] = [
+                remote.model_dump(mode="json")
+                for remote in self._default_repository_remotes(repository.url)
+            ]
+        if "status" in updates:
+            updates["archived_at"] = (
+                datetime.now(UTC).isoformat()
+                if updates["status"] == RepositoryStatus.ARCHIVED.value
+                else None
+            )
         payload = {"id": repository_id, **updates}
         self._repository_event(
             EventType.REPOSITORY_UPDATED, realm_id, payload, principal_id, instance_id
