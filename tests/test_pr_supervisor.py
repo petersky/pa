@@ -546,7 +546,7 @@ class _DedupeDispatcher:
         if event_key in self.keys:
             return "deduplicated"
         self.keys.add(event_key)
-        self.calls.append((event_key, prompt))
+        self.calls.append((event_key, getattr(prompt, "text", prompt)))
         return "queued"
 
 
@@ -598,7 +598,9 @@ class PRSupervisorServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.dispatcher.calls), 1)
         self.assertIn("independently re-fetch", self.dispatcher.calls[0][1].lower())
 
-    async def test_successful_capability_probe_is_not_repeated_every_minute(self) -> None:
+    async def test_successful_capability_probe_is_not_repeated_every_minute(
+        self,
+    ) -> None:
         github = _FakeGitHub([snapshot()])
         service = PRSupervisor(
             self.settings,

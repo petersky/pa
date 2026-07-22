@@ -25,6 +25,7 @@ class DispatchRecord(BaseModel):
     realm_id: str
     card_version: str
     authority_instance_id: str
+    authority_instance_name: str | None = None
     authority_url: str
     target_instance_id: str
     session_id: str | None = None

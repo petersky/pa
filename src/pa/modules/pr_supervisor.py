@@ -364,7 +364,12 @@ async def dispatch_executor(request: Request, body: dict[str, Any]) -> dict[str,
     prompt = str(body.get("prompt") or "")
     if not event_key or not prompt:
         raise HTTPException(status_code=400, detail="event_key and prompt required")
-    state = await service.dispatcher.dispatch_local(watch, event_key, prompt)
+    prompt_audit = body.get("prompt_audit") or []
+    if not isinstance(prompt_audit, list):
+        raise HTTPException(status_code=400, detail="prompt_audit must be a list")
+    state = await service.dispatcher.dispatch_local(
+        watch, event_key, prompt, prompt_audit=prompt_audit
+    )
     return {"state": state}
 
 

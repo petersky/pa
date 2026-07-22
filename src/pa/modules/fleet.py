@@ -16,7 +16,6 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 
-from pa.agent.context import augment_message_with_context
 from pa.auth.middleware import get_principal_id, require_user
 from pa.config import get_settings
 from pa.core.contracts import Module
@@ -139,6 +138,7 @@ class DispatchMaterializeBody(BaseModel):
     card_version: str
     realm_id: str
     authority_instance_id: str
+    authority_instance_name: str | None = None
     authority_url: str
     target_instance_id: str
     session_id: str | None = None
@@ -207,6 +207,7 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
         realm_id=body.realm_id,
         card_version=body.card_version,
         authority_instance_id=body.authority_instance_id,
+        authority_instance_name=body.authority_instance_name,
         authority_url=body.authority_url,
         target_instance_id=body.target_instance_id,
         session_id=body.session_id,
@@ -1447,6 +1448,7 @@ async def start_remote_agent_work(
             "card_version": card.updated_at.isoformat(),
             "realm_id": realm_id,
             "authority_instance_id": settings.instance_id,
+            "authority_instance_name": settings.instance_name,
             "authority_url": authority_url,
             "target_instance_id": instance_id,
         }
@@ -1457,6 +1459,7 @@ async def start_remote_agent_work(
             realm_id=realm_id,
             card_version=card.updated_at.isoformat(),
             authority_instance_id=settings.instance_id,
+            authority_instance_name=settings.instance_name,
             authority_url=authority_url,
             target_instance_id=instance_id,
             state="dispatching",
@@ -1517,18 +1520,14 @@ async def start_remote_agent_work(
 
     message = body.message.strip()
     if card and not message:
-        message = "Work on this card autonomously. Report progress, blockers, and the final result."
+        from pa.prompts import PROMPTS
+
+        message = PROMPTS.render(
+            "dispatch.remote.default", provider=body.provider or "default"
+        ).text
     prompt_result = None
     prompt_error = None
     if message:
-        if card or project_id:
-            message = augment_message_with_context(
-                store,
-                message,
-                card_id=card.id if card else None,
-                project_id=project_id,
-                realm_id=realm_id,
-            )
         try:
             prompt_result = await _peer_agent_json(
                 request,

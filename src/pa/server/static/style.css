@@ -2153,3 +2153,52 @@ a.ghost {
   .file-browser-header { flex-direction: column; }
   .file-browser-actions { width: 100%; }
 }
+
+/* Settings → Prompts */
+.prompt-toolbar {
+  display: grid;
+  grid-template-columns: minmax(16rem, 1fr) minmax(10rem, 14rem);
+  gap: var(--space-3);
+  align-items: end;
+}
+.prompt-catalog {
+  display: grid;
+  gap: var(--space-3);
+}
+.prompt-card-header {
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+.prompt-card-header h3,
+.prompt-card-header p {
+  margin: 0;
+}
+.prompt-card-header p {
+  margin-top: var(--space-1);
+}
+.prompt-meta {
+  margin: var(--space-3) 0;
+}
+.prompt-variable-list {
+  display: grid;
+  gap: var(--space-1);
+  padding-left: 1.25rem;
+}
+.prompt-preview {
+  max-height: 28rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+}
+@media (max-width: 700px) {
+  .prompt-toolbar {
+    grid-template-columns: 1fr;
+  }
+  .prompt-card-header {
+    align-items: stretch;
+  }
+}
