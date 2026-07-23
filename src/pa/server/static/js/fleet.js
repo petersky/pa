@@ -884,6 +884,8 @@
 
   var fleetOverview = null;
   var selectedFleetItem = null;
+  var fleetRefresh = null;
+  var fleetRenderedSnapshot = null;
 
   function readFleetOverview() {
     var source = $("#pa-fleet-overview-data");
@@ -912,6 +914,158 @@
     return worst;
   }
 
+  function topologyStatusForNode(node) {
+    var reach = fieldValue(node, "reachability");
+    var health = reach.value && reach.value.health;
+    if (health !== "up") return health === "unknown" ? reach.state : (health || reach.state);
+    return worstFreshness(node);
+  }
+
+  function fleetNodeLabel(node, freshness) {
+    var reach = fieldValue(node, "reachability");
+    var status = fieldValue(node, "status");
+    var sync = fieldValue(node, "sync");
+    var activity = fieldValue(node, "activity");
+    var providers = fieldValue(node, "providers");
+    var update = fieldValue(node, "update");
+    var health = reach.value && reach.value.health || reach.state;
+    var version = status.value && status.value.version || status.state;
+    var syncLabel = sync.value
+      ? (sync.value.consistent ? "heads aligned" : "head mismatch")
+      : sync.state;
+    var providerValues = Array.isArray(providers.value) ? providers.value : [];
+    var readyProviders = providerValues.filter(function (provider) {
+      var needsAuth = provider.auth_method && provider.auth_method !== "none";
+      return provider.available !== false && (!needsAuth || provider.auth_configured !== false);
+    }).length;
+    var providerLabel = providerValues.length
+      ? readyProviders + "/" + providerValues.length + " providers ready"
+      : "providers " + providers.state;
+    var updateLabel = update.value && update.value.upgrade_available
+      ? "update " + (update.value.available_version || update.value.latest || "available")
+      : "update " + update.state;
+    return node.name + ": " + health + ", " + activityLabel(activity.value) +
+      ", version " + version + ", " + updateLabel + ", sync " + syncLabel +
+      ", " + providerLabel + ", freshness " + freshness;
+  }
+
+  function createFleetSnapshot(overview, refresh, selection) {
+    var snapshot = {
+      overview: overview || { nodes: [], edges: [] },
+      refresh: refresh ? Object.assign({}, refresh, {
+        terminal: Object.assign({}, refresh.terminal || {})
+      }) : null,
+      selection: selection ? Object.assign({}, selection) : null,
+      nodes: [],
+      nodesById: Object.create(null),
+      selectedNode: null
+    };
+    (snapshot.overview.nodes || []).forEach(function (node) {
+      var freshness = worstFreshness(node);
+      var state = {
+        node: node,
+        freshness: freshness,
+        refreshing: Object.keys(node.dimensions || {}).some(function (name) {
+          return !!(node.dimensions[name] || {}).refreshing;
+        }),
+        topologyStatus: topologyStatusForNode(node),
+        accessibleLabel: fleetNodeLabel(node, freshness)
+      };
+      snapshot.nodes.push(state);
+      snapshot.nodesById[node.id] = state;
+    });
+    if (snapshot.selection && snapshot.selection.kind === "node") {
+      snapshot.selectedNode = snapshot.nodesById[snapshot.selection.id] || null;
+    }
+    return snapshot;
+  }
+
+  function replaceFleetDimension(overview, nodeId, dimension, value) {
+    return Object.assign({}, overview, {
+      nodes: (overview.nodes || []).map(function (node) {
+        if (node.id !== nodeId) return node;
+        var dimensions = Object.assign({}, node.dimensions || {});
+        dimensions[dimension] = Object.assign({}, value);
+        return Object.assign({}, node, { dimensions: dimensions });
+      })
+    });
+  }
+
+  function beginFleetRefresh(overview, nodeIds, dimensions, generation, startedAt) {
+    var selected = Object.create(null);
+    (nodeIds || []).forEach(function (id) { selected[id] = true; });
+    var next = Object.assign({}, overview, {
+      nodes: (overview.nodes || []).map(function (node) {
+        if (!selected[node.id]) return node;
+        var fields = Object.assign({}, node.dimensions || {});
+        (dimensions || []).forEach(function (dimension) {
+          fields[dimension] = Object.assign(
+            {},
+            fieldValue(node, dimension),
+            { refreshing: true }
+          );
+        });
+        return Object.assign({}, node, { dimensions: fields });
+      })
+    });
+    return {
+      overview: next,
+      refresh: {
+        generation: generation,
+        total: (nodeIds || []).length * (dimensions || []).length,
+        completed: 0,
+        terminal: Object.create(null),
+        startedAt: startedAt,
+        elapsedMs: 0
+      }
+    };
+  }
+
+  function applyFleetDimensionUpdate(overview, refresh, update) {
+    if (!refresh || update.generation !== refresh.generation) {
+      return { overview: overview, refresh: refresh, accepted: false, newlyCompleted: false };
+    }
+    var key = update.nodeId + "\n" + update.dimension;
+    var terminal = Object.assign({}, refresh.terminal || {});
+    var newlyCompleted = !terminal[key];
+    terminal[key] = true;
+    var nextRefresh = Object.assign({}, refresh, {
+      completed: refresh.completed + (newlyCompleted ? 1 : 0),
+      terminal: terminal,
+      elapsedMs: update.elapsedMs == null ? refresh.elapsedMs : update.elapsedMs
+    });
+    return {
+      overview: replaceFleetDimension(
+        overview,
+        update.nodeId,
+        update.dimension,
+        Object.assign({}, update.value, { refreshing: false })
+      ),
+      refresh: nextRefresh,
+      accepted: true,
+      newlyCompleted: newlyCompleted
+    };
+  }
+
+  function mergeFleetOverviewMetadata(overview, incoming) {
+    var existingById = Object.create(null);
+    (overview.nodes || []).forEach(function (node) { existingById[node.id] = node; });
+    var seen = Object.create(null);
+    var nodes = (incoming.nodes || []).map(function (node) {
+      seen[node.id] = true;
+      var existing = existingById[node.id];
+      if (!existing) return node;
+      return Object.assign({}, node, { dimensions: existing.dimensions });
+    });
+    (overview.nodes || []).forEach(function (node) {
+      if (!seen[node.id]) nodes.push(node);
+    });
+    return Object.assign({}, overview, incoming, {
+      nodes: nodes,
+      edges: incoming.edges || []
+    });
+  }
+
   function activityLabel(value) {
     value = value || {};
     var count = (value.sessions || []).length + (value.dispatches || []).length;
@@ -926,7 +1080,8 @@
     });
   }
 
-  function renderFleetRow(node) {
+  function renderFleetRow(nodeState) {
+    var node = nodeState.node;
     var tr = $('#pa-fleet-instances tr[data-fleet-instance="' + CSS.escape(node.id) + '"]');
     if (!tr) return;
     var reach = fieldValue(node, "reachability");
@@ -984,16 +1139,17 @@
     }
     var freshnessEl = $("[data-fleet-freshness]", tr);
     if (freshnessEl) {
-      var freshness = worstFreshness(node);
-      var refreshing = Object.keys(node.dimensions || {}).some(function (name) {
-        return node.dimensions[name].refreshing;
-      });
       var observed = reach.observed_at || status.observed_at;
+      var freshnessLabel = nodeState.refreshing
+        ? nodeState.freshness + " · refreshing"
+        : nodeState.freshness;
       freshnessEl.innerHTML = '<span class="fleet-freshness fleet-field-' +
-        escapeHtml(freshness) + '">' + escapeHtml(refreshing ? freshness + " · refreshing" : freshness) +
+        escapeHtml(nodeState.freshness) + '" aria-label="Freshness ' +
+        escapeHtml(freshnessLabel) + '">' + escapeHtml(freshnessLabel) +
         "</span>" + (observed ? '<time class="muted small" datetime="' +
           escapeHtml(observed) + '">' + escapeHtml(new Date(observed).toLocaleString()) + "</time>" : "");
     }
+    tr.setAttribute("aria-label", nodeState.accessibleLabel);
     var statusValue = status.value || {};
     var updateValue = update.value || {};
     tr.dataset.updateChannel = updateValue.channel || statusValue.release_track || "release";
@@ -1001,20 +1157,20 @@
     tr.dataset.availableVersion = updateValue.available_version || "";
   }
 
-  function nodeById(id) {
-    return (fleetOverview && fleetOverview.nodes || []).find(function (node) {
-      return node.id === id;
-    });
+  function nodeById(id, snapshot) {
+    var state = snapshot && snapshot.nodesById[id];
+    return state ? state.node : null;
   }
 
-  function edgeById(id) {
-    return (fleetOverview && fleetOverview.edges || []).find(function (edge) {
+  function edgeById(id, snapshot) {
+    return (snapshot && snapshot.overview.edges || []).find(function (edge) {
       return edge.id === id;
     });
   }
 
-  function edgeVisualStatus(edge) {
-    var target = edge && edge.target && nodeById(edge.target);
+  function edgeVisualStatus(edge, snapshot) {
+    var targetState = edge && edge.target && snapshot.nodesById[edge.target];
+    var target = targetState && targetState.node;
     if (!target) return edge && edge.status || "unavailable";
     var reach = fieldValue(target, "reachability");
     var health = reach.value && reach.value.health;
@@ -1023,16 +1179,16 @@
     }
     if (reach.state === "error" || reach.state === "timeout") return "degraded";
     if (reach.state === "unavailable") return "unavailable";
-    if (worstFreshness(target) === "stale") return "stale";
+    if (targetState.freshness === "stale") return "stale";
     return edge.status || "healthy";
   }
 
-  function renderFleetEdgeList() {
+  function renderFleetEdgeList(snapshot) {
     var list = $("#pa-fleet-edge-list");
-    if (!list || !fleetOverview) return;
-    var edges = fleetOverview.edges || [];
+    if (!list || !snapshot) return;
+    var edges = snapshot.overview.edges || [];
     list.innerHTML = edges.length ? edges.map(function (edge) {
-      var status = edgeVisualStatus(edge);
+      var status = edgeVisualStatus(edge, snapshot);
       return '<li><button type="button" class="link-button" data-fleet-edge="' +
         escapeHtml(edge.id) + '">' + escapeHtml(edge.kind + ": " +
           (edge.source || "external") + " → " + (edge.target || "external") +
@@ -1040,23 +1196,29 @@
     }).join("") : '<li class="muted">No registered routes.</li>';
   }
 
-  function renderFleetDetail(kind, id) {
+  function renderFleetDetail(kind, id, snapshot) {
     var panel = $("#pa-fleet-detail");
     if (!panel || !fleetOverview) return;
     selectedFleetItem = { kind: kind, id: id };
+    var current = snapshot;
+    if (!current || !current.selection || current.selection.kind !== kind || current.selection.id !== id) {
+      current = createFleetSnapshot(fleetOverview, fleetRefresh, selectedFleetItem);
+      fleetRenderedSnapshot = current;
+    }
     if (kind === "edge") {
-      var edge = edgeById(id);
+      var edge = edgeById(id, current);
       if (!edge) return;
       panel.innerHTML = "<h3>" + escapeHtml(edge.kind + " route") + "</h3>" +
         "<p><strong>" + escapeHtml(edge.label || edge.id) + "</strong></p>" +
         '<dl class="fleet-detail-list"><dt>Direction</dt><dd>' +
         escapeHtml((edge.source || "external") + " → " + (edge.target || "external")) +
-        "</dd><dt>Status</dt><dd>" + escapeHtml(edgeVisualStatus(edge)) +
+        "</dd><dt>Status</dt><dd>" + escapeHtml(edgeVisualStatus(edge, current)) +
         "</dd></dl><details><summary>Exact route detail</summary><pre>" +
         escapeHtml(JSON.stringify(edge.details || {}, null, 2)) + "</pre></details>";
       return;
     }
-    var node = nodeById(id);
+    var nodeState = current.nodesById[id];
+    var node = nodeState && nodeState.node;
     if (!node) return;
     var sections = Object.keys(node.dimensions || {}).map(function (name) {
       var item = node.dimensions[name] || {};
@@ -1074,19 +1236,12 @@
     }).join("");
     panel.innerHTML = "<h3>" + escapeHtml(node.name) + "</h3><p>" +
       escapeHtml(activityLabel(fieldValue(node, "activity").value)) +
-      ' · <span class="fleet-freshness fleet-field-' + escapeHtml(worstFreshness(node)) +
-      '">' + escapeHtml(worstFreshness(node)) + "</span></p>" +
+      ' · <span class="fleet-freshness fleet-field-' + escapeHtml(nodeState.freshness) +
+      '">' + escapeHtml(nodeState.freshness) + "</span></p>" +
       '<dl class="fleet-detail-list"><dt>Instance</dt><dd><code>' + escapeHtml(node.id) +
       "</code></dd><dt>Endpoint</dt><dd>" + escapeHtml(node.url) +
       "</dd><dt>Zone</dt><dd>" + escapeHtml(node.zone || "default") +
       "</dd></dl>" + sections;
-  }
-
-  function topologyStatus(node) {
-    var reach = fieldValue(node, "reachability");
-    var health = reach.value && reach.value.health;
-    if (health !== "up") return health === "unknown" ? reach.state : (health || reach.state);
-    return worstFreshness(node);
   }
 
   function fleetTopologyLayout(nodes, containerWidth) {
@@ -1101,26 +1256,29 @@
       mode = "single";
       viewWidth = 320;
       viewHeight = 220;
-      positions[nodes[0].id] = { x: 160, y: 110 };
+      positions[(nodes[0].node || nodes[0]).id] = { x: 160, y: 110 };
     } else if (count > 1 && width <= 480) {
       mode = "stacked";
       viewWidth = 320;
       viewHeight = 224 + Math.max(0, count - 1) * 150;
-      nodes.forEach(function (node, index) {
+      nodes.forEach(function (nodeState, index) {
+        var node = nodeState.node || nodeState;
         positions[node.id] = { x: 160, y: 112 + index * 150 };
       });
     } else if (count > 1 && width <= 760) {
       mode = "grid";
       viewWidth = 640;
       viewHeight = 224 + Math.max(0, Math.ceil(count / 2) - 1) * 160;
-      nodes.forEach(function (node, index) {
+      nodes.forEach(function (nodeState, index) {
+        var node = nodeState.node || nodeState;
         positions[node.id] = {
           x: index % 2 === 0 ? 160 : 480,
           y: 112 + Math.floor(index / 2) * 160
         };
       });
     } else {
-      nodes.forEach(function (node, index) {
+      nodes.forEach(function (nodeState, index) {
+        var node = nodeState.node || nodeState;
         if (count === 1) {
           positions[node.id] = { x: 480, y: 210 };
           return;
@@ -1165,13 +1323,14 @@
     fleetTopologyObserver.observe(host);
   }
 
-  function renderFleetTopology() {
+  function renderFleetTopology(snapshot) {
+    var current = snapshot || fleetRenderedSnapshot;
     var host = $("#pa-fleet-topology");
     var svg = host && $("svg", host);
-    if (!svg || !fleetOverview) return;
+    if (!svg || !current) return;
     observeFleetTopology(host);
-    var nodes = fleetOverview.nodes || [];
-    var edges = fleetOverview.edges || [];
+    var nodes = current.nodes;
+    var edges = current.overview.edges || [];
     var layout = fleetTopologyLayout(nodes, host.getBoundingClientRect().width);
     var active = document.activeElement;
     var focusedKind = active && active.closest && active.closest("[data-fleet-node]")
@@ -1190,7 +1349,7 @@
       var from = positions[edge.source];
       var to = positions[edge.target];
       if (!from || !to) return;
-      var visualStatus = edgeVisualStatus(edge);
+      var visualStatus = edgeVisualStatus(edge, current);
       var label = escapeHtml(edge.kind + " · " + (edge.label || visualStatus) +
         " · " + visualStatus);
       if (edge.source === edge.target) {
@@ -1211,7 +1370,8 @@
           (midY - 8) + '" text-anchor="middle">' + escapeHtml(edge.kind) + "</text></g>");
       }
     });
-    nodes.forEach(function (node) {
+    nodes.forEach(function (nodeState) {
+      var node = nodeState.node;
       var pos = positions[node.id];
       var reach = fieldValue(node, "reachability");
       var status = fieldValue(node, "status");
@@ -1228,25 +1388,16 @@
         var needsAuth = provider.auth_method && provider.auth_method !== "none";
         return provider.available !== false && (!needsAuth || provider.auth_configured !== false);
       }).length;
-      var providerLabel = providerValues.length
-        ? readyProviders + "/" + providerValues.length + " providers ready"
-        : "providers " + providers.state;
-      var updateLabel = update.value && update.value.upgrade_available
-        ? "update " + (update.value.available_version || update.value.latest || "available")
-        : "update " + update.state;
       var visualProviderLabel = providerValues.length
         ? readyProviders + "/" + providerValues.length + " auth"
         : "auth " + providers.state;
       var visualUpdateLabel = update.value && update.value.upgrade_available
         ? "upgrade " + (update.value.available_version || update.value.latest || "available")
         : (update.state === "fresh" ? "current" : update.state);
-      var title = node.name + ": " + health + ", " + activityLabel(activity.value) +
-        ", version " + version + ", " + updateLabel + ", sync " + syncLabel +
-        ", " + providerLabel + ", freshness " + worstFreshness(node);
-      parts.push('<g class="fleet-node fleet-node-' + escapeHtml(topologyStatus(node)) +
+      parts.push('<g class="fleet-node fleet-node-' + escapeHtml(nodeState.topologyStatus) +
         (node.local ? " fleet-node-local" : "") + '" data-fleet-node="' + escapeHtml(node.id) +
-        '" tabindex="0" role="button" aria-label="' + escapeHtml(title) + '"><title>' +
-        escapeHtml(title) + '</title><rect x="' + (pos.x - 94) + '" y="' + (pos.y - 58) +
+        '" tabindex="0" role="button" aria-label="' + escapeHtml(nodeState.accessibleLabel) + '"><title>' +
+        escapeHtml(nodeState.accessibleLabel) + '</title><rect x="' + (pos.x - 94) + '" y="' + (pos.y - 58) +
         '" width="188" height="116" rx="14"></rect><text class="fleet-node-name" x="' +
         pos.x + '" y="' + (pos.y - 34) + '" text-anchor="middle">' + escapeHtml(mark + " " + node.name) +
         '</text><text x="' + pos.x + '" y="' + (pos.y - 10) + '" text-anchor="middle">' +
@@ -1256,7 +1407,7 @@
         (pos.y + 30) + '" text-anchor="middle">' +
         escapeHtml(visualProviderLabel + " · " + visualUpdateLabel) +
         '</text><text class="fleet-node-freshness" x="' + pos.x + '" y="' + (pos.y + 49) +
-        '" text-anchor="middle">' + escapeHtml(worstFreshness(node)) + "</text></g>");
+        '" text-anchor="middle">' + escapeHtml(nodeState.freshness) + "</text></g>");
     });
     svg.innerHTML = parts.join("");
     if (focusedId) {
@@ -1265,7 +1416,7 @@
       );
       if (focused) focused.focus({ preventScroll: true });
     }
-    renderFleetEdgeList();
+    renderFleetEdgeList(current);
   }
 
   if (window.PA_TEST) {
@@ -1275,11 +1426,23 @@
     };
   }
 
-  function renderFleetOverview() {
+  function fleetRefreshLabel(refresh) {
+    if (!refresh) return "";
+    if (refresh.message) return refresh.message;
+    var prefix = refresh.completed === 0 ? "Refreshing " : "Refreshed ";
+    var label = prefix + refresh.completed + " of " + refresh.total + " fields" +
+      (refresh.completed === 0 ? "…" : " · " + Math.round(refresh.elapsedMs || 0) + " ms");
+    return refresh.warning ? label + " · " + refresh.warning : label;
+  }
+
+  function renderFleetOverview(snapshot) {
     if (!fleetOverview) return;
-    (fleetOverview.nodes || []).forEach(renderFleetRow);
-    renderFleetTopology();
-    if (selectedFleetItem) renderFleetDetail(selectedFleetItem.kind, selectedFleetItem.id);
+    var current = snapshot || createFleetSnapshot(fleetOverview, fleetRefresh, selectedFleetItem);
+    fleetRenderedSnapshot = current;
+    current.nodes.forEach(renderFleetRow);
+    renderFleetTopology(current);
+    if (current.selection) renderFleetDetail(current.selection.kind, current.selection.id, current);
+    if (current.refresh) setLiveBanner(fleetRefreshLabel(current.refresh));
   }
 
   var fleetUpdateName = "";
@@ -1339,16 +1502,22 @@
 
   function terminalLiveFailure(message, state) {
     if (!$("#pa-fleet-root")) return;
-    (fleetOverview && fleetOverview.nodes || []).forEach(function (node) {
-      Object.keys(node.dimensions || {}).forEach(function (name) {
-        var previous = node.dimensions[name];
-        if (previous.refreshing) node.dimensions[name] = Object.assign({}, previous, {
-          state: state, refreshing: false, error: message
+    fleetOverview = Object.assign({}, fleetOverview, {
+      nodes: (fleetOverview && fleetOverview.nodes || []).map(function (node) {
+        var dimensions = Object.assign({}, node.dimensions || {});
+        Object.keys(dimensions).forEach(function (name) {
+          var previous = dimensions[name];
+          if (previous.refreshing) dimensions[name] = Object.assign({}, previous, {
+            state: state, refreshing: false, error: message
+          });
         });
-      });
+        return Object.assign({}, node, { dimensions: dimensions });
+      })
     });
-    renderFleetOverview();
-    setLiveBanner((message || "Health check failed") + " · Use Refresh to retry.");
+    fleetRefresh = Object.assign({}, fleetRefresh || {}, {
+      message: (message || "Health check failed") + " · Use Refresh to retry."
+    });
+    renderFleetOverview(createFleetSnapshot(fleetOverview, fleetRefresh, selectedFleetItem));
   }
 
   function abortLiveStatus() {
@@ -1378,22 +1547,14 @@
       liveStatusController ? { signal: liveStatusController.signal } : {}
     ).then(function (snapshot) {
       if (seq !== liveStatusSeq || !snapshot) return;
-      fleetOverview.edges = snapshot.edges || [];
-      (snapshot.nodes || []).forEach(function (freshNode) {
-        var existing = nodeById(freshNode.id);
-        if (!existing) {
-          fleetOverview.nodes.push(freshNode);
-          return;
-        }
-        existing.name = freshNode.name;
-        existing.url = freshNode.url;
-        existing.zone = freshNode.zone;
-        existing.capabilities = freshNode.capabilities;
-      });
-      renderFleetTopology();
+      fleetOverview = mergeFleetOverviewMetadata(fleetOverview, snapshot);
+      renderFleetOverview(createFleetSnapshot(fleetOverview, fleetRefresh, selectedFleetItem));
     }).catch(function (error) {
       if (error.name !== "AbortError" && seq === liveStatusSeq) {
-        setLiveBanner("Relationship refresh failed · status fields are still refreshing.");
+        fleetRefresh = Object.assign({}, fleetRefresh || {}, {
+          warning: "Relationship refresh failed"
+        });
+        renderFleetOverview(createFleetSnapshot(fleetOverview, fleetRefresh, selectedFleetItem));
       }
     });
     var nodes = (fleetOverview.nodes || []).filter(function (node) {
@@ -1402,51 +1563,84 @@
     var dimensions = fleetOverview.dimensions || [
       "reachability", "status", "providers", "update", "activity", "sync", "repositories", "supervisor"
     ];
+    var started = performance.now();
+    var begun = beginFleetRefresh(
+      fleetOverview,
+      nodes.map(function (node) { return node.id; }),
+      dimensions,
+      seq,
+      started
+    );
+    fleetOverview = begun.overview;
+    fleetRefresh = begun.refresh;
     var work = [];
     nodes.forEach(function (node) {
       dimensions.forEach(function (dimension) {
-        var previous = fieldValue(node, dimension);
-        node.dimensions[dimension] = Object.assign({}, previous, { refreshing: true });
-        work.push({ node: node, dimension: dimension });
+        work.push({ nodeId: node.id, dimension: dimension });
       });
     });
-    renderFleetOverview();
-    var completed = 0;
-    var started = performance.now();
-    setLiveBanner("Refreshing 0 of " + work.length + " fields…");
+    renderFleetOverview(createFleetSnapshot(fleetOverview, fleetRefresh, selectedFleetItem));
+
+    function currentField(item) {
+      var node = (fleetOverview.nodes || []).find(function (candidate) {
+        return candidate.id === item.nodeId;
+      });
+      return fieldValue(node, item.dimension);
+    }
+
+    function commitDimension(item, value) {
+      var result = applyFleetDimensionUpdate(fleetOverview, fleetRefresh, {
+        generation: seq,
+        nodeId: item.nodeId,
+        dimension: item.dimension,
+        value: value,
+        elapsedMs: performance.now() - started
+      });
+      if (!result.accepted || seq !== liveStatusSeq) return false;
+      fleetOverview = result.overview;
+      fleetRefresh = result.refresh;
+      renderFleetOverview(createFleetSnapshot(fleetOverview, fleetRefresh, selectedFleetItem));
+      return true;
+    }
 
     async function runOne(item) {
       var controller = typeof AbortController === "function" ? new AbortController() : null;
-      var timedOut = false;
       var timeout = item.dimension === "reachability" ? 3500 : 5500;
-      var timer = setTimeout(function () {
-        timedOut = true;
-        if (controller) controller.abort();
-      }, timeout);
       if (liveStatusController && controller) {
         liveStatusController.signal.addEventListener("abort", function () {
           controller.abort();
         }, { once: true });
       }
       var path = "/api/fleet/overview/dimension?instance_id=" +
-        encodeURIComponent(item.node.id) + "&dimension=" +
+        encodeURIComponent(item.nodeId) + "&dimension=" +
         encodeURIComponent(item.dimension) + "&generation=" + seq +
         (force ? "&retry=true" : "");
-      var mark = "fleet:" + seq + ":" + item.node.id + ":" + item.dimension;
+      var mark = "fleet:" + seq + ":" + item.nodeId + ":" + item.dimension;
       if (performance.mark) performance.mark(mark + ":start");
-      try {
-        var patch = await api(path, controller ? { signal: controller.signal } : {});
-        if (seq !== liveStatusSeq || patch.generation !== seq) return;
-        item.node.dimensions[item.dimension] = Object.assign({}, patch, { refreshing: false });
-      } catch (err) {
-        if (seq !== liveStatusSeq) return;
-        var previous = fieldValue(item.node, item.dimension);
-        item.node.dimensions[item.dimension] = Object.assign({}, previous, {
-          state: timedOut ? "timeout" : "error",
-          refreshing: false,
-          error: timedOut ? item.dimension + " browser deadline exceeded" : err.message
-        });
-      } finally {
+      var timer = null;
+      var deadline = new Promise(function (resolve) {
+        timer = setTimeout(function () {
+          if (seq === liveStatusSeq) {
+            commitDimension(item, Object.assign({}, currentField(item), {
+              state: "timeout",
+              error: item.dimension + " browser deadline exceeded; awaiting server result"
+            }));
+          }
+          resolve();
+        }, timeout);
+      });
+      var request = api(path, controller ? { signal: controller.signal } : {}).then(function (patch) {
+        if (seq !== liveStatusSeq || !patch || patch.generation !== seq) return;
+        // A response that arrives after the browser deadline supersedes the
+        // provisional timeout without incrementing completed a second time.
+        commitDimension(item, patch);
+      }).catch(function (err) {
+        if (seq !== liveStatusSeq || err.name === "AbortError") return;
+        commitDimension(item, Object.assign({}, currentField(item), {
+          state: "error",
+          error: err.message
+        }));
+      }).finally(function () {
         clearTimeout(timer);
         if (performance.mark && performance.measure) {
           try {
@@ -1454,17 +1648,8 @@
             performance.measure(mark, mark + ":start", mark + ":end");
           } catch (ignore) {}
         }
-        if (seq === liveStatusSeq) {
-          completed += 1;
-          renderFleetRow(item.node);
-          renderFleetTopology();
-          if (selectedFleetItem && selectedFleetItem.id === item.node.id) {
-            renderFleetDetail("node", item.node.id);
-          }
-          setLiveBanner("Refreshed " + completed + " of " + work.length +
-            " fields · " + Math.round(performance.now() - started) + " ms");
-        }
-      }
+      });
+      await Promise.race([request, deadline]);
     }
 
     var cursor = 0;
@@ -1490,6 +1675,7 @@
   function maybeLoadLiveStatus() {
     if (!$("#pa-fleet-root")) return;
     fleetOverview = readFleetOverview();
+    fleetRefresh = null;
     renderFleetOverview();
     loadLiveStatus(false);
   }
@@ -2204,4 +2390,12 @@
         });
     }
   });
+
+  window.PAFleetOverview = {
+    createSnapshot: createFleetSnapshot,
+    beginRefresh: beginFleetRefresh,
+    applyDimensionUpdate: applyFleetDimensionUpdate,
+    replaceDimension: replaceFleetDimension,
+    worstFreshness: worstFreshness
+  };
 })();
