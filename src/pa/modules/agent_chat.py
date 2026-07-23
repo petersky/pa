@@ -92,7 +92,25 @@ def _runtime_or_404(request: Request, session_id: str):
     mgr = _manager(request)
     runtime = mgr.get(session_id)
     if not runtime or runtime._closed:
-        raise HTTPException(status_code=404, detail="Session not found")
+        logger.info(
+            "Agent session request rejected because runtime is not live",
+            extra={
+                "session_id": session_id,
+                "runtime_present": runtime is not None,
+                "runtime_closed": bool(runtime and runtime._closed),
+            },
+        )
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "session_not_live",
+                "message": (
+                    "This agent session is no longer running. "
+                    "Start or select another session to continue."
+                ),
+                "recoverable": False,
+            },
+        )
     return runtime
 
 
@@ -1036,6 +1054,20 @@ async def session_prompt(request: Request, session_id: str, body: PromptBody) ->
     # Return immediately; transcript/SSE streams the turn. Blocking here made the
     # old HTMX UI look like it only ever received "Turn completed".
     before_seq = runtime._seq
+    logger.info(
+        "Agent prompt submission received",
+        extra={
+            "session_id": session_id,
+            "principal_id": principal_id,
+            "action": body.action,
+            "message_length": len(message),
+            "image_count": len(body.images),
+            "prompting": runtime.prompting,
+            "queue_length": len(runtime._queue),
+            "before_seq": before_seq,
+            "dispatch_id": body.dispatch_id,
+        },
+    )
     stop_reason = await runtime.prompt(
         message,
         images=body.images,
@@ -1070,6 +1102,20 @@ async def session_prompt(request: Request, session_id: str, body: PromptBody) ->
             },
         )
     accepted_event = accepted[0] if accepted else None
+    logger.info(
+        "Agent prompt submission processed",
+        extra={
+            "session_id": session_id,
+            "stop_reason": stop_reason,
+            "accepted": accepted_event is not None,
+            "accepted_event": (
+                accepted_event.event_type if accepted_event is not None else None
+            ),
+            "accepted_seq": accepted_event.seq if accepted_event is not None else None,
+            "queue_length": len(runtime._queue),
+            "dispatch_id": body.dispatch_id,
+        },
+    )
     if dispatch_record and dispatch_store:
         assert accepted_event is not None
         dispatch_record.prompt_acknowledged_at = accepted_event.created_at
@@ -1127,8 +1173,21 @@ async def session_close(request: Request, session_id: str) -> dict:
     mgr = _manager(request)
     runtime = mgr.get(session_id)
     if runtime and not getattr(runtime, "_closed", False):
+        logger.info(
+            "Closing live agent session",
+            extra={
+                "session_id": session_id,
+                "status": runtime.session.status,
+                "prompting": runtime.prompting,
+                "queue_length": len(runtime._queue),
+            },
+        )
         await runtime.close()
         mgr._runtimes.pop(session_id, None)
+        logger.info(
+            "Live agent session closed",
+            extra={"session_id": session_id},
+        )
         return {"ok": True, "live": False}
 
     session = await _offload(
@@ -1138,6 +1197,10 @@ async def session_close(request: Request, session_id: str) -> dict:
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     if session.status != "closed":
+        logger.info(
+            "Closing orphaned agent session",
+            extra={"session_id": session_id, "previous_status": session.status},
+        )
         session.status = "closed"
         session.updated_at = datetime.now(UTC)
         def close_orphan() -> None:

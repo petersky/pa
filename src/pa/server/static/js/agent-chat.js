@@ -125,6 +125,15 @@
     return oldTop + Math.max(0, newHeight - oldHeight);
   }
 
+  function apiErrorMessage(body, fallback) {
+    const detail = body && body.detail;
+    if (typeof detail === "string") return detail;
+    if (detail && typeof detail === "object") {
+      return detail.message || detail.detail || detail.code || fallback;
+    }
+    return fallback;
+  }
+
   function AgentChatWidget(root) {
     this.root = root;
     this.sessionId = root.dataset.sessionId || "";
@@ -215,6 +224,8 @@
     this.queuePaused = false;
     this.prompting = false;
     this.turnActive = false;
+    this.sessionClosed = false;
+    this.connectionNoticeShown = false;
     this.rawText = false;
     this.pendingImages = [];
     this.browserAttached = false;
@@ -369,7 +380,10 @@
     }, opts)).then(function (res) {
       if (!res.ok) {
         return res.json().catch(function () { return {}; }).then(function (body) {
-          throw new Error(body.detail || res.statusText || "Request failed");
+          const error = new Error(apiErrorMessage(body, res.statusText || "Request failed"));
+          error.status = res.status;
+          error.detail = body.detail;
+          throw error;
         });
       }
       if (res.status === 204) return null;
@@ -658,6 +672,8 @@
     const self = this;
     this.lastSnapshot = snap;
     const session = snap.session || {};
+    this.sessionClosed = session.status === "closed";
+    this.setComposerEnabled(!this.sessionClosed);
     if (this.els.title) {
       this.els.title.textContent = session.title || session.label || "Agent";
     }
@@ -818,6 +834,14 @@
     const url = this.apiBase + "/sessions/" + this.sessionId + "/events?after=" + this.lastSeq;
     const es = new EventSource(url);
     this.es = es;
+    es.onopen = function () {
+      self.connectionNoticeShown = false;
+      self.api("/sessions/" + self.sessionId).then(function (snap) {
+        self.applySnapshot(snap);
+      }).catch(function (err) {
+        if (err.status === 404) self.markSessionEnded("This session is no longer running. Start or select another session to continue.");
+      });
+    };
 
     function onAny(ev) {
       try {
@@ -864,6 +888,15 @@
     // "message" events (addEventListener("message") is already registered).
     es.onerror = function () {
       self.setStatus("offline");
+      if (!self.connectionNoticeShown) {
+        self.connectionNoticeShown = true;
+        self.addBubble(
+          "system",
+          "Connection interrupted. PA is reconnecting; prompts are not confirmed until the session returns online.",
+          new Date().toISOString(),
+          { system: true, forceVisible: true }
+        );
+      }
     };
   };
 
@@ -962,10 +995,7 @@
         }
         break;
       case "session_closed":
-        this.setTurnActive(false);
-        this.setStatus("offline");
-        this.setPlaceholder("Session ended.");
-        if (this.es) this.es.close();
+        this.markSessionEnded("Session ended. Start or select another session to send more prompts.");
         refreshSessionList(null);
         break;
       case "browser_attachment_changed":
@@ -1732,6 +1762,41 @@
     if (this.els.browserToggle) this.els.browserToggle.disabled = this.turnActive;
   };
 
+  AgentChatWidget.prototype.setComposerEnabled = function (enabled) {
+    const controls = [
+      this.els.input,
+      this.els.send,
+      this.els.attach,
+      this.els.fileInput,
+    ];
+    controls.forEach(function (control) {
+      if (control) control.disabled = !enabled;
+    });
+    this.root.querySelectorAll("[data-acw-action]").forEach(function (control) {
+      control.disabled = !enabled;
+    });
+    if (this.els.input) {
+      this.els.input.placeholder = enabled
+        ? "Message the agent or drop images here…"
+        : "This session has ended. Start or select another session.";
+    }
+  };
+
+  AgentChatWidget.prototype.markSessionEnded = function (message) {
+    this.sessionClosed = true;
+    this.setTurnActive(false);
+    this.setStatus("offline");
+    this.setComposerEnabled(false);
+    if (this.es) {
+      this.es.close();
+      this.es = null;
+    }
+    this.addBubble("system", message || "Session ended.", new Date().toISOString(), {
+      system: true,
+      forceVisible: true,
+    });
+  };
+
   AgentChatWidget.prototype.scrollToBottom = function () {
     if (this.els.messages) this.els.messages.scrollTop = this.els.messages.scrollHeight;
   };
@@ -1744,6 +1809,15 @@
 
   AgentChatWidget.prototype.send = function (action) {
     const self = this;
+    if (this.sessionClosed) {
+      this.addBubble(
+        "system",
+        "This prompt was not sent because the session has ended. Start or select another session first.",
+        new Date().toISOString(),
+        { system: true, forceVisible: true }
+      );
+      return;
+    }
     const text = (this.els.input && this.els.input.value || "").trim();
     if ((!text && !this.pendingImages.length) || !this.sessionId) return;
     if (this.pendingImages.some(function (image) { return !image.data; })) {
@@ -1778,7 +1852,11 @@
         if (res && res.queued) self.refreshQueue();
       })
       .catch(function (err) {
-        self.addBubble("system", err.message, new Date().toISOString(), { system: true });
+        if (err.status === 404) {
+          self.markSessionEnded("Prompt not sent: this session is no longer running. Start or select another session to continue.");
+          return;
+        }
+        self.addBubble("system", "Prompt not sent: " + err.message, new Date().toISOString(), { system: true, forceVisible: true });
       });
   };
 
@@ -1791,11 +1869,10 @@
     const self = this;
     if (!this.sessionId) return;
     this.api("/sessions/" + this.sessionId + "/close", { method: "POST", body: "{}" }).then(function () {
-      if (self.es) self.es.close();
-      self.setTurnActive(false);
-      self.setStatus("offline");
-      self.setPlaceholder("Session ended.");
+      self.markSessionEnded("Session ended. Start or select another session to send more prompts.");
       refreshSessionList(null);
+    }).catch(function (err) {
+      self.addBubble("system", "Could not end session: " + err.message, new Date().toISOString(), { system: true, forceVisible: true });
     });
   };
 
