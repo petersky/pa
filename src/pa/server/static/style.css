@@ -55,6 +55,20 @@
   min-height: 25rem;
 }
 
+.fleet-topology[data-layout="compact"] {
+  min-height: 0;
+  overflow: visible;
+}
+
+.fleet-topology svg.fleet-topology-compact {
+  min-width: 0;
+  min-height: 0;
+}
+
+.fleet-topology-narrow-hint {
+  display: none;
+}
+
 .fleet-node,
 .fleet-edge {
   cursor: pointer;
@@ -223,7 +237,15 @@
     min-width: 20rem;
     min-height: 19rem;
   }
-  .fleet-topology svg.fleet-topology-multi { min-width: 44rem; }
+  .fleet-topology svg.fleet-topology-multi:not(.fleet-topology-compact) { min-width: 44rem; }
+  .fleet-topology svg.fleet-topology-compact {
+    min-width: 0;
+    min-height: 0;
+  }
+  .fleet-topology-narrow-hint {
+    display: block;
+    margin: 0.45rem 0.85rem 0;
+  }
   .fleet-topology-heading,
   .fleet-table-heading { display: grid; }
   .fleet-table-scroll { overflow: visible; }

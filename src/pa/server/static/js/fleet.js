@@ -1089,24 +1089,64 @@
     return worstFreshness(node);
   }
 
-  function renderFleetTopology() {
-    var host = $("#pa-fleet-topology");
-    var svg = host && $("svg", host);
-    if (!svg || !fleetOverview) return;
-    var nodes = fleetOverview.nodes || [];
-    var edges = fleetOverview.edges || [];
-    var compactSingle = nodes.length === 1 && window.innerWidth <= 600;
-    svg.setAttribute("viewBox", compactSingle ? "300 100 360 220" : "0 0 960 420");
-    svg.classList.toggle("fleet-topology-multi", nodes.length > 1);
+  var FLEET_TOPOLOGY_COMPACT_WIDTH = 720;
+
+  function fleetTopologyLayout(nodes, availableWidth) {
+    var compact = availableWidth > 0 && availableWidth <= FLEET_TOPOLOGY_COMPACT_WIDTH;
     var positions = {};
+    if (compact) {
+      var compactHeight = Math.max(230, 190 + Math.max(0, nodes.length - 1) * 160);
+      nodes.forEach(function (node, index) {
+        positions[node.id] = {
+          x: nodes.length === 1 ? 180 : (index % 2 === 0 ? 128 : 232),
+          y: 110 + index * 160
+        };
+      });
+      return {
+        compact: true,
+        positions: positions,
+        viewBox: "0 0 360 " + compactHeight
+      };
+    }
     nodes.forEach(function (node, index) {
       if (nodes.length === 1) {
         positions[node.id] = { x: 480, y: 210 };
         return;
       }
       var angle = -Math.PI / 2 + (Math.PI * 2 * index / nodes.length);
-      positions[node.id] = { x: 480 + Math.cos(angle) * 310, y: 210 + Math.sin(angle) * 130 };
+      positions[node.id] = {
+        x: 480 + Math.cos(angle) * 310,
+        y: 210 + Math.sin(angle) * 130
+      };
     });
+    return { compact: false, positions: positions, viewBox: "0 0 960 420" };
+  }
+
+  window.PAFleetTopology = {
+    compactBreakpoint: FLEET_TOPOLOGY_COMPACT_WIDTH,
+    layout: fleetTopologyLayout
+  };
+
+  function renderFleetTopology() {
+    var host = $("#pa-fleet-topology");
+    var svg = host && $("svg", host);
+    if (!svg || !fleetOverview) return;
+    var nodes = fleetOverview.nodes || [];
+    var edges = fleetOverview.edges || [];
+    var focused = document.activeElement && document.activeElement.closest
+      ? document.activeElement.closest("[data-fleet-node], [data-fleet-edge]")
+      : null;
+    var focusedKind = focused && focused.hasAttribute("data-fleet-node") ? "node" : "edge";
+    var focusedId = focused && focused.getAttribute(
+      focusedKind === "node" ? "data-fleet-node" : "data-fleet-edge"
+    );
+    var availableWidth = host.clientWidth || window.innerWidth || 960;
+    var layout = fleetTopologyLayout(nodes, availableWidth);
+    svg.setAttribute("viewBox", layout.viewBox);
+    svg.classList.toggle("fleet-topology-multi", nodes.length > 1);
+    svg.classList.toggle("fleet-topology-compact", layout.compact);
+    host.setAttribute("data-layout", layout.compact ? "compact" : "wide");
+    var positions = layout.positions;
     var parts = [
       '<defs><marker id="fleet-arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z"></path></marker></defs>'
     ];
@@ -1120,7 +1160,7 @@
       if (edge.source === edge.target) {
         parts.push('<g class="fleet-edge fleet-edge-' + escapeHtml(visualStatus) +
           '" data-fleet-edge="' + escapeHtml(edge.id) + '" tabindex="0" role="button" aria-label="' +
-          label + '"><title>' + label + '</title><path d="M ' + (from.x + 58) + " " +
+          label + '" aria-controls="pa-fleet-detail"><title>' + label + '</title><path d="M ' + (from.x + 58) + " " +
           (from.y - 28) + " C " + (from.x + 115) + " " + (from.y - 92) + ", " +
           (from.x - 115) + " " + (from.y - 92) + ", " + (from.x - 58) + " " +
           (from.y - 28) + '"></path><text x="' + from.x + '" y="' + (from.y - 82) +
@@ -1130,7 +1170,7 @@
         var midY = (from.y + to.y) / 2;
         parts.push('<g class="fleet-edge fleet-edge-' + escapeHtml(visualStatus) +
           '" data-fleet-edge="' + escapeHtml(edge.id) + '" tabindex="0" role="button" aria-label="' +
-          label + '"><title>' + label + '</title><line x1="' + from.x + '" y1="' + from.y +
+          label + '" aria-controls="pa-fleet-detail"><title>' + label + '</title><line x1="' + from.x + '" y1="' + from.y +
           '" x2="' + to.x + '" y2="' + to.y + '"></line><text x="' + midX + '" y="' +
           (midY - 8) + '" text-anchor="middle">' + escapeHtml(edge.kind) + "</text></g>");
       }
@@ -1169,7 +1209,7 @@
         ", " + providerLabel + ", freshness " + worstFreshness(node);
       parts.push('<g class="fleet-node fleet-node-' + escapeHtml(topologyStatus(node)) +
         (node.local ? " fleet-node-local" : "") + '" data-fleet-node="' + escapeHtml(node.id) +
-        '" tabindex="0" role="button" aria-label="' + escapeHtml(title) + '"><title>' +
+        '" tabindex="0" role="button" aria-controls="pa-fleet-detail" aria-label="' + escapeHtml(title) + '"><title>' +
         escapeHtml(title) + '</title><rect x="' + (pos.x - 94) + '" y="' + (pos.y - 58) +
         '" width="188" height="116" rx="14"></rect><text class="fleet-node-name" x="' +
         pos.x + '" y="' + (pos.y - 34) + '" text-anchor="middle">' + escapeHtml(mark + " " + node.name) +
@@ -1183,6 +1223,13 @@
         '" text-anchor="middle">' + escapeHtml(worstFreshness(node)) + "</text></g>");
     });
     svg.innerHTML = parts.join("");
+    if (focusedId) {
+      var focusAttribute = focusedKind === "node" ? "data-fleet-node" : "data-fleet-edge";
+      var replacement = $all("[" + focusAttribute + "]", svg).find(function (item) {
+        return item.getAttribute(focusAttribute) === focusedId;
+      });
+      if (replacement) replacement.focus({ preventScroll: true });
+    }
     renderFleetEdgeList();
   }
 

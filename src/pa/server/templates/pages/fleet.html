@@ -40,10 +40,14 @@
           </div>
           <span class="muted small" id="pa-fleet-refresh-progress" aria-live="polite">Last-known state</span>
         </div>
+        <p class="muted small fleet-topology-narrow-hint" id="pa-fleet-topology-narrow-hint">
+          Machines stack vertically on narrow screens. Select any machine or route to inspect its details below.
+        </p>
         <div id="pa-fleet-topology"
              class="fleet-topology"
              role="group"
-             aria-labelledby="pa-fleet-topology-title">
+             aria-labelledby="pa-fleet-topology-title"
+             aria-describedby="pa-fleet-topology-narrow-hint">
           <svg viewBox="0 0 960 420" role="img" aria-label="Fleet instance and activity topology"></svg>
           <noscript><p class="notice">The graphical topology needs JavaScript. The complete accessible table and route list remain available below.</p></noscript>
         </div>
@@ -52,7 +56,7 @@
           <ul id="pa-fleet-edge-list">
             {% for edge in fleet_overview.edges %}
             <li>
-              <button type="button" class="ghost small" data-fleet-edge="{{ edge.id }}">
+              <button type="button" class="ghost small" data-fleet-edge="{{ edge.id }}" aria-controls="pa-fleet-detail">
                 {{ edge.kind }} · {{ edge.label }} · {{ edge.status }}
               </button>
             </li>
@@ -89,7 +93,7 @@
         {% set sync = dims.sync %}
         <tr data-fleet-instance="{{ node.id }}" tabindex="0">
           <td>
-            <button type="button" class="fleet-machine-select" data-fleet-node="{{ node.id }}"><strong>{{ node.name }}</strong>{% if node.local %}<span class="badge">local</span>{% endif %}</button>
+            <button type="button" class="fleet-machine-select" data-fleet-node="{{ node.id }}" aria-controls="pa-fleet-detail"><strong>{{ node.name }}</strong>{% if node.local %}<span class="badge">local</span>{% endif %}</button>
             <span class="muted small">{{ node.zone }}</span>
             <details><summary class="muted small">Connection details</summary><dl><dt>Instance ID</dt><dd><code>{{ node.id }}</code></dd><dt>Endpoint</dt><dd><a href="{{ node.url }}" target="_blank" rel="noopener">{{ node.url }}</a></dd><dt>Capabilities</dt><dd>{{ node.capabilities | join(', ') or 'None reported' }}</dd></dl></details>
           </td>

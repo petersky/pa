@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import asyncio
+import shutil
+import subprocess
 import tempfile
 import unittest
 import warnings
@@ -964,12 +966,88 @@ class FleetUpdateUiTests(unittest.TestCase):
         self.assertIn("<noscript>", template)
         self.assertIn('id="pa-fleet-edge-list"', template)
         self.assertIn('id="pa-fleet-instances"', template)
+        self.assertIn('aria-describedby="pa-fleet-topology-narrow-hint"', template)
+        self.assertIn('aria-controls="pa-fleet-detail"', template)
         self.assertIn('tabindex="0" role="button"', script)
         self.assertIn('event.key !== "Enter" && event.key !== " "', script)
+        self.assertIn("fleetTopologyLayout(nodes, availableWidth)", script)
+        self.assertIn("fleet-topology-compact", script)
         self.assertIn("@media (max-width: 1050px)", style)
         self.assertIn("@media (max-width: 900px)", style)
         self.assertIn("@media (prefers-reduced-motion: reduce)", style)
         self.assertIn(".fleet-edge-stale line", style)
+
+    @unittest.skipUnless(
+        shutil.which("node"), "node is required for Fleet UI behavior tests"
+    )
+    def test_topology_layout_fits_narrow_and_desktop_viewports(self) -> None:
+        script_path = (
+            Path(__file__).parents[1]
+            / "src"
+            / "pa"
+            / "server"
+            / "static"
+            / "js"
+            / "fleet.js"
+        )
+        program = r"""
+const fs = require("fs");
+const vm = require("vm");
+const assert = require("assert");
+global.window = {
+  innerWidth: 1200,
+  addEventListener: function () {},
+};
+global.document = {
+  activeElement: null,
+  addEventListener: function () {},
+  querySelector: function () { return null; },
+  querySelectorAll: function () { return []; },
+  body: { addEventListener: function () {} },
+};
+global.location = { href: "http://localhost/fleet" };
+vm.runInThisContext(fs.readFileSync(process.argv[1], "utf8"));
+
+const nodes = [{ id: "mac-mini" }, { id: "monica" }, { id: "local" }];
+const narrow = window.PAFleetTopology.layout(nodes, 358);
+assert.strictEqual(narrow.compact, true);
+assert.strictEqual(narrow.viewBox, "0 0 360 510");
+assert.deepStrictEqual(
+  nodes.map(function (node) { return narrow.positions[node.id].y; }),
+  [110, 270, 430]
+);
+nodes.forEach(function (node) {
+  const point = narrow.positions[node.id];
+  assert.ok(point.x - 115 >= 0, node.id + " loop clips left");
+  assert.ok(point.x + 115 <= 360, node.id + " loop clips right");
+  assert.ok(point.y - 92 >= 0, node.id + " loop clips top");
+  assert.ok(point.y + 58 <= 510, node.id + " card clips bottom");
+});
+
+const single = window.PAFleetTopology.layout([{ id: "local" }], 358);
+assert.strictEqual(single.compact, true);
+assert.strictEqual(single.viewBox, "0 0 360 230");
+assert.deepStrictEqual(single.positions.local, { x: 180, y: 110 });
+
+const tabletPanel = window.PAFleetTopology.layout(nodes, 620);
+assert.strictEqual(tabletPanel.compact, true);
+assert.strictEqual(tabletPanel.viewBox, narrow.viewBox);
+
+const desktop = window.PAFleetTopology.layout(nodes, 1100);
+assert.strictEqual(desktop.compact, false);
+assert.strictEqual(desktop.viewBox, "0 0 960 420");
+nodes.forEach(function (node) {
+  const point = desktop.positions[node.id];
+  assert.ok(point.x - 94 >= 0 && point.x + 94 <= 960);
+  assert.ok(point.y - 58 >= 0 && point.y + 58 <= 420);
+});
+"""
+        subprocess.run(
+            [shutil.which("node"), "-e", program, str(script_path)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
 
 
 class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
