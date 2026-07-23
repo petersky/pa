@@ -223,10 +223,28 @@ class AgentSessionRuntime:
         self._transcript_buffer.clear()
         self._transcript_queue.put_nowait(batch)
         if not self._transcript_writer_task or self._transcript_writer_task.done():
-            self._transcript_writer_task = asyncio.create_task(
-                self._write_transcripts(),
-                name=f"pa-transcript-{self.session_id}",
-            )
+            writer = self._write_transcripts()
+            try:
+                self._transcript_writer_task = asyncio.create_task(
+                    writer,
+                    name=f"pa-transcript-{self.session_id}",
+                )
+            except RuntimeError:
+                # Task creation can fail after loop shutdown has begun. Close the
+                # unscheduled coroutine and persist every batch that would otherwise
+                # remain stranded behind queue.join().
+                writer.close()
+                self._transcript_writer_task = None
+                batches: list[list[TranscriptEvent]] = []
+                while not self._transcript_queue.empty():
+                    batches.append(self._transcript_queue.get_nowait())
+                    self._transcript_queue.task_done()
+                events = [event for queued in batches for event in queued]
+                try:
+                    self.store.append_transcript_events(events)
+                except Exception:
+                    logger.exception("Failed to persist transcript events")
+                    self._transcript_buffer = events + self._transcript_buffer
 
     async def _write_transcripts(self) -> None:
         while not self._transcript_queue.empty():

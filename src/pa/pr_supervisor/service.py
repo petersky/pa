@@ -243,7 +243,7 @@ class ExecutorDispatcher:
                 card_id=watch.card_id,
                 project_id=watch.project_id,
                 principal_id=runtime.session.principal_id or "user:local",
-                cwd=watch.executor_cwd or runtime.session.cwd,
+                cwd=runtime.session.cwd,
                 source="pr-supervisor",
                 prompt_audit=prompt_audit,
             )
