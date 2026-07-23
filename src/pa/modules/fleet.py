@@ -2480,6 +2480,7 @@ async def target_dispatches(request: Request, instance_id: str) -> list[dict[str
 @router.api_route(
     "/fleet/instances/{instance_id}/agent/{agent_path:path}",
     methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    include_in_schema=False,
 )
 async def fleet_agent_proxy(
     request: Request,
