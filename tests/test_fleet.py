@@ -1089,7 +1089,7 @@ class FleetUpdateUiTests(unittest.TestCase):
         self.assertIn("refreshFleetUpdateCheck().then", script)
         self.assertIn('name="install_timeout"', template)
 
-    def test_live_health_is_single_flight_abortable_and_terminal(self) -> None:
+    def test_live_health_is_single_flight_generation_safe_and_terminal(self) -> None:
         root = Path(__file__).parents[1]
         script = (root / "src/pa/server/static/js/fleet.js").read_text()
         template = (root / "src/pa/server/templates/pages/fleet.html").read_text()
@@ -1101,10 +1101,13 @@ class FleetUpdateUiTests(unittest.TestCase):
         self.assertIn("var concurrency = Math.min(4, work.length)", script)
         self.assertIn("browser deadline exceeded", script)
         self.assertIn("/api/fleet/overview/dimension", script)
-        self.assertIn("function edgeVisualStatus(edge)", script)
+        self.assertIn("function edgeVisualStatus(edge, snapshot)", script)
         self.assertIn("providerLabel", script)
-        self.assertIn("if (seq !== liveStatusSeq) return", script)
+        self.assertIn("seq !== liveStatusSeq", script)
         self.assertIn("patch.generation !== seq", script)
+        self.assertIn("function createFleetSnapshot", script)
+        self.assertIn("function applyFleetDimensionUpdate", script)
+        self.assertIn("awaiting server result", script)
         self.assertIn("Object.assign({}, previous", script)
         self.assertIn("Health check failed", script)
         self.assertIn("performance.measure", script)
