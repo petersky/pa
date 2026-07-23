@@ -565,6 +565,12 @@
 
   document.body.addEventListener("htmx:response:error", function (event) {
     var ctx = event.detail && event.detail.ctx;
+    var source = (event.detail && event.detail.elt) ||
+      (ctx && (ctx.elt || ctx.source));
+    var form = source && typeof source.matches === "function"
+      ? (source.matches("form") ? source : source.closest("form"))
+      : null;
+    var operation = form && form.dataset.operation;
     var message = "Request failed";
     var text = ctx && ctx.text;
     var statusText = ctx && ctx.response && ctx.response.raw && ctx.response.raw.statusText;
@@ -574,7 +580,11 @@
         message = data.detail || data.message || message;
         if (Array.isArray(message)) {
           message = message.map(function (item) {
-            return item.msg || String(item);
+            var location = Array.isArray(item.loc) ? item.loc : [];
+            var field = location.filter(function (part) {
+              return part !== "body" && part !== "query" && part !== "path";
+            }).pop();
+            return (field ? field + ": " : "") + (item.msg || String(item));
           }).join("; ");
         }
       } catch (_err) {
@@ -583,6 +593,7 @@
     } else if (statusText) {
       message = statusText;
     }
+    if (operation) message = operation + " — " + message;
     showToast(message, "error");
   });
 

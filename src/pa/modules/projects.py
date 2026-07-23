@@ -425,40 +425,6 @@ def create_project_ui(
     return render_page(request, page)
 
 
-@ui_router.post("/projects/{project_id}", response_model=None)
-def update_project_ui(
-    request: Request,
-    project_id: str,
-    title: str = Form(...),
-    description: str = Form(""),
-    agent_prompt: str = Form(""),
-    tags: str = Form(""),
-    status: str = Form("active"),
-    realm: str | None = None,
-) -> HTMLResponse:
-    from pa.modules.ui_shell import render_page
-
-    realm_id = realm or _active_realm(request)
-    settings = request.app.state.ctx.settings
-    project = get_store().update_project(
-        project_id,
-        ProjectUpdate(
-            title=title.strip(),
-            description=description.strip(),
-            agent_prompt=agent_prompt.strip(),
-            tags=[tag.strip() for tag in tags.split(",") if tag.strip()],
-            status=status,
-        ),
-        realm_id=realm_id,
-        principal_id=get_principal_id(request),
-        instance_id=settings.instance_id,
-    )
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    page = request.app.state.ctx.require_service("pages").get_by_path("/projects")
-    return render_page(request, page)
-
-
 @ui_router.post("/projects/repositories")
 def create_repository_ui(
     request: Request,
@@ -690,6 +656,42 @@ def remove_repository_checkout_ui(
         principal_id=get_principal_id(request),
         instance_id=settings.instance_id,
     )
+    page = request.app.state.ctx.require_service("pages").get_by_path("/projects")
+    return render_page(request, page)
+
+
+# Keep this single-segment dynamic route after the static /projects/* POST routes.
+# Starlette resolves matching routes in registration order.
+@ui_router.post("/projects/{project_id}", response_model=None)
+def update_project_ui(
+    request: Request,
+    project_id: str,
+    title: str = Form(...),
+    description: str = Form(""),
+    agent_prompt: str = Form(""),
+    tags: str = Form(""),
+    status: str = Form("active"),
+    realm: str | None = None,
+) -> HTMLResponse:
+    from pa.modules.ui_shell import render_page
+
+    realm_id = realm or _active_realm(request)
+    settings = request.app.state.ctx.settings
+    project = get_store().update_project(
+        project_id,
+        ProjectUpdate(
+            title=title.strip(),
+            description=description.strip(),
+            agent_prompt=agent_prompt.strip(),
+            tags=[tag.strip() for tag in tags.split(",") if tag.strip()],
+            status=status,
+        ),
+        realm_id=realm_id,
+        principal_id=get_principal_id(request),
+        instance_id=settings.instance_id,
+    )
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
     page = request.app.state.ctx.require_service("pages").get_by_path("/projects")
     return render_page(request, page)
 
