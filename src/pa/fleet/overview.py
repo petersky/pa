@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import time
+from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
 from threading import Lock, RLock
@@ -18,6 +20,10 @@ from pa.core.io import atomic_write_json
 from pa.domain.models import FleetInstance
 from pa.execution.dispatch import TERMINAL_DISPATCH_STATES
 from pa.fleet.update import TERMINAL_PHASES
+from pa.pr_supervisor.models import (
+    PRWatchStatus,
+    canonical_repository_name,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +40,12 @@ DIMENSIONS = (
 DETAIL_TIMEOUT = 4.0
 REACHABILITY_TIMEOUT = 2.5
 GOOD_STATES = {"fresh", "stale"}
+EDGE_STATUS_SEVERITY = {
+    "healthy": 0,
+    "stale": 1,
+    "degraded": 2,
+    "unavailable": 3,
+}
 
 
 def _runtime(ctx: Any) -> AsyncRuntime | None:
@@ -53,6 +65,109 @@ async def _offload(ctx: Any, operation: str, call, *args, timeout=None, **kwargs
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _worst_edge_status(statuses: list[str]) -> str:
+    return max(
+        statuses or ["unavailable"],
+        key=lambda status: EDGE_STATUS_SEVERITY.get(status, 3),
+    )
+
+
+def _group_edge_id(key: tuple[str, str | None, str | None, str]) -> str:
+    digest = hashlib.sha256(
+        "\0".join("" if value is None else value for value in key).encode()
+    ).hexdigest()[:16]
+    return f"edge-{key[0]}-{digest}"
+
+
+def aggregate_topology_edges(edges: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Group coincident activity edges while retaining stable child identities."""
+    groups: dict[
+        tuple[str, str | None, str | None, str], list[dict[str, Any]]
+    ] = {}
+    for edge in edges:
+        key = (
+            str(edge.get("kind") or "activity"),
+            edge.get("source"),
+            edge.get("target"),
+            str(edge.get("direction") or ""),
+        )
+        groups.setdefault(key, []).append(edge)
+
+    result = []
+    for key in sorted(
+        groups,
+        key=lambda item: tuple("" if value is None else value for value in item),
+    ):
+        members = sorted(groups[key], key=lambda edge: str(edge.get("id") or ""))
+        statuses = [str(edge.get("status") or "unavailable") for edge in members]
+        items = [
+            {
+                "id": str(edge.get("id") or ""),
+                "status": status,
+                "label": str(edge.get("label") or edge.get("id") or ""),
+                "details": edge.get("details") or {},
+            }
+            for edge, status in zip(members, statuses, strict=True)
+        ]
+        kind, source, target, direction = key
+        details: dict[str, Any] = {"items": items}
+        label = items[0]["label"] if len(items) == 1 else f"{len(items)} {kind} activities"
+        distinct_count = len(items)
+
+        if kind == "supervisor":
+            pull_requests: dict[tuple[str, int], list[dict[str, Any]]] = {}
+            for item in items:
+                watch = item["details"]
+                try:
+                    repository = canonical_repository_name(
+                        str(watch.get("repository") or "")
+                    )
+                    number = int(watch.get("pr_number") or 0)
+                except (TypeError, ValueError):
+                    repository = str(watch.get("repository") or "unknown").casefold()
+                    number = int(watch.get("pr_number") or 0)
+                pull_requests.setdefault((repository, number), []).append(item)
+            pr_rows = []
+            for (repository, number), watches in sorted(pull_requests.items()):
+                watch_statuses = [str(watch["status"]) for watch in watches]
+                pr_rows.append(
+                    {
+                        "id": f"{repository}#{number}",
+                        "repository": repository,
+                        "pr_number": number,
+                        "count": len(watches),
+                        "status": _worst_edge_status(watch_statuses),
+                        "watch_ids": [watch["id"] for watch in watches],
+                    }
+                )
+            details["pull_requests"] = pr_rows
+            distinct_count = len(pr_rows)
+            if len(pr_rows) == 1:
+                pr = pr_rows[0]
+                label = f"PR {pr['repository']}#{pr['pr_number']}"
+                if len(items) > 1:
+                    label += f" · {len(items)} watches"
+            else:
+                label = f"{len(items)} watches · {len(pr_rows)} pull requests"
+
+        result.append(
+            {
+                "id": _group_edge_id(key),
+                "kind": kind,
+                "source": source,
+                "target": target,
+                "direction": direction,
+                "status": _worst_edge_status(statuses),
+                "status_counts": dict(sorted(Counter(statuses).items())),
+                "label": label,
+                "count": len(items),
+                "distinct_count": distinct_count,
+                "details": details,
+            }
+        )
+    return result
 
 
 def field(
@@ -600,6 +715,14 @@ def build_overview(
         for watch in supervisor_store.list_watches(include_retired=False):
             owner = watch.owner_instance_id or local_id
             target = watch.originating_instance_id or owner
+            watch_status = getattr(watch.status, "value", watch.status)
+            status = (
+                "degraded"
+                if watch.last_error or watch_status == PRWatchStatus.BLOCKED.value
+                else "healthy"
+            )
+            if owner not in by_id or target not in by_id:
+                status = "unavailable"
             edges.append(
                 {
                     "id": f"watch-{watch.id}",
@@ -607,7 +730,7 @@ def build_overview(
                     "source": owner,
                     "target": target,
                     "direction": "owner-to-origin",
-                    "status": "degraded" if watch.last_error else "healthy",
+                    "status": status,
                     "label": f"PR {watch.repository}#{watch.pr_number}",
                     "details": watch.model_dump(mode="json"),
                 }
@@ -642,5 +765,5 @@ def build_overview(
         "local_instance_id": local_id,
         "dimensions": list(DIMENSIONS),
         "nodes": nodes,
-        "edges": edges,
+        "edges": aggregate_topology_edges(edges),
     }
