@@ -125,6 +125,15 @@
     return oldTop + Math.max(0, newHeight - oldHeight);
   }
 
+  function apiErrorMessage(body, fallback) {
+    const detail = body && body.detail;
+    if (typeof detail === "string") return detail;
+    if (detail && typeof detail === "object") {
+      return detail.message || detail.detail || detail.code || fallback;
+    }
+    return fallback;
+  }
+
   function AgentChatWidget(root) {
     this.root = root;
     this.sessionId = root.dataset.sessionId || "";
@@ -215,6 +224,8 @@
     this.queuePaused = false;
     this.prompting = false;
     this.turnActive = false;
+    this.sessionClosed = false;
+    this.connectionNoticeShown = false;
     this.rawText = false;
     this.pendingImages = [];
     this.browserAttached = false;
@@ -369,7 +380,10 @@
     }, opts)).then(function (res) {
       if (!res.ok) {
         return res.json().catch(function () { return {}; }).then(function (body) {
-          throw new Error(body.detail || res.statusText || "Request failed");
+          const error = new Error(apiErrorMessage(body, res.statusText || "Request failed"));
+          error.status = res.status;
+          error.detail = body.detail;
+          throw error;
         });
       }
       if (res.status === 204) return null;
@@ -658,6 +672,8 @@
     const self = this;
     this.lastSnapshot = snap;
     const session = snap.session || {};
+    this.sessionClosed = session.status === "closed";
+    this.setComposerEnabled(!this.sessionClosed);
     if (this.els.title) {
       this.els.title.textContent = session.title || session.label || "Agent";
     }
@@ -818,6 +834,14 @@
     const url = this.apiBase + "/sessions/" + this.sessionId + "/events?after=" + this.lastSeq;
     const es = new EventSource(url);
     this.es = es;
+    es.onopen = function () {
+      self.connectionNoticeShown = false;
+      self.api("/sessions/" + self.sessionId).then(function (snap) {
+        self.applySnapshot(snap);
+      }).catch(function (err) {
+        if (err.status === 404) self.markSessionEnded("This session is no longer running. Start or select another session to continue.");
+      });
+    };
 
     function onAny(ev) {
       try {
@@ -864,6 +888,15 @@
     // "message" events (addEventListener("message") is already registered).
     es.onerror = function () {
       self.setStatus("offline");
+      if (!self.connectionNoticeShown) {
+        self.connectionNoticeShown = true;
+        self.addBubble(
+          "system",
+          "Connection interrupted. PA is reconnecting; prompts are not confirmed until the session returns online.",
+          new Date().toISOString(),
+          { system: true, forceVisible: true }
+        );
+      }
     };
   };
 
@@ -962,10 +995,7 @@
         }
         break;
       case "session_closed":
-        this.setTurnActive(false);
-        this.setStatus("offline");
-        this.setPlaceholder("Session ended.");
-        if (this.es) this.es.close();
+        this.markSessionEnded("Session ended. Start or select another session to send more prompts.");
         refreshSessionList(null);
         break;
       case "browser_attachment_changed":
@@ -1609,7 +1639,7 @@
     }
   };
 
-  AgentChatWidget.prototype.switchSession = function (sessionId) {
+  AgentChatWidget.prototype.switchSession = function (sessionId, live) {
     if (!sessionId || sessionId === this.sessionId) return;
     if (this.settingsDirty && !window.confirm("Discard unsaved Agent settings changes and switch sessions?")) return;
     if (this.settingsDirty) this.resetSettingsDraft();
@@ -1630,10 +1660,26 @@
     this.streaming = {};
     this.setPlaceholder("Loading session…");
     const self = this;
-    this.api("/sessions/" + sessionId)
+    const historical = live === false;
+    const request = historical
+      ? this.api("/history/" + sessionId).then(function (history) {
+          return {
+            session: history.session,
+            transcript: history.events || [],
+            transcript_page: history.page || {},
+            prompting: false,
+            connected: false,
+            queue: [],
+            queue_paused: false,
+            pending_permissions: [],
+            metrics: history.session && history.session.metrics_json || {},
+          };
+        })
+      : this.api("/sessions/" + sessionId);
+    request
       .then(function (snap) {
         self.applySnapshot(snap);
-        self.connectSSE();
+        if (!historical) self.connectSSE();
       })
       .catch(function (err) {
         self.setPlaceholder("Failed to load session: " + err.message);
@@ -1732,6 +1778,41 @@
     if (this.els.browserToggle) this.els.browserToggle.disabled = this.turnActive;
   };
 
+  AgentChatWidget.prototype.setComposerEnabled = function (enabled) {
+    const controls = [
+      this.els.input,
+      this.els.send,
+      this.els.attach,
+      this.els.fileInput,
+    ];
+    controls.forEach(function (control) {
+      if (control) control.disabled = !enabled;
+    });
+    this.root.querySelectorAll("[data-acw-action]").forEach(function (control) {
+      control.disabled = !enabled;
+    });
+    if (this.els.input) {
+      this.els.input.placeholder = enabled
+        ? "Message the agent or drop images here…"
+        : "This session has ended. Start or select another session.";
+    }
+  };
+
+  AgentChatWidget.prototype.markSessionEnded = function (message) {
+    this.sessionClosed = true;
+    this.setTurnActive(false);
+    this.setStatus("offline");
+    this.setComposerEnabled(false);
+    if (this.es) {
+      this.es.close();
+      this.es = null;
+    }
+    this.addBubble("system", message || "Session ended.", new Date().toISOString(), {
+      system: true,
+      forceVisible: true,
+    });
+  };
+
   AgentChatWidget.prototype.scrollToBottom = function () {
     if (this.els.messages) this.els.messages.scrollTop = this.els.messages.scrollHeight;
   };
@@ -1744,6 +1825,15 @@
 
   AgentChatWidget.prototype.send = function (action) {
     const self = this;
+    if (this.sessionClosed) {
+      this.addBubble(
+        "system",
+        "This prompt was not sent because the session has ended. Start or select another session first.",
+        new Date().toISOString(),
+        { system: true, forceVisible: true }
+      );
+      return;
+    }
     const text = (this.els.input && this.els.input.value || "").trim();
     if ((!text && !this.pendingImages.length) || !this.sessionId) return;
     if (this.pendingImages.some(function (image) { return !image.data; })) {
@@ -1778,7 +1868,11 @@
         if (res && res.queued) self.refreshQueue();
       })
       .catch(function (err) {
-        self.addBubble("system", err.message, new Date().toISOString(), { system: true });
+        if (err.status === 404) {
+          self.markSessionEnded("Prompt not sent: this session is no longer running. Start or select another session to continue.");
+          return;
+        }
+        self.addBubble("system", "Prompt not sent: " + err.message, new Date().toISOString(), { system: true, forceVisible: true });
       });
   };
 
@@ -1791,11 +1885,10 @@
     const self = this;
     if (!this.sessionId) return;
     this.api("/sessions/" + this.sessionId + "/close", { method: "POST", body: "{}" }).then(function () {
-      if (self.es) self.es.close();
-      self.setTurnActive(false);
-      self.setStatus("offline");
-      self.setPlaceholder("Session ended.");
+      self.markSessionEnded("Session ended. Start or select another session to send more prompts.");
       refreshSessionList(null);
+    }).catch(function (err) {
+      self.addBubble("system", "Could not end session: " + err.message, new Date().toISOString(), { system: true, forceVisible: true });
     });
   };
 
@@ -1864,20 +1957,27 @@
   function refreshSessionList(activeId) {
     const list = document.querySelector("[data-agent-session-list]");
     if (!list) return;
-    csrfFetch("/sessions")
+    const toggle = document.querySelector("[data-agent-history-toggle]");
+    const includeClosed = !!(toggle && toggle.checked);
+    csrfFetch(includeClosed ? "/history?limit=500" : "/sessions")
       .then(function (sessions) {
         list.innerHTML = "";
         if (!sessions || !sessions.length) {
           const empty = document.createElement("li");
           empty.className = "muted";
           empty.dataset.agentSessionEmpty = "1";
-          empty.textContent = "No live agent sessions yet.";
+          empty.textContent = includeClosed
+            ? "No matching session history."
+            : "No live agent sessions yet.";
           list.appendChild(empty);
           return;
         }
         sessions.forEach(function (s) {
           const li = document.createElement("li");
           li.dataset.sessionId = s.id;
+          li.dataset.sessionLive = s.live === false || s.status === "closed"
+            ? "false"
+            : "true";
           li.setAttribute("role", "button");
           li.tabIndex = 0;
           if (activeId && s.id === activeId) li.classList.add("active");
@@ -1890,8 +1990,35 @@
             sessionConfigSummary(s.config_json);
           list.appendChild(li);
         });
+        filterSessionList();
       })
       .catch(function () { /* ignore */ });
+  }
+
+  function filterSessionList() {
+    const list = document.querySelector("[data-agent-session-list]");
+    const search = document.querySelector("[data-agent-session-search]");
+    if (!list) return;
+    const query = String(search && search.value || "").trim().toLowerCase();
+    let visible = 0;
+    list.querySelectorAll("[data-session-id]").forEach(function (item) {
+      const match = !query || (item.textContent || "").toLowerCase().indexOf(query) !== -1;
+      item.hidden = !match;
+      if (match) visible += 1;
+    });
+    let empty = list.querySelector("[data-agent-session-filter-empty]");
+    if (!visible && query) {
+      if (!empty) {
+        empty = document.createElement("li");
+        empty.className = "muted";
+        empty.dataset.agentSessionFilterEmpty = "1";
+        list.appendChild(empty);
+      }
+      empty.textContent = "No sessions match “" + query + "”.";
+      empty.hidden = false;
+    } else if (empty) {
+      empty.hidden = true;
+    }
   }
 
   function sessionConfigSummary(config) {
@@ -2094,7 +2221,12 @@
         const li = e.target.closest("[data-session-id]");
         if (!li) return;
         const widget = document.querySelector("[data-agent-chat]");
-        if (widget && widget._acw) widget._acw.switchSession(li.dataset.sessionId);
+        if (widget && widget._acw) {
+          widget._acw.switchSession(
+            li.dataset.sessionId,
+            li.dataset.sessionLive !== "false"
+          );
+        }
       });
       list.addEventListener("keydown", function (e) {
         if (e.key !== "Enter" && e.key !== " ") return;
@@ -2102,8 +2234,30 @@
         if (!li) return;
         e.preventDefault();
         const widget = document.querySelector("[data-agent-chat]");
-        if (widget && widget._acw) widget._acw.switchSession(li.dataset.sessionId);
+        if (widget && widget._acw) {
+          widget._acw.switchSession(
+            li.dataset.sessionId,
+            li.dataset.sessionLive !== "false"
+          );
+        }
       });
+    }
+    const historyToggle = root.querySelector("[data-agent-history-toggle]");
+    const sessionSearch = root.querySelector("[data-agent-session-search]");
+    if (historyToggle && !historyToggle._acwBound) {
+      historyToggle._acwBound = true;
+      historyToggle.addEventListener("change", function () {
+        if (sessionSearch) {
+          sessionSearch.hidden = !historyToggle.checked;
+          if (!historyToggle.checked) sessionSearch.value = "";
+        }
+        const widget = document.querySelector("[data-agent-chat]");
+        refreshSessionList(widget && widget._acw && widget._acw.sessionId);
+      });
+    }
+    if (sessionSearch && !sessionSearch._acwBound) {
+      sessionSearch._acwBound = true;
+      sessionSearch.addEventListener("input", filterSessionList);
     }
     const neu = root.querySelector("[data-agent-new-session]");
     if (neu && !neu._acwBound) {

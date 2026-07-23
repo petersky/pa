@@ -9,12 +9,26 @@
     <button type="button" class="ghost small" data-agent-new-session title="New session">New</button>
     {% endif %}
   </div>
+  <div class="agent-session-history-controls">
+    <label class="agent-session-history-toggle">
+      <input type="checkbox" data-agent-history-toggle>
+      <span>Show closed sessions</span>
+    </label>
+    <label class="sr-only" for="agent-session-search">Filter sessions</label>
+    <input id="agent-session-search"
+           type="search"
+           placeholder="Search session history…"
+           autocomplete="off"
+           data-agent-session-search
+           hidden>
+  </div>
   <ul class="session-list" data-agent-session-list>
     {% if sessions %}
     {% for s in sessions %}
     {% set detail = session_details.get(s.id, {}) %}
     <li class="{% if s.id == session_id %}active{% endif %}"
         data-session-id="{{ s.id }}"
+        data-session-live="true"
         role="button"
         tabindex="0">
       <strong>{{ s.title or s.label or s.agent_name }}</strong>

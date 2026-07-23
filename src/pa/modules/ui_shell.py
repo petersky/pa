@@ -109,7 +109,9 @@ def _agent_context(request: Request) -> dict:
         default = next(
             (s for s in live if s.label == "default"), live[0] if live else None
         )
-    sessions = live or ctx.store.list_sessions()[:8]
+    # The Agent sidebar starts with live runtimes only. Closed sessions are
+    # loaded explicitly from the durable history API when the user opts in.
+    sessions = live
     cards = {card.id: card for card in ctx.store.list_cards()}
     projects = {project.id: project for project in ctx.store.list_projects()}
     now = datetime.now(UTC)
