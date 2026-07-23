@@ -407,10 +407,14 @@ def test_reconcile_done_card_on_lease_owner_enables_safe_cleanup(
     lease = manager.provision_repository(
         linked, project_id="project-1", session_id="session-1", card_id="card-1"
     )
-    manager.store.get_card.return_value = SimpleNamespace(lane="done")
-    manager.store.get_session.return_value = AgentSession(
-        id="session-1", agent_name="codex", status="closed"
-    )
+    manager.store.list_cards.return_value = [
+        SimpleNamespace(id="card-1", lane="done")
+    ]
+    manager.store.list_sessions.return_value = [
+        AgentSession(
+            id="session-1", agent_name="codex", status="closed"
+        )
+    ]
 
     result = manager.reconcile_terminal_state()
     reconciled = manager.get(linked.repository.id, "session-1")
@@ -439,9 +443,10 @@ def test_reconcile_closed_standalone_session_preserves_unpushed_work(
     (worktree / "README.md").write_text("unpushed\n")
     git(worktree, "add", "README.md")
     git(worktree, "commit", "-m", "preserve me")
-    manager.store.get_session.return_value = AgentSession(
-        id="session-1", agent_name="codex", status="closed"
-    )
+    manager.store.list_cards.return_value = []
+    manager.store.list_sessions.return_value = [
+        AgentSession(id="session-1", agent_name="codex", status="closed")
+    ]
 
     result = manager.reconcile_terminal_state()
 
@@ -460,20 +465,51 @@ def test_reconcile_retains_nonterminal_card_workspace(tmp_path: Path) -> None:
     manager.provision_repository(
         linked, project_id="project-1", session_id="session-1", card_id="card-1"
     )
-    manager.store.get_card.return_value = SimpleNamespace(lane="active")
-    manager.store.get_session.return_value = AgentSession(
-        id="session-1", agent_name="codex", status="closed"
-    )
+    manager.store.list_cards.return_value = [
+        SimpleNamespace(id="card-1", lane="active")
+    ]
+    manager.store.list_sessions.return_value = [
+        AgentSession(id="session-1", agent_name="codex", status="closed")
+    ]
 
     result = manager.reconcile_terminal_state()
     retained = manager.get(linked.repository.id, "session-1")
 
     assert result["cards_completed"] == 0
+    assert result["nonterminal_cards"] == 1
     assert result["closed_expired"] == 1
     assert retained is not None
     assert retained.completed is False
     assert retained.merged is False
     assert manager.collect_garbage()["retained"] == 1
+
+
+def test_cleanup_refreshes_remote_refs_before_classifying_commits(
+    tmp_path: Path,
+) -> None:
+    manager, _, linked = manager_for(tmp_path)
+    lease = manager.provision_repository(
+        linked, project_id="project-1", session_id="session-1", card_id="card-1"
+    )
+    worktree = Path(lease.worktree_path)
+    git(worktree, "config", "user.email", "test@pa.invalid")
+    git(worktree, "config", "user.name", "PA Test")
+    (worktree / "README.md").write_text("preserved remotely\n")
+    git(worktree, "add", "README.md")
+    git(worktree, "commit", "-m", "preserved remotely")
+    git(worktree, "push", "origin", f"HEAD:refs/heads/archive/{lease.id}")
+    git(
+        Path(lease.cache_path),
+        "update-ref",
+        "-d",
+        f"refs/remotes/origin/archive/{lease.id}",
+    )
+    manager.mark_card_completed("card-1", merged=True)
+    manager.expire_session("session-1")
+
+    assert manager.collect_garbage()["cleaned"] == 1
+    assert manager.metrics()["cleanup_fetches"] == 1
+    assert not worktree.exists()
 
 
 def test_active_session_renewal_extends_lease(tmp_path: Path) -> None:
