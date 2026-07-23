@@ -596,6 +596,7 @@ class RealmSyncWebUiTests(unittest.TestCase):
                 instance_id="ui-node",
                 instance_name="UI node",
                 agent_enabled=False,
+                peers=[],
             )
             app = Kernel.boot(settings=settings).build_app()
             with TestClient(app) as client:

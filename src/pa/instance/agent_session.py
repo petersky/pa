@@ -1189,6 +1189,36 @@ class AgentSessionRuntime:
         self.session.status = "closed"
         self.session.updated_at = datetime.now(UTC)
         await self._save_session_preserving_external_browser_async()
+        try:
+            await self._offload(
+                "workspace.expire_session",
+                self.manager.workspace_manager.expire_session,
+                self.session_id,
+                timeout=30.0,
+            )
+            await self._offload(
+                "workspace.reconcile_terminal_state",
+                self.manager.workspace_manager.reconcile_terminal_state,
+                timeout=30.0,
+            )
+            active_session_ids = {
+                runtime.session_id
+                for runtime in self.manager.list_runtimes()
+                if not runtime._closed
+            }
+            await self._offload(
+                "workspace.collect_garbage",
+                self.manager.workspace_manager.collect_garbage,
+                active_session_ids=active_session_ids,
+                timeout=120.0,
+            )
+        except Exception:
+            # Session closure is authoritative. Cleanup is recoverable via the
+            # explicit workspace reconciliation API or the next agent startup.
+            logger.exception(
+                "Workspace reconciliation after session close failed for %s",
+                self.session_id,
+            )
 
 
 class AgentSessionManager:
@@ -1502,6 +1532,11 @@ class AgentSessionManager:
                 item.session_id for item in snapshot.sessions if item.session_id
             )
         try:
+            await self._offload(
+                "workspace.reconcile_terminal_state",
+                self.workspace_manager.reconcile_terminal_state,
+                timeout=30.0,
+            )
             await self._offload(
                 "workspace.collect_garbage",
                 self.workspace_manager.collect_garbage,

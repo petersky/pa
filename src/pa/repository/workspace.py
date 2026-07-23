@@ -917,6 +917,79 @@ class WorkspaceManager:
             self._increment_metric("completed_workspaces", count)
         return count
 
+    def reconcile_terminal_state(self, *, now: datetime | None = None) -> dict[str, int]:
+        """Reconcile private leases from synced card and session terminal state.
+
+        Workspace lease databases are intentionally instance-local, while cards
+        and sessions are durable control-plane records. A PR supervisor running
+        on another fleet member cannot update this database directly, so every
+        lease owner must independently observe terminal state before cleanup.
+        """
+        now = now or datetime.now(UTC)
+        result = {
+            "examined": 0,
+            "cards_completed": 0,
+            "standalone_completed": 0,
+            "closed_expired": 0,
+            "retained": 0,
+        }
+        for lease in self.list():
+            if lease.state == "cleaned":
+                continue
+            result["examined"] += 1
+            session = self.store.get_session(lease.session_id)
+            session_closed = bool(session and session.status == "closed")
+            terminal = False
+            if lease.card_id:
+                card = self.store.get_card(lease.card_id)
+                terminal = bool(
+                    card and str(getattr(card.lane, "value", card.lane)) == "done"
+                )
+                if terminal and not (lease.completed and lease.merged):
+                    lease.completed = True
+                    lease.merged = True
+                    lease.state = "completed"
+                    lease.stage = "reconciled_card_done"
+                    lease.error = None
+                    result["cards_completed"] += 1
+            elif session_closed:
+                terminal = True
+                if not (lease.completed and lease.merged):
+                    lease.completed = True
+                    lease.merged = True
+                    lease.state = "completed"
+                    lease.stage = "reconciled_session_closed"
+                    lease.error = None
+                    result["standalone_completed"] += 1
+
+            if session_closed and lease.expires_at > now:
+                lease.expires_at = now
+                result["closed_expired"] += 1
+            if terminal or session_closed:
+                lease.updated_at = now
+                self._save(lease)
+            else:
+                result["retained"] += 1
+        if result["cards_completed"] or result["standalone_completed"]:
+            self._increment_metric(
+                "reconciled_workspaces",
+                result["cards_completed"] + result["standalone_completed"],
+            )
+        if result["closed_expired"]:
+            self._increment_metric("expired_closed_workspaces", result["closed_expired"])
+        return result
+
+    def expire_session(self, session_id: str, *, now: datetime | None = None) -> int:
+        """Make a closed session's leases immediately eligible for safe cleanup."""
+        now = now or datetime.now(UTC)
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """UPDATE workspace_leases SET updated_at=?, expires_at=?
+                   WHERE session_id=? AND state!='cleaned'""",
+                (now.isoformat(), now.isoformat(), session_id),
+            )
+            return cursor.rowcount
+
     def renew_session(self, session_id: str) -> int:
         now = datetime.now(UTC)
         with self._connect() as conn:

@@ -1048,12 +1048,14 @@ class PRSupervisorApiAndMcpTests(unittest.TestCase):
             self.assertIn("Pull request supervisor", page.text)
             session_page = client.get("/agent")
             self.assertEqual(session_page.status_code, 200)
-            self.assertIn("PR #17", session_page.text)
+            self.assertIn("Show closed sessions", session_page.text)
+            self.assertNotIn("PR #17", session_page.text)
             session_history = client.get(
                 "/api/agent/history/session-1", headers=headers
             )
             self.assertEqual(session_history.status_code, 200)
             self.assertEqual(session_history.json()["pr_watches"][0]["id"], watch_id)
+            self.assertEqual(session_history.json()["pr_watches"][0]["pr_number"], 17)
 
             incoming = dict(created.json())
             incoming["id"] = "worker-local-id"

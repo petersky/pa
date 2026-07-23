@@ -230,6 +230,23 @@ class FleetOverviewCache:
                 {"version": 1, "updated_at": _now(), "instances": self._data},
             )
 
+    def invalidate(self, instance_id: str, *dimensions: str) -> None:
+        """Drop fields made obsolete by a successful fleet mutation."""
+        with self._lock:
+            current = self._data.get(instance_id)
+            if not current:
+                return
+            changed = False
+            for dimension in dimensions:
+                changed = current.pop(dimension, None) is not None or changed
+            if not current:
+                self._data.pop(instance_id, None)
+            if changed:
+                atomic_write_json(
+                    self.path,
+                    {"version": 1, "updated_at": _now(), "instances": self._data},
+                )
+
 
 _caches: dict[str, FleetOverviewCache] = {}
 _caches_lock = Lock()

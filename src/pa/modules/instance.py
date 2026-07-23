@@ -29,6 +29,10 @@ class RepositoryReconcileRequest(BaseModel):
     snapshots: list[RepositorySnapshotInput] = Field(default_factory=list)
 
 
+class WorkspaceReconcileRequest(BaseModel):
+    collect: bool = True
+
+
 def _unreachable_repository_instances(ctx: AppContext) -> set[str]:
     fleet = ctx.services.get("fleet_registry")
     local_id = ctx.settings.instance_id
@@ -128,6 +132,47 @@ def workspace_leases(request: Request, card_id: str | None = None) -> dict:
         ],
         "metrics": manager.metrics(),
     }
+
+
+@router.post("/workspaces/reconcile")
+async def reconcile_workspace_leases(
+    request: Request, body: WorkspaceReconcileRequest
+) -> dict:
+    """Reconcile terminal cards/sessions into local lease state and collect safely."""
+    agent = request.app.state.ctx.require_service("instance_agent")
+    manager = agent.workspace_manager
+    runtime = request.app.state.ctx.require_service("async_runtime")
+
+    def reconcile() -> dict:
+        before = manager.list()
+        reconciliation = manager.reconcile_terminal_state()
+        active_session_ids = {
+            item.session_id
+            for item in agent.list_runtimes()
+            if not getattr(item, "_closed", False)
+        }
+        collection = (
+            manager.collect_garbage(active_session_ids=active_session_ids)
+            if body.collect
+            else None
+        )
+        after = manager.list()
+        return {
+            "reconciliation": reconciliation,
+            "collection": collection,
+            "before": _workspace_state_counts(before),
+            "after": _workspace_state_counts(after),
+            "metrics": manager.metrics(),
+        }
+
+    return await runtime.run_blocking("workspace.reconcile", reconcile, timeout=300.0)
+
+
+def _workspace_state_counts(leases) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for lease in leases:
+        counts[lease.state] = counts.get(lease.state, 0) + 1
+    return counts
 
 
 @router.post("/repositories/inspect")
@@ -414,3 +459,36 @@ class InstanceModule(Module):
                 ],
                 "metrics": metrics,
             }
+
+        @mcp.tool()
+        async def workspace_reconcile(collect: bool = True) -> dict:
+            """Reconcile terminal local leases and safely collect eligible worktrees."""
+            agent = ctx.require_service("instance_agent")
+            manager = agent.workspace_manager
+            runtime = ctx.require_service("async_runtime")
+
+            def reconcile() -> dict:
+                before = manager.list()
+                reconciliation = manager.reconcile_terminal_state()
+                active_session_ids = {
+                    item.session_id
+                    for item in agent.list_runtimes()
+                    if not getattr(item, "_closed", False)
+                }
+                collection = (
+                    manager.collect_garbage(active_session_ids=active_session_ids)
+                    if collect
+                    else None
+                )
+                after = manager.list()
+                return {
+                    "reconciliation": reconciliation,
+                    "collection": collection,
+                    "before": _workspace_state_counts(before),
+                    "after": _workspace_state_counts(after),
+                    "metrics": manager.metrics(),
+                }
+
+            return await runtime.run_blocking(
+                "workspace.reconcile", reconcile, timeout=300.0
+            )
