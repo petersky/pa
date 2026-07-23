@@ -627,6 +627,112 @@ class RepositoryProjectionTests(unittest.TestCase):
 
 
 class RepositoryRouteTests(unittest.TestCase):
+    def test_repository_html_form_is_not_shadowed_by_project_update_route(
+        self,
+    ) -> None:
+        from fastapi.testclient import TestClient
+
+        from pa.config import Settings, reset_settings
+        from pa.core.kernel import Kernel
+        from pa.domain.store import reset_store
+
+        with tempfile.TemporaryDirectory() as tmp:
+            reset_settings()
+            reset_store()
+            settings = Settings(
+                data_dir=Path(tmp),
+                instance_id="ui-route-instance",
+                agent_enabled=False,
+            )
+            app = Kernel.boot(settings=settings).build_app()
+            with TestClient(app) as client:
+                client.get("/api/health")
+                csrf = client.cookies.get("pa_csrf")
+                headers = {"X-CSRF-Token": csrf, "HX-Request": "true"}
+
+                post_paths = [
+                    route.path
+                    for route in app.routes
+                    if "POST" in getattr(route, "methods", set())
+                ]
+                self.assertLess(
+                    post_paths.index("/projects/repositories"),
+                    post_paths.index("/projects/{project_id}"),
+                )
+
+                project_response = client.post(
+                    "/api/projects",
+                    json={"title": "Route project"},
+                    headers=headers,
+                )
+                self.assertEqual(
+                    project_response.status_code, 201, project_response.text
+                )
+                project_id = project_response.json()["id"]
+
+                create_response = client.post(
+                    f"/projects/repositories?realm=default&project={project_id}",
+                    data={
+                        "url": "https://example.test/form-route.git",
+                        "name": "Form route repository",
+                    },
+                    headers=headers,
+                )
+                self.assertEqual(create_response.status_code, 200, create_response.text)
+
+                repositories = client.get("/api/realm/repositories").json()
+                self.assertEqual(len(repositories), 1)
+                self.assertEqual(
+                    repositories[0]["url"], "https://example.test/form-route.git"
+                )
+                repository_id = repositories[0]["id"]
+
+                link_response = client.post(
+                    f"/projects/{project_id}/repositories?realm=default&project={project_id}",
+                    data={"repository_id": repository_id, "branch": "main"},
+                    headers=headers,
+                )
+                self.assertEqual(link_response.status_code, 200, link_response.text)
+                linked = client.get(
+                    f"/api/projects/{project_id}/repositories"
+                ).json()
+                self.assertEqual(linked[0]["repository"]["id"], repository_id)
+                self.assertEqual(linked[0]["branch"], "main")
+
+                update_response = client.post(
+                    f"/projects/{project_id}?realm=default&project={project_id}",
+                    data={"title": "Updated route project"},
+                    headers=headers,
+                )
+                self.assertEqual(
+                    update_response.status_code, 200, update_response.text
+                )
+                self.assertEqual(
+                    client.get(f"/api/projects/{project_id}").json()["title"],
+                    "Updated route project",
+                )
+
+                validation_response = client.post(
+                    "/projects/repositories",
+                    data={},
+                    headers=headers,
+                )
+                self.assertEqual(
+                    validation_response.status_code,
+                    422,
+                    validation_response.text,
+                )
+                self.assertEqual(
+                    validation_response.json()["detail"][0]["loc"],
+                    ["body", "url"],
+                )
+
+                page = client.get("/projects")
+                self.assertIn('data-operation="Add repository"', page.text)
+
+            reset_store()
+            reset_settings()
+
     def test_realm_catalog_and_instance_snapshots_use_distinct_routes(self) -> None:
         from fastapi.testclient import TestClient
 

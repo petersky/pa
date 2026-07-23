@@ -32,6 +32,7 @@
   <details class="panel-inset">
     <summary>New repository</summary>
     <form class="stack"
+          data-operation="Add repository"
           hx-post="/projects/repositories?realm={{ active_realm }}&project={{ selected_project }}"
           hx-target="#app-view"
           hx-swap="innerHTML">
