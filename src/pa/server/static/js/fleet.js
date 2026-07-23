@@ -1319,26 +1319,104 @@
       "</dd></dl>" + sections;
   }
 
+  function fleetTopologyLayout(nodes, containerWidth) {
+    var count = nodes.length;
+    var positions = {};
+    var width = Number(containerWidth) || 960;
+    var mode = "radial";
+    var viewWidth = 960;
+    var viewHeight = 420;
+
+    if (count === 1 && width <= 600) {
+      mode = "single";
+      viewWidth = 320;
+      viewHeight = 220;
+      positions[(nodes[0].node || nodes[0]).id] = { x: 160, y: 110 };
+    } else if (count > 1 && width <= 480) {
+      mode = "stacked";
+      viewWidth = 320;
+      viewHeight = 224 + Math.max(0, count - 1) * 150;
+      nodes.forEach(function (nodeState, index) {
+        var node = nodeState.node || nodeState;
+        positions[node.id] = { x: 160, y: 112 + index * 150 };
+      });
+    } else if (count > 1 && width <= 760) {
+      mode = "grid";
+      viewWidth = 640;
+      viewHeight = 224 + Math.max(0, Math.ceil(count / 2) - 1) * 160;
+      nodes.forEach(function (nodeState, index) {
+        var node = nodeState.node || nodeState;
+        positions[node.id] = {
+          x: index % 2 === 0 ? 160 : 480,
+          y: 112 + Math.floor(index / 2) * 160
+        };
+      });
+    } else {
+      nodes.forEach(function (nodeState, index) {
+        var node = nodeState.node || nodeState;
+        if (count === 1) {
+          positions[node.id] = { x: 480, y: 210 };
+          return;
+        }
+        var angle = -Math.PI / 2 + (Math.PI * 2 * index / count);
+        positions[node.id] = {
+          x: 480 + Math.cos(angle) * 310,
+          y: 210 + Math.sin(angle) * 130
+        };
+      });
+    }
+
+    return {
+      mode: mode,
+      positions: positions,
+      viewBox: "0 0 " + viewWidth + " " + viewHeight,
+      width: viewWidth,
+      height: viewHeight
+    };
+  }
+
+  var fleetTopologyObserver = null;
+  var observedFleetTopologyHost = null;
+  var observedFleetTopologyWidth = 0;
+  var fleetTopologyResizeFrame = null;
+
+  function observeFleetTopology(host) {
+    if (typeof ResizeObserver !== "function" || observedFleetTopologyHost === host) return;
+    if (fleetTopologyObserver) fleetTopologyObserver.disconnect();
+    observedFleetTopologyHost = host;
+    observedFleetTopologyWidth = Math.round(host.getBoundingClientRect().width);
+    fleetTopologyObserver = new ResizeObserver(function (entries) {
+      var width = entries[0] && Math.round(entries[0].contentRect.width);
+      if (!width || Math.abs(width - observedFleetTopologyWidth) < 2) return;
+      observedFleetTopologyWidth = width;
+      if (fleetTopologyResizeFrame) cancelAnimationFrame(fleetTopologyResizeFrame);
+      fleetTopologyResizeFrame = requestAnimationFrame(function () {
+        fleetTopologyResizeFrame = null;
+        renderFleetTopology();
+      });
+    });
+    fleetTopologyObserver.observe(host);
+  }
+
   function renderFleetTopology(snapshot) {
     var current = snapshot || fleetRenderedSnapshot;
     var host = $("#pa-fleet-topology");
     var svg = host && $("svg", host);
     if (!svg || !current) return;
+    observeFleetTopology(host);
     var nodes = current.nodes;
     var edges = current.overview.edges || [];
-    var compactSingle = nodes.length === 1 && window.innerWidth <= 600;
-    svg.setAttribute("viewBox", compactSingle ? "300 100 360 220" : "0 0 960 420");
+    var layout = fleetTopologyLayout(nodes, host.getBoundingClientRect().width);
+    var active = document.activeElement;
+    var focusedKind = active && active.closest && active.closest("[data-fleet-node]")
+      ? "node"
+      : (active && active.closest && active.closest("[data-fleet-edge]") ? "edge" : "");
+    var focusedId = focusedKind && active.getAttribute("data-fleet-" + focusedKind);
+    svg.setAttribute("viewBox", layout.viewBox);
+    svg.dataset.layout = layout.mode;
     svg.classList.toggle("fleet-topology-multi", nodes.length > 1);
-    var positions = {};
-    nodes.forEach(function (nodeState, index) {
-      var node = nodeState.node;
-      if (nodes.length === 1) {
-        positions[node.id] = { x: 480, y: 210 };
-        return;
-      }
-      var angle = -Math.PI / 2 + (Math.PI * 2 * index / nodes.length);
-      positions[node.id] = { x: 480 + Math.cos(angle) * 310, y: 210 + Math.sin(angle) * 130 };
-    });
+    svg.classList.toggle("fleet-topology-compact", layout.mode !== "radial");
+    var positions = layout.positions;
     var parts = [
       '<defs><marker id="fleet-arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z"></path></marker></defs>'
     ];
@@ -1437,7 +1515,20 @@
         '" text-anchor="middle">' + escapeHtml(nodeState.freshness) + "</text></g>");
     });
     svg.innerHTML = parts.join("");
+    if (focusedId) {
+      var focused = svg.querySelector(
+        '[data-fleet-' + focusedKind + '="' + CSS.escape(focusedId) + '"]'
+      );
+      if (focused) focused.focus({ preventScroll: true });
+    }
     renderFleetEdgeList(current);
+  }
+
+  if (window.PA_TEST) {
+    window.__paFleetTopology = {
+      layout: fleetTopologyLayout,
+      render: renderFleetTopology
+    };
   }
 
   function fleetRefreshLabel(refresh) {

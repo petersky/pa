@@ -1124,6 +1124,12 @@ class FleetUpdateUiTests(unittest.TestCase):
         self.assertIn('id="pa-fleet-instances"', template)
         self.assertIn('tabindex="0" role="button"', script)
         self.assertIn('event.key !== "Enter" && event.key !== " "', script)
+        self.assertIn("function fleetTopologyLayout(nodes, containerWidth)", script)
+        self.assertIn('mode = "stacked"', script)
+        self.assertIn('mode = "grid"', script)
+        self.assertIn("host.getBoundingClientRect().width", script)
+        self.assertIn("new ResizeObserver", script)
+        self.assertIn("focused.focus({ preventScroll: true })", script)
         self.assertIn('data-fleet-edge-item="', script)
         self.assertIn("selectedFleetItem.edgeId", script)
         self.assertIn("parallelOffset", script)
@@ -1133,6 +1139,11 @@ class FleetUpdateUiTests(unittest.TestCase):
         self.assertIn("@media (max-width: 900px)", style)
         self.assertIn("@media (prefers-reduced-motion: reduce)", style)
         self.assertIn(".fleet-edge-stale line", style)
+        self.assertNotIn("min-width: 44rem", style)
+        self.assertLess(
+            template.index('id="pa-fleet-edge-list"'),
+            template.index('id="pa-fleet-detail"'),
+        )
 
 
 class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
