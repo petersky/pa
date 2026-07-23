@@ -360,7 +360,9 @@ body {
 body.app-shell {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  padding-bottom: env(safe-area-inset-bottom, 0);
   overflow: hidden;
 }
 
@@ -643,6 +645,17 @@ body.is-resizing-sidebar iframe {
 
   .sidebar-resize-handle {
     display: none;
+  }
+
+  .page-agent-main,
+  .page-agent-main .agent-chat-widget,
+  .page-agent-main .acw-chat-stage,
+  .page-agent-main .acw-messages {
+    min-height: 0;
+  }
+
+  .page-agent-main .acw-composer-actions {
+    flex-wrap: wrap;
   }
 }
 
@@ -1092,6 +1105,7 @@ code {
   display: flex;
   flex-direction: column;
   min-height: 100%;
+  overflow: hidden;
 }
 
 .page-agent.is-sidebar-collapsed .page-sidebar-left { display: none; }
@@ -1649,6 +1663,7 @@ code {
 .acw-composer {
   display: flex;
   flex-direction: column;
+  flex: 0 0 auto;
   gap: 0.35rem;
   border-top: 1px solid var(--pa-border);
   padding-top: 0.5rem;
@@ -1670,6 +1685,8 @@ code {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
+  max-height: min(10rem, 25dvh);
+  overflow-y: auto;
 }
 
 .acw-attachment {

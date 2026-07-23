@@ -604,6 +604,28 @@ setImmediate(function () {
         self.assertIn("sessionConfigSummary", script)
         self.assertGreaterEqual(script.count("self.applyOptionSnapshot(snap);"), 2)
 
+    def test_agent_page_defaults_to_collapsed_sessions_and_mobile_safe_composer(
+        self,
+    ) -> None:
+        root = Path(__file__).parents[1] / "src" / "pa" / "server"
+        page = (root / "templates" / "pages" / "agent.html").read_text()
+        widget = (
+            root / "templates" / "partials" / "agent" / "chat-widget.html"
+        ).read_text()
+        shell = (root / "templates" / "shell.html").read_text()
+        script = (root / "static" / "js" / "agent-chat.js").read_text()
+        style = (root / "static" / "style.css").read_text()
+
+        self.assertIn("page-agent is-sidebar-collapsed", page)
+        self.assertIn('aria-expanded="false">Show sessions', widget)
+        self.assertIn('saved === null ? true : saved === "1"', script)
+        self.assertIn('classList.toggle("is-sidebar-collapsed", collapsed)', script)
+        self.assertIn("viewport-fit=cover", shell)
+        self.assertIn("height: 100dvh", style)
+        self.assertIn("padding-bottom: env(safe-area-inset-bottom, 0)", style)
+        self.assertIn(".page-agent-main .acw-chat-stage", style)
+        self.assertIn("max-height: min(10rem, 25dvh)", style)
+
     def test_settings_page_exposes_durable_new_chat_defaults(self) -> None:
         root = Path(__file__).parents[1] / "src" / "pa" / "server"
         source = (root / "templates" / "pages" / "settings.html").read_text()
