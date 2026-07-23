@@ -1604,7 +1604,7 @@ class AgentSessionManager:
 
     async def _resume_from_snapshot(
         self, snap: SessionSnapshot, full: QuiesceSnapshot
-    ) -> AgentSessionRuntime:
+    ) -> AgentSessionRuntime | None:
         existing = (
             await self._offload(
                 "sqlite.agent_session_read", self.store.get_session, snap.session_id
@@ -1612,6 +1612,12 @@ class AgentSessionManager:
             if snap.session_id
             else None
         )
+        if existing and existing.status == "closed":
+            logger.info(
+                "Skipping quiesce snapshot for durably closed session %s",
+                existing.id,
+            )
+            return None
         session = existing or AgentSession(
             id=snap.session_id or str(uuid4()),
             agent_name=snap.agent_name or "instance",

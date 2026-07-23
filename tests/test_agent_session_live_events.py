@@ -201,6 +201,39 @@ class AgentSessionLiveEventTests(unittest.TestCase):
                 provider_spec=resolved.spec,
             )
 
+    def test_quiesce_snapshot_does_not_resurrect_closed_session(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = MagicMock()
+            store.get_session.return_value = AgentSession(
+                id="closed-session",
+                agent_name="codex",
+                status="closed",
+                label="card:card-1",
+            )
+            manager = AgentSessionManager(Settings(data_dir=Path(tmp)), store)
+            manager._prepare_workspace = AsyncMock(return_value={})
+            snapshot = SessionSnapshot(
+                session_id="closed-session",
+                agent_name="codex",
+                status="prompting",
+                label="card:card-1",
+            )
+
+            async def run():
+                with patch.object(
+                    AgentSessionRuntime, "start", new=AsyncMock()
+                ) as start:
+                    runtime = await manager._resume_from_snapshot(
+                        snapshot, QuiesceSnapshot()
+                    )
+                return runtime, start
+
+            runtime, start = asyncio.run(run())
+
+            self.assertIsNone(runtime)
+            manager._prepare_workspace.assert_not_awaited()
+            start.assert_not_awaited()
+
     def test_interrupted_snapshot_is_requeued_with_recovery_prompt(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = MagicMock()

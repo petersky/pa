@@ -931,20 +931,28 @@ class WorkspaceManager:
             "cards_completed": 0,
             "standalone_completed": 0,
             "closed_expired": 0,
+            "missing_cards": 0,
+            "nonterminal_cards": 0,
             "retained": 0,
         }
+        cards = {card.id: card for card in self.store.list_cards()}
+        sessions = {session.id: session for session in self.store.list_sessions()}
         for lease in self.list():
             if lease.state == "cleaned":
                 continue
             result["examined"] += 1
-            session = self.store.get_session(lease.session_id)
+            session = sessions.get(lease.session_id)
             session_closed = bool(session and session.status == "closed")
             terminal = False
             if lease.card_id:
-                card = self.store.get_card(lease.card_id)
+                card = cards.get(lease.card_id)
                 terminal = bool(
                     card and str(getattr(card.lane, "value", card.lane)) == "done"
                 )
+                if card is None:
+                    result["missing_cards"] += 1
+                elif not terminal:
+                    result["nonterminal_cards"] += 1
                 if terminal and not (lease.completed and lease.merged):
                     lease.completed = True
                     lease.merged = True
@@ -1029,6 +1037,7 @@ class WorkspaceManager:
         now = now or datetime.now(UTC)
         active_session_ids = active_session_ids or set()
         result = {"cleaned": 0, "blocked": 0, "retained": 0}
+        candidates: dict[str, list[WorkspaceLease]] = {}
         for lease in self.list():
             if lease.state == "cleaned":
                 continue
@@ -1040,17 +1049,49 @@ class WorkspaceManager:
             ):
                 result["retained"] += 1
                 continue
-            if self._cleanup_lease(lease):
-                result["cleaned"] += 1
-                self._increment_metric("cleaned_workspaces")
-            else:
-                result["blocked"] += 1
-                self._increment_metric("cleanup_blocked")
+            candidates.setdefault(lease.cache_path, []).append(lease)
+        for cache_path, leases in candidates.items():
+            with self._repository_lock(Path(cache_path).name):
+                refresh_error = self._refresh_origin_for_cleanup(Path(cache_path))
+                for lease in leases:
+                    if refresh_error:
+                        self._block_cleanup(lease, refresh_error)
+                        cleaned = False
+                    else:
+                        cleaned = self._cleanup_lease_locked(lease)
+                    key = "cleaned" if cleaned else "blocked"
+                    result[key] += 1
+                    self._increment_metric(
+                        "cleaned_workspaces" if cleaned else "cleanup_blocked"
+                    )
         return result
 
-    def _cleanup_lease(self, lease: WorkspaceLease) -> bool:
-        with self._repository_lock(Path(lease.cache_path).name):
-            return self._cleanup_lease_locked(lease)
+    def _refresh_origin_for_cleanup(self, cache: Path) -> str | None:
+        """Refresh reachability before deciding whether commits are unpushed."""
+        try:
+            self._assert_managed_path(cache)
+            if not cache.exists():
+                return None
+            self._git(
+                "-C",
+                str(cache),
+                "fetch",
+                "--prune",
+                "origin",
+                "+refs/heads/*:refs/remotes/origin/*",
+                timeout=60,
+            )
+            self._increment_metric("cleanup_fetches")
+            return None
+        except Exception as exc:
+            return f"could not refresh origin before cleanup: {str(exc)[:800]}"
+
+    def _block_cleanup(self, lease: WorkspaceLease, error: str) -> None:
+        lease.state = "cleanup_blocked"
+        lease.stage = "cleanup"
+        lease.error = error[:1000]
+        lease.updated_at = datetime.now(UTC)
+        self._save(lease)
 
     def _cleanup_lease_locked(self, lease: WorkspaceLease) -> bool:
         worktree = Path(lease.worktree_path)
