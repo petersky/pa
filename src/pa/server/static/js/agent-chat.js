@@ -1639,7 +1639,7 @@
     }
   };
 
-  AgentChatWidget.prototype.switchSession = function (sessionId) {
+  AgentChatWidget.prototype.switchSession = function (sessionId, live) {
     if (!sessionId || sessionId === this.sessionId) return;
     if (this.settingsDirty && !window.confirm("Discard unsaved Agent settings changes and switch sessions?")) return;
     if (this.settingsDirty) this.resetSettingsDraft();
@@ -1660,10 +1660,26 @@
     this.streaming = {};
     this.setPlaceholder("Loading session…");
     const self = this;
-    this.api("/sessions/" + sessionId)
+    const historical = live === false;
+    const request = historical
+      ? this.api("/history/" + sessionId).then(function (history) {
+          return {
+            session: history.session,
+            transcript: history.events || [],
+            transcript_page: history.page || {},
+            prompting: false,
+            connected: false,
+            queue: [],
+            queue_paused: false,
+            pending_permissions: [],
+            metrics: history.session && history.session.metrics_json || {},
+          };
+        })
+      : this.api("/sessions/" + sessionId);
+    request
       .then(function (snap) {
         self.applySnapshot(snap);
-        self.connectSSE();
+        if (!historical) self.connectSSE();
       })
       .catch(function (err) {
         self.setPlaceholder("Failed to load session: " + err.message);
@@ -1941,20 +1957,27 @@
   function refreshSessionList(activeId) {
     const list = document.querySelector("[data-agent-session-list]");
     if (!list) return;
-    csrfFetch("/sessions")
+    const toggle = document.querySelector("[data-agent-history-toggle]");
+    const includeClosed = !!(toggle && toggle.checked);
+    csrfFetch(includeClosed ? "/history?limit=500" : "/sessions")
       .then(function (sessions) {
         list.innerHTML = "";
         if (!sessions || !sessions.length) {
           const empty = document.createElement("li");
           empty.className = "muted";
           empty.dataset.agentSessionEmpty = "1";
-          empty.textContent = "No live agent sessions yet.";
+          empty.textContent = includeClosed
+            ? "No matching session history."
+            : "No live agent sessions yet.";
           list.appendChild(empty);
           return;
         }
         sessions.forEach(function (s) {
           const li = document.createElement("li");
           li.dataset.sessionId = s.id;
+          li.dataset.sessionLive = s.live === false || s.status === "closed"
+            ? "false"
+            : "true";
           li.setAttribute("role", "button");
           li.tabIndex = 0;
           if (activeId && s.id === activeId) li.classList.add("active");
@@ -1967,8 +1990,35 @@
             sessionConfigSummary(s.config_json);
           list.appendChild(li);
         });
+        filterSessionList();
       })
       .catch(function () { /* ignore */ });
+  }
+
+  function filterSessionList() {
+    const list = document.querySelector("[data-agent-session-list]");
+    const search = document.querySelector("[data-agent-session-search]");
+    if (!list) return;
+    const query = String(search && search.value || "").trim().toLowerCase();
+    let visible = 0;
+    list.querySelectorAll("[data-session-id]").forEach(function (item) {
+      const match = !query || (item.textContent || "").toLowerCase().indexOf(query) !== -1;
+      item.hidden = !match;
+      if (match) visible += 1;
+    });
+    let empty = list.querySelector("[data-agent-session-filter-empty]");
+    if (!visible && query) {
+      if (!empty) {
+        empty = document.createElement("li");
+        empty.className = "muted";
+        empty.dataset.agentSessionFilterEmpty = "1";
+        list.appendChild(empty);
+      }
+      empty.textContent = "No sessions match “" + query + "”.";
+      empty.hidden = false;
+    } else if (empty) {
+      empty.hidden = true;
+    }
   }
 
   function sessionConfigSummary(config) {
@@ -2171,7 +2221,12 @@
         const li = e.target.closest("[data-session-id]");
         if (!li) return;
         const widget = document.querySelector("[data-agent-chat]");
-        if (widget && widget._acw) widget._acw.switchSession(li.dataset.sessionId);
+        if (widget && widget._acw) {
+          widget._acw.switchSession(
+            li.dataset.sessionId,
+            li.dataset.sessionLive !== "false"
+          );
+        }
       });
       list.addEventListener("keydown", function (e) {
         if (e.key !== "Enter" && e.key !== " ") return;
@@ -2179,8 +2234,30 @@
         if (!li) return;
         e.preventDefault();
         const widget = document.querySelector("[data-agent-chat]");
-        if (widget && widget._acw) widget._acw.switchSession(li.dataset.sessionId);
+        if (widget && widget._acw) {
+          widget._acw.switchSession(
+            li.dataset.sessionId,
+            li.dataset.sessionLive !== "false"
+          );
+        }
       });
+    }
+    const historyToggle = root.querySelector("[data-agent-history-toggle]");
+    const sessionSearch = root.querySelector("[data-agent-session-search]");
+    if (historyToggle && !historyToggle._acwBound) {
+      historyToggle._acwBound = true;
+      historyToggle.addEventListener("change", function () {
+        if (sessionSearch) {
+          sessionSearch.hidden = !historyToggle.checked;
+          if (!historyToggle.checked) sessionSearch.value = "";
+        }
+        const widget = document.querySelector("[data-agent-chat]");
+        refreshSessionList(widget && widget._acw && widget._acw.sessionId);
+      });
+    }
+    if (sessionSearch && !sessionSearch._acwBound) {
+      sessionSearch._acwBound = true;
+      sessionSearch.addEventListener("input", filterSessionList);
     }
     const neu = root.querySelector("[data-agent-new-session]");
     if (neu && !neu._acwBound) {

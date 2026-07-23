@@ -1874,6 +1874,24 @@ code {
   background: color-mix(in srgb, var(--pa-accent) 8%, transparent);
 }
 
+.agent-session-history-controls {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0 0.75rem 0.75rem;
+}
+
+.agent-session-history-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--pa-text-muted);
+  font-size: 0.8rem;
+}
+
+.agent-session-history-controls input[type="search"] {
+  width: 100%;
+}
+
 .panel-header [data-agent-new-session] {
   margin-left: auto;
 }
