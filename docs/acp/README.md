@@ -93,7 +93,23 @@ Update these docs whenever PA’s provider integration changes or upstream ACP s
 
    Capture `agent_capabilities` / `auth_methods` from the JSON into the provider doc (with a dated “Last verified” line).
 3. **PA wire logs** — `~/.pa/sessions/<id>/wire.jsonl` for real session behavior (resume, MCP inject, permissions).
+
 4. **Community / issue trackers** — known gaps (e.g. MCP inject or `session/load` quirks) should be recorded under Limitations, with links.
+
+## Host sleep and restart recovery
+
+PA owns admitted execution sessions independently of any browser tab or attached
+browser surface. Session/card/project links, provider resume identity, lifecycle,
+queued and in-flight prompts, and the last persisted event cursor are checkpointed
+before prompt admission is acknowledged. On startup PA reconciles every durable
+nonterminal session, even when an abrupt stop did not produce a graceful quiesce
+snapshot. It resumes the provider when supported; otherwise the session remains
+visible as `recoverable_interrupted` with its recovery error and queued work.
+
+Closing a laptop lid suspends the local operating system. PA cannot execute work
+while its host is asleep. Continuous execution requires routing the work to an
+awake fleet instance before sleep; after wake, local sessions reconcile from their
+durable checkpoints instead of being reported as missing.
 
 ### PR checklist when updating docs
 

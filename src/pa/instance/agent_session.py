@@ -58,6 +58,7 @@ _RETRY_SECONDS = 30
 _QUIESCE_POLL_SECONDS = 0.4
 TRANSCRIPT_WINDOW_LIMIT = 1000
 PromptAction = Literal["append", "prepend", "interrupt"]
+_DURABLE_RUNTIME_KEY = "durable_runtime"
 
 
 def _session_dir(data_dir: Path, session_id: str) -> Path:
@@ -79,9 +80,7 @@ class AgentSessionRuntime:
     ) -> None:
         self.manager = manager
         self.async_runtime = (
-            manager.async_runtime
-            if isinstance(manager, AgentSessionManager)
-            else None
+            manager.async_runtime if isinstance(manager, AgentSessionManager) else None
         )
         self.settings = manager.settings
         self.store = manager.store
@@ -135,6 +134,32 @@ class AgentSessionRuntime:
         await self._offload(
             "sqlite.agent_session_save",
             self._save_session_preserving_external_browser,
+        )
+
+    def _checkpoint_runtime(self, *, lifecycle: str | None = None) -> None:
+        """Persist recoverable execution ownership before an API acknowledges it."""
+        config = dict(self.session.config_json or {})
+        previous = dict(config.get(_DURABLE_RUNTIME_KEY) or {})
+        config[_DURABLE_RUNTIME_KEY] = {
+            "version": 1,
+            "lifecycle": lifecycle or previous.get("lifecycle") or "admitted",
+            "queue_paused": self._queue_paused,
+            "queued_prompts": [item.model_dump(mode="json") for item in self._queue],
+            "in_flight": (
+                self._in_flight.model_dump(mode="json") if self._in_flight else None
+            ),
+            "last_event_cursor": self._seq,
+            "updated_at": datetime.now(UTC).isoformat(),
+        }
+        self.session.config_json = config
+        self.session.updated_at = datetime.now(UTC)
+        self._save_session_preserving_external_browser()
+
+    async def _checkpoint_runtime_async(self, *, lifecycle: str | None = None) -> None:
+        await self._offload(
+            "sqlite.agent_runtime_checkpoint",
+            self._checkpoint_runtime,
+            lifecycle=lifecycle,
         )
 
     @property
@@ -264,7 +289,9 @@ class AgentSessionRuntime:
                         self._transcript_buffer = batch + self._transcript_buffer
                         raise
                     except Exception:
-                        logger.exception("Failed to persist transcript events; retrying")
+                        logger.exception(
+                            "Failed to persist transcript events; retrying"
+                        )
                         await asyncio.sleep(delay)
                         delay = min(delay * 2, 2.0)
             finally:
@@ -281,7 +308,9 @@ class AgentSessionRuntime:
                 self._flush_transcript()
                 await self._transcript_queue.join()
         except TimeoutError:
-            logger.error("Timed out draining transcript for session %s", self.session_id)
+            logger.error(
+                "Timed out draining transcript for session %s", self.session_id
+            )
 
     async def _on_acp_update(self, _external_session_id: str, update: Any) -> None:
         normalized = normalize_session_update(update)
@@ -466,6 +495,7 @@ class AgentSessionRuntime:
                 "mode_id": self.session.mode_id,
             },
         )
+        await self._checkpoint_runtime_async(lifecycle="ready")
         self._flush_transcript()
         await self._drain_transcripts()
         await self._drain_transcripts()
@@ -642,6 +672,11 @@ class AgentSessionRuntime:
                 "position": 0 if action == "prepend" else len(self._queue) - 1,
             },
         )
+        try:
+            self._checkpoint_runtime(lifecycle="queued")
+        except Exception:
+            self._queue = [queued for queued in self._queue if queued.id != item.id]
+            raise
         self._flush_transcript()
         if not self._queue_paused:
             self._start_drain()
@@ -774,6 +809,7 @@ class AgentSessionRuntime:
         async with self._prompt_lock:
             self._in_flight = item
             self._turn_started_at = datetime.now(UTC)
+            await self._checkpoint_runtime_async(lifecycle="prompting")
             try:
                 composition = await self._offload(
                     "agent.prompt_compose",
@@ -907,9 +943,7 @@ class AgentSessionRuntime:
                             "usage": usage,
                             "queued_prompt_id": item.id,
                         }
-                        if inspect.iscoroutinefunction(
-                            self.manager.completion_handler
-                        ):
+                        if inspect.iscoroutinefunction(self.manager.completion_handler):
                             result = self.manager.completion_handler(
                                 self.session_id, payload
                             )
@@ -935,6 +969,7 @@ class AgentSessionRuntime:
     def _finish_turn_state(self) -> None:
         self._in_flight = None
         self._turn_started_at = None
+        self._checkpoint_runtime(lifecycle="ready")
 
     def _is_connection_loss(self, exc: BaseException) -> bool:
         if isinstance(exc, ConnectionError):
@@ -973,17 +1008,20 @@ class AgentSessionRuntime:
             except Exception:
                 logger.exception("Cancel failed for session %s", self.session_id)
         self._append_transcript("cancelled", {"pause_queue": pause_queue})
+        await self._checkpoint_runtime_async(lifecycle="ready")
         self._flush_transcript()
         await self._drain_transcripts()
 
     def pause_queue(self) -> None:
         self._queue_paused = True
         self._append_transcript("queue_paused", {})
+        self._checkpoint_runtime(lifecycle="paused")
         self._flush_transcript()
 
     def resume_queue(self) -> None:
         self._queue_paused = False
         self._append_transcript("queue_resumed", {})
+        self._checkpoint_runtime(lifecycle="queued" if self._queue else "ready")
         self._flush_transcript()
         self._start_drain()
 
@@ -993,6 +1031,7 @@ class AgentSessionRuntime:
         removed = len(self._queue) != before
         if removed:
             self._append_transcript("queue_removed", {"id": prompt_id})
+            self._checkpoint_runtime(lifecycle="queued" if self._queue else "ready")
             self._flush_transcript()
         return removed
 
@@ -1002,6 +1041,7 @@ class AgentSessionRuntime:
         remaining = [q for q in self._queue if q.id not in prompt_ids]
         self._queue = ordered + remaining
         self._append_transcript("queue_reordered", {"ids": [q.id for q in self._queue]})
+        self._checkpoint_runtime(lifecycle="queued" if self._queue else "ready")
         self._flush_transcript()
         return list(self._queue)
 
@@ -1523,9 +1563,7 @@ class AgentSessionManager:
             timeout=30.0,
         )
         active_session_ids = {
-            session.id
-            for session in persisted_sessions
-            if session.status != "closed"
+            session.id for session in persisted_sessions if session.status != "closed"
         }
         if will_resume and snapshot and snapshot.resume:
             active_session_ids.update(
@@ -1557,36 +1595,49 @@ class AgentSessionManager:
         self._accepting = True
         self._quiescing = False
 
-        if self._resume_on_start and snapshot and snapshot.resume:
-            if snapshot.sessions or snapshot.queued_prompts:
-                try:
-                    for sess in snapshot.sessions:
-                        try:
-                            await self._resume_from_snapshot(sess, snapshot)
-                        except Exception as exc:
-                            self._last_error = str(exc)
-                            logger.exception(
-                                "Failed to resume session %s", sess.session_id
-                            )
-                    # Legacy top-level queue → default session
-                    if snapshot.queued_prompts:
-                        default = await self.attach_default()
-                        for item in snapshot.queued_prompts:
-                            item.session_id = default.session_id
-                            default._queue.append(item)
-                        default._start_drain()
-                finally:
+        if self._resume_on_start:
+            recovery: dict[str, SessionSnapshot] = {}
+            if snapshot and snapshot.resume:
+                recovery.update(
+                    {
+                        item.session_id: item
+                        for item in snapshot.sessions
+                        if item.session_id
+                    }
+                )
+            # Graceful quiesce is an optimization, not the durable owner. A
+            # sleeping host, SIGKILL, or power loss never gets a shutdown hook.
+            # Reconcile every durable nonterminal admission that was not in the
+            # quiesce file so it cannot silently disappear after restart.
+            for session in reversed(persisted_sessions):
+                if session.status == "closed" or session.id in recovery:
+                    continue
+                recovery[session.id] = self._snapshot_from_persisted(session)
+            try:
+                for sess in recovery.values():
+                    try:
+                        await self._resume_from_snapshot(
+                            sess, snapshot or QuiesceSnapshot(reason="recovery")
+                        )
+                    except Exception as exc:
+                        self._last_error = str(exc)
+                        await self._mark_recovery_interrupted(sess, exc)
+                        logger.exception("Failed to resume session %s", sess.session_id)
+                # Legacy top-level queue → default session
+                if snapshot and snapshot.resume and snapshot.queued_prompts:
+                    default = await self.attach_default()
+                    for item in snapshot.queued_prompts:
+                        item.session_id = default.session_id
+                        default._queue.append(item)
+                    await default._checkpoint_runtime_async(lifecycle="queued")
+                    default._start_drain()
+            finally:
+                if snapshot:
                     await self._offload(
                         "agent.quiesce_snapshot_clear",
                         clear_quiesce_snapshot,
                         self.settings.data_dir,
                     )
-                return
-            await self._offload(
-                "agent.quiesce_snapshot_clear",
-                clear_quiesce_snapshot,
-                self.settings.data_dir,
-            )
         elif snapshot:
             await self._offload(
                 "agent.quiesce_snapshot_clear",
@@ -1601,6 +1652,63 @@ class AgentSessionManager:
         except Exception as exc:
             self._last_error = str(exc)
             logger.exception("Failed to start default agent session")
+
+    @staticmethod
+    def _snapshot_from_persisted(session: AgentSession) -> SessionSnapshot:
+        durable = dict((session.config_json or {}).get(_DURABLE_RUNTIME_KEY) or {})
+        queued = [
+            QueuedPrompt.model_validate(item)
+            for item in durable.get("queued_prompts") or []
+        ]
+        in_flight_raw = durable.get("in_flight")
+        return SessionSnapshot(
+            session_id=session.id,
+            external_session_id=session.external_session_id,
+            agent_name=session.agent_name,
+            status=session.status,
+            cwd=session.cwd,
+            title=session.title,
+            label=session.label,
+            model_id=session.model_id,
+            mode_id=session.mode_id,
+            configuration=dict(
+                ((session.config_json or {}).get("configuration") or {})
+            ),
+            card_id=session.card_id or session.item_id,
+            project_id=session.project_id,
+            principal_id=session.principal_id,
+            prompting=bool(in_flight_raw),
+            queue_paused=bool(durable.get("queue_paused")),
+            queued_prompts=queued,
+            in_flight=(
+                QueuedPrompt.model_validate(in_flight_raw) if in_flight_raw else None
+            ),
+        )
+
+    async def _mark_recovery_interrupted(
+        self, snapshot: SessionSnapshot, exc: BaseException
+    ) -> None:
+        if not snapshot.session_id:
+            return
+        session = await self._offload(
+            "sqlite.agent_session_read", self.store.get_session, snapshot.session_id
+        )
+        if not session or session.status == "closed":
+            return
+        config = dict(session.config_json or {})
+        durable = dict(config.get(_DURABLE_RUNTIME_KEY) or {})
+        durable.update(
+            lifecycle="recoverable_interrupted",
+            recovery_error=str(exc)[:1000],
+            updated_at=datetime.now(UTC).isoformat(),
+        )
+        config[_DURABLE_RUNTIME_KEY] = durable
+        session.config_json = config
+        session.status = "recoverable_interrupted"
+        session.updated_at = datetime.now(UTC)
+        await self._offload(
+            "sqlite.agent_session_save", self.store.save_session, session
+        )
 
     async def _resume_from_snapshot(
         self, snap: SessionSnapshot, full: QuiesceSnapshot
@@ -1770,6 +1878,7 @@ class AgentSessionManager:
                 resume_external_id or existing.external_session_id,
             )
         )
+
         def resolve_provider_spec():
             # When resuming an existing session, keep its provider unless
             # explicitly overridden. Provider discovery reads configuration and
