@@ -44,15 +44,19 @@
 .fleet-topology {
   width: 100%;
   min-height: 25rem;
-  overflow: auto;
+  overflow: hidden;
 }
 
 .fleet-topology svg {
   display: block;
   width: 100%;
-  min-width: 34rem;
+  min-width: 0;
   height: auto;
   min-height: 25rem;
+}
+
+.fleet-topology svg.fleet-topology-compact {
+  margin-inline: auto;
 }
 
 .fleet-node,
@@ -220,10 +224,8 @@
 @media (max-width: 900px) {
   .fleet-topology { min-height: 19rem; }
   .fleet-topology svg {
-    min-width: 20rem;
     min-height: 19rem;
   }
-  .fleet-topology svg.fleet-topology-multi { min-width: 44rem; }
   .fleet-topology-heading,
   .fleet-table-heading { display: grid; }
   .fleet-table-scroll { overflow: visible; }
