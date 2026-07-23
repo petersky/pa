@@ -154,6 +154,56 @@ assert.strictEqual(state.refresh.completed, 1);
 """
         )
 
+    def test_selected_watch_tracks_group_across_relationship_refresh(self) -> None:
+        self.run_node(
+            r"""
+const groupId = "edge-supervisor-stable";
+const selection = {
+  kind: "edge-item",
+  id: "watch-watch-b",
+  edgeId: groupId,
+};
+let current = overview(["local", "peer-a"]);
+current.edges = [{
+  id: groupId,
+  kind: "supervisor",
+  source: "peer-a",
+  target: "local",
+  details: {
+    items: [
+      { id: "watch-watch-a", status: "healthy", details: { id: "watch-a" } },
+      { id: "watch-watch-b", status: "degraded", details: { id: "watch-b" } },
+    ],
+  },
+}];
+let snapshot = model.createSnapshot(current, null, selection);
+assert.strictEqual(snapshot.selection.edgeId, groupId);
+assert.strictEqual(snapshot.selectedEdge.id, groupId);
+assert.strictEqual(snapshot.selectedEdgeItem.details.id, "watch-b");
+
+const incoming = overview(["local", "peer-a"]);
+incoming.edges = [{
+  id: groupId,
+  kind: "supervisor",
+  source: "peer-a",
+  target: "local",
+  details: {
+    items: [
+      { id: "watch-watch-b", status: "healthy", details: { id: "watch-b" } },
+      { id: "watch-watch-a", status: "healthy", details: { id: "watch-a" } },
+    ],
+  },
+}];
+current = model.mergeMetadata(current, incoming);
+snapshot = model.createSnapshot(current, null, selection);
+assert.strictEqual(snapshot.selection.id, "watch-watch-b");
+assert.strictEqual(snapshot.selection.edgeId, groupId);
+assert.strictEqual(snapshot.selectedEdge.id, groupId);
+assert.strictEqual(snapshot.selectedEdgeItem.details.id, "watch-b");
+assert.strictEqual(snapshot.selectedEdgeItem.status, "healthy");
+"""
+        )
+
     def test_final_24_of_24_has_consistent_fresh_derived_state(self) -> None:
         self.run_node(
             r"""

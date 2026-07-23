@@ -145,7 +145,9 @@ class PRSupervisorStore:
                 row = conn.execute(
                     """
                     SELECT * FROM pr_watches
-                    WHERE realm_id = ? AND repository = ? AND pr_number = ?
+                    WHERE realm_id = ?
+                      AND repository = ? COLLATE NOCASE
+                      AND pr_number = ?
                     """,
                     (watch.realm_id, watch.repository, watch.pr_number),
                 ).fetchone()
@@ -273,7 +275,9 @@ class PRSupervisorStore:
             row = conn.execute(
                 """
                 SELECT * FROM pr_watches
-                WHERE realm_id = ? AND repository = ? AND pr_number = ?
+                WHERE realm_id = ?
+                  AND repository = ? COLLATE NOCASE
+                  AND pr_number = ?
                 """,
                 (realm_id, repository, pr_number),
             ).fetchone()
@@ -284,7 +288,7 @@ class PRSupervisorStore:
             rows = conn.execute(
                 """
                 SELECT * FROM pr_watches
-                WHERE repository = ? AND pr_number = ?
+                WHERE repository = ? COLLATE NOCASE AND pr_number = ?
                 ORDER BY realm_id, created_at
                 """,
                 (repository, pr_number),
@@ -351,7 +355,7 @@ class PRSupervisorStore:
                     """
                     UPDATE pr_watches SET next_poll_at = ?, poll_attempt = 0,
                         updated_at = ?
-                    WHERE repository = ? AND pr_number = ?
+                    WHERE repository = ? COLLATE NOCASE AND pr_number = ?
                       AND status IN ('active', 'blocked')
                     """,
                     (now, now, repository, pr_number),
