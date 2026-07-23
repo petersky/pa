@@ -35,6 +35,7 @@ from pa.pr_supervisor.models import (
     PRWatchEvent,
     PRWatchStatus,
     ReviewThread,
+    canonical_repository_name,
     utcnow,
 )
 from pa.pr_supervisor.service import ExecutorDispatcher, PRSupervisor
@@ -129,6 +130,36 @@ class PRSupervisorStoreTests(unittest.TestCase):
         self.assertIsNotNone(recovered)
         self.assertEqual(recovered.repository, "owner/repo")
         self.assertEqual(restarted.list_events("watch-1")[0].event_key, "event-1")
+
+    def test_repository_identity_is_case_insensitive_for_watches_and_capabilities(
+        self,
+    ) -> None:
+        normalized = PRWatch(
+            repository="HTTPS://GITHUB.COM/PeterSky/PA.GIT/",
+            pr_number=65,
+            pr_url="https://github.com/petersky/pa/pull/65",
+        )
+        self.assertEqual(normalized.repository, "PeterSky/PA")
+        self.assertEqual(canonical_repository_name(normalized.repository), "petersky/pa")
+        capability = GitHubCapability(
+            instance_id="worker",
+            authenticated=True,
+            allowed_repositories=["PeterSky/PA"],
+        )
+        self.assertTrue(capability.supports("petersky/pa"))
+        self.assertTrue(capability.supports("PETERSKY/PA"))
+        self.assertFalse(capability.supports("petersky/other"))
+
+        stored = self.store.upsert_watch(
+            watch().model_copy(
+                update={
+                    "id": "case-variant",
+                    "repository": "OWNER/REPO",
+                }
+            )
+        )
+        self.assertEqual(stored.id, "watch-1")
+        self.assertEqual(len(self.store.find_watches("Owner/Repo", 17)), 1)
 
     def test_replica_preserves_highest_fence_for_authority_migration(self) -> None:
         local = self.store.get_watch("watch-1")

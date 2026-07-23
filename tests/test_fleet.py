@@ -525,6 +525,59 @@ class FleetPageLazyLoadTests(unittest.TestCase):
             reset_instance_agent()
             reset_store()
 
+    def test_fleet_page_has_one_semantic_control_for_duplicate_pr_watches(
+        self,
+    ) -> None:
+        from fastapi.testclient import TestClient
+
+        from pa.core.kernel import Kernel
+        from pa.domain.store import reset_store
+        from pa.instance.agent_session import reset_instance_agent
+        from pa.pr_supervisor.models import PRWatch
+
+        reset_store()
+        reset_instance_agent()
+        settings = Settings(
+            data_dir=self.data_dir,
+            instance_id="local-1",
+            instance_name="owner",
+            instance_url="http://owner:8080",
+            agent_enabled=False,
+            peers=[],
+        )
+        try:
+            app = Kernel.boot(settings=settings).build_app()
+            with TestClient(app) as client:
+                supervisor = app.state.ctx.require_service("pr_supervisor_store")
+                watches = [
+                    PRWatch(
+                        id=watch_id,
+                        repository=repository,
+                        pr_number=65,
+                        pr_url=f"https://github.com/{repository}/pull/65",
+                        owner_instance_id="local-1",
+                        originating_instance_id="local-1",
+                    )
+                    for watch_id, repository in (
+                        ("watch-upper", "petersky/PA"),
+                        ("watch-lower-a", "petersky/pa"),
+                        ("watch-lower-b", "petersky/pa"),
+                    )
+                ]
+                with patch.object(
+                    supervisor, "list_watches", return_value=watches
+                ):
+                    page = client.get("/fleet")
+                self.assertEqual(page.status_code, 200, page.text)
+                route_list = page.text.split(
+                    '<ul id="pa-fleet-edge-list">', maxsplit=1
+                )[1].split("</ul>", maxsplit=1)[0]
+                self.assertEqual(route_list.count("data-fleet-edge="), 1)
+                self.assertIn("PR petersky/pa#65 · 3 watches", route_list)
+        finally:
+            reset_instance_agent()
+            reset_store()
+
 
 class FleetHealthParallelTests(unittest.IsolatedAsyncioTestCase):
     async def test_health_probes_in_parallel_and_includes_providers(self) -> None:
@@ -875,6 +928,110 @@ class FleetOverviewTests(unittest.IsolatedAsyncioTestCase):
                 (supervisor["source"], supervisor["target"]), ("remote", "local")
             )
 
+    def test_topology_groups_case_variant_prs_and_keeps_stable_watch_ids(self) -> None:
+        from pa.fleet.overview import build_overview
+        from pa.pr_supervisor.models import PRWatch, PRWatchStatus
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                data_dir=Path(tmp),
+                instance_id="local",
+                instance_name="owner",
+                instance_url="http://owner:8080",
+            )
+            ctx = MagicMock(settings=settings)
+            ctx.store.list_sessions.return_value = []
+            ctx.store.list_repositories.return_value = []
+            ctx.store.get_projection_head.return_value = "head"
+            supervisor_store = MagicMock()
+            ctx.services = {"pr_supervisor_store": supervisor_store}
+            instances = [
+                FleetInstance(
+                    instance_id="local",
+                    name="owner",
+                    url="http://owner:8080",
+                ),
+                FleetInstance(
+                    instance_id="remote",
+                    name="worker",
+                    url="http://worker:8080",
+                ),
+            ]
+            watches = [
+                PRWatch(
+                    id="watch-upper",
+                    repository="petersky/PA",
+                    pr_number=65,
+                    pr_url="https://github.com/petersky/PA/pull/65",
+                    owner_instance_id="remote",
+                    originating_instance_id="local",
+                ),
+                PRWatch(
+                    id="watch-lower-a",
+                    repository="petersky/pa",
+                    pr_number=65,
+                    pr_url="https://github.com/petersky/pa/pull/65",
+                    owner_instance_id="remote",
+                    originating_instance_id="local",
+                ),
+                PRWatch(
+                    id="watch-lower-b",
+                    repository="petersky/pa",
+                    pr_number=65,
+                    pr_url="https://github.com/petersky/pa/pull/65",
+                    owner_instance_id="remote",
+                    originating_instance_id="local",
+                    status=PRWatchStatus.BLOCKED,
+                    last_error="required check failed",
+                ),
+            ]
+            supervisor_store.list_watches.return_value = watches
+
+            first = build_overview(ctx, instances, [])
+            supervisor_store.list_watches.return_value = list(reversed(watches))
+            refreshed = build_overview(ctx, instances, [])
+
+            edge = next(
+                item for item in first["edges"] if item["kind"] == "supervisor"
+            )
+            refreshed_edge = next(
+                item for item in refreshed["edges"] if item["kind"] == "supervisor"
+            )
+            self.assertEqual(edge["id"], refreshed_edge["id"])
+            self.assertEqual(edge["count"], 3)
+            self.assertEqual(edge["distinct_count"], 1)
+            self.assertEqual(edge["status"], "degraded")
+            self.assertEqual(edge["status_counts"], {"degraded": 1, "healthy": 2})
+            self.assertEqual(edge["label"], "PR petersky/pa#65 · 3 watches")
+            self.assertEqual(
+                edge["details"]["pull_requests"],
+                [
+                    {
+                        "id": "petersky/pa#65",
+                        "repository": "petersky/pa",
+                        "pr_number": 65,
+                        "count": 3,
+                        "status": "degraded",
+                        "watch_ids": [
+                            "watch-watch-lower-a",
+                            "watch-watch-lower-b",
+                            "watch-watch-upper",
+                        ],
+                    }
+                ],
+            )
+            self.assertEqual(
+                {item["id"] for item in edge["details"]["items"]},
+                {
+                    "watch-watch-upper",
+                    "watch-watch-lower-a",
+                    "watch-watch-lower-b",
+                },
+            )
+            self.assertEqual(
+                edge["details"]["items"], refreshed_edge["details"]["items"]
+            )
+
     def test_local_activity_reports_multiple_sessions_cards_and_queue(self) -> None:
         from pa.domain.models import AgentSession
         from pa.fleet.overview import local_dimension
@@ -966,6 +1123,12 @@ class FleetUpdateUiTests(unittest.TestCase):
         self.assertIn('id="pa-fleet-instances"', template)
         self.assertIn('tabindex="0" role="button"', script)
         self.assertIn('event.key !== "Enter" && event.key !== " "', script)
+        self.assertIn('data-fleet-edge-item="', script)
+        self.assertIn("selectedFleetItem.edgeId", script)
+        self.assertIn("parallelOffset", script)
+        self.assertIn("canonicalDirection", script)
+        self.assertIn('edge.count > 1 ? " ×" + edge.count', script)
+        self.assertIn("Open watch audit history", script)
         self.assertIn("@media (max-width: 1050px)", style)
         self.assertIn("@media (max-width: 900px)", style)
         self.assertIn("@media (prefers-reduced-motion: reduce)", style)

@@ -12,6 +12,23 @@ def utcnow() -> datetime:
     return datetime.now(UTC)
 
 
+def _normalized_repository_name(value: str) -> str:
+    normalized = value.strip().strip("/")
+    github_prefix = "https://github.com/"
+    if normalized.casefold().startswith(github_prefix):
+        normalized = normalized[len(github_prefix) :]
+    if normalized.casefold().endswith(".git"):
+        normalized = normalized[:-4]
+    if len(normalized.split("/")) != 2:
+        raise ValueError("repository must be owner/name")
+    return normalized
+
+
+def canonical_repository_name(value: str) -> str:
+    """Return the case-insensitive GitHub owner/name identity."""
+    return _normalized_repository_name(value).casefold()
+
+
 class PRPolicy(BaseModel):
     """Project/repository policy copied onto a watch at association time."""
 
@@ -148,14 +165,7 @@ class PRWatch(BaseModel):
     @field_validator("repository")
     @classmethod
     def normalize_repository(cls, value: str) -> str:
-        normalized = value.strip().strip("/")
-        if normalized.endswith(".git"):
-            normalized = normalized[:-4]
-        if normalized.startswith("https://github.com/"):
-            normalized = normalized.removeprefix("https://github.com/")
-        if len(normalized.split("/")) != 2:
-            raise ValueError("repository must be owner/name")
-        return normalized
+        return _normalized_repository_name(value)
 
 
 class PRWatchEvent(BaseModel):
@@ -184,7 +194,14 @@ class GitHubCapability(BaseModel):
     def supports(self, repository: str) -> bool:
         if not self.authenticated:
             return False
-        if self.allowed_repositories and repository not in self.allowed_repositories:
+        try:
+            identity = canonical_repository_name(repository)
+            allowed = {
+                canonical_repository_name(item) for item in self.allowed_repositories
+            }
+        except ValueError:
+            return False
+        if allowed and identity not in allowed:
             return False
         return True
 
