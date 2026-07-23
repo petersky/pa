@@ -18,7 +18,7 @@ from pa.config import Settings
 from pa.core.kernel import Kernel
 from pa.domain.models import AgentSession, Card, CardLane
 from pa.domain.store import reset_store
-from pa.instance.agent_session import reset_instance_agent
+from pa.instance.agent_session import AgentSessionRuntime, reset_instance_agent
 from pa.pr_supervisor.gating import build_executor_prompt, evaluate_gate
 from pa.pr_supervisor.github import (
     GitHubClient,
@@ -904,6 +904,51 @@ class ExecutorWakeReplacementTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(second, "deduplicated")
             agent.create_session.assert_awaited_once()
             runtime.enqueue.assert_called_once()
+
+    async def test_existing_leased_runtime_uses_its_session_cwd(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                data_dir=Path(tmp),
+                instance_id="instance-a",
+                peers=[],
+            )
+            store = PRSupervisorStore(Path(tmp) / "supervisor.db")
+            target = watch()
+            target.executor_cwd = "/tmp/stale-merged-worktree"
+            store.upsert_watch(target)
+            session = AgentSession(
+                id="session-1",
+                agent_name="codex",
+                cwd="/workspace/current-lease",
+                card_id="card-1",
+                principal_id="user:local",
+                config_json={"execution_context": {"version": 1}},
+            )
+            domain = MagicMock()
+            domain.get_session.return_value = session
+            runtime = MagicMock()
+            runtime.session_id = session.id
+            runtime.session = session
+
+            def enqueue(_prompt, **kwargs) -> None:
+                AgentSessionRuntime._validated_cwd(runtime, kwargs["cwd"])
+
+            runtime.enqueue.side_effect = enqueue
+            agent = MagicMock()
+            agent.get.return_value = runtime
+            dispatcher = ExecutorDispatcher(
+                settings, domain, store, agent_manager=agent
+            )
+
+            result = await dispatcher.dispatch_local(
+                store.get_watch("watch-1"), "event-current-lease", "fix it"
+            )
+
+            self.assertEqual(result, "queued")
+            self.assertEqual(
+                runtime.enqueue.call_args.kwargs["cwd"], "/workspace/current-lease"
+            )
+            agent.create_session.assert_not_called()
 
 
 class PRSupervisorApiAndMcpTests(unittest.TestCase):

@@ -33,6 +33,35 @@ class _TranscriptStore:
 
 
 class AgentSessionLiveEventTests(unittest.TestCase):
+    def test_transcript_flush_falls_back_if_writer_cannot_be_scheduled(self) -> None:
+        event = TranscriptEvent(
+            session_id="session-shutdown",
+            seq=1,
+            event_type="turn_completed",
+            payload={},
+        )
+        runtime = AgentSessionRuntime.__new__(AgentSessionRuntime)
+        runtime.async_runtime = MagicMock()
+        runtime.store = MagicMock()
+        runtime.session = AgentSession(
+            id="session-shutdown",
+            agent_name="codex",
+        )
+        runtime._transcript_buffer = [event]
+        runtime._transcript_queue = asyncio.Queue(maxsize=128)
+        runtime._transcript_writer_task = None
+
+        with patch(
+            "pa.instance.agent_session.asyncio.create_task",
+            side_effect=RuntimeError("cannot schedule new futures after shutdown"),
+        ):
+            runtime._flush_transcript()
+
+        runtime.store.append_transcript_events.assert_called_once_with([event])
+        self.assertEqual(runtime._transcript_buffer, [])
+        self.assertTrue(runtime._transcript_queue.empty())
+        self.assertEqual(runtime._transcript_queue._unfinished_tasks, 0)
+
     def test_stale_default_session_uses_configured_provider(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = MagicMock()

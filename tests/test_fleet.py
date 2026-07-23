@@ -6,12 +6,13 @@ import json
 import asyncio
 import tempfile
 import unittest
+import warnings
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
 
 from pa.config import Settings
 from pa.domain.instance_config import load_instance_config, update_instance_config
@@ -1335,6 +1336,22 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
             ),
             "/srv/pa",
         )
+
+    async def test_agent_proxy_does_not_duplicate_openapi_operation_ids(self) -> None:
+        from pa.modules.fleet import router
+
+        app = FastAPI()
+        app.include_router(router, prefix="/api")
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            app.openapi()
+
+        duplicates = [
+            warning
+            for warning in caught
+            if "Duplicate Operation ID" in str(warning.message)
+        ]
+        self.assertEqual(duplicates, [])
 
     async def test_agent_proxy_rejects_path_traversal(self) -> None:
         from pa.modules.fleet import _agent_path
