@@ -958,7 +958,9 @@
       selection: selection ? Object.assign({}, selection) : null,
       nodes: [],
       nodesById: Object.create(null),
-      selectedNode: null
+      selectedNode: null,
+      selectedEdge: null,
+      selectedEdgeItem: null
     };
     (snapshot.overview.nodes || []).forEach(function (node) {
       var freshness = worstFreshness(node);
@@ -976,6 +978,18 @@
     });
     if (snapshot.selection && snapshot.selection.kind === "node") {
       snapshot.selectedNode = snapshot.nodesById[snapshot.selection.id] || null;
+    } else if (snapshot.selection && snapshot.selection.kind === "edge") {
+      snapshot.selectedEdge = (snapshot.overview.edges || []).find(function (edge) {
+        return edge.id === snapshot.selection.id;
+      }) || null;
+    } else if (snapshot.selection && snapshot.selection.kind === "edge-item") {
+      snapshot.selectedEdge = (snapshot.overview.edges || []).find(function (edge) {
+        return edge.id === snapshot.selection.edgeId;
+      }) || null;
+      snapshot.selectedEdgeItem = edgeItemById(
+        snapshot.selectedEdge,
+        snapshot.selection.id
+      ) || null;
     }
     return snapshot;
   }
@@ -1168,8 +1182,21 @@
     });
   }
 
+  function edgeItemById(edge, id) {
+    return (edge && edge.details && edge.details.items || []).find(function (item) {
+      return item.id === id;
+    });
+  }
+
+  function edgeStatusSummary(edge) {
+    var counts = edge && edge.status_counts || {};
+    return Object.keys(counts).sort().map(function (status) {
+      return status + " " + counts[status];
+    }).join(", ");
+  }
+
   function edgeVisualStatus(edge, snapshot) {
-    var targetState = edge && edge.target && snapshot.nodesById[edge.target];
+    var targetState = edge && edge.target && snapshot && snapshot.nodesById[edge.target];
     var target = targetState && targetState.node;
     if (!target) return edge && edge.status || "unavailable";
     var reach = fieldValue(target, "reachability");
@@ -1192,34 +1219,82 @@
       return '<li><button type="button" class="link-button" data-fleet-edge="' +
         escapeHtml(edge.id) + '">' + escapeHtml(edge.kind + ": " +
           (edge.source || "external") + " → " + (edge.target || "external") +
-          " · " + status) + "</button></li>";
+          " · " + (edge.label || edge.id) + " · " + status) + "</button></li>";
     }).join("") : '<li class="muted">No registered routes.</li>';
   }
 
-  function renderFleetDetail(kind, id, snapshot) {
+  function renderFleetDetail(kind, id, edgeId, snapshot) {
     var panel = $("#pa-fleet-detail");
     if (!panel || !fleetOverview) return;
     selectedFleetItem = { kind: kind, id: id };
+    if (kind === "edge-item") selectedFleetItem.edgeId = edgeId;
     var current = snapshot;
-    if (!current || !current.selection || current.selection.kind !== kind || current.selection.id !== id) {
+    if (
+      !current ||
+      !current.selection ||
+      current.selection.kind !== kind ||
+      current.selection.id !== id ||
+      current.selection.edgeId !== selectedFleetItem.edgeId
+    ) {
       current = createFleetSnapshot(fleetOverview, fleetRefresh, selectedFleetItem);
       fleetRenderedSnapshot = current;
+    }
+    if (kind === "edge-item") {
+      var parent = edgeById(edgeId, current);
+      var item = edgeItemById(parent, id);
+      if (!parent || !item) {
+        if (parent) renderFleetDetail("edge", parent.id, null, current);
+        return;
+      }
+      var watchId = item.details && item.details.id || item.id;
+      panel.innerHTML = '<button type="button" class="ghost small" data-fleet-edge="' +
+        escapeHtml(parent.id) + '">← Back to group</button><h3>' +
+        escapeHtml(parent.kind + " detail") + "</h3><p><strong>" +
+        escapeHtml(item.label || item.id) + "</strong></p>" +
+        '<dl class="fleet-detail-list"><dt>Stable ID</dt><dd><code>' +
+        escapeHtml(watchId) + "</code></dd><dt>Status</dt><dd>" +
+        escapeHtml(item.status || "unavailable") +
+        "</dd></dl><details open><summary>Exact watch detail</summary><pre>" +
+        escapeHtml(JSON.stringify(item.details || {}, null, 2)) + "</pre></details>";
+      return;
     }
     if (kind === "edge") {
       var edge = edgeById(id, current);
       if (!edge) return;
+      selectedFleetItem = { kind: kind, id: id };
+      var items = edge.details && edge.details.items || [];
+      var itemList = items.length ? '<h4>Underlying ' +
+        escapeHtml(edge.kind === "supervisor" ? "watches" : "activities") +
+        '</h4><ul class="fleet-edge-item-list">' + items.map(function (item) {
+          var stableId = item.details && item.details.id || item.id;
+          var accessibleLabel = "Open " + edge.kind + " " + stableId + ": " +
+            (item.label || item.id) + ", " + (item.status || "unavailable");
+          return '<li><button type="button" class="link-button" data-fleet-edge-item="' +
+            escapeHtml(item.id) + '" data-fleet-edge-parent="' + escapeHtml(edge.id) +
+            '" aria-label="' + escapeHtml(accessibleLabel) + '">' +
+            escapeHtml((item.label || item.id) + " · " + stableId + " · " +
+              (item.status || "unavailable")) + "</button></li>";
+        }).join("") + "</ul>" : "";
+      var distinct = edge.kind === "supervisor"
+        ? '<dt>Pull requests</dt><dd>' + escapeHtml(edge.distinct_count || 0) + "</dd>"
+        : "";
+      var statusSummary = edgeStatusSummary(edge);
       panel.innerHTML = "<h3>" + escapeHtml(edge.kind + " route") + "</h3>" +
         "<p><strong>" + escapeHtml(edge.label || edge.id) + "</strong></p>" +
         '<dl class="fleet-detail-list"><dt>Direction</dt><dd>' +
         escapeHtml((edge.source || "external") + " → " + (edge.target || "external")) +
         "</dd><dt>Status</dt><dd>" + escapeHtml(edgeVisualStatus(edge, current)) +
-        "</dd></dl><details><summary>Exact route detail</summary><pre>" +
+        "</dd><dt>Activities</dt><dd>" + escapeHtml(edge.count || 1) + "</dd>" +
+        distinct + (statusSummary ? "<dt>Status counts</dt><dd>" +
+          escapeHtml(statusSummary) + "</dd>" : "") + "</dl>" + itemList +
+        "<details><summary>Exact grouped detail</summary><pre>" +
         escapeHtml(JSON.stringify(edge.details || {}, null, 2)) + "</pre></details>";
       return;
     }
     var nodeState = current.nodesById[id];
     var node = nodeState && nodeState.node;
     if (!node) return;
+    selectedFleetItem = { kind: kind, id: id };
     var sections = Object.keys(node.dimensions || {}).map(function (name) {
       var item = node.dimensions[name] || {};
       var timing = item.duration_ms == null ? "" : " · " + item.duration_ms + " ms";
@@ -1345,29 +1420,59 @@
     var parts = [
       '<defs><marker id="fleet-arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z"></path></marker></defs>'
     ];
+    var parallelEdges = {};
+    edges.forEach(function (edge) {
+      if (!positions[edge.source] || !positions[edge.target]) return;
+      var pair = [String(edge.source), String(edge.target)].sort().join("\u0000");
+      if (!parallelEdges[pair]) parallelEdges[pair] = [];
+      parallelEdges[pair].push(edge);
+    });
+    Object.keys(parallelEdges).forEach(function (pair) {
+      parallelEdges[pair].sort(function (left, right) {
+        return String(left.id).localeCompare(String(right.id));
+      });
+    });
     edges.forEach(function (edge) {
       var from = positions[edge.source];
       var to = positions[edge.target];
       if (!from || !to) return;
       var visualStatus = edgeVisualStatus(edge, current);
-      var label = escapeHtml(edge.kind + " · " + (edge.label || visualStatus) +
-        " · " + visualStatus);
+      var countLabel = edge.count > 1 ? edge.count + " activities · " : "";
+      var label = escapeHtml(edge.kind + " · " + countLabel +
+        (edge.label || visualStatus) + " · " + visualStatus);
+      var pairKey = [String(edge.source), String(edge.target)].sort().join("\u0000");
+      var siblings = parallelEdges[pairKey] || [edge];
+      var parallelIndex = siblings.indexOf(edge);
+      var parallelOffset = (parallelIndex - (siblings.length - 1) / 2) * 200;
+      var visualLabel = edge.kind + (edge.count > 1 ? " ×" + edge.count : "");
       if (edge.source === edge.target) {
+        var loopLift = 92 + Math.abs(parallelOffset);
+        var loopSpread = 115 + parallelIndex * 16;
         parts.push('<g class="fleet-edge fleet-edge-' + escapeHtml(visualStatus) +
           '" data-fleet-edge="' + escapeHtml(edge.id) + '" tabindex="0" role="button" aria-label="' +
           label + '"><title>' + label + '</title><path d="M ' + (from.x + 58) + " " +
-          (from.y - 28) + " C " + (from.x + 115) + " " + (from.y - 92) + ", " +
-          (from.x - 115) + " " + (from.y - 92) + ", " + (from.x - 58) + " " +
-          (from.y - 28) + '"></path><text x="' + from.x + '" y="' + (from.y - 82) +
-          '" text-anchor="middle">' + escapeHtml(edge.kind) + "</text></g>");
+          (from.y - 28) + " C " + (from.x + loopSpread) + " " + (from.y - loopLift) + ", " +
+          (from.x - loopSpread) + " " + (from.y - loopLift) + ", " + (from.x - 58) + " " +
+          (from.y - 28) + '"></path><text x="' + from.x + '" y="' +
+          (from.y - loopLift + 10) + '" text-anchor="middle">' +
+          escapeHtml(visualLabel) + "</text></g>");
       } else {
-        var midX = (from.x + to.x) / 2;
-        var midY = (from.y + to.y) / 2;
+        var canonicalIds = [String(edge.source), String(edge.target)].sort();
+        var canonicalFrom = positions[canonicalIds[0]];
+        var canonicalTo = positions[canonicalIds[1]];
+        var dx = canonicalTo.x - canonicalFrom.x;
+        var dy = canonicalTo.y - canonicalFrom.y;
+        var length = Math.sqrt(dx * dx + dy * dy) || 1;
+        var controlX = (from.x + to.x) / 2 - dy / length * parallelOffset;
+        var controlY = (from.y + to.y) / 2 + dx / length * parallelOffset;
+        var midX = (from.x + 2 * controlX + to.x) / 4;
+        var midY = (from.y + 2 * controlY + to.y) / 4;
         parts.push('<g class="fleet-edge fleet-edge-' + escapeHtml(visualStatus) +
           '" data-fleet-edge="' + escapeHtml(edge.id) + '" tabindex="0" role="button" aria-label="' +
-          label + '"><title>' + label + '</title><line x1="' + from.x + '" y1="' + from.y +
-          '" x2="' + to.x + '" y2="' + to.y + '"></line><text x="' + midX + '" y="' +
-          (midY - 8) + '" text-anchor="middle">' + escapeHtml(edge.kind) + "</text></g>");
+          label + '"><title>' + label + '</title><path d="M ' + from.x + " " + from.y +
+          " Q " + controlX + " " + controlY + ", " + to.x + " " + to.y +
+          '"></path><text x="' + midX + '" y="' + (midY - 8) +
+          '" text-anchor="middle">' + escapeHtml(visualLabel) + "</text></g>");
       }
     });
     nodes.forEach(function (nodeState) {
@@ -1441,7 +1546,14 @@
     fleetRenderedSnapshot = current;
     current.nodes.forEach(renderFleetRow);
     renderFleetTopology(current);
-    if (current.selection) renderFleetDetail(current.selection.kind, current.selection.id, current);
+    if (current.selection) {
+      renderFleetDetail(
+        current.selection.kind,
+        current.selection.id,
+        current.selection.edgeId,
+        current
+      );
+    }
     if (current.refresh) setLiveBanner(fleetRefreshLabel(current.refresh));
   }
 
@@ -1713,10 +1825,19 @@
   document.addEventListener("keydown", function (event) {
     if (event.key !== "Enter" && event.key !== " ") return;
     var node = event.target.closest && event.target.closest("[data-fleet-node]");
+    var item = event.target.closest && event.target.closest("[data-fleet-edge-item]");
     var edge = event.target.closest && event.target.closest("[data-fleet-edge]");
-    if (!node && !edge) return;
+    if (!node && !item && !edge) return;
     event.preventDefault();
     if (node) renderFleetDetail("node", node.getAttribute("data-fleet-node"));
+    if (item) {
+      renderFleetDetail(
+        "edge-item",
+        item.getAttribute("data-fleet-edge-item"),
+        item.getAttribute("data-fleet-edge-parent")
+      );
+      return;
+    }
     if (edge) renderFleetDetail("edge", edge.getAttribute("data-fleet-edge"));
   });
 
@@ -1767,6 +1888,15 @@
     var topologyNode = e.target.closest("[data-fleet-node]");
     if (topologyNode) {
       renderFleetDetail("node", topologyNode.getAttribute("data-fleet-node"));
+      return;
+    }
+    var topologyEdgeItem = e.target.closest("[data-fleet-edge-item]");
+    if (topologyEdgeItem) {
+      renderFleetDetail(
+        "edge-item",
+        topologyEdgeItem.getAttribute("data-fleet-edge-item"),
+        topologyEdgeItem.getAttribute("data-fleet-edge-parent")
+      );
       return;
     }
     var topologyEdge = e.target.closest("[data-fleet-edge]");
@@ -2396,6 +2526,7 @@
     beginRefresh: beginFleetRefresh,
     applyDimensionUpdate: applyFleetDimensionUpdate,
     replaceDimension: replaceFleetDimension,
+    mergeMetadata: mergeFleetOverviewMetadata,
     worstFreshness: worstFreshness
   };
 })();

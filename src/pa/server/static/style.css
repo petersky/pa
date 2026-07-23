@@ -140,6 +140,15 @@
   padding-left: 1.25rem;
 }
 
+.fleet-edge-item-list {
+  margin: 0.35rem 0 0.85rem;
+  padding-left: 1.25rem;
+}
+
+.fleet-edge-item-list .link-button {
+  text-align: left;
+}
+
 .fleet-detail-panel {
   padding: 0.85rem;
   max-height: 31rem;
