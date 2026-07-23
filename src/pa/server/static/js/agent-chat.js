@@ -2188,14 +2188,15 @@
         toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
         try { localStorage.setItem("pa-agent-sidebar-collapsed", collapsed ? "1" : "0"); } catch (_) {}
       });
-      let saved = false;
-      try { saved = localStorage.getItem("pa-agent-sidebar-collapsed") === "1"; } catch (_) {}
-      if (saved) {
-        const layout = toggle.closest(".page-agent") || document.querySelector(".page-agent");
-        if (layout) layout.classList.add("is-sidebar-collapsed");
-        toggle.textContent = "Show sessions";
-        toggle.setAttribute("aria-expanded", "false");
-      }
+      let collapsed = true;
+      try {
+        const saved = localStorage.getItem("pa-agent-sidebar-collapsed");
+        collapsed = saved === null ? true : saved === "1";
+      } catch (_) {}
+      const layout = toggle.closest(".page-agent") || document.querySelector(".page-agent");
+      if (layout) layout.classList.toggle("is-sidebar-collapsed", collapsed);
+      toggle.textContent = collapsed ? "Show sessions" : "Hide sessions";
+      toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
     });
   }
 
