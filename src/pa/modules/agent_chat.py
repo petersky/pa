@@ -1226,6 +1226,37 @@ async def session_close(request: Request, session_id: str) -> dict:
                 )
 
         await _offload(mgr, "sqlite.agent_session_close", close_orphan)
+        try:
+            await _offload(
+                mgr,
+                "workspace.expire_session",
+                mgr.workspace_manager.expire_session,
+                session_id,
+                timeout=30.0,
+            )
+            await _offload(
+                mgr,
+                "workspace.reconcile_terminal_state",
+                mgr.workspace_manager.reconcile_terminal_state,
+                timeout=30.0,
+            )
+            active_session_ids = {
+                item.session_id
+                for item in mgr.list_runtimes()
+                if not getattr(item, "_closed", False)
+            }
+            await _offload(
+                mgr,
+                "workspace.collect_garbage",
+                mgr.workspace_manager.collect_garbage,
+                active_session_ids=active_session_ids,
+                timeout=120.0,
+            )
+        except Exception:
+            logger.exception(
+                "Workspace reconciliation after orphan close failed for %s",
+                session_id,
+            )
     return {"ok": True, "live": False, "orphan": True}
 
 

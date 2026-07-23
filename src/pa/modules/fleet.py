@@ -52,7 +52,7 @@ from pa.fleet.join import (
     unwire_instance_peers,
 )
 from pa.fleet.membership import MembershipStore
-from pa.fleet.overview import DIMENSIONS, build_overview, probe_dimension
+from pa.fleet.overview import DIMENSIONS, build_overview, cache_for, probe_dimension
 from pa.fleet.registry import FleetRegistry
 from pa.fleet.remote_install import (
     RemoteInstallRequest,
@@ -2566,6 +2566,12 @@ async def fleet_agent_proxy(
     finally:
         await upstream.aclose()
         await client.aclose()
+    if request.method != "GET" and upstream.status_code < 400:
+        cache_for(request.app.state.ctx.settings.data_dir).invalidate(
+            instance_id,
+            "activity",
+            "repositories",
+        )
     return Response(
         content=content,
         status_code=upstream.status_code,
@@ -2615,6 +2621,63 @@ async def _proxy_agent_providers(
             detail = resp.text[:500]
         raise HTTPException(status_code=resp.status_code, detail=detail)
     return await _response_json(request, resp)
+
+
+async def _proxy_workspace_reconcile(
+    request: Request,
+    instance_id: str,
+    body: dict,
+) -> dict:
+    require_user(request)
+    inst = _fleet_instance_or_404(request, instance_id)
+    settings = request.app.state.ctx.settings
+    headers: dict[str, str] = {}
+    if settings.sync_token:
+        headers["Authorization"] = f"Bearer {settings.sync_token}"
+    url = f"{inst.url.rstrip('/')}/api/workspaces/reconcile"
+    client = request.app.state.ctx.services.get("fleet_http_client")
+    owns_client = client is None
+    client = client or httpx.AsyncClient(
+        timeout=httpx.Timeout(305.0, connect=5.0),
+        limits=httpx.Limits(max_connections=8, max_keepalive_connections=4),
+    )
+    try:
+        resp = await _fleet_http(
+            request,
+            "http.fleet_workspace_reconcile",
+            client.post(url, headers=headers, json=body, timeout=305.0),
+            timeout=310.0,
+        )
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Peer unreachable: {exc}") from exc
+    finally:
+        if owns_client:
+            await client.aclose()
+    if resp.status_code >= 400:
+        try:
+            payload = await _response_json(request, resp)
+            detail = (
+                payload.get("detail", payload) if isinstance(payload, dict) else payload
+            )
+        except ValueError:
+            detail = resp.text[:500]
+        raise HTTPException(status_code=resp.status_code, detail=detail)
+    return await _response_json(request, resp)
+
+
+@router.post("/fleet/instances/{instance_id}/workspaces/reconcile")
+async def fleet_workspace_reconcile(
+    request: Request,
+    instance_id: str,
+    body: dict,
+):
+    payload = await _proxy_workspace_reconcile(request, instance_id, body)
+    cache_for(request.app.state.ctx.settings.data_dir).invalidate(
+        instance_id,
+        "activity",
+        "repositories",
+    )
+    return payload
 
 
 @router.get("/fleet/instances/{instance_id}/agent-providers")
