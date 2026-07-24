@@ -6,12 +6,17 @@ from pathlib import Path
 from unittest.mock import patch
 
 import httpx
+from fastapi.testclient import TestClient
 
-from pa.config import Settings
+from pa.auth.users import UserDirectory
+from pa.config import Settings, reset_settings
+from pa.core.kernel import Kernel
 from pa.core.writer_lock import DataDirAlreadyOwnedError, DataDirWriterLock
 from pa.domain.models import CardCreate, CardEvent, EventType
 from pa.domain.projection import CardProjection
+from pa.domain.store import reset_store
 from pa.execution.lease import LeaseManager
+from pa.instance.agent_session import reset_instance_agent
 from pa.mcp.local_api import request_local_pa
 from pa.modules.sync import _ensure_projection_at_head
 from pa.sync.event_log import EventLog, StaleSyncHeadError
@@ -221,6 +226,11 @@ class DataDirWriterLockTests(unittest.TestCase):
 
 
 class LocalMcpApiTests(unittest.TestCase):
+    def tearDown(self) -> None:
+        reset_instance_agent()
+        reset_store()
+        reset_settings()
+
     def test_not_found_can_preserve_optional_mcp_contract(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), agent_enabled=False)
@@ -253,6 +263,81 @@ class LocalMcpApiTests(unittest.TestCase):
                     "/api/repositories/repo-1",
                 )
             self.assertIsNone(result)
+
+    def test_explicit_owner_target_survives_cold_start_and_restart(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                data_dir=Path(tmp),
+                instance_id="owner",
+                port=9876,
+                agent_enabled=False,
+            )
+            token = UserDirectory(settings.data_dir).ensure_default_user().cli_token
+            headers = {"Authorization": f"Bearer {token}"}
+
+            def exercise(app) -> tuple[str, str]:
+                with TestClient(app) as client:
+                    ready = client.get("/api/ready", headers=headers)
+                    self.assertEqual(ready.status_code, 200, ready.text)
+                    self.assertEqual(ready.json()["instance_id"], "owner")
+                    card = client.post(
+                        "/api/cards", json={"title": "owner card"}, headers=headers
+                    )
+                    self.assertEqual(card.status_code, 201, card.text)
+                    item = client.post(
+                        "/api/items",
+                        json={"kind": "task", "title": "owner item"},
+                        headers=headers,
+                    )
+                    self.assertEqual(item.status_code, 201, item.text)
+                    project = client.post(
+                        "/api/projects",
+                        json={"title": "owner project"},
+                        headers=headers,
+                    )
+                    self.assertEqual(project.status_code, 201, project.text)
+                    self.assertEqual(
+                        client.get("/api/cards", headers=headers).status_code, 200
+                    )
+                    self.assertEqual(
+                        client.get("/api/items", headers=headers).status_code, 200
+                    )
+                    self.assertEqual(
+                        client.get("/api/projects", headers=headers).status_code, 200
+                    )
+                    sync = client.get("/api/sync/status", headers=headers)
+                    self.assertEqual(sync.status_code, 200, sync.text)
+                    workspaces = client.get("/api/workspaces", headers=headers)
+                    self.assertEqual(workspaces.status_code, 200, workspaces.text)
+                    return card.json()["id"], project.json()["id"]
+
+            first_card, first_project = exercise(
+                Kernel.boot(settings=settings).build_app()
+            )
+            reset_instance_agent()
+            reset_store()
+
+            with TestClient(Kernel.boot(settings=settings).build_app()) as client:
+                ready = client.get("/api/ready", headers=headers)
+                self.assertEqual(ready.status_code, 200, ready.text)
+                self.assertEqual(
+                    client.get(
+                        f"/api/cards/{first_card}", headers=headers
+                    ).status_code,
+                    200,
+                )
+                self.assertEqual(
+                    client.get(
+                        f"/api/projects/{first_project}", headers=headers
+                    ).status_code,
+                    200,
+                )
+                self.assertGreaterEqual(
+                    len(client.get("/api/items", headers=headers).json()), 2
+                )
+                self.assertEqual(
+                    client.get("/api/sync/status", headers=headers).status_code, 200
+                )
 
 
 if __name__ == "__main__":
