@@ -443,3 +443,116 @@ class AgentSessionLiveEventTests(unittest.TestCase):
         self.assertEqual(runtime._subscribers, [subscriber])
         self.assertEqual(subscriber.get_nowait(), {"seq": 2})
         self.assertEqual(subscriber.get_nowait(), {"seq": 3, "type": "turn_completed"})
+
+    def test_prompt_admission_checkpoints_links_queue_and_event_cursor(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = MagicMock()
+            store.next_transcript_seq.return_value = 1
+            store.get_session.return_value = None
+            manager = AgentSessionManager(Settings(data_dir=Path(tmp)), store)
+            session = AgentSession(
+                id="session-durable",
+                agent_name="codex",
+                status="connected",
+                card_id="card-1",
+                project_id="project-1",
+            )
+            runtime = AgentSessionRuntime(manager, session)
+            runtime._queue_paused = True
+
+            item = runtime.enqueue("keep working")
+
+            durable = session.config_json["durable_runtime"]
+            self.assertEqual(durable["lifecycle"], "queued")
+            self.assertEqual(durable["last_event_cursor"], 1)
+            self.assertEqual(durable["queued_prompts"][0]["id"], item.id)
+            self.assertEqual(durable["queued_prompts"][0]["card_id"], "card-1")
+            self.assertEqual(durable["queued_prompts"][0]["project_id"], "project-1")
+            store.save_session.assert_called_with(session)
+
+    def test_abrupt_restart_recovers_durable_nonterminal_session_without_snapshot(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            queued = QueuedPrompt(
+                id="queued-1",
+                message="survive restart",
+                session_id="session-restart",
+                card_id="card-1",
+                project_id="project-1",
+            )
+            session = AgentSession(
+                id="session-restart",
+                agent_name="codex",
+                external_session_id="provider-session-1",
+                status="prompting",
+                label="card:card-1",
+                card_id="card-1",
+                project_id="project-1",
+                config_json={
+                    "durable_runtime": {
+                        "version": 1,
+                        "lifecycle": "prompting",
+                        "queue_paused": False,
+                        "queued_prompts": [],
+                        "in_flight": queued.model_dump(mode="json"),
+                        "last_event_cursor": 41,
+                    }
+                },
+            )
+            store = MagicMock()
+            store.list_sessions.return_value = [session]
+            manager = AgentSessionManager(Settings(data_dir=Path(tmp)), store)
+            manager.workspace_manager.reconcile_terminal_state = MagicMock(
+                return_value={}
+            )
+            manager.workspace_manager.collect_garbage = MagicMock(return_value={})
+            manager._resume_from_snapshot = AsyncMock()
+            manager.attach_default = AsyncMock()
+
+            asyncio.run(manager.start(resume=True))
+
+            recovered = manager._resume_from_snapshot.await_args.args[0]
+            self.assertEqual(recovered.session_id, "session-restart")
+            self.assertEqual(recovered.external_session_id, "provider-session-1")
+            self.assertEqual(recovered.card_id, "card-1")
+            self.assertEqual(recovered.project_id, "project-1")
+            self.assertEqual(recovered.in_flight.id, "queued-1")
+
+    def test_wake_reconciliation_marks_resume_failure_recoverable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            session = AgentSession(
+                id="session-sleep",
+                agent_name="codex",
+                external_session_id="provider-session-sleep",
+                status="connected",
+                label="card:card-sleep",
+                config_json={
+                    "durable_runtime": {
+                        "version": 1,
+                        "lifecycle": "ready",
+                        "queued_prompts": [],
+                        "last_event_cursor": 12,
+                    }
+                },
+            )
+            store = MagicMock()
+            store.list_sessions.return_value = [session]
+            store.get_session.return_value = session
+            manager = AgentSessionManager(Settings(data_dir=Path(tmp)), store)
+            manager.workspace_manager.reconcile_terminal_state = MagicMock(
+                return_value={}
+            )
+            manager.workspace_manager.collect_garbage = MagicMock(return_value={})
+            manager._resume_from_snapshot = AsyncMock(
+                side_effect=RuntimeError("provider resume unavailable")
+            )
+            manager.attach_default = AsyncMock()
+
+            asyncio.run(manager.start(resume=True))
+
+            self.assertEqual(session.status, "recoverable_interrupted")
+            durable = session.config_json["durable_runtime"]
+            self.assertEqual(durable["lifecycle"], "recoverable_interrupted")
+            self.assertIn("provider resume unavailable", durable["recovery_error"])
+            store.save_session.assert_called_with(session)
