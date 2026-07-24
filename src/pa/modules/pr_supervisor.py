@@ -8,8 +8,8 @@ from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
 from pa.auth.middleware import get_principal_id
-from pa.core.contracts import Module
 from pa.core.context import AppContext
+from pa.core.contracts import Module
 from pa.core.ui.pages import PageDefinition, PageRegistry
 from pa.domain.models import Project, ProjectUpdate
 from pa.pr_supervisor.github import (
@@ -543,7 +543,6 @@ class PRSupervisorModule(Module):
     def register_mcp(self, mcp, ctx: AppContext) -> None:
         from pa.mcp.local_api import request_local_pa
 
-        store: PRSupervisorStore = ctx.require_service("pr_supervisor_store")
         async_runtime = ctx.require_service("async_runtime")
 
         @mcp.tool()
@@ -553,28 +552,26 @@ class PRSupervisorModule(Module):
             include_retired: bool = False,
         ) -> list[dict[str, Any]]:
             """List durable PR watches and their current lifecycle state."""
-            return [
-                watch.model_dump(mode="json")
-                for watch in store.list_watches(
-                    realm_id=realm,
-                    card_id=card_id,
-                    include_retired=include_retired,
-                )
-            ]
+            return request_local_pa(
+                ctx.settings,
+                "GET",
+                "/api/pr-supervisor/watches",
+                params={
+                    "realm": realm,
+                    "card_id": card_id,
+                    "include_retired": include_retired,
+                },
+            )
 
         @mcp.tool()
         def get_pr_watch(watch_id: str) -> dict[str, Any] | None:
             """Get a PR watch and its audit history."""
-            watch = store.get_watch(watch_id)
-            if not watch:
-                return None
-            return {
-                "watch": watch.model_dump(mode="json"),
-                "events": [
-                    event.model_dump(mode="json")
-                    for event in store.list_events(watch_id)
-                ],
-            }
+            return request_local_pa(
+                ctx.settings,
+                "GET",
+                f"/api/pr-supervisor/watches/{watch_id}",
+                allow_not_found=True,
+            )
 
         @mcp.tool()
         async def create_pr_watch(
@@ -588,47 +585,46 @@ class PRSupervisorModule(Module):
             executor_cwd: str | None = None,
         ) -> dict[str, Any]:
             """Create a durable, fleet-supervised PR watch."""
-            service: PRSupervisor = ctx.require_service("pr_supervisor")
-            policy = await async_runtime.run_blocking(
-                "pr_supervisor.resolve_policy",
-                resolve_policy,
-                ctx.store,
-                project_id=project_id,
-                realm_id=realm,
-                repository=repository,
+            return await async_runtime.run_blocking(
+                "mcp.pr_watch_create_http",
+                request_local_pa,
+                ctx.settings,
+                "POST",
+                "/api/pr-supervisor/watches",
+                json={
+                    "realm_id": realm,
+                    "project_id": project_id,
+                    "card_id": card_id,
+                    "repository": repository,
+                    "pr_number": pr_number,
+                    "pr_url": pr_url,
+                    "originating_session_id": originating_session_id,
+                    "executor_cwd": executor_cwd,
+                },
             )
-            watch = await service.register_watch(
-                PRWatch(
-                    realm_id=realm,
-                    project_id=project_id,
-                    card_id=card_id,
-                    repository=repository,
-                    pr_number=pr_number,
-                    pr_url=pr_url,
-                    originating_instance_id=ctx.settings.instance_id,
-                    originating_session_id=originating_session_id,
-                    executor_cwd=executor_cwd,
-                    policy=policy,
-                ),
-                source="mcp",
-            )
-            return watch.model_dump(mode="json")
 
         @mcp.tool()
         async def refresh_pr_watch(watch_id: str) -> dict[str, Any]:
             """Schedule an immediate refresh for an active PR watch."""
-            service: PRSupervisor = ctx.require_service("pr_supervisor")
-            return {
-                "watch_id": watch_id,
-                "scheduled": bool(await service.refresh_watch(watch_id)),
-            }
+            return await async_runtime.run_blocking(
+                "mcp.pr_watch_refresh_http",
+                request_local_pa,
+                ctx.settings,
+                "POST",
+                f"/api/pr-supervisor/watches/{watch_id}/refresh",
+            )
 
         @mcp.tool()
         async def retire_pr_watch(watch_id: str) -> dict[str, Any] | None:
             """Retire a PR watch without deleting its audit history."""
-            service: PRSupervisor = ctx.require_service("pr_supervisor")
-            watch = await service.retire_watch(watch_id)
-            return watch.model_dump(mode="json") if watch else None
+            return await async_runtime.run_blocking(
+                "mcp.pr_watch_retire_http",
+                request_local_pa,
+                ctx.settings,
+                "DELETE",
+                f"/api/pr-supervisor/watches/{watch_id}",
+                allow_not_found=True,
+            )
 
         @mcp.tool()
         async def create_supervised_pull_request(
@@ -645,49 +641,26 @@ class PRSupervisorModule(Module):
             draft: bool | None = None,
         ) -> dict[str, Any]:
             """Open a PR ready for review by policy and immediately supervise it."""
-            service: PRSupervisor = ctx.require_service("pr_supervisor")
-            policy = await async_runtime.run_blocking(
-                "pr_supervisor.resolve_policy",
-                resolve_policy,
-                ctx.store,
-                project_id=project_id,
-                realm_id=realm,
-                repository=repository,
-            )
-            pr = await service.github.create_pull_request(
-                repository,
-                title=title,
-                head=head,
-                base=base or policy.integration_branch or "main",
-                body=body,
-                draft=draft,
-                policy=policy,
-            )
-            watched = await service.register_watch(
-                PRWatch(
-                    realm_id=realm,
-                    project_id=project_id,
-                    card_id=card_id,
-                    repository=repository,
-                    pr_number=int(pr["number"]),
-                    pr_url=str(pr.get("html_url") or ""),
-                    base_branch=str((pr.get("base") or {}).get("ref") or base),
-                    head_sha=str((pr.get("head") or {}).get("sha") or "") or None,
-                    originating_instance_id=ctx.settings.instance_id,
-                    originating_session_id=originating_session_id,
-                    executor_cwd=executor_cwd,
-                    policy=policy,
-                ),
-                source="mcp:pull_request_create",
-            )
-            return {
-                "pull_request": {
-                    "number": pr["number"],
-                    "url": pr.get("html_url"),
-                    "draft": bool(pr.get("draft")),
+            return await async_runtime.run_blocking(
+                "mcp.pr_create_http",
+                request_local_pa,
+                ctx.settings,
+                "POST",
+                "/api/pr-supervisor/pull-requests",
+                json={
+                    "repository": repository,
+                    "title": title,
+                    "head": head,
+                    "base": base,
+                    "body": body,
+                    "realm_id": realm,
+                    "project_id": project_id,
+                    "card_id": card_id,
+                    "originating_session_id": originating_session_id,
+                    "executor_cwd": executor_cwd,
+                    "draft": draft,
                 },
-                "watch": watched.model_dump(mode="json"),
-            }
+            )
 
         @mcp.tool()
         def set_project_pr_policy(
@@ -755,13 +728,9 @@ class PRSupervisorModule(Module):
         @mcp.tool()
         def github_integration_capability() -> dict[str, Any]:
             """Report local GitHub authentication/webhook capability without secrets."""
-            service = ctx.services.get("pr_supervisor")
-            capability = (
-                service.capability
-                if service
-                else GitHubCapability(
-                    instance_id=ctx.settings.instance_id,
-                    state="service_not_running",
-                )
+            capabilities = request_local_pa(
+                ctx.settings,
+                "GET",
+                "/api/pr-supervisor/capabilities",
             )
-            return capability.model_dump(mode="json")
+            return capabilities["local"]

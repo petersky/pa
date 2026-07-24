@@ -8,8 +8,8 @@ from pydantic import BaseModel, Field
 
 from pa.auth.middleware import get_principal_id
 from pa.config import get_settings
-from pa.core.contracts import Module
 from pa.core.context import AppContext
+from pa.core.contracts import Module
 from pa.instance.quiesce import QuiesceProgress
 from pa.repository.state import RepositorySnapshotInput
 
@@ -46,6 +46,42 @@ def _unreachable_repository_instances(ctx: AppContext) -> set[str]:
 @router.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@router.get("/ready")
+async def ready(request: Request) -> dict:
+    """Report API readiness only after owner-scoped runtime services exist."""
+    ctx = request.app.state.ctx
+    required = {
+        "instance_agent",
+        "async_runtime",
+        "event_log",
+        "fleet_registry",
+    }
+    missing = sorted(required - ctx.services.keys())
+    if missing:
+        raise HTTPException(
+            status_code=503,
+            detail={"status": "starting", "missing_services": missing},
+        )
+    paths = {route.path for route in request.app.routes}
+    required_paths = {
+        "/api/cards",
+        "/api/items",
+        "/api/projects",
+        "/api/sync/status",
+    }
+    missing_routes = sorted(required_paths - paths)
+    if missing_routes:
+        raise HTTPException(
+            status_code=503,
+            detail={"status": "starting", "missing_routes": missing_routes},
+        )
+    return {
+        "status": "ready",
+        "instance_id": ctx.settings.instance_id,
+        "routes": ["cards", "items", "projects", "sync"],
+    }
 
 
 @router.get("/runtime")
@@ -400,95 +436,63 @@ class InstanceModule(Module):
         return [("/api", router, ["instance"])]
 
     def register_mcp(self, mcp, ctx: AppContext) -> None:
+        from pa.mcp.local_api import request_local_pa
+
         settings = ctx.settings
 
         @mcp.tool()
         def instance_info() -> dict:
             """Return information about this PA instance."""
-            return {
-                "id": settings.instance_id,
-                "name": settings.instance_name,
-                "fleet_id": settings.fleet_id,
-                "subscribed_realms": settings.subscribed_realms,
-                "zone": settings.zone,
-                "capabilities": settings.capabilities,
-                "host": settings.host,
-                "port": settings.port,
-                "peers": settings.peers,
-            }
+            return request_local_pa(settings, "GET", "/api/instance")
 
         @mcp.tool()
         async def repository_inspect(path: str) -> dict:
             """Inspect and persist this instance's current Git repository state."""
-            from pathlib import Path
-
-            service = ctx.require_service("repository_state")
             runtime = ctx.require_service("async_runtime")
-            result = await service.refresh_async(Path(path), runtime)
-            return result.model_dump(mode="json")
+            return await runtime.run_blocking(
+                "mcp.repository_inspect_http",
+                request_local_pa,
+                settings,
+                "POST",
+                "/api/repositories/inspect",
+                params={"path": path},
+            )
 
         @mcp.tool()
         async def repository_snapshots() -> list[dict]:
             """List non-authoritative repository observations by instance."""
-            service = ctx.require_service("repository_state")
             runtime = ctx.require_service("async_runtime")
-            items = await runtime.run_blocking(
-                "repository.snapshots",
-                service.list,
-                unreachable_instances=_unreachable_repository_instances(ctx),
+            return await runtime.run_blocking(
+                "mcp.repository_snapshots_http",
+                request_local_pa,
+                settings,
+                "GET",
+                "/api/repositories",
             )
-            return [
-                item.model_dump(mode="json")
-                for item in items
-            ]
 
         @mcp.tool()
         async def workspace_leases(card_id: str | None = None) -> dict:
             """List this instance's durable worktree leases and lifecycle metrics."""
-            agent = ctx.require_service("instance_agent")
-            manager = agent.workspace_manager
             runtime = ctx.require_service("async_runtime")
-            leases, metrics = await runtime.run_blocking(
-                "workspace.list",
-                lambda: (manager.list(card_id=card_id), manager.metrics()),
+            return await runtime.run_blocking(
+                "mcp.workspace_leases_http",
+                request_local_pa,
+                settings,
+                "GET",
+                "/api/workspaces",
+                params={"card_id": card_id},
             )
-            return {
-                "leases": [
-                    lease.model_dump(mode="json")
-                    for lease in leases
-                ],
-                "metrics": metrics,
-            }
 
         @mcp.tool()
         async def workspace_reconcile(collect: bool = True) -> dict:
             """Reconcile terminal local leases and safely collect eligible worktrees."""
-            agent = ctx.require_service("instance_agent")
-            manager = agent.workspace_manager
             runtime = ctx.require_service("async_runtime")
-
-            def reconcile() -> dict:
-                before = manager.list()
-                reconciliation = manager.reconcile_terminal_state()
-                active_session_ids = {
-                    item.session_id
-                    for item in agent.list_runtimes()
-                    if not getattr(item, "_closed", False)
-                }
-                collection = (
-                    manager.collect_garbage(active_session_ids=active_session_ids)
-                    if collect
-                    else None
-                )
-                after = manager.list()
-                return {
-                    "reconciliation": reconciliation,
-                    "collection": collection,
-                    "before": _workspace_state_counts(before),
-                    "after": _workspace_state_counts(after),
-                    "metrics": manager.metrics(),
-                }
-
             return await runtime.run_blocking(
-                "workspace.reconcile", reconcile, timeout=300.0
+                "mcp.workspace_reconcile_http",
+                request_local_pa,
+                settings,
+                "POST",
+                "/api/workspaces/reconcile",
+                json={"collect": collect},
+                timeout=300.0,
             )
