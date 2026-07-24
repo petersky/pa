@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
+from pa.core.io import atomic_write_json
 from pa.domain.models import Card
 from pa.sync.event_log import EventLog
 from pa.sync.object_store import ObjectStore
-from pa.core.io import atomic_write_json
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,7 @@ logger = logging.getLogger(__name__)
 class SyncMetrics:
     def __init__(self, data_dir: Path) -> None:
         self.path = data_dir / "sync_metrics.json"
+        self._lock = threading.Lock()
         self._metrics: dict = {"pushes": 0, "pulls": 0, "objects_imported": 0, "last_sync": None}
         if self.path.exists():
             try:
@@ -26,21 +28,24 @@ class SyncMetrics:
                 pass
 
     def record_push(self) -> None:
-        self._metrics["pushes"] = self._metrics.get("pushes", 0) + 1
-        self._metrics["last_sync"] = datetime.now(UTC).isoformat()
-        self._save()
+        with self._lock:
+            self._metrics["pushes"] = self._metrics.get("pushes", 0) + 1
+            self._metrics["last_sync"] = datetime.now(UTC).isoformat()
+            self._save()
 
     def record_pull(self, count: int) -> None:
-        self._metrics["pulls"] = self._metrics.get("pulls", 0) + 1
-        self._metrics["objects_imported"] = self._metrics.get("objects_imported", 0) + count
-        self._metrics["last_sync"] = datetime.now(UTC).isoformat()
-        self._save()
+        with self._lock:
+            self._metrics["pulls"] = self._metrics.get("pulls", 0) + 1
+            self._metrics["objects_imported"] = self._metrics.get("objects_imported", 0) + count
+            self._metrics["last_sync"] = datetime.now(UTC).isoformat()
+            self._save()
 
     def _save(self) -> None:
         atomic_write_json(self.path, self._metrics)
 
     def snapshot(self) -> dict:
-        return dict(self._metrics)
+        with self._lock:
+            return dict(self._metrics)
 
 
 def compact_realm(
