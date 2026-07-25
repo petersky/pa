@@ -276,6 +276,7 @@ def _pr_watch_context(
 
 def _card_summary_context(request: Request, card) -> dict:
     store = get_store()
+    dispatch_store = request.app.state.ctx.services.get("dispatch_store")
     realm_id = card.realm_id
     project = (
         store.get_project(card.project_id, realm_id=realm_id)
@@ -305,6 +306,20 @@ def _card_summary_context(request: Request, card) -> dict:
             if candidate.parent_id == card.id
         ],
         "critical_watch": critical_watch,
+        "card_reconciliations": (
+            [
+                record.public_dict()["card_reconciliation"]
+                | {
+                    "dispatch_id": record.dispatch_id,
+                    "session_id": record.session_id,
+                }
+                for record in dispatch_store.list(limit=1000)
+                if record.card_id == card.id
+                and record.reconciliation_state != "not_requested"
+            ]
+            if dispatch_store
+            else []
+        ),
         "lanes": list(CardLane),
         "csrf_token": token_for_request(request),
         **watch_context,

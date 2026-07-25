@@ -232,6 +232,43 @@ command, push, review, or merge completed unless the current systems confirm it.
 )
 
 _register(
+    key="card.reconciliation.disposition",
+    purpose="Recover a missing card disposition without repeating completed implementation.",
+    scope="card-reconciliation",
+    version=1,
+    template="""Your preceding card-linked turn completed without a valid
+`pa.card-disposition/v1` payload. Do not repeat implementation unless current
+verification finds a problem.
+
+Revalidate the current worktree and commit, the exact pull-request head, required
+CI checks, required approvals and actionable review threads, mergeability, merge
+state and merge commit, the durable PA PR watch, and the card's evidence. If PA
+card or PR-supervisor tooling is unavailable, report that problem and do not
+guess.
+
+Return exactly one JSON object and no Markdown or prose:
+{
+  "contract": "pa.card-disposition/v1",
+  "lane": "active | waiting | done",
+  "outcome": "concise verified outcome",
+  "evidence": {
+    "integration_required": true,
+    "pr_watch_id": "watch id or null",
+    "watched_head_sha": "exact head SHA or null",
+    "merge_commit_sha": "merge commit SHA or null",
+    "references": ["durable card, PR, CI, or review references"]
+  }
+}
+
+Use `active` only when verification found implementation or agent-owned corrective
+work still in progress. Use `waiting` for every open or unmerged pull request and
+for external pending work. Use `done` only when project completion policy is
+satisfied; integration work requires an exact watched head, terminal stable-green
+required checks, satisfied required-review gates, a merged PR, and matching merge
+commit evidence. Never infer or claim Done from prose or incomplete evidence.""",
+)
+
+_register(
     key="pr_supervisor.action.required",
     purpose="Direct an executor to address a non-green pull request without merging it.",
     scope="pr-supervisor",

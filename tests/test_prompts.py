@@ -21,8 +21,8 @@ from pa.prompts import (
     PromptVariable,
 )
 
-
 EXPECTED_PROMPT_KEYS = {
+    "card.reconciliation.disposition",
     "agent.context.browser",
     "agent.context.card",
     "agent.context.data_safety",
