@@ -302,6 +302,7 @@ class Kernel:
             self._install_debug_middleware(app)
 
         self._install_cache_middleware(app)
+        self._install_identity_middleware(app)
         self._install_responsiveness_middleware(app)
         self._install_runtime_error_handlers(app)
 
@@ -336,6 +337,20 @@ class Kernel:
         app.add_exception_handler(BlockingQueueFull, overloaded)
         app.add_exception_handler(AsyncRuntimeClosed, overloaded)
         app.add_exception_handler(BlockingOperationTimeout, timed_out)
+
+    def _install_identity_middleware(self, app: FastAPI) -> None:
+        from uuid import uuid4
+
+        from starlette.requests import Request
+        from starlette.responses import Response
+
+        @app.middleware("http")
+        async def identity(request: Request, call_next) -> Response:
+            correlation_id = request.headers.get("X-Request-ID") or str(uuid4())
+            response = await call_next(request)
+            response.headers["X-PA-Instance-ID"] = self.ctx.settings.instance_id
+            response.headers["X-Request-ID"] = correlation_id
+            return response
 
     def _install_responsiveness_middleware(self, app: FastAPI) -> None:
         import time
