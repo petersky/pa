@@ -141,6 +141,7 @@
 
 .fleet-node-local rect { stroke-width: 5; }
 .fleet-node-fresh rect { stroke: var(--pa-ok); }
+.fleet-node-partial rect,
 .fleet-node-stale rect { stroke: var(--pa-accent); stroke-dasharray: 8 4; }
 .fleet-node-timeout rect { stroke: var(--pa-danger); stroke-dasharray: 3 4; }
 .fleet-node-error rect,
@@ -289,6 +290,7 @@
 }
 
 .fleet-field-fresh { color: var(--pa-ok); }
+.fleet-field-partial,
 .fleet-field-stale { color: var(--pa-accent); }
 .fleet-field-timeout,
 .fleet-field-error { color: var(--pa-danger); }
@@ -937,6 +939,15 @@ button.ghost, .text-btn {
   background: color-mix(in srgb, var(--pa-ok) 20%, transparent);
   color: var(--pa-ok);
 }
+.badge-warning {
+  background: color-mix(in srgb, var(--pa-accent) 20%, transparent);
+  color: var(--pa-accent);
+}
+.badge-danger {
+  background: color-mix(in srgb, var(--pa-danger) 20%, transparent);
+  color: var(--pa-danger);
+}
+.badge-neutral { color: var(--pa-text-muted); }
 
 .status-active { background: color-mix(in srgb, var(--pa-ok) 20%, transparent); color: var(--pa-ok); }
 .status-done { opacity: 0.7; }

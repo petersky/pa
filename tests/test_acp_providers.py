@@ -20,8 +20,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import HTTPException
 
-from pa.acp.providers.base import AgentProviderSpec, ProviderConfigureBody
-from pa.acp.providers.codex import _codex_auth_status
+from pa.acp.providers.base import (
+    AgentProviderSpec,
+    ProviderConfigureBody,
+    ProviderStatus,
+)
+from pa.acp.providers.codex import (
+    CodexProvider,
+    _codex_auth_state,
+    _codex_auth_status,
+)
+from pa.acp.providers.cursor import CursorProvider, _cursor_auth_status
 from pa.acp.providers.openinterpreter import (
     OpenInterpreterProvider,
     _run_official_installer,
@@ -40,6 +49,7 @@ from pa.acp.providers.registry import (
     list_provider_ids,
 )
 from pa.acp.providers.resolve import (
+    list_provider_summaries_bounded,
     resolve_agent_provider,
     resolve_provider_id,
     resolve_surface_preferences,
@@ -498,6 +508,199 @@ class AcpProviderTests(unittest.TestCase):
             )
         self.assertTrue(configured)
         self.assertEqual(method, "chatgpt_oauth")
+
+    def test_codex_chatgpt_login_normalizes_as_authenticated(self) -> None:
+        auth = (True, "chatgpt_oauth", "Signed in with ChatGPT on the target.", None)
+        self.assertEqual(
+            _codex_auth_state(auth, codex_cli="/usr/bin/codex"),
+            "authenticated",
+        )
+
+    def test_cursor_status_uses_supported_cli_and_api_key_paths(self) -> None:
+        secret = "cursor-key-never-return"
+        api_key = _cursor_auth_status(None, env={"CURSOR_API_KEY": secret})
+        self.assertEqual(api_key[:3], ("authenticated", True, "api_key"))
+        self.assertNotIn(secret, " ".join(str(value) for value in api_key))
+
+        signed_in = subprocess.CompletedProcess(
+            ["agent", "status"], 0, "Authenticated as operator@example.test", ""
+        )
+        signed_out = subprocess.CompletedProcess(
+            ["agent", "status"], 1, "Not logged in", ""
+        )
+        malformed = subprocess.CompletedProcess(
+            ["agent", "status"], 0, "future status payload", ""
+        )
+        with patch(
+            "pa.acp.providers.cursor.subprocess.run",
+            side_effect=[signed_in, signed_out, malformed],
+        ) as run:
+            authenticated = _cursor_auth_status("/usr/bin/agent", env={})
+            logged_out = _cursor_auth_status("/usr/bin/agent", env={})
+            unknown = _cursor_auth_status("/usr/bin/agent", env={})
+        self.assertEqual(authenticated[:3], ("authenticated", True, "cursor_account"))
+        self.assertEqual(logged_out[0], "signed_out")
+        self.assertEqual(unknown[0], "unknown")
+        self.assertEqual(run.call_args_list[0].args[0], ["/usr/bin/agent", "status"])
+
+    def test_cursor_status_distinguishes_timeout_permission_and_unavailable(self) -> None:
+        with patch(
+            "pa.acp.providers.cursor.subprocess.run",
+            side_effect=subprocess.TimeoutExpired(["agent", "status"], 3),
+        ):
+            timed_out = _cursor_auth_status("/usr/bin/agent", env={})
+        with patch(
+            "pa.acp.providers.cursor.subprocess.run",
+            side_effect=PermissionError("secret credential path"),
+        ):
+            denied = _cursor_auth_status("/usr/bin/agent", env={})
+        unavailable = _cursor_auth_status(None, env={})
+        self.assertEqual(timed_out[0], "timed_out")
+        self.assertEqual(denied[0], "probe_failed")
+        self.assertNotIn("secret credential path", " ".join(str(v) for v in denied))
+        self.assertEqual(unavailable[0], "unavailable")
+
+    def test_provider_summaries_correlate_active_sessions_and_redact_failures(self) -> None:
+        active = [
+            SimpleNamespace(
+                _closed=False,
+                connected=True,
+                session=SimpleNamespace(agent_name=provider_id),
+            )
+            for provider_id in ("codex", "cursor")
+        ]
+        manager = SimpleNamespace(list_runtimes=lambda: active)
+        codex = SimpleNamespace(
+            id="codex",
+            display_name="Codex",
+            status=lambda _data_dir: ProviderStatus(
+                id="codex",
+                display_name="Codex",
+                installed=True,
+                available=True,
+                auth_configured=True,
+                auth_state="authenticated",
+                auth_method="chatgpt_oauth",
+                auth_status="Signed in with ChatGPT on the target.",
+                auth_evidence=["codex_cli_status"],
+            ),
+        )
+        leaked = "refresh_token=must-never-leak"
+        broken = SimpleNamespace(
+            id="cursor",
+            display_name="Cursor",
+            status=lambda _data_dir: (_ for _ in ()).throw(PermissionError(leaked)),
+        )
+        with patch(
+            "pa.acp.providers.resolve.list_providers", return_value=[codex, broken]
+        ):
+            summaries = asyncio.run(
+                list_provider_summaries_bounded(
+                    self.data_dir, manager=manager, timeout=0.1
+                )
+            )
+        self.assertEqual(summaries[0]["auth_state"], "authenticated")
+        self.assertEqual(summaries[0]["auth_method"], "chatgpt_oauth")
+        self.assertEqual(summaries[0]["active_session_count"], 1)
+        self.assertIn("active_acp_session", summaries[0]["auth_evidence"])
+        self.assertEqual(summaries[1]["auth_state"], "authenticated")
+        self.assertEqual(summaries[1]["direct_auth_state"], "probe_failed")
+        self.assertEqual(summaries[1]["auth_method"], "active_acp_session")
+        self.assertTrue(summaries[1]["available"])
+        self.assertNotIn(leaked, json.dumps(summaries))
+
+    def test_provider_action_failures_do_not_return_sensitive_command_output(self) -> None:
+        secret = "refresh_token=provider-action-secret"
+        failed = subprocess.CompletedProcess(["provider"], 7, secret, secret)
+
+        with (
+            patch(
+                "pa.acp.providers.cursor.resolve_executable",
+                return_value=Path("/usr/bin/agent"),
+            ),
+            patch("pa.acp.providers.cursor.subprocess.run", return_value=failed),
+            patch("pa.acp.providers.cursor._version", return_value=None),
+        ):
+            cursor = CursorProvider().update(self.data_dir)
+
+        def codex_which(command):
+            return "/usr/bin/npm" if command == "npm" else None
+
+        with (
+            patch("pa.acp.providers.codex.shutil.which", side_effect=codex_which),
+            patch("pa.acp.providers.codex.subprocess.run", return_value=failed),
+        ):
+            codex = CodexProvider().install(self.data_dir)
+
+        with (
+            patch(
+                "pa.acp.providers.openinterpreter.resolve_executable",
+                return_value=None,
+            ),
+            patch("pa.acp.providers.openinterpreter.shutil.which", return_value=None),
+            patch(
+                "pa.acp.providers.openinterpreter._run_official_installer",
+                return_value=failed,
+            ),
+        ):
+            interpreter = OpenInterpreterProvider().install(self.data_dir)
+
+        payload = json.dumps(
+            [
+                cursor.model_dump(mode="json"),
+                codex.model_dump(mode="json"),
+                interpreter.model_dump(mode="json"),
+            ]
+        )
+        self.assertNotIn(secret, payload)
+        self.assertIn("exit 7", payload)
+
+    def test_acp_probe_failure_redacts_exception_and_log(self) -> None:
+        from pa.acp.providers.probe import probe_acp_initialize
+
+        secret = "cookie=probe-secret"
+        spec = AgentProviderSpec(
+            id="test", display_name="Test", command="test-agent"
+        )
+        with (
+            patch(
+                "pa.acp.providers.probe._probe_async",
+                new=AsyncMock(side_effect=RuntimeError(secret)),
+            ),
+            self.assertLogs("pa.acp.providers.probe", level="WARNING") as logs,
+        ):
+            result = probe_acp_initialize(spec)
+        self.assertNotIn(secret, json.dumps(result))
+        self.assertNotIn(secret, " ".join(logs.output))
+        self.assertEqual(result["ok"], False)
+
+    def test_provider_summaries_timeout_one_provider_without_blocking_another(self) -> None:
+        def slow_status(_data_dir):
+            time.sleep(0.05)
+            return ProviderStatus(id="cursor", display_name="Cursor")
+
+        slow = SimpleNamespace(id="cursor", display_name="Cursor", status=slow_status)
+        ready = SimpleNamespace(
+            id="codex",
+            display_name="Codex",
+            status=lambda _data_dir: ProviderStatus(
+                id="codex",
+                display_name="Codex",
+                installed=True,
+                available=True,
+                auth_configured=True,
+                auth_state="authenticated",
+                auth_method="chatgpt_oauth",
+            ),
+        )
+        with patch(
+            "pa.acp.providers.resolve.list_providers", return_value=[slow, ready]
+        ):
+            summaries = asyncio.run(
+                list_provider_summaries_bounded(self.data_dir, timeout=0.01)
+            )
+        self.assertEqual(summaries[0]["auth_state"], "timed_out")
+        self.assertEqual(summaries[1]["auth_state"], "authenticated")
 
     def test_login_output_redacts_credentials_but_keeps_device_instructions(
         self,
@@ -1009,6 +1212,24 @@ class AcpProviderTests(unittest.TestCase):
 
         self.assertTrue(result["ok"])
         self.assertEqual(captured["env"][key], "child-only")
+
+    def test_runtime_lifecycle_invalidates_local_provider_snapshot(self) -> None:
+        from pa.fleet.overview import cache_for, field
+        from pa.instance.agent_session import AgentSessionManager
+
+        cache = cache_for(self.data_dir)
+        cache.put(
+            self.settings.instance_id,
+            "providers",
+            field(
+                "fresh",
+                [{"id": "codex", "auth_state": "authenticated"}],
+                observed_at="2026-07-25T12:00:00+00:00",
+            ),
+        )
+        manager = AgentSessionManager(self.settings, MagicMock())
+        manager._invalidate_provider_overview()
+        self.assertIsNone(cache.get(self.settings.instance_id, "providers"))
 
     def test_unknown_provider_raises(self) -> None:
         with self.assertRaises(KeyError):

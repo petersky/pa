@@ -18,6 +18,7 @@ from pa.core.async_runtime import (
     BlockingOperationTimeout,
     BlockingQueueFull,
 )
+from pa.acp.providers.base import ProviderStatus
 from pa.config import Settings
 from pa.core.kernel import Kernel
 from pa.domain.models import AgentSession
@@ -520,8 +521,11 @@ class WorkerResponsivenessTests(unittest.IsolatedAsyncioTestCase):
         def blocked_discovery(_data_dir):
             entered.set()
             release.wait(1)
-            return []
+            return ProviderStatus(id="blocked", display_name="Blocked")
 
+        provider = SimpleNamespace(
+            id="blocked", display_name="Blocked", status=blocked_discovery
+        )
         with tempfile.TemporaryDirectory() as tmp:
             ctx = SimpleNamespace(
                 settings=SimpleNamespace(data_dir=Path(tmp)),
@@ -530,8 +534,7 @@ class WorkerResponsivenessTests(unittest.IsolatedAsyncioTestCase):
             request = MagicMock()
             request.app.state.ctx = ctx
             with patch(
-                "pa.modules.agent_providers.list_provider_summaries",
-                side_effect=blocked_discovery,
+                "pa.acp.providers.resolve.list_providers", return_value=[provider]
             ):
                 task = asyncio.create_task(list_local_providers(request))
                 await asyncio.to_thread(entered.wait, 1)
@@ -543,7 +546,7 @@ class WorkerResponsivenessTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(response, {"status": "ok"})
                 self.assertLess(unrelated_ms, 25)
                 release.set()
-                self.assertEqual(await task, [])
+                self.assertEqual((await task)[0]["id"], "blocked")
 
     async def test_file_render_stall_keeps_health_responsive(self) -> None:
         release = threading.Event()

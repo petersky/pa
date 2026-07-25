@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import tempfile
 import urllib.request
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -95,6 +96,7 @@ class OpenInterpreterProvider:
         model_provider = str(configuration.get("model_provider") or "").strip()
         no_auth = model_provider in _NO_AUTH_PROVIDERS
         auth_configured = bool(creds) or no_auth
+        attempted_at = datetime.now(UTC).isoformat()
         if creds:
             auth_status = "Model provider credential configured on this host."
         elif no_auth:
@@ -113,7 +115,13 @@ class OpenInterpreterProvider:
             else (meta.version if meta else None),
             auth_configured=auth_configured,
             auth_method=model_provider or ("environment" if creds else "none"),
+            auth_state="authenticated" if auth_configured else "not_configured",
             auth_status=auth_status,
+            auth_evidence=["configured_credential"]
+            if creds
+            else (["no_auth_required"] if no_auth else []),
+            last_attempted_at=attempted_at,
+            last_successful_at=attempted_at,
             install_method=meta.install_method if meta else "official",
             last_probe=meta.last_probe if meta else None,
             meta={
@@ -134,20 +142,26 @@ class OpenInterpreterProvider:
             return self._record_install(data_dir, Path(existing), "already installed")
         try:
             proc = _run_official_installer(_managed_home(data_dir))
-        except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
+        except subprocess.TimeoutExpired:
             return ProviderInstallResult(
                 id=self.id,
                 ok=False,
-                message=f"OpenInterpreter install failed: {exc}",
+                message="OpenInterpreter install timed out",
+                command=_DEFAULT_COMMAND,
+            )
+        except (OSError, ValueError) as exc:
+            return ProviderInstallResult(
+                id=self.id,
+                ok=False,
+                message=f"OpenInterpreter install failed ({type(exc).__name__})",
                 command=_DEFAULT_COMMAND,
             )
         resolved = resolve_executable(_DEFAULT_COMMAND) or shutil.which(
             _DEFAULT_COMMAND
         )
         if proc.returncode != 0 or not resolved:
-            detail = _output_tail(proc)
             message = (
-                f"OpenInterpreter installer exited {proc.returncode}: {detail}"
+                f"OpenInterpreter installer failed (exit {proc.returncode})"
                 if proc.returncode != 0
                 else "Installer completed but `interpreter` is not on the PA service PATH"
             )
@@ -156,7 +170,6 @@ class OpenInterpreterProvider:
                 ok=False,
                 message=message,
                 command=_DEFAULT_COMMAND,
-                detail={"output_tail": detail},
             )
         return self._record_install(data_dir, Path(resolved), "installed")
 
@@ -195,16 +208,26 @@ class OpenInterpreterProvider:
                 check=False,
                 env={**os.environ, **spec.env},
             )
-        except (OSError, subprocess.TimeoutExpired) as exc:
+        except subprocess.TimeoutExpired:
             return ProviderInstallResult(
-                id=self.id, ok=False, message=str(exc), command=str(resolved)
+                id=self.id,
+                ok=False,
+                message="OpenInterpreter update timed out",
+                command=str(resolved),
+            )
+        except OSError as exc:
+            return ProviderInstallResult(
+                id=self.id,
+                ok=False,
+                message=f"OpenInterpreter update failed ({type(exc).__name__})",
+                command=str(resolved),
             )
         if proc.returncode == 0:
             return self._record_install(data_dir, Path(resolved), "updated")
         return ProviderInstallResult(
             id=self.id,
             ok=False,
-            message=f"OpenInterpreter update failed: {_output_tail(proc)}",
+            message=f"OpenInterpreter update failed (exit {proc.returncode})",
             command=str(resolved),
         )
 
@@ -372,14 +395,10 @@ def _version(command: str) -> str | None:
             [command, "--version"],
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=0.4,
             check=False,
         )
     except OSError, subprocess.TimeoutExpired:
         return None
     text = (proc.stdout or proc.stderr or "").strip()
     return text.splitlines()[0][:120] if text else None
-
-
-def _output_tail(proc: subprocess.CompletedProcess[str]) -> str:
-    return (proc.stderr or proc.stdout or "").strip()[-500:]

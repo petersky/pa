@@ -1360,6 +1360,7 @@ class AgentSessionRuntime:
                 "close_reason": reason,
             },
         )
+        self.manager._invalidate_provider_overview()
         return True
 
 
@@ -1390,6 +1391,17 @@ class AgentSessionManager:
         self.completion_handler: (
             Callable[[str, dict[str, Any]], Awaitable[Any] | Any] | None
         ) = None
+
+    def _invalidate_provider_overview(self) -> None:
+        """Discard local provider evidence after an ACP runtime lifecycle change."""
+        from pa.fleet.overview import cache_for
+
+        try:
+            cache_for(self.settings.data_dir).invalidate(
+                self.settings.instance_id, "providers"
+            )
+        except (OSError, RuntimeError, ValueError):
+            logger.warning("Could not invalidate Fleet provider snapshot", exc_info=True)
 
     async def _offload(
         self, operation: str, call, *args, timeout: float | None = None, **kwargs
@@ -2243,6 +2255,7 @@ class AgentSessionManager:
             provider_spec=provider_spec,
         )
         self._runtimes[runtime.session_id] = runtime
+        self._invalidate_provider_overview()
         return runtime
 
     async def reconnect(self) -> bool:
@@ -2442,6 +2455,7 @@ class AgentSessionManager:
                 )
             raise
         self._runtimes[runtime.session_id] = runtime
+        self._invalidate_provider_overview()
         return runtime
 
     async def attach_default(

@@ -177,16 +177,37 @@ def field(
     observed_at: str | None = None,
     duration_ms: float | None = None,
     error: str | None = None,
+    failure_code: str | None = None,
+    attempted_at: str | None = None,
 ) -> dict[str, Any]:
-    """Build the stable browser/server field contract."""
-    return {
-        "state": state
+    """Build a last-success value plus independently observable attempt contract."""
+    normalized = (
+        state
         if state in {"fresh", "stale", "timeout", "error", "unavailable"}
-        else "error",
+        else "error"
+    )
+    safe_error = (error or "")[:240] or None
+    attempt_time = attempted_at or (observed_at if normalized in GOOD_STATES else _now())
+    successful_at = observed_at if normalized in GOOD_STATES and value is not None else None
+    return {
+        "state": normalized,
         "value": value,
         "observed_at": observed_at,
         "duration_ms": round(duration_ms, 1) if duration_ms is not None else None,
-        "error": (error or "")[:240] or None,
+        "error": safe_error,
+        "last_attempted_at": attempt_time,
+        "last_attempt_state": normalized,
+        "last_attempt_duration_ms": round(duration_ms, 1)
+        if duration_ms is not None
+        else None,
+        "last_successful_at": successful_at,
+        "failure": {
+            "code": failure_code or normalized,
+            "message": safe_error,
+            "retryable": normalized in {"timeout", "error"},
+        }
+        if safe_error
+        else None,
     }
 
 
@@ -197,10 +218,12 @@ class FleetOverviewCache:
         self.path = data_dir / "fleet_overview_cache.json"
         self._lock = RLock()
         self._data: dict[str, dict[str, Any]] = {}
+        self._revision = 0
         try:
             payload = json.loads(self.path.read_text())
             if isinstance(payload, dict):
                 self._data = dict(payload.get("instances") or {})
+                self._revision = int(payload.get("revision") or 0)
         except OSError, ValueError, TypeError:
             pass
 
@@ -209,11 +232,29 @@ class FleetOverviewCache:
             value = (self._data.get(instance_id) or {}).get(dimension)
             return dict(value) if isinstance(value, dict) else None
 
-    def put(self, instance_id: str, dimension: str, value: dict[str, Any]) -> None:
+    @property
+    def revision(self) -> int:
+        with self._lock:
+            return self._revision
+
+    def put(
+        self,
+        instance_id: str,
+        dimension: str,
+        value: dict[str, Any],
+        *,
+        attempt_id: int | None = None,
+    ) -> bool:
         with self._lock:
             current = self._data.setdefault(instance_id, {})
             previous = current.get(dimension)
-            # A failed refresh never erases the last useful value.
+            candidate_id = attempt_id or time.time_ns()
+            previous_id = int((previous or {}).get("attempt_id") or 0)
+            if candidate_id < previous_id:
+                return False
+            value = {**value, "attempt_id": candidate_id}
+            # A failed refresh is diagnostic metadata, never a replacement for
+            # the last successful value/timestamp.
             if (
                 value.get("state") not in GOOD_STATES
                 and previous
@@ -221,14 +262,47 @@ class FleetOverviewCache:
             ):
                 value = {
                     **value,
+                    "state": "stale",
                     "value": previous.get("value"),
                     "observed_at": previous.get("observed_at"),
+                    "duration_ms": previous.get("duration_ms"),
+                    "last_successful_at": previous.get("last_successful_at")
+                    or previous.get("observed_at"),
                 }
             current[dimension] = value
+            self._revision += 1
             atomic_write_json(
                 self.path,
-                {"version": 1, "updated_at": _now(), "instances": self._data},
+                {
+                    "version": 2,
+                    "revision": self._revision,
+                    "updated_at": _now(),
+                    "instances": self._data,
+                },
             )
+            return True
+
+    def invalidate_all(self, *dimensions: str) -> None:
+        """Invalidate a dimension after a local mutation without guessing instance IDs."""
+        with self._lock:
+            changed = False
+            for instance_id in list(self._data):
+                current = self._data[instance_id]
+                for dimension in dimensions:
+                    changed = current.pop(dimension, None) is not None or changed
+                if not current:
+                    self._data.pop(instance_id, None)
+            if changed:
+                self._revision += 1
+                atomic_write_json(
+                    self.path,
+                    {
+                        "version": 2,
+                        "revision": self._revision,
+                        "updated_at": _now(),
+                        "instances": self._data,
+                    },
+                )
 
     def invalidate(self, instance_id: str, *dimensions: str) -> None:
         """Drop fields made obsolete by a successful fleet mutation."""
@@ -244,13 +318,21 @@ class FleetOverviewCache:
             if changed:
                 atomic_write_json(
                     self.path,
-                    {"version": 1, "updated_at": _now(), "instances": self._data},
+                    {
+                        "version": 2,
+                        "revision": self._revision + 1,
+                        "updated_at": _now(),
+                        "instances": self._data,
+                    },
                 )
+                self._revision += 1
 
 
 _caches: dict[str, FleetOverviewCache] = {}
 _caches_lock = Lock()
-_probe_tasks: dict[tuple[str, str, str], asyncio.Task[dict[str, Any]]] = {}
+_probe_tasks: dict[
+    tuple[str, str, str], tuple[int, asyncio.Task[dict[str, Any]]]
+] = {}
 _probe_lock = asyncio.Lock()
 
 
@@ -465,14 +547,13 @@ async def _probe(ctx: Any, inst: FleetInstance, dimension: str) -> dict[str, Any
                 timeout=timeout,
             )
         elif is_local and dimension == "providers":
-            from pa.acp.providers.resolve import list_provider_summaries
+            from pa.acp.providers.resolve import list_provider_summaries_bounded
 
-            value = await _offload(
-                ctx,
-                "fleet.overview.providers",
-                list_provider_summaries,
+            value = await list_provider_summaries_bounded(
                 ctx.settings.data_dir,
-                timeout=timeout,
+                manager=ctx.services.get("instance_agent"),
+                async_runtime=_runtime(ctx),
+                timeout=max(0.5, timeout - 0.5),
             )
         elif is_local and dimension == "update":
             from pa.update.runner import check_update
@@ -539,6 +620,7 @@ async def _probe(ctx: Any, inst: FleetInstance, dimension: str) -> dict[str, Any
             None,
             duration_ms=elapsed,
             error=f"{dimension} exceeded {timeout:g}s deadline",
+            failure_code="deadline_exceeded",
         )
     except (
         httpx.HTTPError,
@@ -551,8 +633,72 @@ async def _probe(ctx: Any, inst: FleetInstance, dimension: str) -> dict[str, Any
     ) as exc:
         elapsed = (time.perf_counter() - started) * 1000
         return field(
-            "error", None, duration_ms=elapsed, error=str(exc) or exc.__class__.__name__
+            "error",
+            None,
+            duration_ms=elapsed,
+            error=f"{dimension} probe failed ({exc.__class__.__name__})",
+            failure_code="probe_failed",
         )
+
+
+def _merge_provider_snapshots(previous: Any, current: Any) -> list[dict[str, Any]]:
+    """Retain affirmative auth across inconclusive provider attempts only."""
+    previous_by_id = {
+        str(item.get("id")): item
+        for item in (previous if isinstance(previous, list) else [])
+        if isinstance(item, dict) and item.get("id")
+    }
+    merged: list[dict[str, Any]] = []
+    for raw in current if isinstance(current, list) else []:
+        if not isinstance(raw, dict):
+            continue
+        item = dict(raw)
+        prior = previous_by_id.get(str(item.get("id")))
+        state = str(item.get("auth_state") or "unknown")
+        attempt_state = str(item.get("direct_auth_state") or state)
+        if (
+            prior
+            and prior.get("auth_state") == "authenticated"
+            and attempt_state in {"timed_out", "probe_failed", "unknown"}
+        ):
+            for key in (
+                "installed",
+                "available",
+                "command",
+                "resolved_path",
+                "version",
+                "codex_cli_installed",
+                "codex_cli_path",
+                "codex_cli_version",
+                "install_method",
+            ):
+                if key in prior:
+                    item[key] = prior[key]
+            item.update(
+                {
+                    "auth_state": "authenticated",
+                    "auth_configured": True,
+                    "auth_method": prior.get("auth_method") or "authenticated",
+                    "auth_status": prior.get("auth_status"),
+                    "last_successful_at": prior.get("last_successful_at")
+                    or prior.get("last_attempted_at"),
+                    "stale": True,
+                    "last_attempt": {
+                        "state": attempt_state,
+                        "at": item.get("last_attempted_at"),
+                        "duration_ms": item.get("probe_duration_ms"),
+                        "error": item.get("auth_error") or item.get("error"),
+                    },
+                }
+            )
+            item["auth_evidence"] = list(
+                dict.fromkeys(
+                    list(prior.get("auth_evidence") or [])
+                    + list(item.get("auth_evidence") or [])
+                )
+            )
+        merged.append(item)
+    return merged
 
 
 async def probe_dimension(
@@ -580,17 +726,27 @@ async def probe_dimension(
             pass
     key = (str(ctx.settings.data_dir), inst.instance_id, dimension)
     async with _probe_lock:
-        task = _probe_tasks.get(key)
-        if task is None or task.done():
+        active = _probe_tasks.get(key)
+        if active is None or active[1].done() or force:
+            attempt_id = time.time_ns()
             task = asyncio.create_task(_probe(ctx, inst, dimension))
-            _probe_tasks[key] = task
+            _probe_tasks[key] = (attempt_id, task)
+        else:
+            attempt_id, task = active
     try:
         result = await asyncio.shield(task)
     finally:
         if task.done():
             async with _probe_lock:
-                if _probe_tasks.get(key) is task:
+                if _probe_tasks.get(key) == (attempt_id, task):
                     _probe_tasks.pop(key, None)
+    if dimension == "providers" and result.get("state") in GOOD_STATES:
+        result = {
+            **result,
+            "value": _merge_provider_snapshots(
+                (cached or {}).get("value"), result.get("value")
+            ),
+        }
     await _offload(
         ctx,
         "fleet.overview_cache_write",
@@ -598,6 +754,7 @@ async def probe_dimension(
         inst.instance_id,
         dimension,
         result,
+        attempt_id=attempt_id,
     )
     merged = (
         await _offload(
@@ -777,7 +934,8 @@ def build_overview(
         pass
 
     return {
-        "version": 1,
+        "version": 2,
+        "snapshot_version": cache.revision,
         "generated_at": _now(),
         "local_instance_id": local_id,
         "dimensions": list(DIMENSIONS),

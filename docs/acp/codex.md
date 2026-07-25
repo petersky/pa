@@ -1,7 +1,7 @@
 # Codex ACP (`codex-acp`)
 
 **Provider id:** `codex`  
-**Last verified:** 2026-07-17 (Codex CLI 0.144.5 and official Codex authentication guidance)
+**Last verified:** 2026-07-25 (Codex CLI 0.144.5 and official Codex authentication guidance)
 **Package:** `@agentclientprotocol/codex-acp`  
 **Upstream:** [OpenAI Codex](https://github.com/openai/codex)
 **Official auth guidance:** [Codex authentication](https://learn.chatgpt.com/docs/auth)
@@ -48,11 +48,19 @@ Supported authentication methods:
 - Codex access token, when configured for trusted enterprise automation.
 - Custom OpenAI-compatible gateway when the client opts into gateway auth.
 
-`ProviderStatus.auth_method` is one of `none`, `chatgpt_oauth`, `api_key`,
-`access_token`, or `unknown`. PA prefers explicit target-process credentials and
-otherwise runs the bounded, read-only `codex login status`. Status output and
-credential-file contents are never returned. Missing CLI, status timeout, invalid
-credentials, and unknown future CLI responses are reported actionably.
+`ProviderStatus.auth_method` distinguishes `chatgpt_oauth`, `api_key`,
+`access_token`, `active_acp_session`, `none`, and `unknown`. Its independent
+`auth_state` is `authenticated`, `not_configured`, `signed_out`, `unavailable`,
+`probe_failed`, `timed_out`, or `unknown`. PA therefore presents a successful Codex
+ChatGPT login as authenticated OpenAI/Codex access; it does not label it “OpenAI
+unauthenticated” merely because no API key is present.
+
+PA prefers explicit target-process credentials and otherwise runs the bounded,
+read-only `codex login status` as the PA service user. Connected Codex ACP sessions
+are strong corroborating evidence for their existing profiles, while the direct
+probe state is retained when the two differ. Status output, credential paths, and
+credential-file contents are never returned. Missing CLI, permission errors,
+timeouts, and unknown future CLI responses remain distinct, actionable states.
 
 Device login jobs last 10 minutes by default (configurable from 1–30 minutes),
 can be cancelled, persist only redacted public events, and become `interrupted`

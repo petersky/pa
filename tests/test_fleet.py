@@ -141,7 +141,7 @@ class FleetRegistryReloadTests(unittest.TestCase):
         self.assertIn('data-codex-login-resume="', source)
         self.assertIn("Use any browser to finish signing in", source)
         self.assertIn(
-            'if (job.state === "succeeded") setTimeout(loadLiveStatus, 1000)',
+            'setTimeout(function () { loadLiveStatus(true, instanceId || undefined); }, 1000)',
             source,
         )
 
@@ -767,7 +767,8 @@ class FleetHealthParallelTests(unittest.IsolatedAsyncioTestCase):
                 patch("pa.modules.fleet.require_user"),
                 patch("pa.modules.fleet.httpx.AsyncClient", return_value=client),
                 patch(
-                    "pa.acp.providers.resolve.list_provider_summaries", return_value=[]
+                    "pa.acp.providers.resolve.list_provider_summaries_bounded",
+                    new=AsyncMock(return_value=[]),
                 ),
                 patch(
                     "pa.update.runner.check_update", side_effect=RuntimeError("offline")
@@ -815,12 +816,13 @@ class FleetOverviewTests(unittest.IsolatedAsyncioTestCase):
 
             with patch("pa.fleet.overview._probe", side_effect=slow_probe):
                 first = asyncio.create_task(
-                    probe_dimension(ctx, inst, "reachability", force=True)
+                    probe_dimension(ctx, inst, "reachability")
                 )
                 second = asyncio.create_task(
-                    probe_dimension(ctx, inst, "reachability", force=True)
+                    probe_dimension(ctx, inst, "reachability")
                 )
                 await started.wait()
+                await asyncio.sleep(0)
                 release.set()
                 results = await asyncio.gather(first, second)
 
@@ -838,10 +840,118 @@ class FleetOverviewTests(unittest.IsolatedAsyncioTestCase):
             ):
                 timed_out = await probe_dimension(ctx, inst, "reachability", force=True)
 
-            self.assertEqual(timed_out["state"], "timeout")
+            self.assertEqual(timed_out["state"], "stale")
+            self.assertEqual(timed_out["last_attempt_state"], "timeout")
             self.assertEqual(timed_out["value"], {"health": "up"})
+            self.assertEqual(
+                timed_out["last_successful_at"], "2026-07-22T12:00:00+00:00"
+            )
             persisted = cache_for(settings.data_dir).get("remote", "reachability")
             self.assertEqual(persisted["value"], {"health": "up"})
+
+    async def test_manual_refresh_supersedes_older_background_timeout(self) -> None:
+        from pa.fleet.overview import field, probe_dimension
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="local")
+            ctx = MagicMock(settings=settings)
+            inst = FleetInstance(
+                instance_id="remote",
+                name="remote",
+                url="http://remote:8080",
+            )
+            older_started = asyncio.Event()
+            release_older = asyncio.Event()
+            calls = 0
+
+            async def racing_probe(*_args):
+                nonlocal calls
+                calls += 1
+                if calls == 1:
+                    older_started.set()
+                    await release_older.wait()
+                    return field(
+                        "timeout", None, duration_ms=2500, error="older deadline"
+                    )
+                return field(
+                    "fresh",
+                    {"health": "up"},
+                    observed_at="2026-07-25T12:00:01+00:00",
+                    duration_ms=10,
+                )
+
+            with patch("pa.fleet.overview._probe", side_effect=racing_probe):
+                older = asyncio.create_task(
+                    probe_dimension(ctx, inst, "reachability", force=True)
+                )
+                await older_started.wait()
+                newer = await probe_dimension(
+                    ctx, inst, "reachability", force=True
+                )
+                release_older.set()
+                older_result = await older
+
+            self.assertEqual(calls, 2)
+            self.assertEqual(newer["state"], "fresh")
+            self.assertEqual(older_result["state"], "fresh")
+            self.assertEqual(older_result["value"], {"health": "up"})
+
+    async def test_older_timeout_cannot_replace_newer_success(self) -> None:
+        from pa.fleet.overview import FleetOverviewCache, field
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = FleetOverviewCache(Path(tmp))
+            successful = field(
+                "fresh",
+                {"health": "up"},
+                observed_at="2026-07-25T12:00:01+00:00",
+                duration_ms=8,
+            )
+            timed_out = field(
+                "timeout", None, duration_ms=2500, error="deadline"
+            )
+
+            self.assertTrue(
+                cache.put("local", "reachability", successful, attempt_id=20)
+            )
+            self.assertFalse(
+                cache.put("local", "reachability", timed_out, attempt_id=10)
+            )
+            current = cache.get("local", "reachability")
+            self.assertEqual(current["state"], "fresh")
+            self.assertEqual(current["value"], {"health": "up"})
+            self.assertEqual(current["attempt_id"], 20)
+
+    def test_provider_probe_failure_retains_affirmative_auth_only(self) -> None:
+        from pa.fleet.overview import _merge_provider_snapshots
+
+        previous = [{
+            "id": "codex",
+            "auth_state": "authenticated",
+            "auth_configured": True,
+            "auth_method": "chatgpt_oauth",
+            "auth_status": "Signed in with ChatGPT on the target.",
+            "auth_evidence": ["codex_cli_status"],
+            "last_attempted_at": "2026-07-25T12:00:00+00:00",
+        }]
+        inconclusive = [{
+            "id": "codex",
+            "auth_state": "timed_out",
+            "auth_method": "unknown",
+            "auth_error": "codex login status timed out",
+            "last_attempted_at": "2026-07-25T12:01:00+00:00",
+        }]
+        merged = _merge_provider_snapshots(previous, inconclusive)[0]
+        self.assertEqual(merged["auth_state"], "authenticated")
+        self.assertEqual(merged["auth_method"], "chatgpt_oauth")
+        self.assertEqual(merged["last_attempt"]["state"], "timed_out")
+        self.assertTrue(merged["stale"])
+
+        signed_out = _merge_provider_snapshots(
+            previous,
+            [{"id": "codex", "auth_state": "signed_out", "auth_method": "none"}],
+        )[0]
+        self.assertEqual(signed_out["auth_state"], "signed_out")
 
     def test_topology_uses_same_nodes_for_routes_updates_and_supervisor(self) -> None:
         from pa.fleet.overview import build_overview

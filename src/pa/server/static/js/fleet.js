@@ -818,40 +818,73 @@
     else clearRemoteWatchers();
   }
 
+  function providerAuthState(provider) {
+    if (provider && provider.auth_state) return provider.auth_state;
+    if (provider && provider.auth_configured) return "authenticated";
+    if (!provider || provider.available === false) return "unavailable";
+    if (provider.auth_method === "unknown") return "unknown";
+    return "not_configured";
+  }
+
+  function providerMechanismLabel(method) {
+    return ({
+      chatgpt_oauth: "ChatGPT OAuth", api_key: "API key",
+      access_token: "access token", cursor_account: "Cursor account",
+      active_acp_session: "active ACP session",
+      environment: "environment credential", none: "none", unknown: "unknown"
+    })[method] || String(method || "none").replace(/_/g, " ");
+  }
+
+  function providerStateLabel(state) {
+    return ({
+      authenticated: "authenticated", not_configured: "not configured",
+      signed_out: "signed out", unavailable: "unavailable",
+      probe_failed: "probe failed", timed_out: "timed out", unknown: "unknown"
+    })[state] || "unknown";
+  }
+
+  function providerBadgeClass(state) {
+    if (state === "authenticated") return "badge-ok";
+    if (state === "signed_out") return "badge-danger";
+    if (["probe_failed", "timed_out", "unknown"].indexOf(state) >= 0) return "badge-warning";
+    return "badge-neutral";
+  }
+
   function providersHtml(providers, instanceId) {
-    if (!providers || !providers.length) {
-      return '<span class="muted">—</span>';
-    }
-    return providers
-      .map(function (p) {
-        var label = escapeHtml(p.display_name || p.id || "?");
-        var mark = p.available ? " ✓" : " ·";
-        var title = escapeHtml(p.id || "");
-        var install = p.installed ? "installed" : "not installed";
-        var auth = p.auth_configured ? (p.auth_method || "authenticated") :
-          (p.auth_method === "unknown" ? "auth unknown" : "not signed in");
-        var probe = p.last_probe && p.last_probe.ok ? "probe ready" : "not probed";
-        var detail = escapeHtml(install + " · " + auth + " · " + probe +
-          (p.auth_status ? " · " + p.auth_status : ""));
-        var login = "";
-        if (p.id === "codex" && p.login_in_progress) {
-          var activeJob = p.meta && p.meta.active_login_job_id;
-          login = activeJob ?
-            ' <button type="button" class="ghost small" data-codex-login-resume="' +
-              escapeHtml(instanceId || "") + '" data-login-job="' +
-              escapeHtml(activeJob) + '">Resume sign-in</button>' :
-            ' <span class="muted small">login in progress</span>';
-        } else if (p.id === "codex" && p.codex_cli_installed && !p.auth_configured) {
-          login = ' <button type="button" class="ghost small" data-codex-login="' +
-            escapeHtml(instanceId || "") + '">Sign in with ChatGPT</button>';
-        } else if (p.id === "codex" && !p.codex_cli_installed) {
-          login = ' <button type="button" class="ghost small" data-codex-cli-install="' +
-            escapeHtml(instanceId || "") + '">Install Codex CLI</button>';
-        }
-        return '<span class="badge" title="' + detail + ' (' + title + ')">' +
-          label + mark + " · " + escapeHtml(auth) + "</span>" + login;
-      })
-      .join(" ");
+    if (!providers || !providers.length) return '<span class="muted">—</span>';
+    return providers.map(function (p) {
+      var label = escapeHtml(p.display_name || p.id || "?");
+      var state = providerAuthState(p);
+      var mark = state === "authenticated" ? " ✓" : (state === "signed_out" ? " !" : " ·");
+      var mechanism = providerMechanismLabel(p.auth_method);
+      var auth = providerStateLabel(state);
+      if (state === "authenticated" && mechanism !== "none") auth += " · " + mechanism;
+      var install = p.installed ? "installed" : "not installed";
+      var attempted = p.last_attempt && p.last_attempt.state
+        ? " · latest probe " + providerStateLabel(p.last_attempt.state) : "";
+      var detail = escapeHtml(install + " · " + auth + attempted +
+        (p.auth_status ? " · " + p.auth_status : "") +
+        (p.auth_error ? " · " + p.auth_error : ""));
+      var login = "";
+      if (p.id === "codex" && p.login_in_progress) {
+        var activeJob = p.meta && p.meta.active_login_job_id;
+        login = activeJob ?
+          ' <button type="button" class="ghost small" data-codex-login-resume="' +
+            escapeHtml(instanceId || "") + '" data-login-job="' + escapeHtml(activeJob) +
+            '">Resume sign-in</button>' :
+          ' <span class="muted small">login in progress</span>';
+      } else if (p.id === "codex" && p.codex_cli_installed &&
+                 (state === "signed_out" || state === "not_configured")) {
+        login = ' <button type="button" class="ghost small" data-codex-login="' +
+          escapeHtml(instanceId || "") + '">Sign in with ChatGPT</button>';
+      } else if (p.id === "codex" && !p.codex_cli_installed && state === "unavailable") {
+        login = ' <button type="button" class="ghost small" data-codex-cli-install="' +
+          escapeHtml(instanceId || "") + '">Install Codex CLI</button>';
+      }
+      return '<span class="badge ' + providerBadgeClass(state) + '" title="' + detail +
+        '" aria-label="' + escapeHtml((p.display_name || p.id || "Provider") + ": " + auth) +
+        '">' + label + mark + " · " + escapeHtml(auth) + "</span>" + login;
+    }).join(" ");
   }
 
   function healthHtml(state) {
@@ -896,8 +929,10 @@
       if (instructions) instructions.innerHTML = parts.join(" · ");
       if (["succeeded", "failed", "cancelled", "timed_out", "interrupted"].indexOf(job.state) >= 0) {
         codexLoginJob = "";
-        loadLiveStatus();
-        if (job.state === "succeeded") setTimeout(loadLiveStatus, 1000);
+        loadLiveStatus(true, instanceId || undefined);
+        if (job.state === "succeeded") {
+          setTimeout(function () { loadLiveStatus(true, instanceId || undefined); }, 1000);
+        }
         return;
       }
       await new Promise(function (resolve) { setTimeout(resolve, 1000); });
@@ -927,21 +962,35 @@
       : { state: "unavailable", value: null, observed_at: null, error: null };
   }
 
-  function worstFreshness(node) {
+  function requiredReadiness(node) {
+    var reach = fieldValue(node, "reachability");
+    var health = reach.value && reach.value.health;
+    if (health !== "up") return health === "unknown" ? reach.state : (health || reach.state);
+    var sync = fieldValue(node, "sync");
+    if (sync.value && sync.value.consistent === false) return "error";
     var order = { error: 5, timeout: 4, unavailable: 3, stale: 2, fresh: 1 };
     var worst = "fresh";
-    Object.keys(node.dimensions || {}).forEach(function (name) {
-      var item = node.dimensions[name] || {};
+    ["reachability", "status", "sync"].forEach(function (name) {
+      var item = fieldValue(node, name);
       if ((order[item.state] || 5) > (order[worst] || 1)) worst = item.state || "error";
     });
     return worst;
   }
 
+  function worstFreshness(node) {
+    var readiness = requiredReadiness(node);
+    if (readiness !== "fresh") return readiness;
+    var optionalIssue = ["providers", "update", "activity", "repositories", "supervisor"]
+      .some(function (name) {
+        var item = fieldValue(node, name);
+        var attempt = item.last_attempt_state || item.state;
+        return ["error", "timeout", "stale"].indexOf(attempt) >= 0;
+      });
+    return optionalIssue ? "partial" : "fresh";
+  }
+
   function topologyStatusForNode(node) {
-    var reach = fieldValue(node, "reachability");
-    var health = reach.value && reach.value.health;
-    if (health !== "up") return health === "unknown" ? reach.state : (health || reach.state);
-    return worstFreshness(node);
+    return requiredReadiness(node);
   }
 
   function fleetNodeLabel(node, freshness) {
@@ -958,8 +1007,7 @@
       : sync.state;
     var providerValues = Array.isArray(providers.value) ? providers.value : [];
     var readyProviders = providerValues.filter(function (provider) {
-      var needsAuth = provider.auth_method && provider.auth_method !== "none";
-      return provider.available !== false && (!needsAuth || provider.auth_configured !== false);
+      return provider.available !== false && providerAuthState(provider) === "authenticated";
     }).length;
     var providerLabel = providerValues.length
       ? readyProviders + "/" + providerValues.length + " providers ready"
@@ -1019,6 +1067,8 @@
 
   function replaceFleetDimension(overview, nodeId, dimension, value) {
     return Object.assign({}, overview, {
+      snapshot_version: value && value.snapshot_version != null
+        ? value.snapshot_version : overview.snapshot_version,
       nodes: (overview.nodes || []).map(function (node) {
         if (node.id !== nodeId) return node;
         var dimensions = Object.assign({}, node.dimensions || {});
@@ -1058,6 +1108,22 @@
     };
   }
 
+  function mergeFieldAttemptFailure(previous, state, error) {
+    var attemptedAt = new Date().toISOString();
+    if (previous && previous.value != null) {
+      return Object.assign({}, previous, {
+        state: "stale", error: error || null,
+        last_attempted_at: attemptedAt, last_attempt_state: state,
+        failure: { code: state, message: error || null, retryable: true }
+      });
+    }
+    return Object.assign({}, previous || {}, {
+      state: state, value: null, error: error || null,
+      last_attempted_at: attemptedAt, last_attempt_state: state,
+      failure: { code: state, message: error || null, retryable: true }
+    });
+  }
+
   function applyFleetDimensionUpdate(overview, refresh, update) {
     if (!refresh || update.generation !== refresh.generation) {
       return { overview: overview, refresh: refresh, accepted: false, newlyCompleted: false };
@@ -1071,12 +1137,20 @@
       terminal: terminal,
       elapsedMs: update.elapsedMs == null ? refresh.elapsedMs : update.elapsedMs
     });
+    var previousNode = (overview.nodes || []).find(function (node) {
+      return node.id === update.nodeId;
+    });
+    var previousField = fieldValue(previousNode, update.dimension);
+    var nextValue = update.value || {};
+    if (["timeout", "error"].indexOf(nextValue.state) >= 0) {
+      nextValue = mergeFieldAttemptFailure(previousField, nextValue.state, nextValue.error);
+    }
     return {
       overview: replaceFleetDimension(
         overview,
         update.nodeId,
         update.dimension,
-        Object.assign({}, update.value, { refreshing: false })
+        Object.assign({}, nextValue, { refreshing: false })
       ),
       refresh: nextRefresh,
       accepted: true,
@@ -1320,15 +1394,22 @@
     selectedFleetItem = { kind: kind, id: id };
     var sections = Object.keys(node.dimensions || {}).map(function (name) {
       var item = node.dimensions[name] || {};
-      var timing = item.duration_ms == null ? "" : " · " + item.duration_ms + " ms";
+      var timingValue = item.last_attempt_duration_ms == null
+        ? item.duration_ms : item.last_attempt_duration_ms;
+      var timing = timingValue == null ? "" : " · " + timingValue + " ms";
       var error = item.error
-        ? '<p class="fleet-diagnostic-error">Action: retry ' + escapeHtml(name) +
-          " after checking the peer route. " + escapeHtml(item.error) + "</p>"
+        ? '<p class="fleet-diagnostic-error">Latest refresh ' +
+          escapeHtml(item.last_attempt_state || item.state || "failed") + ". Retry " +
+          escapeHtml(name) + " on this instance. " + escapeHtml(item.error) + "</p>"
         : "";
+      var attempted = item.last_attempted_at
+        ? "Last attempted " + new Date(item.last_attempted_at).toLocaleString()
+        : "Never attempted";
+      var successful = item.last_successful_at || item.observed_at;
       return '<details><summary><strong>' + escapeHtml(name) + "</strong> · " +
         escapeHtml(item.state || "unavailable") + escapeHtml(timing) +
-        '</summary><p class="muted small">' +
-        escapeHtml(item.observed_at ? new Date(item.observed_at).toLocaleString() : "Never observed") +
+        '</summary><p class="muted small">' + escapeHtml(attempted) + " · " +
+        escapeHtml(successful ? "Last successful " + new Date(successful).toLocaleString() : "Never successful") +
         "</p>" + error + "<pre>" + escapeHtml(JSON.stringify(item.value, null, 2)) +
         "</pre></details>";
     }).join("");
@@ -1473,7 +1554,8 @@
   function FleetTopologyController(host) {
     this.host = host;
     this.svg = $("svg", host);
-    this.panel = host.closest ? host.closest(".fleet-topology-panel") : host.parentElement;
+    this.panel = (host.closest && host.closest(".fleet-topology-panel")) ||
+      host.parentElement;
     this.state = $("[data-fleet-topology-state]", host);
     this.snapshot = null;
     this.layout = null;
@@ -1844,8 +1926,7 @@
       var syncLabel = sync.value ? (sync.value.consistent ? "heads aligned" : "head mismatch") : sync.state;
       var providerValues = Array.isArray(providers.value) ? providers.value : [];
       var readyProviders = providerValues.filter(function (provider) {
-        var needsAuth = provider.auth_method && provider.auth_method !== "none";
-        return provider.available !== false && (!needsAuth || provider.auth_configured !== false);
+        return provider.available !== false && providerAuthState(provider) === "authenticated";
       }).length;
       var visualProviderLabel = providerValues.length
         ? readyProviders + "/" + providerValues.length + " auth"
@@ -2109,9 +2190,9 @@
         var dimensions = Object.assign({}, node.dimensions || {});
         Object.keys(dimensions).forEach(function (name) {
           var previous = dimensions[name];
-          if (previous.refreshing) dimensions[name] = Object.assign({}, previous, {
-            state: state, refreshing: false, error: message
-          });
+          if (previous.refreshing) dimensions[name] = Object.assign(
+            {}, mergeFieldAttemptFailure(previous, state, message), { refreshing: false }
+          );
         });
         return Object.assign({}, node, { dimensions: dimensions });
       })
@@ -2129,6 +2210,19 @@
     liveStatusTimer = null;
     liveStatusRequest = null;
     liveStatusController = null;
+    if (fleetOverview) {
+      fleetOverview = Object.assign({}, fleetOverview, {
+        nodes: (fleetOverview.nodes || []).map(function (node) {
+          var dimensions = {};
+          Object.keys(node.dimensions || {}).forEach(function (name) {
+            dimensions[name] = Object.assign({}, node.dimensions[name], {
+              refreshing: false
+            });
+          });
+          return Object.assign({}, node, { dimensions: dimensions });
+        })
+      });
+    }
   }
 
   function loadLiveStatus(force, onlyInstance) {
@@ -2229,10 +2323,11 @@
       var deadline = new Promise(function (resolve) {
         timer = setTimeout(function () {
           if (seq === liveStatusSeq) {
-            commitDimension(item, Object.assign({}, currentField(item), {
-              state: "timeout",
-              error: item.dimension + " browser deadline exceeded; awaiting server result"
-            }));
+            commitDimension(item, mergeFieldAttemptFailure(
+              currentField(item),
+              "timeout",
+              item.dimension + " browser deadline exceeded; awaiting server result"
+            ));
           }
           resolve();
         }, timeout);
@@ -2244,10 +2339,9 @@
         commitDimension(item, patch);
       }).catch(function (err) {
         if (seq !== liveStatusSeq || err.name === "AbortError") return;
-        commitDimension(item, Object.assign({}, currentField(item), {
-          state: "error",
-          error: err.message
-        }));
+        commitDimension(item, mergeFieldAttemptFailure(
+          currentField(item), "error", err.message
+        ));
       }).finally(function () {
         clearTimeout(timer);
         if (performance.mark && performance.measure) {
@@ -2489,7 +2583,7 @@
         method: "POST"
       }).then(function (result) {
         if (!result.ok) throw new Error(result.message || "Codex CLI install failed");
-        loadLiveStatus();
+        loadLiveStatus(true, cliInstance || undefined);
       }).catch(function (err) {
         window.alert(err.message);
       }).finally(function () { cliInstallButton.disabled = false; });
@@ -3109,6 +3203,10 @@
     applyDimensionUpdate: applyFleetDimensionUpdate,
     replaceDimension: replaceFleetDimension,
     mergeMetadata: mergeFleetOverviewMetadata,
-    worstFreshness: worstFreshness
+    worstFreshness: worstFreshness,
+    requiredReadiness: requiredReadiness,
+    mergeFieldAttemptFailure: mergeFieldAttemptFailure,
+    providerAuthState: providerAuthState,
+    providerBadgeClass: providerBadgeClass
   };
 })();

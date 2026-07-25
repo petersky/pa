@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 
@@ -43,8 +43,23 @@ class ProviderStatus(BaseModel):
     version: str | None = None
     auth_configured: bool = False
     auth_method: str = "none"
+    auth_state: Literal[
+        "authenticated",
+        "not_configured",
+        "signed_out",
+        "unavailable",
+        "probe_failed",
+        "timed_out",
+        "unknown",
+    ] = "unknown"
     auth_status: str | None = None
     auth_error: str | None = None
+    auth_evidence: list[str] = Field(default_factory=list)
+    auth_scope: str = "service_user"
+    active_session_count: int = 0
+    last_attempted_at: str | None = None
+    last_successful_at: str | None = None
+    probe_duration_ms: float | None = None
     login_in_progress: bool = False
     codex_cli_installed: bool | None = None
     codex_cli_path: str | None = None
