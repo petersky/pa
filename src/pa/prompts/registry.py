@@ -44,6 +44,7 @@ class PromptDefinition(BaseModel):
         "session",
         "project",
         "card",
+        "card-reconciliation",
         "remote-dispatch",
         "pr-supervisor",
         "release",

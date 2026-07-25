@@ -41,6 +41,7 @@ from pa.execution.dispatch import (
     DispatchWorker,
 )
 from pa.execution.disposition import decide_card_disposition
+from pa.execution.reconciliation import CompletionReconciler
 from pa.fleet.join import (
     apply_reachability_settings,
     ensure_sync_token,
@@ -3357,15 +3358,28 @@ class FleetModule(Module):
             ctx.settings.sync_token,
             async_runtime=async_runtime,
         )
-        outbox.start()
         ctx.register_service("completion_outbox", outbox)
         agent = ctx.require_service("instance_agent")
-        agent.completion_handler = outbox.queue
+        reconciler = CompletionReconciler(
+            ctx.require_service("dispatch_store"),
+            agent,
+            outbox,
+            ctx.store,
+            lambda: ctx.services.get("pr_supervisor"),
+        )
+        await reconciler.recover()
+        reconciler.start()
+        ctx.register_service("completion_reconciler", reconciler)
+        agent.completion_handler = reconciler.handle_completion
+        outbox.start()
 
     async def on_shutdown(self, app, ctx: AppContext) -> None:
         dispatch_worker = ctx.services.get("dispatch_worker")
         if dispatch_worker:
             await dispatch_worker.close()
+        reconciler = ctx.services.get("completion_reconciler")
+        if reconciler:
+            await reconciler.close()
         outbox = ctx.services.get("completion_outbox")
         if outbox:
             await outbox.close(timeout=5.0)

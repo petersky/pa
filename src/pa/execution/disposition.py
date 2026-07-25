@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from typing import Any, Literal
 
@@ -9,7 +10,6 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from pa.domain.models import CardLane
 from pa.pr_supervisor.models import PRWatch, PRWatchStatus, utcnow
-
 
 CARD_DISPOSITION_V1 = "pa.card-disposition/v1"
 
@@ -64,6 +64,29 @@ def parse_card_disposition(
         return CardDispositionV1.model_validate(value), None
     except (ValidationError, TypeError, ValueError) as exc:
         return None, str(exc)
+
+
+def extract_card_disposition(
+    text: str,
+) -> tuple[dict[str, Any] | None, str | None]:
+    """Strictly extract one machine-readable v1 disposition from final output."""
+    candidate = text.strip()
+    if candidate.startswith("```") and candidate.endswith("```"):
+        lines = candidate.splitlines()
+        if len(lines) >= 3 and lines[0].strip().lower() in {"```", "```json"}:
+            candidate = "\n".join(lines[1:-1]).strip()
+    if not candidate:
+        return None, "The final response did not contain a JSON disposition."
+    try:
+        value = json.loads(candidate)
+    except (json.JSONDecodeError, TypeError, ValueError) as exc:
+        return None, f"The final response was not exactly one JSON object: {exc}"
+    if not isinstance(value, dict):
+        return None, "The final response disposition must be a JSON object."
+    disposition, error = parse_card_disposition(value)
+    if not disposition:
+        return None, f"The JSON disposition was invalid: {error or 'validation failed'}"
+    return disposition.model_dump(mode="json"), None
 
 
 def decide_card_disposition(

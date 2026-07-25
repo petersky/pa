@@ -90,6 +90,18 @@ def _session_pr_watches(request: Request, session) -> list[dict[str, Any]]:
     ]
 
 
+def _session_reconciliation(request: Request, session_id: str) -> dict[str, Any]:
+    store = request.app.state.ctx.services.get("dispatch_store")
+    record = store.by_session(session_id) if store else None
+    if not record:
+        return {
+            "state": "not_requested",
+            "reason": None,
+            "recoverable": False,
+        }
+    return record.public_dict()["card_reconciliation"]
+
+
 def _startup_state(manager) -> dict[str, Any]:
     state = getattr(manager, "startup_state", None)
     if callable(state):
@@ -752,15 +764,16 @@ def list_agent_sessions(request: Request) -> list[dict]:
         if runtime._closed:
             continue
         live_ids.add(runtime.session.id)
-        result.append(_session_list_item(runtime.session, runtime=runtime))
+        result.append(_session_list_item(request, runtime.session, runtime=runtime))
     for session in mgr.store.list_sessions():
         if session.id in live_ids or session.status == "closed":
             continue
-        result.append(_session_list_item(session))
+        result.append(_session_list_item(request, session))
     return result
 
 
 def _session_list_item(
+    request: Request,
     session: AgentSession,
     *,
     runtime: AgentSessionRuntime | None = None,
@@ -791,6 +804,7 @@ def _session_list_item(
         "queue_length": len(runtime._queue) if runtime else len(queued),
         "last_seq": runtime._seq if runtime else durable.get("last_event_cursor", 0),
         "updated_at": session.updated_at.isoformat(),
+        "card_reconciliation": _session_reconciliation(request, session.id),
     }
 
 
@@ -868,6 +882,7 @@ def list_agent_session_history(
             "instance_id": settings.instance_id,
             "instance_name": settings.instance_name,
             "pr_watches": _session_pr_watches(request, session),
+            "card_reconciliation": _session_reconciliation(request, session.id),
             "live": bool(
                 (runtime := mgr.get(session.id))
                 and not getattr(runtime, "_closed", False)
@@ -942,6 +957,7 @@ def get_agent_session_history(
         },
         "live": bool(runtime and not getattr(runtime, "_closed", False)),
         "pr_watches": _session_pr_watches(request, session),
+        "card_reconciliation": _session_reconciliation(request, session.id),
         "recovery": _durable_session_state(mgr, session),
         "events": [event.model_dump(mode="json") for event in events],
         "page": page,
@@ -1024,7 +1040,9 @@ async def recover_session(
 
 @router.get("/sessions/{session_id}")
 def get_session_snapshot(request: Request, session_id: str) -> dict:
-    return _runtime_or_404(request, session_id).snapshot()
+    snapshot = _runtime_or_404(request, session_id).snapshot()
+    snapshot["card_reconciliation"] = _session_reconciliation(request, session_id)
+    return snapshot
 
 
 @router.get("/sessions/{session_id}/events")
