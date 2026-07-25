@@ -681,13 +681,17 @@ class ItemsModule(Module):
             )
 
         @mcp.tool()
-        def list_cards(realm: str = "default", lane: str | None = None) -> list[dict]:
+        def list_cards(
+            realm: str | None = None,
+            lane: str | None = None,
+            kind: str | None = None,
+        ) -> list[dict]:
             """List cards in a realm."""
             return request_local_pa(
                 ctx.settings,
                 "GET",
                 "/api/cards",
-                params={"realm": realm, "lane": lane},
+                params={"realm": realm, "lane": lane, "kind": kind},
             )
 
         @mcp.tool()

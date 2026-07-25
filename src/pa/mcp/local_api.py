@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import time
+from enum import Enum
 
 import httpx
 
@@ -13,6 +14,17 @@ from pa.config import Settings
 
 class LocalPAServerUnavailable(RuntimeError):
     pass
+
+
+def _normalized_query_params(params: dict | None) -> dict | None:
+    if not params:
+        return None
+    normalized = {
+        key: value.value if isinstance(value, Enum) else value
+        for key, value in params.items()
+        if value is not None and (not isinstance(value, str) or value.strip())
+    }
+    return normalized or None
 
 
 def local_pa_url(settings: Settings) -> str:
@@ -42,7 +54,7 @@ def request_local_pa(
             response = httpx.request(
                 method,
                 f"{local_pa_url(settings)}{path}",
-                params=params,
+                params=_normalized_query_params(params),
                 json=json,
                 headers=headers,
                 timeout=min(2.0, max(0.1, deadline - time.monotonic())),
