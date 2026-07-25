@@ -22,6 +22,17 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
+# These operations are deliberately off-loop and include normal filesystem,
+# SQLite, object traversal, or Git latency. Keep collecting their exact metrics,
+# but reserve warnings for durations that indicate genuine degradation.
+_SLOW_OPERATION_SECONDS = {
+    "dispatch.runnable_read": 2.0,
+    "filesystem.github_credentials_read": 2.0,
+    "sync.object_collect": 2.0,
+    "sync.object_list": 2.0,
+    "workspace.project_provision": 5.0,
+}
+
 
 class BlockingQueueFull(RuntimeError):
     """The bounded legacy executor cannot accept more work."""
@@ -277,7 +288,10 @@ class AsyncRuntime:
             metrics.failed += 1
         else:
             metrics.completed += 1
-        if elapsed_ms >= self.slow_call_seconds * 1000:
+        warning_seconds = _SLOW_OPERATION_SECONDS.get(
+            operation, self.slow_call_seconds
+        )
+        if elapsed_ms >= warning_seconds * 1000:
             logger.warning(
                 "Slow off-loop operation operation=%s elapsed_ms=%.1f",
                 operation,

@@ -1322,6 +1322,16 @@ class AgentSessionManager:
         prior_config = dict(session.config_json or {})
         prior_context = dict(prior_config.get("execution_context") or {})
         authority_instance = prior_context.get("authority_instance")
+        if requested_cwd:
+            requested_path = Path(requested_cwd).expanduser().resolve()
+            data_dir = self.settings.data_dir.expanduser().resolve()
+            if requested_path == data_dir or data_dir in requested_path.parents:
+                logger.warning(
+                    "Ignoring stale session cwd inside PA_DATA_DIR for session %s; "
+                    "rematerializing an allowed workspace",
+                    session.id,
+                )
+                requested_cwd = None
         session.status = "provisioning"
         config = dict(session.config_json or {})
         config["provisioning"] = {
@@ -1341,7 +1351,9 @@ class AgentSessionManager:
                 )
                 if project is None:
                     raise WorkspaceProvisioningError(
-                        "Project is not available on this instance"
+                        f"Project {session.project_id} is not available on this "
+                        "instance; sync or link the project checkout, then retry "
+                        "workspace provisioning"
                     )
                 workspace = await self._offload(
                     "workspace.project_provision",
@@ -1396,6 +1408,18 @@ class AgentSessionManager:
                 "state": "failed",
                 "stage": "workspace",
                 "retryable": True,
+                "error_code": (
+                    "project_unavailable_on_instance"
+                    if session.project_id
+                    and "is not available on this instance" in str(exc)
+                    else "workspace_provisioning_failed"
+                ),
+                "action": (
+                    "Sync or link the project checkout on this instance, then retry"
+                    if session.project_id
+                    and "is not available on this instance" in str(exc)
+                    else "Correct the workspace configuration, then retry"
+                ),
                 "error": str(exc)[:1000],
             }
             session.config_json = config

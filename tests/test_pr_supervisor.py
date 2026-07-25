@@ -680,6 +680,30 @@ class PRSupervisorServiceTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(github.probe_calls, 2)
 
+    async def test_transient_credential_probe_is_actionable_and_retried(self) -> None:
+        github = GitHubClient(
+            GitHubCredentials(token="token", token_source="instance_file")
+        )
+        github._request = AsyncMock(side_effect=httpx.ConnectTimeout(""))
+        service = PRSupervisor(
+            self.settings,
+            self.domain,
+            supervisor_store=self.store,
+            github_client=github,
+            dispatcher=self.dispatcher,
+        )
+
+        with patch(
+            "pa.pr_supervisor.service.GitHubCredentials.load",
+            return_value=github.credentials,
+        ):
+            capability = await service.refresh_capability(force=True)
+
+        self.assertEqual(capability.state, "error")
+        self.assertFalse(capability.authenticated)
+        self.assertEqual(capability.detail, "ConnectTimeout")
+        self.assertIsNotNone(service._capability_checked_at)
+
     async def test_condition_change_rearms_same_failure(self) -> None:
         failed = snapshot(conclusion="failure")
         pending = snapshot(conclusion=None, status="in_progress")

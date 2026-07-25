@@ -345,13 +345,15 @@ class SyncEngine:
                 "imported": imported,
             }
         except (httpx.HTTPError, TimeoutError) as exc:
-            logger.warning("Sync exchange with %s failed: %s", base, exc)
+            detail = str(exc).strip()
+            error = f"{type(exc).__name__}: {detail}" if detail else type(exc).__name__
+            logger.warning("Sync exchange with %s failed: %s", base, error)
             return {
                 **descriptor,
                 "status": "unavailable",
                 "head": None,
                 "imported": 0,
-                "error": str(exc),
+                "error": error,
             }
         except ValueError as exc:
             return {

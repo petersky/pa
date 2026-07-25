@@ -189,10 +189,13 @@ class GitHubClient:
             return capability
         try:
             await self._request("GET", "/user", operation="credential probe")
-        except GitHubAPIError as exc:
+        except (GitHubAPIError, httpx.HTTPError) as exc:
             capability.authenticated = False
             capability.state = "error"
-            capability.detail = str(exc)
+            detail = str(exc).strip()
+            capability.detail = (
+                f"{type(exc).__name__}: {detail}" if detail else type(exc).__name__
+            )
         return capability
 
     async def create_pull_request(
