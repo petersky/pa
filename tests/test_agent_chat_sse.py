@@ -19,6 +19,7 @@ from pa.execution.dispatch import DispatchRecord, DispatchStore
 from pa.modules.agent_chat import (
     CreateSessionBody,
     _apply_initial_options,
+    _runtime_or_404,
     create_session,
     get_provider_options,
     get_agent_session_history,
@@ -75,6 +76,57 @@ class _FakeRuntime:
 
 
 class AgentChatSseTests(unittest.TestCase):
+    def test_restart_ui_race_is_gated_then_distinguishes_durable_loss(self) -> None:
+        manager = MagicMock()
+        manager.startup_state.return_value = {
+            "phase": "recovering",
+            "complete": False,
+            "total": 2,
+            "recovered": 0,
+        }
+        request = MagicMock()
+
+        with patch("pa.modules.agent_chat._manager", return_value=manager):
+            with self.assertRaises(HTTPException) as starting:
+                _runtime_or_404(request, "session-race")
+
+        self.assertEqual(starting.exception.status_code, 503)
+        self.assertEqual(
+            starting.exception.detail["code"], "agent_recovery_in_progress"
+        )
+
+        durable = AgentSession(
+            id="session-race",
+            agent_name="future-provider",
+            external_session_id="provider-thread-1",
+            status="recoverable_interrupted",
+            config_json={
+                "durable_runtime": {
+                    "recovery_error": "Unknown ACP provider 'future-provider'"
+                }
+            },
+        )
+        manager.startup_state.return_value = {"phase": "ready", "complete": True}
+        manager.get.return_value = None
+        manager.store.get_session.return_value = durable
+
+        with patch("pa.modules.agent_chat._manager", return_value=manager):
+            with self.assertRaises(HTTPException) as interrupted:
+                _runtime_or_404(request, durable.id)
+
+        detail = interrupted.exception.detail
+        self.assertEqual(detail["code"], "session_not_live")
+        self.assertTrue(detail["recoverable"])
+        self.assertEqual(detail["durable_session"]["reason"], "provider_thread_lost")
+        self.assertIn("/history/", detail["history_url"])
+        self.assertIn("/recover", detail["recover_url"])
+
+        manager.store.get_session.return_value = None
+        with patch("pa.modules.agent_chat._manager", return_value=manager):
+            with self.assertRaises(HTTPException) as deleted:
+                _runtime_or_404(request, durable.id)
+        self.assertEqual(deleted.exception.detail["code"], "session_deleted")
+
     def test_saved_surface_defaults_are_applied_to_a_new_session(self) -> None:
         from pa.core.preferences import SurfaceAgentPrefs
 

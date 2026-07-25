@@ -653,3 +653,44 @@ class AgentSessionLiveEventTests(unittest.TestCase):
             self.assertEqual(durable["lifecycle"], "recoverable_interrupted")
             self.assertIn("provider resume unavailable", durable["recovery_error"])
             store.save_session.assert_called_with(session)
+
+    def test_missing_provider_rollout_recovers_one_stable_pa_session(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            session = AgentSession(
+                id="session-rollout",
+                agent_name="future-provider",
+                external_session_id="provider-thread-old",
+                status="recoverable_interrupted",
+                label="card:rollout",
+            )
+            store = MagicMock()
+            store.get_session.return_value = session
+            manager = AgentSessionManager(
+                Settings(data_dir=Path(tmp), agent_provider="codex"), store
+            )
+            runtime = MagicMock()
+            runtime._closed = False
+            runtime.session = session
+
+            async def create_replacement(**_kwargs):
+                await asyncio.sleep(0)
+                manager._runtimes[session.id] = runtime
+                return runtime
+
+            manager.create_session = AsyncMock(side_effect=create_replacement)
+
+            async def run() -> tuple[object, object]:
+                return await asyncio.gather(
+                    manager.recover_session(session.id),
+                    manager.recover_session(session.id),
+                )
+
+            first, second = asyncio.run(run())
+
+            self.assertIs(first, runtime)
+            self.assertIs(second, runtime)
+            self.assertEqual(manager.create_session.await_count, 1)
+            kwargs = manager.create_session.await_args.kwargs
+            self.assertIs(kwargs["existing"], session)
+            self.assertEqual(kwargs["resume_external_id"], "provider-thread-old")
+            self.assertEqual(kwargs["provider_override"], "codex")

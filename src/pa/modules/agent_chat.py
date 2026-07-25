@@ -19,6 +19,8 @@ from pa.core.contracts import Module
 from pa.core.preferences import get_preferences_store
 from pa.instance.agent_session import (
     AgentSessionManager,
+    AgentSessionRecoveryError,
+    AgentStartupNotReady,
     AgentSessionRuntime,
     TRANSCRIPT_WINDOW_LIMIT,
 )
@@ -49,9 +51,7 @@ async def _offload(
     **kwargs,
 ):
     if isinstance(manager, AgentSessionManager):
-        return await manager._offload(
-            operation, call, *args, timeout=timeout, **kwargs
-        )
+        return await manager._offload(operation, call, *args, timeout=timeout, **kwargs)
     return await asyncio.to_thread(call, *args, **kwargs)
 
 
@@ -65,9 +65,7 @@ async def _runtime_offload(
     **kwargs,
 ):
     if isinstance(runtime, AgentSessionRuntime):
-        return await runtime._offload(
-            operation, call, *args, timeout=timeout, **kwargs
-        )
+        return await runtime._offload(operation, call, *args, timeout=timeout, **kwargs)
     return await asyncio.to_thread(call, *args, **kwargs)
 
 
@@ -88,10 +86,96 @@ def _session_pr_watches(request: Request, session) -> list[dict[str, Any]]:
     ]
 
 
+def _startup_state(manager) -> dict[str, Any]:
+    state = getattr(manager, "startup_state", None)
+    if callable(state):
+        return dict(state())
+    return {"phase": "ready", "complete": True, "error": None}
+
+
+def _require_session_traffic_ready(request: Request):
+    manager = _manager(request)
+    state = _startup_state(manager)
+    if not state.get("complete", True):
+        failed = state.get("phase") == "failed"
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": (
+                    "agent_recovery_failed" if failed else "agent_recovery_in_progress"
+                ),
+                "message": (
+                    "Durable agent session recovery failed. Session history remains available."
+                    if failed
+                    else "PA is restoring durable agent sessions. Try again shortly."
+                ),
+                "recoverable": not failed,
+                "retry_after_ms": 250,
+                "startup": state,
+                "history_url": "/api/agent/history",
+            },
+        )
+    return manager
+
+
+def _session_actions(session_id: str, *, recoverable: bool) -> dict[str, Any]:
+    return {
+        "history_url": f"/api/agent/history/{session_id}",
+        "recover_url": (
+            f"/api/agent/sessions/{session_id}/recover" if recoverable else None
+        ),
+    }
+
+
+def _durable_session_state(manager, session) -> dict[str, Any]:
+    runtime = manager.get(session.id)
+    live = bool(runtime and not getattr(runtime, "_closed", False))
+    recoverable = session.status != "closed" and not live
+    durable = dict((session.config_json or {}).get("durable_runtime") or {})
+    return {
+        "exists": True,
+        "live": live,
+        "recoverable": recoverable,
+        "reason": (
+            "live"
+            if live
+            else "session_closed"
+            if session.status == "closed"
+            else "provider_thread_lost"
+        ),
+        "status": session.status,
+        "provider": session.agent_name,
+        "recovery_error": durable.get("recovery_error"),
+        "actions": _session_actions(session.id, recoverable=recoverable),
+    }
+
+
 def _runtime_or_404(request: Request, session_id: str):
-    mgr = _manager(request)
+    mgr = _require_session_traffic_ready(request)
     runtime = mgr.get(session_id)
     if not runtime or runtime._closed:
+        session = mgr.store.get_session(session_id)
+        if session:
+            state = _durable_session_state(mgr, session)
+            detail = {
+                "code": "session_not_live",
+                "message": (
+                    "This PA session is closed. Durable history remains available."
+                    if state["reason"] == "session_closed"
+                    else "The PA session exists, but its provider thread is not live."
+                ),
+                "recoverable": state["recoverable"],
+                "durable_session": state,
+                **state["actions"],
+            }
+        else:
+            detail = {
+                "code": "session_deleted",
+                "message": "This PA session no longer exists.",
+                "recoverable": False,
+                "durable_session": {"exists": False, "reason": "pa_session_deleted"},
+                **_session_actions(session_id, recoverable=False),
+            }
         logger.info(
             "Agent session request rejected because runtime is not live",
             extra={
@@ -100,17 +184,7 @@ def _runtime_or_404(request: Request, session_id: str):
                 "runtime_closed": bool(runtime and runtime._closed),
             },
         )
-        raise HTTPException(
-            status_code=404,
-            detail={
-                "code": "session_not_live",
-                "message": (
-                    "This agent session is no longer running. "
-                    "Start or select another session to continue."
-                ),
-                "recoverable": False,
-            },
-        )
+        raise HTTPException(status_code=404, detail=detail)
     return runtime
 
 
@@ -243,6 +317,10 @@ class ReorderBody(BaseModel):
     prompt_ids: list[str] = Field(default_factory=list)
 
 
+class RecoverSessionBody(BaseModel):
+    provider: str | None = None
+
+
 class PreferencesBody(BaseModel):
     agent_auto_approve_permissions: bool | None = None
     agent_provider: str | None = None
@@ -252,7 +330,7 @@ class PreferencesBody(BaseModel):
 
 @router.post("/sessions")
 async def create_session(request: Request, body: CreateSessionBody) -> dict:
-    mgr = _manager(request)
+    mgr = _require_session_traffic_ready(request)
     principal_id = get_principal_id(request)
     created_runtime = False
     from pa.acp.surfaces import surface_for_label
@@ -288,8 +366,7 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
         dispatch_store = request.app.state.ctx.services.get("dispatch_store")
         dispatch_record = (
             await _offload(
-                mgr,
-                "dispatch.record_read", dispatch_store.get, body.dispatch_id
+                mgr, "dispatch.record_read", dispatch_store.get, body.dispatch_id
             )
             if dispatch_store
             else None
@@ -315,6 +392,7 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                 },
             )
         if not body.resume and not dispatch_record.session_id:
+
             def reserve_dispatch_session() -> None:
                 dispatch_record.session_id = str(uuid4())
                 dispatch_store.transition(
@@ -324,14 +402,10 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                     detail={"session_id": dispatch_record.session_id},
                 )
 
-            await _offload(
-                mgr,
-                "dispatch.session_reserve", reserve_dispatch_session
-            )
+            await _offload(mgr, "dispatch.session_reserve", reserve_dispatch_session)
     if body.project_id:
         project = await _offload(
-            mgr,
-            "sqlite.project_read", mgr.store.get_project, body.project_id
+            mgr, "sqlite.project_read", mgr.store.get_project, body.project_id
         )
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
@@ -343,6 +417,7 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     new_session_defaults = None
     if isinstance(settings.data_dir, (str, Path)):
+
         def resolve_requested_providers():
             inherited, _ = resolve_provider_id(
                 settings,
@@ -368,8 +443,7 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
             return inherited, requested
 
         inherited_provider, requested_provider = await _offload(
-            mgr,
-            "agent.provider_resolve", resolve_requested_providers, timeout=30.0
+            mgr, "agent.provider_resolve", resolve_requested_providers, timeout=30.0
         )
         defaults_provider = surface_defaults.provider or inherited_provider
         if defaults_provider.strip().lower() == requested_provider.strip().lower():
@@ -632,6 +706,7 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
         execution["dispatch_id"] = dispatch_record.dispatch_id
         config["execution_context"] = execution
         runtime.session.config_json = config
+
         def persist_dispatch_link() -> None:
             mgr.store.save_session(runtime.session)
             dispatch_store.transition(
@@ -641,10 +716,7 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                 detail={
                     "session_id": runtime.session_id,
                     "configuration": dict(
-                        (
-                            (runtime.session.config_json or {}).get("configuration")
-                            or {}
-                        )
+                        ((runtime.session.config_json or {}).get("configuration") or {})
                     ),
                 },
             )
@@ -655,7 +727,7 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
 
 @router.get("/sessions")
 def list_agent_sessions(request: Request) -> list[dict]:
-    mgr = _manager(request)
+    mgr = _require_session_traffic_ready(request)
     return [
         {
             "id": rt.session.id,
@@ -776,6 +848,7 @@ def list_agent_session_history(
                 (runtime := mgr.get(session.id))
                 and not getattr(runtime, "_closed", False)
             ),
+            "recovery": _durable_session_state(mgr, session),
         }
         for session in sessions[: max(1, min(limit, 500))]
     ]
@@ -845,9 +918,63 @@ def get_agent_session_history(
         },
         "live": bool(runtime and not getattr(runtime, "_closed", False)),
         "pr_watches": _session_pr_watches(request, session),
+        "recovery": _durable_session_state(mgr, session),
         "events": [event.model_dump(mode="json") for event in events],
         "page": page,
     }
+
+
+@router.post("/sessions/{session_id}/recover")
+async def recover_agent_session(
+    request: Request, session_id: str, body: RecoverSessionBody
+) -> dict:
+    mgr = _require_session_traffic_ready(request)
+    try:
+        runtime = await mgr.recover_session(session_id, provider_override=body.provider)
+    except AgentStartupNotReady:
+        _require_session_traffic_ready(request)
+        raise RuntimeError("unreachable startup gate")
+    except AgentSessionRecoveryError as exc:
+        message = str(exc)
+        deleted = "deleted" in message.lower()
+        raise HTTPException(
+            status_code=404 if deleted else 409,
+            detail={
+                "code": "session_deleted" if deleted else "session_closed",
+                "message": message,
+                "recoverable": False,
+                "durable_session": {"exists": not deleted},
+                **_session_actions(session_id, recoverable=False),
+            },
+        ) from exc
+    except Exception as exc:
+        session = await _offload(
+            mgr,
+            "sqlite.agent_session_read",
+            mgr.store.get_session,
+            session_id,
+        )
+        state = (
+            _durable_session_state(mgr, session)
+            if session
+            else {"exists": False, "recoverable": False}
+        )
+        missing_provider = "Unknown ACP provider" in str(exc)
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "provider_unavailable"
+                if missing_provider
+                else "session_recovery_failed",
+                "message": str(exc),
+                "recoverable": bool(state.get("recoverable")),
+                "durable_session": state,
+                **_session_actions(
+                    session_id, recoverable=bool(state.get("recoverable"))
+                ),
+            },
+        ) from exc
+    return await _offload(mgr, "agent.session_snapshot", runtime.snapshot)
 
 
 @router.get("/sessions/{session_id}")
@@ -910,8 +1037,7 @@ async def session_events(request: Request, session_id: str) -> StreamingResponse
                         "created_at": te.created_at.isoformat(),
                     }
                     yield await _runtime_offload(
-                        runtime,
-                        "agent.sse_serialize", _sse, te.seq, payload
+                        runtime, "agent.sse_serialize", _sse, te.seq, payload
                     )
                     cursor = te.seq
                 if len(page) < TRANSCRIPT_WINDOW_LIMIT:
@@ -967,8 +1093,7 @@ async def session_events(request: Request, session_id: str) -> StreamingResponse
                                 "created_at": te.created_at.isoformat(),
                             }
                             yield await _runtime_offload(
-                                runtime,
-                                "agent.sse_serialize", _sse, te.seq, payload
+                                runtime, "agent.sse_serialize", _sse, te.seq, payload
                             )
                             cursor = te.seq
                         if cursor == previous_cursor:
@@ -977,8 +1102,7 @@ async def session_events(request: Request, session_id: str) -> StreamingResponse
                         continue
                 cursor = max(cursor, seq)
                 yield await _runtime_offload(
-                    runtime,
-                    "agent.sse_serialize", _sse, seq or None, event
+                    runtime, "agent.sse_serialize", _sse, seq or None, event
                 )
         finally:
             runtime.unsubscribe(queue)
@@ -1015,8 +1139,7 @@ async def session_prompt(request: Request, session_id: str, body: PromptBody) ->
         dispatch_store = request.app.state.ctx.services.get("dispatch_store")
         dispatch_record = (
             await _runtime_offload(
-                runtime,
-                "dispatch.record_read", dispatch_store.get, body.dispatch_id
+                runtime, "dispatch.record_read", dispatch_store.get, body.dispatch_id
             )
             if dispatch_store
             else None
@@ -1191,8 +1314,7 @@ async def session_close(request: Request, session_id: str) -> dict:
         return {"ok": True, "live": False}
 
     session = await _offload(
-        mgr,
-        "sqlite.agent_session_read", mgr.store.get_session, session_id
+        mgr, "sqlite.agent_session_read", mgr.store.get_session, session_id
     )
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -1203,6 +1325,7 @@ async def session_close(request: Request, session_id: str) -> dict:
         )
         session.status = "closed"
         session.updated_at = datetime.now(UTC)
+
         def close_orphan() -> None:
             mgr.store.save_session(session)
             try:
