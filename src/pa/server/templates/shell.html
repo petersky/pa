@@ -61,6 +61,9 @@
   <dialog id="card-detail-dialog" class="card-detail-dialog" aria-label="Card details">
     <div id="card-detail-dialog-content" data-card-dialog-content></div>
   </dialog>
+  <dialog id="new-card-dialog" class="new-card-dialog" aria-labelledby="new-card-title">
+    <div id="new-card-dialog-content" data-new-card-dialog-content></div>
+  </dialog>
   {% if debug and dev_tools | default(true) %}
   <div id="debug-panel" hx-get="/partials/debug-panel" hx-trigger="load" hx-swap="innerHTML"></div>
   {% endif %}

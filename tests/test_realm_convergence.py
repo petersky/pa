@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -18,6 +19,7 @@ from pa.domain.models import (
     Card,
     CardEvent,
     CardLane,
+    CardUpdate,
     EventType,
     FleetInstance,
     PeerRoute,
@@ -267,6 +269,76 @@ class RealmConvergenceTests(unittest.IsolatedAsyncioTestCase):
         )
         for old_head in original_heads:
             self.assertTrue(self.authority.log.is_ancestor(old_head, final_head))
+
+    async def test_real_card_updates_auto_merge_timestamp_and_remain_listable(
+        self,
+    ) -> None:
+        card = self._shared_card()
+        projections = {
+            node.settings.instance_id: CardProjection(node.settings.db_path, node.log)
+            for node in self.nodes
+        }
+        for node in self.nodes:
+            projection = projections[node.settings.instance_id]
+            projection.rebuild_from_log("default")
+            node.engine.on_head_advanced(projection.rebuild_from_log)
+            self.assertEqual(
+                [item.id for item in projection.list_cards()],
+                [card.id],
+            )
+
+        authority_card = projections["authority"].update_card(
+            card.id,
+            CardUpdate(title="Automatic convergence"),
+            instance_id="authority",
+        )
+        time.sleep(0.001)
+        target_card = projections["target"].update_card(
+            card.id,
+            CardUpdate(body="Keep both histories"),
+            instance_id="target",
+        )
+        time.sleep(0.001)
+        observer_card = projections["observer"].update_card(
+            card.id,
+            CardUpdate(lane=CardLane.ACTIVE),
+            instance_id="observer",
+        )
+        assert authority_card and target_card and observer_card
+        original_heads = {node.log.get_head("default") for node in self.nodes}
+        expected_updated_at = max(
+            authority_card.updated_at,
+            target_card.updated_at,
+            observer_card.updated_at,
+        )
+
+        state = await self.authority.engine.converge_realm("default")
+
+        self.assertEqual(state["phase"], "converged")
+        final_heads = {node.log.get_head("default") for node in self.nodes}
+        self.assertEqual(final_heads, {state["head"]})
+        for original_head in original_heads:
+            assert original_head is not None
+            self.assertTrue(
+                self.authority.log.is_ancestor(original_head, state["head"])
+            )
+        for projection in projections.values():
+            listed = projection.list_cards()
+            self.assertEqual(len(listed), 1)
+            merged = listed[0]
+            self.assertEqual(merged.title, "Automatic convergence")
+            self.assertEqual(merged.body, "Keep both histories")
+            self.assertEqual(merged.lane, CardLane.ACTIVE)
+            self.assertEqual(merged.updated_at, expected_updated_at)
+        audit = self.authority.log.merge_audit("default")
+        self.assertTrue(
+            any(
+                resolution.get("field") == "updated_at"
+                and resolution.get("strategy") == "latest_timestamp"
+                for entry in audit
+                for resolution in entry["automatic_resolutions"]
+            )
+        )
 
     async def test_incompatible_values_are_named_and_manual_resolution_is_audited(
         self,
