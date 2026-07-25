@@ -38,13 +38,24 @@
             <h3 id="pa-fleet-topology-title">Topology</h3>
             <p class="muted small">Coincident activity is grouped with counts; select a group to inspect every route or PR watch.</p>
           </div>
-          <span class="muted small" id="pa-fleet-refresh-progress" aria-live="polite">Last-known state</span>
+          <div class="fleet-topology-actions">
+            <div class="fleet-topology-controls" role="group" aria-label="Topology viewport controls">
+              <button class="ghost small" type="button" data-fleet-topology-action="zoom-out" aria-label="Zoom topology out">−</button>
+              <button class="ghost small" type="button" data-fleet-topology-action="zoom-in" aria-label="Zoom topology in">+</button>
+              <button class="ghost small" type="button" data-fleet-topology-action="reset" aria-label="Reset topology zoom and pan to 100%">Reset <span data-fleet-topology-scale>100%</span></button>
+              <button class="ghost small" type="button" data-fleet-topology-action="fit" aria-label="Fit the complete topology in the viewport">Fit topology</button>
+            </div>
+            <span class="muted small" id="pa-fleet-refresh-progress" aria-live="polite">Last-known state</span>
+          </div>
         </div>
         <div id="pa-fleet-topology"
              class="fleet-topology"
              role="group"
-             aria-labelledby="pa-fleet-topology-title">
-          <svg viewBox="0 0 960 420" role="img" aria-label="Fleet instance and activity topology"></svg>
+             aria-labelledby="pa-fleet-topology-title"
+             aria-describedby="pa-fleet-topology-help">
+          <p class="sr-only" id="pa-fleet-topology-help">Use the controls to zoom, reset, or fit the graph. Drag empty graph space to pan. Select a machine or route to inspect it.</p>
+          <svg viewBox="0 0 960 420" role="img" aria-label="Fleet instance and activity topology" tabindex="0"></svg>
+          <p class="fleet-topology-state muted" data-fleet-topology-state aria-live="polite">Loading cached topology…</p>
           <noscript><p class="notice">The graphical topology needs JavaScript. The complete accessible table and route list remain available below.</p></noscript>
         </div>
         <details class="fleet-route-equivalent">
