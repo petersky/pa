@@ -156,6 +156,21 @@
   </section>
   {% endif %}
 
+  {% if card_reconciliations %}
+  <section class="card-detail-section" aria-labelledby="card-reconciliation-title">
+    <h3 id="card-reconciliation-title">Completion reconciliation</h3>
+    <ul class="detail-link-list">
+      {% for reconciliation in card_reconciliations %}
+      <li>
+        <span class="status status-{{ 'blocked' if reconciliation.recoverable else 'active' }}">{{ reconciliation.state }}</span>
+        {{ reconciliation.reason or 'No reconciliation detail recorded.' }}
+        {% if reconciliation.session_id %}<a href="/agent?session={{ reconciliation.session_id }}">Session</a>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
   <section class="card-detail-section" aria-labelledby="card-agent-title">
     <div class="section-heading-inline">
       <div><h3 id="card-agent-title">Agent</h3><p class="muted">Selecting a card never starts work. Start or resume explicitly.</p></div>

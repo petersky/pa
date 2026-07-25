@@ -19,7 +19,6 @@ from pa.acp.client import (
     permission_selected,
 )
 from pa.acp.configuration import SessionConfigurationRequest
-from pa.agent.context import compose_session_prompt
 from pa.acp.providers.registry import DEFAULT_PROVIDER_ID
 from pa.acp.providers.resolve import resolve_agent_provider
 from pa.acp.surfaces import (
@@ -28,6 +27,7 @@ from pa.acp.surfaces import (
     AgentInvocationContext,
     surface_for_label,
 )
+from pa.agent.context import compose_session_prompt
 from pa.browser.manager import BrowserManager
 from pa.config import Settings
 from pa.core.preferences import get_preferences_store
@@ -108,6 +108,8 @@ class AgentSessionRuntime:
         self._transcript_writer_task: asyncio.Task[None] | None = None
         self._closed = False
         self._turn_started_at: datetime | None = None
+        self._turn_agent_text: list[str] = []
+        self._turn_final_text: list[str] = []
 
     async def _offload(
         self, operation: str, call, *args, timeout: float | None = None, **kwargs
@@ -315,6 +317,12 @@ class AgentSessionRuntime:
     async def _on_acp_update(self, _external_session_id: str, update: Any) -> None:
         normalized = normalize_session_update(update)
         event_type = str(normalized.get("type") or "session_update")
+        if event_type == "agent_message_chunk" and self._in_flight:
+            text = str(normalized.get("text") or "")
+            if text:
+                self._turn_agent_text.append(text)
+                if normalized.get("phase") == "final":
+                    self._turn_final_text.append(text)
         if event_type == "usage_update" and normalized.get("usage"):
             metrics = dict(self.session.metrics_json or {})
             metrics["usage"] = normalized["usage"]
@@ -811,6 +819,8 @@ class AgentSessionRuntime:
         async with self._prompt_lock:
             self._in_flight = item
             self._turn_started_at = datetime.now(UTC)
+            self._turn_agent_text = []
+            self._turn_final_text = []
             await self._checkpoint_runtime_async(lifecycle="prompting")
             try:
                 composition = await self._offload(
@@ -864,6 +874,19 @@ class AgentSessionRuntime:
                                     "resolved_context": {},
                                 },
                             )
+                if item.source.startswith("card-reconciliation:"):
+                    definition = PROMPTS.get("card.reconciliation.disposition")
+                    prompt_audit.insert(
+                        0,
+                        {
+                            "key": definition.key,
+                            "version": definition.version,
+                            "source": definition.source,
+                            "scope": definition.scope,
+                            "provider": self.session.agent_name,
+                            "resolved_context": {},
+                        },
+                    )
                 config = dict(self.session.config_json or {})
                 audit_history = list(config.get("prompt_audit") or [])
                 audit_entry = {"prompt_id": item.id, "prompts": prompt_audit}
@@ -940,11 +963,24 @@ class AgentSessionRuntime:
                 await self._drain_transcripts()
                 if self.manager.completion_handler and item.card_id:
                     try:
+                        from pa.execution.disposition import extract_card_disposition
+
+                        final_text = "".join(self._turn_final_text).strip()
+                        if not final_text:
+                            final_text = "".join(self._turn_agent_text).strip()
+                        disposition, disposition_error = extract_card_disposition(
+                            final_text
+                        )
                         payload = {
                             "stop_reason": stop_reason,
                             "usage": usage,
                             "queued_prompt_id": item.id,
+                            "prompt_source": item.source,
                         }
+                        if disposition:
+                            payload["card_disposition"] = disposition
+                        elif disposition_error:
+                            payload["card_disposition_error"] = disposition_error[:1000]
                         if inspect.iscoroutinefunction(self.manager.completion_handler):
                             result = self.manager.completion_handler(
                                 self.session_id, payload

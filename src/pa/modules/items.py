@@ -9,8 +9,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from pa.auth.csrf import token_for_request
 from pa.auth.middleware import get_principal_id
 from pa.config import get_settings
-from pa.core.contracts import Module
 from pa.core.context import AppContext
+from pa.core.contracts import Module
 from pa.core.ui.pages import PageDefinition, PageRegistry
 from pa.domain.models import (
     CardCreate,
@@ -27,8 +27,8 @@ from pa.domain.models import (
     KnowledgeStatus,
     KnowledgeUpdate,
 )
-from pa.domain.store import get_store
 from pa.domain.session_selection import preferred_sessions_by_card
+from pa.domain.store import get_store
 
 router = APIRouter()
 ui_router = APIRouter()
@@ -72,6 +72,7 @@ def _pr_watch_context(request: Request, card_id: str) -> dict:
 
 def _card_detail_context(request: Request, card) -> dict:
     store = get_store()
+    dispatch_store = request.app.state.ctx.services.get("dispatch_store")
     realm_id = card.realm_id
     project = (
         store.get_project(card.project_id, realm_id=realm_id)
@@ -100,6 +101,20 @@ def _card_detail_context(request: Request, card) -> dict:
             None,
         ),
         "card_knowledge": store.list_knowledge(item_id=card.id, limit=10),
+        "card_reconciliations": (
+            [
+                record.public_dict()["card_reconciliation"]
+                | {
+                    "dispatch_id": record.dispatch_id,
+                    "session_id": record.session_id,
+                }
+                for record in dispatch_store.list(limit=1000)
+                if record.card_id == card.id
+                and record.reconciliation_state != "not_requested"
+            ]
+            if dispatch_store
+            else []
+        ),
         "lanes": list(CardLane),
         "csrf_token": token_for_request(request),
         "agent_enabled": request.app.state.ctx.settings.agent_enabled,

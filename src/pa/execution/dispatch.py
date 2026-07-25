@@ -92,6 +92,14 @@ class DispatchRecord(BaseModel):
     card_disposition_reason: str | None = None
     card_lane_before: str | None = None
     card_lane_after: str | None = None
+    reconciliation_state: str = "not_requested"
+    reconciliation_reason: str | None = None
+    reconciliation_recoverable: bool = False
+    reconciliation_attempts: int = 0
+    reconciliation_prompt_count: int = 0
+    reconciliation_prompt_id: str | None = None
+    reconciliation_next_retry_at: datetime | None = None
+    reconciliation_updated_at: datetime | None = None
     acknowledged_at: datetime | None = None
     events: list[DispatchEvent] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -130,6 +138,24 @@ class DispatchRecord(BaseModel):
             "lane_before": self.card_lane_before,
             "lane_after": self.card_lane_after,
             "reason": self.card_disposition_reason,
+        }
+        data["card_reconciliation"] = {
+            "state": self.reconciliation_state,
+            "reason": self.reconciliation_reason,
+            "recoverable": self.reconciliation_recoverable,
+            "attempts": self.reconciliation_attempts,
+            "prompt_count": self.reconciliation_prompt_count,
+            "prompt_id": self.reconciliation_prompt_id,
+            "next_retry_at": (
+                self.reconciliation_next_retry_at.isoformat()
+                if self.reconciliation_next_retry_at
+                else None
+            ),
+            "updated_at": (
+                self.reconciliation_updated_at.isoformat()
+                if self.reconciliation_updated_at
+                else None
+            ),
         }
         return data
 

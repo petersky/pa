@@ -21,18 +21,18 @@ from pydantic import BaseModel, Field
 from pa.acp.configuration import SessionConfigurationRequest
 from pa.auth.middleware import get_principal_id, require_user
 from pa.core.async_runtime import AsyncRuntime
-from pa.core.contracts import Module
 from pa.core.context import AppContext
+from pa.core.contracts import Module
 from pa.core.io import atomic_write_json
 from pa.core.ui.pages import PageDefinition, PageRegistry
 from pa.domain.models import (
     CardEvent,
     CardLane,
     CardUpdate,
+    EventType,
     FleetInstance,
     KnowledgeEntry,
     RealmRole,
-    EventType,
 )
 from pa.execution.dispatch import (
     CompletionOutbox,
@@ -41,6 +41,7 @@ from pa.execution.dispatch import (
     DispatchWorker,
 )
 from pa.execution.disposition import decide_card_disposition
+from pa.execution.reconciliation import CompletionReconciler
 from pa.fleet.join import (
     apply_reachability_settings,
     ensure_sync_token,
@@ -60,9 +61,9 @@ from pa.fleet.remote_install import (
     run_install_job,
 )
 from pa.fleet.update import (
+    TERMINAL_PHASES,
     FleetUpdateJobStore,
     FleetUpdateRequest,
-    TERMINAL_PHASES,
     prepare_update_job_recovery,
     start_update_job,
 )
@@ -2936,15 +2937,28 @@ class FleetModule(Module):
             ctx.settings.sync_token,
             async_runtime=async_runtime,
         )
-        outbox.start()
         ctx.register_service("completion_outbox", outbox)
         agent = ctx.require_service("instance_agent")
-        agent.completion_handler = outbox.queue
+        reconciler = CompletionReconciler(
+            ctx.require_service("dispatch_store"),
+            agent,
+            outbox,
+            ctx.store,
+            lambda: ctx.services.get("pr_supervisor"),
+        )
+        await reconciler.recover()
+        reconciler.start()
+        ctx.register_service("completion_reconciler", reconciler)
+        agent.completion_handler = reconciler.handle_completion
+        outbox.start()
 
     async def on_shutdown(self, app, ctx: AppContext) -> None:
         dispatch_worker = ctx.services.get("dispatch_worker")
         if dispatch_worker:
             await dispatch_worker.close()
+        reconciler = ctx.services.get("completion_reconciler")
+        if reconciler:
+            await reconciler.close()
         outbox = ctx.services.get("completion_outbox")
         if outbox:
             await outbox.close(timeout=5.0)

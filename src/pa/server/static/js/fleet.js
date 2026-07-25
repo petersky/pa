@@ -499,6 +499,7 @@
       var turn = dispatch.agent_turn || {};
       var transport = dispatch.dispatch_completion || {};
       var card = dispatch.card_completion || {};
+      var reconciliation = dispatch.card_reconciliation || {};
       var lifecycle = '<p class="muted small">Agent turn: ' +
         escapeHtml(turn.completed ? "completed" : "in progress") +
         (turn.stop_reason ? " (" + escapeHtml(turn.stop_reason) + ")" : "") +
@@ -509,6 +510,15 @@
           escapeHtml(card.lane_after || card.lane_before || "unchanged") +
           ' · Disposition: ' + escapeHtml(card.status) +
           (card.reason ? " · " + escapeHtml(card.reason) : "") + "</p>";
+      }
+      var reconciliationText = "";
+      if (dispatch.card_id && reconciliation.state &&
+          reconciliation.state !== "not_requested" &&
+          reconciliation.state !== "not_required") {
+        reconciliationText = '<p class="muted small">Reconciliation: ' +
+          escapeHtml(reconciliation.state) +
+          (reconciliation.reason ? " · " + escapeHtml(reconciliation.reason) : "") +
+          "</p>";
       }
       var actions = '<span class="form-actions">';
       if (dispatch.can_retry) actions += '<button type="button" class="ghost small" data-dispatch-retry="' +
@@ -523,7 +533,7 @@
         '<span class="status status-' + badge + '">' + escapeHtml(remoteDispatchStageLabel(state)) + "</span>" +
         '<p class="muted small"><code>' + escapeHtml(dispatch.dispatch_id) + "</code>" +
         (latest ? " · " + escapeHtml(latest) : "") + "</p></div>" + actions + "</div>" +
-        error + lifecycle + cardText + outboxText +
+        error + lifecycle + cardText + reconciliationText + outboxText +
         (terminal ? "" : '<progress></progress>') + "</li>";
     }).join("");
   }
@@ -544,11 +554,18 @@
       var authority = merged[target.dispatch_id];
       if (!authority) {
         merged[target.dispatch_id] = target;
-      } else if (target.state === "completion_pending" || target.state === "completed") {
-        authority.state = target.state;
-        authority.last_error = target.last_error;
-        authority.completion_outbox = target.completion_outbox;
-        authority.updated_at = target.updated_at;
+      } else {
+        if (target.card_reconciliation &&
+            target.card_reconciliation.state !== "not_requested") {
+          authority.card_reconciliation = target.card_reconciliation;
+          authority.updated_at = target.updated_at;
+        }
+        if (target.state === "completion_pending" || target.state === "completed") {
+          authority.state = target.state;
+          authority.last_error = target.last_error;
+          authority.completion_outbox = target.completion_outbox;
+          authority.updated_at = target.updated_at;
+        }
       }
     });
     var rows = Object.keys(merged).map(function (key) { return merged[key]; });

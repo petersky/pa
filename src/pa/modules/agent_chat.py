@@ -18,11 +18,11 @@ from pa.auth.middleware import get_principal_id
 from pa.core.contracts import Module
 from pa.core.preferences import get_preferences_store
 from pa.instance.agent_session import (
+    TRANSCRIPT_WINDOW_LIMIT,
     AgentSessionManager,
     AgentSessionRuntime,
-    TRANSCRIPT_WINDOW_LIMIT,
 )
-from pa.instance.quiesce import ImageAttachment, MAX_TOTAL_IMAGE_BYTES
+from pa.instance.quiesce import MAX_TOTAL_IMAGE_BYTES, ImageAttachment
 
 router = APIRouter(prefix="/agent")
 logger = logging.getLogger(__name__)
@@ -86,6 +86,18 @@ def _session_pr_watches(request: Request, session) -> list[dict[str, Any]]:
         if watch.originating_session_id == session.id
         or (watch.card_id and watch.card_id == session.card_id)
     ]
+
+
+def _session_reconciliation(request: Request, session_id: str) -> dict[str, Any]:
+    store = request.app.state.ctx.services.get("dispatch_store")
+    record = store.by_session(session_id) if store else None
+    if not record:
+        return {
+            "state": "not_requested",
+            "reason": None,
+            "recoverable": False,
+        }
+    return record.public_dict()["card_reconciliation"]
 
 
 def _runtime_or_404(request: Request, session_id: str):
@@ -255,12 +267,11 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
     mgr = _manager(request)
     principal_id = get_principal_id(request)
     created_runtime = False
-    from pa.acp.surfaces import surface_for_label
     from pa.acp.providers.resolve import (
         resolve_provider_id,
         resolve_surface_preferences,
     )
-    from pa.acp.surfaces import AgentInvocationContext
+    from pa.acp.surfaces import AgentInvocationContext, surface_for_label
     from pa.core.preferences import SurfaceAgentPrefs
 
     surface = body.surface or surface_for_label(body.label, project_id=body.project_id)
@@ -692,6 +703,9 @@ def list_agent_sessions(request: Request) -> list[dict]:
             "queue_length": len(rt._queue),
             "last_seq": rt._seq,
             "updated_at": rt.session.updated_at.isoformat(),
+            "card_reconciliation": _session_reconciliation(
+                request, rt.session.id
+            ),
         }
         for rt in mgr.list_runtimes()
         if not rt._closed
@@ -772,6 +786,7 @@ def list_agent_session_history(
             "instance_id": settings.instance_id,
             "instance_name": settings.instance_name,
             "pr_watches": _session_pr_watches(request, session),
+            "card_reconciliation": _session_reconciliation(request, session.id),
             "live": bool(
                 (runtime := mgr.get(session.id))
                 and not getattr(runtime, "_closed", False)
@@ -845,6 +860,7 @@ def get_agent_session_history(
         },
         "live": bool(runtime and not getattr(runtime, "_closed", False)),
         "pr_watches": _session_pr_watches(request, session),
+        "card_reconciliation": _session_reconciliation(request, session.id),
         "events": [event.model_dump(mode="json") for event in events],
         "page": page,
     }
@@ -852,7 +868,9 @@ def get_agent_session_history(
 
 @router.get("/sessions/{session_id}")
 def get_session_snapshot(request: Request, session_id: str) -> dict:
-    return _runtime_or_404(request, session_id).snapshot()
+    snapshot = _runtime_or_404(request, session_id).snapshot()
+    snapshot["card_reconciliation"] = _session_reconciliation(request, session_id)
+    return snapshot
 
 
 @router.get("/sessions/{session_id}/events")
