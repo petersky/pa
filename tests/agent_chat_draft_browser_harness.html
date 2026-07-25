@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en" data-pa-instance-id="browser-instance" data-pa-principal-id="browser-user">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent draft browser harness</title>
+  <link rel="stylesheet" href="/src/pa/server/static/style.css">
+  <script src="/src/pa/server/static/js/agent-chat-drafts.js" defer></script>
+  <script src="/src/pa/server/static/js/agent-chat-draft-widget.js" defer></script>
+  <script src="/src/pa/server/static/js/agent-chat.js" defer></script>
+</head>
+<body>
+  <main class="page page-agent">
+    <h1>Agent draft browser harness</h1>
+    <a href="/README.md" id="navigate-away">Navigate away</a>
+    <section class="agent-chat-widget" data-agent-chat data-session-id="browser-session-a"
+             data-auto-start="0" aria-label="Session A">
+      <div class="acw-messages" data-acw-messages>
+        <p data-acw-placeholder></p>
+      </div>
+      <form class="acw-composer" data-acw-form>
+        <label for="draft-a">Session A draft</label>
+        <textarea id="draft-a" data-acw-input rows="3"></textarea>
+        <div class="acw-attachments" data-acw-attachments hidden></div>
+        <p class="muted small acw-draft-attachments" data-acw-draft-attachments
+           role="status" aria-live="polite" hidden></p>
+        <input type="file" data-acw-file-input multiple hidden>
+        <div class="acw-composer-actions">
+          <div class="acw-composer-draft-actions">
+            <button type="button" class="ghost acw-attach" data-acw-attach>📎 Attach</button>
+            <button type="button" class="ghost small" data-acw-clear-draft>Clear draft</button>
+            <span class="muted small acw-draft-status" data-acw-draft-status
+                  role="status" aria-live="polite"></span>
+          </div>
+          <div class="acw-send-group">
+            <button type="button" class="ghost" data-acw-stop disabled>Stop</button>
+            <button type="submit" class="primary" data-acw-send>Send</button>
+          </div>
+        </div>
+      </form>
+    </section>
+    <section class="agent-chat-widget" data-agent-chat data-session-id="browser-session-b"
+             data-auto-start="0" aria-label="Session B">
+      <div class="acw-messages" data-acw-messages>
+        <p data-acw-placeholder></p>
+      </div>
+      <form class="acw-composer" data-acw-form>
+        <label for="draft-b">Session B draft</label>
+        <textarea id="draft-b" data-acw-input rows="3"></textarea>
+        <div class="acw-attachments" data-acw-attachments hidden></div>
+        <p class="muted small acw-draft-attachments" data-acw-draft-attachments
+           role="status" aria-live="polite" hidden></p>
+        <input type="file" data-acw-file-input multiple hidden>
+        <div class="acw-composer-actions">
+          <div class="acw-composer-draft-actions">
+            <button type="button" class="ghost acw-attach" data-acw-attach>📎 Attach</button>
+            <button type="button" class="ghost small" data-acw-clear-draft>Clear draft</button>
+            <span class="muted small acw-draft-status" data-acw-draft-status
+                  role="status" aria-live="polite"></span>
+          </div>
+          <div class="acw-send-group">
+            <button type="button" class="ghost" data-acw-stop disabled>Stop</button>
+            <button type="submit" class="primary" data-acw-send>Send</button>
+          </div>
+        </div>
+      </form>
+    </section>
+  </main>
+</body>
+</html>

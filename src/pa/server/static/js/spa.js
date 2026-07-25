@@ -283,9 +283,11 @@
   }
 
   var cardDialogOpener = null;
-  var cardDialogOwnsHistory = false;
+  var cardDialogHistoryDepth = 0;
+  var cardDialogHasBaseEntry = false;
   var cardDialogRequest = null;
   var cardDialogBackNavigation = false;
+  var cardTabs = ["summary", "agent", "activity"];
 
   function cardDialog() {
     return document.getElementById("card-detail-dialog");
@@ -305,6 +307,14 @@
   function cardDetailUrl(cardId, realm) {
     var params = new URLSearchParams({ realm: realm || "default" });
     return "/partials/cards/" + encodeURIComponent(cardId) + "/detail?" + params.toString();
+  }
+
+  function normalizedCardTab(name) {
+    return cardTabs.indexOf(name) >= 0 ? name : "summary";
+  }
+
+  function currentCardTab() {
+    return normalizedCardTab(new URL(window.location.href).searchParams.get("tab"));
   }
 
   function cardMarkdownSource(element) {
@@ -400,6 +410,136 @@
     }
   }
 
+  function initActivityPanel(panel) {
+    if (!panel || panel.dataset.activityBound) return;
+    panel.dataset.activityBound = "1";
+    var filter = panel.querySelector("[data-card-activity-filter]");
+    var more = panel.querySelector("[data-card-activity-more]");
+    var entries = Array.prototype.slice.call(panel.querySelectorAll("[data-card-activity-entry]"));
+    var empty = panel.querySelector("[data-card-activity-empty]");
+    var expanded = false;
+
+    function applyFilter() {
+      var value = filter ? filter.value : "all";
+      var visible = 0;
+      entries.forEach(function (entry) {
+        var matches = value === "all" || entry.dataset.activityKind === value;
+        var withinLimit = expanded || visible < 25;
+        entry.hidden = !matches || !withinLimit;
+        if (matches) visible += 1;
+      });
+      var shown = entries.filter(function (entry) { return !entry.hidden; }).length;
+      if (empty) empty.hidden = shown > 0;
+      if (more) {
+        more.hidden = expanded || visible <= 25;
+        more.textContent = "Show older activity";
+      }
+    }
+
+    if (filter) filter.addEventListener("change", applyFilter);
+    if (more) more.addEventListener("click", function () {
+      expanded = true;
+      applyFilter();
+    });
+    applyFilter();
+  }
+
+  function renderCardTabError(panel, message) {
+    panel.dataset.cardTabState = "error";
+    panel.innerHTML =
+      '<div class="card-tab-state" role="alert"><h3>Could not load this tab</h3><p>' +
+      String(message || "Request failed.").replace(/[&<>]/g, function (char) {
+        return { "&": "&amp;", "<": "&lt;", ">": "&gt;" }[char];
+      }) +
+      '</p><button type="button" data-card-tab-retry>Retry</button></div>';
+  }
+
+  function loadCardTab(detail, name) {
+    var panel = detail && detail.querySelector('[data-card-tab-panel="' + name + '"]');
+    if (!panel || !panel.dataset.cardTabSrc || panel.dataset.cardTabState === "loaded" ||
+        panel.dataset.cardTabState === "loading") return;
+    panel.dataset.cardTabState = "loading";
+    panel.innerHTML =
+      '<div class="card-tab-state" role="status" aria-live="polite"><span class="loading-spinner" aria-hidden="true"></span><p>Loading ' +
+      name + "…</p></div>";
+    fetch(panel.dataset.cardTabSrc, { credentials: "same-origin" })
+      .then(function (response) {
+        if (!response.ok) throw new Error(response.status === 404 ? "This card no longer exists." : "Request failed.");
+        return response.text();
+      })
+      .then(function (html) {
+        panel.innerHTML = html;
+        panel.dataset.cardTabState = "loaded";
+        if (typeof htmx !== "undefined") htmx.process(panel);
+        decorateLinks(panel);
+        renderCardMarkdown(panel);
+        initActivityPanel(panel);
+        if (window.PAAgentChat && typeof window.PAAgentChat.mount === "function") {
+          window.PAAgentChat.mount(panel);
+        }
+        var announcer = detail.querySelector("[data-card-tab-announcer]");
+        if (announcer) announcer.textContent = name + " tab loaded.";
+      })
+      .catch(function (error) {
+        renderCardTabError(panel, error.message);
+      });
+  }
+
+  function activateCardTab(detail, name, pushHistory, focusTab) {
+    if (!detail) return;
+    name = normalizedCardTab(name);
+    var selected = detail.querySelector('[data-card-tab="' + name + '"]');
+    if (!selected) return;
+    var previous = detail.querySelector('[data-card-tab][aria-selected="true"]');
+
+    detail.querySelectorAll("[data-card-tab]").forEach(function (tab) {
+      var active = tab === selected;
+      tab.setAttribute("aria-selected", active ? "true" : "false");
+      tab.tabIndex = active ? 0 : -1;
+    });
+    detail.querySelectorAll("[data-card-tab-panel]").forEach(function (panel) {
+      panel.hidden = panel.dataset.cardTabPanel !== name;
+    });
+
+    if (pushHistory && (!previous || previous.dataset.cardTab !== name)) {
+      var url = new URL(window.location.href);
+      url.searchParams.set("card", detail.dataset.cardId);
+      url.searchParams.set("tab", name);
+      if (detail.dataset.cardRealm) url.searchParams.set("realm", detail.dataset.cardRealm);
+      if (cardDialogHistoryDepth === 0 && !(history.state && history.state.paCard)) {
+        history.replaceState(
+          {
+            paCard: detail.dataset.cardId,
+            paCardTab: previous ? previous.dataset.cardTab : "summary",
+            paCardDepth: 0,
+            paCardHasBase: cardDialogHasBaseEntry,
+          },
+          "",
+          window.location.href
+        );
+      }
+      cardDialogHistoryDepth += 1;
+      history.pushState(
+        {
+          paCard: detail.dataset.cardId,
+          paCardTab: name,
+          paCardDepth: cardDialogHistoryDepth,
+          paCardHasBase: cardDialogHasBaseEntry,
+        },
+        "",
+        url
+      );
+    }
+    if (focusTab) selected.focus();
+    loadCardTab(detail, name);
+  }
+
+  function initCardDetail(detail, selectedTab) {
+    if (!detail) return;
+    activateCardTab(detail, selectedTab, false, false);
+    initActivityPanel(detail.querySelector('[data-card-tab-panel="activity"]'));
+  }
+
   function renderCardDialogError(cardId, realm, message) {
     var content = cardDialogContent();
     if (!content) return;
@@ -411,13 +551,14 @@
       '<button type="button" class="ghost" data-card-dialog-close>Close</button></div></div>';
     var retry = content.querySelector("[data-card-detail-retry]");
     if (retry) retry.addEventListener("click", function () {
-      loadCardDetail(cardId, realm, false);
+      loadCardDetail(cardId, realm, false, currentCardTab());
     });
   }
 
-  function loadCardDetail(cardId, realm, pushHistory) {
+  function loadCardDetail(cardId, realm, pushHistory, selectedTab) {
     var content = cardDialogContent();
     if (!content || !cardId) return;
+    selectedTab = normalizedCardTab(selectedTab);
     if (cardDialogRequest) cardDialogRequest.abort();
     cardDialogRequest = new AbortController();
     content.innerHTML = '<div class="card-dialog-state" role="status" aria-live="polite"><p>Loading card details…</p><button type="button" class="ghost" data-card-dialog-close>Close</button></div>';
@@ -426,9 +567,22 @@
     if (pushHistory) {
       var url = new URL(window.location.href);
       url.searchParams.set("card", cardId);
+      url.searchParams.set("tab", selectedTab);
       if (realm) url.searchParams.set("realm", realm);
-      history.pushState({ paCard: cardId }, "", url);
-      cardDialogOwnsHistory = true;
+      if (cardDialogHistoryDepth === 0) {
+        cardDialogHasBaseEntry = !new URL(window.location.href).searchParams.has("card");
+      }
+      cardDialogHistoryDepth += 1;
+      history.pushState(
+        {
+          paCard: cardId,
+          paCardTab: selectedTab,
+          paCardDepth: cardDialogHistoryDepth,
+          paCardHasBase: cardDialogHasBaseEntry,
+        },
+        "",
+        url
+      );
     }
 
     fetch(cardDetailUrl(cardId, realm), {
@@ -444,6 +598,7 @@
         if (typeof htmx !== "undefined") htmx.process(content);
         decorateLinks(content);
         renderCardMarkdown(content);
+        initCardDetail(content.querySelector("[data-card-detail]"), selectedTab);
         if (window.PAAgentChat && typeof window.PAAgentChat.mount === "function") {
           window.PAAgentChat.mount(content);
         }
@@ -463,17 +618,19 @@
     var content = cardDialogContent();
     if (content) content.replaceChildren();
     if (updateHistory && new URL(window.location.href).searchParams.has("card")) {
-      if (cardDialogOwnsHistory) {
+      if (cardDialogHasBaseEntry && cardDialogHistoryDepth > 0) {
         cardDialogBackNavigation = true;
-        history.back();
+        history.go(-cardDialogHistoryDepth);
       }
       else {
         var url = new URL(window.location.href);
         url.searchParams.delete("card");
+        url.searchParams.delete("tab");
         history.replaceState({}, "", url);
       }
     }
-    cardDialogOwnsHistory = false;
+    cardDialogHistoryDepth = 0;
+    cardDialogHasBaseEntry = false;
     if (cardDialogOpener && document.contains(cardDialogOpener)) cardDialogOpener.focus();
     cardDialogOpener = null;
   }
@@ -481,7 +638,38 @@
   function openCardFromLocation() {
     var url = new URL(window.location.href);
     var cardId = url.searchParams.get("card");
-    if (cardId) loadCardDetail(cardId, url.searchParams.get("realm") || "default", false);
+    if (cardId) {
+      var state = history.state || {};
+      cardDialogHistoryDepth = Number(state.paCardDepth || 0);
+      cardDialogHasBaseEntry = !!state.paCardHasBase;
+      loadCardDetail(
+        cardId,
+        url.searchParams.get("realm") || "default",
+        false,
+        normalizedCardTab(url.searchParams.get("tab"))
+      );
+    }
+  }
+
+  function restoreCardFromHistory() {
+    window.setTimeout(function () {
+      var url = new URL(window.location.href);
+      var cardId = url.searchParams.get("card");
+      if (!cardId) return;
+      var selectedTab = normalizedCardTab(url.searchParams.get("tab"));
+      var content = cardDialogContent();
+      var detail = content && content.querySelector("[data-card-detail]");
+      if (detail && detail.dataset.cardId === cardId && cardDialog() && cardDialog().open) {
+        activateCardTab(detail, selectedTab, false, false);
+      } else {
+        loadCardDetail(
+          cardId,
+          url.searchParams.get("realm") || "default",
+          false,
+          selectedTab
+        );
+      }
+    }, 0);
   }
 
   var newCardDialogOpener = null;
@@ -912,6 +1100,7 @@
         return;
       }
       decorateLinks(target);
+      initCardDetail(target.querySelector("[data-card-detail]"), currentCardTab());
       if (window.PAAgentChat && typeof window.PAAgentChat.mount === "function") {
         window.PAAgentChat.mount(target);
       }
@@ -922,6 +1111,10 @@
   document.body.addEventListener("htmx:after:history:update", function () {
     setActiveNav(window.location.pathname);
     updateTitle();
+  });
+
+  document.addEventListener("htmx:historyRestore", function () {
+    restoreCardFromHistory();
   });
 
   document.body.addEventListener("htmx:response:error", function (event) {
@@ -963,8 +1156,9 @@
     var cardId = url.searchParams.get("card");
     if (cardId) {
       cardDialogBackNavigation = false;
-      cardDialogOwnsHistory = !!(event.state && event.state.paCard);
-      loadCardDetail(cardId, url.searchParams.get("realm") || "default", false);
+      cardDialogHistoryDepth = Number(event.state && event.state.paCardDepth || 0);
+      cardDialogHasBaseEntry = !!(event.state && event.state.paCardHasBase);
+      restoreCardFromHistory();
       return;
     }
     if (cardDialogBackNavigation) {
@@ -1002,7 +1196,8 @@
       loadCardDetail(
         detailLink.dataset.cardId,
         detailLink.dataset.cardRealm || "default",
-        true
+        true,
+        "summary"
       );
       return;
     }
@@ -1012,6 +1207,20 @@
     }
     var detail = event.target.closest("[data-card-detail]");
     if (!detail) return;
+    var cardTab = event.target.closest("[data-card-tab]");
+    if (cardTab) {
+      activateCardTab(detail, cardTab.dataset.cardTab, true, false);
+      return;
+    }
+    var tabRetry = event.target.closest("[data-card-tab-retry]");
+    if (tabRetry) {
+      var retryPanel = tabRetry.closest("[data-card-tab-panel]");
+      if (retryPanel) {
+        retryPanel.dataset.cardTabState = "";
+        loadCardTab(detail, retryPanel.dataset.cardTabPanel);
+      }
+      return;
+    }
     var editTrigger = event.target.closest("[data-inline-edit-open]");
     if (editTrigger) {
       var embeddedControl = event.target.closest("a, audio, video, iframe, input, select, textarea");
@@ -1054,6 +1263,22 @@
   });
 
   document.body.addEventListener("keydown", function (event) {
+    var cardTab = event.target.closest("[data-card-tab]");
+    if (cardTab && event.target === cardTab) {
+      var detail = cardTab.closest("[data-card-detail]");
+      var tabs = Array.prototype.slice.call(detail.querySelectorAll("[data-card-tab]"));
+      var index = tabs.indexOf(cardTab);
+      var nextIndex = null;
+      if (event.key === "ArrowRight" || event.key === "ArrowDown") nextIndex = (index + 1) % tabs.length;
+      if (event.key === "ArrowLeft" || event.key === "ArrowUp") nextIndex = (index - 1 + tabs.length) % tabs.length;
+      if (event.key === "Home") nextIndex = 0;
+      if (event.key === "End") nextIndex = tabs.length - 1;
+      if (nextIndex !== null) {
+        event.preventDefault();
+        activateCardTab(detail, tabs[nextIndex].dataset.cardTab, true, true);
+      }
+      return;
+    }
     var trigger = event.target.closest("[data-inline-edit-open]");
     if (trigger && event.target === trigger && (event.key === "Enter" || event.key === " ")) {
       event.preventDefault();

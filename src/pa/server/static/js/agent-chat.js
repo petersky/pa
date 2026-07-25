@@ -235,6 +235,7 @@
     this.turnTimerId = null;
     this.queuePaused = false;
     this.prompting = false;
+    this.submissionPending = false;
     this.turnActive = false;
     this.sessionClosed = false;
     this.connectionNoticeShown = false;
@@ -247,6 +248,8 @@
 
     this.startupRetryId = null;
     this._bind();
+    this.drafts = window.PAAgentDrafts && window.PAAgentDrafts.installWidget
+      ? window.PAAgentDrafts.installWidget(this) : null;
     const self = this;
     ensureMarkdown().then(function () { self.rerenderMarkdownBubbles(); });
     if (this.autoStart) this.init();
@@ -351,7 +354,7 @@
     });
     if (this.els.input) {
       this.els.input.addEventListener("keydown", function (e) {
-        if (e.key === "Enter" && !e.shiftKey) {
+        if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
           e.preventDefault();
           self.send(self.prompting ? "append" : "append");
         }
@@ -550,6 +553,7 @@
     boot
       .then(function (snap) {
         const sid = (snap.session && snap.session.id) || (snap.id) || self.sessionId;
+        if (self.drafts) self.drafts.switchSession(sid);
         self.sessionId = sid;
         self.root.dataset.sessionId = sid;
         return self.openSession(sid, "", { replace: true });
@@ -615,6 +619,8 @@
   AgentChatWidget.prototype.openSession = function (sessionId, ownerInstanceId, options) {
     const self = this;
     options = options || {};
+    if (this.drafts && ownerInstanceId) this.drafts.setInstance(ownerInstanceId);
+    if (this.drafts) this.drafts.switchSession(sessionId);
     this.sessionId = sessionId;
     this.ownerInstanceId = ownerInstanceId || "";
     this.root.dataset.sessionId = sessionId;
@@ -627,6 +633,10 @@
         self.sessionRoute = route;
         self.ownerInstanceId = route.owner && route.owner.instance_id || self.ownerInstanceId;
         self.root.dataset.ownerInstanceId = self.ownerInstanceId;
+        if (self.drafts && self.ownerInstanceId) {
+          self.drafts.setInstance(self.ownerInstanceId);
+          self.drafts.switchSession(sessionId);
+        }
         if (route.api_base) self.apiBase = String(route.api_base).replace(/\/$/, "");
         self._writeSessionUrl(!!options.replace);
         if (route.state === "owner_unreachable") {
@@ -895,6 +905,7 @@
       };
       self.pendingImages.push(image);
       self.renderPendingImages();
+      if (self.drafts) self.drafts.changed();
 
       const reader = new FileReader();
       reader.onload = function () {
@@ -914,6 +925,7 @@
     const removed = this.pendingImages.splice(index, 1)[0];
     if (removed.preview) URL.revokeObjectURL(removed.preview);
     this.renderPendingImages();
+    if (this.drafts) this.drafts.changed();
   };
 
   AgentChatWidget.prototype.clearPendingImages = function () {
@@ -982,6 +994,7 @@
     const provisioning = session.config_json && session.config_json.provisioning || {};
     const recoveryBlocked = session.status === "recovery_blocked" || provisioning.state === "blocked";
     this.sessionClosed = session.status === "closed";
+    if (this.drafts) this.drafts.onSnapshot(session);
     this.setComposerEnabled(!this.sessionClosed && !recoveryBlocked);
     if (recoveryBlocked && this.els.input) {
       this.els.input.placeholder = "Recovery is blocked. Follow the action above, retry, or end the session.";
@@ -1318,6 +1331,7 @@
         }
         break;
       case "session_closed":
+        if (this.drafts) this.drafts.clear(true, "Draft cleared because this session ended.");
         this.markSessionEnded("Session ended. Start or select another session to send more prompts.");
         refreshSessionList(null);
         break;
@@ -1983,7 +1997,7 @@
     this.openSession(sessionId, ownerInstanceId || "", options || {}).catch(function () {});
   };
 
-  AgentChatWidget.prototype.setApiBase = function (apiBase) {
+  AgentChatWidget.prototype.setApiBase = function (apiBase, instanceId) {
     const next = String(apiBase || "/api/agent").replace(/\/$/, "");
     if (next === this.apiBase) return;
     if (this.es) {
@@ -1992,6 +2006,7 @@
     }
     this.stopBrowserRefresh();
     this.apiBase = next;
+    if (this.drafts) this.drafts.setInstance(instanceId);
     this.sessionId = "";
     this.root.dataset.apiBase = next;
     this.root.dataset.sessionId = "";
@@ -2121,6 +2136,7 @@
 
   AgentChatWidget.prototype.send = function (action) {
     const self = this;
+    if (this.submissionPending) return;
     if (this.sessionClosed) {
       this.addBubble(
         "system",
@@ -2130,14 +2146,16 @@
       );
       return;
     }
-    const text = (this.els.input && this.els.input.value || "").trim();
+    const rawText = this.els.input && this.els.input.value || "";
+    const text = rawText.trim();
     if ((!text && !this.pendingImages.length) || !this.sessionId) return;
     if (this.pendingImages.some(function (image) { return !image.data; })) {
       this.addBubble("system", "Please wait for the images to finish loading.", new Date().toISOString(), { system: true, forceVisible: true });
       return;
     }
     const act = action || "append";
-    const images = this.pendingImages.map(function (image) {
+    const submittedImages = this.pendingImages.slice();
+    const displayImages = submittedImages.map(function (image) {
       return {
         name: image.name,
         mime_type: image.mime_type,
@@ -2145,25 +2163,54 @@
         preview: "data:" + image.mime_type + ";base64," + image.data,
       };
     });
-    this.els.input.value = "";
-    this.clearPendingImages();
-    // Optimistic user bubble; SSE user_message may also arrive — dedupe by text+recency.
-    this.addBubble("user", text, new Date().toISOString(), { images: images });
-    this.scrollToBottom();
+    const promptId = this.drafts
+      ? this.drafts.beginSubmission()
+      : (window.PAAgentDrafts ? window.PAAgentDrafts.randomId() : String(Date.now()));
+    this.submissionPending = true;
+    if (this.els.send) this.els.send.disabled = true;
+    this.root.querySelectorAll("[data-acw-action]").forEach(function (control) {
+      control.disabled = true;
+    });
     this.api("/sessions/" + this.sessionId + "/prompt", {
       method: "POST",
       body: JSON.stringify({
         message: text,
-        images: images.map(function (image) {
+        images: displayImages.map(function (image) {
           return { name: image.name, mime_type: image.mime_type, data: image.data };
         }),
         action: act,
+        client_prompt_id: promptId,
       }),
     })
       .then(function (res) {
-        if (res && res.queued) self.refreshQueue();
+        if (!res || !res.accepted) {
+          const error = new Error("PA could not confirm durable prompt acceptance.");
+          error.acceptanceUnconfirmed = true;
+          throw error;
+        }
+        if (!self._isDuplicateUserBubble(text)) {
+          self.addBubble("user", text, new Date().toISOString(), { images: displayImages });
+        }
+        self.scrollToBottom();
+        if (self.drafts) {
+          self.drafts.submissionAccepted({
+            rawText: rawText,
+            images: submittedImages,
+          });
+        } else {
+          if (self.els.input && self.els.input.value === rawText) self.els.input.value = "";
+          self.clearPendingImages();
+        }
+        if (res.queued) self.refreshQueue();
       })
       .catch(function (err) {
+        if (self.drafts) {
+          self.drafts.submissionFailed({
+            rawText: rawText,
+            images: submittedImages,
+            conflict: err.status === 409,
+          });
+        }
         const code = apiErrorCode(err);
         if (code === "session_not_live" || code === "session_deleted") {
           self.addBubble("system", "Prompt not sent: " + err.message, new Date().toISOString(), { system: true, forceVisible: true });
@@ -2171,8 +2218,16 @@
           return;
         }
         self.addBubble("system", "Prompt not sent: " + err.message, new Date().toISOString(), { system: true, forceVisible: true });
+      })
+      .finally(function () {
+        self.submissionPending = false;
+        if (self.els.send) self.els.send.disabled = self.sessionClosed;
+        self.root.querySelectorAll("[data-acw-action]").forEach(function (control) {
+          control.disabled = self.sessionClosed;
+        });
       });
   };
+
 
   AgentChatWidget.prototype.cancel = function () {
     if (!this.sessionId) return;
@@ -2183,6 +2238,7 @@
     const self = this;
     if (!this.sessionId) return;
     this.api("/sessions/" + this.sessionId + "/close", { method: "POST", body: "{}" }).then(function () {
+      if (self.drafts) self.drafts.clear(true, "Draft cleared because this session ended.");
       self.markSessionEnded("Session ended. Start or select another session to send more prompts.");
       refreshSessionList(null);
     }).catch(function (err) {
@@ -2217,6 +2273,8 @@
       .then(function () {
         if (self.es) self.es.close();
         self.es = null;
+        if (self.drafts) self.drafts.clear(true, "Draft cleared because this session ended.");
+        if (self.drafts) self.drafts.switchSession("");
         self.sessionId = "";
         self.root.dataset.sessionId = "";
         self.lastSeq = 0;

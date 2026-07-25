@@ -675,9 +675,10 @@
     var audit = $("#pa-remote-audit");
     var widgetRoot = $("#pa-remote-chat [data-agent-chat]");
     if (!chat || !widgetRoot || !window.PAAgentChat) return;
+    widgetRoot.dataset.draftInstanceId = remoteInstanceId;
     window.PAAgentChat.mount(chat);
     if (!widgetRoot._acw) return;
-    widgetRoot._acw.setApiBase(remoteApiBase(remoteInstanceId));
+    widgetRoot._acw.setApiBase(remoteApiBase(remoteInstanceId), remoteInstanceId);
     if (audit) audit.hidden = true;
     chat.hidden = false;
     widgetRoot._acw.switchSession(sessionId, true, remoteInstanceId);

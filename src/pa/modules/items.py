@@ -257,7 +257,9 @@ def _comma_separated(value: str) -> list[str]:
     )
 
 
-def _pr_watch_context(request: Request, card_id: str) -> dict:
+def _pr_watch_context(
+    request: Request, card_id: str, *, include_events: bool = True
+) -> dict:
     store = request.app.state.ctx.services.get("pr_supervisor_store")
     if not store:
         return {"pr_watches": [], "pr_watch_events": {}}
@@ -266,22 +268,29 @@ def _pr_watch_context(request: Request, card_id: str) -> dict:
         "pr_watches": watches,
         "pr_watch_events": {
             watch.id: store.list_events(watch.id, limit=20) for watch in watches
-        },
+        }
+        if include_events
+        else {},
     }
 
 
-def _card_detail_context(request: Request, card) -> dict:
+def _card_summary_context(request: Request, card) -> dict:
     store = get_store()
-    dispatch_store = request.app.state.ctx.services.get("dispatch_store")
     realm_id = card.realm_id
     project = (
         store.get_project(card.project_id, realm_id=realm_id)
         if card.project_id
         else None
     )
-    related_sessions = [
-        session for session in store.list_sessions() if session.card_id == card.id
-    ]
+    watch_context = _pr_watch_context(request, card.id, include_events=False)
+    critical_watch = next(
+        (
+            watch
+            for watch in watch_context["pr_watches"]
+            if watch.last_error or watch.status.value == "blocked"
+        ),
+        None,
+    )
     return {
         "card": card,
         "project": project,
@@ -295,12 +304,28 @@ def _card_detail_context(request: Request, card) -> dict:
             for candidate in store.list_cards(realm_id=realm_id)
             if candidate.parent_id == card.id
         ],
+        "critical_watch": critical_watch,
+        "lanes": list(CardLane),
+        "csrf_token": token_for_request(request),
+        **watch_context,
+    }
+
+
+def _card_agent_context(request: Request, card) -> dict:
+    store = get_store()
+    dispatch_store = request.app.state.ctx.services.get("dispatch_store")
+    related_sessions = [
+        session for session in store.list_sessions() if session.card_id == card.id
+    ]
+    current_session = next(
+        (session for session in related_sessions if session.status != "closed"),
+        None,
+    )
+    return {
+        "card": card,
         "related_sessions": related_sessions,
-        "current_session": next(
-            (session for session in related_sessions if session.status != "closed"),
-            None,
-        ),
-        "card_knowledge": store.list_knowledge(item_id=card.id, limit=10),
+        "current_session": current_session,
+        "agent_enabled": request.app.state.ctx.settings.agent_enabled,
         "card_reconciliations": (
             [
                 record.public_dict()["card_reconciliation"]
@@ -315,10 +340,133 @@ def _card_detail_context(request: Request, card) -> dict:
             if dispatch_store
             else []
         ),
-        "lanes": list(CardLane),
-        "csrf_token": token_for_request(request),
-        "agent_enabled": request.app.state.ctx.settings.agent_enabled,
-        **_pr_watch_context(request, card.id),
+    }
+
+
+def _card_activity_context(request: Request, card) -> dict:
+    store = get_store()
+    entries: list[dict] = []
+
+    event_log = request.app.state.ctx.services.get("event_log")
+    if event_log:
+        head = event_log.get_head(card.realm_id)
+        if head:
+
+            def add_card_event(event) -> None:
+                if event.card_id != card.id:
+                    return
+                fields = [
+                    key
+                    for key in event.payload
+                    if key
+                    not in {
+                        "created_at",
+                        "updated_at",
+                        "summary_updated_at",
+                        "summary_source",
+                        "summary_stale",
+                    }
+                ]
+                if event.type.value == "card_created":
+                    label = "Card created"
+                elif event.type.value == "card_updated":
+                    label = "Card updated"
+                    if fields:
+                        label += ": " + ", ".join(
+                            field.replace("_", " ") for field in fields
+                        )
+                else:
+                    label = event.type.value.replace("_", " ").capitalize()
+                entries.append(
+                    {
+                        "id": f"card-{event.id}",
+                        "kind": "card",
+                        "label": label,
+                        "actor": event.author_principal,
+                        "detail": event.author_instance,
+                        "timestamp": event.timestamp,
+                    }
+                )
+
+            event_log.apply_commit_chain(head, add_card_event)
+
+    if not any(entry["label"] == "Card created" for entry in entries):
+        entries.append(
+            {
+                "id": f"card-created-{card.id}",
+                "kind": "card",
+                "label": "Card created",
+                "actor": card.created_by_principal or "unknown",
+                "detail": card.created_by_instance or "",
+                "timestamp": card.created_at,
+            }
+        )
+
+    for session in store.list_sessions():
+        if session.card_id != card.id:
+            continue
+        context = (session.config_json or {}).get("execution_context") or {}
+        instance = context.get("instance") or {}
+        entries.append(
+            {
+                "id": f"agent-{session.id}",
+                "kind": "agent",
+                "label": f"Agent session {session.status}",
+                "actor": session.agent_name,
+                "detail": instance.get("name") or session.title or session.label or "",
+                "timestamp": session.updated_at,
+            }
+        )
+
+    dispatch_store = request.app.state.ctx.services.get("dispatch_store")
+    if dispatch_store:
+        for dispatch in dispatch_store.list(limit=500):
+            if dispatch.card_id != card.id:
+                continue
+            for event in dispatch.events:
+                entries.append(
+                    {
+                        "id": f"dispatch-{dispatch.dispatch_id}-{event.seq}",
+                        "kind": "dispatch",
+                        "label": event.message,
+                        "actor": dispatch.target_instance_name
+                        or dispatch.target_instance_id,
+                        "detail": event.state.replace("_", " "),
+                        "timestamp": event.created_at,
+                    }
+                )
+
+    watch_context = _pr_watch_context(request, card.id)
+    for watch in watch_context["pr_watches"]:
+        for event in watch_context["pr_watch_events"].get(watch.id, []):
+            entries.append(
+                {
+                    "id": f"pr-{event.id}",
+                    "kind": "pr",
+                    "label": event.event_type.replace("_", " ").capitalize(),
+                    "actor": event.source,
+                    "detail": f"{watch.repository}#{watch.pr_number}",
+                    "timestamp": event.created_at,
+                }
+            )
+
+    for knowledge in store.list_knowledge(item_id=card.id, limit=100):
+        entries.append(
+            {
+                "id": f"memory-{knowledge.id}",
+                "kind": "memory",
+                "label": knowledge.summary,
+                "actor": knowledge.owner or knowledge.source,
+                "detail": knowledge.kind.value,
+                "timestamp": knowledge.created_at,
+            }
+        )
+
+    return {
+        "card": card,
+        "activity": sorted(
+            entries, key=lambda entry: entry["timestamp"], reverse=True
+        ),
     }
 
 
@@ -901,7 +1049,37 @@ def card_detail_partial(
     return _templates(request).TemplateResponse(
         request,
         "partials/card-detail.html",
-        _card_detail_context(request, card),
+        _card_summary_context(request, card),
+    )
+
+
+@ui_router.get("/partials/cards/{card_id}/agent", response_class=HTMLResponse)
+def card_detail_agent_partial(
+    request: Request, card_id: str, realm: str | None = None
+) -> HTMLResponse:
+    realm_id = realm or _active_realm(request)
+    card = get_store().get_card(card_id, realm_id=realm_id)
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+    return _templates(request).TemplateResponse(
+        request,
+        "partials/card-detail-agent.html",
+        _card_agent_context(request, card),
+    )
+
+
+@ui_router.get("/partials/cards/{card_id}/activity", response_class=HTMLResponse)
+def card_detail_activity_partial(
+    request: Request, card_id: str, realm: str | None = None
+) -> HTMLResponse:
+    realm_id = realm or _active_realm(request)
+    card = get_store().get_card(card_id, realm_id=realm_id)
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+    return _templates(request).TemplateResponse(
+        request,
+        "partials/card-detail-activity.html",
+        _card_activity_context(request, card),
     )
 
 
@@ -942,7 +1120,7 @@ def card_detail_update(
     if not card:
         raise HTTPException(status_code=404, detail="Card not found")
     return _templates(request).TemplateResponse(
-        request, "partials/card-detail.html", _card_detail_context(request, card)
+        request, "partials/card-detail.html", _card_summary_context(request, card)
     )
 
 
