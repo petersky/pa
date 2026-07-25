@@ -2632,6 +2632,162 @@ async def fleet_agent_proxy(
     )
 
 
+def _local_session_route(request: Request, session_id: str) -> dict[str, Any] | None:
+    ctx = request.app.state.ctx
+    session = ctx.store.get_session(session_id)
+    if not session:
+        return None
+    manager = ctx.services.get("instance_agent")
+    runtime = manager.get(session_id) if manager else None
+    live = bool(runtime and not getattr(runtime, "_closed", False))
+    ended = session.status in {"closed", "quiesced"}
+    return {
+        "session_id": session_id,
+        "state": "live" if live else "expired" if ended else "recoverable",
+        "live": live,
+        "recoverable": not live and not ended,
+        "api_base": "/api/agent",
+        "owner": {
+            "instance_id": session.origin_instance_id or ctx.settings.instance_id,
+            "instance_name": session.origin_instance_name or ctx.settings.instance_name,
+        },
+        "provider": {
+            "id": session.agent_name,
+            "session_id": session.external_session_id,
+        },
+        "history_url": f"/api/agent/history/{session_id}",
+        "recovery_url": (
+            f"/api/agent/sessions/{session_id}/recover"
+            if not live and not ended
+            else None
+        ),
+    }
+
+
+@router.get("/fleet/session-route/{session_id}")
+async def resolve_session_route(
+    request: Request,
+    session_id: str,
+    owner_instance_id: str | None = None,
+) -> dict[str, Any]:
+    """Resolve a durable PA session to its owning fleet instance."""
+    require_user(request)
+    ctx = request.app.state.ctx
+    local = _local_session_route(request, session_id)
+    if local:
+        return local
+
+    dispatch_store = ctx.services.get("dispatch_store")
+    dispatch = dispatch_store.by_session(session_id) if dispatch_store else None
+    owner_id = owner_instance_id or (dispatch.target_instance_id if dispatch else None)
+    owner_name = dispatch.target_instance_name if dispatch else None
+    if not owner_id:
+        return {
+            "session_id": session_id,
+            "state": "missing",
+            "live": False,
+            "recoverable": False,
+            "message": "This agent session was deleted or has expired.",
+        }
+    if owner_id == ctx.settings.instance_id:
+        return {
+            "session_id": session_id,
+            "state": "missing",
+            "live": False,
+            "recoverable": False,
+            "owner": {
+                "instance_id": owner_id,
+                "instance_name": ctx.settings.instance_name,
+            },
+            "message": "This agent session was deleted or has expired.",
+        }
+
+    fleet: FleetRegistry = ctx.require_service("fleet")
+    owner = fleet.get_instance(owner_id)
+    api_base = f"/api/fleet/instances/{quote(owner_id, safe='-._~')}/agent"
+    if not owner:
+        return {
+            "session_id": session_id,
+            "state": "owner_unreachable",
+            "live": False,
+            "recoverable": True,
+            "api_base": api_base,
+            "owner": {
+                "instance_id": owner_id,
+                "instance_name": owner_name or owner_id,
+            },
+            "message": "The session owner is not currently registered. Retry after it reconnects.",
+        }
+    try:
+        history = await _peer_agent_json(
+            request,
+            owner_id,
+            "GET",
+            f"history/{session_id}",
+            timeout=10.0,
+        )
+    except HTTPException as exc:
+        if exc.status_code in {502, 503, 504}:
+            return {
+                "session_id": session_id,
+                "state": "owner_unreachable",
+                "live": False,
+                "recoverable": True,
+                "api_base": api_base,
+                "owner": {
+                    "instance_id": owner_id,
+                    "instance_name": owner.name,
+                },
+                "message": "The session owner is temporarily unreachable. Retry when it reconnects.",
+            }
+        if exc.status_code in {404, 410}:
+            return {
+                "session_id": session_id,
+                "state": "missing" if exc.status_code == 404 else "expired",
+                "live": False,
+                "recoverable": False,
+                "api_base": api_base,
+                "owner": {
+                    "instance_id": owner_id,
+                    "instance_name": owner.name,
+                },
+                "message": (
+                    "This agent session was deleted or has expired."
+                    if exc.status_code == 404
+                    else "This session has ended; its retained history is unavailable."
+                ),
+            }
+        raise
+    if not isinstance(history, dict) or not isinstance(history.get("session"), dict):
+        raise HTTPException(
+            status_code=502, detail="Session owner returned invalid history"
+        )
+    session = history["session"]
+    live = bool(history.get("live"))
+    ended = session.get("status") in {"closed", "quiesced"}
+    return {
+        "session_id": session_id,
+        "state": "live" if live else "expired" if ended else "recoverable",
+        "live": live,
+        "recoverable": not live and not ended,
+        "api_base": api_base,
+        "owner": {
+            "instance_id": owner_id,
+            "instance_name": owner.name,
+        },
+        "provider": {
+            "id": session.get("agent_name"),
+            "session_id": session.get("external_session_id"),
+        },
+        "history_url": f"{api_base}/history/{session_id}",
+        "recovery_url": (
+            f"{api_base}/sessions/{session_id}/recover"
+            if not live and not ended
+            else None
+        ),
+    }
+
+
 async def _proxy_agent_providers(
     request: Request,
     instance_id: str,
