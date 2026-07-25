@@ -74,6 +74,7 @@
           <label><input type="checkbox" data-acw-toggle-raw> Raw text</label>
           <button type="button" class="ghost" data-acw-recover hidden>Recover session</button>
           <button type="button" class="ghost" data-acw-restart>Restart session</button>
+          <button type="button" class="ghost" data-acw-history hidden>Open durable history</button>
           <button type="button" class="ghost danger" data-acw-end>End session</button>
         </div>
       </details>
@@ -83,6 +84,14 @@
   {% if show_metrics %}
   <div class="acw-metrics muted" data-acw-metrics hidden></div>
   {% endif %}
+
+  <div class="acw-recovery" data-acw-recovery hidden>
+    <div>
+      <strong>Session recovery is blocked.</strong>
+      <span data-acw-recovery-action></span>
+    </div>
+    <button type="button" class="primary small" data-acw-retry>Retry now</button>
+  </div>
 
   <section class="acw-browser" data-acw-browser hidden aria-label="Attached browser">
     <div class="acw-browser-toolbar">

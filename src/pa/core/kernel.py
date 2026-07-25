@@ -118,6 +118,9 @@ class Kernel:
             and not consume_skip_resume(self.ctx.settings.data_dir)
         )
         agent._accepting = False
+        begin_startup = getattr(agent, "begin_startup", None)
+        if callable(begin_startup):
+            begin_startup()
         self.ctx.register_service("instance_agent", agent)
         lifecycle = {"phase": "starting", "error": None}
         self.ctx.register_service("agent_lifecycle", lifecycle)
@@ -125,11 +128,17 @@ class Kernel:
         async def start_agent() -> None:
             try:
                 await agent.start(resume=resume)
+                complete_startup = getattr(agent, "complete_startup", None)
+                if callable(complete_startup):
+                    complete_startup()
                 lifecycle["phase"] = "ready" if agent.connected else "idle"
             except asyncio.CancelledError:
                 lifecycle["phase"] = "cancelled"
                 raise
             except Exception as exc:
+                complete_startup = getattr(agent, "complete_startup", None)
+                if callable(complete_startup):
+                    complete_startup(exc)
                 lifecycle.update(phase="error", error=str(exc)[:1000])
                 logger.exception("Background ACP startup failed")
 
