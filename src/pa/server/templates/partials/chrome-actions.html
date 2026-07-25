@@ -1,6 +1,11 @@
 {% from "macros/icons.html" import icon %}
 
 <div class="chrome-actions">
+  <button type="button" class="new-card-button" data-new-card-open
+          title="Create a new card" aria-label="Create a new card">
+    <span aria-hidden="true">+</span> New
+  </button>
+
   <span class="instance-indicator icon-btn"
         title="Instance: {{ instance_name }}"
         aria-label="Instance: {{ instance_name }}">
