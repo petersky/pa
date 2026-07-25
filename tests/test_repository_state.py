@@ -4,7 +4,7 @@ import asyncio
 import subprocess
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from pydantic import ValidationError
@@ -77,6 +77,72 @@ def test_async_inspection_uses_cancellable_git_and_bounded_worker(tmp_path: Path
     assert result.state == "fresh"
     assert result.snapshot.branch == "main"
     assert result.snapshot.untracked == 1
+    assert metrics["operations"]["repository.snapshot_write"]["completed"] == 1
+
+
+def test_async_inspection_error_persists_without_previous_snapshot(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    make_repo(repo)
+    service = RepositoryStateService(tmp_path / "data", "macmini")
+
+    async def run():
+        runtime = AsyncRuntime(max_workers=2, max_queue=2)
+        await runtime.start()
+        try:
+            with patch.object(
+                service.inspector,
+                "inspect_async",
+                new=AsyncMock(side_effect=GitInspectionError("inspection failed")),
+            ):
+                result = await service.refresh_async(repo, runtime)
+            return result, runtime.snapshot()
+        finally:
+            await runtime.close()
+
+    result, metrics = asyncio.run(run())
+    listed = service.list()
+
+    assert result.state == "error"
+    assert result.state_reason == "inspection failed"
+    assert result.snapshot.inspection_error == "inspection failed"
+    assert len(listed) == 1
+    assert listed[0].snapshot == result.snapshot
+    assert metrics["operations"]["repository.snapshot_write"]["completed"] == 1
+
+
+def test_async_inspection_error_updates_previous_snapshot(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    make_repo(repo)
+    service = RepositoryStateService(tmp_path / "data", "macmini")
+    successful = service.refresh(repo)
+
+    async def run():
+        runtime = AsyncRuntime(max_workers=2, max_queue=2)
+        await runtime.start()
+        try:
+            with patch.object(
+                service.inspector,
+                "inspect_async",
+                new=AsyncMock(side_effect=GitInspectionError("inspection failed")),
+            ):
+                result = await service.refresh_async(repo, runtime)
+            return result, runtime.snapshot()
+        finally:
+            await runtime.close()
+
+    failed, metrics = asyncio.run(run())
+    listed = service.list()
+
+    assert failed.state == "error"
+    assert failed.state_reason == "inspection failed"
+    assert failed.snapshot.inspection_error == "inspection failed"
+    assert failed.snapshot.repository_id == successful.snapshot.repository_id
+    assert failed.snapshot.head == successful.snapshot.head
+    assert failed.snapshot.observed_at > successful.snapshot.observed_at
+    assert len(listed) == 1
+    assert listed[0].snapshot == failed.snapshot
     assert metrics["operations"]["repository.snapshot_write"]["completed"] == 1
 
 
