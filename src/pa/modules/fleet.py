@@ -42,6 +42,7 @@ from pa.execution.dispatch import (
 )
 from pa.execution.disposition import decide_card_disposition
 from pa.execution.reconciliation import CompletionReconciler
+from pa.fleet.control_plane import build_control_plane_status
 from pa.fleet.join import (
     apply_reachability_settings,
     ensure_sync_token,
@@ -79,6 +80,17 @@ router = APIRouter()
 ui_router = APIRouter()
 _peer_update_task: asyncio.Task[Any] | None = None
 _peer_update_task_operation_id: str | None = None
+
+
+@router.get("/fleet/control-plane/status")
+def control_plane_status(request: Request) -> dict[str, Any]:
+    """Expose honest compatibility state without treating static URLs as election."""
+    service = request.app.state.ctx.services.get("pr_supervisor")
+    health = service.authority_health() if service is not None else None
+    return build_control_plane_status(
+        request.app.state.ctx.settings,
+        pr_supervisor_health=health,
+    )
 
 
 async def _offload_ctx(
