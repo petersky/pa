@@ -110,8 +110,13 @@ class Kernel:
         agent.browser.async_runtime = async_runtime
         import os
 
+        from pa.instance.quiesce import consume_skip_resume
+
         resume_env = os.environ.get("PA_ACP_RESUME", "1").strip().lower()
-        resume = resume_env not in {"0", "false", "no", "off"}
+        resume = (
+            resume_env not in {"0", "false", "no", "off"}
+            and not consume_skip_resume(self.ctx.settings.data_dir)
+        )
         agent._accepting = False
         self.ctx.register_service("instance_agent", agent)
         lifecycle = {"phase": "starting", "error": None}
@@ -182,13 +187,18 @@ class Kernel:
                 logger.error("Timed out shutting down module %s", entry.module.name)
 
         agent_start_task = self.ctx.services.get("agent_start_task")
+        agent: AgentSessionManager | None = self.ctx.services.get("instance_agent")
+        if agent:
+            # Fence admissions before cancellation so a startup task cannot
+            # attach another provider while shutdown is taking ownership.
+            agent._accepting = False
+            agent._quiescing = True
         if agent_start_task and not agent_start_task.done():
             agent_start_task.cancel()
             try:
                 await asyncio.wait_for(agent_start_task, timeout=5.0)
             except (asyncio.CancelledError, asyncio.TimeoutError):
                 pass
-        agent: AgentSessionManager | None = self.ctx.services.get("instance_agent")
         if agent:
             import os
 
@@ -215,7 +225,7 @@ class Kernel:
                 except Exception:
                     logger.exception("ACP quiesce during shutdown failed")
             try:
-                await asyncio.wait_for(agent.stop(), timeout=10.0)
+                await asyncio.wait_for(agent.stop(fast=skip), timeout=10.0)
             except asyncio.TimeoutError:
                 logger.error("Timed out stopping ACP/browser runtimes")
         execution_router = self.ctx.services.get("execution_router")

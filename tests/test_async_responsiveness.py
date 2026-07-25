@@ -160,6 +160,37 @@ class RequestPathResponsivenessTests(unittest.IsolatedAsyncioTestCase):
 
 
 class StartupResponsivenessTests(unittest.IsolatedAsyncioTestCase):
+    async def test_consume_once_skip_resume_reaches_agent_start(self) -> None:
+        fake_agent = SimpleNamespace(
+            browser=SimpleNamespace(async_runtime=None),
+            _accepting=True,
+            connected=False,
+            start=AsyncMock(),
+            stop=AsyncMock(),
+            list_runtimes=lambda: [],
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                data_dir=Path(tmp) / "data",
+                workspace_root=Path(tmp) / "workspaces",
+            )
+            kernel = Kernel.boot(settings=settings, load_modules=False)
+            app = FastAPI()
+            with (
+                patch(
+                    "pa.instance.agent_session.get_instance_agent",
+                    return_value=fake_agent,
+                ),
+                patch(
+                    "pa.instance.quiesce.consume_skip_resume", return_value=True
+                ) as consume,
+            ):
+                await kernel.startup(app)
+                await kernel.ctx.require_service("agent_start_task")
+                consume.assert_called_once_with(settings.data_dir)
+                fake_agent.start.assert_awaited_once_with(resume=False)
+                await kernel.shutdown(app)
+
     async def test_provider_startup_is_backgrounded_after_manager_admission(self) -> None:
         release = asyncio.Event()
 

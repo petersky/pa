@@ -310,6 +310,26 @@ class AgentSessionLiveEventTests(unittest.TestCase):
 
             context.__aexit__.assert_awaited_once_with(None, None, None)
 
+    def test_forced_disconnect_kills_child_without_waiting_for_transport(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            connection = AgentConnection(Settings(data_dir=Path(tmp)), MagicMock())
+            blocked = asyncio.Event()
+            context = MagicMock()
+
+            async def wait_forever(*_args) -> None:
+                await blocked.wait()
+
+            context.__aexit__ = AsyncMock(side_effect=wait_forever)
+            process = MagicMock(returncode=None)
+            process.wait = AsyncMock()
+            connection._ctx = context
+            connection._proc = process
+
+            asyncio.run(connection.disconnect(timeout=0.01, force=True))
+
+            process.kill.assert_called()
+            self.assertIsNone(connection._ctx)
+
     def test_mark_transport_dead_uses_disconnect_lock(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             connection = AgentConnection(Settings(data_dir=Path(tmp)), MagicMock())
@@ -518,6 +538,33 @@ class AgentSessionLiveEventTests(unittest.TestCase):
             self.assertEqual(recovered.card_id, "card-1")
             self.assertEqual(recovered.project_id, "project-1")
             self.assertEqual(recovered.in_flight.id, "queued-1")
+
+    def test_no_resume_boot_skips_durable_recovery_and_default_attach(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = MagicMock()
+            store.list_sessions.return_value = [
+                AgentSession(
+                    id="session-paused",
+                    agent_name="codex",
+                    status="disconnected",
+                )
+            ]
+            manager = AgentSessionManager(Settings(data_dir=Path(tmp)), store)
+            manager.workspace_manager.reconcile_terminal_state = MagicMock(
+                return_value={}
+            )
+            manager.workspace_manager.collect_garbage = MagicMock(return_value={})
+            manager._resume_from_snapshot = AsyncMock()
+            manager.attach_default = AsyncMock()
+
+            asyncio.run(manager.start(resume=False))
+
+            store.list_sessions.assert_not_called()
+            manager._resume_from_snapshot.assert_not_awaited()
+            manager.attach_default.assert_not_awaited()
+            manager.workspace_manager.collect_garbage.assert_called_once_with(
+                active_session_ids=set()
+            )
 
     def test_wake_reconciliation_marks_resume_failure_recoverable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
