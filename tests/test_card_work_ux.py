@@ -453,6 +453,58 @@ class CoreWorkUiRouteTests(unittest.TestCase):
             self.assertIn('aria-label="Work board"', response.text)
             self.assertNotIn("page-sidebar-right", response.text)
 
+    def test_done_lane_is_title_only_and_expands_filtered_results(self) -> None:
+        with TestClient(self.app) as client:
+            store = self.app.state.ctx.store
+            omitted = []
+            for index in range(12):
+                card = store.create_card(
+                    CardCreate(
+                        title=f"Matching outcome {index:02d}",
+                        summary=f"Done summary {index} must stay hidden.",
+                        lane=CardLane.DONE,
+                    )
+                )
+                if index < 2:
+                    omitted.append(card.title)
+            store.create_card(
+                CardCreate(
+                    title="Unrelated newest outcome",
+                    summary="This card must not affect a filtered result limit.",
+                    lane=CardLane.DONE,
+                )
+            )
+
+            first_page = client.get("/partials/cards?lane=done&q=Matching")
+
+            self.assertEqual(first_page.status_code, 200)
+            self.assertEqual(
+                first_page.text.count('<article class="compact-card'), 10
+            )
+            self.assertIn("Matching outcome 11", first_page.text)
+            for title in omitted:
+                self.assertNotIn(title, first_page.text)
+            self.assertNotIn("Done summary", first_page.text)
+            self.assertNotIn("Unrelated newest outcome", first_page.text)
+            self.assertNotIn("compact-card-summary", first_page.text)
+            self.assertNotIn("compact-card-meta", first_page.text)
+            self.assertNotIn("compact-card-footer", first_page.text)
+            self.assertIn("Showing 10 of 12", first_page.text)
+            self.assertIn("Show 2 more", first_page.text)
+            self.assertIn("data-done-show-more", first_page.text)
+            self.assertIn("q=Matching", first_page.text)
+            self.assertIn("limit=12", first_page.text)
+
+            expanded = client.get(
+                "/partials/cards?lane=done&q=Matching&limit=12"
+            )
+
+            self.assertEqual(expanded.status_code, 200)
+            self.assertEqual(expanded.text.count('<article class="compact-card'), 12)
+            for title in omitted:
+                self.assertIn(title, expanded.text)
+            self.assertNotIn("data-done-show-more", expanded.text)
+
     def test_first_page_response_exposes_matching_csrf_for_mutation(self) -> None:
         with TestClient(self.app) as client:
             page = client.get("/")
