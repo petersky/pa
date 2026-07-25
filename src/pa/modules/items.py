@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Form, HTTPException, Request
+from fastapi import APIRouter, Form, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from pa.auth.csrf import token_for_request
@@ -32,6 +32,14 @@ from pa.domain.session_selection import preferred_sessions_by_card
 
 router = APIRouter()
 ui_router = APIRouter()
+
+
+def _mark_legacy_item_api(response: Response) -> None:
+    response.headers["Deprecation"] = "true"
+    response.headers["Link"] = (
+        "<https://github.com/petersky/pa/blob/main/docs/ITEM_CARD_MIGRATION.md>;"
+        ' rel="deprecation"; type="text/markdown"'
+    )
 
 
 def _templates(request: Request):
@@ -312,20 +320,29 @@ def update_card_api(
 
 @router.get("/items")
 def list_items(
-    kind: ItemKind | None = None, status: ItemStatus | None = None
+    response: Response,
+    kind: ItemKind | None = None,
+    status: ItemStatus | None = None,
 ) -> list[dict]:
+    _mark_legacy_item_api(response)
     items = get_store().list_items(kind=kind, status=status)
     return [item.model_dump(mode="json") for item in items]
 
 
 @router.post("/items", status_code=201)
-def create_item(data: ItemCreate) -> dict:
-    item = get_store().create_item(data)
+def create_item(request: Request, response: Response, data: ItemCreate) -> dict:
+    _mark_legacy_item_api(response)
+    item = get_store().create_item(
+        data,
+        principal_id=get_principal_id(request),
+        instance_id=request.app.state.ctx.settings.instance_id,
+    )
     return item.model_dump(mode="json")
 
 
 @router.get("/items/{item_id}")
-def get_item(item_id: str) -> dict:
+def get_item(response: Response, item_id: str) -> dict:
+    _mark_legacy_item_api(response)
     item = get_store().get_item(item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
@@ -333,16 +350,29 @@ def get_item(item_id: str) -> dict:
 
 
 @router.patch("/items/{item_id}")
-def update_item(item_id: str, data: ItemUpdate) -> dict:
-    item = get_store().update_item(item_id, data)
+def update_item(
+    request: Request, response: Response, item_id: str, data: ItemUpdate
+) -> dict:
+    _mark_legacy_item_api(response)
+    item = get_store().update_item(
+        item_id,
+        data,
+        principal_id=get_principal_id(request),
+        instance_id=request.app.state.ctx.settings.instance_id,
+    )
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
     return item.model_dump(mode="json")
 
 
 @router.delete("/items/{item_id}", status_code=204)
-def delete_item(item_id: str) -> None:
-    if not get_store().delete_item(item_id):
+def delete_item(request: Request, response: Response, item_id: str) -> None:
+    _mark_legacy_item_api(response)
+    if not get_store().delete_item(
+        item_id,
+        principal_id=get_principal_id(request),
+        instance_id=request.app.state.ctx.settings.instance_id,
+    ):
         raise HTTPException(status_code=404, detail="Item not found")
 
 
@@ -682,12 +712,69 @@ class ItemsModule(Module):
 
         @mcp.tool()
         def list_cards(realm: str = "default", lane: str | None = None) -> list[dict]:
-            """List cards in a realm."""
+            """List canonical cards in a realm, optionally filtered by lane."""
             return request_local_pa(
                 ctx.settings,
                 "GET",
                 "/api/cards",
                 params={"realm": realm, "lane": lane},
+            )
+
+        @mcp.tool()
+        def create_card(
+            title: str,
+            kind: str = "task",
+            body: str = "",
+            lane: str = "inbox",
+            realm: str = "default",
+            parent_id: str | None = None,
+            project_id: str | None = None,
+            tags: list[str] | None = None,
+        ) -> dict:
+            """Create a canonical card. Use lane: inbox, active, waiting, or done."""
+            return request_local_pa(
+                ctx.settings,
+                "POST",
+                "/api/cards",
+                json={
+                    "realm_id": realm,
+                    "kind": kind,
+                    "title": title,
+                    "body": body,
+                    "lane": lane,
+                    "parent_id": parent_id,
+                    "project_id": project_id,
+                    "tags": tags or [],
+                },
+            )
+
+        @mcp.tool()
+        def update_card(
+            card_id: str,
+            title: str | None = None,
+            body: str | None = None,
+            lane: str | None = None,
+            realm: str = "default",
+            tags: list[str] | None = None,
+        ) -> dict | None:
+            """Update a canonical card. Omitted fields remain unchanged."""
+            changes = {
+                key: value
+                for key, value in {
+                    "title": title,
+                    "body": body,
+                    "lane": lane,
+                    "tags": tags,
+                }.items()
+                if value is not None
+            }
+            return request_local_pa(
+                ctx.settings,
+                "PATCH",
+                f"/api/cards/{card_id}",
+                params={"realm": realm},
+                json=changes,
+                allow_not_found=True,
             )
 
         @mcp.tool()
@@ -698,7 +785,7 @@ class ItemsModule(Module):
             status: str = "open",
             parent_id: str | None = None,
         ) -> dict:
-            """Create a goal, task, project, or concern."""
+            """Deprecated: create an item. Prefer create_card with canonical lane."""
             return request_local_pa(
                 ctx.settings,
                 "POST",
