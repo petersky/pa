@@ -658,7 +658,7 @@ def test_workspace_recovery_rematerializes_cwd_from_data_dir(tmp_path: Path) -> 
     assert workspace_manager.settings.data_dir not in Path(session.cwd).parents
 
 
-def test_missing_project_records_actionable_recoverable_state(tmp_path: Path) -> None:
+def test_missing_project_records_actionable_blocked_state(tmp_path: Path) -> None:
     workspace_manager, _, _ = manager_for(tmp_path)
     workspace_manager.store.get_project.return_value = None
     manager = AgentSessionManager(workspace_manager.settings, workspace_manager.store)
@@ -676,9 +676,45 @@ def test_missing_project_records_actionable_recoverable_state(tmp_path: Path) ->
         )
 
     state = session.config_json["provisioning"]
-    assert state["retryable"] is True
+    assert session.status == "recovery_blocked"
+    assert state["state"] == "blocked"
+    assert state["retryable"] is False
+    assert state["manual_retry"] is True
+    assert state["automatic_retry"] is False
+    assert state["retry_on"] == "project_availability_change"
     assert state["error_code"] == "project_unavailable_on_instance"
-    assert "Sync or link" in state["action"]
+    assert "Sync the project" in state["action"]
+    assert "Close the session" in state["action"]
+
+
+def test_unmaterialized_project_links_record_blocked_state(tmp_path: Path) -> None:
+    workspace_manager, _, _ = manager_for(tmp_path)
+    workspace_manager.store.get_project.return_value = SimpleNamespace(
+        realm_id="default",
+        repos=["repo-1"],
+        tool_config={},
+    )
+    workspace_manager.store.list_project_repositories.return_value = []
+    manager = AgentSessionManager(workspace_manager.settings, workspace_manager.store)
+    session = AgentSession(
+        id="recovery-session",
+        agent_name="codex",
+        project_id="project-1",
+    )
+
+    with pytest.raises(
+        WorkspaceProvisioningError, match="links are not materialized"
+    ):
+        asyncio.run(
+            manager._prepare_workspace(
+                session, requested_cwd=None, provider_id="codex"
+            )
+        )
+
+    state = session.config_json["provisioning"]
+    assert session.status == "recovery_blocked"
+    assert state["state"] == "blocked"
+    assert state["retry_on"] == "project_availability_change"
 
 
 def test_agent_session_records_retryable_provisioning_failure(tmp_path: Path) -> None:

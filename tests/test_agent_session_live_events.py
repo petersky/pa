@@ -539,6 +539,176 @@ class AgentSessionLiveEventTests(unittest.TestCase):
             self.assertEqual(recovered.project_id, "project-1")
             self.assertEqual(recovered.in_flight.id, "queued-1")
 
+    def test_unavailable_project_is_attempted_once_across_restarts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            session = AgentSession(
+                id="session-project-blocked",
+                agent_name="codex",
+                status="prompting",
+                project_id="project-missing",
+            )
+            store = MagicMock()
+            store.list_sessions.return_value = [session]
+            store.get_session.return_value = session
+            store.get_project.return_value = None
+            manager = AgentSessionManager(Settings(data_dir=Path(tmp)), store)
+            manager.workspace_manager.reconcile_terminal_state = MagicMock(
+                return_value={}
+            )
+            manager.workspace_manager.collect_garbage = MagicMock(return_value={})
+
+            async def fail_for_missing_project(snap, _full):
+                await manager._prepare_workspace(
+                    session,
+                    requested_cwd=snap.cwd,
+                    provider_id=session.agent_name,
+                )
+
+            manager._resume_from_snapshot = AsyncMock(
+                side_effect=fail_for_missing_project
+            )
+            manager.attach_default = AsyncMock()
+
+            with (
+                patch("pa.instance.agent_session.logger.warning") as warning,
+                patch("pa.instance.agent_session.logger.exception") as exception,
+                patch("pa.instance.agent_session.logger.info") as info,
+            ):
+                asyncio.run(manager.start(resume=True))
+                asyncio.run(manager.start(resume=True))
+
+            self.assertEqual(manager._resume_from_snapshot.await_count, 1)
+            self.assertEqual(session.status, "recovery_blocked")
+            self.assertEqual(
+                session.config_json["durable_runtime"]["lifecycle"],
+                "recovery_blocked",
+            )
+            self.assertTrue(
+                any(
+                    "recovery blocked" in str(call.args[0]).lower()
+                    for call in warning.call_args_list
+                )
+            )
+            self.assertTrue(
+                any(
+                    "remains blocked" in str(call.args[0]).lower()
+                    for call in info.call_args_list
+                )
+            )
+            exception.assert_not_called()
+
+    def test_blocked_project_retries_after_project_and_links_arrive(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            session = AgentSession(
+                id="session-project-arrived",
+                agent_name="codex",
+                status="recovery_blocked",
+                project_id="project-arrived",
+                config_json={
+                    "provisioning": {
+                        "state": "blocked",
+                        "action": "Sync the project, then retry",
+                    }
+                },
+            )
+            store = MagicMock()
+            store.list_sessions.return_value = [session]
+            store.get_session.return_value = session
+            store.get_project.return_value = SimpleNamespace(realm_id="default")
+            store.list_project_repositories.return_value = [
+                (SimpleNamespace(id="repo-1"), SimpleNamespace(branch="main"))
+            ]
+            manager = AgentSessionManager(Settings(data_dir=Path(tmp)), store)
+            manager.workspace_manager.reconcile_terminal_state = MagicMock(
+                return_value={}
+            )
+            manager.workspace_manager.collect_garbage = MagicMock(return_value={})
+            manager._resume_from_snapshot = AsyncMock()
+            manager.attach_default = AsyncMock()
+
+            asyncio.run(manager.start(resume=True))
+
+            manager._resume_from_snapshot.assert_awaited_once()
+            recovered = manager._resume_from_snapshot.await_args.args[0]
+            self.assertEqual(recovered.session_id, session.id)
+            store.list_project_repositories.assert_called_once_with(
+                "project-arrived", realm_id="default"
+            )
+
+    def test_project_arrival_exposes_new_failure_as_retryable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            session = AgentSession(
+                id="session-project-new-failure",
+                agent_name="codex",
+                status="recovery_blocked",
+                project_id="project-arrived",
+                config_json={
+                    "provisioning": {
+                        "state": "blocked",
+                        "action": "Sync the project, then retry",
+                    }
+                },
+            )
+            store = MagicMock()
+            store.get_session.return_value = session
+            manager = AgentSessionManager(Settings(data_dir=Path(tmp)), store)
+            snapshot = manager._snapshot_from_persisted(session)
+
+            recovery_state = asyncio.run(
+                manager._mark_recovery_interrupted(
+                    snapshot, RuntimeError("provider resume unavailable")
+                )
+            )
+
+            self.assertEqual(recovery_state, "recoverable_interrupted")
+            self.assertEqual(session.status, "recoverable_interrupted")
+
+    def test_unknown_nonterminal_status_is_not_automatically_recovered(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            session = AgentSession(
+                id="session-unknown",
+                agent_name="codex",
+                status="future_terminal_state",
+            )
+            store = MagicMock()
+            store.list_sessions.return_value = [session]
+            manager = AgentSessionManager(Settings(data_dir=Path(tmp)), store)
+            manager.workspace_manager.reconcile_terminal_state = MagicMock(
+                return_value={}
+            )
+            manager.workspace_manager.collect_garbage = MagicMock(return_value={})
+            manager._resume_from_snapshot = AsyncMock()
+            manager.attach_default = AsyncMock()
+
+            asyncio.run(manager.start(resume=True))
+
+            manager._resume_from_snapshot.assert_not_awaited()
+            manager.workspace_manager.collect_garbage.assert_called_once_with(
+                active_session_ids=set()
+            )
+
+    def test_explicit_retry_bypasses_blocked_auto_recovery_policy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            session = AgentSession(
+                id="session-explicit-retry",
+                agent_name="codex",
+                status="recovery_blocked",
+                project_id="project-missing",
+            )
+            store = MagicMock()
+            store.get_session.return_value = session
+            manager = AgentSessionManager(Settings(data_dir=Path(tmp)), store)
+            runtime = MagicMock()
+            manager._resume_from_snapshot = AsyncMock(return_value=runtime)
+
+            recovered = asyncio.run(manager.retry_session(session.id))
+
+            self.assertIs(recovered, runtime)
+            manager._resume_from_snapshot.assert_awaited_once()
+            snapshot, reason = manager._resume_from_snapshot.await_args.args
+            self.assertEqual(snapshot.session_id, session.id)
+            self.assertEqual(reason.reason, "explicit_retry")
+
     def test_no_resume_boot_skips_durable_recovery_and_default_attach(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = MagicMock()

@@ -67,6 +67,22 @@ class AgentChatDraftContractTests(unittest.TestCase):
         )
         self.assertIn("self.drafts.setInstance(self.ownerInstanceId)", open_session)
 
+    def test_snapshot_retains_draft_hook_while_blocking_recovery_composer(self) -> None:
+        script = (SERVER / "static" / "js" / "agent-chat.js").read_text()
+        apply_snapshot = script.split(
+            "AgentChatWidget.prototype.applySnapshot", 1
+        )[1].split("AgentChatWidget.prototype.applyOptionSnapshot", 1)[0]
+
+        self.assertIn("this.drafts.onSnapshot(session)", apply_snapshot)
+        self.assertIn(
+            "this.setComposerEnabled(!this.sessionClosed && !recoveryBlocked)",
+            apply_snapshot,
+        )
+        self.assertLess(
+            apply_snapshot.index("this.drafts.onSnapshot(session)"),
+            apply_snapshot.index("this.setComposerEnabled"),
+        )
+
     def test_client_prompt_id_validation(self) -> None:
         body = PromptBody(message="keep me", client_prompt_id="browser-prompt-1")
         self.assertEqual(body.client_prompt_id, "browser-prompt-1")
