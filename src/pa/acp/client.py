@@ -1271,14 +1271,35 @@ class AgentConnection:
                     raise
                 raise ACPConfigurationError(message) from exc
 
-    async def disconnect(self) -> None:
+    async def disconnect(
+        self, *, timeout: float = 5.0, force: bool = False
+    ) -> None:
         async with self._disconnect_lock:
             ctx = self._ctx
+            proc = self._proc
             self._ctx = None
             self._conn = None
             self._proc = None
             if ctx:
-                await ctx.__aexit__(None, None, None)
+                if force and proc and getattr(proc, "returncode", None) is None:
+                    try:
+                        proc.kill()
+                    except (ProcessLookupError, OSError):
+                        pass
+                try:
+                    await asyncio.wait_for(
+                        ctx.__aexit__(None, None, None), timeout=max(0.1, timeout)
+                    )
+                except TimeoutError:
+                    if proc and getattr(proc, "returncode", None) is None:
+                        try:
+                            proc.kill()
+                        except (ProcessLookupError, OSError):
+                            pass
+                        try:
+                            await asyncio.wait_for(proc.wait(), timeout=0.5)
+                        except (TimeoutError, ProcessLookupError):
+                            logger.error("ACP child did not exit after forced kill")
         if self.session and self.session.status not in {"closed", "quiesced"}:
             self.session.status = "disconnected"
             await self._offload(

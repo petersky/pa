@@ -1669,13 +1669,15 @@ class AgentSessionManager:
                 self.settings.data_dir,
             )
 
-        # Ensure a default session exists for the instance chat surface.
-        try:
-            await self.attach_default()
-            self._last_error = None
-        except Exception as exc:
-            self._last_error = str(exc)
-            logger.exception("Failed to start default agent session")
+        # A no-resume boot is intentionally inert until an explicit admission.
+        # Durable nonterminal sessions remain recoverable on a later normal boot.
+        if self._resume_on_start:
+            try:
+                await self.attach_default()
+                self._last_error = None
+            except Exception as exc:
+                self._last_error = str(exc)
+                logger.exception("Failed to start default agent session")
 
     @staticmethod
     def _snapshot_from_persisted(session: AgentSession) -> SessionSnapshot:
@@ -2226,17 +2228,30 @@ class AgentSessionManager:
             wait=wait,
         )
 
-    async def stop(self) -> None:
-        for runtime in list(self._runtimes.values()):
+    async def stop(self, *, fast: bool = False) -> None:
+        self._accepting = False
+        self._quiescing = True
+
+        async def stop_runtime(runtime: AgentSessionRuntime) -> None:
             try:
                 runtime._flush_transcript()
-                await runtime._drain_transcripts()
+                await runtime._drain_transcripts(timeout=0.25 if fast else 5.0)
                 if runtime.connection:
-                    await runtime.connection.disconnect()
+                    await runtime.connection.disconnect(
+                        timeout=0.5 if fast else 5.0,
+                        force=fast,
+                    )
             except Exception:
                 logger.exception("Error disconnecting session %s", runtime.session_id)
+
+        await asyncio.gather(
+            *(stop_runtime(runtime) for runtime in list(self._runtimes.values()))
+        )
         self._runtimes.clear()
-        await self.browser.close()
+        try:
+            await asyncio.wait_for(self.browser.close(), timeout=1.0 if fast else 5.0)
+        except TimeoutError:
+            logger.error("Timed out stopping browser runtime")
 
     async def quiesce(
         self,
@@ -2278,6 +2293,7 @@ class AgentSessionManager:
 
         await _emit("capturing")
         sessions: list[SessionSnapshot] = []
+        disconnects = []
         for runtime in list(self._runtimes.values()):
             snap = runtime.to_session_snapshot()
             sessions.append(snap)
@@ -2291,8 +2307,12 @@ class AgentSessionManager:
             runtime._flush_transcript()
             await runtime._drain_transcripts()
             if runtime.connection:
-                await runtime.connection.disconnect()
+                remaining = max(0.1, deadline - asyncio.get_running_loop().time())
+                disconnects.append(
+                    runtime.connection.disconnect(timeout=min(5.0, remaining))
+                )
                 runtime.connection = None
+        await asyncio.gather(*disconnects)
 
         snapshot = QuiesceSnapshot(
             reason=reason,

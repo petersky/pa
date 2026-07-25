@@ -150,6 +150,26 @@ class AutonomousHostControlsTests(unittest.TestCase):
             agent.quiesce.assert_awaited_once()
             agent.stop.assert_awaited_once()
 
+    def test_shutdown_skip_quiesce_uses_fast_runtime_stop(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            agent = MagicMock(connected=True, prompting=False)
+            agent.list_runtimes.return_value = [MagicMock(_closed=False)]
+            agent.quiesce = AsyncMock()
+            agent.stop = AsyncMock()
+            ctx = MagicMock()
+            ctx.settings = Settings(data_dir=Path(tmp))
+            ctx.hooks.emit = AsyncMock()
+            ctx.services = {"instance_agent": agent}
+            kernel = Kernel(ctx, MagicMock(modules=[]))
+
+            with patch(
+                "pa.instance.quiesce.consume_skip_quiesce", return_value=True
+            ):
+                asyncio.run(kernel.shutdown(MagicMock()))
+
+            agent.quiesce.assert_not_awaited()
+            agent.stop.assert_awaited_once_with(fast=True)
+
     def test_secret_files_are_owner_only_even_when_replacing_loose_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

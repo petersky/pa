@@ -135,13 +135,34 @@ def skip_quiesce_path(data_dir: Path) -> Path:
     return data_dir / "agent_skip_quiesce"
 
 
+def skip_resume_path(data_dir: Path) -> Path:
+    return data_dir / "agent_skip_resume"
+
+
 def request_skip_quiesce(data_dir: Path) -> None:
     data_dir.mkdir(parents=True, exist_ok=True)
     skip_quiesce_path(data_dir).write_text("1\n")
 
 
+def request_skip_resume(data_dir: Path) -> None:
+    """Disable durable ACP recovery for exactly the next server boot."""
+    data_dir.mkdir(parents=True, exist_ok=True)
+    skip_resume_path(data_dir).write_text("1\n")
+
+
 def consume_skip_quiesce(data_dir: Path) -> bool:
     path = skip_quiesce_path(data_dir)
+    if not path.exists():
+        return False
+    try:
+        path.unlink()
+    except OSError:
+        pass
+    return True
+
+
+def consume_skip_resume(data_dir: Path) -> bool:
+    path = skip_resume_path(data_dir)
     if not path.exists():
         return False
     try:
@@ -175,8 +196,13 @@ def clear_quiesce_snapshot(data_dir: Path) -> None:
 
 
 def mark_snapshot_no_resume(data_dir: Path) -> None:
-    """Discard any pending quiesce snapshot so startup will not resume ACP state."""
+    """Disable all automatic ACP recovery for the next boot.
+
+    Durable sessions remain nonterminal and can be explicitly reopened later;
+    this marker does not close or discard user work.
+    """
     clear_quiesce_snapshot(data_dir)
+    request_skip_resume(data_dir)
 
 
 class QuiesceProgress(BaseModel):
