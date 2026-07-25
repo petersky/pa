@@ -200,6 +200,12 @@ class RemoteAgentStartBody(BaseModel):
     resume_session_id: str | None = None
 
 
+class DispatchControlBody(BaseModel):
+    """Idempotency context for a durable dispatch lifecycle mutation."""
+
+    idempotency_key: str | None = None
+
+
 class DispatchMaterializeBody(BaseModel):
     dispatch_id: str
     mutation_id: str
@@ -2388,13 +2394,50 @@ def get_dispatch(request: Request, dispatch_id: str) -> dict[str, Any]:
     return record.public_dict()
 
 
+def _dispatch_control_key(
+    request: Request, body: DispatchControlBody | None
+) -> str:
+    header_key = request.headers.get("idempotency-key")
+    if not isinstance(header_key, str):
+        header_key = None
+    key = (header_key or (body.idempotency_key if body else None) or str(uuid4())).strip()
+    if not key:
+        raise HTTPException(status_code=400, detail="Idempotency-Key cannot be empty")
+    return key
+
+
+def _repeat_dispatch_control(
+    record: DispatchRecord, operation: str, idempotency_key: str
+) -> bool:
+    previous = record.control_operations.get(idempotency_key)
+    if previous is None:
+        return False
+    if previous != operation:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "idempotency_conflict",
+                "message": "This idempotency key was already used for a different dispatch operation.",
+                "dispatch_id": record.dispatch_id,
+            },
+        )
+    return True
+
+
 @router.post("/fleet/dispatch-jobs/{dispatch_id}/retry", status_code=202)
-def retry_dispatch(request: Request, dispatch_id: str) -> dict[str, Any]:
+def retry_dispatch(
+    request: Request,
+    dispatch_id: str,
+    body: DispatchControlBody | None = None,
+) -> dict[str, Any]:
     require_user(request)
     ledger = _dispatch_store(request)
     record = ledger.get(dispatch_id)
     if not record:
         raise HTTPException(status_code=404, detail="Dispatch not found")
+    idempotency_key = _dispatch_control_key(request, body)
+    if _repeat_dispatch_control(record, "retry", idempotency_key):
+        return record.public_dict()
     if record.state not in {"failed", "cancelled"} or not record.recoverable:
         raise HTTPException(
             status_code=409,
@@ -2406,6 +2449,7 @@ def retry_dispatch(request: Request, dispatch_id: str) -> dict[str, Any]:
     record.cancel_requested = False
     record.last_error = None
     record.error_code = None
+    record.control_operations[idempotency_key] = "retry"
     ledger.transition(record, "queued", "Operator queued a safe retry.")
     worker = request.app.state.ctx.services.get("dispatch_worker")
     if worker:
@@ -2414,13 +2458,21 @@ def retry_dispatch(request: Request, dispatch_id: str) -> dict[str, Any]:
 
 
 @router.post("/fleet/dispatch-jobs/{dispatch_id}/cancel", status_code=202)
-def cancel_dispatch(request: Request, dispatch_id: str) -> dict[str, Any]:
+def cancel_dispatch(
+    request: Request,
+    dispatch_id: str,
+    body: DispatchControlBody | None = None,
+) -> dict[str, Any]:
     require_user(request)
     ledger = _dispatch_store(request)
     record = ledger.get(dispatch_id)
     if not record:
         raise HTTPException(status_code=404, detail="Dispatch not found")
+    idempotency_key = _dispatch_control_key(request, body)
+    if _repeat_dispatch_control(record, "cancel", idempotency_key):
+        return record.public_dict()
     if record.state == "queued":
+        record.control_operations[idempotency_key] = "cancel"
         ledger.transition(record, "cancelled", "Operator cancelled queued dispatch.")
         return record.public_dict()
     if record.state not in {
@@ -2436,6 +2488,7 @@ def cancel_dispatch(request: Request, dispatch_id: str) -> dict[str, Any]:
             },
         )
     record.cancel_requested = True
+    record.control_operations[idempotency_key] = "cancel"
     ledger.transition(
         record,
         record.state,
@@ -2904,3 +2957,80 @@ class FleetModule(Module):
 
     def ui_routers(self):
         return [ui_router]
+
+    def register_mcp(self, mcp, ctx: AppContext) -> None:
+        from pa.mcp.local_api import request_local_pa
+
+        @mcp.tool()
+        def dispatch_card_to_instance(
+            card_id: str,
+            instance_id: str,
+            message: str = "",
+            idempotency_key: str | None = None,
+            provider: str | None = None,
+            model_id: str | None = None,
+            mode_id: str | None = None,
+            effort: str | None = None,
+            cwd: str | None = None,
+            config: dict[str, str | bool] | None = None,
+        ) -> dict:
+            """Durably and idempotently dispatch an authoritative card to a fleet instance."""
+            key = (idempotency_key or str(uuid4())).strip()
+            if not key:
+                raise ValueError("idempotency_key cannot be empty")
+            return request_local_pa(
+                ctx.settings,
+                "POST",
+                f"/api/fleet/instances/{instance_id}/agent/start",
+                json={
+                    "card_id": card_id,
+                    "message": message,
+                    "provider": provider,
+                    "model_id": model_id,
+                    "mode_id": mode_id,
+                    "effort": effort,
+                    "cwd": cwd,
+                    "config": config or {},
+                    "idempotency_key": key,
+                },
+            )
+
+        @mcp.tool()
+        def get_dispatch(dispatch_id: str) -> dict | None:
+            """Get normalized durable dispatch, session, authority, target, and card-version state."""
+            return request_local_pa(
+                ctx.settings,
+                "GET",
+                f"/api/fleet/dispatch-jobs/{dispatch_id}",
+                allow_not_found=True,
+            )
+
+        @mcp.tool()
+        def retry_dispatch(
+            dispatch_id: str, idempotency_key: str | None = None
+        ) -> dict:
+            """Idempotently queue a safe retry through the durable dispatch control plane."""
+            key = (idempotency_key or str(uuid4())).strip()
+            if not key:
+                raise ValueError("idempotency_key cannot be empty")
+            return request_local_pa(
+                ctx.settings,
+                "POST",
+                f"/api/fleet/dispatch-jobs/{dispatch_id}/retry",
+                json={"idempotency_key": key},
+            )
+
+        @mcp.tool()
+        def cancel_dispatch(
+            dispatch_id: str, idempotency_key: str | None = None
+        ) -> dict:
+            """Idempotently request cancellation at a safe durable dispatch boundary."""
+            key = (idempotency_key or str(uuid4())).strip()
+            if not key:
+                raise ValueError("idempotency_key cannot be empty")
+            return request_local_pa(
+                ctx.settings,
+                "POST",
+                f"/api/fleet/dispatch-jobs/{dispatch_id}/cancel",
+                json={"idempotency_key": key},
+            )

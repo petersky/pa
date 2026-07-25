@@ -20,6 +20,7 @@ from pa.execution.dispatch import (
 )
 from pa.modules.fleet import (
     DispatchCompletionBody,
+    DispatchControlBody,
     DispatchMaterializeBody,
     _assert_dispatch_sync_health,
     _process_remote_dispatch,
@@ -724,6 +725,69 @@ class DurableDispatchJobTests(unittest.IsolatedAsyncioTestCase):
                 cancelled = cancel_dispatch(request, record.dispatch_id)
             self.assertEqual(cancelled["state"], "cancelled")
             self.assertEqual(cancelled["dispatch_id"], "dispatch-1")
+
+    async def test_retry_and_cancel_are_idempotent_by_control_key(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            app, ledger, _domain = self._job_app(Path(tmp))
+            record = self._record(state="failed", last_error="offline")
+            ledger.put(record)
+            request = MagicMock()
+            request.app = app
+            request.headers = {}
+            with patch("pa.modules.fleet.require_user"):
+                first_retry = retry_dispatch(
+                    request,
+                    record.dispatch_id,
+                    DispatchControlBody(idempotency_key="retry-1"),
+                )
+                repeated_retry = retry_dispatch(
+                    request,
+                    record.dispatch_id,
+                    DispatchControlBody(idempotency_key="retry-1"),
+                )
+                first_cancel = cancel_dispatch(
+                    request,
+                    record.dispatch_id,
+                    DispatchControlBody(idempotency_key="cancel-1"),
+                )
+                repeated_cancel = cancel_dispatch(
+                    request,
+                    record.dispatch_id,
+                    DispatchControlBody(idempotency_key="cancel-1"),
+                )
+
+            self.assertEqual(first_retry["state"], "queued")
+            self.assertEqual(repeated_retry["state"], "queued")
+            self.assertEqual(first_cancel["state"], "cancelled")
+            self.assertEqual(repeated_cancel["state"], "cancelled")
+            persisted = DispatchStore(Path(tmp)).get(record.dispatch_id)
+            self.assertEqual(
+                persisted.control_operations,
+                {"retry-1": "retry", "cancel-1": "cancel"},
+            )
+
+    async def test_control_key_cannot_be_reused_for_another_operation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            app, ledger, _domain = self._job_app(Path(tmp))
+            record = self._record(state="failed", last_error="offline")
+            ledger.put(record)
+            request = MagicMock()
+            request.app = app
+            request.headers = {}
+            with patch("pa.modules.fleet.require_user"):
+                retry_dispatch(
+                    request,
+                    record.dispatch_id,
+                    DispatchControlBody(idempotency_key="operation-1"),
+                )
+                with self.assertRaises(HTTPException) as raised:
+                    cancel_dispatch(
+                        request,
+                        record.dispatch_id,
+                        DispatchControlBody(idempotency_key="operation-1"),
+                    )
+            self.assertEqual(raised.exception.status_code, 409)
+            self.assertEqual(raised.exception.detail["code"], "idempotency_conflict")
 
 
 class DispatchRestartTests(unittest.TestCase):
