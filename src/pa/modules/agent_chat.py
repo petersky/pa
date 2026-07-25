@@ -22,6 +22,7 @@ from pa.instance.agent_session import (
     TRANSCRIPT_WINDOW_LIMIT,
     AgentSessionManager,
     AgentSessionRuntime,
+    RECOVERY_BLOCKED_STATUS,
 )
 from pa.instance.quiesce import MAX_TOTAL_IMAGE_BYTES, ImageAttachment
 
@@ -1297,6 +1298,50 @@ async def session_cancel(request: Request, session_id: str) -> dict:
     runtime = _runtime_or_404(request, session_id)
     await runtime.cancel(pause_queue=True)
     return {"ok": True, "queue_paused": True}
+
+
+@router.post("/sessions/{session_id}/retry")
+async def session_retry(request: Request, session_id: str) -> dict:
+    """Explicitly retry a durable session that is not currently live."""
+    mgr = _manager(request)
+    try:
+        runtime = await mgr.retry_session(session_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        session = await _offload(
+            mgr,
+            "sqlite.agent_session_read",
+            mgr.store.get_session,
+            session_id,
+        )
+        if session and session.status == RECOVERY_BLOCKED_STATUS:
+            provisioning = dict(
+                (session.config_json or {}).get("provisioning") or {}
+            )
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": provisioning.get("error_code")
+                    or "session_recovery_blocked",
+                    "message": provisioning.get("error") or str(exc),
+                    "blocked": True,
+                    "retryable": False,
+                    "manual_retry": True,
+                    "action": provisioning.get("action"),
+                },
+            ) from exc
+        if session and session.status == "closed":
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "session_closed",
+                    "message": "Closed sessions cannot be retried",
+                    "recoverable": False,
+                },
+            ) from exc
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return await _offload(mgr, "agent.session_snapshot", runtime.snapshot)
 
 
 @router.post("/sessions/{session_id}/close")
