@@ -83,6 +83,20 @@ class AgentChatDraftContractTests(unittest.TestCase):
             apply_snapshot.index("this.setComposerEnabled"),
         )
 
+    def test_failed_prompt_retains_draft_before_session_recovery(self) -> None:
+        script = (SERVER / "static" / "js" / "agent-chat.js").read_text()
+        send = script.split("AgentChatWidget.prototype.send", 1)[1].split(
+            "AgentChatWidget.prototype.cancel", 1
+        )[0]
+
+        self.assertIn("self.drafts.submissionFailed", send)
+        self.assertIn('code === "session_not_live"', send)
+        self.assertIn('code === "session_deleted"', send)
+        self.assertLess(
+            send.index("self.drafts.submissionFailed"),
+            send.index("self.resolveSessionNotLive"),
+        )
+
     def test_client_prompt_id_validation(self) -> None:
         body = PromptBody(message="keep me", client_prompt_id="browser-prompt-1")
         self.assertEqual(body.client_prompt_id, "browser-prompt-1")

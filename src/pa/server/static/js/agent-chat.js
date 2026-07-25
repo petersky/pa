@@ -134,6 +134,11 @@
     return fallback;
   }
 
+  function apiErrorCode(error) {
+    const detail = error && error.detail;
+    return detail && typeof detail === "object" ? detail.code : "";
+  }
+
   function AgentChatWidget(root) {
     this.root = root;
     this.sessionId = root.dataset.sessionId || "";
@@ -165,6 +170,8 @@
       stop: root.querySelector("[data-acw-stop]"),
       systemToggle: root.querySelector("[data-acw-toggle-system]"),
       rawToggle: root.querySelector("[data-acw-toggle-raw]"),
+      recover: root.querySelector("[data-acw-recover]"),
+      history: root.querySelector("[data-acw-history]"),
       working: root.querySelector("[data-acw-working]"),
       workingLabel: root.querySelector("[data-acw-working-label]"),
       turnTimer: root.querySelector("[data-acw-turn-timer]"),
@@ -239,6 +246,7 @@
     this.browserDeviceScaleFactor = 1;
     this.browserRefreshId = null;
 
+    this.startupRetryId = null;
     this._bind();
     this.drafts = window.PAAgentDrafts && window.PAAgentDrafts.installWidget
       ? window.PAAgentDrafts.installWidget(this) : null;
@@ -281,8 +289,17 @@
         self.retrySession();
       });
     }
-    const recover = this.root.querySelector("[data-acw-recover]");
-    if (recover) recover.addEventListener("click", function () { self.recoverSession(); });
+    if (this.els.recover) this.els.recover.addEventListener("click", function () {
+      self.recoverSession(self.sessionId).catch(function (err) {
+        self.setPlaceholder("Session recovery is still unavailable: " + err.message);
+      });
+    });
+    if (this.els.history) this.els.history.addEventListener("click", function () {
+      self.loadDurableSession(self.sessionId).catch(function (err) {
+        self.setPlaceholder("Failed to load durable history: " + err.message);
+        self.setStatus("error");
+      });
+    });
     if (this.els.systemToggle) {
       this.els.systemToggle.checked = this.showSystem;
       this.root.classList.toggle("show-system", this.showSystem);
@@ -405,6 +422,115 @@
       return res.json();
     });
   };
+  AgentChatWidget.prototype.retryAfterStartupRecovery = function (error) {
+    const code = apiErrorCode(error);
+    if (code !== "agent_recovery_in_progress") return false;
+    const detail = error.detail || {};
+    const delay = Math.max(100, Number(detail.retry_after_ms || 250));
+    this.setPlaceholder("Restoring durable agent sessions…");
+    this.setStatus("starting");
+    if (this.startupRetryId) clearTimeout(this.startupRetryId);
+    const self = this;
+    this.startupRetryId = setTimeout(function () {
+      self.startupRetryId = null;
+      self.init();
+    }, delay);
+    return true;
+  };
+
+
+  AgentChatWidget.prototype.showRecoveryActions = function (detail) {
+    detail = detail || {};
+    const recoverable = detail.recoverable === true;
+    if (this.els.recover) this.els.recover.hidden = !recoverable;
+    if (this.els.history) this.els.history.hidden = !detail.history_url;
+  };
+
+  AgentChatWidget.prototype.clearSelectedSession = function () {
+    if (this.es) {
+      this.es.close();
+      this.es = null;
+    }
+    this.sessionId = "";
+    this.ownerInstanceId = "";
+    this.sessionRoute = null;
+    this.root.dataset.sessionId = "";
+    this.root.dataset.ownerInstanceId = "";
+    this.apiBase = String(this.root.dataset.apiBase || "/api/agent").replace(/\/$/, "");
+    this.lastSeq = 0;
+    this.sessionClosed = true;
+    this.setTurnActive(false);
+    this.setStatus("offline");
+    this.setComposerEnabled(false);
+    this.showRecoveryActions({});
+    if (this.root.closest(".page-agent")) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("session");
+      url.searchParams.delete("instance");
+      window.history.replaceState({}, "", url);
+    }
+  };
+
+  AgentChatWidget.prototype.loadDurableSession = function (sessionId) {
+    if (!sessionId) return Promise.reject(new Error("No session selected"));
+    const self = this;
+    return this.api("/history/" + encodeURIComponent(sessionId)).then(function (history) {
+      const snap = {
+        session: history.session,
+        transcript: history.events || [],
+        transcript_page: history.page || {},
+        prompting: false,
+        connected: false,
+        queue: [],
+        queue_paused: false,
+        pending_permissions: [],
+        metrics: history.session && history.session.metrics_json || {},
+      };
+      self.sessionId = sessionId;
+      self.root.dataset.sessionId = sessionId;
+      self.applySnapshot(snap);
+      self.sessionClosed = true;
+      self.setComposerEnabled(false);
+      self.setStatus("offline");
+      const recovery = history.recovery || {};
+      self.showRecoveryActions({ recoverable: recovery.recoverable, history_url: "/api/agent/history/" + sessionId });
+      return history;
+    });
+  };
+
+  AgentChatWidget.prototype.resolveSessionNotLive = function (error, sessionId) {
+    const detail = error && typeof error.detail === "object" ? error.detail : {};
+    const code = apiErrorCode(error);
+    if (code !== "session_not_live" && code !== "session_deleted") return Promise.reject(error);
+    const self = this;
+    if (code === "session_not_live" && detail.recoverable === true) {
+      this.showRecoveryActions(detail);
+      return this.recoverSession(sessionId).catch(function (recoveryError) {
+        return self.loadDurableSession(sessionId).then(function () {
+          self.addBubble(
+            "system",
+            "Provider recovery is still unavailable: " + recoveryError.message,
+            new Date().toISOString(),
+            { system: true, forceVisible: true }
+          );
+          return null;
+        });
+      });
+    }
+    const durable = detail.durable_session || {};
+    if (durable.exists && detail.history_url) {
+      return this.loadDurableSession(sessionId).catch(function () {
+        self.clearSelectedSession();
+        return null;
+      });
+    }
+    this.clearSelectedSession();
+    refreshSessionList(null);
+    if (code === "session_deleted" && this.autoStart) {
+      setTimeout(function () { self.init(); }, 0);
+    }
+    return Promise.resolve(null);
+  };
 
   AgentChatWidget.prototype.init = function () {
     const self = this;
@@ -433,6 +559,11 @@
         return self.openSession(sid, "", { replace: true });
       })
       .catch(function (err) {
+        if (self.retryAfterStartupRecovery(err)) return;
+        const code = apiErrorCode(err);
+        if (code === "session_not_live" || code === "session_deleted") {
+          return self.resolveSessionNotLive(err, self.sessionId);
+        }
         self.setPlaceholder("Failed to start session: " + err.message);
         self.setStatus("error");
       });
@@ -495,6 +626,7 @@
     this.root.dataset.sessionId = sessionId;
     this.root.dataset.ownerInstanceId = this.ownerInstanceId;
     this._setRecoveryControl(false);
+    this.showRecoveryActions({});
     this.setPlaceholder("Locating session owner…");
     return this.resolveSessionRoute(sessionId, this.ownerInstanceId)
       .then(function (route) {
@@ -515,22 +647,31 @@
           return null;
         }
         if (route.state === "missing") {
+          self.clearSelectedSession();
+          refreshSessionList(null);
           self.setStatus("error");
-          self.setComposerEnabled(false);
           self.setPlaceholder(route.message || "This agent session was deleted or has expired.");
+          if (self.autoStart) setTimeout(function () { self.init(); }, 0);
           return null;
         }
         if (route.live) {
-          return self.api("/sessions/" + sessionId).then(function (snap) {
+          return self.api("/sessions/" + encodeURIComponent(sessionId)).then(function (snap) {
+            if (self.startupRetryId) clearTimeout(self.startupRetryId);
+            self.startupRetryId = null;
+            self.showRecoveryActions({});
             self.applySnapshot(snap);
             self.connectSSE();
             self.refreshBrowserState();
             return snap;
           });
         }
-        return self.api("/history/" + sessionId).then(function (history) {
+        return self.api("/history/" + encodeURIComponent(sessionId)).then(function (history) {
           self.applySnapshot(self._historySnapshot(history));
           self.setComposerEnabled(false);
+          self.showRecoveryActions({
+            recoverable: route.recoverable,
+            history_url: "/api/agent/history/" + sessionId,
+          });
           if (route.recoverable) {
             self._setRecoveryControl(true, "Recover session");
             self.addBubble("system", "PA restored this session's durable history. Reconnect it to continue.", new Date().toISOString(), { system: true, forceVisible: true });
@@ -541,6 +682,11 @@
         });
       })
       .catch(function (err) {
+        if (self.retryAfterStartupRecovery(err)) return null;
+        const code = apiErrorCode(err);
+        if (code === "session_not_live" || code === "session_deleted") {
+          return self.resolveSessionNotLive(err, sessionId);
+        }
         self.sessionRoute = { state: "owner_unreachable" };
         self.setPlaceholder("Failed to load session: " + err.message);
         self.setStatus("error");
@@ -550,27 +696,49 @@
       });
   };
 
-  AgentChatWidget.prototype.recoverSession = function () {
+  AgentChatWidget.prototype.recoverSession = function (sessionId) {
     const self = this;
-    if (!this.sessionId) return;
+    const targetSessionId = sessionId || this.sessionId;
+    if (!targetSessionId) return Promise.reject(new Error("No session selected"));
     this._setRecoveryControl(false);
     if (this.sessionRoute && this.sessionRoute.state === "owner_unreachable") {
-      this.openSession(this.sessionId, this.ownerInstanceId, { replace: true }).catch(function () {});
-      return;
+      return this.openSession(targetSessionId, this.ownerInstanceId, { replace: true });
     }
-    this.setPlaceholder("Recovering session…");
-    this.api("/sessions/" + this.sessionId + "/recover", { method: "POST", body: "{}" })
+    this.setPlaceholder("Recovering provider thread…");
+    return this.api("/sessions/" + encodeURIComponent(targetSessionId) + "/recover", {
+      method: "POST",
+      body: "{}",
+    })
       .then(function (snap) {
+        if (self.startupRetryId) clearTimeout(self.startupRetryId);
+        self.startupRetryId = null;
+        self.sessionId = targetSessionId;
+        self.root.dataset.sessionId = targetSessionId;
+        self.sessionRoute = self.sessionRoute || {};
         self.sessionRoute.state = "live";
         self.sessionRoute.live = true;
         self.sessionRoute.recoverable = false;
+        self.showRecoveryActions({});
         self.applySnapshot(snap);
+        self.sessionClosed = false;
+        self.setComposerEnabled(true);
         self.connectSSE();
+        refreshSessionList(targetSessionId);
+        return snap;
       })
       .catch(function (err) {
+        if (self.retryAfterStartupRecovery(err)) return null;
+        const code = apiErrorCode(err);
+        if (code === "session_not_live" || code === "session_deleted") {
+          return self.resolveSessionNotLive(err, targetSessionId);
+        }
+        if (code === "session_recovery_blocked" || code === "session_closed") {
+          return self.loadDurableSession(targetSessionId);
+        }
         self.setPlaceholder("Session recovery is still unavailable: " + err.message);
         self.setStatus("offline");
         self._setRecoveryControl(true, "Retry recovery");
+        throw err;
       });
   };
 
@@ -1004,7 +1172,10 @@
       self.api("/sessions/" + self.sessionId).then(function (snap) {
         self.applySnapshot(snap);
       }).catch(function (err) {
-        if (err.status === 404) self.markSessionEnded("This session is no longer running. Start or select another session to continue.");
+        const code = apiErrorCode(err);
+        if (code === "session_not_live" || code === "session_deleted") {
+          self.resolveSessionNotLive(err, self.sessionId);
+        } else if (err.status === 404) self.markSessionEnded("This session is no longer running.");
       });
     };
 
@@ -2040,8 +2211,10 @@
             conflict: err.status === 409,
           });
         }
-        if (err.status === 404) {
-          self.markSessionEnded("Prompt not sent: this session is no longer running. Start or select another session to continue.");
+        const code = apiErrorCode(err);
+        if (code === "session_not_live" || code === "session_deleted") {
+          self.addBubble("system", "Prompt not sent: " + err.message, new Date().toISOString(), { system: true, forceVisible: true });
+          self.resolveSessionNotLive(err, self.sessionId);
           return;
         }
         self.addBubble("system", "Prompt not sent: " + err.message, new Date().toISOString(), { system: true, forceVisible: true });
@@ -2182,6 +2355,7 @@
           li.dataset.sessionLive = s.live === false || s.status === "closed"
             ? "false"
             : "true";
+          li.dataset.sessionRecoverable = s.recovery && s.recovery.recoverable ? "true" : "false";
           li.setAttribute("role", "button");
           li.tabIndex = 0;
           if (activeId && s.id === activeId) li.classList.add("active");
