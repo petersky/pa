@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # --- Control plane (Fleet / Realm / Membership) ---
@@ -260,6 +260,68 @@ class CardKind(StrEnum):
     CONCERN = "concern"
 
 
+class ItemStatus(StrEnum):
+    """Deprecated item lifecycle vocabulary.
+
+    New callers use :class:`CardLane`.  This enum remains versioned because old
+    HTTP/MCP clients and durable events can still contain these values.
+    """
+
+    OPEN = "open"
+    ACTIVE = "active"
+    BLOCKED = "blocked"
+    DONE = "done"
+    ARCHIVED = "archived"
+
+
+_STATUS_TO_LANE = {
+    ItemStatus.OPEN: CardLane.INBOX,
+    ItemStatus.ACTIVE: CardLane.ACTIVE,
+    ItemStatus.BLOCKED: CardLane.WAITING,
+    ItemStatus.DONE: CardLane.DONE,
+    ItemStatus.ARCHIVED: CardLane.DONE,
+}
+
+_LANE_TO_STATUS = {
+    CardLane.INBOX: ItemStatus.OPEN,
+    CardLane.ACTIVE: ItemStatus.ACTIVE,
+    CardLane.WAITING: ItemStatus.BLOCKED,
+    CardLane.DONE: ItemStatus.DONE,
+}
+
+
+def lane_from_legacy_status(status: ItemStatus | str) -> CardLane:
+    """Translate the legacy item lifecycle to the canonical card lifecycle."""
+
+    return _STATUS_TO_LANE[ItemStatus(status)]
+
+
+def legacy_status_from_lane(lane: CardLane | str) -> ItemStatus:
+    """Translate a canonical lane for a legacy item response."""
+
+    return _LANE_TO_STATUS[CardLane(lane)]
+
+
+def _adapt_legacy_lifecycle(data):
+    """Normalize legacy ``status`` input and reject conflicting vocabulary."""
+
+    if not isinstance(data, dict) or "status" not in data:
+        return data
+    adapted = dict(data)
+    status = adapted.pop("status")
+    if status is None:
+        return adapted
+    legacy_lane = lane_from_legacy_status(status)
+    lane = adapted.get("lane")
+    if lane is not None and CardLane(lane) != legacy_lane:
+        raise ValueError(
+            f"Conflicting lifecycle values: lane={CardLane(lane).value!r} "
+            f"does not match deprecated status={ItemStatus(status).value!r}"
+        )
+    adapted["lane"] = legacy_lane
+    return adapted
+
+
 class CardSummarySource(StrEnum):
     FALLBACK = "fallback"
     MANUAL = "manual"
@@ -292,6 +354,11 @@ class Card(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
+    @model_validator(mode="before")
+    @classmethod
+    def accept_legacy_status(cls, data):
+        return _adapt_legacy_lifecycle(data)
+
 
 class CardCreate(BaseModel):
     realm_id: str = "default"
@@ -301,11 +368,21 @@ class CardCreate(BaseModel):
     summary: str = ""
     summary_source: CardSummarySource | None = None
     lane: CardLane = CardLane.INBOX
+    status: ItemStatus | None = Field(
+        default=None,
+        exclude=True,
+        deprecated="Use the canonical lane field.",
+    )
     parent_id: str | None = None
     project_id: str | None = None
     tags: list[str] = Field(default_factory=list)
     preferred_instance: str | None = None
     preferred_capabilities: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def accept_legacy_status(cls, data):
+        return _adapt_legacy_lifecycle(data)
 
 
 class CardUpdate(BaseModel):
@@ -315,11 +392,21 @@ class CardUpdate(BaseModel):
     summary_source: CardSummarySource | None = None
     summary_stale: bool | None = None
     lane: CardLane | None = None
+    status: ItemStatus | None = Field(
+        default=None,
+        exclude=True,
+        deprecated="Use the canonical lane field.",
+    )
     parent_id: str | None = None
     project_id: str | None = None
     tags: list[str] | None = None
     preferred_instance: str | None = None
     preferred_capabilities: list[str] | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def accept_legacy_status(cls, data):
+        return _adapt_legacy_lifecycle(data)
 
 
 # --- Sync objects ---
@@ -374,38 +461,12 @@ class SyncRef(BaseModel):
     head_hash: str
 
 
-# --- Legacy Item aliases (backward compatibility) ---
+# --- Legacy Item compatibility DTOs (backward compatibility) ---
 
 
-class ItemKind(StrEnum):
-    GOAL = "goal"
-    TASK = "task"
-    PROJECT = "project"
-    CONCERN = "concern"
-
-
-class ItemStatus(StrEnum):
-    OPEN = "open"
-    ACTIVE = "active"
-    BLOCKED = "blocked"
-    DONE = "done"
-    ARCHIVED = "archived"
-
-
-_STATUS_TO_LANE = {
-    ItemStatus.OPEN: CardLane.INBOX,
-    ItemStatus.ACTIVE: CardLane.ACTIVE,
-    ItemStatus.BLOCKED: CardLane.WAITING,
-    ItemStatus.DONE: CardLane.DONE,
-    ItemStatus.ARCHIVED: CardLane.DONE,
-}
-
-_LANE_TO_STATUS = {
-    CardLane.INBOX: ItemStatus.OPEN,
-    CardLane.ACTIVE: ItemStatus.ACTIVE,
-    CardLane.WAITING: ItemStatus.BLOCKED,
-    CardLane.DONE: ItemStatus.DONE,
-}
+# Kind has always had identical semantics, so keep an import-compatible alias
+# instead of maintaining a second domain enum.
+ItemKind = CardKind
 
 
 class Item(BaseModel):
@@ -426,7 +487,7 @@ class Item(BaseModel):
             kind=ItemKind(card.kind.value),
             title=card.title,
             body=card.body,
-            status=_LANE_TO_STATUS.get(card.lane, ItemStatus.OPEN),
+            status=legacy_status_from_lane(card.lane),
             parent_id=card.parent_id,
             tags=card.tags,
             created_at=card.created_at,
@@ -448,7 +509,7 @@ class ItemCreate(BaseModel):
             kind=CardKind(self.kind.value),
             title=self.title,
             body=self.body,
-            lane=_STATUS_TO_LANE.get(self.status, CardLane.INBOX),
+            lane=lane_from_legacy_status(self.status),
             parent_id=self.parent_id,
             tags=self.tags,
         )
@@ -462,7 +523,7 @@ class ItemUpdate(BaseModel):
     tags: list[str] | None = None
 
     def to_card_update(self) -> CardUpdate:
-        lane = _STATUS_TO_LANE.get(self.status) if self.status else None
+        lane = lane_from_legacy_status(self.status) if self.status else None
         return CardUpdate(
             title=self.title,
             body=self.body,
