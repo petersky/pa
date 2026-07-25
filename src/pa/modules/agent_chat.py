@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 from pathlib import Path
@@ -18,11 +19,11 @@ from pa.auth.middleware import get_principal_id
 from pa.core.contracts import Module
 from pa.core.preferences import get_preferences_store
 from pa.instance.agent_session import (
+    TRANSCRIPT_WINDOW_LIMIT,
     AgentSessionManager,
     AgentSessionRuntime,
-    TRANSCRIPT_WINDOW_LIMIT,
 )
-from pa.instance.quiesce import ImageAttachment, MAX_TOTAL_IMAGE_BYTES
+from pa.instance.quiesce import MAX_TOTAL_IMAGE_BYTES, ImageAttachment
 
 router = APIRouter(prefix="/agent")
 logger = logging.getLogger(__name__)
@@ -49,9 +50,7 @@ async def _offload(
     **kwargs,
 ):
     if isinstance(manager, AgentSessionManager):
-        return await manager._offload(
-            operation, call, *args, timeout=timeout, **kwargs
-        )
+        return await manager._offload(operation, call, *args, timeout=timeout, **kwargs)
     return await asyncio.to_thread(call, *args, **kwargs)
 
 
@@ -65,9 +64,7 @@ async def _runtime_offload(
     **kwargs,
 ):
     if isinstance(runtime, AgentSessionRuntime):
-        return await runtime._offload(
-            operation, call, *args, timeout=timeout, **kwargs
-        )
+        return await runtime._offload(operation, call, *args, timeout=timeout, **kwargs)
     return await asyncio.to_thread(call, *args, **kwargs)
 
 
@@ -235,6 +232,7 @@ class PromptBody(BaseModel):
     card_id: str | None = None
     project_id: str | None = None
     dispatch_id: str | None = None
+    idempotency_key: str | None = None
 
     @model_validator(mode="after")
     def validate_total_image_size(self) -> PromptBody:
@@ -279,12 +277,11 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
     mgr = _manager(request)
     principal_id = get_principal_id(request)
     created_runtime = False
-    from pa.acp.surfaces import surface_for_label
     from pa.acp.providers.resolve import (
         resolve_provider_id,
         resolve_surface_preferences,
     )
-    from pa.acp.surfaces import AgentInvocationContext
+    from pa.acp.surfaces import AgentInvocationContext, surface_for_label
     from pa.core.preferences import SurfaceAgentPrefs
 
     surface = body.surface or surface_for_label(body.label, project_id=body.project_id)
@@ -312,8 +309,7 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
         dispatch_store = request.app.state.ctx.services.get("dispatch_store")
         dispatch_record = (
             await _offload(
-                mgr,
-                "dispatch.record_read", dispatch_store.get, body.dispatch_id
+                mgr, "dispatch.record_read", dispatch_store.get, body.dispatch_id
             )
             if dispatch_store
             else None
@@ -339,6 +335,7 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                 },
             )
         if not body.resume and not dispatch_record.session_id:
+
             def reserve_dispatch_session() -> None:
                 dispatch_record.session_id = str(uuid4())
                 dispatch_store.transition(
@@ -348,14 +345,10 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                     detail={"session_id": dispatch_record.session_id},
                 )
 
-            await _offload(
-                mgr,
-                "dispatch.session_reserve", reserve_dispatch_session
-            )
+            await _offload(mgr, "dispatch.session_reserve", reserve_dispatch_session)
     if body.project_id:
         project = await _offload(
-            mgr,
-            "sqlite.project_read", mgr.store.get_project, body.project_id
+            mgr, "sqlite.project_read", mgr.store.get_project, body.project_id
         )
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
@@ -367,6 +360,7 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     new_session_defaults = None
     if isinstance(settings.data_dir, (str, Path)):
+
         def resolve_requested_providers():
             inherited, _ = resolve_provider_id(
                 settings,
@@ -392,8 +386,7 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
             return inherited, requested
 
         inherited_provider, requested_provider = await _offload(
-            mgr,
-            "agent.provider_resolve", resolve_requested_providers, timeout=30.0
+            mgr, "agent.provider_resolve", resolve_requested_providers, timeout=30.0
         )
         defaults_provider = surface_defaults.provider or inherited_provider
         if defaults_provider.strip().lower() == requested_provider.strip().lower():
@@ -656,6 +649,7 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
         execution["dispatch_id"] = dispatch_record.dispatch_id
         config["execution_context"] = execution
         runtime.session.config_json = config
+
         def persist_dispatch_link() -> None:
             mgr.store.save_session(runtime.session)
             dispatch_store.transition(
@@ -665,10 +659,7 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                 detail={
                     "session_id": runtime.session_id,
                     "configuration": dict(
-                        (
-                            (runtime.session.config_json or {}).get("configuration")
-                            or {}
-                        )
+                        ((runtime.session.config_json or {}).get("configuration") or {})
                     ),
                 },
             )
@@ -993,8 +984,7 @@ async def session_events(request: Request, session_id: str) -> StreamingResponse
                         "created_at": te.created_at.isoformat(),
                     }
                     yield await _runtime_offload(
-                        runtime,
-                        "agent.sse_serialize", _sse, te.seq, payload
+                        runtime, "agent.sse_serialize", _sse, te.seq, payload
                     )
                     cursor = te.seq
                 if len(page) < TRANSCRIPT_WINDOW_LIMIT:
@@ -1050,8 +1040,7 @@ async def session_events(request: Request, session_id: str) -> StreamingResponse
                                 "created_at": te.created_at.isoformat(),
                             }
                             yield await _runtime_offload(
-                                runtime,
-                                "agent.sse_serialize", _sse, te.seq, payload
+                                runtime, "agent.sse_serialize", _sse, te.seq, payload
                             )
                             cursor = te.seq
                         if cursor == previous_cursor:
@@ -1060,8 +1049,7 @@ async def session_events(request: Request, session_id: str) -> StreamingResponse
                         continue
                 cursor = max(cursor, seq)
                 yield await _runtime_offload(
-                    runtime,
-                    "agent.sse_serialize", _sse, seq or None, event
+                    runtime, "agent.sse_serialize", _sse, seq or None, event
                 )
         finally:
             runtime.unsubscribe(queue)
@@ -1092,14 +1080,40 @@ async def session_prompt(request: Request, session_id: str, body: PromptBody) ->
     if not message and not body.images:
         raise HTTPException(status_code=400, detail="message or image required")
     runtime = _runtime_or_404(request, session_id)
+    settings = request.app.state.ctx.settings
+    principal_id = get_principal_id(request)
+    user = getattr(request.state, "user", None)
+    instance_authenticated = (
+        getattr(request.state, "instance_authenticated", False) is True
+    )
+    if instance_authenticated and not body.dispatch_id:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "insufficient_authorization",
+                "message": "Fleet credentials may prompt only a dispatch-linked session.",
+            },
+        )
+    if (
+        settings.auth_required is True
+        and not instance_authenticated
+        and getattr(runtime.session, "principal_id", None) != principal_id
+        and getattr(user, "role", None) != "admin"
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "insufficient_authorization",
+                "message": "This principal does not own the linked agent session.",
+            },
+        )
     dispatch_record = None
     dispatch_store = None
     if body.dispatch_id:
         dispatch_store = request.app.state.ctx.services.get("dispatch_store")
         dispatch_record = (
             await _runtime_offload(
-                runtime,
-                "dispatch.record_read", dispatch_store.get, body.dispatch_id
+                runtime, "dispatch.record_read", dispatch_store.get, body.dispatch_id
             )
             if dispatch_store
             else None
@@ -1119,7 +1133,26 @@ async def session_prompt(request: Request, session_id: str, body: PromptBody) ->
                     "recoverable": False,
                 },
             )
-        if dispatch_record.prompt_ack:
+        followup_fingerprint = hashlib.sha256(
+            json.dumps(
+                {"message": message, "action": body.action},
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
+        if body.idempotency_key:
+            prior = dispatch_record.followup_operations.get(body.idempotency_key)
+            if prior:
+                if prior.get("fingerprint") != followup_fingerprint:
+                    raise HTTPException(
+                        status_code=409,
+                        detail={
+                            "code": "idempotency_conflict",
+                            "message": "This follow-up key was used for a different prompt.",
+                        },
+                    )
+                return {**dict(prior.get("response") or {}), "duplicate": True}
+        elif dispatch_record.prompt_ack:
             ack = dispatch_record.prompt_ack
             return {
                 "stop_reason": "accepted",
@@ -1133,7 +1166,6 @@ async def session_prompt(request: Request, session_id: str, body: PromptBody) ->
                 "duplicate": True,
                 "queue": [item.public_dict() for item in runtime._queue],
             }
-    principal_id = get_principal_id(request)
     # Return immediately; transcript/SSE streams the turn. Blocking here made the
     # old HTMX UI look like it only ever received "Turn completed".
     before_seq = runtime._seq
@@ -1199,30 +1231,7 @@ async def session_prompt(request: Request, session_id: str, body: PromptBody) ->
             "dispatch_id": body.dispatch_id,
         },
     )
-    if dispatch_record and dispatch_store:
-        assert accepted_event is not None
-        dispatch_record.prompt_acknowledged_at = accepted_event.created_at
-        dispatch_record.prompt_ack = {
-            "event_id": accepted_event.id,
-            "event_seq": accepted_event.seq,
-            "event_type": accepted_event.event_type,
-            "prompt_id": accepted_event.payload.get("id"),
-        }
-        await _runtime_offload(
-            runtime,
-            "dispatch.prompt_ack",
-            dispatch_store.transition,
-            dispatch_record,
-            "running",
-            "Prompt durably accepted by linked remote session.",
-            detail={
-                "session_id": session_id,
-                "event_id": accepted_event.id,
-                "event_seq": accepted_event.seq,
-                "event_type": accepted_event.event_type,
-            },
-        )
-    return {
+    response = {
         "stop_reason": stop_reason,
         "queued": stop_reason == "queued",
         "started": stop_reason == "started",
@@ -1234,6 +1243,53 @@ async def session_prompt(request: Request, session_id: str, body: PromptBody) ->
         "duplicate": False,
         "queue": [q.public_dict() for q in runtime._queue],
     }
+    if dispatch_record and dispatch_store:
+        assert accepted_event is not None
+        ack = {
+            "event_id": accepted_event.id,
+            "event_seq": accepted_event.seq,
+            "event_type": accepted_event.event_type,
+            "prompt_id": accepted_event.payload.get("id"),
+        }
+        if body.idempotency_key:
+            dispatch_record.followup_operations[body.idempotency_key] = {
+                "fingerprint": followup_fingerprint,
+                "response": {
+                    key: response.get(key)
+                    for key in (
+                        "stop_reason",
+                        "queued",
+                        "started",
+                        "accepted",
+                        "accepted_event",
+                        "prompt_id",
+                        "dispatch_id",
+                        "session_id",
+                        "duplicate",
+                    )
+                },
+            }
+            message_text = "Follow-up durably accepted by linked remote session."
+        else:
+            dispatch_record.prompt_acknowledged_at = accepted_event.created_at
+            dispatch_record.prompt_ack = ack
+            message_text = "Prompt durably accepted by linked remote session."
+        await _runtime_offload(
+            runtime,
+            "dispatch.prompt_ack",
+            dispatch_store.transition,
+            dispatch_record,
+            "running",
+            message_text,
+            detail={
+                "session_id": session_id,
+                "event_id": accepted_event.id,
+                "event_seq": accepted_event.seq,
+                "event_type": accepted_event.event_type,
+                "followup": bool(body.idempotency_key),
+            },
+        )
+    return response
 
 
 @router.post("/sessions/{session_id}/cancel")
@@ -1274,8 +1330,7 @@ async def session_close(request: Request, session_id: str) -> dict:
         return {"ok": True, "live": False}
 
     session = await _offload(
-        mgr,
-        "sqlite.agent_session_read", mgr.store.get_session, session_id
+        mgr, "sqlite.agent_session_read", mgr.store.get_session, session_id
     )
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -1286,6 +1341,7 @@ async def session_close(request: Request, session_id: str) -> dict:
         )
         session.status = "closed"
         session.updated_at = datetime.now(UTC)
+
         def close_orphan() -> None:
             mgr.store.save_session(session)
             try:

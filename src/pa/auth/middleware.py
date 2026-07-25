@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import hmac
 import re
+from urllib.parse import urlsplit
 
 from fastapi import HTTPException, Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, Response
 
 from pa.auth.cookies import use_secure_cookies
-from pa.auth.csrf import COOKIE_NAME, generate_token, validate_request
+from pa.auth.csrf import COOKIE_NAME, generate_token, inspect_token, validate_request
 from pa.auth.sessions import SessionManager
 from pa.auth.users import UserDirectory
 from pa.config import Settings
@@ -55,13 +56,11 @@ CSRF_EXEMPT_PATHS = {
 
 
 def _is_public(path: str) -> bool:
-    if path in PUBLIC_PATHS:
-        return True
-    if path.startswith("/static/"):
-        return True
-    if path.startswith("/partials/") and path.endswith("/public"):
-        return True
-    return False
+    return (
+        path in PUBLIC_PATHS
+        or path.startswith("/static/")
+        or (path.startswith("/partials/") and path.endswith("/public"))
+    )
 
 
 def _is_sync_path(path: str) -> bool:
@@ -73,6 +72,20 @@ def _is_fleet_instance_route(request: Request) -> bool:
         return True
     if request.url.path.startswith("/api/pr-supervisor/") and request.url.path != (
         "/api/pr-supervisor/webhook/github"
+    ):
+        return True
+    if request.method in {"GET", "POST"} and re.fullmatch(
+        r"/api/fleet/(?:instances/[A-Za-z0-9-]{1,80}/)?dispatch-jobs/"
+        r"[A-Za-z0-9-]{1,80}(?:/(?:retry|cancel|prompt))?",
+        request.url.path,
+    ):
+        return True
+    if request.method == "POST" and re.fullmatch(
+        r"/api/fleet/instances/[A-Za-z0-9-]{1,80}/agent/start", request.url.path
+    ):
+        return True
+    if request.method == "POST" and re.fullmatch(
+        r"/api/agent/sessions/[A-Za-z0-9-]{1,80}/prompt", request.url.path
     ):
         return True
     if request.method == "GET" and re.fullmatch(
@@ -100,11 +113,31 @@ def _needs_csrf(request: Request) -> bool:
     path = request.url.path
     if _is_public(path) or path in CSRF_EXEMPT_PATHS:
         return False
-    if path.startswith("/api/") and request.headers.get("authorization", "").startswith(
-        "Bearer "
-    ):
+    return not (
+        path.startswith("/api/")
+        and request.headers.get("authorization", "").startswith("Bearer ")
+    )
+
+
+def _error(code: str, message: str, status: int) -> JSONResponse:
+    return JSONResponse(
+        {"detail": {"code": code, "message": message}}, status_code=status
+    )
+
+
+def _origin_allowed(request: Request, settings: Settings) -> bool:
+    origin = request.headers.get("origin", "").strip()
+    if not origin:
+        return True
+    parsed = urlsplit(origin)
+    if not parsed.scheme or not parsed.netloc:
         return False
-    return True
+    allowed = {f"{request.url.scheme}://{request.url.netloc}".lower()}
+    if settings.instance_url:
+        advertised = urlsplit(settings.instance_url)
+        if advertised.scheme and advertised.netloc:
+            allowed.add(f"{advertised.scheme}://{advertised.netloc}".lower())
+    return f"{parsed.scheme}://{parsed.netloc}".lower() in allowed
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -122,29 +155,38 @@ class AuthMiddleware(BaseHTTPMiddleware):
         request.state.user_authenticated = False
         request.state.instance_authenticated = False
         cookie_csrf = request.cookies.get(COOKIE_NAME)
-        request.state.csrf_token = cookie_csrf or generate_token()
+        csrf_status = inspect_token(cookie_csrf, self.settings.session_secret)
+        rotate_csrf = csrf_status != "valid"
+        request.state.csrf_token = (
+            generate_token(self.settings.session_secret) if rotate_csrf else cookie_csrf
+        )
 
         path = request.url.path
         is_public = _is_public(path)
         is_fleet_instance_route = _is_fleet_instance_route(request)
 
         auth_header = request.headers.get("authorization", "")
+        bearer_supplied = auth_header.startswith("Bearer ")
+        bearer_valid = False
         if auth_header.startswith("Bearer "):
             token = auth_header[7:]
             if self.settings.sync_token and hmac.compare_digest(
                 token, self.settings.sync_token
             ):
                 request.state.instance_authenticated = True
+                bearer_valid = True
             else:
                 user = self.users.get_by_cli_token(token)
                 if user:
                     request.state.user = user
                     request.state.principal_id = f"user:{user.id}"
                     request.state.user_authenticated = True
+                    bearer_valid = True
 
         session_token = request.cookies.get(self.sessions.COOKIE_NAME)
+        session_status = "missing"
         if session_token and not request.state.principal_id:
-            uid = self.sessions.verify_token(session_token)
+            uid, session_status = self.sessions.inspect_token(session_token)
             if uid:
                 user = self.users.get(uid)
                 if user:
@@ -158,9 +200,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
             and not is_public
             and not request.state.instance_authenticated
         ):
-            return JSONResponse(
-                {"detail": "Instance authentication required"},
-                status_code=401,
+            return _error(
+                "missing_authentication",
+                "Fleet instance authentication is missing or invalid.",
+                401,
             )
 
         if not request.state.principal_id:
@@ -175,20 +218,61 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 )
             )
             if needs_user_auth:
-                return JSONResponse(
-                    {"detail": "Authentication required"},
-                    status_code=401,
+                if request.state.instance_authenticated:
+                    return _error(
+                        "insufficient_authorization",
+                        "Fleet instance credentials do not authorize this user operation.",
+                        403,
+                    )
+                if session_status == "expired":
+                    return _error(
+                        "expired_session",
+                        "The authenticated browser session has expired; sign in again.",
+                        401,
+                    )
+                if bearer_supplied and not bearer_valid:
+                    return _error(
+                        "invalid_authentication",
+                        "The supplied bearer credential is invalid.",
+                        401,
+                    )
+                return _error(
+                    "missing_authentication", "Authentication is required.", 401
                 )
             default = self.users.ensure_default_user()
             request.state.user = default
             request.state.principal_id = f"user:{default.id}"
 
-        if _needs_csrf(request) and not validate_request(request):
-            return JSONResponse({"detail": "CSRF validation failed"}, status_code=403)
+        if _needs_csrf(request):
+            if not _origin_allowed(request, self.settings):
+                return _error(
+                    "invalid_origin",
+                    "The browser request Origin is not this PA instance or its advertised URL.",
+                    403,
+                )
+            csrf = validate_request(request, self.settings.session_secret)
+            if not csrf.ok:
+                messages = {
+                    "csrf_missing": "The CSRF cookie or matching request header is missing.",
+                    "csrf_mismatch": "The CSRF header does not match the CSRF cookie.",
+                    "csrf_invalid": "The CSRF token is invalid.",
+                    "csrf_expired": "The CSRF token has expired; use the rotated cookie and retry safely.",
+                }
+                response = _error(csrf.code, messages[csrf.code], 403)
+                if csrf.code in {"csrf_expired", "csrf_invalid"}:
+                    response.set_cookie(
+                        COOKIE_NAME,
+                        request.state.csrf_token,
+                        httponly=False,
+                        samesite="lax",
+                        secure=use_secure_cookies(request, self.settings),
+                        max_age=86400 * 30,
+                    )
+                return response
 
         response = await call_next(request)
 
-        if not cookie_csrf:
+        if rotate_csrf:
             response.set_cookie(
                 COOKIE_NAME,
                 request.state.csrf_token,
