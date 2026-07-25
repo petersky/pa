@@ -279,6 +279,71 @@ class CoreWorkUiRouteTests(unittest.TestCase):
             self.assertNotIn("card-edit-surface", detail.text)
             self.assertNotIn("data-card-edit-open", detail.text)
 
+    def test_global_header_shows_the_serving_instance_beneath_the_pa_brand(
+        self,
+    ) -> None:
+        with TestClient(self.app) as client:
+            non_local = client.get("/")
+
+            self.assertEqual(non_local.status_code, 200)
+            self.assertRegex(
+                non_local.text,
+                r'class="brand-link">PA</a>\s*'
+                r'<span class="brand-instance" data-pa-instance-name="UX test">',
+            )
+            self.assertIn(
+                '<span class="sr-only">Instance: </span>UX test',
+                non_local.text,
+            )
+            self.assertNotIn("instance-indicator", non_local.text)
+            self.assertNotIn('aria-label="Instance:', non_local.text)
+            self.assertRegex(
+                non_local.text,
+                r'data-new-card-open[\s\S]*?</button>\s*'
+                r'(?!<span[^>]+instance)',
+            )
+            for page in self.app.state.ctx.require_service("pages").nav_pages():
+                with self.subTest(page=page.path):
+                    global_page = client.get(page.path)
+                    self.assertEqual(global_page.status_code, 200)
+                    self.assertIn(
+                        'data-pa-instance-name="UX test"',
+                        global_page.text,
+                    )
+                    self.assertNotIn("instance-indicator", global_page.text)
+
+            self.app.state.ctx.settings.instance_name = "local"
+            local = client.get("/")
+
+            self.assertEqual(local.status_code, 200)
+            self.assertIn('data-pa-instance-name="local"', local.text)
+            self.assertIn(
+                '<span class="sr-only">Instance: </span>local',
+                local.text,
+            )
+            self.assertNotIn('data-pa-instance-name="UX test"', local.text)
+
+    def test_header_instance_label_has_responsive_quiet_type_contract(self) -> None:
+        root = Path(__file__).parents[1] / "src" / "pa" / "server"
+        css = (root / "static" / "style.css").read_text()
+        spa = (root / "static" / "js" / "spa.js").read_text()
+
+        brand_rules = css.split(".brand-block {", 1)[1].split("}", 1)[0]
+        instance_rules = css.split(".brand-instance {", 1)[1].split("}", 1)[0]
+        mobile_rules = css.split("@media (max-width: 700px)", 1)[1]
+
+        self.assertIn("flex-direction: column", brand_rules)
+        self.assertIn("flex: 0 0 auto", brand_rules)
+        self.assertIn("font-size: 0.6875rem", instance_rules)
+        self.assertIn("color: var(--pa-text-muted)", instance_rules)
+        self.assertIn("white-space: nowrap", instance_rules)
+        self.assertIn(".header-start { min-width: 0; flex-wrap: nowrap; }", mobile_rules)
+        self.assertIn(
+            'document.querySelector("[data-pa-instance-name]")',
+            spa,
+        )
+        self.assertNotIn(".instance-indicator", spa)
+
     def test_new_card_modal_exposes_compact_complete_creation_fields(self) -> None:
         with TestClient(self.app) as client:
             project = self.app.state.ctx.store.create_project(

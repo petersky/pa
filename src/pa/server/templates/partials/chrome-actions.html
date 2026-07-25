@@ -6,12 +6,6 @@
     <span aria-hidden="true">+</span> New
   </button>
 
-  <span class="instance-indicator icon-btn"
-        title="Instance: {{ instance_name }}"
-        aria-label="Instance: {{ instance_name }}">
-    {{ icon('instance', 'icon icon-sm') }}
-  </span>
-
   {% if agent_connected %}
   <a href="/agent"
      class="status-btn online"
