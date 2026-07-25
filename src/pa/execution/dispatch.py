@@ -83,6 +83,7 @@ class DispatchRecord(BaseModel):
     recoverable: bool = True
     cancel_requested: bool = False
     control_operations: dict[str, str] = Field(default_factory=dict)
+    followup_operations: dict[str, dict[str, Any]] = Field(default_factory=dict)
     prompt_acknowledged_at: datetime | None = None
     prompt_ack: dict[str, Any] | None = None
     knowledge_recorded_at: datetime | None = None
@@ -451,12 +452,8 @@ class CompletionOutbox:
     def _http_client(self) -> httpx.AsyncClient:
         if self._client is None:
             self._client = httpx.AsyncClient(
-                timeout=httpx.Timeout(
-                    connect=3.0, read=10.0, write=10.0, pool=2.0
-                ),
-                limits=httpx.Limits(
-                    max_connections=4, max_keepalive_connections=2
-                ),
+                timeout=httpx.Timeout(connect=3.0, read=10.0, write=10.0, pool=2.0),
+                limits=httpx.Limits(max_connections=4, max_keepalive_connections=2),
             )
         return self._client
 
