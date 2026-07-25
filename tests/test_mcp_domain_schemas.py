@@ -12,6 +12,7 @@ from pa.domain.models import (
     RepositoryCreate,
     RepositoryUpdate,
 )
+from pa.modules.fleet import FleetModule
 from pa.modules.items import ItemsModule
 from pa.modules.projects import ProjectsModule
 
@@ -31,6 +32,7 @@ class McpDomainSchemaTests(IsolatedAsyncioTestCase):
         self.mcp = FastMCP("schema-contract")
         ctx = SimpleNamespace(settings=SimpleNamespace())
         ItemsModule().register_mcp(self.mcp, ctx)
+        FleetModule().register_mcp(self.mcp, ctx)
         ProjectsModule().register_mcp(self.mcp, ctx)
         self.schemas = {
             tool.name: tool.inputSchema for tool in await self.mcp.list_tools()
@@ -70,6 +72,22 @@ class McpDomainSchemaTests(IsolatedAsyncioTestCase):
             for field in ("visibility", "status"):
                 with self.subTest(tool=tool_name, field=field):
                     self.assert_enum_matches_model(tool_name, field, model, field)
+
+    async def test_dispatch_mutations_require_typed_idempotency_and_authority(
+        self,
+    ) -> None:
+        dispatch = self.schemas["dispatch_card_to_instance"]
+        self.assertIn("idempotency_key", dispatch["required"])
+        self.assertIn("authority_instance_id", dispatch["properties"])
+
+        followup = self.schemas["prompt_dispatch_session"]
+        self.assertTrue(
+            {"dispatch_id", "message", "idempotency_key"}.issubset(followup["required"])
+        )
+        self.assertEqual(
+            followup["properties"]["action"]["enum"],
+            ["append", "prepend", "interrupt"],
+        )
 
     async def test_invalid_enum_value_fails_before_tool_handler_runs(self) -> None:
         with self.assertRaises(ToolError) as raised:

@@ -110,7 +110,20 @@ def _http_error(
         validation = None
     else:
         validation = _validation_details(response)
+        code = None
+        detail_message = None
+        try:
+            detail = response.json().get("detail")
+            if isinstance(detail, dict):
+                code = str(detail.get("code") or "")[:100]
+                detail_message = str(detail.get("message") or "")[:1000]
+        except ValueError, AttributeError:
+            pass
         suffix = f" validation={validation!r}" if validation else ""
+        if code:
+            suffix += f" code={code}"
+        if detail_message:
+            suffix += f" detail={detail_message}"
         message = f"The PA API rejected the MCP request ({context}).{suffix}"
     return LocalPARequestError(
         message,

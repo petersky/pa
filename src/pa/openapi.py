@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from fastapi import FastAPI
@@ -32,8 +33,18 @@ def _error_response(description: str) -> dict[str, Any]:
 
 
 def _is_instance_api(path: str) -> bool:
-    return path.startswith("/api/sync/") or path.startswith(
-        "/api/fleet/dispatch/"
+    return path.startswith(("/api/sync/", "/api/fleet/dispatch/"))
+
+
+def _is_hybrid_instance_api(path: str) -> bool:
+    return bool(
+        re.fullmatch(
+            r"/api/fleet/(?:instances/\{[^}]+\}/)?dispatch-jobs/\{[^}]+\}"
+            r"(?:/(?:retry|cancel|prompt))?",
+            path,
+        )
+        or re.fullmatch(r"/api/fleet/instances/\{[^}]+\}/agent/start", path)
+        or re.fullmatch(r"/api/agent/sessions/\{[^}]+\}/prompt", path)
     )
 
 
@@ -54,8 +65,12 @@ def _document_operation(path: str, method: str, operation: dict[str, Any]) -> No
             },
             {"userBearer": []},
         ]
+        if _is_hybrid_instance_api(path):
+            operation["security"].append({"instanceBearer": []})
     else:
         operation["security"] = [{"paSession": []}, {"userBearer": []}]
+        if _is_hybrid_instance_api(path):
+            operation["security"].append({"instanceBearer": []})
 
     operation.setdefault("responses", {}).setdefault(
         "401",
@@ -75,9 +90,11 @@ def _document_operation(path: str, method: str, operation: dict[str, Any]) -> No
 
 
 def _document_remote_dispatch(schema: dict[str, Any]) -> None:
-    operation = schema["paths"].get(
-        "/api/fleet/instances/{instance_id}/agent/start", {}
-    ).get("post")
+    operation = (
+        schema["paths"]
+        .get("/api/fleet/instances/{instance_id}/agent/start", {})
+        .get("post")
+    )
     if not operation:
         return
 
@@ -238,9 +255,7 @@ def install_openapi_contract(app: FastAPI) -> None:
                     "type": "object",
                     "required": ["detail"],
                     "properties": {
-                        "detail": {
-                            "oneOf": [{"type": "string"}, {"type": "object"}]
-                        }
+                        "detail": {"oneOf": [{"type": "string"}, {"type": "object"}]}
                     },
                 },
                 "DispatchAdmission": {

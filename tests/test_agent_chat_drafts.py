@@ -9,14 +9,13 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import HTTPException
 
 from pa.domain.models import TranscriptEvent
 from pa.domain.projection import CardProjection
-from pa.modules.agent_chat import PromptBody, _submit_client_prompt
-
+from pa.modules.agent_chat import PromptBody, _submit_client_prompt, session_prompt
 
 ROOT = Path(__file__).parents[1]
 SERVER = ROOT / "src" / "pa" / "server"
@@ -192,6 +191,38 @@ class ClientPromptAdmissionTests(unittest.TestCase):
 
         asyncio.run(run())
         runtime.prompt.assert_not_awaited()
+
+    def test_client_prompt_id_does_not_bypass_session_authorization(self) -> None:
+        request = MagicMock()
+        request.app.state.ctx.settings = SimpleNamespace(auth_required=True)
+        request.state.instance_authenticated = False
+        request.state.user = SimpleNamespace(role="user")
+        runtime = SimpleNamespace(session=SimpleNamespace(principal_id="owner"))
+        body = PromptBody(message="private", client_prompt_id="browser-prompt-1")
+
+        async def run() -> None:
+            with (
+                patch(
+                    "pa.modules.agent_chat._runtime_or_404", return_value=runtime
+                ),
+                patch(
+                    "pa.modules.agent_chat.get_principal_id",
+                    return_value="intruder",
+                ),
+                patch(
+                    "pa.modules.agent_chat._submit_client_prompt",
+                    new_callable=AsyncMock,
+                ) as submit,
+            ):
+                with self.assertRaises(HTTPException) as raised:
+                    await session_prompt(request, "session-1", body)
+                self.assertEqual(raised.exception.status_code, 403)
+                self.assertEqual(
+                    raised.exception.detail["code"], "insufficient_authorization"
+                )
+                submit.assert_not_awaited()
+
+        asyncio.run(run())
 
 
 @unittest.skipUnless(shutil.which("node"), "node is required for draft UI tests")
