@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import inspect
+import json
 import logging
 import random
 import re
@@ -13,7 +14,7 @@ from uuid import uuid4
 
 import httpx
 
-from pa.domain.models import CardLane, CardUpdate
+from pa.domain.models import AgentSession, CardLane, CardUpdate
 from pa.execution.disposition import (
     decide_card_disposition,
     disposition_for_merged_watch,
@@ -178,10 +179,12 @@ class ExecutorDispatcher:
                 state="failed",
                 detail="instance agent unavailable",
             )
-            raise RuntimeError("instance agent unavailable")
+            return "failed"
+        runtime = None
+        session = None
+        delivery = "live"
+        failure_reason = None
         try:
-            runtime = None
-            session = None
             if watch.originating_session_id:
                 runtime = self.agent.get(watch.originating_session_id)
                 session = await self._offload(
@@ -189,18 +192,13 @@ class ExecutorDispatcher:
                     self.domain_store.get_session,
                     watch.originating_session_id,
                 )
-            if runtime is None and watch.card_id:
-                for candidate in self.agent.list_runtimes():
-                    if candidate.session.card_id == watch.card_id:
-                        runtime = candidate
-                        break
-                if session is None:
-                    session = await self._offload(
-                        "sqlite.agent_session_read",
-                        self.domain_store.get_session_by_label,
-                        f"card:{watch.card_id}",
-                    )
-            if runtime is None and session and session.status != "closed":
+            if (
+                runtime is None
+                and session
+                and session.status
+                not in {"closed", "configuration_failed", "provisioning_failed"}
+                and session.external_session_id
+            ):
                 try:
                     runtime = await self.agent.create_session(
                         existing=session,
@@ -212,19 +210,37 @@ class ExecutorDispatcher:
                         card_id=watch.card_id or session.card_id,
                         project_id=watch.project_id or session.project_id,
                     )
+                    delivery = "resumed"
                 except WorkspaceProvisioningError as exc:
-                    logger.warning(
-                        "Could not resume executor session %s; "
-                        "workspace will be rematerialized: %s",
-                        session.id,
-                        exc,
-                    )
+                    failure_reason = f"resume_workspace_failed:{exc}"
                 except Exception:
-                    logger.exception(
-                        "Could not resume executor session %s; creating replacement",
-                        session.id,
-                    )
+                    logger.exception("Could not resume executor session %s", session.id)
+                    failure_reason = "provider_thread_unrecoverable"
+            elif runtime is None:
+                if session is None:
+                    failure_reason = "durable_session_missing"
+                elif session.status == "closed":
+                    failure_reason = "durable_session_closed"
+                elif session.status in {"configuration_failed", "provisioning_failed"}:
+                    failure_reason = f"durable_session_terminal:{session.status}"
+                else:
+                    failure_reason = "provider_thread_missing"
             if runtime is None:
+                card = (
+                    await self._offload(
+                        "sqlite.card_read",
+                        self.domain_store.get_card,
+                        watch.card_id,
+                        realm_id=watch.realm_id,
+                    )
+                    if watch.card_id
+                    else None
+                )
+                if not card or card.lane not in {CardLane.ACTIVE, CardLane.WAITING}:
+                    raise RuntimeError(
+                        f"{failure_reason or 'session_unavailable'}; "
+                        "fallback requires a linked active/waiting card"
+                    )
                 project = (
                     await self._offload(
                         "sqlite.project_read",
@@ -236,7 +252,7 @@ class ExecutorDispatcher:
                     else None
                 )
                 runtime = await self.agent.create_session(
-                    label=f"card:{watch.card_id}" if watch.card_id else "pr-supervisor",
+                    label=f"card:{watch.card_id}",
                     title=f"PR #{watch.pr_number} executor",
                     cwd=watch.executor_cwd,
                     principal_id="user:local",
@@ -245,6 +261,7 @@ class ExecutorDispatcher:
                     project_tool_config=project.tool_config if project else None,
                     surface="execution",
                 )
+                delivery = "fallback"
             runtime.enqueue(
                 prompt,
                 action="append",
@@ -260,16 +277,28 @@ class ExecutorDispatcher:
                 drained = drain()
                 if inspect.isawaitable(drained):
                     await drained
-
-            def finish_dispatch() -> None:
-                self.store.finish_dispatch(
-                    event_key, state="queued", detail=runtime.session_id
-                )
-                self.store.increment_metric("executor_prompts")
-
-            await self._offload("pr_supervisor.dispatch_finish", finish_dispatch)
-            return "queued"
-        except Exception as exc:
+            detail = json.dumps(
+                {
+                    "session_id": runtime.session_id,
+                    "originating_session_id": watch.originating_session_id,
+                    "originating_agent": watch.originating_agent,
+                    "resume_state": delivery,
+                    "fallback_reason": failure_reason,
+                },
+                sort_keys=True,
+            )
+            await self._offload(
+                "pr_supervisor.dispatch_finish",
+                self.store.finish_dispatch,
+                event_key,
+                state=f"{delivery}_queued",
+                detail=detail,
+            )
+            await self._offload(
+                "pr_supervisor.metric", self.store.increment_metric, "executor_prompts"
+            )
+            return f"{delivery}_queued"
+        except Exception as exc:  # noqa: BLE001
             await self._offload(
                 "pr_supervisor.dispatch_finish",
                 self.store.finish_dispatch,
@@ -277,7 +306,7 @@ class ExecutorDispatcher:
                 state="failed",
                 detail=str(exc),
             )
-            raise
+            return "failed"
 
     def _instance_url(self, instance_id: str) -> str | None:
         if self.fleet:
@@ -475,9 +504,7 @@ class PRSupervisor:
     async def run_once(self) -> None:
         capability = await self.refresh_capability()
         await self._reconcile_merged_cards()
-        due = await self._offload(
-            "sqlite.pr_supervisor_due_read", self.store.list_due
-        )
+        due = await self._offload("sqlite.pr_supervisor_due_read", self.store.list_due)
         if not due:
             return
         for watch in due:
@@ -519,6 +546,17 @@ class PRSupervisor:
     ) -> PRWatch:
         if not watch.originating_instance_id:
             watch.originating_instance_id = self.settings.instance_id
+        if watch.originating_session_id:
+            session = await self._offload(
+                "sqlite.agent_session_read",
+                self.domain_store.get_session,
+                watch.originating_session_id,
+            )
+            if isinstance(session, AgentSession):
+                watch.originating_agent = watch.originating_agent or session.agent_name
+                watch.executor_cwd = watch.executor_cwd or session.cwd
+                watch.card_id = watch.card_id or session.card_id
+                watch.project_id = watch.project_id or session.project_id
         if not watch.required_capabilities:
             watch.required_capabilities = [
                 "pr-supervisor",
@@ -540,6 +578,7 @@ class PRSupervisor:
                 "project_id": stored.project_id,
                 "originating_instance_id": stored.originating_instance_id,
                 "originating_session_id": stored.originating_session_id,
+                "originating_agent": stored.originating_agent,
                 "policy": stored.policy.model_dump(mode="json"),
             },
         )
@@ -751,8 +790,8 @@ class PRSupervisor:
     ) -> None:
         kind = "green_for_agent_merge" if green else "action_required"
         event_key = (
-            f"{watch.id}:{snapshot.head_sha}:{gate.fingerprint}:"
-            f"{watch.condition_version}:{kind}"
+            f"{watch.id}:{gate.fingerprint}:{watch.condition_version}:"
+            f"{watch.originating_session_id or 'no-session'}:{kind}"
         )
         await self._audit(
             watch,
@@ -1245,9 +1284,7 @@ class PRSupervisor:
         )
         if response.status_code >= 400:
             raise RuntimeError(f"HTTP {response.status_code}")
-        return await self._offload(
-            "pr_supervisor.response_json", response.json
-        )
+        return await self._offload("pr_supervisor.response_json", response.json)
 
     async def _get_json(self, url: str) -> dict[str, Any]:
         headers: dict[str, str] = {}
@@ -1259,15 +1296,11 @@ class PRSupervisor:
         )
         if response.status_code >= 400:
             raise RuntimeError(f"HTTP {response.status_code}")
-        return await self._offload(
-            "pr_supervisor.response_json", response.json
-        )
+        return await self._offload("pr_supervisor.response_json", response.json)
 
     async def migrate_discoverable_associations(self) -> int:
         migrated = 0
-        cards = await self._offload(
-            "sqlite.card_read", self.domain_store.list_cards
-        )
+        cards = await self._offload("sqlite.card_read", self.domain_store.list_cards)
         for card in cards:
             if card.lane == CardLane.DONE:
                 continue

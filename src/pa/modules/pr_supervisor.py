@@ -163,6 +163,7 @@ def get_watch(request: Request, watch_id: str) -> dict[str, Any]:
             event.model_dump(mode="json")
             for event in _store(request).list_events(watch_id)
         ],
+        "notifications": _store(request).list_dispatches(watch_id),
     }
 
 
@@ -582,6 +583,7 @@ class PRSupervisorModule(Module):
             project_id: str | None = None,
             card_id: str | None = None,
             originating_session_id: str | None = None,
+            originating_agent: str | None = None,
             executor_cwd: str | None = None,
         ) -> dict[str, Any]:
             """Create a durable, fleet-supervised PR watch."""
@@ -599,6 +601,7 @@ class PRSupervisorModule(Module):
                     "pr_number": pr_number,
                     "pr_url": pr_url,
                     "originating_session_id": originating_session_id,
+                    "originating_agent": originating_agent,
                     "executor_cwd": executor_cwd,
                 },
             )

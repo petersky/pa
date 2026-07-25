@@ -675,28 +675,8 @@ class PRSupervisorStore:
                 )
             return True
         except sqlite3.IntegrityError:
-            with self._conn(immediate=True) as conn:
-                row = conn.execute(
-                    "SELECT state FROM pr_dispatch_claims WHERE event_key = ?",
-                    (event_key,),
-                ).fetchone()
-                if not row or row["state"] != "failed":
-                    return False
-                cursor = conn.execute(
-                    """
-                    UPDATE pr_dispatch_claims
-                    SET state = 'claimed', target_instance_id = ?,
-                        target_session_id = ?, detail = NULL, updated_at = ?
-                    WHERE event_key = ? AND state = 'failed'
-                    """,
-                    (
-                        target_instance_id,
-                        target_session_id,
-                        utcnow().isoformat(),
-                        event_key,
-                    ),
-                )
-            return cursor.rowcount == 1
+            # One key represents one delivery decision, including failure and fallback.
+            return False
 
     def finish_dispatch(self, event_key: str, *, state: str, detail: str = "") -> None:
         with self._conn() as conn:
@@ -707,6 +687,19 @@ class PRSupervisorStore:
                 """,
                 (state, detail[:2000], utcnow().isoformat(), event_key),
             )
+
+    def list_dispatches(
+        self, watch_id: str, *, limit: int = 100
+    ) -> list[dict[str, Any]]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                """SELECT event_key, watch_id, target_instance_id, target_session_id,
+                          state, detail, created_at, updated_at
+                   FROM pr_dispatch_claims WHERE watch_id = ?
+                   ORDER BY created_at DESC LIMIT ?""",
+                (watch_id, limit),
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def save_capability(self, capability: GitHubCapability) -> None:
         with self._conn() as conn:

@@ -140,7 +140,9 @@ class PRSupervisorStoreTests(unittest.TestCase):
             pr_url="https://github.com/petersky/pa/pull/65",
         )
         self.assertEqual(normalized.repository, "PeterSky/PA")
-        self.assertEqual(canonical_repository_name(normalized.repository), "petersky/pa")
+        self.assertEqual(
+            canonical_repository_name(normalized.repository), "petersky/pa"
+        )
         capability = GitHubCapability(
             instance_id="worker",
             authenticated=True,
@@ -301,7 +303,7 @@ class PRSupervisorStoreTests(unittest.TestCase):
                 now=now + timedelta(seconds=92),
             )
 
-    def test_idempotent_events_and_dispatch_retry(self) -> None:
+    def test_idempotent_events_and_dispatch_failure_is_terminal(self) -> None:
         event = PRWatchEvent(
             watch_id="watch-1",
             event_key="same",
@@ -326,7 +328,7 @@ class PRSupervisorStoreTests(unittest.TestCase):
             )
         )
         self.store.finish_dispatch("same", state="failed", detail="offline")
-        self.assertTrue(
+        self.assertFalse(
             self.store.claim_dispatch(
                 "same",
                 "watch-1",
@@ -981,7 +983,9 @@ class ExecutorWakeReplacementTests(unittest.IsolatedAsyncioTestCase):
             )
             domain.get_session_by_label.return_value = None
             domain.get_project.return_value = None
-            domain.get_card.return_value = None
+            domain.get_card.return_value = Card(
+                id="card-1", title="fallback", lane=CardLane.ACTIVE
+            )
             runtime = MagicMock()
             runtime.session_id = "replacement"
             runtime.session = SimpleNamespace(
@@ -998,7 +1002,7 @@ class ExecutorWakeReplacementTests(unittest.IsolatedAsyncioTestCase):
             w = store.get_watch("watch-1")
             first = await dispatcher.dispatch_local(w, "event-1", "fix it")
             second = await dispatcher.dispatch_local(w, "event-1", "fix it")
-            self.assertEqual(first, "queued")
+            self.assertEqual(first, "fallback_queued")
             self.assertEqual(second, "deduplicated")
             agent.create_session.assert_awaited_once()
             runtime.enqueue.assert_called_once()
@@ -1042,11 +1046,117 @@ class ExecutorWakeReplacementTests(unittest.IsolatedAsyncioTestCase):
                 store.get_watch("watch-1"), "event-current-lease", "fix it"
             )
 
-            self.assertEqual(result, "queued")
+            self.assertEqual(result, "live_queued")
             self.assertEqual(
                 runtime.enqueue.call_args.kwargs["cwd"], "/workspace/current-lease"
             )
             agent.create_session.assert_not_called()
+
+    async def test_inactive_resumable_session_is_reloaded_exactly_once(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="instance-a", peers=[])
+            store = PRSupervisorStore(Path(tmp) / "supervisor.db")
+            store.upsert_watch(watch())
+            session = AgentSession(
+                id="session-1",
+                agent_name="codex",
+                status="idle",
+                external_session_id="provider-thread-1",
+                card_id="card-1",
+                principal_id="user:local",
+                cwd="/workspace/card",
+            )
+            domain = MagicMock()
+            domain.get_session.return_value = session
+            runtime = MagicMock()
+            runtime.session_id = session.id
+            runtime.session = session
+            agent = MagicMock()
+            agent.get.return_value = None
+            agent.create_session = AsyncMock(return_value=runtime)
+            dispatcher = ExecutorDispatcher(
+                settings, domain, store, agent_manager=agent
+            )
+
+            result = await dispatcher.dispatch_local(
+                store.get_watch("watch-1"), "inactive-resume", "fix it"
+            )
+            duplicate = await dispatcher.dispatch_local(
+                store.get_watch("watch-1"), "inactive-resume", "fix it"
+            )
+
+            self.assertEqual(result, "resumed_queued")
+            self.assertEqual(duplicate, "deduplicated")
+            agent.create_session.assert_awaited_once()
+            self.assertEqual(
+                agent.create_session.await_args.kwargs["resume_external_id"],
+                "provider-thread-1",
+            )
+            diagnostic = store.list_dispatches("watch-1")[0]
+            self.assertEqual(diagnostic["state"], "resumed_queued")
+            self.assertEqual(
+                json.loads(diagnostic["detail"])["resume_state"], "resumed"
+            )
+
+    async def test_missing_provider_thread_uses_one_bounded_card_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="instance-a", peers=[])
+            store = PRSupervisorStore(Path(tmp) / "supervisor.db")
+            store.upsert_watch(watch())
+            session = AgentSession(
+                id="session-1", agent_name="codex", status="idle", card_id="card-1"
+            )
+            domain = MagicMock()
+            domain.get_session.return_value = session
+            domain.get_card.return_value = Card(
+                id="card-1", title="fallback", lane=CardLane.WAITING
+            )
+            domain.get_project.return_value = None
+            runtime = MagicMock()
+            runtime.session_id = "fallback-session"
+            runtime.session = SimpleNamespace(
+                principal_id="user:local", cwd="/workspace/fallback"
+            )
+            agent = MagicMock()
+            agent.get.return_value = None
+            agent.create_session = AsyncMock(return_value=runtime)
+            dispatcher = ExecutorDispatcher(
+                settings, domain, store, agent_manager=agent
+            )
+
+            result = await dispatcher.dispatch_local(
+                store.get_watch("watch-1"), "missing-provider", "fix it"
+            )
+
+            self.assertEqual(result, "fallback_queued")
+            detail = json.loads(store.list_dispatches("watch-1")[0]["detail"])
+            self.assertEqual(detail["fallback_reason"], "provider_thread_missing")
+            self.assertEqual(detail["originating_session_id"], "session-1")
+
+    def test_dispatch_claim_survives_restart_without_reprompt(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "supervisor.db"
+            first = PRSupervisorStore(path)
+            first.upsert_watch(watch())
+            self.assertTrue(
+                first.claim_dispatch(
+                    "restart-key",
+                    "watch-1",
+                    target_instance_id="instance-a",
+                    target_session_id="session-1",
+                )
+            )
+            first.finish_dispatch("restart-key", state="failed", detail="closed")
+            restarted = PRSupervisorStore(path)
+            self.assertFalse(
+                restarted.claim_dispatch(
+                    "restart-key",
+                    "watch-1",
+                    target_instance_id="instance-b",
+                    target_session_id=None,
+                )
+            )
+            self.assertEqual(restarted.list_dispatches("watch-1")[0]["state"], "failed")
 
 
 class PRSupervisorApiAndMcpTests(unittest.TestCase):
