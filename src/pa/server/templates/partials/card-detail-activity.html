@@ -1,0 +1,43 @@
+<div class="card-tab-loaded" data-card-tab-loaded>
+  <div class="section-heading-inline activity-heading">
+    <div>
+      <h3>Activity</h3>
+      <p class="muted">Card, agent, dispatch, pull request, and audit events in time order.</p>
+    </div>
+    <label class="activity-filter">
+      <span>Filter</span>
+      <select data-card-activity-filter>
+        <option value="all">All activity</option>
+        <option value="card">Card changes</option>
+        <option value="agent">Agent sessions</option>
+        <option value="dispatch">Dispatches</option>
+        <option value="pr">Pull requests</option>
+        <option value="memory">Memory &amp; decisions</option>
+      </select>
+    </label>
+  </div>
+
+  {% if activity %}
+  <ol class="activity-timeline" data-card-activity-list>
+    {% for entry in activity %}
+    <li data-card-activity-entry data-activity-kind="{{ entry.kind }}" {% if loop.index > 25 %}hidden{% endif %}>
+      <span class="activity-marker" aria-hidden="true"></span>
+      <div>
+        <strong>{{ entry.label }}</strong>
+        <p class="muted">{{ entry.actor }}{% if entry.detail %} · {{ entry.detail }}{% endif %}</p>
+      </div>
+      <time datetime="{{ entry.timestamp.isoformat() }}">{{ entry.timestamp.strftime('%b %-d, %H:%M') }}</time>
+    </li>
+    {% endfor %}
+  </ol>
+  {% if activity | length > 25 %}
+  <button type="button" class="ghost" data-card-activity-more>Show older activity</button>
+  {% endif %}
+  <p class="card-tab-empty muted" data-card-activity-empty hidden>No activity matches this filter.</p>
+  {% else %}
+  <div class="card-tab-empty" role="status">
+    <h3>No activity recorded</h3>
+    <p class="muted">Card and execution events will appear here as work progresses.</p>
+  </div>
+  {% endif %}
+</div>

@@ -1761,6 +1761,27 @@ class CardProjection:
             ).fetchall()
         return [self._row_to_transcript(row) for row in rows]
 
+    def get_prompt_acceptance(
+        self, session_id: str, prompt_id: str
+    ) -> TranscriptEvent | None:
+        """Find a durable browser prompt admission by its stable client id."""
+        with self._conn() as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM agent_transcript_events
+                WHERE session_id = ?
+                  AND event_type IN ('queue_enqueued', 'user_message')
+                  AND json_valid(payload)
+                  AND json_extract(payload, '$.id') = ?
+                ORDER BY
+                  CASE event_type WHEN 'user_message' THEN 0 ELSE 1 END,
+                  seq DESC
+                LIMIT 1
+                """,
+                (session_id, prompt_id),
+            ).fetchone()
+        return self._row_to_transcript(row) if row else None
+
     def list_transcript_events_before(
         self,
         session_id: str,

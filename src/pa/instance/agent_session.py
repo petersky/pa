@@ -20,8 +20,8 @@ from pa.acp.client import (
 )
 from pa.acp.configuration import SessionConfigurationRequest
 from pa.agent.context import compose_session_prompt
-from pa.acp.providers.registry import DEFAULT_PROVIDER_ID
-from pa.acp.providers.resolve import resolve_agent_provider
+from pa.acp.providers.registry import DEFAULT_PROVIDER_ID, known_provider_ids
+from pa.acp.providers.resolve import resolve_agent_provider, resolve_provider_id
 from pa.acp.surfaces import (
     SURFACE_CHAT_DEFAULT,
     SURFACE_EXECUTION,
@@ -93,6 +93,14 @@ def _project_recovery_block(exc: BaseException) -> bool:
     )
 
 
+class AgentStartupNotReady(RuntimeError):
+    """Raised when session traffic arrives before durable recovery finishes."""
+
+
+class AgentSessionRecoveryError(RuntimeError):
+    """Raised when a durable PA session cannot be recovered."""
+
+
 def _session_dir(data_dir: Path, session_id: str) -> Path:
     path = data_dir / "sessions" / session_id
     path.mkdir(parents=True, exist_ok=True)
@@ -121,6 +129,7 @@ class AgentSessionRuntime:
         self.agent_env.setdefault("PA_BROWSER_SESSION_ID", session.id)
         self.connection: AgentConnection | None = None
         self._prompt_lock = asyncio.Lock()
+        self._prompt_admission_lock = asyncio.Lock()
         self._queue: list[QueuedPrompt] = []
         self._queue_paused = False
         self._in_flight: QueuedPrompt | None = None
@@ -679,9 +688,11 @@ class AgentSessionRuntime:
         agent_env: dict[str, str] | None = None,
         source: str = "api",
         prompt_audit: list[dict[str, Any]] | None = None,
+        prompt_id: str | None = None,
     ) -> QueuedPrompt:
         cwd = self._validated_cwd(cwd)
         item = QueuedPrompt(
+            id=prompt_id or str(uuid4()),
             message=message,
             images=list(images or []),
             session_id=self.session_id,
@@ -702,6 +713,7 @@ class AgentSessionRuntime:
             {
                 "id": item.id,
                 "message": message,
+                "images": [image.public_dict() for image in item.images],
                 "action": action,
                 "position": 0 if action == "prepend" else len(self._queue) - 1,
             },
@@ -727,6 +739,7 @@ class AgentSessionRuntime:
         agent_env: dict[str, str] | None = None,
         cwd: str | None = None,
         action: PromptAction = "append",
+        prompt_id: str | None = None,
         _from_queue: bool = False,
         wait: bool = True,
     ) -> str:
@@ -743,6 +756,7 @@ class AgentSessionRuntime:
                 principal_id=principal_id,
                 cwd=cwd,
                 agent_env=agent_env,
+                prompt_id=prompt_id,
             )
             return "queued"
 
@@ -759,10 +773,12 @@ class AgentSessionRuntime:
                     principal_id=principal_id,
                     cwd=cwd,
                     agent_env=agent_env,
+                    prompt_id=prompt_id,
                 )
                 return "queued"
 
         item = QueuedPrompt(
+            id=prompt_id or str(uuid4()),
             message=message,
             images=list(images or []),
             session_id=self.session_id,
@@ -785,12 +801,19 @@ class AgentSessionRuntime:
                     principal_id=principal_id,
                     cwd=cwd,
                     agent_env=agent_env,
+                    prompt_id=prompt_id,
                 )
                 return "queued"
             self._queue.insert(0, item)
             self._append_transcript(
                 "queue_enqueued",
-                {"id": item.id, "message": message, "action": "run", "position": 0},
+                {
+                    "id": item.id,
+                    "message": message,
+                    "images": [image.public_dict() for image in item.images],
+                    "action": "run",
+                    "position": 0,
+                },
             )
             self._flush_transcript()
             self._start_drain()
@@ -1315,6 +1338,13 @@ class AgentSessionManager:
         self._accepting = True
         self._last_error: str | None = None
         self._resume_on_start = True
+        self._startup_complete = True
+        self._startup_phase = "ready"
+        self._startup_error: str | None = None
+        self._startup_total = 0
+        self._startup_recovered = 0
+        self._startup_failed = 0
+        self._startup_session_id: str | None = None
         self._default_label = "default"
         self._lock = asyncio.Lock()
         self._label_locks: dict[str, asyncio.Lock] = {}
@@ -1353,6 +1383,45 @@ class AgentSessionManager:
 
     def label_lock(self, label: str) -> asyncio.Lock:
         return self._label_locks.setdefault(label, asyncio.Lock())
+
+    def begin_startup(self) -> None:
+        """Fence external session admission while durable recovery runs."""
+        self._startup_complete = False
+        self._startup_phase = "recovering"
+        self._startup_error = None
+        self._startup_total = 0
+        self._startup_recovered = 0
+        self._startup_failed = 0
+        self._startup_session_id = None
+
+    def complete_startup(self, error: BaseException | None = None) -> None:
+        self._startup_error = str(error)[:1000] if error else None
+        self._startup_phase = "failed" if error else "ready"
+        self._startup_complete = error is None
+        self._startup_session_id = None
+
+    @property
+    def startup_complete(self) -> bool:
+        return self._startup_complete
+
+    def startup_state(self) -> dict[str, Any]:
+        return {
+            "phase": self._startup_phase,
+            "complete": self._startup_complete,
+            "error": self._startup_error,
+            "total": self._startup_total,
+            "recovered": self._startup_recovered,
+            "failed": self._startup_failed,
+            "session_id": self._startup_session_id,
+        }
+
+    def require_startup_complete(self) -> None:
+        if not self._startup_complete:
+            raise AgentStartupNotReady(
+                "Durable ACP session recovery is still in progress"
+                if self._startup_phase != "failed"
+                else "Durable ACP session recovery failed"
+            )
 
     async def _prepare_workspace(
         self,
@@ -1506,6 +1575,11 @@ class AgentSessionManager:
         from pa.server.shutdown import is_shutting_down
 
         return (not self._accepting) or self._quiescing or is_shutting_down()
+
+    def _should_abort_recovery(self) -> bool:
+        from pa.server.shutdown import is_shutting_down
+
+        return self._quiescing or is_shutting_down()
 
     def get(self, session_id: str) -> AgentSessionRuntime | None:
         return self._runtimes.get(session_id)
@@ -1834,26 +1908,30 @@ class AgentSessionManager:
                 ):
                     continue
                 recovery[session.id] = self._snapshot_from_persisted(session)
+            self._startup_total = len(recovery)
             try:
                 for sess in recovery.values():
-                    if self._should_abort_admission():
+                    if self._should_abort_recovery():
                         logger.info(
                             "Aborting remaining ACP resumes because shutdown began"
                         )
                         break
+                    self._startup_session_id = sess.session_id
                     try:
                         await self._resume_from_snapshot(
                             sess, snapshot or QuiesceSnapshot(reason="recovery")
                         )
+                        self._startup_recovered += 1
                     except asyncio.CancelledError:
                         raise
                     except Exception as exc:
-                        if self._should_abort_admission():
+                        if self._should_abort_recovery():
                             logger.info(
                                 "ACP resume for %s aborted during shutdown",
                                 sess.session_id,
                             )
                             break
+                        self._startup_failed += 1
                         self._last_error = str(exc)
                         recovery_state = await self._mark_recovery_interrupted(
                             sess, exc
@@ -1873,12 +1951,12 @@ class AgentSessionManager:
                             )
                 # Legacy top-level queue → default session
                 if (
-                    not self._should_abort_admission()
+                    not self._should_abort_recovery()
                     and snapshot
                     and snapshot.resume
                     and snapshot.queued_prompts
                 ):
-                    default = await self.attach_default()
+                    default = await self.attach_default(_startup_recovery=True)
                     for item in snapshot.queued_prompts:
                         item.session_id = default.session_id
                         default._queue.append(item)
@@ -1900,9 +1978,9 @@ class AgentSessionManager:
 
         # A no-resume boot is intentionally inert until an explicit admission.
         # Durable nonterminal sessions remain recoverable on a later normal boot.
-        if self._resume_on_start and not self._should_abort_admission():
+        if self._resume_on_start and not self._should_abort_recovery():
             try:
-                await self.attach_default()
+                await self.attach_default(_startup_recovery=True)
                 self._last_error = None
             except Exception as exc:
                 self._last_error = str(exc)
@@ -1976,6 +2054,7 @@ class AgentSessionManager:
 
     async def retry_session(self, session_id: str) -> AgentSessionRuntime:
         """Explicitly retry a durable, nonterminal session regardless of auto policy."""
+        self.require_startup_complete()
         async with self._lock:
             runtime = self.get(session_id)
             if runtime and not getattr(runtime, "_closed", False):
@@ -2028,7 +2107,7 @@ class AgentSessionManager:
     async def _resume_from_snapshot(
         self, snap: SessionSnapshot, full: QuiesceSnapshot
     ) -> AgentSessionRuntime | None:
-        if self._should_abort_admission():
+        if self._should_abort_recovery():
             raise RuntimeError("Agent is quiescing")
         existing = (
             await self._offload(
@@ -2132,6 +2211,7 @@ class AgentSessionManager:
 
     async def reconnect(self) -> bool:
         """Reconnect the default session (compat with chrome reconnect button)."""
+        self.require_startup_complete()
         try:
             runtime = await self.attach_default()
             if runtime.connected:
@@ -2167,9 +2247,12 @@ class AgentSessionManager:
         provider_override: str | None = None,
         project_tool_config: dict | None = None,
         initial_configuration: SessionConfigurationRequest | None = None,
+        _startup_recovery: bool = False,
     ) -> AgentSessionRuntime:
         if not self.settings.agent_enabled:
             raise RuntimeError("Agent disabled")
+        if not _startup_recovery and not self._startup_complete:
+            self.require_startup_complete()
         if self._should_abort_admission():
             raise RuntimeError("Agent is quiescing")
 
@@ -2333,6 +2416,7 @@ class AgentSessionManager:
         agent_env: dict[str, str] | None = None,
         provider_override: str | None = None,
         initial_configuration: SessionConfigurationRequest | None = None,
+        _startup_recovery: bool = False,
     ) -> AgentSessionRuntime:
         async with self._lock:
             for rt in self._runtimes.values():
@@ -2366,6 +2450,67 @@ class AgentSessionManager:
                 surface=SURFACE_CHAT_DEFAULT,
                 provider_override=provider_override,
                 initial_configuration=initial_configuration,
+                _startup_recovery=_startup_recovery,
+            )
+
+    async def recover_session(
+        self,
+        session_id: str,
+        *,
+        provider_override: str | None = None,
+    ) -> AgentSessionRuntime:
+        """Reconnect one durable PA session without creating a second PA identity."""
+        self.require_startup_complete()
+        async with self.label_lock(f"recover:{session_id}"):
+            runtime = self.get(session_id)
+            if runtime and not runtime._closed:
+                return runtime
+            session = await self._offload(
+                "sqlite.agent_session_read", self.store.get_session, session_id
+            )
+            if session is None:
+                raise AgentSessionRecoveryError("PA session was deleted")
+            if session.status == "closed":
+                raise AgentSessionRecoveryError("PA session is closed")
+            if session.status == RECOVERY_BLOCKED_STATUS:
+                raise AgentSessionRecoveryError("PA session recovery is blocked")
+            if not provider_override and session.agent_name not in known_provider_ids():
+
+                def resolve_rollout_provider() -> str:
+                    known = set(known_provider_ids())
+                    resolved, _ = resolve_provider_id(
+                        self.settings,
+                        AgentInvocationContext(
+                            surface=surface_for_label(
+                                session.label, project_id=session.project_id
+                            ),
+                            principal_id=session.principal_id,
+                            card_id=session.card_id or session.item_id,
+                            project_id=session.project_id,
+                        ),
+                    )
+                    if resolved in known:
+                        return resolved
+                    configured = (self.settings.agent_provider or "").strip().lower()
+                    if configured in known:
+                        return configured
+                    return DEFAULT_PROVIDER_ID
+
+                provider_override = await self._offload(
+                    "agent.recovery_provider_resolve",
+                    resolve_rollout_provider,
+                    timeout=30.0,
+                )
+            return await self.create_session(
+                label=session.label,
+                title=session.title,
+                cwd=session.cwd,
+                principal_id=session.principal_id,
+                card_id=session.card_id or session.item_id,
+                project_id=session.project_id,
+                existing=session,
+                resume_external_id=session.external_session_id,
+                provider_override=provider_override,
             )
 
     def enqueue_prompt(
@@ -2431,6 +2576,7 @@ class AgentSessionManager:
         surface: str | None = None,
         provider_override: str | None = None,
     ) -> str:
+        self.require_startup_complete()
         if session_id:
             runtime = self._runtimes.get(session_id)
             if not runtime:
