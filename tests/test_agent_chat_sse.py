@@ -96,6 +96,19 @@ class AgentChatSseTests(unittest.TestCase):
             starting.exception.detail["code"], "agent_recovery_in_progress"
         )
 
+        with patch("pa.modules.agent_chat._manager", return_value=manager):
+            for operation in (session_retry, session_close):
+                with self.subTest(operation=operation.__name__):
+                    with self.assertRaises(HTTPException) as gated:
+                        asyncio.run(operation(request, "session-race"))
+                    self.assertEqual(gated.exception.status_code, 503)
+                    self.assertEqual(
+                        gated.exception.detail["code"],
+                        "agent_recovery_in_progress",
+                    )
+        manager.retry_session.assert_not_called()
+        manager.get.assert_not_called()
+
         durable = AgentSession(
             id="session-race",
             agent_name="future-provider",
@@ -121,6 +134,18 @@ class AgentChatSseTests(unittest.TestCase):
         self.assertEqual(detail["durable_session"]["reason"], "provider_thread_lost")
         self.assertIn("/history/", detail["history_url"])
         self.assertIn("/recover", detail["recover_url"])
+
+        durable.status = "recovery_blocked"
+        with patch("pa.modules.agent_chat._manager", return_value=manager):
+            with self.assertRaises(HTTPException) as blocked:
+                _runtime_or_404(request, durable.id)
+        blocked_detail = blocked.exception.detail
+        self.assertEqual(blocked_detail["code"], "session_not_live")
+        self.assertFalse(blocked_detail["recoverable"])
+        self.assertEqual(
+            blocked_detail["durable_session"]["reason"], "recovery_blocked"
+        )
+        self.assertIsNone(blocked_detail["recover_url"])
 
         manager.store.get_session.return_value = None
         with patch("pa.modules.agent_chat._manager", return_value=manager):

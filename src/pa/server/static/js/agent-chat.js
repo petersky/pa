@@ -722,6 +722,9 @@
         if (code === "session_not_live" || code === "session_deleted") {
           return self.resolveSessionNotLive(err, targetSessionId);
         }
+        if (code === "session_recovery_blocked" || code === "session_closed") {
+          return self.loadDurableSession(targetSessionId);
+        }
         self.setPlaceholder("Session recovery is still unavailable: " + err.message);
         self.setStatus("offline");
         self._setRecoveryControl(true, "Retry recovery");

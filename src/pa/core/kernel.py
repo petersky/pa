@@ -113,12 +113,10 @@ class Kernel:
         from pa.instance.quiesce import consume_skip_resume
 
         resume_env = os.environ.get("PA_ACP_RESUME", "1").strip().lower()
-        resume = resume_env not in {
-            "0",
-            "false",
-            "no",
-            "off",
-        } and not consume_skip_resume(self.ctx.settings.data_dir)
+        resume = (
+            resume_env not in {"0", "false", "no", "off"}
+            and not consume_skip_resume(self.ctx.settings.data_dir)
+        )
         agent._accepting = False
         begin_startup = getattr(agent, "begin_startup", None)
         if callable(begin_startup):
@@ -146,7 +144,9 @@ class Kernel:
 
         import asyncio
 
-        agent_start_task = asyncio.create_task(start_agent(), name="pa-agent-startup")
+        agent_start_task = asyncio.create_task(
+            start_agent(), name="pa-agent-startup"
+        )
         self.ctx.register_service("agent_start_task", agent_start_task)
         self.ctx.register_service("peer_registry", PeerRegistry(self.ctx.settings))
 
@@ -199,7 +199,7 @@ class Kernel:
             agent_start_task.cancel()
             try:
                 await asyncio.wait_for(agent_start_task, timeout=5.0)
-            except asyncio.CancelledError, asyncio.TimeoutError:
+            except (asyncio.CancelledError, asyncio.TimeoutError):
                 pass
 
         for entry in reversed(self.registry.modules):

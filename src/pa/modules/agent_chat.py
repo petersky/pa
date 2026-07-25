@@ -132,7 +132,11 @@ def _session_actions(session_id: str, *, recoverable: bool) -> dict[str, Any]:
 def _durable_session_state(manager, session) -> dict[str, Any]:
     runtime = manager.get(session.id)
     live = bool(runtime and not getattr(runtime, "_closed", False))
-    recoverable = session.status not in {"closed", "quiesced"} and not live
+    recoverable = session.status not in {
+        "closed",
+        "quiesced",
+        RECOVERY_BLOCKED_STATUS,
+    } and not live
     durable = dict((session.config_json or {}).get("durable_runtime") or {})
     return {
         "exists": True,
@@ -143,6 +147,8 @@ def _durable_session_state(manager, session) -> dict[str, Any]:
             if live
             else "session_closed"
             if session.status in {"closed", "quiesced"}
+            else "recovery_blocked"
+            if session.status == RECOVERY_BLOCKED_STATUS
             else "provider_thread_lost"
         ),
         "status": session.status,
@@ -942,14 +948,31 @@ async def recover_session(
         raise RuntimeError("unreachable startup gate")
     except AgentSessionRecoveryError as exc:
         message = str(exc)
-        deleted = "deleted" in message.lower()
+        lowered = message.lower()
+        deleted = "deleted" in lowered
+        blocked = "blocked" in lowered
         raise HTTPException(
             status_code=404 if deleted else 409,
             detail={
-                "code": "session_deleted" if deleted else "session_closed",
+                "code": (
+                    "session_deleted"
+                    if deleted
+                    else "session_recovery_blocked"
+                    if blocked
+                    else "session_closed"
+                ),
                 "message": message,
                 "recoverable": False,
-                "durable_session": {"exists": not deleted},
+                "durable_session": {
+                    "exists": not deleted,
+                    "reason": (
+                        "pa_session_deleted"
+                        if deleted
+                        else "recovery_blocked"
+                        if blocked
+                        else "session_closed"
+                    ),
+                },
                 **_session_actions(session_id, recoverable=False),
             },
         ) from exc
@@ -1361,7 +1384,7 @@ async def session_cancel(request: Request, session_id: str) -> dict:
 @router.post("/sessions/{session_id}/retry")
 async def session_retry(request: Request, session_id: str) -> dict:
     """Explicitly retry a durable session that is not currently live."""
-    mgr = _manager(request)
+    mgr = _require_session_traffic_ready(request)
     try:
         runtime = await mgr.retry_session(session_id)
     except LookupError as exc:
@@ -1374,7 +1397,9 @@ async def session_retry(request: Request, session_id: str) -> dict:
             session_id,
         )
         if session and session.status == RECOVERY_BLOCKED_STATUS:
-            provisioning = dict((session.config_json or {}).get("provisioning") or {})
+            provisioning = dict(
+                (session.config_json or {}).get("provisioning") or {}
+            )
             raise HTTPException(
                 status_code=409,
                 detail={
@@ -1410,7 +1435,7 @@ async def session_close(request: Request, session_id: str) -> dict:
     """
     from datetime import UTC, datetime
 
-    mgr = _manager(request)
+    mgr = _require_session_traffic_ready(request)
     runtime = mgr.get(session_id)
     if runtime and not getattr(runtime, "_closed", False):
         logger.info(

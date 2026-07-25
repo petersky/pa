@@ -75,9 +75,9 @@ AUTO_RECOVERY_SESSION_STATUSES = frozenset(
         "recoverable_interrupted",
     }
 )
-RECOVERY_RETAINED_SESSION_STATUSES = AUTO_RECOVERY_SESSION_STATUSES | {
-    RECOVERY_BLOCKED_STATUS
-}
+RECOVERY_RETAINED_SESSION_STATUSES = (
+    AUTO_RECOVERY_SESSION_STATUSES | {RECOVERY_BLOCKED_STATUS}
+)
 
 
 def _project_recovery_block(exc: BaseException) -> bool:
@@ -1486,9 +1486,13 @@ class AgentSessionManager:
             )
             return context_environment(context)
         except Exception as exc:
-            project_blocked = bool(session.project_id and _project_recovery_block(exc))
+            project_blocked = bool(
+                session.project_id and _project_recovery_block(exc)
+            )
             session.status = (
-                RECOVERY_BLOCKED_STATUS if project_blocked else "provisioning_failed"
+                RECOVERY_BLOCKED_STATUS
+                if project_blocked
+                else "provisioning_failed"
             )
             config = dict(session.config_json or {})
             if authority_instance:
@@ -1690,8 +1694,12 @@ class AgentSessionManager:
             list_links = getattr(self.store, "list_project_repositories", None)
             if not callable(list_links):
                 return False
-            realm_id = getattr(project, "realm_id", self.settings.primary_realm)
-            return bool(list_links(session.project_id, realm_id=realm_id))
+            realm_id = getattr(
+                project, "realm_id", self.settings.primary_realm
+            )
+            return bool(
+                list_links(session.project_id, realm_id=realm_id)
+            )
 
         return await self._offload(
             "agent.project_recovery_availability",
@@ -1740,7 +1748,8 @@ class AgentSessionManager:
             active_session_ids.update(
                 item.session_id
                 for item in snapshot.sessions
-                if item.session_id and item.status in RECOVERY_RETAINED_SESSION_STATUSES
+                if item.session_id
+                and item.status in RECOVERY_RETAINED_SESSION_STATUSES
             )
         try:
             await self._offload(
@@ -1828,7 +1837,10 @@ class AgentSessionManager:
             # Reconcile every durable nonterminal admission that was not in the
             # quiesce file so it cannot silently disappear after restart.
             for session in reversed(persisted_sessions):
-                if session.id not in recovery_eligibility or session.id in recovery:
+                if (
+                    session.id not in recovery_eligibility
+                    or session.id in recovery
+                ):
                     continue
                 recovery[session.id] = self._snapshot_from_persisted(session)
             self._startup_total = len(recovery)
@@ -1864,7 +1876,9 @@ class AgentSessionManager:
                             logger.warning(
                                 "ACP recovery blocked for session %s: %s",
                                 sess.session_id,
-                                self._recovery_action(session) if session else str(exc),
+                                self._recovery_action(session)
+                                if session
+                                else str(exc),
                             )
                         else:
                             logger.exception(
@@ -1975,6 +1989,7 @@ class AgentSessionManager:
 
     async def retry_session(self, session_id: str) -> AgentSessionRuntime:
         """Explicitly retry a durable, nonterminal session regardless of auto policy."""
+        self.require_startup_complete()
         async with self._lock:
             runtime = self.get(session_id)
             if runtime and not getattr(runtime, "_closed", False):
@@ -2003,7 +2018,9 @@ class AgentSessionManager:
                 raise
             except Exception as exc:
                 self._last_error = str(exc)
-                recovery_state = await self._mark_recovery_interrupted(snapshot, exc)
+                recovery_state = await self._mark_recovery_interrupted(
+                    snapshot, exc
+                )
                 if recovery_state == RECOVERY_BLOCKED_STATUS:
                     logger.warning(
                         "Explicit ACP recovery retry remains blocked for session "
@@ -2390,6 +2407,8 @@ class AgentSessionManager:
                 raise AgentSessionRecoveryError("PA session was deleted")
             if session.status == "closed":
                 raise AgentSessionRecoveryError("PA session is closed")
+            if session.status == RECOVERY_BLOCKED_STATUS:
+                raise AgentSessionRecoveryError("PA session recovery is blocked")
             if not provider_override and session.agent_name not in known_provider_ids():
 
                 def resolve_rollout_provider() -> str:
