@@ -695,6 +695,25 @@ class ItemsModule(Module):
             )
 
         @mcp.tool()
+        def update_card_preferred_instance(
+            card_id: str,
+            instance_id: str,
+            realm: str = "default",
+        ) -> dict | None:
+            """Set a card's preferred fleet instance and return its new authority version."""
+            instance_id = instance_id.strip()
+            if not instance_id:
+                raise ValueError("instance_id cannot be empty")
+            return request_local_pa(
+                ctx.settings,
+                "PATCH",
+                f"/api/cards/{card_id}",
+                params={"realm": realm},
+                json={"preferred_instance": instance_id},
+                allow_not_found=True,
+            )
+
+        @mcp.tool()
         def create_item(
             kind: ItemKind,
             title: str,
