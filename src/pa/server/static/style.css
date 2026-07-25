@@ -1961,8 +1961,20 @@ code {
   width: 100%;
 }
 
+.agent-session-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-left: auto;
+}
+
 .panel-header [data-agent-new-session] {
   margin-left: auto;
+}
+
+.session-list .agent-session-close {
+  align-self: flex-end;
+  margin-top: 0.15rem;
 }
 
 .agent-new-session-dialog {

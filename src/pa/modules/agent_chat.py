@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import json
 import logging
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
@@ -18,7 +19,7 @@ from pa.acp.configuration import ACPConfigurationError, SessionConfigurationRequ
 from pa.auth.middleware import get_principal_id
 from pa.core.contracts import Module
 from pa.core.preferences import get_preferences_store
-from pa.domain.models import TranscriptEvent
+from pa.domain.models import AgentSession, TranscriptEvent
 from pa.instance.agent_session import (
     RECOVERY_BLOCKED_STATUS,
     TRANSCRIPT_WINDOW_LIMIT,
@@ -757,49 +758,54 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
 @router.get("/sessions")
 def list_agent_sessions(request: Request) -> list[dict]:
     mgr = _require_session_traffic_ready(request)
-    return [
-        {
-            "id": rt.session.id,
-            "title": rt.session.title,
-            "label": rt.session.label,
-            "agent_name": rt.session.agent_name,
-            "status": rt.session.status,
-            "connected": rt.connected,
-            "prompting": rt.prompting,
-            "model_id": rt.session.model_id,
-            "mode_id": rt.session.mode_id,
-            "requested_model_id": (
-                (rt.session.config_json or {})
-                .get("configuration", {})
-                .get("requested", {})
-                .get("model_id")
-            ),
-            "requested_reasoning": (
-                (rt.session.config_json or {})
-                .get("configuration", {})
-                .get("requested", {})
-                .get("reasoning")
-            ),
-            "effective_reasoning": (
-                (rt.session.config_json or {})
-                .get("configuration", {})
-                .get("effective", {})
-                .get("reasoning")
-            ),
-            "configuration_state": (
-                (rt.session.config_json or {}).get("configuration", {}).get("state")
-            ),
-            "config_json": rt.session.config_json,
-            "queue_length": len(rt._queue),
-            "last_seq": rt._seq,
-            "updated_at": rt.session.updated_at.isoformat(),
-            "card_reconciliation": _session_reconciliation(
-                request, rt.session.id
-            ),
-        }
-        for rt in mgr.list_runtimes()
-        if not rt._closed
-    ]
+    result: list[dict] = []
+    live_ids: set[str] = set()
+    for runtime in mgr.list_runtimes():
+        if runtime._closed:
+            continue
+        live_ids.add(runtime.session.id)
+        result.append(_session_list_item(request, runtime.session, runtime=runtime))
+    for session in mgr.store.list_sessions():
+        if session.id in live_ids or session.status == "closed":
+            continue
+        result.append(_session_list_item(request, session))
+    return result
+
+
+def _session_list_item(
+    request: Request,
+    session: AgentSession,
+    *,
+    runtime: AgentSessionRuntime | None = None,
+) -> dict:
+    config = session.config_json or {}
+    configuration = config.get("configuration", {})
+    durable = config.get("durable_runtime", {})
+    queued = durable.get("queued_prompts") or []
+    return {
+        "id": session.id,
+        "title": session.title,
+        "label": session.label,
+        "agent_name": session.agent_name,
+        "origin_instance_id": session.origin_instance_id,
+        "origin_instance_name": session.origin_instance_name,
+        "status": session.status,
+        "connected": bool(runtime and runtime.connected),
+        "prompting": bool(runtime and runtime.prompting),
+        "live": runtime is not None,
+        "orphan": runtime is None,
+        "model_id": session.model_id,
+        "mode_id": session.mode_id,
+        "requested_model_id": configuration.get("requested", {}).get("model_id"),
+        "requested_reasoning": configuration.get("requested", {}).get("reasoning"),
+        "effective_reasoning": configuration.get("effective", {}).get("reasoning"),
+        "configuration_state": configuration.get("state"),
+        "config_json": config,
+        "queue_length": len(runtime._queue) if runtime else len(queued),
+        "last_seq": runtime._seq if runtime else durable.get("last_event_cursor", 0),
+        "updated_at": session.updated_at.isoformat(),
+        "card_reconciliation": _session_reconciliation(request, session.id),
+    }
 
 
 @router.get("/provider-options/{provider_id}")
@@ -1557,72 +1563,73 @@ async def session_retry(request: Request, session_id: str) -> dict:
     return await _offload(mgr, "agent.session_snapshot", runtime.snapshot)
 
 
-@router.post("/sessions/{session_id}/close")
-async def session_close(request: Request, session_id: str) -> dict:
-    """Close a live runtime, or mark a store-only orphan session closed.
-
-    After abrupt restarts, sessions can remain `prompting`/`connected` in the
-    durable store with no live ACP runtime. Operators still need `/close` to
-    clear those so card labels can be reused.
-    """
-    from datetime import UTC, datetime
-
-    mgr = _require_session_traffic_ready(request)
-    runtime = mgr.get(session_id)
-    if runtime and not getattr(runtime, "_closed", False):
-        logger.info(
-            "Closing live agent session",
-            extra={
-                "session_id": session_id,
-                "status": runtime.session.status,
-                "prompting": runtime.prompting,
-                "queue_length": len(runtime._queue),
-            },
+async def _close_orphan_session(
+    mgr,
+    session: AgentSession,
+    *,
+    reason: str,
+) -> str | None:
+    """Close one durable store-only session and return its prior status."""
+    if session.status == "closed":
+        return None
+    closed_at = datetime.now(UTC)
+    close_session_method = getattr(type(mgr.store), "close_session", None)
+    if close_session_method is not None:
+        closed, prior_status = await _offload(
+            mgr,
+            "sqlite.agent_session_close",
+            mgr.store.close_session,
+            session.id,
+            reason=reason,
+            closed_at=closed_at,
         )
-        await runtime.close()
-        mgr._runtimes.pop(session_id, None)
-        logger.info(
-            "Live agent session closed",
-            extra={"session_id": session_id},
-        )
-        return {"ok": True, "live": False}
-
-    session = await _offload(
-        mgr, "sqlite.agent_session_read", mgr.store.get_session, session_id
-    )
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-    if session.status != "closed":
-        logger.info(
-            "Closing orphaned agent session",
-            extra={"session_id": session_id, "previous_status": session.status},
-        )
+        if closed is None:
+            return None
+        session.status = closed.status
+        session.updated_at = closed.updated_at
+        if prior_status is None:
+            return None
+    else:
+        prior_status = session.status
         session.status = "closed"
-        session.updated_at = datetime.now(UTC)
+        session.updated_at = closed_at
 
-        def close_orphan() -> None:
+        def persist_close() -> None:
             mgr.store.save_session(session)
-            try:
-                from pa.domain.models import TranscriptEvent
+            next_seq = mgr.store.next_transcript_seq(session.id)
+            mgr.store.append_transcript_events(
+                [
+                    TranscriptEvent(
+                        session_id=session.id,
+                        seq=next_seq,
+                        event_type="session_closed",
+                        payload={"reason": reason, "prior_status": prior_status},
+                    )
+                ]
+            )
 
-                next_seq = mgr.store.next_transcript_seq(session_id)
-                mgr.store.append_transcript_events(
-                    [
-                        TranscriptEvent(
-                            session_id=session_id,
-                            seq=next_seq,
-                            event_type="session_closed",
-                            payload={"reason": "orphan_close"},
-                        )
-                    ]
-                )
-            except Exception:
-                logger.exception(
-                    "Failed to append session_closed transcript for orphan %s",
-                    session_id,
-                )
+        await _offload(mgr, "sqlite.agent_session_close", persist_close)
+    logger.info(
+        "Orphaned agent session closed",
+        extra={
+            "session_id": session.id,
+            "prior_status": prior_status,
+            "close_reason": reason,
+        },
+    )
+    return prior_status
 
-        await _offload(mgr, "sqlite.agent_session_close", close_orphan)
+
+async def _reconcile_closed_session_workspaces(
+    mgr,
+    session_ids: list[str],
+) -> None:
+    if not session_ids:
+        return
+    if isinstance(mgr, AgentSessionManager):
+        await mgr.reconcile_closed_sessions(session_ids)
+        return
+    for session_id in dict.fromkeys(session_ids):
         try:
             await _offload(
                 mgr,
@@ -1631,29 +1638,125 @@ async def session_close(request: Request, session_id: str) -> dict:
                 session_id,
                 timeout=30.0,
             )
-            await _offload(
-                mgr,
-                "workspace.reconcile_terminal_state",
-                mgr.workspace_manager.reconcile_terminal_state,
-                timeout=30.0,
-            )
-            active_session_ids = {
-                item.session_id
-                for item in mgr.list_runtimes()
-                if not getattr(item, "_closed", False)
-            }
-            await _offload(
-                mgr,
-                "workspace.collect_garbage",
-                mgr.workspace_manager.collect_garbage,
-                active_session_ids=active_session_ids,
-                timeout=120.0,
-            )
         except Exception:
             logger.exception(
-                "Workspace reconciliation after orphan close failed for %s",
+                "Workspace expiration after session close failed for %s",
                 session_id,
             )
+    try:
+        await _offload(
+            mgr,
+            "workspace.reconcile_terminal_state",
+            mgr.workspace_manager.reconcile_terminal_state,
+            timeout=30.0,
+        )
+        active_session_ids = {
+            item.session_id
+            for item in mgr.list_runtimes()
+            if not getattr(item, "_closed", False)
+        }
+        await _offload(
+            mgr,
+            "workspace.collect_garbage",
+            mgr.workspace_manager.collect_garbage,
+            active_session_ids=active_session_ids,
+            timeout=120.0,
+        )
+    except Exception:
+        logger.exception(
+            "Workspace reconciliation after closing sessions failed",
+            extra={"session_ids": list(dict.fromkeys(session_ids))},
+        )
+
+
+@router.post("/sessions/close-all")
+async def session_close_all(request: Request) -> dict:
+    """Close every live or durable nonterminal session on this instance."""
+    mgr = _require_session_traffic_ready(request)
+    runtimes = [
+        runtime
+        for runtime in mgr.list_runtimes()
+        if not getattr(runtime, "_closed", False)
+    ]
+    persisted = await _offload(
+        mgr,
+        "sqlite.agent_sessions_list",
+        mgr.store.list_sessions,
+    )
+    live_ids = {runtime.session_id for runtime in runtimes}
+    closed_ids: list[str] = []
+    live_closed = 0
+    orphan_closed = 0
+
+    for runtime in runtimes:
+        changed = await runtime.close(
+            reason="bulk_user_close",
+            reconcile_workspace=False,
+        )
+        mgr._runtimes.pop(runtime.session_id, None)
+        if changed:
+            closed_ids.append(runtime.session_id)
+            live_closed += 1
+
+    for session in persisted:
+        if session.id in live_ids or session.status == "closed":
+            continue
+        prior_status = await _close_orphan_session(
+            mgr,
+            session,
+            reason="bulk_user_close",
+        )
+        if prior_status is not None:
+            closed_ids.append(session.id)
+            orphan_closed += 1
+
+    await _reconcile_closed_session_workspaces(mgr, closed_ids)
+    logger.info(
+        "All nonterminal agent sessions closed",
+        extra={
+            "closed_count": len(closed_ids),
+            "live_closed": live_closed,
+            "orphan_closed": orphan_closed,
+            "session_ids": closed_ids,
+        },
+    )
+    return {
+        "ok": True,
+        "closed": len(closed_ids),
+        "live_closed": live_closed,
+        "orphan_closed": orphan_closed,
+        "session_ids": closed_ids,
+    }
+
+
+@router.post("/sessions/{session_id}/close")
+async def session_close(request: Request, session_id: str) -> dict:
+    """Close a live runtime, or mark a store-only orphan session closed.
+
+    After abrupt restarts, sessions can remain `prompting`/`connected` in the
+    durable store with no live ACP runtime. Operators still need `/close` to
+    clear those so card labels can be reused.
+    """
+    mgr = _require_session_traffic_ready(request)
+    runtime = mgr.get(session_id)
+    if runtime and not getattr(runtime, "_closed", False):
+        await runtime.close(reason="user_close")
+        mgr._runtimes.pop(session_id, None)
+        return {"ok": True, "live": False}
+
+    session = await _offload(
+        mgr,
+        "sqlite.agent_session_read", mgr.store.get_session, session_id
+    )
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    prior_status = await _close_orphan_session(
+        mgr,
+        session,
+        reason="orphan_user_close",
+    )
+    if prior_status is not None:
+        await _reconcile_closed_session_workspaces(mgr, [session_id])
     return {"ok": True, "live": False, "orphan": True}
 
 

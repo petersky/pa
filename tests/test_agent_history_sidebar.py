@@ -13,7 +13,10 @@ def test_agent_sidebar_exposes_opt_in_history_controls() -> None:
     assert "data-agent-history-toggle" in template
     assert "Show closed sessions" in template
     assert "data-agent-session-search" in template
-    assert 'data-session-live="true"' in template
+    assert "live_session_ids" in template
+    assert "data-agent-session-close" in template
+    assert "Forget" in template
+    assert "data-agent-end-all" in template
     assert "data-acw-recover" in widget
     assert "data-acw-history" in widget
 
@@ -25,6 +28,8 @@ def test_agent_sidebar_loads_and_selects_durable_history() -> None:
     assert 'self.api("/history/" + encodeURIComponent(sessionId))' in script
     assert "filterSessionList" in script
     assert 'li.dataset.sessionLive !== "false"' in script
+    assert 'csrfFetch("/sessions/close-all"' in script
+    assert "data-agent-session-close" in script
     assert '"/api/fleet/session-route/" + encodeURIComponent(sessionId)' in script
     assert "this.openSession(sessionId, ownerInstanceId" in script
     assert "retryAfterStartupRecovery" in script

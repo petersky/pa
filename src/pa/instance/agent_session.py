@@ -1303,7 +1303,25 @@ class AgentSessionRuntime:
             in_flight=self._in_flight,
         )
 
-    async def close(self) -> None:
+    async def close(
+        self,
+        *,
+        reason: str = "user_close",
+        reconcile_workspace: bool = True,
+    ) -> bool:
+        if self._closed:
+            return False
+        prior_status = self.session.status
+        logger.info(
+            "Closing live agent session",
+            extra={
+                "session_id": self.session_id,
+                "prior_status": prior_status,
+                "close_reason": reason,
+                "prompting": self.prompting,
+                "queue_length": len(self._queue),
+            },
+        )
         self._closed = True
         self._queue_paused = True
         if self._drain_task and not self._drain_task.done():
@@ -1313,45 +1331,36 @@ class AgentSessionRuntime:
                 fut.set_result(permission_cancelled())
             self._pending_permissions.pop(req_id, None)
             self._permission_requests.pop(req_id, None)
-        self._append_transcript("session_closed", {})
+        self._append_transcript(
+            "session_closed",
+            {"reason": reason, "prior_status": prior_status},
+        )
         self._flush_transcript()
         await self._drain_transcripts()
         if self.connection:
-            await self.connection.disconnect()
-            self.connection = None
+            try:
+                await self.connection.disconnect()
+            except Exception:
+                logger.exception(
+                    "Provider disconnect failed while closing session %s",
+                    self.session_id,
+                )
+            finally:
+                self.connection = None
         self.session.status = "closed"
         self.session.updated_at = datetime.now(UTC)
         await self._save_session_preserving_external_browser_async()
-        try:
-            await self._offload(
-                "workspace.expire_session",
-                self.manager.workspace_manager.expire_session,
-                self.session_id,
-                timeout=30.0,
-            )
-            await self._offload(
-                "workspace.reconcile_terminal_state",
-                self.manager.workspace_manager.reconcile_terminal_state,
-                timeout=30.0,
-            )
-            active_session_ids = {
-                runtime.session_id
-                for runtime in self.manager.list_runtimes()
-                if not runtime._closed
-            }
-            await self._offload(
-                "workspace.collect_garbage",
-                self.manager.workspace_manager.collect_garbage,
-                active_session_ids=active_session_ids,
-                timeout=120.0,
-            )
-        except Exception:
-            # Session closure is authoritative. Cleanup is recoverable via the
-            # explicit workspace reconciliation API or the next agent startup.
-            logger.exception(
-                "Workspace reconciliation after session close failed for %s",
-                self.session_id,
-            )
+        if reconcile_workspace:
+            await self.manager.reconcile_closed_sessions([self.session_id])
+        logger.info(
+            "Live agent session closed",
+            extra={
+                "session_id": self.session_id,
+                "prior_status": prior_status,
+                "close_reason": reason,
+            },
+        )
+        return True
 
 
 class AgentSessionManager:
@@ -1616,6 +1625,47 @@ class AgentSessionManager:
 
     def list_runtimes(self) -> list[AgentSessionRuntime]:
         return list(self._runtimes.values())
+
+    async def reconcile_closed_sessions(self, session_ids: list[str]) -> None:
+        """Expire closed-session leases, then reconcile and collect once."""
+        unique_session_ids = list(dict.fromkeys(session_ids))
+        for session_id in unique_session_ids:
+            try:
+                await self._offload(
+                    "workspace.expire_session",
+                    self.workspace_manager.expire_session,
+                    session_id,
+                    timeout=30.0,
+                )
+            except Exception:
+                logger.exception(
+                    "Workspace expiration after session close failed for %s",
+                    session_id,
+                )
+        try:
+            await self._offload(
+                "workspace.reconcile_terminal_state",
+                self.workspace_manager.reconcile_terminal_state,
+                timeout=30.0,
+            )
+            active_session_ids = {
+                runtime.session_id
+                for runtime in self.list_runtimes()
+                if not runtime._closed
+            }
+            await self._offload(
+                "workspace.collect_garbage",
+                self.workspace_manager.collect_garbage,
+                active_session_ids=active_session_ids,
+                timeout=120.0,
+            )
+        except Exception:
+            # Session closure is authoritative. Cleanup is recoverable via the
+            # explicit workspace reconciliation API or the next agent startup.
+            logger.exception(
+                "Workspace reconciliation after closing sessions failed",
+                extra={"session_ids": unique_session_ids},
+            )
 
     def progress(self) -> QuiesceProgress:
         active = sum(1 for rt in self._runtimes.values() if rt.connected)

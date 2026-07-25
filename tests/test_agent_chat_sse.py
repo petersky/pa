@@ -14,8 +14,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi import HTTPException
 
 from pa.acp.client import normalize_session_update
+from pa.config import Settings
 from pa.domain.models import AgentSession, TranscriptEvent
+from pa.domain.projection import CardProjection
 from pa.execution.dispatch import DispatchRecord, DispatchStore
+from pa.instance.agent_session import AgentSessionManager
 from pa.modules.agent_chat import (
     CreateSessionBody,
     _apply_initial_options,
@@ -26,6 +29,7 @@ from pa.modules.agent_chat import (
     list_agent_session_history,
     list_agent_sessions,
     session_close,
+    session_close_all,
     session_events,
     session_retry,
 )
@@ -646,6 +650,39 @@ class AgentChatSseTests(unittest.TestCase):
             sessions[0]["config_json"]["values"]["reasoningEffort"], "high"
         )
         self.assertEqual(sessions[0]["last_seq"], 12)
+        self.assertTrue(sessions[0]["live"])
+        self.assertFalse(sessions[0]["orphan"])
+
+    def test_session_list_exposes_nonterminal_store_only_orphans(self) -> None:
+        orphan = AgentSession(
+            id="sess-orphan",
+            agent_name="codex",
+            status="recoverable_interrupted",
+            config_json={
+                "durable_runtime": {
+                    "queued_prompts": [{"id": "queued-1"}],
+                    "last_event_cursor": 19,
+                }
+            },
+        )
+        closed = AgentSession(
+            id="sess-closed",
+            agent_name="codex",
+            status="closed",
+        )
+        manager = MagicMock()
+        manager.list_runtimes.return_value = []
+        manager.store.list_sessions.return_value = [orphan, closed]
+        request = MagicMock()
+
+        with patch("pa.modules.agent_chat._manager", return_value=manager):
+            sessions = list_agent_sessions(request)
+
+        self.assertEqual([session["id"] for session in sessions], ["sess-orphan"])
+        self.assertFalse(sessions[0]["live"])
+        self.assertTrue(sessions[0]["orphan"])
+        self.assertEqual(sessions[0]["queue_length"], 1)
+        self.assertEqual(sessions[0]["last_seq"], 19)
 
     def test_persisted_history_includes_closed_session_transcript(self) -> None:
         session = AgentSession(
@@ -1147,7 +1184,11 @@ class AgentChatSseTests(unittest.TestCase):
         request = MagicMock()
 
         async def run() -> dict:
-            with patch("pa.modules.agent_chat._manager", return_value=manager):
+            with (
+                patch("pa.modules.agent_chat._manager", return_value=manager),
+                patch("pa.modules.agent_chat.logger.info") as log_info,
+            ):
+                self.orphan_close_log = log_info
                 return await session_close(request, "sess-orphan")
 
         result = asyncio.run(run())
@@ -1158,6 +1199,137 @@ class AgentChatSseTests(unittest.TestCase):
         event = store.append_transcript_events.call_args.args[0][0]
         self.assertEqual(event.event_type, "session_closed")
         self.assertEqual(event.seq, 42)
+        self.assertEqual(event.payload["reason"], "orphan_user_close")
+        self.assertEqual(event.payload["prior_status"], "recovery_blocked")
+        close_log = self.orphan_close_log.call_args.kwargs["extra"]
+        self.assertEqual(close_log["session_id"], "sess-orphan")
+        self.assertEqual(close_log["prior_status"], "recovery_blocked")
+
+    def test_bulk_close_handles_live_and_orphan_mixture_then_restart(self) -> None:
+        live_session = AgentSession(
+            id="sess-live",
+            agent_name="codex",
+            status="prompting",
+        )
+        interrupted = AgentSession(
+            id="sess-interrupted",
+            agent_name="codex",
+            status="recoverable_interrupted",
+        )
+        provisioning = AgentSession(
+            id="sess-provisioning",
+            agent_name="codex",
+            status="provisioning_failed",
+        )
+        already_closed = AgentSession(
+            id="sess-closed",
+            agent_name="codex",
+            status="closed",
+        )
+        sessions = [live_session, interrupted, provisioning, already_closed]
+        store = MagicMock()
+        store.list_sessions.return_value = sessions
+        store.next_transcript_seq.side_effect = [7, 11]
+
+        runtime = MagicMock()
+        runtime._closed = False
+        runtime.session_id = live_session.id
+
+        async def close_live(**_kwargs) -> bool:
+            runtime._closed = True
+            live_session.status = "closed"
+            return True
+
+        runtime.close = AsyncMock(side_effect=close_live)
+        manager = MagicMock()
+        manager.store = store
+        manager._runtimes = {live_session.id: runtime}
+        manager.list_runtimes.side_effect = lambda: list(manager._runtimes.values())
+        request = MagicMock()
+
+        async def close_all() -> dict:
+            with patch("pa.modules.agent_chat._manager", return_value=manager):
+                return await session_close_all(request)
+
+        first = asyncio.run(close_all())
+        second = asyncio.run(close_all())
+
+        self.assertEqual(
+            first,
+            {
+                "ok": True,
+                "closed": 3,
+                "live_closed": 1,
+                "orphan_closed": 2,
+                "session_ids": [
+                    "sess-live",
+                    "sess-interrupted",
+                    "sess-provisioning",
+                ],
+            },
+        )
+        self.assertEqual(second["closed"], 0)
+        runtime.close.assert_awaited_once_with(
+            reason="bulk_user_close",
+            reconcile_workspace=False,
+        )
+        self.assertEqual(store.append_transcript_events.call_count, 2)
+        events = [
+            call.args[0][0] for call in store.append_transcript_events.call_args_list
+        ]
+        self.assertEqual(
+            [event.payload["prior_status"] for event in events],
+            ["recoverable_interrupted", "provisioning_failed"],
+        )
+        self.assertEqual({session.status for session in sessions}, {"closed"})
+        self.assertEqual(
+            manager.workspace_manager.expire_session.call_count,
+            3,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            restarted = AgentSessionManager(Settings(data_dir=Path(tmp)), store)
+            restarted.workspace_manager.reconcile_terminal_state = MagicMock(
+                return_value={}
+            )
+            restarted.workspace_manager.collect_garbage = MagicMock(return_value={})
+            restarted._resume_from_snapshot = AsyncMock()
+            restarted.attach_default = AsyncMock()
+
+            asyncio.run(restarted.start(resume=True))
+
+            restarted._resume_from_snapshot.assert_not_awaited()
+
+    def test_durable_close_is_atomic_and_idempotent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = CardProjection(Path(tmp) / "pa.db")
+            store.save_session(
+                AgentSession(
+                    id="sess-atomic",
+                    agent_name="codex",
+                    status="provisioning_failed",
+                )
+            )
+
+            closed, prior_status = store.close_session(
+                "sess-atomic",
+                reason="bulk_user_close",
+            )
+            repeated, repeated_prior = store.close_session(
+                "sess-atomic",
+                reason="bulk_user_close",
+            )
+            events = store.list_transcript_events("sess-atomic")
+
+        assert closed is not None
+        assert repeated is not None
+        self.assertEqual(closed.status, "closed")
+        self.assertEqual(repeated.status, "closed")
+        self.assertEqual(prior_status, "provisioning_failed")
+        self.assertIsNone(repeated_prior)
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].event_type, "session_closed")
+        self.assertEqual(events[0].payload["prior_status"], "provisioning_failed")
 
     def test_explicit_retry_returns_recovered_session_snapshot(self) -> None:
         runtime = MagicMock()

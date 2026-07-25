@@ -5,9 +5,14 @@
 <div class="panel agent-sessions-panel">
   <div class="panel-header">
     <h2>Sessions</h2>
-    {% if agent_enabled %}
-    <button type="button" class="ghost small" data-agent-new-session title="New session">New</button>
-    {% endif %}
+    <div class="agent-session-header-actions">
+      {% if sessions %}
+      <button type="button" class="ghost small danger" data-agent-end-all title="End every live or recoverable session">End all</button>
+      {% endif %}
+      {% if agent_enabled %}
+      <button type="button" class="ghost small" data-agent-new-session title="New session">New</button>
+      {% endif %}
+    </div>
   </div>
   <div class="agent-session-history-controls">
     <label class="agent-session-history-toggle">
@@ -29,7 +34,7 @@
     <li class="{% if s.id == session_id %}active{% endif %}"
         data-session-id="{{ s.id }}"
         data-session-instance="{{ s.origin_instance_id or '' }}"
-        data-session-live="true"
+        data-session-live="{{ 'true' if s.id in live_session_ids else 'false' }}"
         role="button"
         tabindex="0">
       <strong>{{ s.title or s.label or s.agent_name }}</strong>
@@ -49,6 +54,12 @@
         PR #{{ watch.pr_number }} · {{ watch.status.value }}
       </a>
       {% endfor %}
+      <button type="button"
+              class="ghost small danger agent-session-close"
+              data-agent-session-close
+              title="{{ 'Close the live session' if s.id in live_session_ids else 'Forget this orphan so it is not retried' }}">
+        {{ 'Close' if s.id in live_session_ids else 'Forget' }}
+      </button>
     </li>
     {% endfor %}
     {% else %}

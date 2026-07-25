@@ -1646,6 +1646,69 @@ class CardProjection:
             ).fetchone()
         return self._row_to_session(row) if row else None
 
+    def close_session(
+        self,
+        session_id: str,
+        *,
+        reason: str,
+        closed_at: datetime | None = None,
+    ) -> tuple[AgentSession | None, str | None]:
+        """Atomically close a durable session and append its audit event.
+
+        The prior status is ``None`` when the session was already closed, which
+        makes singleton and bulk closure idempotent.
+        """
+        closed_at = closed_at or datetime.now(UTC)
+        with self._mutation_lock, self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM agent_sessions WHERE id = ?",
+                (session_id,),
+            ).fetchone()
+            if row is None:
+                return None, None
+            session = self._row_to_session(row)
+            if session.status == "closed":
+                return session, None
+            prior_status = session.status
+            conn.execute(
+                "UPDATE agent_sessions SET status='closed', updated_at=? WHERE id=?",
+                (closed_at.isoformat(), session_id),
+            )
+            seq_row = conn.execute(
+                """
+                SELECT COALESCE(MAX(seq), 0) AS max_seq
+                FROM agent_transcript_events
+                WHERE session_id = ?
+                """,
+                (session_id,),
+            ).fetchone()
+            next_seq = int(seq_row["max_seq"] if seq_row else 0) + 1
+            event = TranscriptEvent(
+                session_id=session_id,
+                seq=next_seq,
+                event_type="session_closed",
+                payload={"reason": reason, "prior_status": prior_status},
+                created_at=closed_at,
+            )
+            conn.execute(
+                """
+                INSERT INTO agent_transcript_events
+                (id, session_id, seq, event_type, payload, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event.id,
+                    event.session_id,
+                    event.seq,
+                    event.event_type,
+                    json.dumps(event.payload),
+                    event.created_at.isoformat(),
+                ),
+            )
+            session.status = "closed"
+            session.updated_at = closed_at
+            return session, prior_status
+
     def next_transcript_seq(self, session_id: str) -> int:
         with self._conn() as conn:
             row = conn.execute(
