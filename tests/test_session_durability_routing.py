@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import tempfile
 import unittest
-from contextlib import asynccontextmanager
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -66,23 +65,16 @@ class SessionRecoveryTests(unittest.IsolatedAsyncioTestCase):
         runtime.snapshot.return_value = {"session": {"id": session.id}}
 
         manager = MagicMock()
-        manager.get.side_effect = [None, None]
-        manager.store.get_session.return_value = session
-        manager.create_session = AsyncMock(return_value=runtime)
-
-        @asynccontextmanager
-        async def label_lock(_label):
-            yield
-
-        manager.label_lock = label_lock
+        manager.startup_state.return_value = {"phase": "ready", "complete": True}
+        manager.recover_session = AsyncMock(return_value=runtime)
         request = MagicMock()
         with patch("pa.modules.agent_chat._manager", return_value=manager):
             result = await recover_session(request, session.id)
 
         self.assertEqual(result["session"]["id"], session.id)
-        kwargs = manager.create_session.await_args.kwargs
-        self.assertIs(kwargs["existing"], session)
-        self.assertEqual(kwargs["resume_external_id"], "provider-thread-9")
+        manager.recover_session.assert_awaited_once_with(
+            session.id, provider_override=None
+        )
 
 
 class RemoteOwnerReconnectTests(unittest.IsolatedAsyncioTestCase):
