@@ -18,13 +18,14 @@ from pa.acp.configuration import ACPConfigurationError, SessionConfigurationRequ
 from pa.auth.middleware import get_principal_id
 from pa.core.contracts import Module
 from pa.core.preferences import get_preferences_store
+from pa.domain.models import TranscriptEvent
 from pa.instance.agent_session import (
+    RECOVERY_BLOCKED_STATUS,
     TRANSCRIPT_WINDOW_LIMIT,
     AgentSessionManager,
     AgentSessionRecoveryError,
-    AgentStartupNotReady,
     AgentSessionRuntime,
-    RECOVERY_BLOCKED_STATUS,
+    AgentStartupNotReady,
 )
 from pa.instance.quiesce import MAX_TOTAL_IMAGE_BYTES, ImageAttachment
 
@@ -262,7 +263,7 @@ async def _apply_initial_options(
         return
     session = getattr(runtime, "session", None)
     diagnostic = dict(
-        ((getattr(session, "config_json", None) or {}).get("configuration") or {})
+        (getattr(session, "config_json", None) or {}).get("configuration") or {}
     )
     if (
         diagnostic.get("state") == "ready"
@@ -293,12 +294,20 @@ class PromptBody(BaseModel):
     card_id: str | None = None
     project_id: str | None = None
     dispatch_id: str | None = None
+    client_prompt_id: str | None = Field(
+        default=None,
+        min_length=8,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9._:-]+$",
+    )
     idempotency_key: str | None = None
 
     @model_validator(mode="after")
     def validate_total_image_size(self) -> PromptBody:
         if sum(image.decoded_size for image in self.images) > MAX_TOTAL_IMAGE_BYTES:
             raise ValueError("images exceed 20 MB combined limit")
+        if self.client_prompt_id and self.dispatch_id:
+            raise ValueError("client_prompt_id and dispatch_id are mutually exclusive")
         return self
 
 
@@ -724,7 +733,7 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                 detail={
                     "session_id": runtime.session_id,
                     "configuration": dict(
-                        ((runtime.session.config_json or {}).get("configuration") or {})
+                        (runtime.session.config_json or {}).get("configuration") or {}
                     ),
                 },
             )
@@ -1156,6 +1165,108 @@ def _sse(event_id: int | None, data: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n\n"
 
 
+def _public_prompt_images(images: list[ImageAttachment]) -> list[dict[str, str]]:
+    return [image.public_dict() for image in images]
+
+
+def _prompt_acceptance_matches(
+    event: TranscriptEvent, message: str, images: list[ImageAttachment]
+) -> bool:
+    payload = event.payload or {}
+    return payload.get("message") == message and list(
+        payload.get("images") or []
+    ) == _public_prompt_images(images)
+
+
+async def _submit_client_prompt(
+    request: Request,
+    session_id: str,
+    body: PromptBody,
+    runtime,
+    message: str,
+) -> dict:
+    """Idempotently admit a browser prompt and prove transcript durability."""
+    assert body.client_prompt_id
+    prompt_id = body.client_prompt_id
+    async with runtime._prompt_admission_lock:
+        existing = await _runtime_offload(
+            runtime,
+            "sqlite.prompt_acceptance_read",
+            runtime.store.get_prompt_acceptance,
+            session_id,
+            prompt_id,
+        )
+        if existing:
+            if not _prompt_acceptance_matches(existing, message, body.images):
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "client_prompt_id_conflict",
+                        "message": "This prompt id was already accepted for different content.",
+                        "recoverable": False,
+                    },
+                )
+            queued = (
+                existing.event_type == "queue_enqueued"
+                and existing.payload.get("action") != "run"
+            )
+            return {
+                "stop_reason": "accepted",
+                "queued": queued,
+                "started": not queued,
+                "accepted": True,
+                "accepted_event": existing.event_type,
+                "prompt_id": prompt_id,
+                "dispatch_id": None,
+                "session_id": session_id,
+                "duplicate": True,
+                "queue": [item.public_dict() for item in runtime._queue],
+            }
+
+        stop_reason = await runtime.prompt(
+            message,
+            images=body.images,
+            item_id=body.card_id,
+            principal_id=get_principal_id(request),
+            project_id=body.project_id,
+            action=body.action,
+            prompt_id=prompt_id,
+            wait=False,
+        )
+        runtime._flush_transcript()
+        await _drain_runtime_transcripts(runtime)
+        accepted = await _runtime_offload(
+            runtime,
+            "sqlite.prompt_acceptance_read",
+            runtime.store.get_prompt_acceptance,
+            session_id,
+            prompt_id,
+        )
+        if not accepted or not _prompt_acceptance_matches(
+            accepted, message, body.images
+        ):
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "prompt_not_persisted",
+                    "message": "Prompt acceptance was not present in the durable transcript.",
+                    "recoverable": True,
+                },
+            )
+        return {
+            "stop_reason": stop_reason,
+            "queued": stop_reason == "queued",
+            "started": stop_reason == "started",
+            "accepted": True,
+            "accepted_event": accepted.event_type,
+            "prompt_id": prompt_id,
+            "dispatch_id": None,
+            "session_id": session_id,
+            "duplicate": False,
+            "queue": [item.public_dict() for item in runtime._queue],
+        }
+
+
 @router.post("/sessions/{session_id}/prompt")
 async def session_prompt(request: Request, session_id: str, body: PromptBody) -> dict:
     message = body.message.strip()
@@ -1189,6 +1300,8 @@ async def session_prompt(request: Request, session_id: str, body: PromptBody) ->
                 "message": "This principal does not own the linked agent session.",
             },
         )
+    if body.client_prompt_id:
+        return await _submit_client_prompt(request, session_id, body, runtime, message)
     dispatch_record = None
     dispatch_store = None
     if body.dispatch_id:
