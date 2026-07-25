@@ -1724,6 +1724,40 @@ code {
   gap: 0.5rem;
 }
 
+.acw-composer-draft-actions {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.4rem;
+}
+
+.acw-draft-status {
+  flex: 1 1 12rem;
+  overflow-wrap: anywhere;
+}
+
+.acw-draft-attachments {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 480px) {
+  .acw-composer-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .acw-composer-draft-actions {
+    width: 100%;
+  }
+
+  .acw-send-group {
+    align-self: flex-end;
+  }
+}
+
 .acw-message-images {
   display: flex;
   flex-wrap: wrap;

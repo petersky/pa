@@ -89,6 +89,7 @@ class AgentSessionRuntime:
         self.agent_env.setdefault("PA_BROWSER_SESSION_ID", session.id)
         self.connection: AgentConnection | None = None
         self._prompt_lock = asyncio.Lock()
+        self._prompt_admission_lock = asyncio.Lock()
         self._queue: list[QueuedPrompt] = []
         self._queue_paused = False
         self._in_flight: QueuedPrompt | None = None
@@ -647,9 +648,11 @@ class AgentSessionRuntime:
         agent_env: dict[str, str] | None = None,
         source: str = "api",
         prompt_audit: list[dict[str, Any]] | None = None,
+        prompt_id: str | None = None,
     ) -> QueuedPrompt:
         cwd = self._validated_cwd(cwd)
         item = QueuedPrompt(
+            id=prompt_id or str(uuid4()),
             message=message,
             images=list(images or []),
             session_id=self.session_id,
@@ -670,6 +673,7 @@ class AgentSessionRuntime:
             {
                 "id": item.id,
                 "message": message,
+                "images": [image.public_dict() for image in item.images],
                 "action": action,
                 "position": 0 if action == "prepend" else len(self._queue) - 1,
             },
@@ -695,6 +699,7 @@ class AgentSessionRuntime:
         agent_env: dict[str, str] | None = None,
         cwd: str | None = None,
         action: PromptAction = "append",
+        prompt_id: str | None = None,
         _from_queue: bool = False,
         wait: bool = True,
     ) -> str:
@@ -711,6 +716,7 @@ class AgentSessionRuntime:
                 principal_id=principal_id,
                 cwd=cwd,
                 agent_env=agent_env,
+                prompt_id=prompt_id,
             )
             return "queued"
 
@@ -727,10 +733,12 @@ class AgentSessionRuntime:
                     principal_id=principal_id,
                     cwd=cwd,
                     agent_env=agent_env,
+                    prompt_id=prompt_id,
                 )
                 return "queued"
 
         item = QueuedPrompt(
+            id=prompt_id or str(uuid4()),
             message=message,
             images=list(images or []),
             session_id=self.session_id,
@@ -753,12 +761,19 @@ class AgentSessionRuntime:
                     principal_id=principal_id,
                     cwd=cwd,
                     agent_env=agent_env,
+                    prompt_id=prompt_id,
                 )
                 return "queued"
             self._queue.insert(0, item)
             self._append_transcript(
                 "queue_enqueued",
-                {"id": item.id, "message": message, "action": "run", "position": 0},
+                {
+                    "id": item.id,
+                    "message": message,
+                    "images": [image.public_dict() for image in item.images],
+                    "action": "run",
+                    "position": 0,
+                },
             )
             self._flush_transcript()
             self._start_drain()

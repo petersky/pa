@@ -2,7 +2,9 @@
 <html lang="en"
       data-theme="{{ theme_id | default('pa') }}"
       data-theme-id="{{ theme_id | default('pa') }}"
-      data-appearance-pref="{{ appearance | default('system') }}">
+      data-appearance-pref="{{ appearance | default('system') }}"
+      data-pa-instance-id="{{ instance_id }}"
+      data-pa-principal-id="{{ principal_id }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -30,6 +32,8 @@
   <script src="{{ static_url('js/theme.js') }}" defer></script>
   <script src="{{ static_url('js/spa.js') }}" defer></script>
   <script src="{{ static_url('js/layout.js') }}" defer></script>
+  <script src="{{ static_url('js/agent-chat-drafts.js') }}" defer></script>
+  <script src="{{ static_url('js/agent-chat-draft-widget.js') }}" defer></script>
   <script src="{{ static_url('js/agent-chat.js') }}" defer></script>
   <script src="{{ static_url('js/file-browser.js') }}" defer></script>
   <script src="{{ static_url('js/fleet.js') }}" defer></script>

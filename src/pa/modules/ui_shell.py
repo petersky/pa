@@ -39,7 +39,9 @@ def _shell_context(request: Request) -> dict:
     assets = ctx.require_service("assets")
 
     return {
+        "instance_id": settings.instance_id,
         "instance_name": settings.instance_name,
+        "principal_id": get_principal_id(request),
         "agent_connected": agent.connected,
         "debug": settings.debug,
         "dev_tools": settings.dev_tools,
