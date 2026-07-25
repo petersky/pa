@@ -50,3 +50,15 @@ def test_agent_page_exposes_non_destructive_recovery_action() -> None:
     assert '"/recover"' in script
     assert 'route.state === "owner_unreachable"' in script
     assert 'route.state === "missing"' in script
+
+
+def test_blocked_session_surfaces_retry_and_close_guidance() -> None:
+    template = (
+        ROOT / "templates" / "partials" / "agent" / "chat-widget.html"
+    ).read_text()
+    script = (ROOT / "static" / "js" / "agent-chat.js").read_text()
+
+    assert "data-acw-recovery-action" in template
+    assert "data-acw-retry" in template
+    assert '"/sessions/" + this.sessionId + "/retry"' in script
+    assert "end it from the Session menu" in script
