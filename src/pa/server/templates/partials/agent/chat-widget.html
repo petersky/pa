@@ -81,6 +81,14 @@
   <div class="acw-metrics muted" data-acw-metrics hidden></div>
   {% endif %}
 
+  <div class="acw-recovery" data-acw-recovery hidden>
+    <div>
+      <strong>Session recovery is blocked.</strong>
+      <span data-acw-recovery-action></span>
+    </div>
+    <button type="button" class="primary small" data-acw-retry>Retry now</button>
+  </div>
+
   <section class="acw-browser" data-acw-browser hidden aria-label="Attached browser">
     <div class="acw-browser-toolbar">
       <input type="url" data-acw-browser-url aria-label="Browser URL" placeholder="https://example.com">

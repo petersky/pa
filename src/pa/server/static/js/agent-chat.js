@@ -169,6 +169,9 @@
       status: root.querySelector("[data-acw-status]"),
       title: root.querySelector("[data-acw-title]"),
       metrics: root.querySelector("[data-acw-metrics]"),
+      recovery: root.querySelector("[data-acw-recovery]"),
+      recoveryAction: root.querySelector("[data-acw-recovery-action]"),
+      recoveryRetry: root.querySelector("[data-acw-retry]"),
       permissions: root.querySelector("[data-acw-permissions]"),
       queue: root.querySelector("[data-acw-queue]"),
       queueList: root.querySelector("[data-acw-queue-list]"),
@@ -268,6 +271,11 @@
     if (end) end.addEventListener("click", function () { self.closeSession(); });
     const restart = this.root.querySelector("[data-acw-restart]");
     if (restart) restart.addEventListener("click", function () { self.restartSession(); });
+    if (this.els.recoveryRetry) {
+      this.els.recoveryRetry.addEventListener("click", function () {
+        self.retrySession();
+      });
+    }
     if (this.els.systemToggle) {
       this.els.systemToggle.checked = this.showSystem;
       this.root.classList.toggle("show-system", this.showSystem);
@@ -672,8 +680,21 @@
     const self = this;
     this.lastSnapshot = snap;
     const session = snap.session || {};
+    const provisioning = session.config_json && session.config_json.provisioning || {};
+    const recoveryBlocked = session.status === "recovery_blocked" || provisioning.state === "blocked";
     this.sessionClosed = session.status === "closed";
-    this.setComposerEnabled(!this.sessionClosed);
+    this.setComposerEnabled(!this.sessionClosed && !recoveryBlocked);
+    if (recoveryBlocked && this.els.input) {
+      this.els.input.placeholder = "Recovery is blocked. Follow the action above, retry, or end the session.";
+    }
+    if (this.els.recovery) {
+      this.els.recovery.hidden = !recoveryBlocked;
+      if (this.els.recoveryAction) {
+        this.els.recoveryAction.textContent = provisioning.action ||
+          "Correct the project availability, retry this session, or end it from the Session menu.";
+      }
+      if (this.els.recoveryRetry) this.els.recoveryRetry.disabled = false;
+    }
     if (this.els.title) {
       this.els.title.textContent = session.title || session.label || "Agent";
     }
@@ -1889,6 +1910,26 @@
       refreshSessionList(null);
     }).catch(function (err) {
       self.addBubble("system", "Could not end session: " + err.message, new Date().toISOString(), { system: true, forceVisible: true });
+    });
+  };
+
+  AgentChatWidget.prototype.retrySession = function () {
+    const self = this;
+    if (!this.sessionId || !this.els.recoveryRetry) return;
+    this.els.recoveryRetry.disabled = true;
+    this.api("/sessions/" + this.sessionId + "/retry", {
+      method: "POST",
+      body: "{}",
+    }).then(function (snap) {
+      self.applySnapshot(snap);
+      self.connectSSE();
+      refreshSessionList(self.sessionId);
+    }).catch(function (err) {
+      const action = err.detail && err.detail.action;
+      if (self.els.recoveryAction && action) self.els.recoveryAction.textContent = action;
+      self.addBubble("system", "Recovery retry failed: " + err.message, new Date().toISOString(), { system: true, forceVisible: true });
+    }).finally(function () {
+      if (self.els.recoveryRetry) self.els.recoveryRetry.disabled = false;
     });
   };
 

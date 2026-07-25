@@ -1557,9 +1557,25 @@ code {
 .acw-composer,
 .acw-working,
 .acw-queue,
+.acw-recovery,
 .acw-permissions {
   width: min(100%, 56rem);
   margin-inline: auto;
+}
+
+.acw-recovery {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--pa-accent);
+  border-radius: var(--pa-chat-radius);
+  background: var(--pa-surface-raised);
+}
+
+.acw-recovery[hidden] {
+  display: none;
 }
 
 .acw-tool-header {
