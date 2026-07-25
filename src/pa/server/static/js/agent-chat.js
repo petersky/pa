@@ -1988,6 +1988,17 @@
               [s.agent_name, s.model_id, s.mode_id].filter(Boolean).join(" · ")
             ) + "</span>" +
             sessionConfigSummary(s.config_json);
+          if (s.status !== "closed") {
+            const close = document.createElement("button");
+            close.type = "button";
+            close.className = "ghost small danger agent-session-close";
+            close.dataset.agentSessionClose = "1";
+            close.textContent = s.live === false ? "Forget" : "Close";
+            close.title = s.live === false
+              ? "Forget this orphan so it is not retried"
+              : "Close the live session";
+            li.appendChild(close);
+          }
           list.appendChild(li);
         });
         filterSessionList();
@@ -2220,6 +2231,26 @@
       list.addEventListener("click", function (e) {
         const li = e.target.closest("[data-session-id]");
         if (!li) return;
+        if (e.target.closest("[data-agent-session-close]")) {
+          e.preventDefault();
+          e.stopPropagation();
+          const sessionId = li.dataset.sessionId;
+          const widget = document.querySelector("[data-agent-chat]");
+          csrfFetch("/sessions/" + encodeURIComponent(sessionId) + "/close", {
+            method: "POST",
+            body: "{}",
+          }).then(function () {
+            if (widget && widget._acw && widget._acw.sessionId === sessionId) {
+              widget._acw.markSessionEnded(
+                "Session ended. Start or select another session to send more prompts."
+              );
+            }
+            refreshSessionList(null);
+          }).catch(function (err) {
+            window.alert("Could not close session: " + err.message);
+          });
+          return;
+        }
         const widget = document.querySelector("[data-agent-chat]");
         if (widget && widget._acw) {
           widget._acw.switchSession(
@@ -2230,6 +2261,7 @@
       });
       list.addEventListener("keydown", function (e) {
         if (e.key !== "Enter" && e.key !== " ") return;
+        if (e.target.closest("[data-agent-session-close]")) return;
         const li = e.target.closest("[data-session-id]");
         if (!li) return;
         e.preventDefault();
@@ -2258,6 +2290,30 @@
     if (sessionSearch && !sessionSearch._acwBound) {
       sessionSearch._acwBound = true;
       sessionSearch.addEventListener("input", filterSessionList);
+    }
+    const endAll = root.querySelector("[data-agent-end-all]");
+    if (endAll && !endAll._acwBound) {
+      endAll._acwBound = true;
+      endAll.addEventListener("click", function () {
+        if (!window.confirm("End every live and recoverable agent session?")) return;
+        endAll.disabled = true;
+        csrfFetch("/sessions/close-all", { method: "POST", body: "{}" })
+          .then(function () {
+            const widget = document.querySelector("[data-agent-chat]");
+            if (widget && widget._acw && widget._acw.sessionId) {
+              widget._acw.markSessionEnded(
+                "All sessions ended. Start a new session to continue."
+              );
+            }
+            refreshSessionList(null);
+          })
+          .catch(function (err) {
+            window.alert("Could not end all sessions: " + err.message);
+          })
+          .finally(function () {
+            endAll.disabled = false;
+          });
+      });
     }
     const neu = root.querySelector("[data-agent-new-session]");
     if (neu && !neu._acwBound) {

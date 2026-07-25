@@ -33,6 +33,60 @@ class _TranscriptStore:
 
 
 class AgentSessionLiveEventTests(unittest.TestCase):
+    def test_live_close_audits_prior_status_and_is_idempotent(self) -> None:
+        runtime = AgentSessionRuntime.__new__(AgentSessionRuntime)
+        runtime.session = AgentSession(
+            id="session-live-close",
+            agent_name="codex",
+            status="prompting",
+        )
+        runtime._closed = False
+        runtime._queue_paused = False
+        runtime._queue = []
+        runtime._in_flight = None
+        runtime._drain_task = None
+        runtime._pending_permissions = {}
+        runtime._permission_requests = {}
+        runtime.connection = None
+        runtime.manager = MagicMock()
+        runtime._append_transcript = MagicMock()
+        runtime._flush_transcript = MagicMock()
+        runtime._drain_transcripts = AsyncMock()
+        runtime._save_session_preserving_external_browser_async = AsyncMock()
+
+        async def run() -> tuple[bool, bool]:
+            first = await runtime.close(
+                reason="bulk_user_close",
+                reconcile_workspace=False,
+            )
+            second = await runtime.close(
+                reason="bulk_user_close",
+                reconcile_workspace=False,
+            )
+            return first, second
+
+        with patch("pa.instance.agent_session.logger.info") as log_info:
+            first, second = asyncio.run(run())
+
+        self.assertTrue(first)
+        self.assertFalse(second)
+        runtime._append_transcript.assert_called_once_with(
+            "session_closed",
+            {
+                "reason": "bulk_user_close",
+                "prior_status": "prompting",
+            },
+        )
+        self.assertEqual(runtime.session.status, "closed")
+        structured = [call.kwargs["extra"] for call in log_info.call_args_list]
+        self.assertTrue(
+            all(
+                detail["session_id"] == "session-live-close"
+                and detail["prior_status"] == "prompting"
+                for detail in structured
+            )
+        )
+
     def test_transcript_flush_falls_back_if_writer_cannot_be_scheduled(self) -> None:
         event = TranscriptEvent(
             session_id="session-shutdown",

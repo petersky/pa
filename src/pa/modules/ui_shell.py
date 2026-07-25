@@ -103,15 +103,21 @@ def _agent_context(request: Request) -> dict:
     agent = ctx.require_service("instance_agent")
     runtimes = agent.list_runtimes() if hasattr(agent, "list_runtimes") else []
     live = [rt.session for rt in runtimes if not getattr(rt, "_closed", False)]
+    live_ids = {session.id for session in live}
+    orphans = [
+        session
+        for session in ctx.store.list_sessions()
+        if session.status != "closed" and session.id not in live_ids
+    ]
     selected_id = request.query_params.get("session")
     default = next((s for s in live if s.id == selected_id), None)
     if not default:
         default = next(
             (s for s in live if s.label == "default"), live[0] if live else None
         )
-    # The Agent sidebar starts with live runtimes only. Closed sessions are
-    # loaded explicitly from the durable history API when the user opts in.
-    sessions = live
+    # Durable nonterminal sessions remain actionable even when their ACP
+    # runtime was lost. Closed sessions are still opt-in history.
+    sessions = live + orphans
     cards = {card.id: card for card in ctx.store.list_cards()}
     projects = {project.id: project for project in ctx.store.list_projects()}
     now = datetime.now(UTC)
@@ -148,6 +154,7 @@ def _agent_context(request: Request) -> dict:
         "agent_connected": agent.connected,
         "agent_enabled": ctx.settings.agent_enabled,
         "sessions": sessions,
+        "live_session_ids": live_ids,
         "session_id": default.id if default else "",
         "session_details": session_details,
         "pr_watches_by_session": watches_by_session,
