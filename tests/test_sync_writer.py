@@ -137,6 +137,18 @@ class EventLogWriterSafetyTests(unittest.TestCase):
             projection = CardProjection(data_dir / "resolved.db", left)
             projection.rebuild_from_log("default")
             self.assertEqual(projection.get_card("card-1").title, "resolved")
+            resolved = projection.get_card("card-1")
+            resolution_event = left.get_event(merge.event_hashes[0])
+            self.assertIsNotNone(resolution_event)
+            self.assertIn("updated_at", resolution_event.payload)
+
+            replica_log = EventLog(objects, data_dir / "replica", "replica")
+            replica_log.advance_ref("default", merge.hash, expected_head=None)
+            replica = CardProjection(data_dir / "replica.db", replica_log)
+            replica.rebuild_from_log("default")
+            replica_card = replica.get_card("card-1")
+            self.assertEqual(replica_card.title, "resolved")
+            self.assertEqual(replica_card.updated_at, resolved.updated_at)
 
     def test_rebuild_replays_delete_without_appending_another_commit(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
