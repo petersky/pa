@@ -587,12 +587,15 @@ class SyncModule(Module):
         return "P2P sync protocol for realm-scoped card state"
 
     def on_load(self, ctx: AppContext) -> None:
+        from pa.core.live_updates import LiveUpdateBroker
+
         settings = ctx.settings
         obj_store = get_object_store(settings)
         event_log = get_event_log(settings)
         ctx.register_service("object_store", obj_store)
         ctx.register_service("event_log", event_log)
         ctx.register_service("sync_metrics", SyncMetrics(settings.data_dir))
+        ctx.register_service("live_updates", LiveUpdateBroker())
 
     async def on_startup(self, app, ctx: AppContext) -> None:
         settings = ctx.settings
@@ -610,6 +613,8 @@ class SyncModule(Module):
             ctx.require_service("async_runtime"),
         )
         ctx.register_service("sync_engine", engine)
+        live_updates = ctx.require_service("live_updates")
+        live_updates.start()
 
         original_append = event_log.append_event
 
@@ -617,6 +622,15 @@ class SyncModule(Module):
             def combined(commit):
                 if on_commit:
                     on_commit(commit)
+                live_updates.publish(
+                    commit.realm_id,
+                    {
+                        "type": "cards_changed",
+                        "realm_id": commit.realm_id,
+                        "head": commit.hash,
+                        "source": "local",
+                    },
+                )
                 import asyncio
 
                 try:
@@ -633,6 +647,15 @@ class SyncModule(Module):
         def rebuild_projection(realm_id: str) -> None:
             with store.mutation():
                 store.rebuild_from_log(realm_id)
+            live_updates.publish(
+                realm_id,
+                {
+                    "type": "cards_changed",
+                    "realm_id": realm_id,
+                    "head": event_log.get_head(realm_id),
+                    "source": "sync",
+                },
+            )
 
         engine.on_head_advanced(rebuild_projection)
         runtime = ctx.require_service("async_runtime")

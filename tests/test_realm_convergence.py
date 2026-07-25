@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import tempfile
 import time
@@ -15,6 +16,7 @@ from fastapi.testclient import TestClient
 
 from pa.config import Settings, reset_settings
 from pa.core.kernel import Kernel
+from pa.core.live_updates import LiveUpdateBroker
 from pa.domain.models import (
     Card,
     CardEvent,
@@ -269,6 +271,43 @@ class RealmConvergenceTests(unittest.IsolatedAsyncioTestCase):
         )
         for old_head in original_heads:
             self.assertTrue(self.authority.log.is_ancestor(old_head, final_head))
+
+    async def test_remote_lane_move_rebuilds_projection_and_notifies_browser(
+        self,
+    ) -> None:
+        card = self._shared_card()
+        local_projection = CardProjection(
+            self.authority.settings.db_path, self.authority.log
+        )
+        local_projection.rebuild_from_log("default")
+        broker = LiveUpdateBroker()
+        broker.start()
+        updates = broker.subscribe("default")
+
+        def rebuild_and_notify(realm_id: str) -> None:
+            local_projection.rebuild_from_log(realm_id)
+            broker.publish(
+                realm_id,
+                {
+                    "type": "cards_changed",
+                    "realm_id": realm_id,
+                    "head": self.authority.log.get_head(realm_id),
+                    "source": "sync",
+                },
+            )
+
+        self.authority.engine.on_head_advanced(rebuild_and_notify)
+        self._update(self.target, card.id, lane=CardLane.DONE.value)
+
+        state = await self.authority.engine.converge_realm("default")
+        update = await asyncio.wait_for(updates.get(), timeout=1.0)
+
+        synced = local_projection.get_card(card.id, realm_id="default")
+        assert synced is not None
+        self.assertEqual(state["phase"], "converged")
+        self.assertEqual(synced.lane, CardLane.DONE)
+        self.assertEqual(update["source"], "sync")
+        self.assertEqual(update["head"], state["head"])
 
     async def test_real_card_updates_auto_merge_timestamp_and_remain_listable(
         self,

@@ -282,6 +282,37 @@
     });
   }
 
+  var boardEventSource = null;
+  var boardEventRealm = null;
+
+  function initBoardLiveUpdates() {
+    var board = document.querySelector("[data-work-board]");
+    var realm = board && board.dataset.realm;
+    if (!realm) {
+      if (boardEventSource) boardEventSource.close();
+      boardEventSource = null;
+      boardEventRealm = null;
+      return;
+    }
+    if (boardEventSource && boardEventRealm === realm) return;
+    if (boardEventSource) boardEventSource.close();
+    boardEventRealm = realm;
+    boardEventSource = new EventSource(
+      "/api/cards/events?realm=" + encodeURIComponent(realm)
+    );
+    boardEventSource.addEventListener("cards-changed", function (event) {
+      var current = document.querySelector("[data-work-board]");
+      if (!current || current.dataset.realm !== realm) return;
+      try {
+        var update = JSON.parse(event.data);
+        if (update.realm_id !== realm) return;
+      } catch (_error) {
+        return;
+      }
+      document.body.dispatchEvent(new CustomEvent("boardRefresh"));
+    });
+  }
+
   var cardDialogOpener = null;
   var cardDialogHistoryDepth = 0;
   var cardDialogHasBaseEntry = false;
@@ -1084,6 +1115,7 @@
       setActiveNav(window.location.pathname);
       updateTitle();
       initBoardDragDrop(target);
+      initBoardLiveUpdates();
       initAgentReconnect();
       decorateLinks(target);
       if (window.PAAgentChat && typeof window.PAAgentChat.mount === "function") {
@@ -1302,6 +1334,7 @@
     setActiveNav(window.location.pathname);
     updateTitle();
     initBoardDragDrop(document);
+    initBoardLiveUpdates();
     initAgentReconnect();
     decorateLinks(document);
     renderCardMarkdown(document);
