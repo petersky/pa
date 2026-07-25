@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -42,6 +43,8 @@ class CompletionReconciler:
         *,
         retry_seconds: float = 5.0,
         max_attempts: int = 30,
+        retry_max_seconds: float = 300.0,
+        rng: random.Random | None = None,
     ) -> None:
         self.dispatch_store = dispatch_store
         self.agent = agent
@@ -50,6 +53,8 @@ class CompletionReconciler:
         self.supervisor_service = supervisor_service
         self.retry_seconds = max(0.01, retry_seconds)
         self.max_attempts = max(1, max_attempts)
+        self.retry_max_seconds = max(self.retry_seconds, retry_max_seconds)
+        self.rng = rng or random.Random()
         self._task: asyncio.Task[None] | None = None
         self._wake = asyncio.Event()
         self._lock = asyncio.Lock()
@@ -104,6 +109,39 @@ class CompletionReconciler:
                 "Recovered missing card disposition for bounded reconciliation.",
             )
         self._wake.set()
+
+    async def retry(self, dispatch_id: str) -> DispatchRecord:
+        """Idempotently re-arm a legacy or exhausted reconciliation."""
+        async with self._lock:
+            record = await self._offload(
+                "reconciliation.dispatch_read", self.dispatch_store.get, dispatch_id
+            )
+            if not record:
+                raise KeyError(dispatch_id)
+            if not record.card_id:
+                raise ValueError("dispatch is not linked to a card")
+            if record.reconciliation_state in {"resolved", "not_required"}:
+                return record
+            record.reconciliation_state = "pending"
+            record.reconciliation_reason = "Operator requested durable reconciliation."
+            record.reconciliation_condition = "operator_retry"
+            record.reconciliation_last_dependency_error = None
+            record.reconciliation_recovery_action = (
+                "Re-check exact-head completion evidence and replay acknowledgement."
+            )
+            record.reconciliation_recoverable = True
+            record.reconciliation_attempts = 0
+            record.reconciliation_next_retry_at = None
+            record.reconciliation_updated_at = datetime.now(UTC)
+            await self._transition(
+                record,
+                record.state,
+                "Operator re-armed card completion reconciliation.",
+                detail={"idempotent": True},
+            )
+            await self._advance(record)
+            self._wake.set()
+            return record
 
     async def handle_completion(self, session_id: str, payload: dict[str, Any]) -> bool:
         """Route one turn completion to delivery or one reconciliation prompt."""
@@ -471,6 +509,20 @@ class CompletionReconciler:
     async def _block(self, record: DispatchRecord, reason: str) -> None:
         record.reconciliation_attempts += 1
         record.reconciliation_updated_at = datetime.now(UTC)
+        lowered = reason.lower()
+        if "card tooling" in lowered:
+            condition = "pa_unavailable"
+        elif "supervisor" in lowered:
+            condition = "authority_unavailable"
+        elif "provider" in lowered:
+            condition = "missing_provider_thread"
+        else:
+            condition = "unavailable_service"
+        record.reconciliation_condition = condition
+        record.reconciliation_last_dependency_error = reason[:1000]
+        record.reconciliation_recovery_action = (
+            "Retry exact-head completion reconciliation when the dependency recovers."
+        )
         if record.reconciliation_attempts >= self.max_attempts:
             record.reconciliation_state = "exhausted"
             record.reconciliation_reason = (
@@ -486,8 +538,13 @@ class CompletionReconciler:
         record.reconciliation_state = "blocked"
         record.reconciliation_reason = reason[:1000]
         record.reconciliation_recoverable = True
+        delay = min(
+            self.retry_max_seconds,
+            self.retry_seconds * (2 ** min(record.reconciliation_attempts - 1, 10)),
+        )
+        delay = max(self.retry_seconds, delay * self.rng.uniform(0.8, 1.2))
         record.reconciliation_next_retry_at = datetime.now(UTC) + timedelta(
-            seconds=self.retry_seconds
+            seconds=delay
         )
         await self._transition(
             record,
@@ -497,6 +554,10 @@ class CompletionReconciler:
                 "reason": record.reconciliation_reason,
                 "attempt": record.reconciliation_attempts,
                 "max_attempts": self.max_attempts,
+                "condition": record.reconciliation_condition,
+                "next_retry_at": record.reconciliation_next_retry_at.isoformat(),
+                "last_dependency_error": record.reconciliation_last_dependency_error,
+                "recovery_action": record.reconciliation_recovery_action,
             },
         )
 
