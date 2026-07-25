@@ -5,8 +5,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import signal
 import shutil
+import signal
 import socket
 from dataclasses import dataclass
 from pathlib import Path
@@ -32,7 +32,9 @@ def _browser_executable() -> str | None:
         "/Applications/Chromium.app/Contents/MacOS/Chromium",
         "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
     ]
-    return next((str(path) for path in candidates if path and Path(path).is_file()), None)
+    return next(
+        (str(path) for path in candidates if path and Path(path).is_file()), None
+    )
 
 
 def _free_port() -> int:
@@ -81,7 +83,9 @@ class BrowserAttachment:
             **metadata,
         }
 
-    async def resize(self, width: int, height: int, *, device_scale_factor: float = 1) -> None:
+    async def resize(
+        self, width: int, height: int, *, device_scale_factor: float = 1
+    ) -> None:
         await self.page.resize(width, height, device_scale_factor=device_scale_factor)
         self.width = width
         self.height = height
@@ -136,9 +140,13 @@ class BrowserManager:
             width = width or int(os.environ.get("PA_BROWSER_WIDTH", "1440"))
             height = height or int(os.environ.get("PA_BROWSER_HEIGHT", "900"))
             if not 320 <= width <= 7680 or not 240 <= height <= 4320:
-                raise ValueError("Browser dimensions must be between 320x240 and 7680x4320")
+                raise ValueError(
+                    "Browser dimensions must be between 320x240 and 7680x4320"
+                )
             if not 0.25 <= device_scale_factor <= 4:
-                raise ValueError("Browser device scale factor must be between 0.25 and 4")
+                raise ValueError(
+                    "Browser device scale factor must be between 0.25 and 4"
+                )
             existing = self.get(session_id)
             if existing:
                 if (width, height, device_scale_factor) != (
@@ -146,7 +154,9 @@ class BrowserManager:
                     existing.height,
                     existing.device_scale_factor,
                 ):
-                    await existing.resize(width, height, device_scale_factor=device_scale_factor)
+                    await existing.resize(
+                        width, height, device_scale_factor=device_scale_factor
+                    )
                 if url and url != "about:blank":
                     await existing.page.navigate(url)
                 return existing
@@ -201,11 +211,31 @@ class BrowserManager:
                                 if pages:
                                     target = pages[0]
                                     break
-                            except (httpx.HTTPError, ValueError):
+                            except httpx.HTTPError, ValueError:
                                 pass
                             await asyncio.sleep(0.1)
+                    if not target and process.returncode is None:
+                        try:
+                            response = await client.put(
+                                f"{endpoint}/json/new?about:blank"
+                            )
+                            created = response.json()
+                            if created.get("type") == "page":
+                                target = created
+                        except httpx.HTTPError, ValueError:
+                            pass
                     if not target:
-                        raise RuntimeError("Chromium did not expose a browser page")
+                        state = (
+                            f"exited with code {process.returncode}"
+                            if process.returncode is not None
+                            else "kept running without a page target"
+                        )
+                        raise RuntimeError(
+                            "Chromium started but did not expose a usable page within "
+                            f"6 seconds ({state}, endpoint={endpoint}). Check that the "
+                            "configured executable supports --headless=new and remote "
+                            "debugging, and that its profile directory is writable."
+                        )
                     attachment = BrowserAttachment(
                         id=attachment_id,
                         session_id=session_id,

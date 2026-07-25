@@ -32,16 +32,21 @@ class SessionManager:
         sig = _sign(body, self.secret)
         return f"{body}.{sig}"
 
-    def verify_token(self, token: str) -> str | None:
+    def inspect_token(self, token: str) -> tuple[str | None, str]:
         if "." not in token:
-            return None
+            return None, "invalid"
         body, sig = token.rsplit(".", 1)
         if not hmac.compare_digest(_sign(body, self.secret), sig):
-            return None
+            return None, "invalid"
         try:
             payload: dict[str, Any] = json.loads(body)
         except json.JSONDecodeError:
-            return None
+            return None, "invalid"
         if payload.get("exp", 0) < time.time():
-            return None
-        return str(payload.get("uid", ""))
+            return None, "expired"
+        uid = str(payload.get("uid", ""))
+        return (uid, "valid") if uid else (None, "invalid")
+
+    def verify_token(self, token: str) -> str | None:
+        uid, status = self.inspect_token(token)
+        return uid if status == "valid" else None

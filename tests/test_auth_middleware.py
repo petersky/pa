@@ -34,7 +34,7 @@ class SyncTokenAuthSeparationTests(unittest.TestCase):
             session_secret="test-secret",
         )
         self.users = UserDirectory(self.data_dir)
-        self.sessions = SessionManager(self.settings)
+        self.sessions = SessionManager(self.settings.session_secret)
 
         app = Starlette(
             routes=[
@@ -96,7 +96,7 @@ class SyncTokenAuthSeparationTests(unittest.TestCase):
             headers={"X-CSRF-Token": csrf},
         )
         self.assertEqual(resp.status_code, 401)
-        self.assertIn("Instance authentication", resp.json()["detail"])
+        self.assertEqual(resp.json()["detail"]["code"], "missing_authentication")
 
         resp_ok = self.client.post(
             "/api/sync/push",
@@ -115,7 +115,7 @@ class SyncTokenAuthSeparationTests(unittest.TestCase):
             headers={"X-CSRF-Token": csrf},
         )
         self.assertEqual(resp.status_code, 401)
-        self.assertEqual(resp.json()["detail"], "Authentication required")
+        self.assertEqual(resp.json()["detail"]["code"], "missing_authentication")
 
     def test_hardened_peer_accepts_sync_token_only_for_update_routes(self) -> None:
         self.settings.auth_required = True
@@ -144,7 +144,10 @@ class SyncTokenAuthSeparationTests(unittest.TestCase):
         ]:
             with self.subTest(method=method, path=path):
                 response = self.client.request(method, path, headers=headers, json={})
-                self.assertEqual(response.status_code, 401, response.text)
+                self.assertEqual(response.status_code, 403, response.text)
+                self.assertEqual(
+                    response.json()["detail"]["code"], "insufficient_authorization"
+                )
 
         user = self.users.ensure_default_user()
         response = self.client.get(
@@ -165,6 +168,47 @@ class SyncTokenAuthSeparationTests(unittest.TestCase):
             with self.subTest(method=method, path=path):
                 response = self.client.request(method, path, headers=headers, json={})
                 self.assertEqual(response.status_code, 200, response.text)
+
+    def test_csrf_diagnostics_distinguish_mismatch_expiry_rotation_and_origin(
+        self,
+    ) -> None:
+        from pa.auth.csrf import generate_token
+
+        self.client.get("/api/health")
+        token = self.client.cookies.get("pa_csrf")
+        mismatch = self.client.post(
+            "/api/agent/prompt",
+            headers={"X-CSRF-Token": "different"},
+            json={},
+        )
+        self.assertEqual(mismatch.status_code, 403)
+        self.assertEqual(mismatch.json()["detail"]["code"], "csrf_mismatch")
+
+        invalid_origin = self.client.post(
+            "/api/agent/prompt",
+            headers={"X-CSRF-Token": token, "Origin": "https://evil.invalid"},
+            json={},
+        )
+        self.assertEqual(invalid_origin.json()["detail"]["code"], "invalid_origin")
+
+        expired = generate_token(self.settings.session_secret, now=0)
+        self.client.cookies.set("pa_csrf", expired)
+        rotated = self.client.post(
+            "/api/agent/prompt",
+            headers={"X-CSRF-Token": expired},
+            json={},
+        )
+        self.assertEqual(rotated.json()["detail"]["code"], "csrf_expired")
+        self.assertNotEqual(rotated.cookies.get("pa_csrf"), expired)
+
+    def test_expired_browser_session_has_specific_401(self) -> None:
+        self.settings.auth_required = True
+        user = self.users.ensure_default_user()
+        expired = self.sessions.create_token(user, ttl_seconds=-1)
+        self.client.cookies.set("pa_session", expired)
+        response = self.client.get("/api/config")
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json()["detail"]["code"], "expired_session")
 
 
 if __name__ == "__main__":
