@@ -854,6 +854,79 @@ class EventLogMergeTests(unittest.TestCase):
             second = other.merge_heads("default", "a" * 64, "b" * 64, "other")
             self.assertEqual(first.hash, second.hash)
 
+    def test_metadata_resolution_is_deterministic_for_reversed_heads(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            objects = ObjectStore(root / "objects")
+            left = EventLog(objects, root / "left", "left")
+            right = EventLog(objects, root / "right", "right")
+            first_merger = EventLog(objects, root / "first", "first")
+            second_merger = EventLog(objects, root / "second", "second")
+            _, base = left.append_event(
+                CardEvent(
+                    type=EventType.CARD_CREATED,
+                    realm_id="default",
+                    card_id="card-1",
+                    author_principal="test",
+                    author_instance="left",
+                    payload=Card(id="card-1", title="base").model_dump(mode="json"),
+                )
+            )
+            right.advance_ref("default", base.hash)
+            _, left_head = left.append_event(
+                CardEvent(
+                    type=EventType.CARD_UPDATED,
+                    realm_id="default",
+                    card_id="card-1",
+                    author_principal="test",
+                    author_instance="left",
+                    payload={
+                        "title": "left",
+                        "updated_at": "2026-07-24T12:00:00+00:00",
+                    },
+                )
+            )
+            _, right_head = right.append_event(
+                CardEvent(
+                    type=EventType.CARD_UPDATED,
+                    realm_id="default",
+                    card_id="card-1",
+                    author_principal="test",
+                    author_instance="right",
+                    payload={
+                        "body": "right",
+                        "updated_at": "2026-07-24T13:00:00Z",
+                    },
+                )
+            )
+            compatible, first_health = first_merger.compatible_histories(
+                left_head.hash, right_head.hash
+            )
+            reverse_compatible, second_health = second_merger.compatible_histories(
+                right_head.hash, left_head.hash
+            )
+            self.assertTrue(compatible, first_health)
+            self.assertTrue(reverse_compatible, second_health)
+            self.assertEqual(
+                first_health["automatic_resolutions"][0]["value"],
+                "2026-07-24T13:00:00Z",
+            )
+            first = first_merger.merge_heads(
+                "default",
+                left_head.hash,
+                right_head.hash,
+                "sync:auto",
+                automatic_resolutions=first_health["automatic_resolutions"],
+            )
+            second = second_merger.merge_heads(
+                "default",
+                right_head.hash,
+                left_head.hash,
+                "sync:auto",
+                automatic_resolutions=second_health["automatic_resolutions"],
+            )
+            self.assertEqual(first.hash, second.hash)
+
     def test_three_instance_disjoint_histories_converge_without_operator_conflict(
         self,
     ) -> None:

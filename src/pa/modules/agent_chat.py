@@ -92,6 +92,33 @@ def _runtime_or_404(request: Request, session_id: str):
     mgr = _manager(request)
     runtime = mgr.get(session_id)
     if not runtime or runtime._closed:
+        session = mgr.store.get_session(session_id)
+        if session and session.status not in {"closed", "quiesced"}:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "session_temporarily_unavailable",
+                    "message": (
+                        "This durable agent session is not live yet. Its metadata "
+                        "and history are still available and it can be recovered."
+                    ),
+                    "recoverable": True,
+                    "history_url": f"/api/agent/history/{session_id}",
+                    "recovery_url": f"/api/agent/sessions/{session_id}/recover",
+                },
+            )
+        if session:
+            raise HTTPException(
+                status_code=410,
+                detail={
+                    "code": "session_expired",
+                    "message": (
+                        "This session has ended. Its durable history remains available."
+                    ),
+                    "recoverable": False,
+                    "history_url": f"/api/agent/history/{session_id}",
+                },
+            )
         logger.info(
             "Agent session request rejected because runtime is not live",
             extra={
@@ -103,11 +130,8 @@ def _runtime_or_404(request: Request, session_id: str):
         raise HTTPException(
             status_code=404,
             detail={
-                "code": "session_not_live",
-                "message": (
-                    "This agent session is no longer running. "
-                    "Start or select another session to continue."
-                ),
+                "code": "session_not_found",
+                "message": "This agent session was deleted or has expired.",
                 "recoverable": False,
             },
         )
@@ -853,6 +877,65 @@ def get_agent_session_history(
 @router.get("/sessions/{session_id}")
 def get_session_snapshot(request: Request, session_id: str) -> dict:
     return _runtime_or_404(request, session_id).snapshot()
+
+
+@router.post("/sessions/{session_id}/recover")
+async def recover_session(request: Request, session_id: str) -> dict:
+    """Reconnect an exact durable PA session without replacing its identity."""
+    mgr = _manager(request)
+    runtime = mgr.get(session_id)
+    if runtime and not getattr(runtime, "_closed", False):
+        return await _offload(mgr, "agent.session_snapshot", runtime.snapshot)
+    session = await _offload(
+        mgr, "sqlite.agent_session_read", mgr.store.get_session, session_id
+    )
+    if not session:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "session_not_found",
+                "message": "This agent session was deleted or has expired.",
+                "recoverable": False,
+            },
+        )
+    if session.status in {"closed", "quiesced"}:
+        raise HTTPException(
+            status_code=410,
+            detail={
+                "code": "session_expired",
+                "message": "This ended session cannot be recovered; its history is retained.",
+                "recoverable": False,
+            },
+        )
+    lock_key = session.label or f"session:{session.id}"
+    async with mgr.label_lock(lock_key):
+        runtime = mgr.get(session_id)
+        if runtime and not getattr(runtime, "_closed", False):
+            return await _offload(mgr, "agent.session_snapshot", runtime.snapshot)
+        try:
+            runtime = await mgr.create_session(
+                label=session.label,
+                title=session.title,
+                cwd=session.cwd,
+                principal_id=session.principal_id,
+                card_id=session.card_id,
+                project_id=session.project_id,
+                existing=session,
+                resume_external_id=session.external_session_id,
+            )
+        except Exception as exc:
+            logger.warning("Could not recover durable session %s: %s", session_id, exc)
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "session_recovery_failed",
+                    "message": f"The session is retained but could not reconnect: {exc}",
+                    "recoverable": True,
+                    "history_url": f"/api/agent/history/{session_id}",
+                    "recovery_url": f"/api/agent/sessions/{session_id}/recover",
+                },
+            ) from exc
+    return await _offload(mgr, "agent.session_snapshot", runtime.snapshot)
 
 
 @router.get("/sessions/{session_id}/events")

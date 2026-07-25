@@ -8,13 +8,45 @@ import threading
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 import fcntl
 
 from pa.core.io import atomic_write_json
 from pa.domain.models import CardEvent, EventType, SyncCommit, SyncRef
 from pa.sync.object_store import ObjectStore, object_hash
+
+
+_AUTOMATIC_METADATA_FIELDS = {("card", "updated_at")}
+_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+
+
+def _canonical_value(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+
+
+def _latest_timestamp_value(left: Any, right: Any) -> Any:
+    """Select the latest ISO timestamp with a deterministic malformed fallback."""
+
+    parsed: list[tuple[datetime, str, Any]] = []
+    for value in (left, right):
+        if isinstance(value, str):
+            try:
+                stamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                if stamp.tzinfo is None:
+                    stamp = stamp.replace(tzinfo=UTC)
+                parsed.append(
+                    (stamp.astimezone(UTC), _canonical_value(value), value)
+                )
+            except ValueError:
+                parsed = []
+                break
+        else:
+            parsed = []
+            break
+    if len(parsed) == 2:
+        return max(parsed)[2]
+    return max((left, right), key=_canonical_value)
 
 
 class EventLog:
@@ -156,27 +188,77 @@ class EventLog:
         author_principal: str,
         *,
         expected_head: str | None | object = ...,
+        automatic_resolutions: list[dict[str, Any]] | None = None,
     ) -> SyncCommit:
         parents = sorted({head_a, head_b})
+        normalized_resolutions = sorted(
+            (
+                {
+                    key: resolution[key]
+                    for key in ("entity", "id", "field", "value", "strategy")
+                    if key in resolution
+                }
+                for resolution in (automatic_resolutions or [])
+            ),
+            key=lambda item: (
+                item.get("entity", ""),
+                item.get("id", ""),
+                item.get("field", ""),
+                _canonical_value(item.get("value")),
+            ),
+        )
+        resolution_events: list[CardEvent] = []
+        for resolution in normalized_resolutions:
+            entity = resolution.get("entity")
+            entity_id = resolution.get("id")
+            field = resolution.get("field")
+            if entity not in {"card", "project"} or not entity_id or not field:
+                continue
+            resolution_key = _canonical_value(
+                {"parents": parents, **resolution}
+            ).encode()
+            resolution_events.append(
+                CardEvent(
+                    id=f"auto-resolve-{object_hash(resolution_key)}",
+                    type=(
+                        EventType.CARD_UPDATED
+                        if entity == "card"
+                        else EventType.PROJECT_UPDATED
+                    ),
+                    realm_id=realm_id,
+                    card_id=entity_id if entity == "card" else None,
+                    project_id=entity_id if entity == "project" else None,
+                    author_principal="sync:auto",
+                    author_instance="sync-merge",
+                    payload={field: resolution.get("value")},
+                    timestamp=_EPOCH,
+                )
+            )
         merge_id = object_hash("|".join(parents).encode())
+        merge_payload: dict[str, Any] = {"merge": True, "parents": parents}
+        if normalized_resolutions:
+            merge_payload["automatic_resolutions"] = normalized_resolutions
         merge_event = CardEvent(
             id=f"merge-{merge_id}",
             type=EventType.CARD_UPDATED,
             realm_id=realm_id,
             author_principal="sync:auto",
             author_instance="sync-merge",
-            payload={"merge": True, "parents": parents},
-            timestamp=datetime(1970, 1, 1, tzinfo=UTC),
+            payload=merge_payload,
+            timestamp=_EPOCH,
         )
-        event_hash = self.store.put_json(merge_event.model_dump(mode="json"))
+        event_hashes = [
+            self.store.put_json(event.model_dump(mode="json"))
+            for event in [*resolution_events, merge_event]
+        ]
         commit = SyncCommit(
             hash="",
             realm_id=realm_id,
             instance_id="sync-merge",
             parent_hashes=parents,
-            event_hashes=[event_hash],
+            event_hashes=event_hashes,
             author_principal="sync:auto",
-            timestamp=datetime(1970, 1, 1, tzinfo=UTC),
+            timestamp=_EPOCH,
         )
         commit.hash = self.store.put_json(commit.model_dump(mode="json"))
         self.advance_ref(realm_id, commit.hash, expected_head=expected_head)
@@ -192,6 +274,22 @@ class EventLog:
     ) -> SyncCommit:
         """Create a merge commit carrying explicit operator resolutions."""
         parents = sorted({local_head, remote_head})
+        resolution_updated_at = datetime.now(UTC).isoformat()
+        events = [
+            event.model_copy(
+                update={
+                    "payload": {
+                        **event.payload,
+                        "updated_at": resolution_updated_at,
+                    }
+                }
+            )
+            if event.card_id
+            and event.type in {EventType.CARD_CREATED, EventType.CARD_UPDATED}
+            and "updated_at" not in event.payload
+            else event
+            for event in events
+        ]
         audit_event = CardEvent(
             type=EventType.CARD_UPDATED,
             realm_id=realm_id,
@@ -279,6 +377,7 @@ class EventLog:
 
         left, right = changes(head_a), changes(head_b)
         conflicts = []
+        automatic_resolutions = []
         for entity_key in sorted(set(left) & set(right)):
             entity, entity_id = entity_key
             left_fields = left[entity_key]
@@ -305,6 +404,22 @@ class EventLog:
                     continue
             for field in sorted(set(left_fields) & set(right_fields)):
                 if left_fields[field]["value"] != right_fields[field]["value"]:
+                    if (entity, field) in _AUTOMATIC_METADATA_FIELDS:
+                        automatic_resolutions.append(
+                            {
+                                "entity": entity,
+                                "id": entity_id,
+                                "field": field,
+                                "value": _latest_timestamp_value(
+                                    left_fields[field]["value"],
+                                    right_fields[field]["value"],
+                                ),
+                                "strategy": "latest_timestamp",
+                                "local": left_fields[field],
+                                "remote": right_fields[field],
+                            }
+                        )
+                        continue
                     conflicts.append(
                         {
                             "entity": entity,
@@ -316,6 +431,7 @@ class EventLog:
                     )
         return not conflicts, {
             "conflicts": conflicts,
+            "automatic_resolutions": automatic_resolutions,
             "common_ancestors": sorted(common),
         }
 
@@ -379,6 +495,9 @@ class EventLog:
                         "author_instance": event.author_instance,
                         "timestamp": commit.timestamp.isoformat(),
                         "resolved_events": event.payload.get("resolved_events", []),
+                        "automatic_resolutions": event.payload.get(
+                            "automatic_resolutions", []
+                        ),
                     }
                 )
             stack.extend(reversed(commit.parent_hashes))
