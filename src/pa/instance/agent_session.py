@@ -59,6 +59,38 @@ _QUIESCE_POLL_SECONDS = 0.4
 TRANSCRIPT_WINDOW_LIMIT = 1000
 PromptAction = Literal["append", "prepend", "interrupt"]
 _DURABLE_RUNTIME_KEY = "durable_runtime"
+RECOVERY_BLOCKED_STATUS = "recovery_blocked"
+AUTO_RECOVERY_SESSION_STATUSES = frozenset(
+    {
+        "provisioning",
+        "provisioning_failed",
+        "connecting",
+        "configuring",
+        "configuration_failed",
+        "connected",
+        "idle",
+        "prompting",
+        "disconnected",
+        "quiesced",
+        "recoverable_interrupted",
+    }
+)
+RECOVERY_RETAINED_SESSION_STATUSES = (
+    AUTO_RECOVERY_SESSION_STATUSES | {RECOVERY_BLOCKED_STATUS}
+)
+
+
+def _project_recovery_block(exc: BaseException) -> bool:
+    message = str(exc).lower()
+    return any(
+        marker in message
+        for marker in (
+            "project has no linked repositories",
+            "project is not available on this instance",
+            "project repository links are not materialized on this instance",
+            "is not available on this instance; sync or link",
+        )
+    )
 
 
 def _session_dir(data_dir: Path, session_id: str) -> Path:
@@ -1409,30 +1441,41 @@ class AgentSessionManager:
             )
             return context_environment(context)
         except Exception as exc:
-            session.status = "provisioning_failed"
+            project_blocked = bool(
+                session.project_id and _project_recovery_block(exc)
+            )
+            session.status = (
+                RECOVERY_BLOCKED_STATUS
+                if project_blocked
+                else "provisioning_failed"
+            )
             config = dict(session.config_json or {})
             if authority_instance:
                 config["execution_context"] = {"authority_instance": authority_instance}
             else:
                 config.pop("execution_context", None)
             config["provisioning"] = {
-                "state": "failed",
+                "state": "blocked" if project_blocked else "failed",
                 "stage": "workspace",
-                "retryable": True,
+                "retryable": not project_blocked,
+                "manual_retry": project_blocked,
+                "automatic_retry": not project_blocked,
                 "error_code": (
                     "project_unavailable_on_instance"
-                    if session.project_id
-                    and "is not available on this instance" in str(exc)
+                    if project_blocked
                     else "workspace_provisioning_failed"
                 ),
                 "action": (
-                    "Sync or link the project checkout on this instance, then retry"
-                    if session.project_id
-                    and "is not available on this instance" in str(exc)
+                    "Sync the project and repository links to this instance, or "
+                    "link its checkout; then retry this session. Close the session "
+                    "if it is no longer needed."
+                    if project_blocked
                     else "Correct the workspace configuration, then retry"
                 ),
                 "error": str(exc)[:1000],
             }
+            if project_blocked:
+                config["provisioning"]["retry_on"] = "project_availability_change"
             session.config_json = config
             session.cwd = None
             await self._offload(
@@ -1631,6 +1674,50 @@ class AgentSessionManager:
             timeout=10.0,
         )
 
+    async def _project_recovery_available(self, session: AgentSession) -> bool:
+        if not session.project_id:
+            return False
+
+        def project_ready() -> bool:
+            project = self.store.get_project(session.project_id)
+            if project is None:
+                return False
+            list_links = getattr(self.store, "list_project_repositories", None)
+            if not callable(list_links):
+                return False
+            realm_id = getattr(
+                project, "realm_id", self.settings.primary_realm
+            )
+            return bool(
+                list_links(session.project_id, realm_id=realm_id)
+            )
+
+        return await self._offload(
+            "agent.project_recovery_availability",
+            project_ready,
+            timeout=30.0,
+        )
+
+    async def _automatic_recovery_eligibility(
+        self, session: AgentSession
+    ) -> str | None:
+        if session.status in AUTO_RECOVERY_SESSION_STATUSES:
+            return "status"
+        if session.status != RECOVERY_BLOCKED_STATUS:
+            return None
+        if await self._project_recovery_available(session):
+            return "project_available"
+        return None
+
+    @staticmethod
+    def _recovery_action(session: AgentSession) -> str:
+        provisioning = dict((session.config_json or {}).get("provisioning") or {})
+        return str(
+            provisioning.get("action")
+            or "Retry the session after correcting its workspace configuration, "
+            "or close it if it is no longer needed."
+        )
+
     async def start(self, *, resume: bool | None = None) -> None:
         if resume is not None:
             self._resume_on_start = resume
@@ -1644,11 +1731,16 @@ class AgentSessionManager:
             timeout=30.0,
         )
         active_session_ids = {
-            session.id for session in persisted_sessions if session.status != "closed"
+            session.id
+            for session in persisted_sessions
+            if session.status in RECOVERY_RETAINED_SESSION_STATUSES
         }
         if will_resume and snapshot and snapshot.resume:
             active_session_ids.update(
-                item.session_id for item in snapshot.sessions if item.session_id
+                item.session_id
+                for item in snapshot.sessions
+                if item.session_id
+                and item.status in RECOVERY_RETAINED_SESSION_STATUSES
             )
         try:
             await self._offload(
@@ -1690,6 +1782,31 @@ class AgentSessionManager:
             return
 
         if self._resume_on_start:
+            persisted_by_id = {session.id: session for session in persisted_sessions}
+            recovery_eligibility: dict[str, str] = {}
+            for session in persisted_sessions:
+                eligibility = await self._automatic_recovery_eligibility(session)
+                if eligibility:
+                    recovery_eligibility[session.id] = eligibility
+                    if eligibility == "project_available":
+                        logger.info(
+                            "Project availability changed; retrying blocked ACP "
+                            "session %s",
+                            session.id,
+                        )
+                elif session.status == RECOVERY_BLOCKED_STATUS:
+                    logger.info(
+                        "ACP recovery remains blocked for session %s: %s",
+                        session.id,
+                        self._recovery_action(session),
+                    )
+                elif session.status != "closed":
+                    logger.info(
+                        "Skipping automatic ACP recovery for session %s with "
+                        "ineligible status %s",
+                        session.id,
+                        session.status,
+                    )
             recovery: dict[str, SessionSnapshot] = {}
             if snapshot and snapshot.resume:
                 recovery.update(
@@ -1697,6 +1814,13 @@ class AgentSessionManager:
                         item.session_id: item
                         for item in snapshot.sessions
                         if item.session_id
+                        and (
+                            item.session_id in recovery_eligibility
+                            or (
+                                item.session_id not in persisted_by_id
+                                and item.status in AUTO_RECOVERY_SESSION_STATUSES
+                            )
+                        )
                     }
                 )
             # Graceful quiesce is an optimization, not the durable owner. A
@@ -1704,7 +1828,10 @@ class AgentSessionManager:
             # Reconcile every durable nonterminal admission that was not in the
             # quiesce file so it cannot silently disappear after restart.
             for session in reversed(persisted_sessions):
-                if session.status == "closed" or session.id in recovery:
+                if (
+                    session.id not in recovery_eligibility
+                    or session.id in recovery
+                ):
                     continue
                 recovery[session.id] = self._snapshot_from_persisted(session)
             try:
@@ -1728,8 +1855,22 @@ class AgentSessionManager:
                             )
                             break
                         self._last_error = str(exc)
-                        await self._mark_recovery_interrupted(sess, exc)
-                        logger.exception("Failed to resume session %s", sess.session_id)
+                        recovery_state = await self._mark_recovery_interrupted(
+                            sess, exc
+                        )
+                        if recovery_state == RECOVERY_BLOCKED_STATUS:
+                            session = persisted_by_id.get(sess.session_id or "")
+                            logger.warning(
+                                "ACP recovery blocked for session %s: %s",
+                                sess.session_id,
+                                self._recovery_action(session)
+                                if session
+                                else str(exc),
+                            )
+                        else:
+                            logger.exception(
+                                "Failed to resume session %s", sess.session_id
+                            )
                 # Legacy top-level queue → default session
                 if (
                     not self._should_abort_admission()
@@ -1801,28 +1942,88 @@ class AgentSessionManager:
 
     async def _mark_recovery_interrupted(
         self, snapshot: SessionSnapshot, exc: BaseException
-    ) -> None:
+    ) -> str | None:
         if not snapshot.session_id:
-            return
+            return None
         session = await self._offload(
             "sqlite.agent_session_read", self.store.get_session, snapshot.session_id
         )
         if not session or session.status == "closed":
-            return
+            return None
         config = dict(session.config_json or {})
+        # Classify the current failure, not a stale blocked marker. The project
+        # may have arrived since the last boot and exposed a different failure.
+        blocked = bool(session.project_id and _project_recovery_block(exc))
+        recovery_state = (
+            RECOVERY_BLOCKED_STATUS if blocked else "recoverable_interrupted"
+        )
         durable = dict(config.get(_DURABLE_RUNTIME_KEY) or {})
         durable.update(
-            lifecycle="recoverable_interrupted",
+            lifecycle=recovery_state,
             recovery_error=str(exc)[:1000],
             updated_at=datetime.now(UTC).isoformat(),
         )
+        if blocked:
+            durable["recovery_action"] = self._recovery_action(session)
         config[_DURABLE_RUNTIME_KEY] = durable
         session.config_json = config
-        session.status = "recoverable_interrupted"
+        session.status = recovery_state
         session.updated_at = datetime.now(UTC)
         await self._offload(
             "sqlite.agent_session_save", self.store.save_session, session
         )
+        return recovery_state
+
+    async def retry_session(self, session_id: str) -> AgentSessionRuntime:
+        """Explicitly retry a durable, nonterminal session regardless of auto policy."""
+        async with self._lock:
+            runtime = self.get(session_id)
+            if runtime and not getattr(runtime, "_closed", False):
+                return runtime
+            session = await self._offload(
+                "sqlite.agent_session_read", self.store.get_session, session_id
+            )
+            if not session:
+                raise LookupError("Session not found")
+            if session.status == "closed":
+                raise RuntimeError("Closed sessions cannot be retried")
+            if session.status not in RECOVERY_RETAINED_SESSION_STATUSES:
+                raise RuntimeError(
+                    f"Session status {session.status!r} is not eligible for recovery"
+                )
+            logger.info(
+                "Explicit ACP recovery retry requested for session %s",
+                session_id,
+            )
+            snapshot = self._snapshot_from_persisted(session)
+            try:
+                recovered = await self._resume_from_snapshot(
+                    snapshot, QuiesceSnapshot(reason="explicit_retry")
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                self._last_error = str(exc)
+                recovery_state = await self._mark_recovery_interrupted(
+                    snapshot, exc
+                )
+                if recovery_state == RECOVERY_BLOCKED_STATUS:
+                    logger.warning(
+                        "Explicit ACP recovery retry remains blocked for session "
+                        "%s: %s",
+                        session_id,
+                        self._recovery_action(session),
+                    )
+                else:
+                    logger.exception(
+                        "Explicit ACP recovery retry failed for session %s",
+                        session_id,
+                    )
+                raise
+            if recovered is None:
+                raise RuntimeError("Session recovery did not create a runtime")
+            self._last_error = None
+            return recovered
 
     async def _resume_from_snapshot(
         self, snap: SessionSnapshot, full: QuiesceSnapshot
@@ -2033,6 +2234,8 @@ class AgentSessionManager:
         session = existing or AgentSession(
             id=session_id or str(uuid4()),
             agent_name=provider_id,
+            origin_instance_id=self.settings.instance_id,
+            origin_instance_name=self.settings.instance_name,
             status="provisioning",
             cwd=None,
             title=title,
@@ -2043,6 +2246,12 @@ class AgentSessionManager:
             item_id=card_id,
         )
         if existing:
+            session.origin_instance_id = (
+                session.origin_instance_id or self.settings.instance_id
+            )
+            session.origin_instance_name = (
+                session.origin_instance_name or self.settings.instance_name
+            )
             if label is not None:
                 session.label = label
             if title is not None:

@@ -137,6 +137,8 @@
   function AgentChatWidget(root) {
     this.root = root;
     this.sessionId = root.dataset.sessionId || "";
+    this.ownerInstanceId = root.dataset.ownerInstanceId || "";
+    this.sessionRoute = null;
     this.createLabel = root.dataset.createLabel || "default";
     this.cardId = root.dataset.cardId || "";
     this.apiBase = (root.dataset.apiBase || "/api/agent").replace(/\/$/, "");
@@ -169,6 +171,9 @@
       status: root.querySelector("[data-acw-status]"),
       title: root.querySelector("[data-acw-title]"),
       metrics: root.querySelector("[data-acw-metrics]"),
+      recovery: root.querySelector("[data-acw-recovery]"),
+      recoveryAction: root.querySelector("[data-acw-recovery-action]"),
+      recoveryRetry: root.querySelector("[data-acw-retry]"),
       permissions: root.querySelector("[data-acw-permissions]"),
       queue: root.querySelector("[data-acw-queue]"),
       queueList: root.querySelector("[data-acw-queue-list]"),
@@ -268,6 +273,13 @@
     if (end) end.addEventListener("click", function () { self.closeSession(); });
     const restart = this.root.querySelector("[data-acw-restart]");
     if (restart) restart.addEventListener("click", function () { self.restartSession(); });
+    if (this.els.recoveryRetry) {
+      this.els.recoveryRetry.addEventListener("click", function () {
+        self.retrySession();
+      });
+    }
+    const recover = this.root.querySelector("[data-acw-recover]");
+    if (recover) recover.addEventListener("click", function () { self.recoverSession(); });
     if (this.els.systemToggle) {
       this.els.systemToggle.checked = this.showSystem;
       this.root.classList.toggle("show-system", this.showSystem);
@@ -393,6 +405,10 @@
 
   AgentChatWidget.prototype.init = function () {
     const self = this;
+    if (this.sessionId) {
+      this.openSession(this.sessionId, this.ownerInstanceId, { replace: true }).catch(function () {});
+      return;
+    }
     const body = {
       attach_default: this.createLabel === "default" && !this.cardId,
       label: this.createLabel,
@@ -400,28 +416,151 @@
       title: this.cardId ? "Card agent" : null,
     };
     if (this.preferredProvider) body.provider = this.preferredProvider;
-    const boot = this.sessionId
-      ? Promise.resolve({ session: { id: this.sessionId } })
-      : this.api("/sessions", {
-          method: "POST",
-          body: JSON.stringify(body),
-        });
+    const boot = this.api("/sessions", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
 
     boot
       .then(function (snap) {
         const sid = (snap.session && snap.session.id) || (snap.id) || self.sessionId;
         self.sessionId = sid;
         self.root.dataset.sessionId = sid;
-        return self.api("/sessions/" + sid);
-      })
-      .then(function (snap) {
-        self.applySnapshot(snap);
-        self.connectSSE();
-        self.refreshBrowserState();
+        return self.openSession(sid, "", { replace: true });
       })
       .catch(function (err) {
         self.setPlaceholder("Failed to start session: " + err.message);
         self.setStatus("error");
+      });
+  };
+
+  AgentChatWidget.prototype.resolveSessionRoute = function (sessionId, ownerInstanceId) {
+    let url = "/api/fleet/session-route/" + encodeURIComponent(sessionId);
+    if (ownerInstanceId) {
+      url += "?owner_instance_id=" + encodeURIComponent(ownerInstanceId);
+    }
+    return fetch(url, { headers: csrfHeaders(), credentials: "same-origin" })
+      .then(function (res) {
+        if (!res.ok) {
+          return res.json().catch(function () { return {}; }).then(function (body) {
+            throw new Error(apiErrorMessage(body, res.statusText || "Could not resolve session owner"));
+          });
+        }
+        return res.json();
+      });
+  };
+
+  AgentChatWidget.prototype._historySnapshot = function (history) {
+    return {
+      session: history.session,
+      transcript: history.events || [],
+      transcript_page: history.page || {},
+      prompting: false,
+      connected: false,
+      queue: [],
+      queue_paused: false,
+      pending_permissions: [],
+      metrics: history.session && history.session.metrics_json || {},
+    };
+  };
+
+  AgentChatWidget.prototype._setRecoveryControl = function (visible, label) {
+    const button = this.root.querySelector("[data-acw-recover]");
+    if (!button) return;
+    button.hidden = !visible;
+    if (label) button.textContent = label;
+  };
+
+  AgentChatWidget.prototype._writeSessionUrl = function (replace) {
+    if (!this.root.closest(".page-agent") || !this.sessionId) return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("session", this.sessionId);
+    if (this.ownerInstanceId) url.searchParams.set("instance", this.ownerInstanceId);
+    else url.searchParams.delete("instance");
+    const state = { paAgentSession: this.sessionId, paAgentInstance: this.ownerInstanceId };
+    window.history[replace ? "replaceState" : "pushState"](state, "", url);
+  };
+
+  AgentChatWidget.prototype.openSession = function (sessionId, ownerInstanceId, options) {
+    const self = this;
+    options = options || {};
+    this.sessionId = sessionId;
+    this.ownerInstanceId = ownerInstanceId || "";
+    this.root.dataset.sessionId = sessionId;
+    this.root.dataset.ownerInstanceId = this.ownerInstanceId;
+    this._setRecoveryControl(false);
+    this.setPlaceholder("Locating session owner…");
+    return this.resolveSessionRoute(sessionId, this.ownerInstanceId)
+      .then(function (route) {
+        self.sessionRoute = route;
+        self.ownerInstanceId = route.owner && route.owner.instance_id || self.ownerInstanceId;
+        self.root.dataset.ownerInstanceId = self.ownerInstanceId;
+        if (route.api_base) self.apiBase = String(route.api_base).replace(/\/$/, "");
+        self._writeSessionUrl(!!options.replace);
+        if (route.state === "owner_unreachable") {
+          self.setStatus("offline");
+          self.setComposerEnabled(false);
+          self.setPlaceholder(route.message || "The session owner is temporarily unreachable.");
+          self._setRecoveryControl(true, "Retry connection");
+          return null;
+        }
+        if (route.state === "missing") {
+          self.setStatus("error");
+          self.setComposerEnabled(false);
+          self.setPlaceholder(route.message || "This agent session was deleted or has expired.");
+          return null;
+        }
+        if (route.live) {
+          return self.api("/sessions/" + sessionId).then(function (snap) {
+            self.applySnapshot(snap);
+            self.connectSSE();
+            self.refreshBrowserState();
+            return snap;
+          });
+        }
+        return self.api("/history/" + sessionId).then(function (history) {
+          self.applySnapshot(self._historySnapshot(history));
+          self.setComposerEnabled(false);
+          if (route.recoverable) {
+            self._setRecoveryControl(true, "Recover session");
+            self.addBubble("system", "PA restored this session's durable history. Reconnect it to continue.", new Date().toISOString(), { system: true, forceVisible: true });
+          } else {
+            self.markSessionEnded("Session ended. Its durable history is still available.");
+          }
+          return history;
+        });
+      })
+      .catch(function (err) {
+        self.sessionRoute = { state: "owner_unreachable" };
+        self.setPlaceholder("Failed to load session: " + err.message);
+        self.setStatus("error");
+        self.setComposerEnabled(false);
+        self._setRecoveryControl(true, "Retry connection");
+        throw err;
+      });
+  };
+
+  AgentChatWidget.prototype.recoverSession = function () {
+    const self = this;
+    if (!this.sessionId) return;
+    this._setRecoveryControl(false);
+    if (this.sessionRoute && this.sessionRoute.state === "owner_unreachable") {
+      this.openSession(this.sessionId, this.ownerInstanceId, { replace: true }).catch(function () {});
+      return;
+    }
+    this.setPlaceholder("Recovering session…");
+    this.api("/sessions/" + this.sessionId + "/recover", { method: "POST", body: "{}" })
+      .then(function (snap) {
+        self.sessionRoute.state = "live";
+        self.sessionRoute.live = true;
+        self.sessionRoute.recoverable = false;
+        self.applySnapshot(snap);
+        self.connectSSE();
+      })
+      .catch(function (err) {
+        self.setPlaceholder("Session recovery is still unavailable: " + err.message);
+        self.setStatus("offline");
+        self._setRecoveryControl(true, "Retry recovery");
       });
   };
 
@@ -672,8 +811,21 @@
     const self = this;
     this.lastSnapshot = snap;
     const session = snap.session || {};
+    const provisioning = session.config_json && session.config_json.provisioning || {};
+    const recoveryBlocked = session.status === "recovery_blocked" || provisioning.state === "blocked";
     this.sessionClosed = session.status === "closed";
-    this.setComposerEnabled(!this.sessionClosed);
+    this.setComposerEnabled(!this.sessionClosed && !recoveryBlocked);
+    if (recoveryBlocked && this.els.input) {
+      this.els.input.placeholder = "Recovery is blocked. Follow the action above, retry, or end the session.";
+    }
+    if (this.els.recovery) {
+      this.els.recovery.hidden = !recoveryBlocked;
+      if (this.els.recoveryAction) {
+        this.els.recoveryAction.textContent = provisioning.action ||
+          "Correct the project availability, retry this session, or end it from the Session menu.";
+      }
+      if (this.els.recoveryRetry) this.els.recoveryRetry.disabled = false;
+    }
     if (this.els.title) {
       this.els.title.textContent = session.title || session.label || "Agent";
     }
@@ -1639,16 +1791,14 @@
     }
   };
 
-  AgentChatWidget.prototype.switchSession = function (sessionId, live) {
-    if (!sessionId || sessionId === this.sessionId) return;
+  AgentChatWidget.prototype.switchSession = function (sessionId, live, ownerInstanceId, options) {
+    if (!sessionId || (sessionId === this.sessionId && (!ownerInstanceId || ownerInstanceId === this.ownerInstanceId))) return;
     if (this.settingsDirty && !window.confirm("Discard unsaved Agent settings changes and switch sessions?")) return;
     if (this.settingsDirty) this.resetSettingsDraft();
     if (this.es) {
       this.es.close();
       this.es = null;
     }
-    this.sessionId = sessionId;
-    this.root.dataset.sessionId = sessionId;
     this.lastSeq = 0;
     this.transcriptEvents = [];
     this.seenEvents = {};
@@ -1659,32 +1809,7 @@
     this.updateOlderControl();
     this.streaming = {};
     this.setPlaceholder("Loading session…");
-    const self = this;
-    const historical = live === false;
-    const request = historical
-      ? this.api("/history/" + sessionId).then(function (history) {
-          return {
-            session: history.session,
-            transcript: history.events || [],
-            transcript_page: history.page || {},
-            prompting: false,
-            connected: false,
-            queue: [],
-            queue_paused: false,
-            pending_permissions: [],
-            metrics: history.session && history.session.metrics_json || {},
-          };
-        })
-      : this.api("/sessions/" + sessionId);
-    request
-      .then(function (snap) {
-        self.applySnapshot(snap);
-        if (!historical) self.connectSSE();
-      })
-      .catch(function (err) {
-        self.setPlaceholder("Failed to load session: " + err.message);
-        self.setStatus("error");
-      });
+    this.openSession(sessionId, ownerInstanceId || "", options || {}).catch(function () {});
   };
 
   AgentChatWidget.prototype.setApiBase = function (apiBase) {
@@ -1892,6 +2017,26 @@
     });
   };
 
+  AgentChatWidget.prototype.retrySession = function () {
+    const self = this;
+    if (!this.sessionId || !this.els.recoveryRetry) return;
+    this.els.recoveryRetry.disabled = true;
+    this.api("/sessions/" + this.sessionId + "/retry", {
+      method: "POST",
+      body: "{}",
+    }).then(function (snap) {
+      self.applySnapshot(snap);
+      self.connectSSE();
+      refreshSessionList(self.sessionId);
+    }).catch(function (err) {
+      const action = err.detail && err.detail.action;
+      if (self.els.recoveryAction && action) self.els.recoveryAction.textContent = action;
+      self.addBubble("system", "Recovery retry failed: " + err.message, new Date().toISOString(), { system: true, forceVisible: true });
+    }).finally(function () {
+      if (self.els.recoveryRetry) self.els.recoveryRetry.disabled = false;
+    });
+  };
+
   AgentChatWidget.prototype.restartSession = function () {
     const self = this;
     if (!this.sessionId) return;
@@ -1975,6 +2120,7 @@
         sessions.forEach(function (s) {
           const li = document.createElement("li");
           li.dataset.sessionId = s.id;
+          li.dataset.sessionInstance = s.origin_instance_id || s.instance_id || "";
           li.dataset.sessionLive = s.live === false || s.status === "closed"
             ? "false"
             : "true";
@@ -2255,7 +2401,8 @@
         if (widget && widget._acw) {
           widget._acw.switchSession(
             li.dataset.sessionId,
-            li.dataset.sessionLive !== "false"
+            li.dataset.sessionLive !== "false",
+            li.dataset.sessionInstance || ""
           );
         }
       });
@@ -2269,7 +2416,8 @@
         if (widget && widget._acw) {
           widget._acw.switchSession(
             li.dataset.sessionId,
-            li.dataset.sessionLive !== "false"
+            li.dataset.sessionLive !== "false",
+            li.dataset.sessionInstance || ""
           );
         }
       });
@@ -2431,6 +2579,18 @@
   document.addEventListener("DOMContentLoaded", function () {
     mountAll(document);
   });
+  if (window.addEventListener) {
+    window.addEventListener("popstate", function () {
+      const root = document.querySelector(".page-agent [data-agent-chat]");
+      if (!root || !root._acw) return;
+      const params = new URL(window.location.href).searchParams;
+      const sessionId = params.get("session") || "";
+      const instanceId = params.get("instance") || "";
+      if (sessionId) {
+        root._acw.switchSession(sessionId, true, instanceId, { replace: true });
+      }
+    });
+  }
   // HTMX 4 uses colon-separated event names (htmx:after:swap).
   ["htmx:after:swap", "htmx:afterSwap"].forEach(function (evt) {
     document.body && document.body.addEventListener(evt, function (e) {

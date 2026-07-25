@@ -111,7 +111,7 @@ def _agent_context(request: Request) -> dict:
     ]
     selected_id = request.query_params.get("session")
     default = next((s for s in live if s.id == selected_id), None)
-    if not default:
+    if not default and not selected_id:
         default = next(
             (s for s in live if s.label == "default"), live[0] if live else None
         )
@@ -155,7 +155,10 @@ def _agent_context(request: Request) -> dict:
         "agent_enabled": ctx.settings.agent_enabled,
         "sessions": sessions,
         "live_session_ids": live_ids,
-        "session_id": default.id if default else "",
+        "session_id": selected_id or (default.id if default else ""),
+        "session_instance_id": request.query_params.get("instance")
+        or (default.origin_instance_id if default else None)
+        or ctx.settings.instance_id,
         "session_details": session_details,
         "pr_watches_by_session": watches_by_session,
     }

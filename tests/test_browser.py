@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from pa.browser.cdp import CdpError, CdpPage, validate_browser_url
 from pa.browser.manager import BrowserAttachment, BrowserManager, _browser_executable
 from pa.instance.agent_session import AgentSessionRuntime
-from pa.modules.browser import McpBrowserController
+from pa.modules.browser import BrowserModule, McpBrowserController
 
 
 class BrowserUrlTests(unittest.TestCase):
@@ -41,8 +41,28 @@ class BrowserAttachmentTests(unittest.IsolatedAsyncioTestCase):
             profile_dir=Path("/tmp/profile"),
         )
         with (
-            patch.object(CdpPage, "metadata", AsyncMock(return_value={"target_id": "target-1", "title": "PA", "url": "https://example.com"})),
-            patch.object(CdpPage, "viewport", AsyncMock(return_value={"width": 1600, "height": 1000, "device_scale_factor": 2})),
+            patch.object(
+                CdpPage,
+                "metadata",
+                AsyncMock(
+                    return_value={
+                        "target_id": "target-1",
+                        "title": "PA",
+                        "url": "https://example.com",
+                    }
+                ),
+            ),
+            patch.object(
+                CdpPage,
+                "viewport",
+                AsyncMock(
+                    return_value={
+                        "width": 1600,
+                        "height": 1000,
+                        "device_scale_factor": 2,
+                    }
+                ),
+            ),
         ):
             state = await attachment.state()
             self.assertEqual(state["url"], "https://example.com")
@@ -133,9 +153,13 @@ class BrowserSessionRuntimeTests(unittest.IsolatedAsyncioTestCase):
             height=1080,
             device_scale_factor=2,
             resize=AsyncMock(),
-            state=AsyncMock(return_value={"attached": True, "url": "https://example.com"}),
+            state=AsyncMock(
+                return_value={"attached": True, "url": "https://example.com"}
+            ),
         )
-        runtime.manager = SimpleNamespace(browser=SimpleNamespace(get=lambda _session_id: attachment))
+        runtime.manager = SimpleNamespace(
+            browser=SimpleNamespace(get=lambda _session_id: attachment)
+        )
         runtime.session = SimpleNamespace(
             id="session-1",
             config_json={"browser": {"attached": True}, "other": "kept"},
@@ -149,7 +173,9 @@ class BrowserSessionRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(state["attached"])
         self.assertEqual(runtime.session.config_json["browser"]["width"], 1920)
         self.assertEqual(runtime.session.config_json["browser"]["height"], 1080)
-        self.assertEqual(runtime.session.config_json["browser"]["device_scale_factor"], 2)
+        self.assertEqual(
+            runtime.session.config_json["browser"]["device_scale_factor"], 2
+        )
         self.assertEqual(runtime.session.config_json["other"], "kept")
         runtime.store.save_session.assert_called_once_with(runtime.session)
 
@@ -160,7 +186,10 @@ class BrowserSessionRuntimeTests(unittest.IsolatedAsyncioTestCase):
         )
         runtime.session = SimpleNamespace(
             id="session-1",
-            config_json={"browser": {"attached": True, "width": 800}, "options": ["new"]},
+            config_json={
+                "browser": {"attached": True, "width": 800},
+                "options": ["new"],
+            },
         )
         runtime.store = SimpleNamespace(
             get_session=MagicMock(return_value=persisted),
@@ -176,7 +205,9 @@ class BrowserSessionRuntimeTests(unittest.IsolatedAsyncioTestCase):
 
 class McpBrowserControllerTests(unittest.IsolatedAsyncioTestCase):
     async def test_session_state_reads_live_viewport_and_persists_resize(self):
-        session = SimpleNamespace(config_json={"browser": {"url": "https://old.example"}})
+        session = SimpleNamespace(
+            config_json={"browser": {"url": "https://old.example"}}
+        )
         store = SimpleNamespace(
             get_session=MagicMock(return_value=session),
             save_session=MagicMock(),
@@ -184,7 +215,9 @@ class McpBrowserControllerTests(unittest.IsolatedAsyncioTestCase):
         controller = McpBrowserController(Path("/tmp/pa-browser-test"), store)
         page = SimpleNamespace(
             metadata=AsyncMock(return_value={"url": "https://example.com"}),
-            viewport=AsyncMock(return_value={"width": 1920, "height": 1080, "device_scale_factor": 2}),
+            viewport=AsyncMock(
+                return_value={"width": 1920, "height": 1080, "device_scale_factor": 2}
+            ),
         )
         browser_env = {
             "PA_BROWSER_CDP_URL": "http://127.0.0.1:9222",
@@ -206,14 +239,126 @@ class McpBrowserControllerTests(unittest.IsolatedAsyncioTestCase):
         store.save_session.assert_called_once_with(session)
 
     async def test_default_attach_persistence_preserves_saved_url(self):
-        session = SimpleNamespace(config_json={"browser": {"url": "https://saved.example"}})
+        session = SimpleNamespace(
+            config_json={"browser": {"url": "https://saved.example"}}
+        )
         store = SimpleNamespace(
             get_session=MagicMock(return_value=session),
             save_session=MagicMock(),
         )
         controller = McpBrowserController(Path("/tmp/pa-browser-test"), store)
         controller.attributes = {"width": 1440, "height": 900, "device_scale_factor": 1}
-        with patch.dict(os.environ, {"PA_BROWSER_SESSION_ID": "session-1"}, clear=False):
+        with patch.dict(
+            os.environ, {"PA_BROWSER_SESSION_ID": "session-1"}, clear=False
+        ):
             controller.persist_session_attributes(url=None)
 
         self.assertEqual(session.config_json["browser"]["url"], "https://saved.example")
+
+
+class BrowserDiagnosticTests(unittest.IsolatedAsyncioTestCase):
+    async def test_manager_creates_page_target_when_chromium_starts_empty(self) -> None:
+        class EmptyClient:
+            async def get(self, _url):
+                return SimpleNamespace(json=list)
+
+            async def put(self, _url):
+                return SimpleNamespace(
+                    json=lambda: {"id": "target-new", "type": "page"}
+                )
+
+            async def aclose(self):
+                return None
+
+        process = SimpleNamespace(
+            pid=4321, returncode=None, wait=AsyncMock(return_value=0)
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            manager = BrowserManager(Path(tmp))
+            manager._client = EmptyClient()
+            with (
+                patch("pa.browser.manager._browser_executable", return_value="chrome"),
+                patch("pa.browser.manager._free_port", return_value=9222),
+                patch(
+                    "pa.browser.manager.asyncio.create_subprocess_exec",
+                    AsyncMock(return_value=process),
+                ),
+                patch("pa.browser.manager.asyncio.sleep", AsyncMock()),
+                patch.object(BrowserAttachment, "resize", AsyncMock()),
+            ):
+                attachment = await manager.attach("session-empty")
+            self.assertEqual(attachment.target_id, "target-new")
+
+    async def test_attach_failure_has_actionable_diagnostic(self) -> None:
+        class EmptyClient:
+            async def get(self, _url):
+                return SimpleNamespace(json=list)
+
+            async def put(self, _url):
+                raise RuntimeError("unavailable")
+
+        process = SimpleNamespace(
+            pid=4321, returncode=1, wait=AsyncMock(return_value=1)
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            manager = BrowserManager(Path(tmp))
+            manager._client = EmptyClient()
+            with (
+                patch("pa.browser.manager._browser_executable", return_value="chrome"),
+                patch("pa.browser.manager._free_port", return_value=9222),
+                patch(
+                    "pa.browser.manager.asyncio.create_subprocess_exec",
+                    AsyncMock(return_value=process),
+                ),
+                self.assertRaisesRegex(
+                    RuntimeError,
+                    "supports --headless=new.*profile directory is writable",
+                ),
+            ):
+                await manager.attach("session-failed")
+
+    async def test_snapshot_reports_empty_page_and_rejects_error_page(self) -> None:
+        class FakeMcp:
+            def __init__(self):
+                self.functions = {}
+
+            def tool(self):
+                def register(fn):
+                    self.functions[fn.__name__] = fn
+                    return fn
+
+                return register
+
+        mcp = FakeMcp()
+        ctx = MagicMock()
+        BrowserModule().register_mcp(mcp, ctx)
+        page = SimpleNamespace(
+            metadata=AsyncMock(return_value={"url": "https://pa.test", "title": "PA"}),
+            evaluate=AsyncMock(
+                return_value={
+                    "document": {
+                        "ready_state": "complete",
+                        "url": "https://pa.test",
+                        "title": "PA",
+                        "body_text": "",
+                    },
+                    "elements": [],
+                }
+            ),
+        )
+        with patch.object(
+            McpBrowserController, "ensure_page", AsyncMock(return_value=page)
+        ):
+            payload = __import__("json").loads(
+                await mcp.functions["browser_snapshot"]()
+            )
+        self.assertEqual(payload["diagnostic"]["code"], "empty_snapshot")
+
+        page.evaluate.return_value["document"]["url"] = "chrome-error://chromewebdata/"
+        with (
+            patch.object(
+                McpBrowserController, "ensure_page", AsyncMock(return_value=page)
+            ),
+            self.assertRaises(CdpError),
+        ):
+            await mcp.functions["browser_snapshot"]()

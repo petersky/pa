@@ -266,6 +266,12 @@ class GitHubClient:
         confirmed = await self.get_pull_head(repository, number)
         merged = bool(pr.get("merged") or pr.get("merged_at"))
         state = "merged" if merged else str(pr.get("state") or "open")
+        merge_commit_sha = (
+            pr.get("merge_commit_sha")
+            or ((review_data.get("mergeCommit") or {}).get("oid"))
+            if merged
+            else None
+        )
         return PRSnapshot(
             repository=repository,
             number=number,
@@ -278,7 +284,7 @@ class GitHubClient:
             title=str(pr.get("title") or ""),
             mergeable=pr.get("mergeable"),
             mergeable_state=pr.get("mergeable_state"),
-            merge_commit_sha=pr.get("merge_commit_sha") if merged else None,
+            merge_commit_sha=merge_commit_sha,
             review_decision=review_data.get("reviewDecision"),
             approvals=approvals,
             required_approvals=(
@@ -430,6 +436,7 @@ class GitHubClient:
           repository(owner: $owner, name: $name) {
             pullRequest(number: $number) {
               reviewDecision
+              mergeCommit { oid }
               reviewThreads(first: 100) {
                 pageInfo { hasNextPage }
                 nodes {

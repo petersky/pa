@@ -1,21 +1,29 @@
 from __future__ import annotations
 
+import mimetypes
+import os
+import re
+import shutil
 from datetime import UTC, datetime, timedelta
-from urllib.parse import urlencode
+from itertools import zip_longest
+from pathlib import Path
+from urllib.parse import quote, urlencode, urlsplit
+from uuid import uuid4
 
-from fastapi import APIRouter, Form, HTTPException, Request, Response
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
 from pa.auth.csrf import token_for_request
 from pa.auth.middleware import get_principal_id
 from pa.config import get_settings
-from pa.core.contracts import Module
 from pa.core.context import AppContext
+from pa.core.contracts import Module
 from pa.core.ui.pages import PageDefinition, PageRegistry
 from pa.domain.models import (
     CardCreate,
     CardKind,
     CardLane,
+    CardSummarySource,
     CardUpdate,
     Item,
     ItemCreate,
@@ -27,11 +35,23 @@ from pa.domain.models import (
     KnowledgeStatus,
     KnowledgeUpdate,
 )
-from pa.domain.store import get_store
 from pa.domain.session_selection import preferred_sessions_by_card
+from pa.domain.store import get_store
 
 router = APIRouter()
 ui_router = APIRouter()
+
+MAX_CARD_ATTACHMENTS = 10
+MAX_CARD_ATTACHMENT_BYTES = 25 * 1024 * 1024
+MAX_CARD_ATTACHMENTS_TOTAL_BYTES = 100 * 1024 * 1024
+ATTACHMENT_ID_RE = re.compile(r"^[0-9a-f]{32}$")
+SAFE_IMAGE_TYPES = {
+    "image/avif",
+    "image/gif",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+}
 
 
 def _mark_legacy_item_api(response: Response) -> None:
@@ -55,6 +75,186 @@ def _active_realm(request: Request) -> str:
 
 def _active_project(request: Request) -> str | None:
     return request.query_params.get("project")
+
+
+def _attachment_root(request: Request) -> Path:
+    return Path(request.app.state.ctx.settings.data_dir) / "card-attachments"
+
+
+def _safe_attachment_filename(filename: str, index: int) -> str:
+    basename = (filename or f"attachment-{index}").replace("\\", "/").split("/")[-1]
+    cleaned = re.sub(r"[^\w.() -]+", "_", basename, flags=re.UNICODE).strip(" .")
+    if not cleaned:
+        cleaned = f"attachment-{index}"
+    if len(cleaned) > 160:
+        suffix = Path(cleaned).suffix[:20]
+        cleaned = cleaned[: 160 - len(suffix)].rstrip(" .") + suffix
+    return cleaned
+
+
+def _unique_attachment_filename(filename: str, used: set[str]) -> str:
+    candidate = filename
+    stem = Path(filename).stem
+    suffix = Path(filename).suffix
+    counter = 2
+    while candidate.casefold() in used:
+        candidate = f"{stem}-{counter}{suffix}"
+        counter += 1
+    used.add(candidate.casefold())
+    return candidate
+
+
+def _attachment_media_type(filename: str, supplied: str | None) -> str:
+    guessed, _ = mimetypes.guess_type(filename)
+    return guessed or supplied or "application/octet-stream"
+
+
+def _persist_card_attachments(
+    root: Path,
+    uploads: list[UploadFile],
+) -> list[dict[str, str | int | Path]]:
+    if len(uploads) > MAX_CARD_ATTACHMENTS:
+        raise HTTPException(
+            status_code=413,
+            detail=f"A card can have at most {MAX_CARD_ATTACHMENTS} files",
+        )
+    if not uploads:
+        return []
+
+    root.mkdir(parents=True, exist_ok=True)
+    attachment_id = uuid4().hex
+    temporary = root / f".tmp-{attachment_id}"
+    destination = root / attachment_id
+    temporary.mkdir()
+    total_size = 0
+    used_names: set[str] = set()
+    records: list[dict[str, str | int | Path]] = []
+    try:
+        for index, upload in enumerate(uploads, start=1):
+            filename = _unique_attachment_filename(
+                _safe_attachment_filename(upload.filename or "", index),
+                used_names,
+            )
+            path = temporary / filename
+            size = 0
+            upload.file.seek(0)
+            with path.open("xb") as handle:
+                while chunk := upload.file.read(1024 * 1024):
+                    size += len(chunk)
+                    total_size += len(chunk)
+                    if size > MAX_CARD_ATTACHMENT_BYTES:
+                        raise HTTPException(
+                            status_code=413,
+                            detail=f"{filename} exceeds the 25 MB file limit",
+                        )
+                    if total_size > MAX_CARD_ATTACHMENTS_TOTAL_BYTES:
+                        raise HTTPException(
+                            status_code=413,
+                            detail="Card attachments exceed the 100 MB total limit",
+                        )
+                    handle.write(chunk)
+            media_type = _attachment_media_type(filename, upload.content_type)
+            records.append(
+                {
+                    "attachment_id": attachment_id,
+                    "filename": filename,
+                    "media_type": media_type,
+                    "size": size,
+                    "path": destination / filename,
+                    "url": (
+                        f"/card-attachments/{attachment_id}/{quote(filename, safe='')}"
+                    ),
+                }
+            )
+        os.replace(temporary, destination)
+        return records
+    except BaseException:
+        shutil.rmtree(temporary, ignore_errors=True)
+        shutil.rmtree(destination, ignore_errors=True)
+        raise
+
+
+def _delete_attachment_batch(records: list[dict[str, str | int | Path]]) -> None:
+    if not records:
+        return
+    first_path = records[0].get("path")
+    if isinstance(first_path, Path):
+        shutil.rmtree(first_path.parent, ignore_errors=True)
+
+
+def _markdown_label(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
+
+
+def _attachment_markup(record: dict[str, str | int | Path]) -> str:
+    filename = str(record["filename"])
+    label = _markdown_label(filename)
+    url = str(record["url"])
+    media_type = str(record["media_type"])
+    if media_type in SAFE_IMAGE_TYPES:
+        return f"![{label}]({url})"
+    if media_type.startswith("video/"):
+        return f'<video controls preload="metadata" src="{url}"></video>'
+    if media_type.startswith("audio/"):
+        return f'<audio controls preload="metadata" src="{url}"></audio>'
+    return f"[{label}]({url})"
+
+
+def _validated_link(raw_url: str) -> str:
+    url = raw_url.strip()
+    if not url:
+        return ""
+    parsed = urlsplit(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Attachment link must be an http(s) URL: {url}",
+        )
+    return quote(url, safe=":/?#[]@!$&'+,;=%")
+
+
+def _append_markdown_section(body: str, title: str, entries: list[str]) -> str:
+    if not entries:
+        return body
+    section = f"## {title}\n\n" + "\n\n".join(entries)
+    return f"{body.rstrip()}\n\n{section}".strip()
+
+
+def _compose_card_body(
+    body: str,
+    *,
+    link_urls: list[str],
+    link_labels: list[str],
+    attachments: list[dict[str, str | int | Path]],
+    file_tokens: list[str],
+) -> str:
+    composed = body.strip()
+    unreferenced: list[str] = []
+    for index, record in enumerate(attachments):
+        token = file_tokens[index].strip() if index < len(file_tokens) else ""
+        marker = f"attachment:{token}" if token else ""
+        if marker and marker in composed:
+            composed = composed.replace(marker, str(record["url"]))
+        else:
+            unreferenced.append(_attachment_markup(record))
+
+    links: list[str] = []
+    for raw_url, raw_label in zip_longest(link_urls, link_labels, fillvalue=""):
+        url = _validated_link(raw_url)
+        if not url:
+            continue
+        parsed = urlsplit(url)
+        label = _markdown_label(raw_label.strip() or parsed.netloc)
+        links.append(f"[{label}]({url})")
+
+    composed = _append_markdown_section(composed, "Links", links)
+    return _append_markdown_section(composed, "Attachments", unreferenced)
+
+
+def _comma_separated(value: str) -> list[str]:
+    return list(
+        dict.fromkeys(part.strip() for part in value.split(",") if part.strip())
+    )
 
 
 def _pr_watch_context(request: Request, card_id: str) -> dict:
@@ -236,6 +436,42 @@ def _home_context(request: Request) -> dict:
         "fleet_instances": fleet.list_instances() if fleet else [],
         "instance_name": ctx.settings.instance_name,
         "active_realm": realm,
+    }
+
+
+def _new_card_context(request: Request) -> dict:
+    realm = _active_realm(request)
+    ctx = request.app.state.ctx
+    store = get_store()
+    selected_project = _active_project(request)
+    projects = store.list_projects(realm_id=realm)
+    if selected_project not in {project.id for project in projects}:
+        selected_project = None
+    instances = [{"id": ctx.settings.instance_id, "name": ctx.settings.instance_name}]
+    fleet = ctx.services.get("fleet_registry")
+    if fleet:
+        known = {ctx.settings.instance_id}
+        for instance in fleet.list_instances():
+            if instance.instance_id in known:
+                continue
+            known.add(instance.instance_id)
+            instances.append(
+                {
+                    "id": instance.instance_id,
+                    "name": instance.name or instance.instance_id,
+                }
+            )
+    return {
+        "active_realm": realm,
+        "selected_project": selected_project,
+        "kinds": list(CardKind),
+        "lanes": list(CardLane),
+        "projects": projects,
+        "parent_cards": store.list_cards(realm_id=realm),
+        "instance_options": instances,
+        "csrf_token": token_for_request(request),
+        "max_attachments": MAX_CARD_ATTACHMENTS,
+        "max_attachment_mb": MAX_CARD_ATTACHMENT_BYTES // (1024 * 1024),
     }
 
 
@@ -434,6 +670,136 @@ def create_item_ui(
     return RedirectResponse(url=f"/?realm={realm}", status_code=303)
 
 
+@ui_router.get("/partials/cards/new", response_class=HTMLResponse)
+def new_card_form(request: Request) -> HTMLResponse:
+    return _templates(request).TemplateResponse(
+        request,
+        "partials/card-new.html",
+        _new_card_context(request),
+    )
+
+
+@ui_router.post("/partials/cards/new", response_model=None)
+async def create_card_modal_ui(
+    request: Request,
+    title: str = Form(...),
+    body: str = Form(""),
+    summary: str = Form(""),
+    kind: CardKind = Form(CardKind.TASK),
+    lane: CardLane = Form(CardLane.INBOX),
+    project_id: str = Form(""),
+    parent_id: str = Form(""),
+    tags: str = Form(""),
+    preferred_instance: str = Form(""),
+    preferred_capabilities: str = Form(""),
+    link_urls: list[str] | None = Form(None),
+    link_labels: list[str] | None = Form(None),
+    file_tokens: list[str] | None = Form(None),
+    files: list[UploadFile] | None = File(None),
+) -> JSONResponse:
+    realm = _active_realm(request)
+    cleaned_title = title.strip()
+    if not cleaned_title:
+        raise HTTPException(status_code=422, detail="Title is required")
+
+    store = get_store()
+    selected_project = project_id.strip() or None
+    selected_parent = parent_id.strip() or None
+    if selected_project and not store.get_project(selected_project, realm_id=realm):
+        raise HTTPException(status_code=422, detail="Selected project was not found")
+    if selected_parent and not store.get_card(selected_parent, realm_id=realm):
+        raise HTTPException(
+            status_code=422, detail="Selected parent card was not found"
+        )
+
+    uploads = [upload for upload in (files or []) if upload.filename]
+    runtime = request.app.state.ctx.require_service("async_runtime")
+    attachments: list[dict[str, str | int | Path]] = []
+    try:
+        attachments = await runtime.run_blocking(
+            "cards.attachments.persist",
+            _persist_card_attachments,
+            _attachment_root(request),
+            uploads,
+            timeout=120.0,
+        )
+        composed_body = _compose_card_body(
+            body,
+            link_urls=link_urls or [],
+            link_labels=link_labels or [],
+            attachments=attachments,
+            file_tokens=file_tokens or [],
+        )
+        cleaned_summary = summary.strip()
+        settings = request.app.state.ctx.settings
+        card = store.create_card(
+            CardCreate(
+                realm_id=realm,
+                kind=kind,
+                title=cleaned_title,
+                body=composed_body,
+                summary=cleaned_summary,
+                summary_source=(CardSummarySource.MANUAL if cleaned_summary else None),
+                lane=lane,
+                parent_id=selected_parent,
+                project_id=selected_project,
+                tags=_comma_separated(tags),
+                preferred_instance=preferred_instance.strip() or None,
+                preferred_capabilities=_comma_separated(preferred_capabilities),
+            ),
+            principal_id=get_principal_id(request),
+            instance_id=settings.instance_id,
+        )
+    except BaseException:
+        if attachments:
+            await runtime.run_blocking(
+                "cards.attachments.cleanup",
+                _delete_attachment_batch,
+                attachments,
+                timeout=30.0,
+            )
+        raise
+    finally:
+        for upload in uploads:
+            await upload.close()
+
+    return JSONResponse(
+        card.model_dump(mode="json"),
+        status_code=201,
+        headers={"Location": f"/cards/{card.id}"},
+    )
+
+
+@ui_router.get("/card-attachments/{attachment_id}/{filename}")
+def card_attachment(
+    request: Request,
+    attachment_id: str,
+    filename: str,
+) -> FileResponse:
+    if not ATTACHMENT_ID_RE.fullmatch(attachment_id) or Path(filename).name != filename:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    root = _attachment_root(request).resolve()
+    path = (root / attachment_id / filename).resolve()
+    if not path.is_relative_to(root) or not path.is_file():
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    media_type = _attachment_media_type(path.name, None)
+    inline = media_type in SAFE_IMAGE_TYPES or media_type.startswith(
+        ("video/", "audio/")
+    )
+    return FileResponse(
+        path,
+        filename=path.name,
+        media_type=media_type,
+        content_disposition_type="inline" if inline else "attachment",
+        headers={
+            "Content-Security-Policy": (
+                "sandbox; default-src 'none'; img-src 'self'; media-src 'self'"
+            ),
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
 @ui_router.post("/cards")
 def create_card_ui(
     request: Request,
@@ -467,12 +833,35 @@ def cards_partial(
     lane: CardLane | None = None,
     realm: str | None = None,
     project: str | None = None,
+    limit: int = 10,
 ) -> HTMLResponse:
     context = _cards_context(request, lane=lane)
+    done_total = 0
+    done_visible = 0
+    done_show_more_count = 0
+    done_show_more_query = ""
+    if lane == CardLane.DONE:
+        done_total = len(context["cards"])
+        done_limit = max(10, limit)
+        context["cards"] = context["cards"][:done_limit]
+        done_visible = len(context["cards"])
+        done_show_more_count = min(10, done_total - done_visible)
+        if done_show_more_count:
+            show_more_params = dict(request.query_params)
+            show_more_params["lane"] = CardLane.DONE.value
+            show_more_params["limit"] = str(done_visible + done_show_more_count)
+            done_show_more_query = urlencode(show_more_params)
     return _templates(request).TemplateResponse(
         request,
         "partials/cards.html",
-        {**context, "lane": lane},
+        {
+            **context,
+            "lane": lane,
+            "done_total": done_total,
+            "done_visible": done_visible,
+            "done_show_more_count": done_show_more_count,
+            "done_show_more_query": done_show_more_query,
+        },
     )
 
 

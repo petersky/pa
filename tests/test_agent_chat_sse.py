@@ -30,6 +30,7 @@ from pa.modules.agent_chat import (
     session_close,
     session_close_all,
     session_events,
+    session_retry,
 )
 
 
@@ -1088,11 +1089,11 @@ class AgentChatSseTests(unittest.TestCase):
         out = asyncio.run(run())
         self.assertEqual(len(out), 2)
 
-    def test_close_marks_store_only_orphan_sessions_closed(self) -> None:
+    def test_close_marks_blocked_store_only_sessions_closed(self) -> None:
         orphan = AgentSession(
             id="sess-orphan",
             agent_name="codex",
-            status="prompting",
+            status="recovery_blocked",
             title="Make repositories first-class PA resources",
             label="card:4bd6e725",
         )
@@ -1122,10 +1123,10 @@ class AgentChatSseTests(unittest.TestCase):
         self.assertEqual(event.event_type, "session_closed")
         self.assertEqual(event.seq, 42)
         self.assertEqual(event.payload["reason"], "orphan_user_close")
-        self.assertEqual(event.payload["prior_status"], "prompting")
+        self.assertEqual(event.payload["prior_status"], "recovery_blocked")
         close_log = self.orphan_close_log.call_args.kwargs["extra"]
         self.assertEqual(close_log["session_id"], "sess-orphan")
-        self.assertEqual(close_log["prior_status"], "prompting")
+        self.assertEqual(close_log["prior_status"], "recovery_blocked")
 
     def test_bulk_close_handles_live_and_orphan_mixture_then_restart(self) -> None:
         live_session = AgentSession(
@@ -1252,6 +1253,57 @@ class AgentChatSseTests(unittest.TestCase):
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0].event_type, "session_closed")
         self.assertEqual(events[0].payload["prior_status"], "provisioning_failed")
+
+    def test_explicit_retry_returns_recovered_session_snapshot(self) -> None:
+        runtime = MagicMock()
+        runtime.snapshot.return_value = {
+            "session": {"id": "sess-recovered", "status": "idle"}
+        }
+        manager = MagicMock()
+        manager.retry_session = AsyncMock(return_value=runtime)
+        request = MagicMock()
+
+        async def run() -> dict:
+            with patch("pa.modules.agent_chat._manager", return_value=manager):
+                return await session_retry(request, "sess-recovered")
+
+        result = asyncio.run(run())
+
+        manager.retry_session.assert_awaited_once_with("sess-recovered")
+        self.assertEqual(result["session"]["status"], "idle")
+
+    def test_explicit_retry_surfaces_blocked_operator_action(self) -> None:
+        blocked = AgentSession(
+            id="sess-blocked",
+            agent_name="codex",
+            status="recovery_blocked",
+            config_json={
+                "provisioning": {
+                    "state": "blocked",
+                    "error_code": "project_unavailable_on_instance",
+                    "error": "Project is unavailable",
+                    "action": "Sync or link the project, retry, or close the session",
+                }
+            },
+        )
+        manager = MagicMock()
+        manager.retry_session = AsyncMock(
+            side_effect=RuntimeError("Project is unavailable")
+        )
+        manager.store.get_session.return_value = blocked
+        request = MagicMock()
+
+        async def run() -> dict:
+            with patch("pa.modules.agent_chat._manager", return_value=manager):
+                return await session_retry(request, blocked.id)
+
+        with self.assertRaises(HTTPException) as raised:
+            asyncio.run(run())
+
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertTrue(raised.exception.detail["blocked"])
+        self.assertFalse(raised.exception.detail["retryable"])
+        self.assertIn("close", raised.exception.detail["action"])
 
 
 if __name__ == "__main__":

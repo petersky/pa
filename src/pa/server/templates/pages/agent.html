@@ -33,6 +33,7 @@
     {% set detail = session_details.get(s.id, {}) %}
     <li class="{% if s.id == session_id %}active{% endif %}"
         data-session-id="{{ s.id }}"
+        data-session-instance="{{ s.origin_instance_id or '' }}"
         data-session-live="{{ 'true' if s.id in live_session_ids else 'false' }}"
         role="button"
         tabindex="0">
@@ -137,6 +138,7 @@
   {% if agent_enabled %}
   {% with
       session_id=session_id,
+      owner_instance_id=session_instance_id,
       create_label='default',
       show_model=true,
       show_mode=true,
