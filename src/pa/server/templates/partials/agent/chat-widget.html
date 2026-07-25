@@ -1,9 +1,10 @@
 {# Modular agent chat widget — embeddable on Agent page or card panes.
    Context / data attributes:
-     session_id, create_label, card_id, show_model, show_mode, show_thinking,
+     session_id, owner_instance_id, create_label, card_id, show_model, show_mode, show_thinking,
      show_system_prompts, show_queue, show_metrics, compact, api_base, auto_start
 #}
 {% set sid = session_id | default('') %}
+{% set owner_id = owner_instance_id | default('') %}
 {% set label = create_label | default('default') %}
 {% set cid = card_id | default('') %}
 {% set show_model = show_model if show_model is defined else true %}
@@ -20,6 +21,7 @@
 <div class="agent-chat-widget{% if compact %} is-compact{% endif %}"
      data-agent-chat
      data-session-id="{{ sid }}"
+     data-owner-instance-id="{{ owner_id }}"
      data-create-label="{{ label }}"
      data-card-id="{{ cid }}"
      data-api-base="{{ api_base }}"
@@ -70,6 +72,7 @@
         <div class="acw-menu-body">
           <label><input type="checkbox" data-acw-toggle-system> Show system messages</label>
           <label><input type="checkbox" data-acw-toggle-raw> Raw text</label>
+          <button type="button" class="ghost" data-acw-recover hidden>Recover session</button>
           <button type="button" class="ghost" data-acw-restart>Restart session</button>
           <button type="button" class="ghost danger" data-acw-end>End session</button>
         </div>
