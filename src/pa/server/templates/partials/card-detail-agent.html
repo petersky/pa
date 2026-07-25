@@ -1,0 +1,80 @@
+<div class="card-tab-loaded" data-card-tab-loaded>
+  <div class="section-heading-inline">
+    <div>
+      <h3>Agent execution</h3>
+      <p class="muted">Selecting a card never starts work. Start or resume explicitly.</p>
+    </div>
+    {% if agent_enabled | default(true) %}
+    <button type="button" data-card-agent-start>{{ 'Resume agent' if current_session else 'Start agent' }}</button>
+    {% endif %}
+  </div>
+
+  {% if related_sessions %}
+  <div class="agent-session-list">
+    {% for session in related_sessions %}
+    {% set execution = session.config_json.get('execution_context', {}) %}
+    {% set instance = execution.get('instance', {}) %}
+    {% set configuration = session.config_json.get('configuration', {}) %}
+    <article class="agent-session-card">
+      <div class="section-heading-inline">
+        <div>
+          <h4><a href="/agent?session={{ session.id }}">{{ session.title or session.label or 'Card agent' }}</a></h4>
+          <p><span class="status status-{{ session.status }}">{{ session.status }}</span></p>
+        </div>
+        <time datetime="{{ session.updated_at.isoformat() }}">{{ session.updated_at.strftime('%b %-d, %H:%M') }}</time>
+      </div>
+      <dl class="detail-list">
+        <div><dt>Host</dt><dd>{{ instance.get('name') or instance.get('id') or 'Local instance' }}</dd></div>
+        <div><dt>Provider</dt><dd>{{ session.agent_name }}</dd></div>
+        <div><dt>Model</dt><dd>{{ session.model_id or configuration.get('requested', {}).get('model_id') or 'Provider default' }}</dd></div>
+        <div><dt>Mode</dt><dd>{{ session.mode_id or 'Provider default' }}</dd></div>
+        <div><dt>Approval</dt><dd>{{ execution.get('approval_policy') or 'Instance default' }}</dd></div>
+        <div><dt>Queue</dt><dd>{{ 'Ready for prompts' if session.status != 'closed' else 'Session closed' }}</dd></div>
+        {% if session.cwd %}<div><dt>Worktree</dt><dd><code>{{ session.cwd }}</code></dd></div>{% endif %}
+      </dl>
+      {% if execution.get('repositories') %}
+      <details class="agent-repositories">
+        <summary>Repository context</summary>
+        {% for repository in execution.get('repositories', []) %}
+        <dl class="detail-list">
+          <div><dt>Repository</dt><dd>{{ repository.get('repository_url') or repository.get('repository_id') }}</dd></div>
+          <div><dt>Branch</dt><dd><code>{{ repository.get('branch') or 'Not recorded' }}</code></dd></div>
+          <div><dt>Base</dt><dd><code>{{ repository.get('base_sha') or 'Not recorded' }}</code></dd></div>
+        </dl>
+        {% endfor %}
+      </details>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="card-tab-empty" role="status">
+    <h3>No agent sessions yet</h3>
+    <p class="muted">Start an agent when this card is ready for execution.</p>
+  </div>
+  {% endif %}
+
+  {% if agent_enabled | default(true) %}
+  <div id="card-agent-pane-{{ card.id }}"
+       class="card-agent-pane"
+       data-card-agent-pane
+       hx-preserve="true"
+       hidden>
+    {% with
+        session_id=current_session.id if current_session else '',
+        create_label='card:' ~ card.id,
+        card_id=card.id,
+        show_model=true,
+        show_mode=true,
+        show_thinking=false,
+        show_system_prompts=false,
+        show_queue=false,
+        show_metrics=false,
+        compact=true,
+        auto_start=false
+    %}
+      {% include "partials/agent/chat-widget.html" %}
+    {% endwith %}
+  </div>
+  {% endif %}
+</div>
