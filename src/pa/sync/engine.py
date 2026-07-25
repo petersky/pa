@@ -425,6 +425,9 @@ class SyncEngine:
                         remote_head,
                         "sync:auto",
                         expected_head=local_head,
+                        automatic_resolutions=health.get(
+                            "automatic_resolutions", []
+                        ),
                     )
                     advanced_head = merge.hash
                 if self._rebuild_projection:

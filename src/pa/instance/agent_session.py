@@ -2019,6 +2019,8 @@ class AgentSessionManager:
         session = existing or AgentSession(
             id=session_id or str(uuid4()),
             agent_name=provider_id,
+            origin_instance_id=self.settings.instance_id,
+            origin_instance_name=self.settings.instance_name,
             status="provisioning",
             cwd=None,
             title=title,
@@ -2029,6 +2031,12 @@ class AgentSessionManager:
             item_id=card_id,
         )
         if existing:
+            session.origin_instance_id = (
+                session.origin_instance_id or self.settings.instance_id
+            )
+            session.origin_instance_name = (
+                session.origin_instance_name or self.settings.instance_name
+            )
             if label is not None:
                 session.label = label
             if title is not None:

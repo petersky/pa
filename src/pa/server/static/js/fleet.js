@@ -440,7 +440,10 @@
       var state = session.prompting ? "working" : (session.status || "idle");
       return '<li><button type="button" class="ghost pa-remote-session-button" data-remote-session="' +
         escapeHtml(session.id) + '"><span>' + title + '</span><span class="status status-' +
-        (session.prompting ? "active" : "open") + '">' + escapeHtml(state) + "</span></button></li>";
+        (session.prompting ? "active" : "open") + '">' + escapeHtml(state) +
+        '</span></button><a class="text-btn small" href="/agent?session=' +
+        encodeURIComponent(session.id) + '&instance=' + encodeURIComponent(remoteInstanceId) +
+        '">Open in Agent</a></li>';
     }).join("");
   }
 
@@ -525,8 +528,9 @@
         escapeHtml(dispatch.dispatch_id) + '">Retry</button>';
       if (dispatch.can_cancel) actions += '<button type="button" class="ghost small" data-dispatch-cancel="' +
         escapeHtml(dispatch.dispatch_id) + '">Cancel</button>';
-      if (dispatch.session_id) actions += '<button type="button" class="ghost small" data-remote-session="' +
-        escapeHtml(dispatch.session_id) + '">Open session</button>';
+      if (dispatch.session_id) actions += '<a class="ghost small" href="/agent?session=' +
+        encodeURIComponent(dispatch.session_id) + '&instance=' + encodeURIComponent(remoteInstanceId) +
+        '">Open session</a>';
       actions += "</span>";
       return '<li data-dispatch-id="' + escapeHtml(dispatch.dispatch_id) + '"><div class="panel-header"><div>' +
         '<strong>' + escapeHtml(dispatch.card_id ? "Card dispatch" : "Remote session") + '</strong> ' +
@@ -676,7 +680,7 @@
     widgetRoot._acw.setApiBase(remoteApiBase(remoteInstanceId));
     if (audit) audit.hidden = true;
     chat.hidden = false;
-    widgetRoot._acw.switchSession(sessionId);
+    widgetRoot._acw.switchSession(sessionId, true, remoteInstanceId);
   }
 
   function remoteAuditEventHtml(event) {

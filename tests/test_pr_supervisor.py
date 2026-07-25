@@ -528,6 +528,49 @@ class GitHubFixtureTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(snap.approvals, 1)
         self.assertEqual(snap.review_threads[0].path, "src/app.py")
 
+    async def test_snapshot_recovers_merged_commit_from_graphql(self) -> None:
+        head_sha = "a" * 40
+        merge_commit_sha = "c" * 40
+        github = GitHubClient(GitHubCredentials(token="local-secret"))
+        github._request = AsyncMock(
+            return_value=(
+                200,
+                {
+                    "number": 17,
+                    "html_url": "https://github.com/owner/repo/pull/17",
+                    "state": "closed",
+                    "merged": True,
+                    "merged_at": "2026-07-24T00:31:20Z",
+                    "draft": False,
+                    "title": "Feature",
+                    "head": {"sha": head_sha},
+                    "base": {"ref": "main"},
+                    "mergeable": None,
+                    "mergeable_state": "unknown",
+                    "merge_commit_sha": None,
+                },
+            )
+        )
+        github._branch_protection = AsyncMock(return_value=({}, True))
+        github._checks = AsyncMock(return_value=([], True))
+        github._reviews = AsyncMock(return_value=([], True))
+        github._review_threads = AsyncMock(
+            return_value=(
+                {
+                    "reviewDecision": None,
+                    "mergeCommit": {"oid": merge_commit_sha},
+                },
+                [],
+                True,
+            )
+        )
+        github.get_pull_head = AsyncMock(return_value=head_sha)
+
+        snap = await github.snapshot("owner/repo", 17)
+
+        self.assertEqual(snap.state, "merged")
+        self.assertEqual(snap.merge_commit_sha, merge_commit_sha)
+
     async def test_pull_request_creation_is_ready_by_default(self) -> None:
         captured: dict = {}
 

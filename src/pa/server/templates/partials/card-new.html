@@ -1,0 +1,131 @@
+<form class="new-card-form"
+      data-new-card-form
+      enctype="multipart/form-data"
+      action="/partials/cards/new?realm={{ active_realm }}"
+      method="post">
+  <header class="new-card-header">
+    <div>
+      <p class="eyebrow">{{ active_realm }}</p>
+      <h2 id="new-card-title">Create new card</h2>
+      <p class="muted">Capture the work and route it without leaving this page.</p>
+    </div>
+    <button type="button" class="ghost" data-new-card-close aria-label="Close">×</button>
+  </header>
+
+  <div class="new-card-fields">
+    <label class="new-card-field-span-2">
+      <span>Title</span>
+      <input type="text" name="title" required autofocus
+             placeholder="What needs attention?">
+    </label>
+
+    <label>
+      <span>Kind</span>
+      <select name="kind" required>
+        {% for kind in kinds %}
+        <option value="{{ kind.value }}" {% if kind.value == 'task' %}selected{% endif %}>
+          {{ kind.value | capitalize }}
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      <span>Lane</span>
+      <select name="lane" required>
+        {% for lane in lanes %}
+        <option value="{{ lane.value }}" {% if lane.value == 'inbox' %}selected{% endif %}>
+          {{ lane.value | capitalize }}
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <label class="new-card-field-span-2 new-card-description-field">
+      <span>Description</span>
+      <textarea name="body" rows="7" data-new-card-description
+                placeholder="Context, intent, constraints, and acceptance criteria. Drop files here to attach them."></textarea>
+      <small>Markdown supported. Dropped images, video, and audio are embedded at the cursor.</small>
+    </label>
+
+    <label class="new-card-field-span-2">
+      <span>Summary <span class="muted">(optional)</span></span>
+      <textarea name="summary" rows="2"
+                placeholder="A concise collection-view summary; otherwise PA derives one from the description."></textarea>
+    </label>
+
+    <label>
+      <span>Project</span>
+      <select name="project_id">
+        <option value="">No project</option>
+        {% for project in projects %}
+        <option value="{{ project.id }}" {% if selected_project == project.id %}selected{% endif %}>
+          {{ project.title }}
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      <span>Parent card</span>
+      <select name="parent_id">
+        <option value="">No parent</option>
+        {% for parent in parent_cards %}
+        <option value="{{ parent.id }}">{{ parent.title }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <label>
+      <span>Tags</span>
+      <input type="text" name="tags" placeholder="ui, priority, follow-up">
+    </label>
+    <label>
+      <span>Preferred instance</span>
+      <select name="preferred_instance">
+        <option value="">Any eligible instance</option>
+        {% for instance in instance_options %}
+        <option value="{{ instance.id }}">{{ instance.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <label class="new-card-field-span-2">
+      <span>Preferred capabilities</span>
+      <input type="text" name="preferred_capabilities"
+             placeholder="gpu, browser, macos (comma-separated)">
+    </label>
+  </div>
+
+  <section class="new-card-attachments" aria-labelledby="new-card-attachments-title">
+    <div class="new-card-section-heading">
+      <div>
+        <h3 id="new-card-attachments-title">Attachments</h3>
+        <p class="muted">Add reference links or upload up to {{ max_attachments }} files ({{ max_attachment_mb }} MB each).</p>
+      </div>
+      <div class="new-card-attachment-actions">
+        <button type="button" class="ghost small" data-new-card-add-link>+ Link</button>
+        <label class="ghost small new-card-file-button">
+          + Files
+          <input class="sr-only" type="file" multiple data-new-card-files>
+        </label>
+      </div>
+    </div>
+    <div class="new-card-link-list" data-new-card-link-list></div>
+    <div class="new-card-file-list" data-new-card-file-list hidden></div>
+  </section>
+
+  <p class="new-card-error" data-new-card-error role="alert" hidden></p>
+  <footer class="new-card-footer">
+    <span class="muted small">⌘/Ctrl + Enter to create</span>
+    <div class="form-actions">
+      <button type="button" class="ghost" data-new-card-close>Cancel</button>
+      <button type="submit" data-new-card-submit>Create card</button>
+    </div>
+  </footer>
+<template data-new-card-link-template>
+  <div class="new-card-link-row">
+    <input type="url" name="link_urls" placeholder="https://…" aria-label="Link URL">
+    <input type="text" name="link_labels" placeholder="Label (optional)" aria-label="Link label">
+    <button type="button" class="ghost small" data-new-card-remove-link aria-label="Remove link">×</button>
+  </div>
+</template>
+</form>
