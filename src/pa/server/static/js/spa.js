@@ -484,6 +484,367 @@
     if (cardId) loadCardDetail(cardId, url.searchParams.get("realm") || "default", false);
   }
 
+  var newCardDialogOpener = null;
+  var newCardRequest = null;
+  var newCardFiles = [];
+  var NEW_CARD_MAX_FILES = 10;
+  var NEW_CARD_MAX_FILE_BYTES = 25 * 1024 * 1024;
+  var NEW_CARD_IMAGE_TYPES = [
+    "image/avif", "image/gif", "image/jpeg", "image/png", "image/webp"
+  ];
+
+  function newCardDialog() {
+    return document.getElementById("new-card-dialog");
+  }
+
+  function newCardDialogContent() {
+    return document.getElementById("new-card-dialog-content");
+  }
+
+  function newCardContextUrl() {
+    var current = new URL(window.location.href);
+    var params = new URLSearchParams();
+    params.set("realm", current.searchParams.get("realm") || "default");
+    var project = current.searchParams.get("project");
+    if (project) params.set("project", project);
+    return "/partials/cards/new?" + params.toString();
+  }
+
+  function showNewCardDialog() {
+    var dialog = newCardDialog();
+    if (!dialog || dialog.open) return;
+    if (typeof dialog.showModal === "function") dialog.showModal();
+    else dialog.setAttribute("open", "");
+  }
+
+  function clearNewCardFiles() {
+    newCardFiles.forEach(function (record) {
+      if (record.preview) URL.revokeObjectURL(record.preview);
+    });
+    newCardFiles = [];
+  }
+
+  function closeNewCardDialog() {
+    if (newCardRequest) newCardRequest.abort();
+    newCardRequest = null;
+    clearNewCardFiles();
+    var dialog = newCardDialog();
+    if (dialog && dialog.open) dialog.close();
+    var content = newCardDialogContent();
+    if (content) content.replaceChildren();
+    if (newCardDialogOpener && document.contains(newCardDialogOpener)) {
+      newCardDialogOpener.focus();
+    }
+    newCardDialogOpener = null;
+  }
+
+  function newCardErrorMessage(data, fallback) {
+    var detail = data && data.detail;
+    if (typeof detail === "string") return detail;
+    if (Array.isArray(detail)) {
+      return detail.map(function (item) { return item.msg || String(item); }).join("; ");
+    }
+    return fallback || "The card could not be created.";
+  }
+
+  function addNewCardLinkRow(form) {
+    var template = form.querySelector("[data-new-card-link-template]");
+    var list = form.querySelector("[data-new-card-link-list]");
+    if (!template || !list) return;
+    list.appendChild(template.content.cloneNode(true));
+    var rows = list.querySelectorAll(".new-card-link-row");
+    var input = rows.length && rows[rows.length - 1].querySelector('input[type="url"]');
+    if (input && rows.length > 1) input.focus();
+  }
+
+  function newCardFileToken() {
+    if (window.crypto && typeof window.crypto.randomUUID === "function") {
+      return window.crypto.randomUUID();
+    }
+    return Date.now().toString(36) + Math.random().toString(36).slice(2);
+  }
+
+  function newCardFileMediaKind(file) {
+    var type = String(file.type || "").toLowerCase();
+    var name = String(file.name || "").toLowerCase();
+    if (NEW_CARD_IMAGE_TYPES.indexOf(type) !== -1 ||
+        /\.(avif|gif|jpe?g|png|webp)$/.test(name)) {
+      return "image";
+    }
+    if (type.indexOf("video/") === 0 ||
+        /\.(m4v|mov|mp4|ogv|webm)$/.test(name)) {
+      return "video";
+    }
+    if (type.indexOf("audio/") === 0 ||
+        /\.(aac|flac|m4a|mp3|oga|ogg|opus|wav|weba)$/.test(name)) {
+      return "audio";
+    }
+    return "file";
+  }
+
+  function newCardFileMarkup(file, token) {
+    var name = String(file.name || "attachment")
+      .replace(/\\/g, "\\\\")
+      .replace(/\[/g, "\\[")
+      .replace(/\]/g, "\\]");
+    var target = "attachment:" + token;
+    var kind = newCardFileMediaKind(file);
+    if (kind === "image") {
+      return "![" + name + "](" + target + ")";
+    }
+    if (kind === "video") {
+      return '<video controls preload="metadata" src="' + target + '"></video>';
+    }
+    if (kind === "audio") {
+      return '<audio controls preload="metadata" src="' + target + '"></audio>';
+    }
+    return "[" + name + "](" + target + ")";
+  }
+
+  function insertNewCardDescriptionMarkup(textarea, markup) {
+    var start = typeof textarea.selectionStart === "number"
+      ? textarea.selectionStart : textarea.value.length;
+    var end = typeof textarea.selectionEnd === "number" ? textarea.selectionEnd : start;
+    var before = textarea.value.slice(0, start);
+    var after = textarea.value.slice(end);
+    var leading = before && !before.endsWith("\n") ? "\n\n" : "";
+    var trailing = after && !after.startsWith("\n") ? "\n\n" : "";
+    var inserted = leading + markup + trailing;
+    textarea.value = before + inserted + after;
+    var cursor = before.length + inserted.length;
+    textarea.focus();
+    textarea.setSelectionRange(cursor, cursor);
+  }
+
+  function formatNewCardFileSize(size) {
+    if (size >= 1024 * 1024) return (size / (1024 * 1024)).toFixed(1) + " MB";
+    if (size >= 1024) return Math.ceil(size / 1024) + " KB";
+    return size + " B";
+  }
+
+  function renderNewCardFiles(form) {
+    var list = form.querySelector("[data-new-card-file-list]");
+    if (!list) return;
+    list.replaceChildren();
+    list.hidden = !newCardFiles.length;
+    newCardFiles.forEach(function (record, index) {
+      var item = document.createElement("div");
+      item.className = "new-card-file-item";
+      if (record.preview) {
+        var image = document.createElement("img");
+        image.src = record.preview;
+        image.alt = "";
+        item.appendChild(image);
+      } else {
+        var icon = document.createElement("span");
+        icon.className = "new-card-file-icon";
+        icon.textContent = "↥";
+        icon.setAttribute("aria-hidden", "true");
+        item.appendChild(icon);
+      }
+      var meta = document.createElement("span");
+      meta.className = "new-card-file-meta";
+      var name = document.createElement("strong");
+      name.textContent = record.file.name;
+      var size = document.createElement("small");
+      size.textContent = formatNewCardFileSize(record.file.size);
+      meta.appendChild(name);
+      meta.appendChild(size);
+      item.appendChild(meta);
+      var remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "ghost small";
+      remove.textContent = "×";
+      remove.setAttribute("aria-label", "Remove " + record.file.name);
+      remove.addEventListener("click", function () {
+        var removed = newCardFiles.splice(index, 1)[0];
+        if (removed.preview) URL.revokeObjectURL(removed.preview);
+        if (removed.insertedMarkup) {
+          var textarea = form.querySelector("[data-new-card-description]");
+          textarea.value = textarea.value.replace(removed.insertedMarkup, "");
+        }
+        renderNewCardFiles(form);
+      });
+      item.appendChild(remove);
+      list.appendChild(item);
+    });
+  }
+
+  function addNewCardFiles(form, files, embedInDescription) {
+    var error = form.querySelector("[data-new-card-error]");
+    var textarea = form.querySelector("[data-new-card-description]");
+    Array.from(files || []).forEach(function (file) {
+      if (newCardFiles.length >= NEW_CARD_MAX_FILES) {
+        if (error) {
+          error.textContent = "A card can have at most " + NEW_CARD_MAX_FILES + " files.";
+          error.hidden = false;
+        }
+        return;
+      }
+      if (file.size > NEW_CARD_MAX_FILE_BYTES) {
+        if (error) {
+          error.textContent = file.name + " exceeds the 25 MB file limit.";
+          error.hidden = false;
+        }
+        return;
+      }
+      var duplicate = newCardFiles.some(function (record) {
+        return record.file.name === file.name && record.file.size === file.size &&
+          record.file.lastModified === file.lastModified;
+      });
+      if (duplicate) return;
+      var token = newCardFileToken();
+      var markup = newCardFileMarkup(file, token);
+      var record = {
+        file: file,
+        token: token,
+        preview: newCardFileMediaKind(file) === "image"
+          ? URL.createObjectURL(file) : "",
+        insertedMarkup: embedInDescription ? markup : "",
+      };
+      newCardFiles.push(record);
+      if (embedInDescription && textarea) {
+        insertNewCardDescriptionMarkup(textarea, markup);
+      }
+    });
+    renderNewCardFiles(form);
+  }
+
+  function refreshCurrentPageAfterCardCreate() {
+    var url = window.location.pathname + window.location.search;
+    if (typeof htmx !== "undefined") {
+      htmx.ajax("GET", url, { target: "#app-view", swap: "innerHTML" });
+    } else {
+      window.location.reload();
+    }
+  }
+
+  function initNewCardForm(form) {
+    addNewCardLinkRow(form);
+    var fileInput = form.querySelector("[data-new-card-files]");
+    var textarea = form.querySelector("[data-new-card-description]");
+    var error = form.querySelector("[data-new-card-error]");
+    if (fileInput) {
+      fileInput.addEventListener("change", function () {
+        addNewCardFiles(form, fileInput.files, false);
+        fileInput.value = "";
+      });
+    }
+    if (textarea) {
+      textarea.addEventListener("dragover", function (event) {
+        if (!event.dataTransfer ||
+            Array.from(event.dataTransfer.types || []).indexOf("Files") === -1) {
+          return;
+        }
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "copy";
+        textarea.classList.add("is-file-drop-target");
+      });
+      textarea.addEventListener("dragleave", function (event) {
+        if (!textarea.contains(event.relatedTarget)) {
+          textarea.classList.remove("is-file-drop-target");
+        }
+      });
+      textarea.addEventListener("drop", function (event) {
+        if (!event.dataTransfer || !event.dataTransfer.files.length) return;
+        event.preventDefault();
+        textarea.classList.remove("is-file-drop-target");
+        addNewCardFiles(form, event.dataTransfer.files, true);
+      });
+    }
+    form.addEventListener("click", function (event) {
+      if (event.target.closest("[data-new-card-add-link]")) {
+        addNewCardLinkRow(form);
+        return;
+      }
+      var remove = event.target.closest("[data-new-card-remove-link]");
+      if (remove) remove.closest(".new-card-link-row").remove();
+    });
+    form.addEventListener("keydown", function (event) {
+      if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault();
+        form.requestSubmit();
+      }
+    });
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      if (!form.reportValidity()) return;
+      var submit = form.querySelector("[data-new-card-submit]");
+      var formData = new FormData(form);
+      newCardFiles.forEach(function (record) {
+        formData.append("files", record.file, record.file.name);
+        formData.append("file_tokens", record.token);
+      });
+      if (error) error.hidden = true;
+      if (submit) {
+        submit.disabled = true;
+        submit.textContent = "Creating…";
+      }
+      fetch(form.action, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: csrfHeader(),
+        body: formData,
+      })
+        .then(function (response) {
+          return response.json().catch(function () { return {}; }).then(function (data) {
+            if (!response.ok) throw new Error(newCardErrorMessage(data));
+            return data;
+          });
+        })
+        .then(function () {
+          showToast("Card created.", "success");
+          closeNewCardDialog();
+          refreshCurrentPageAfterCardCreate();
+        })
+        .catch(function (failure) {
+          if (error) {
+            error.textContent = failure.message || "The card could not be created.";
+            error.hidden = false;
+          }
+        })
+        .finally(function () {
+          if (submit) {
+            submit.disabled = false;
+            submit.textContent = "Create card";
+          }
+        });
+    });
+  }
+
+  function openNewCardDialog(opener) {
+    var content = newCardDialogContent();
+    if (!content) return;
+    newCardDialogOpener = opener || document.activeElement;
+    clearNewCardFiles();
+    if (newCardRequest) newCardRequest.abort();
+    newCardRequest = new AbortController();
+    content.innerHTML = '<div class="card-dialog-state" role="status"><p>Loading new card…</p></div>';
+    showNewCardDialog();
+    fetch(newCardContextUrl(), {
+      credentials: "same-origin",
+      signal: newCardRequest.signal,
+    })
+      .then(function (response) {
+        if (!response.ok) throw new Error("The new-card form could not be loaded.");
+        return response.text();
+      })
+      .then(function (html) {
+        content.innerHTML = html;
+        var form = content.querySelector("[data-new-card-form]");
+        if (form) initNewCardForm(form);
+        var focus = content.querySelector("[autofocus]");
+        if (focus) focus.focus({ preventScroll: true });
+      })
+      .catch(function (error) {
+        if (error.name === "AbortError") return;
+        content.innerHTML = '<div class="card-dialog-state" role="alert"><p>' +
+          String(error.message).replace(/[&<>]/g, function (character) {
+            return { "&": "&amp;", "<": "&lt;", ">": "&gt;" }[character];
+          }) + '</p><button type="button" class="ghost" data-new-card-close>Close</button></div>';
+      });
+  }
+
   function initAgentReconnect() {
     document.querySelectorAll("#pa-agent-reconnect").forEach(function (btn) {
       if (btn.dataset.bound) return;
@@ -624,6 +985,16 @@
   });
 
   document.body.addEventListener("click", function (event) {
+    var newCardOpen = event.target.closest("[data-new-card-open]");
+    if (newCardOpen) {
+      event.preventDefault();
+      openNewCardDialog(newCardOpen);
+      return;
+    }
+    if (event.target.closest("[data-new-card-close]")) {
+      closeNewCardDialog();
+      return;
+    }
     var detailLink = event.target.closest("[data-card-detail-link]");
     if (detailLink) {
       event.preventDefault();
@@ -715,6 +1086,13 @@
       dialog.addEventListener("cancel", function (event) {
         event.preventDefault();
         closeCardDialog(true);
+      });
+    }
+    var createDialog = newCardDialog();
+    if (createDialog) {
+      createDialog.addEventListener("cancel", function (event) {
+        event.preventDefault();
+        closeNewCardDialog();
       });
     }
     openCardFromLocation();

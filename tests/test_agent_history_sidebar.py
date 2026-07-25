@@ -17,7 +17,36 @@ def test_agent_sidebar_loads_and_selects_durable_history() -> None:
     script = (ROOT / "static" / "js" / "agent-chat.js").read_text()
 
     assert 'includeClosed ? "/history?limit=500" : "/sessions"' in script
-    assert 'this.api("/history/" + sessionId)' in script
+    assert 'self.api("/history/" + sessionId)' in script
     assert "filterSessionList" in script
     assert 'li.dataset.sessionLive !== "false"' in script
-    assert "if (!historical) self.connectSSE();" in script
+    assert '"/api/fleet/session-route/" + encodeURIComponent(sessionId)' in script
+
+
+def test_agent_deep_link_survives_refresh_and_back_forward_without_close() -> None:
+    script = (ROOT / "static" / "js" / "agent-chat.js").read_text()
+    switch_block = script.split("AgentChatWidget.prototype.switchSession", 1)[1].split(
+        "AgentChatWidget.prototype.setApiBase", 1
+    )[0]
+
+    assert 'url.searchParams.set("session", this.sessionId)' in script
+    assert 'url.searchParams.set("instance", this.ownerInstanceId)' in script
+    assert 'window.addEventListener("popstate"' in script
+    assert "root._acw.switchSession(sessionId, true, instanceId" in script
+    assert (
+        "this.openSession(this.sessionId, this.ownerInstanceId, { replace: true })"
+        in script
+    )
+    assert '"/close"' not in switch_block
+
+
+def test_agent_page_exposes_non_destructive_recovery_action() -> None:
+    template = (
+        ROOT / "templates" / "partials" / "agent" / "chat-widget.html"
+    ).read_text()
+    script = (ROOT / "static" / "js" / "agent-chat.js").read_text()
+
+    assert "data-acw-recover" in template
+    assert '"/recover"' in script
+    assert 'route.state === "owner_unreachable"' in script
+    assert 'route.state === "missing"' in script

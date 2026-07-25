@@ -140,6 +140,9 @@ def _apply_sync_push_local(
                             head_hash,
                             "sync:auto",
                             expected_head=local_head,
+                            automatic_resolutions=health.get(
+                                "automatic_resolutions", []
+                            ),
                         )
                         head_hash = merge.hash
                         store.rebuild_from_log(realm_id)

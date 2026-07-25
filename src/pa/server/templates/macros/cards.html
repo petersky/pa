@@ -1,9 +1,10 @@
-{% macro compact_card(card, project=None, session=None, movable=false, lanes=[]) %}
-<article class="compact-card item-{{ card.kind.value }}"
+{% macro compact_card(card, project=None, session=None, movable=false, lanes=[], title_only=false) %}
+<article class="compact-card item-{{ card.kind.value }}{% if title_only %} is-title-only{% endif %}"
          {% if movable %}draggable="true"{% endif %}
          data-card-id="{{ card.id }}"
          data-realm="{{ card.realm_id }}"
          data-card-lane="{{ card.lane.value }}">
+  {% if not title_only %}
   <div class="compact-card-meta">
     <span class="badge">{{ card.kind.value }}</span>
     <span class="status status-{{ card.lane.value }}">{{ card.lane.value }}</span>
@@ -12,12 +13,14 @@
     <span class="summary-stale" title="The source details changed after this summary was written">Summary needs review</span>
     {% endif %}
   </div>
+  {% endif %}
   <h3>
     <a href="?realm={{ card.realm_id }}&card={{ card.id }}"
        data-card-detail-link
        data-card-id="{{ card.id }}"
        data-card-realm="{{ card.realm_id }}">{{ card.title }}</a>
   </h3>
+  {% if not title_only %}
   <div class="card-markdown compact-card-summary" data-card-markdown>
     <span hidden data-card-markdown-source>{{ card.summary | tojson }}</span>
   </div>
@@ -47,5 +50,6 @@
     </details>
     {% endif %}
   </footer>
+  {% endif %}
 </article>
 {% endmacro %}

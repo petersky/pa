@@ -181,6 +181,8 @@ class CardProjection:
                     id TEXT PRIMARY KEY,
                     agent_name TEXT NOT NULL,
                     external_session_id TEXT,
+                    origin_instance_id TEXT,
+                    origin_instance_name TEXT,
                     item_id TEXT,
                     card_id TEXT,
                     principal_id TEXT,
@@ -272,6 +274,8 @@ class CardProjection:
         if "project_id" not in session_cols:
             conn.execute("ALTER TABLE agent_sessions ADD COLUMN project_id TEXT")
         for col, decl in (
+            ("origin_instance_id", "TEXT"),
+            ("origin_instance_name", "TEXT"),
             ("cwd", "TEXT"),
             ("title", "TEXT"),
             ("label", "TEXT"),
@@ -1580,15 +1584,18 @@ class CardProjection:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO agent_sessions
-                (id, agent_name, external_session_id, item_id, card_id, project_id, principal_id,
+                (id, agent_name, external_session_id, origin_instance_id, origin_instance_name,
+                 item_id, card_id, project_id, principal_id,
                  status, cwd, title, label, model_id, mode_id, config_json, metrics_json,
                  created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     session.id,
                     session.agent_name,
                     session.external_session_id,
+                    session.origin_instance_id,
+                    session.origin_instance_name,
                     session.item_id or session.card_id,
                     session.card_id or session.item_id,
                     session.project_id,
@@ -1977,6 +1984,12 @@ class CardProjection:
             id=row["id"],
             agent_name=row["agent_name"],
             external_session_id=row["external_session_id"],
+            origin_instance_id=(
+                row["origin_instance_id"] if "origin_instance_id" in keys else None
+            ),
+            origin_instance_name=(
+                row["origin_instance_name"] if "origin_instance_name" in keys else None
+            ),
             item_id=row["item_id"],
             card_id=row["card_id"] if "card_id" in keys else row["item_id"],
             project_id=row["project_id"] if "project_id" in keys else None,

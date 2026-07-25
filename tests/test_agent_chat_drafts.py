@@ -52,6 +52,22 @@ class AgentChatDraftContractTests(unittest.TestCase):
         self.assertIn("plaintext", docs)
         self.assertIn("never persists attachment bytes", docs)
 
+    def test_session_routing_scopes_draft_before_restoring_conversation(self) -> None:
+        script = (SERVER / "static" / "js" / "agent-chat.js").read_text()
+        open_session = script.split(
+            "AgentChatWidget.prototype.openSession", 1
+        )[1].split("AgentChatWidget.prototype.recoverSession", 1)[0]
+
+        self.assertLess(
+            open_session.index("this.drafts.setInstance(ownerInstanceId)"),
+            open_session.index("this.drafts.switchSession(sessionId)"),
+        )
+        self.assertLess(
+            open_session.index("this.drafts.switchSession(sessionId)"),
+            open_session.index("this.sessionId = sessionId"),
+        )
+        self.assertIn("self.drafts.setInstance(self.ownerInstanceId)", open_session)
+
     def test_client_prompt_id_validation(self) -> None:
         body = PromptBody(message="keep me", client_prompt_id="browser-prompt-1")
         self.assertEqual(body.client_prompt_id, "browser-prompt-1")
