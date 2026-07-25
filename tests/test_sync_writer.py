@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import httpx
 from fastapi.testclient import TestClient
@@ -12,12 +13,13 @@ from pa.auth.users import UserDirectory
 from pa.config import Settings, reset_settings
 from pa.core.kernel import Kernel
 from pa.core.writer_lock import DataDirAlreadyOwnedError, DataDirWriterLock
-from pa.domain.models import CardCreate, CardEvent, EventType
+from pa.domain.models import CardCreate, CardEvent, CardLane, EventType, ItemKind
 from pa.domain.projection import CardProjection
 from pa.domain.store import reset_store
 from pa.execution.lease import LeaseManager
 from pa.instance.agent_session import reset_instance_agent
 from pa.mcp.local_api import request_local_pa
+from pa.modules.items import ItemsModule
 from pa.modules.sync import _ensure_projection_at_head
 from pa.sync.event_log import EventLog, StaleSyncHeadError
 from pa.sync.object_store import ObjectStore
@@ -263,6 +265,57 @@ class LocalMcpApiTests(unittest.TestCase):
                     "/api/repositories/repo-1",
                 )
             self.assertIsNone(result)
+
+    def test_list_tools_omit_empty_filters_and_forward_supplied_filters(self) -> None:
+        class FakeMcp:
+            def __init__(self) -> None:
+                self.functions: dict[str, object] = {}
+
+            def tool(self):
+                def register(fn):
+                    self.functions[fn.__name__] = fn
+                    return fn
+
+                return register
+
+        mcp = FakeMcp()
+        ctx = MagicMock()
+        response = httpx.Response(
+            200,
+            json=[],
+            request=httpx.Request("GET", "http://127.0.0.1/api/cards"),
+        )
+        with (
+            patch.dict(os.environ, {"PA_LOCAL_API_TOKEN": "test-token"}),
+            patch("httpx.request", return_value=response) as local_request,
+        ):
+            ItemsModule().register_mcp(mcp, ctx)
+
+            self.assertEqual(mcp.functions["list_cards"](), [])
+            self.assertIsNone(local_request.call_args.kwargs["params"])
+            self.assertEqual(mcp.functions["list_items"](), [])
+            self.assertIsNone(local_request.call_args.kwargs["params"])
+
+            self.assertEqual(
+                mcp.functions["list_cards"](
+                    realm="team",
+                    lane=CardLane.ACTIVE,
+                    kind="task",
+                ),
+                [],
+            )
+            self.assertEqual(
+                local_request.call_args.kwargs["params"],
+                {"realm": "team", "lane": "active", "kind": "task"},
+            )
+            self.assertEqual(
+                mcp.functions["list_items"](kind=ItemKind.TASK, status="done"),
+                [],
+            )
+            self.assertEqual(
+                local_request.call_args.kwargs["params"],
+                {"kind": "task", "status": "done"},
+            )
 
     def test_explicit_owner_target_survives_cold_start_and_restart(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
