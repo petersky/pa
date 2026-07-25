@@ -328,6 +328,30 @@ class CardSummarySource(StrEnum):
     AGENT = "agent"
 
 
+class AttachmentState(StrEnum):
+    ACTIVE = "active"
+    DELETED = "deleted"
+    QUARANTINED = "quarantined"
+
+
+class CardAttachment(BaseModel):
+    """Realm-synced metadata for immutable attachment content."""
+
+    attachment_id: str = Field(default_factory=lambda: uuid4().hex)
+    card_id: str
+    realm_id: str = "default"
+    filename: str
+    media_type: str = "application/octet-stream"
+    size: int = Field(ge=0)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    blob_ref: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    created_by_principal: str
+    created_by_instance: str
+    visibility: str = "realm"
+    state: AttachmentState = AttachmentState.ACTIVE
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
 class Card(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     realm_id: str = "default"
@@ -342,6 +366,7 @@ class Card(BaseModel):
     parent_id: str | None = None
     project_id: str | None = None
     tags: list[str] = Field(default_factory=list)
+    attachments: list[CardAttachment] = Field(default_factory=list)
     visibility: str = "realm"
     owner_principal: str | None = None
     preferred_instance: str | None = None
@@ -416,6 +441,8 @@ class EventType(StrEnum):
     CARD_CREATED = "card_created"
     CARD_UPDATED = "card_updated"
     CARD_DELETED = "card_deleted"
+    ATTACHMENT_CREATED = "attachment_created"
+    ATTACHMENT_REMOVED = "attachment_removed"
     PROJECT_CREATED = "project_created"
     PROJECT_UPDATED = "project_updated"
     PROJECT_ARCHIVED = "project_archived"

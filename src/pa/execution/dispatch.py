@@ -65,6 +65,7 @@ class DispatchRecord(BaseModel):
     realm_id: str = "default"
     card_version: str | None = None
     card_snapshot: dict[str, Any] | None = None
+    attachment_evidence: dict[str, Any] | None = None
     request_payload: dict[str, Any] = Field(default_factory=dict)
     principal_id: str = "user:local"
     authority_instance_id: str

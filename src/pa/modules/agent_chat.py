@@ -146,11 +146,15 @@ def _session_actions(session_id: str, *, recoverable: bool) -> dict[str, Any]:
 def _durable_session_state(manager, session) -> dict[str, Any]:
     runtime = manager.get(session.id)
     live = bool(runtime and not getattr(runtime, "_closed", False))
-    recoverable = session.status not in {
-        "closed",
-        "quiesced",
-        RECOVERY_BLOCKED_STATUS,
-    } and not live
+    recoverable = (
+        session.status
+        not in {
+            "closed",
+            "quiesced",
+            RECOVERY_BLOCKED_STATUS,
+        }
+        and not live
+    )
     durable = dict((session.config_json or {}).get("durable_runtime") or {})
     return {
         "exists": True,
@@ -734,6 +738,10 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
             or dispatch_record.authority_instance_id,
         }
         execution["dispatch_id"] = dispatch_record.dispatch_id
+        execution["attachments"] = dispatch_record.attachment_evidence or {
+            "verified": True,
+            "attachments": [],
+        }
         config["execution_context"] = execution
         runtime.session.config_json = config
 
@@ -1535,9 +1543,7 @@ async def session_retry(request: Request, session_id: str) -> dict:
             session_id,
         )
         if session and session.status == RECOVERY_BLOCKED_STATUS:
-            provisioning = dict(
-                (session.config_json or {}).get("provisioning") or {}
-            )
+            provisioning = dict((session.config_json or {}).get("provisioning") or {})
             raise HTTPException(
                 status_code=409,
                 detail={
@@ -1745,8 +1751,7 @@ async def session_close(request: Request, session_id: str) -> dict:
         return {"ok": True, "live": False}
 
     session = await _offload(
-        mgr,
-        "sqlite.agent_session_read", mgr.store.get_session, session_id
+        mgr, "sqlite.agent_session_read", mgr.store.get_session, session_id
     )
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")

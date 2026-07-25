@@ -42,6 +42,7 @@ _register(
 - Worktree: {{ worktree.path }}
 - Branch: {{ branch }}
 - Base SHA: {{ base_sha }}
+- Verified attachment paths: {{ attachment_paths }}
 
 These are resolved values for this session. Do not substitute a remembered host or path.""",
     variables=(
@@ -83,6 +84,11 @@ These are resolved values for this session. Do not substitute a remembered host 
         ),
         _v("branch", "Materialized working branch.", "pa/synthetic-card"),
         _v("base_sha", "Resolved base commit.", "0123456789abcdef"),
+        _v(
+            "attachment_paths",
+            "Verified dispatch attachment paths.",
+            "/synthetic/attachments/brief.pdf",
+        ),
     ),
 )
 

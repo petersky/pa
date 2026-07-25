@@ -19,6 +19,12 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 from pa.acp.configuration import SessionConfigurationRequest
+from pa.attachments import (
+    AttachmentError,
+    AttachmentStore,
+    CHUNK_BYTES,
+    manifest_digest,
+)
 from pa.auth.middleware import get_principal_id, require_user
 from pa.core.async_runtime import AsyncRuntime
 from pa.core.context import AppContext
@@ -26,6 +32,7 @@ from pa.core.contracts import Module
 from pa.core.io import atomic_write_json
 from pa.core.ui.pages import PageDefinition, PageRegistry
 from pa.domain.models import (
+    CardAttachment,
     CardEvent,
     CardLane,
     CardUpdate,
@@ -227,6 +234,14 @@ class DispatchMaterializeBody(BaseModel):
     authority_url: str
     target_instance_id: str
     session_id: str | None = None
+    attachment_manifest: list[CardAttachment] = Field(default_factory=list)
+    attachment_digest: str | None = None
+
+
+class AttachmentFinalizeBody(BaseModel):
+    realm_id: str
+    card_id: str
+    size: int
 
 
 class DispatchCompletionBody(BaseModel):
@@ -252,12 +267,58 @@ def _dispatch_store(request: Request) -> DispatchStore:
 @router.post("/fleet/dispatch/materialize")
 def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dict:
     """Make an exact authoritative card version resolvable before session creation."""
+    _require_instance(request)
     settings = request.app.state.ctx.settings
     if body.target_instance_id != settings.instance_id:
         raise HTTPException(
             status_code=409,
             detail={"code": "wrong_target", "expected": settings.instance_id},
         )
+    if body.attachment_digest is not None and body.attachment_digest != manifest_digest(
+        body.attachment_manifest
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "attachment_manifest_mismatch", "recoverable": False},
+        )
+    for item in body.attachment_manifest:
+        if item.realm_id != body.realm_id or item.card_id != str(
+            (body.card or {}).get("id") or ""
+        ):
+            raise HTTPException(
+                status_code=403,
+                detail={"code": "attachment_scope_mismatch", "recoverable": False},
+            )
+    attachment_store = AttachmentStore(request.app.state.ctx.settings.data_dir)
+    attachment_store.authorize_transfer(
+        body.dispatch_id,
+        body.realm_id,
+        str((body.card or {}).get("id") or ""),
+        body.attachment_manifest,
+    )
+    missing = [
+        {
+            "sha256": item.sha256,
+            "size": item.size,
+            "offset": attachment_store.partial_size(body.dispatch_id, item.sha256),
+        }
+        for item in body.attachment_manifest
+        if not attachment_store.has_verified_blob(item.sha256, item.size)
+    ]
+    if missing:
+        return {
+            "dispatch_id": body.dispatch_id,
+            "resolvable": False,
+            "missing": missing,
+            "attachment_digest": body.attachment_digest,
+        }
+    try:
+        attachment_evidence = attachment_store.materialize(
+            body.dispatch_id, body.attachment_manifest
+        )
+    except AttachmentError as exc:
+        raise HTTPException(status_code=409, detail=exc.detail()) from exc
+
     ledger = _dispatch_store(request)
     recorded = ledger.get(body.dispatch_id)
     if recorded:
@@ -276,6 +337,7 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
             "resolvable": True,
             "duplicate": True,
             "session_id": recorded.session_id,
+            "attachment_evidence": recorded.attachment_evidence,
         }
 
     store = request.app.state.ctx.store
@@ -321,6 +383,7 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
         resume_requested=bool(body.session_id),
         resume_session_id=body.session_id,
         state="materializing",
+        attachment_evidence=attachment_evidence,
     )
     try:
         ledger.put(record)
@@ -335,7 +398,93 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
         "card_version": body.card_version,
         "resolvable": True,
         "duplicate": False,
+        "attachment_evidence": attachment_evidence,
     }
+
+
+@router.get("/fleet/attachments/{card_id}/{attachment_id}")
+def fetch_fleet_attachment(
+    request: Request, card_id: str, attachment_id: str, realm_id: str
+) -> FileResponse:
+    _require_instance(request)
+    caller = request.headers.get("X-PA-Origin-Instance-ID", "").strip()
+    _fleet_instance_or_404(request, caller)
+    card = request.app.state.ctx.store.get_card(card_id, realm_id=realm_id)
+    if not card:
+        raise HTTPException(status_code=404, detail={"code": "card_not_found"})
+    attachment = next(
+        (item for item in card.attachments if item.attachment_id == attachment_id), None
+    )
+    if (
+        not attachment
+        or attachment.realm_id != realm_id
+        or attachment.card_id != card_id
+    ):
+        raise HTTPException(status_code=404, detail={"code": "attachment_not_found"})
+    blobs = AttachmentStore(request.app.state.ctx.settings.data_dir)
+    if not blobs.has_verified_blob(attachment.sha256, attachment.size):
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "attachment_blob_missing", "recoverable": True},
+        )
+    return FileResponse(
+        blobs.blob_path(attachment.sha256),
+        media_type="application/octet-stream",
+        headers={
+            "X-PA-Attachment-SHA256": attachment.sha256,
+            "X-PA-Attachment-Size": str(attachment.size),
+            "Content-Disposition": "attachment",
+            "X-Content-Type-Options": "nosniff",
+            "Accept-Ranges": "bytes",
+        },
+    )
+
+
+@router.put("/fleet/dispatch/{dispatch_id}/attachments/{sha256}")
+async def transfer_dispatch_attachment(
+    request: Request,
+    dispatch_id: str,
+    sha256: str,
+    realm_id: str,
+    card_id: str,
+    size: int,
+    offset: int,
+) -> dict:
+    _require_instance(request)
+    blobs = AttachmentStore(request.app.state.ctx.settings.data_dir)
+    if not blobs.authorized_attachment(dispatch_id, realm_id, card_id, sha256, size):
+        raise HTTPException(
+            status_code=403, detail={"code": "attachment_transfer_unauthorized"}
+        )
+    data = await request.body()
+    if len(data) > CHUNK_BYTES:
+        raise HTTPException(status_code=413, detail={"code": "chunk_too_large"})
+    try:
+        received = blobs.append_chunk(
+            dispatch_id, sha256, offset=offset, data=data, total_size=size
+        )
+    except AttachmentError as exc:
+        raise HTTPException(status_code=409, detail=exc.detail()) from exc
+    return {"received": received, "complete": received == size}
+
+
+@router.post("/fleet/dispatch/{dispatch_id}/attachments/{sha256}/finalize")
+def finalize_dispatch_attachment(
+    request: Request, dispatch_id: str, sha256: str, body: AttachmentFinalizeBody
+) -> dict:
+    _require_instance(request)
+    blobs = AttachmentStore(request.app.state.ctx.settings.data_dir)
+    if not blobs.authorized_attachment(
+        dispatch_id, body.realm_id, body.card_id, sha256, body.size
+    ):
+        raise HTTPException(
+            status_code=403, detail={"code": "attachment_transfer_unauthorized"}
+        )
+    try:
+        blobs.finalize_partial(dispatch_id, sha256, body.size)
+    except AttachmentError as exc:
+        raise HTTPException(status_code=409, detail=exc.detail()) from exc
+    return {"verified": True, "sha256": sha256, "size": body.size}
 
 
 @router.post("/fleet/dispatch/{dispatch_id}/complete")
@@ -1825,6 +1974,95 @@ async def _peer_authority_json(
     return await _response_json(request, response)
 
 
+async def _transfer_missing_attachments(
+    request: Request,
+    instance_id: str,
+    dispatch_id: str,
+    card_id: str,
+    realm_id: str,
+    manifest: list[CardAttachment],
+    missing: list[dict[str, Any]],
+) -> None:
+    inst = _fleet_instance_or_404(request, instance_id)
+    source = AttachmentStore(request.app.state.ctx.settings.data_dir)
+    by_hash = {item.sha256: item for item in manifest}
+    async with _borrow_fleet_client(request, timeout=120.0) as client:
+        for need in missing:
+            item = by_hash.get(str(need.get("sha256") or ""))
+            if not item or not source.has_verified_blob(item.sha256, item.size):
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "authority_attachment_missing",
+                        "sha256": need.get("sha256"),
+                        "message": "The authority does not have the required verified blob.",
+                        "recoverable": True,
+                    },
+                )
+            offset = int(need.get("offset") or 0)
+            if offset > item.size:
+                raise HTTPException(
+                    status_code=409,
+                    detail={"code": "invalid_resume_offset", "recoverable": True},
+                )
+            with source.blob_path(item.sha256).open("rb") as handle:
+                handle.seek(offset)
+                while offset < item.size:
+                    chunk = await _offload_request(
+                        request, "attachments.chunk_read", handle.read, CHUNK_BYTES
+                    )
+                    if not chunk:
+                        break
+                    response = await _fleet_http(
+                        request,
+                        "http.attachment_chunk",
+                        client.put(
+                            f"{inst.url.rstrip('/')}/api/fleet/dispatch/{dispatch_id}/attachments/{item.sha256}",
+                            headers={
+                                **_peer_headers(request),
+                                "Content-Type": "application/octet-stream",
+                            },
+                            params={
+                                "realm_id": realm_id,
+                                "card_id": card_id,
+                                "size": item.size,
+                                "offset": offset,
+                            },
+                            content=chunk,
+                            timeout=120.0,
+                        ),
+                        timeout=120.0,
+                    )
+                    if response.status_code >= 400:
+                        try:
+                            detail = (await _response_json(request, response)).get(
+                                "detail"
+                            )
+                        except ValueError, AttributeError:
+                            detail = response.text[:500]
+                        raise HTTPException(
+                            status_code=response.status_code, detail=detail
+                        )
+                    offset += len(chunk)
+            response = await _fleet_http(
+                request,
+                "http.attachment_finalize",
+                client.post(
+                    f"{inst.url.rstrip('/')}/api/fleet/dispatch/{dispatch_id}/attachments/{item.sha256}/finalize",
+                    headers=_peer_headers(request),
+                    json={"realm_id": realm_id, "card_id": card_id, "size": item.size},
+                    timeout=120.0,
+                ),
+                timeout=120.0,
+            )
+            if response.status_code >= 400:
+                try:
+                    detail = (await _response_json(request, response)).get("detail")
+                except ValueError, AttributeError:
+                    detail = response.text[:500]
+                raise HTTPException(status_code=response.status_code, detail=detail)
+
+
 async def _assert_dispatch_sync_health(request: Request, realm_id: str) -> None:
     """Never choose an arbitrary realm head for remote work."""
     settings = request.app.state.ctx.settings
@@ -2033,22 +2271,59 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
         "materializing",
         "Materializing the exact dispatch context on the target.",
     )
-    await _peer_dispatch_json(
-        request,
-        record.target_instance_id,
-        {
-            "dispatch_id": record.dispatch_id,
-            "mutation_id": record.mutation_id,
-            "card": record.card_snapshot,
-            "card_version": record.card_version,
-            "realm_id": record.realm_id,
-            "authority_instance_id": record.authority_instance_id,
-            "authority_instance_name": record.authority_instance_name,
-            "authority_url": record.authority_url,
-            "target_instance_id": record.target_instance_id,
-            "session_id": record.resume_session_id if record.resume_requested else None,
-        },
+    materialize_payload = {
+        "dispatch_id": record.dispatch_id,
+        "mutation_id": record.mutation_id,
+        "card": record.card_snapshot,
+        "card_version": record.card_version,
+        "realm_id": record.realm_id,
+        "authority_instance_id": record.authority_instance_id,
+        "authority_instance_name": record.authority_instance_name,
+        "authority_url": record.authority_url,
+        "target_instance_id": record.target_instance_id,
+        "session_id": record.resume_session_id if record.resume_requested else None,
+        "attachment_manifest": [
+            item.model_dump(mode="json") for item in (card.attachments if card else [])
+        ],
+        "attachment_digest": manifest_digest(card.attachments if card else []),
+    }
+    manifest = [
+        CardAttachment.model_validate(item)
+        for item in materialize_payload["attachment_manifest"]
+    ]
+    materialized = await _peer_dispatch_json(
+        request, record.target_instance_id, materialize_payload
     )
+    if not materialized.get("resolvable"):
+        await _transfer_missing_attachments(
+            request,
+            record.target_instance_id,
+            record.dispatch_id,
+            record.card_id or "",
+            record.realm_id,
+            manifest,
+            list(materialized.get("missing") or []),
+        )
+        materialized = await _peer_dispatch_json(
+            request, record.target_instance_id, materialize_payload
+        )
+    if not materialized.get("resolvable") or (
+        manifest and not (materialized.get("attachment_evidence") or {}).get("verified")
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "attachment_materialization_unverified",
+                "message": "Required attachments did not verify; the agent was not started.",
+                "recoverable": True,
+            },
+        )
+    record.attachment_evidence = materialized.get("attachment_evidence") or {
+        "digest": manifest_digest(manifest),
+        "attachments": [],
+        "verified": True,
+    }
+    await _offload_ctx(ctx, "dispatch.record_write", ledger.put, record)
     if await _dispatch_cancelled(ctx, ledger, record):
         return
 

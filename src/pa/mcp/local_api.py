@@ -142,6 +142,7 @@ def request_local_pa(
     *,
     params: dict | None = None,
     json: dict | None = None,
+    files: dict | None = None,
     allow_not_found: bool = False,
 ):
     token = os.environ.get("PA_LOCAL_API_TOKEN", "").strip()
@@ -163,6 +164,7 @@ def request_local_pa(
                 f"{local_pa_url(settings)}{path}",
                 params=_normalized_query_params(params),
                 json=json,
+                files=files,
                 headers=headers,
                 timeout=min(2.0, max(0.1, deadline - time.monotonic())),
             )

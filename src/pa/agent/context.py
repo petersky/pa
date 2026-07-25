@@ -159,6 +159,17 @@ def _execution_values(settings: Settings, session: AgentSession) -> dict[str, An
         repository.get("worktree_path") or repository.get("workspace") or cwd
     )
     checkout = str(repository.get("checkout_path") or worktree)
+    attachment_records = list(
+        (execution.get("attachments") or {}).get("attachments") or []
+    )
+    attachment_paths = (
+        "; ".join(
+            str(item.get("local_path"))
+            for item in attachment_records
+            if item.get("local_path")
+        )
+        or "(none)"
+    )
     return {
         "execution_instance": execution_instance,
         "authority_instance": authority,
@@ -170,6 +181,7 @@ def _execution_values(settings: Settings, session: AgentSession) -> dict[str, An
         "worktree": {"path": worktree},
         "branch": repository.get("branch") or "(not linked)",
         "base_sha": repository.get("base_sha") or "(not linked)",
+        "attachment_paths": attachment_paths,
     }
 
 
