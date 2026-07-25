@@ -18,7 +18,7 @@ from pa.domain.projection import CardProjection
 from pa.domain.store import reset_store
 from pa.execution.lease import LeaseManager
 from pa.instance.agent_session import reset_instance_agent
-from pa.mcp.local_api import request_local_pa
+from pa.mcp.local_api import LocalPARequestError, request_local_pa
 from pa.modules.items import ItemsModule
 from pa.modules.sync import _ensure_projection_at_head
 from pa.sync.event_log import EventLog, StaleSyncHeadError
@@ -265,6 +265,131 @@ class LocalMcpApiTests(unittest.TestCase):
                     "/api/repositories/repo-1",
                 )
             self.assertIsNone(result)
+
+    def test_validation_error_preserves_sanitized_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), agent_enabled=False)
+            response = httpx.Response(
+                422,
+                json={
+                    "detail": [
+                        {
+                            "type": "enum",
+                            "loc": ["body", "lane"],
+                            "msg": "Input should be 'todo'",
+                            "input": "secret-value",
+                        }
+                    ]
+                },
+                headers={"X-Request-ID": "server-correlation"},
+                request=httpx.Request("POST", "http://127.0.0.1/api/cards"),
+            )
+            with (
+                patch("httpx.request", return_value=response),
+                self.assertRaises(LocalPARequestError) as raised,
+            ):
+                request_local_pa(
+                    settings, "POST", "/api/cards", json={"lane": "invalid"}
+                )
+            error = raised.exception
+            self.assertEqual(error.operation, "POST")
+            self.assertEqual(error.endpoint, "/api/cards")
+            self.assertEqual(error.status, 422)
+            self.assertEqual(error.correlation_id, "server-correlation")
+            self.assertEqual(
+                error.validation,
+                [
+                    {
+                        "type": "enum",
+                        "loc": ["body", "lane"],
+                        "msg": "Input should be 'todo'",
+                    }
+                ],
+            )
+            self.assertNotIn("secret-value", str(error))
+            self.assertNotIn("instance mismatch", str(error))
+
+    def test_malformed_id_validation_is_not_an_instance_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), agent_enabled=False)
+            response = httpx.Response(
+                422,
+                json={
+                    "detail": [
+                        {
+                            "type": "uuid_parsing",
+                            "loc": ["path", "card_id"],
+                            "msg": "Input should be a valid UUID",
+                        }
+                    ]
+                },
+                request=httpx.Request("GET", "http://127.0.0.1/api/cards/bad"),
+            )
+            with (
+                patch("httpx.request", return_value=response),
+                self.assertRaisesRegex(LocalPARequestError, "uuid_parsing") as raised,
+            ):
+                request_local_pa(settings, "GET", "/api/cards/bad")
+            self.assertIsNotNone(raised.exception.validation)
+            self.assertNotIn("instance mismatch", str(raised.exception))
+
+    def test_verified_instance_mismatch_has_specific_diagnostic(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), agent_enabled=False)
+            response = httpx.Response(
+                422,
+                json={"detail": "request rejected"},
+                headers={
+                    "X-PA-Instance-ID": "other-instance",
+                    "X-Request-ID": "mismatch-correlation",
+                },
+                request=httpx.Request("POST", "http://127.0.0.1/api/cards"),
+            )
+            with (
+                patch.dict(os.environ, {"PA_INSTANCE_ID": "bridge-instance"}),
+                patch("httpx.request", return_value=response),
+                self.assertRaisesRegex(
+                    LocalPARequestError,
+                    "bridge instance 'bridge-instance' reached server instance "
+                    "'other-instance'",
+                ) as raised,
+            ):
+                request_local_pa(settings, "POST", "/api/cards", json={})
+            self.assertEqual(raised.exception.correlation_id, "mismatch-correlation")
+
+    def test_auth_and_server_errors_keep_context_without_mismatch_claim(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), agent_enabled=False)
+            for status in (401, 403, 500, 503):
+                response = httpx.Response(
+                    status,
+                    json={"detail": "internal or auth detail"},
+                    request=httpx.Request("GET", "http://127.0.0.1/api/cards"),
+                )
+                with (
+                    patch("httpx.request", return_value=response),
+                    self.assertRaises(LocalPARequestError) as raised,
+                ):
+                    request_local_pa(settings, "GET", "/api/cards")
+                self.assertEqual(raised.exception.status, status)
+                self.assertIn("operation=GET", str(raised.exception))
+                self.assertIn("endpoint=/api/cards", str(raised.exception))
+                self.assertNotIn("instance mismatch", str(raised.exception))
+                self.assertNotIn("internal or auth detail", str(raised.exception))
+
+    def test_server_identity_and_correlation_headers_are_exposed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                data_dir=Path(tmp),
+                instance_id="owner",
+                agent_enabled=False,
+            )
+            with TestClient(Kernel.boot(settings=settings).build_app()) as client:
+                response = client.get(
+                    "/api/ready", headers={"X-Request-ID": "client-correlation"}
+                )
+            self.assertEqual(response.headers["X-PA-Instance-ID"], "owner")
+            self.assertEqual(response.headers["X-Request-ID"], "client-correlation")
 
     def test_list_tools_omit_empty_filters_and_forward_supplied_filters(self) -> None:
         class FakeMcp:
