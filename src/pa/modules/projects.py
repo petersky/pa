@@ -18,6 +18,7 @@ from pa.domain.models import (
     RepositoryRemote,
     RepositoryStatus,
     RepositoryUpdate,
+    RepositoryVisibility,
 )
 from pa.domain.store import get_store
 from pa.domain.session_selection import preferred_sessions_by_card
@@ -826,8 +827,8 @@ class ProjectsModule(Module):
             provider: str = "",
             provider_repository_id: str | None = None,
             provider_metadata: dict | None = None,
-            visibility: str = "realm",
-            status: str = "active",
+            visibility: RepositoryVisibility = RepositoryVisibility.REALM,
+            status: RepositoryStatus = RepositoryStatus.ACTIVE,
         ) -> dict:
             """Create a synchronized first-class repository."""
             return request_local_pa(
@@ -857,8 +858,8 @@ class ProjectsModule(Module):
             provider: str | None = None,
             provider_repository_id: str | None = None,
             provider_metadata: dict | None = None,
-            visibility: str | None = None,
-            status: str | None = None,
+            visibility: RepositoryVisibility | None = None,
+            status: RepositoryStatus | None = None,
             clear_fields: list[str] | None = None,
             realm: str = "default",
         ) -> dict | None:
