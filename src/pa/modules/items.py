@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import mimetypes
 import os
 import re
@@ -11,7 +13,13 @@ from urllib.parse import quote, urlencode, urlsplit
 from uuid import uuid4
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+    StreamingResponse,
+)
 
 from pa.auth.csrf import token_for_request
 from pa.auth.middleware import get_principal_id
@@ -52,6 +60,35 @@ SAFE_IMAGE_TYPES = {
     "image/png",
     "image/webp",
 }
+
+
+@router.get("/cards/events")
+async def card_events(request: Request, realm: str | None = None) -> StreamingResponse:
+    realm_id = realm or request.app.state.ctx.settings.primary_realm
+    broker = request.app.state.ctx.require_service("live_updates")
+
+    async def stream():
+        queue = broker.subscribe(realm_id)
+        try:
+            yield ": connected\n\n"
+            while not await request.is_disconnected():
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=20.0)
+                except TimeoutError:
+                    yield ": keepalive\n\n"
+                    continue
+                yield (
+                    "event: cards-changed\n"
+                    f"data: {json.dumps(event, separators=(',', ':'))}\n\n"
+                )
+        finally:
+            broker.unsubscribe(realm_id, queue)
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 def _mark_legacy_item_api(response: Response) -> None:

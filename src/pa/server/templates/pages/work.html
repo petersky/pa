@@ -59,7 +59,7 @@
     {% endfor %}
   </nav>
 
-  <section class="board-grid" aria-label="Work board" data-work-board>
+  <section class="board-grid" aria-label="Work board" data-work-board data-realm="{{ active_realm }}">
     {% for lane in lanes %}
     <section class="board-column" data-lane="{{ lane.value }}" data-mobile-active="{{ 'true' if lane.value == 'active' else 'false' }}">
       <header><h2>{{ lane.value | capitalize }}</h2><span class="muted" aria-hidden="true">•</span></header>
