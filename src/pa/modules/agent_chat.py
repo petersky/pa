@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 from pathlib import Path
@@ -18,13 +19,14 @@ from pa.auth.middleware import get_principal_id
 from pa.core.contracts import Module
 from pa.core.preferences import get_preferences_store
 from pa.instance.agent_session import (
+    TRANSCRIPT_WINDOW_LIMIT,
     AgentSessionManager,
     AgentSessionRecoveryError,
     AgentStartupNotReady,
     AgentSessionRuntime,
-    TRANSCRIPT_WINDOW_LIMIT,
+    RECOVERY_BLOCKED_STATUS,
 )
-from pa.instance.quiesce import ImageAttachment, MAX_TOTAL_IMAGE_BYTES
+from pa.instance.quiesce import MAX_TOTAL_IMAGE_BYTES, ImageAttachment
 
 router = APIRouter(prefix="/agent")
 logger = logging.getLogger(__name__)
@@ -130,7 +132,7 @@ def _session_actions(session_id: str, *, recoverable: bool) -> dict[str, Any]:
 def _durable_session_state(manager, session) -> dict[str, Any]:
     runtime = manager.get(session.id)
     live = bool(runtime and not getattr(runtime, "_closed", False))
-    recoverable = session.status != "closed" and not live
+    recoverable = session.status not in {"closed", "quiesced"} and not live
     durable = dict((session.config_json or {}).get("durable_runtime") or {})
     return {
         "exists": True,
@@ -140,7 +142,7 @@ def _durable_session_state(manager, session) -> dict[str, Any]:
             "live"
             if live
             else "session_closed"
-            if session.status == "closed"
+            if session.status in {"closed", "quiesced"}
             else "provider_thread_lost"
         ),
         "status": session.status,
@@ -285,6 +287,7 @@ class PromptBody(BaseModel):
     card_id: str | None = None
     project_id: str | None = None
     dispatch_id: str | None = None
+    idempotency_key: str | None = None
 
     @model_validator(mode="after")
     def validate_total_image_size(self) -> PromptBody:
@@ -333,12 +336,11 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
     mgr = _require_session_traffic_ready(request)
     principal_id = get_principal_id(request)
     created_runtime = False
-    from pa.acp.surfaces import surface_for_label
     from pa.acp.providers.resolve import (
         resolve_provider_id,
         resolve_surface_preferences,
     )
-    from pa.acp.surfaces import AgentInvocationContext
+    from pa.acp.surfaces import AgentInvocationContext, surface_for_label
     from pa.core.preferences import SurfaceAgentPrefs
 
     surface = body.surface or surface_for_label(body.label, project_id=body.project_id)
@@ -925,12 +927,16 @@ def get_agent_session_history(
 
 
 @router.post("/sessions/{session_id}/recover")
-async def recover_agent_session(
-    request: Request, session_id: str, body: RecoverSessionBody
+async def recover_session(
+    request: Request,
+    session_id: str,
+    body: RecoverSessionBody | None = None,
 ) -> dict:
     mgr = _require_session_traffic_ready(request)
     try:
-        runtime = await mgr.recover_session(session_id, provider_override=body.provider)
+        runtime = await mgr.recover_session(
+            session_id, provider_override=body.provider if body else None
+        )
     except AgentStartupNotReady:
         _require_session_traffic_ready(request)
         raise RuntimeError("unreachable startup gate")
@@ -1133,6 +1139,33 @@ async def session_prompt(request: Request, session_id: str, body: PromptBody) ->
     if not message and not body.images:
         raise HTTPException(status_code=400, detail="message or image required")
     runtime = _runtime_or_404(request, session_id)
+    settings = request.app.state.ctx.settings
+    principal_id = get_principal_id(request)
+    user = getattr(request.state, "user", None)
+    instance_authenticated = (
+        getattr(request.state, "instance_authenticated", False) is True
+    )
+    if instance_authenticated and not body.dispatch_id:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "insufficient_authorization",
+                "message": "Fleet credentials may prompt only a dispatch-linked session.",
+            },
+        )
+    if (
+        settings.auth_required is True
+        and not instance_authenticated
+        and getattr(runtime.session, "principal_id", None) != principal_id
+        and getattr(user, "role", None) != "admin"
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "insufficient_authorization",
+                "message": "This principal does not own the linked agent session.",
+            },
+        )
     dispatch_record = None
     dispatch_store = None
     if body.dispatch_id:
@@ -1159,7 +1192,26 @@ async def session_prompt(request: Request, session_id: str, body: PromptBody) ->
                     "recoverable": False,
                 },
             )
-        if dispatch_record.prompt_ack:
+        followup_fingerprint = hashlib.sha256(
+            json.dumps(
+                {"message": message, "action": body.action},
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
+        if body.idempotency_key:
+            prior = dispatch_record.followup_operations.get(body.idempotency_key)
+            if prior:
+                if prior.get("fingerprint") != followup_fingerprint:
+                    raise HTTPException(
+                        status_code=409,
+                        detail={
+                            "code": "idempotency_conflict",
+                            "message": "This follow-up key was used for a different prompt.",
+                        },
+                    )
+                return {**dict(prior.get("response") or {}), "duplicate": True}
+        elif dispatch_record.prompt_ack:
             ack = dispatch_record.prompt_ack
             return {
                 "stop_reason": "accepted",
@@ -1173,7 +1225,6 @@ async def session_prompt(request: Request, session_id: str, body: PromptBody) ->
                 "duplicate": True,
                 "queue": [item.public_dict() for item in runtime._queue],
             }
-    principal_id = get_principal_id(request)
     # Return immediately; transcript/SSE streams the turn. Blocking here made the
     # old HTMX UI look like it only ever received "Turn completed".
     before_seq = runtime._seq
@@ -1239,30 +1290,7 @@ async def session_prompt(request: Request, session_id: str, body: PromptBody) ->
             "dispatch_id": body.dispatch_id,
         },
     )
-    if dispatch_record and dispatch_store:
-        assert accepted_event is not None
-        dispatch_record.prompt_acknowledged_at = accepted_event.created_at
-        dispatch_record.prompt_ack = {
-            "event_id": accepted_event.id,
-            "event_seq": accepted_event.seq,
-            "event_type": accepted_event.event_type,
-            "prompt_id": accepted_event.payload.get("id"),
-        }
-        await _runtime_offload(
-            runtime,
-            "dispatch.prompt_ack",
-            dispatch_store.transition,
-            dispatch_record,
-            "running",
-            "Prompt durably accepted by linked remote session.",
-            detail={
-                "session_id": session_id,
-                "event_id": accepted_event.id,
-                "event_seq": accepted_event.seq,
-                "event_type": accepted_event.event_type,
-            },
-        )
-    return {
+    response = {
         "stop_reason": stop_reason,
         "queued": stop_reason == "queued",
         "started": stop_reason == "started",
@@ -1274,6 +1302,53 @@ async def session_prompt(request: Request, session_id: str, body: PromptBody) ->
         "duplicate": False,
         "queue": [q.public_dict() for q in runtime._queue],
     }
+    if dispatch_record and dispatch_store:
+        assert accepted_event is not None
+        ack = {
+            "event_id": accepted_event.id,
+            "event_seq": accepted_event.seq,
+            "event_type": accepted_event.event_type,
+            "prompt_id": accepted_event.payload.get("id"),
+        }
+        if body.idempotency_key:
+            dispatch_record.followup_operations[body.idempotency_key] = {
+                "fingerprint": followup_fingerprint,
+                "response": {
+                    key: response.get(key)
+                    for key in (
+                        "stop_reason",
+                        "queued",
+                        "started",
+                        "accepted",
+                        "accepted_event",
+                        "prompt_id",
+                        "dispatch_id",
+                        "session_id",
+                        "duplicate",
+                    )
+                },
+            }
+            message_text = "Follow-up durably accepted by linked remote session."
+        else:
+            dispatch_record.prompt_acknowledged_at = accepted_event.created_at
+            dispatch_record.prompt_ack = ack
+            message_text = "Prompt durably accepted by linked remote session."
+        await _runtime_offload(
+            runtime,
+            "dispatch.prompt_ack",
+            dispatch_store.transition,
+            dispatch_record,
+            "running",
+            message_text,
+            detail={
+                "session_id": session_id,
+                "event_id": accepted_event.id,
+                "event_seq": accepted_event.seq,
+                "event_type": accepted_event.event_type,
+                "followup": bool(body.idempotency_key),
+            },
+        )
+    return response
 
 
 @router.post("/sessions/{session_id}/cancel")
@@ -1281,6 +1356,48 @@ async def session_cancel(request: Request, session_id: str) -> dict:
     runtime = _runtime_or_404(request, session_id)
     await runtime.cancel(pause_queue=True)
     return {"ok": True, "queue_paused": True}
+
+
+@router.post("/sessions/{session_id}/retry")
+async def session_retry(request: Request, session_id: str) -> dict:
+    """Explicitly retry a durable session that is not currently live."""
+    mgr = _manager(request)
+    try:
+        runtime = await mgr.retry_session(session_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        session = await _offload(
+            mgr,
+            "sqlite.agent_session_read",
+            mgr.store.get_session,
+            session_id,
+        )
+        if session and session.status == RECOVERY_BLOCKED_STATUS:
+            provisioning = dict((session.config_json or {}).get("provisioning") or {})
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": provisioning.get("error_code")
+                    or "session_recovery_blocked",
+                    "message": provisioning.get("error") or str(exc),
+                    "blocked": True,
+                    "retryable": False,
+                    "manual_retry": True,
+                    "action": provisioning.get("action"),
+                },
+            ) from exc
+        if session and session.status == "closed":
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "session_closed",
+                    "message": "Closed sessions cannot be retried",
+                    "recoverable": False,
+                },
+            ) from exc
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return await _offload(mgr, "agent.session_snapshot", runtime.snapshot)
 
 
 @router.post("/sessions/{session_id}/close")

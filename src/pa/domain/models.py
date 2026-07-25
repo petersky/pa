@@ -537,6 +537,8 @@ class AgentSession(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     agent_name: str
     external_session_id: str | None = None
+    origin_instance_id: str | None = None
+    origin_instance_name: str | None = None
     item_id: str | None = None
     card_id: str | None = None
     project_id: str | None = None

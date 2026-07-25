@@ -12,34 +12,6 @@
     <a class="ghost" href="/work?realm={{ active_realm }}">Open work board</a>
   </header>
 
-  <section class="quick-capture panel" aria-labelledby="quick-capture-title">
-    <div class="panel-header">
-      <div>
-        <h2 id="quick-capture-title">Quick capture</h2>
-        <p class="muted">Create a card without leaving the command center.</p>
-      </div>
-    </div>
-    <form class="quick-capture-form"
-          hx-post="/items" hx-target="#app-view" hx-push-url="/" hx-swap="innerHTML">
-      <input type="hidden" name="csrf" value="{{ csrf_token }}">
-      <label>
-        <span>Kind</span>
-        <select name="kind" required>
-          {% for k in kinds %}<option value="{{ k.value }}">{{ k.value | capitalize }}</option>{% endfor %}
-        </select>
-      </label>
-      <label class="quick-capture-title">
-        <span>Title</span>
-        <input type="text" name="title" required placeholder="What needs attention?">
-      </label>
-      <label class="quick-capture-details">
-        <span>Details</span>
-        <textarea name="body" rows="2" placeholder="Context, intent, and constraints"></textarea>
-      </label>
-      <button type="submit">Add card</button>
-    </form>
-  </section>
-
   <div class="command-center-grid">
     <section class="panel command-section command-attention" aria-labelledby="needs-attention-title">
       <div class="panel-header">

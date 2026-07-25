@@ -141,6 +141,12 @@ conflict-free two-parent merge, or must return a field-level conflict. Manual
 resolution creates another two-parent merge with explicit resolution events;
 it never rewrites a ref to discard one history.
 
+System-managed card version stamps do not force an operator conflict when peers
+otherwise changed compatible fields. PA deterministically selects the latest
+valid `updated_at`, records that automatic resolution in the merge audit, and
+projects the same version on every peer. User-authored fields still require an
+explicit resolution when concurrent values differ.
+
 `POST /api/sync/conflicts/resolve` and MCP `resolve_sync_conflicts` accept one
 entry per entity: `{"entity":"card","id":"…","action":"update","fields":{"title":"…"}}`.
 Every reported conflicting field must be present. For delete-vs-edit conflicts,

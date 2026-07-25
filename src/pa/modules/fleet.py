@@ -9,7 +9,7 @@ import logging
 import re
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from typing import Any, AsyncIterator
+from typing import Any, AsyncIterator, Literal
 from urllib.parse import quote
 from uuid import uuid4
 
@@ -21,18 +21,18 @@ from pydantic import BaseModel, Field
 from pa.acp.configuration import SessionConfigurationRequest
 from pa.auth.middleware import get_principal_id, require_user
 from pa.core.async_runtime import AsyncRuntime
-from pa.core.contracts import Module
 from pa.core.context import AppContext
+from pa.core.contracts import Module
 from pa.core.io import atomic_write_json
 from pa.core.ui.pages import PageDefinition, PageRegistry
 from pa.domain.models import (
     CardEvent,
     CardLane,
     CardUpdate,
+    EventType,
     FleetInstance,
     KnowledgeEntry,
     RealmRole,
-    EventType,
 )
 from pa.execution.dispatch import (
     CompletionOutbox,
@@ -60,9 +60,9 @@ from pa.fleet.remote_install import (
     run_install_job,
 )
 from pa.fleet.update import (
+    TERMINAL_PHASES,
     FleetUpdateJobStore,
     FleetUpdateRequest,
-    TERMINAL_PHASES,
     prepare_update_job_recovery,
     start_update_job,
 )
@@ -186,6 +186,7 @@ def _peer_has_exact_release(settings, channel: str, release) -> bool:
 class RemoteAgentStartBody(BaseModel):
     """Start a standalone or card-linked session on a fleet instance."""
 
+    authority_instance_id: str | None = None
     card_id: str | None = None
     project_id: str | None = None
     title: str | None = None
@@ -204,6 +205,14 @@ class DispatchControlBody(BaseModel):
     """Idempotency context for a durable dispatch lifecycle mutation."""
 
     idempotency_key: str | None = None
+
+
+class DispatchFollowupBody(BaseModel):
+    """Idempotent prompt for the session durably linked to a dispatch."""
+
+    message: str = Field(min_length=1, max_length=200_000)
+    action: Literal["append", "prepend", "interrupt"] = "append"
+    idempotency_key: str
 
 
 class DispatchMaterializeBody(BaseModel):
@@ -1085,9 +1094,7 @@ async def install_remote(request: Request, body: dict) -> dict:
     await _offload_request(
         request, "filesystem.fleet_sync_token", ensure_sync_token, settings
     )
-    job = await _offload_request(
-        request, "fleet.install_job_create", store.create, req
-    )
+    job = await _offload_request(request, "fleet.install_job_create", store.create, req)
     asyncio.create_task(
         run_install_job(
             settings,
@@ -1212,7 +1219,10 @@ def _fleet_instance_or_404(request: Request, instance_id: str):
 
 def _peer_headers(request: Request) -> dict[str, str]:
     settings = request.app.state.ctx.settings
-    headers = {"Accept": "application/json"}
+    headers = {
+        "Accept": "application/json",
+        "X-PA-Origin-Instance-ID": settings.instance_id,
+    }
     if settings.sync_token:
         headers["Authorization"] = f"Bearer {settings.sync_token}"
     return headers
@@ -1762,6 +1772,58 @@ async def _peer_dispatch_json(
     return await _response_json(request, resp)
 
 
+async def _peer_authority_json(
+    request: Request,
+    authority_instance_id: str,
+    method: str,
+    path: str,
+    *,
+    body: dict[str, Any] | None = None,
+    timeout: float = 30.0,
+) -> dict[str, Any]:
+    inst = _fleet_instance_or_404(request, authority_instance_id)
+    client = request.app.state.ctx.services.get("fleet_http_client")
+    owns_client = client is None
+    client = client or httpx.AsyncClient(timeout=timeout)
+    headers = _peer_headers(request)
+    key = (body or {}).get("idempotency_key")
+    if key:
+        headers["Idempotency-Key"] = str(key)
+    try:
+        response = await _fleet_http(
+            request,
+            "http.fleet_authority",
+            client.request(
+                method,
+                f"{inst.url.rstrip('/')}/api/fleet/{path.lstrip('/')}",
+                headers=headers,
+                json=body,
+                timeout=timeout,
+            ),
+            timeout=timeout,
+        )
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "authority_unavailable",
+                "message": str(exc),
+                "recoverable": True,
+            },
+        ) from exc
+    finally:
+        if owns_client:
+            await client.aclose()
+    if response.status_code >= 400:
+        try:
+            decoded = await _response_json(request, response)
+            detail = decoded.get("detail")
+        except ValueError, AttributeError:
+            detail = response.text[:500]
+        raise HTTPException(status_code=response.status_code, detail=detail)
+    return await _response_json(request, response)
+
+
 async def _assert_dispatch_sync_health(request: Request, realm_id: str) -> None:
     """Never choose an arbitrary realm head for remote work."""
     settings = request.app.state.ctx.settings
@@ -2213,7 +2275,7 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
                 ),
                 source="remote_dispatch",
                 tags=["remote-operations", f"instance:{record.target_instance_id}"],
-            )
+            ),
         )
         record.knowledge_recorded_at = datetime.now(UTC)
         await _offload_ctx(ctx, "dispatch.record_write", ledger.put, record)
@@ -2245,6 +2307,25 @@ async def start_remote_agent_work(
     require_user(request)
     ctx = request.app.state.ctx
     settings = ctx.settings
+    selected_authority = body.authority_instance_id or settings.instance_id
+    if selected_authority != settings.instance_id:
+        if getattr(request.state, "instance_authenticated", False) is True:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "wrong_authority",
+                    "message": "The selected authority did not receive the routed request.",
+                },
+            )
+        forwarded = body.model_dump(mode="json")
+        forwarded["authority_instance_id"] = selected_authority
+        return await _peer_authority_json(
+            request,
+            selected_authority,
+            "POST",
+            f"instances/{instance_id}/agent/start",
+            body=forwarded,
+        )
     store = ctx.store
     realm_id = settings.primary_realm
     card = (
@@ -2288,7 +2369,8 @@ async def start_remote_agent_work(
             },
         )
     payload = body.model_dump(
-        mode="json", exclude={"idempotency_key", "resume_session_id"}
+        mode="json",
+        exclude={"authority_instance_id", "idempotency_key", "resume_session_id"},
     )
     payload["project_id"] = project_id
     fingerprint = hashlib.sha256(
@@ -2340,7 +2422,11 @@ async def start_remote_agent_work(
         card_version=card.updated_at.isoformat() if card else None,
         card_snapshot=card.model_dump(mode="json") if card else None,
         request_payload=payload,
-        principal_id=get_principal_id(request),
+        principal_id=(
+            f"instance:{request.headers.get('X-PA-Origin-Instance-ID', 'fleet')}"
+            if getattr(request.state, "instance_authenticated", False) is True
+            else get_principal_id(request)
+        ),
         authority_instance_id=settings.instance_id,
         authority_instance_name=settings.instance_name,
         authority_url=authority_url,
@@ -2394,13 +2480,135 @@ def get_dispatch(request: Request, dispatch_id: str) -> dict[str, Any]:
     return record.public_dict()
 
 
-def _dispatch_control_key(
-    request: Request, body: DispatchControlBody | None
-) -> str:
+def _require_dispatch_access(request: Request, record: DispatchRecord) -> None:
+    if getattr(request.state, "instance_authenticated", False) is True:
+        return
+    user = require_user(request)
+    if (
+        request.app.state.ctx.settings.auth_required
+        and record.principal_id != get_principal_id(request)
+        and getattr(user, "role", None) != "admin"
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "insufficient_authorization",
+                "message": "This principal does not own the dispatch-linked session.",
+            },
+        )
+
+
+@router.post("/fleet/dispatch-jobs/{dispatch_id}/prompt")
+async def prompt_dispatch_session(
+    request: Request, dispatch_id: str, body: DispatchFollowupBody
+) -> dict[str, Any]:
+    record = _dispatch_store(request).get(dispatch_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Dispatch not found")
+    _require_dispatch_access(request, record)
+    key = body.idempotency_key.strip()
+    if not key:
+        raise HTTPException(status_code=400, detail="Idempotency-Key cannot be empty")
+    if not record.session_id:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "linked_session_missing",
+                "message": "The dispatch has not durably linked a target session yet.",
+                "recoverable": True,
+            },
+        )
+    if record.state in {"failed", "cancelled"}:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "linked_session_unavailable",
+                "message": f"Dispatch in {record.state} cannot accept follow-up work.",
+                "recoverable": record.recoverable,
+            },
+        )
+    fingerprint = hashlib.sha256(
+        json.dumps(
+            {"message": body.message, "action": body.action},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    prior = record.followup_operations.get(key)
+    if prior:
+        if prior.get("fingerprint") != fingerprint:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "idempotency_conflict",
+                    "message": "This follow-up key was used for a different prompt.",
+                },
+            )
+        return {**dict(prior.get("response") or {}), "duplicate": True}
+    result = await _peer_agent_json(
+        request,
+        record.target_instance_id,
+        "POST",
+        f"sessions/{record.session_id}/prompt",
+        body={
+            "message": body.message,
+            "action": body.action,
+            "card_id": record.card_id,
+            "project_id": record.project_id,
+            "dispatch_id": record.dispatch_id,
+            "idempotency_key": key,
+        },
+    )
+    if not isinstance(result, dict) or not result.get("accepted"):
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "followup_not_acknowledged",
+                "message": "The target did not durably acknowledge the follow-up prompt.",
+                "recoverable": True,
+            },
+        )
+    public = {
+        key: result.get(key)
+        for key in (
+            "stop_reason",
+            "queued",
+            "started",
+            "accepted",
+            "accepted_event",
+            "prompt_id",
+            "dispatch_id",
+            "session_id",
+            "duplicate",
+        )
+    }
+    public["authority_instance_id"] = record.authority_instance_id
+    record.followup_operations[key] = {
+        "fingerprint": fingerprint,
+        "response": public,
+    }
+    await _offload_request(
+        request,
+        "dispatch.followup_ack",
+        _dispatch_store(request).transition,
+        record,
+        record.state,
+        "Linked session follow-up durably acknowledged.",
+        detail={
+            "session_id": record.session_id,
+            "prompt_id": result.get("prompt_id"),
+        },
+    )
+    return public
+
+
+def _dispatch_control_key(request: Request, body: DispatchControlBody | None) -> str:
     header_key = request.headers.get("idempotency-key")
     if not isinstance(header_key, str):
         header_key = None
-    key = (header_key or (body.idempotency_key if body else None) or str(uuid4())).strip()
+    key = (
+        header_key or (body.idempotency_key if body else None) or str(uuid4())
+    ).strip()
     if not key:
         raise HTTPException(status_code=400, detail="Idempotency-Key cannot be empty")
     return key
@@ -2495,6 +2703,63 @@ def cancel_dispatch(
         "Cancellation requested; the worker will stop at the next safe boundary.",
     )
     return record.public_dict()
+
+
+@router.get("/fleet/instances/{authority_instance_id}/dispatch-jobs/{dispatch_id}")
+async def authority_dispatch_status(
+    request: Request, authority_instance_id: str, dispatch_id: str
+) -> dict[str, Any]:
+    require_user(request)
+    if authority_instance_id == request.app.state.ctx.settings.instance_id:
+        return get_dispatch(request, dispatch_id)
+    if getattr(request.state, "instance_authenticated", False) is True:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "wrong_authority",
+                "message": "The selected authority did not receive the routed request.",
+            },
+        )
+    return await _peer_authority_json(
+        request, authority_instance_id, "GET", f"dispatch-jobs/{dispatch_id}"
+    )
+
+
+@router.post(
+    "/fleet/instances/{authority_instance_id}/dispatch-jobs/{dispatch_id}/{operation}"
+)
+async def authority_dispatch_mutation(
+    request: Request,
+    authority_instance_id: str,
+    dispatch_id: str,
+    operation: Literal["retry", "cancel", "prompt"],
+    body: dict[str, Any],
+) -> dict[str, Any]:
+    require_user(request)
+    if authority_instance_id == request.app.state.ctx.settings.instance_id:
+        if operation == "prompt":
+            return await prompt_dispatch_session(
+                request, dispatch_id, DispatchFollowupBody.model_validate(body)
+            )
+        control = DispatchControlBody.model_validate(body)
+        return (retry_dispatch if operation == "retry" else cancel_dispatch)(
+            request, dispatch_id, control
+        )
+    if getattr(request.state, "instance_authenticated", False) is True:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "wrong_authority",
+                "message": "The selected authority did not receive the routed request.",
+            },
+        )
+    return await _peer_authority_json(
+        request,
+        authority_instance_id,
+        "POST",
+        f"dispatch-jobs/{dispatch_id}/{operation}",
+        body=body,
+    )
 
 
 @router.get("/fleet/instances/{instance_id}/dispatches")
@@ -2630,6 +2895,162 @@ async def fleet_agent_proxy(
         status_code=upstream.status_code,
         headers=response_headers,
     )
+
+
+def _local_session_route(request: Request, session_id: str) -> dict[str, Any] | None:
+    ctx = request.app.state.ctx
+    session = ctx.store.get_session(session_id)
+    if not session:
+        return None
+    manager = ctx.services.get("instance_agent")
+    runtime = manager.get(session_id) if manager else None
+    live = bool(runtime and not getattr(runtime, "_closed", False))
+    ended = session.status in {"closed", "quiesced"}
+    return {
+        "session_id": session_id,
+        "state": "live" if live else "expired" if ended else "recoverable",
+        "live": live,
+        "recoverable": not live and not ended,
+        "api_base": "/api/agent",
+        "owner": {
+            "instance_id": session.origin_instance_id or ctx.settings.instance_id,
+            "instance_name": session.origin_instance_name or ctx.settings.instance_name,
+        },
+        "provider": {
+            "id": session.agent_name,
+            "session_id": session.external_session_id,
+        },
+        "history_url": f"/api/agent/history/{session_id}",
+        "recovery_url": (
+            f"/api/agent/sessions/{session_id}/recover"
+            if not live and not ended
+            else None
+        ),
+    }
+
+
+@router.get("/fleet/session-route/{session_id}")
+async def resolve_session_route(
+    request: Request,
+    session_id: str,
+    owner_instance_id: str | None = None,
+) -> dict[str, Any]:
+    """Resolve a durable PA session to its owning fleet instance."""
+    require_user(request)
+    ctx = request.app.state.ctx
+    local = _local_session_route(request, session_id)
+    if local:
+        return local
+
+    dispatch_store = ctx.services.get("dispatch_store")
+    dispatch = dispatch_store.by_session(session_id) if dispatch_store else None
+    owner_id = owner_instance_id or (dispatch.target_instance_id if dispatch else None)
+    owner_name = dispatch.target_instance_name if dispatch else None
+    if not owner_id:
+        return {
+            "session_id": session_id,
+            "state": "missing",
+            "live": False,
+            "recoverable": False,
+            "message": "This agent session was deleted or has expired.",
+        }
+    if owner_id == ctx.settings.instance_id:
+        return {
+            "session_id": session_id,
+            "state": "missing",
+            "live": False,
+            "recoverable": False,
+            "owner": {
+                "instance_id": owner_id,
+                "instance_name": ctx.settings.instance_name,
+            },
+            "message": "This agent session was deleted or has expired.",
+        }
+
+    fleet: FleetRegistry = ctx.require_service("fleet")
+    owner = fleet.get_instance(owner_id)
+    api_base = f"/api/fleet/instances/{quote(owner_id, safe='-._~')}/agent"
+    if not owner:
+        return {
+            "session_id": session_id,
+            "state": "owner_unreachable",
+            "live": False,
+            "recoverable": True,
+            "api_base": api_base,
+            "owner": {
+                "instance_id": owner_id,
+                "instance_name": owner_name or owner_id,
+            },
+            "message": "The session owner is not currently registered. Retry after it reconnects.",
+        }
+    try:
+        history = await _peer_agent_json(
+            request,
+            owner_id,
+            "GET",
+            f"history/{session_id}",
+            timeout=10.0,
+        )
+    except HTTPException as exc:
+        if exc.status_code in {502, 503, 504}:
+            return {
+                "session_id": session_id,
+                "state": "owner_unreachable",
+                "live": False,
+                "recoverable": True,
+                "api_base": api_base,
+                "owner": {
+                    "instance_id": owner_id,
+                    "instance_name": owner.name,
+                },
+                "message": "The session owner is temporarily unreachable. Retry when it reconnects.",
+            }
+        if exc.status_code in {404, 410}:
+            return {
+                "session_id": session_id,
+                "state": "missing" if exc.status_code == 404 else "expired",
+                "live": False,
+                "recoverable": False,
+                "api_base": api_base,
+                "owner": {
+                    "instance_id": owner_id,
+                    "instance_name": owner.name,
+                },
+                "message": (
+                    "This agent session was deleted or has expired."
+                    if exc.status_code == 404
+                    else "This session has ended; its retained history is unavailable."
+                ),
+            }
+        raise
+    if not isinstance(history, dict) or not isinstance(history.get("session"), dict):
+        raise HTTPException(
+            status_code=502, detail="Session owner returned invalid history"
+        )
+    session = history["session"]
+    live = bool(history.get("live"))
+    ended = session.get("status") in {"closed", "quiesced"}
+    return {
+        "session_id": session_id,
+        "state": "live" if live else "expired" if ended else "recoverable",
+        "live": live,
+        "recoverable": not live and not ended,
+        "api_base": api_base,
+        "owner": {
+            "instance_id": owner_id,
+            "instance_name": owner.name,
+        },
+        "provider": {
+            "id": session.get("agent_name"),
+            "session_id": session.get("external_session_id"),
+        },
+        "history_url": f"{api_base}/history/{session_id}",
+        "recovery_url": (
+            f"{api_base}/sessions/{session_id}/recover"
+            if not live and not ended
+            else None
+        ),
+    }
 
 
 async def _proxy_agent_providers(
@@ -2965,8 +3386,9 @@ class FleetModule(Module):
         def dispatch_card_to_instance(
             card_id: str,
             instance_id: str,
+            idempotency_key: str,
             message: str = "",
-            idempotency_key: str | None = None,
+            authority_instance_id: str | None = None,
             provider: str | None = None,
             model_id: str | None = None,
             mode_id: str | None = None,
@@ -2975,7 +3397,7 @@ class FleetModule(Module):
             config: dict[str, str | bool] | None = None,
         ) -> dict:
             """Durably and idempotently dispatch an authoritative card to a fleet instance."""
-            key = (idempotency_key or str(uuid4())).strip()
+            key = idempotency_key.strip()
             if not key:
                 raise ValueError("idempotency_key cannot be empty")
             return request_local_pa(
@@ -2983,6 +3405,7 @@ class FleetModule(Module):
                 "POST",
                 f"/api/fleet/instances/{instance_id}/agent/start",
                 json={
+                    "authority_instance_id": authority_instance_id,
                     "card_id": card_id,
                     "message": message,
                     "provider": provider,
@@ -2996,41 +3419,87 @@ class FleetModule(Module):
             )
 
         @mcp.tool()
-        def get_dispatch(dispatch_id: str) -> dict | None:
+        def get_dispatch(
+            dispatch_id: str, authority_instance_id: str | None = None
+        ) -> dict | None:
             """Get normalized durable dispatch, session, authority, target, and card-version state."""
             return request_local_pa(
                 ctx.settings,
                 "GET",
-                f"/api/fleet/dispatch-jobs/{dispatch_id}",
+                (
+                    f"/api/fleet/instances/{authority_instance_id}/dispatch-jobs/{dispatch_id}"
+                    if authority_instance_id
+                    else f"/api/fleet/dispatch-jobs/{dispatch_id}"
+                ),
                 allow_not_found=True,
             )
 
         @mcp.tool()
         def retry_dispatch(
-            dispatch_id: str, idempotency_key: str | None = None
+            dispatch_id: str,
+            idempotency_key: str,
+            authority_instance_id: str | None = None,
         ) -> dict:
             """Idempotently queue a safe retry through the durable dispatch control plane."""
-            key = (idempotency_key or str(uuid4())).strip()
+            key = idempotency_key.strip()
             if not key:
                 raise ValueError("idempotency_key cannot be empty")
             return request_local_pa(
                 ctx.settings,
                 "POST",
-                f"/api/fleet/dispatch-jobs/{dispatch_id}/retry",
+                (
+                    f"/api/fleet/instances/{authority_instance_id}/dispatch-jobs/{dispatch_id}/retry"
+                    if authority_instance_id
+                    else f"/api/fleet/dispatch-jobs/{dispatch_id}/retry"
+                ),
                 json={"idempotency_key": key},
             )
 
         @mcp.tool()
         def cancel_dispatch(
-            dispatch_id: str, idempotency_key: str | None = None
+            dispatch_id: str,
+            idempotency_key: str,
+            authority_instance_id: str | None = None,
         ) -> dict:
             """Idempotently request cancellation at a safe durable dispatch boundary."""
-            key = (idempotency_key or str(uuid4())).strip()
+            key = idempotency_key.strip()
             if not key:
                 raise ValueError("idempotency_key cannot be empty")
             return request_local_pa(
                 ctx.settings,
                 "POST",
-                f"/api/fleet/dispatch-jobs/{dispatch_id}/cancel",
+                (
+                    f"/api/fleet/instances/{authority_instance_id}/dispatch-jobs/{dispatch_id}/cancel"
+                    if authority_instance_id
+                    else f"/api/fleet/dispatch-jobs/{dispatch_id}/cancel"
+                ),
                 json={"idempotency_key": key},
+            )
+
+        @mcp.tool()
+        def prompt_dispatch_session(
+            dispatch_id: str,
+            message: str,
+            idempotency_key: str,
+            action: Literal["append", "prepend", "interrupt"] = "append",
+            authority_instance_id: str | None = None,
+        ) -> dict:
+            """Durably prompt the live session linked to a dispatch without exposing CSRF state."""
+            key = idempotency_key.strip()
+            if not key:
+                raise ValueError("idempotency_key cannot be empty")
+            path = (
+                f"/api/fleet/instances/{authority_instance_id}/dispatch-jobs/{dispatch_id}/prompt"
+                if authority_instance_id
+                else f"/api/fleet/dispatch-jobs/{dispatch_id}/prompt"
+            )
+            return request_local_pa(
+                ctx.settings,
+                "POST",
+                path,
+                json={
+                    "message": message,
+                    "action": action,
+                    "idempotency_key": key,
+                },
             )

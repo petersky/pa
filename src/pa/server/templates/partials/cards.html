@@ -7,10 +7,24 @@
       card_projects.get(card.id),
       card_sessions.get(card.id),
       movable=true,
-      lanes=lanes
+      lanes=lanes,
+      title_only=lane and lane.value == 'done'
     ) }}
   {% endfor %}
 </div>
+{% if done_show_more_query %}
+<div class="done-list-actions">
+  <span class="muted">Showing {{ done_visible }} of {{ done_total }}</span>
+  <button type="button"
+          class="ghost"
+          data-done-show-more
+          hx-get="/partials/cards?{{ done_show_more_query }}"
+          hx-target="closest .board-column-body"
+          hx-swap="innerHTML">
+    Show {{ done_show_more_count }} more
+  </button>
+</div>
+{% endif %}
 {% else %}
 <div class="empty-state compact-empty">
   <h3>No cards here</h3>

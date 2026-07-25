@@ -74,10 +74,17 @@ class OpenAPIContractTests(TestCase):
             "#/components/schemas/DispatchAdmission",
         )
         self.assertIn("409", operation["responses"])
+        self.assertIn({"instanceBearer": []}, operation["security"])
+        prompt = self.schema["paths"]["/api/fleet/dispatch-jobs/{dispatch_id}/prompt"][
+            "post"
+        ]
+        self.assertIn({"instanceBearer": []}, prompt["security"])
 
-    def test_documented_curl_example_is_redacted_and_uses_required_headers(self) -> None:
+    def test_documented_http_helper_is_redacted_and_avoids_token_scraping(self) -> None:
         docs = (Path(__file__).parents[1] / "docs" / "API.md").read_text()
-        self.assertIn('X-CSRF-Token: $CSRF_TOKEN', docs)
-        self.assertIn("Idempotency-Key: dispatch-2026-07-24-001", docs)
-        self.assertIn("password=REDACTED", docs)
+        self.assertIn("from pa.http_client import PAClient", docs)
+        self.assertIn('idempotency_key="dispatch-2026-07-24-001"', docs)
+        self.assertIn('pa.login("operator", "REDACTED")', docs)
+        self.assertIn("direct cookie/token scraping is unsupported", docs)
+        self.assertNotIn("awk '$6", docs)
         self.assertNotIn("PA_SYNC_TOKEN", docs)

@@ -21,13 +21,17 @@ from pa.execution.dispatch import (
 from pa.modules.fleet import (
     DispatchCompletionBody,
     DispatchControlBody,
+    DispatchFollowupBody,
     DispatchMaterializeBody,
+    RemoteAgentStartBody,
     _assert_dispatch_sync_health,
     _process_remote_dispatch,
     cancel_dispatch,
     complete_dispatch,
     materialize_dispatch,
+    prompt_dispatch_session,
     retry_dispatch,
+    start_remote_agent_work,
 )
 from pa.pr_supervisor.models import PRWatch
 from pa.sync.event_log import EventLog
@@ -45,6 +49,87 @@ def request_for(settings: Settings, store: MagicMock, services: dict | None = No
     request.app.state.ctx = ctx
     request.headers = {}
     return request
+
+
+class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
+    async def test_start_routes_to_explicit_peer_authority(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                data_dir=Path(tmp),
+                instance_id="macbook",
+                instance_url="http://macbook:8080",
+            )
+            request = request_for(settings, MagicMock(), {})
+            request.state.instance_authenticated = False
+            forwarded = {"accepted": True, "dispatch_id": "dispatch-1"}
+            with (
+                patch("pa.modules.fleet.require_user"),
+                patch(
+                    "pa.modules.fleet._peer_authority_json",
+                    AsyncMock(return_value=forwarded),
+                ) as proxy,
+            ):
+                result = await start_remote_agent_work(
+                    request,
+                    "target",
+                    RemoteAgentStartBody(
+                        authority_instance_id="monica",
+                        card_id="card-1",
+                        message="work",
+                        idempotency_key="start-1",
+                    ),
+                )
+            self.assertEqual(result, forwarded)
+            self.assertEqual(proxy.await_args.args[1], "monica")
+            self.assertEqual(
+                proxy.await_args.kwargs["body"]["authority_instance_id"], "monica"
+            )
+
+    async def test_linked_followup_is_idempotent_at_authority(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="monica")
+            ledger = DispatchStore(Path(tmp))
+            record = DispatchRecord(
+                dispatch_id="dispatch-1",
+                mutation_id="mutation-1",
+                authority_instance_id="monica",
+                authority_url="http://monica:8080",
+                target_instance_id="target",
+                session_id="session-1",
+                state="running",
+            )
+            ledger.put(record)
+            request = request_for(settings, MagicMock(), {"dispatch_store": ledger})
+            request.state.instance_authenticated = True
+            acknowledged = {
+                "accepted": True,
+                "session_id": "session-1",
+                "prompt_id": "prompt-1",
+                "duplicate": False,
+            }
+            with patch(
+                "pa.modules.fleet._peer_agent_json",
+                AsyncMock(return_value=acknowledged),
+            ) as peer:
+                first = await prompt_dispatch_session(
+                    request,
+                    "dispatch-1",
+                    DispatchFollowupBody(
+                        message="continue", idempotency_key="followup-1"
+                    ),
+                )
+                repeated = await prompt_dispatch_session(
+                    request,
+                    "dispatch-1",
+                    DispatchFollowupBody(
+                        message="continue", idempotency_key="followup-1"
+                    ),
+                )
+            self.assertTrue(first["accepted"])
+            self.assertTrue(repeated["duplicate"])
+            self.assertEqual(peer.await_count, 1)
+            persisted = DispatchStore(Path(tmp)).get("dispatch-1")
+            self.assertNotIn("continue", str(persisted.followup_operations))
 
 
 class MaterializationTests(unittest.TestCase):
@@ -852,6 +937,79 @@ class EventLogMergeTests(unittest.TestCase):
             # Parent hashes are sufficient for proving deterministic merge encoding.
             first = log.merge_heads("default", "b" * 64, "a" * 64, "ignored")
             second = other.merge_heads("default", "a" * 64, "b" * 64, "other")
+            self.assertEqual(first.hash, second.hash)
+
+    def test_metadata_resolution_is_deterministic_for_reversed_heads(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            objects = ObjectStore(root / "objects")
+            left = EventLog(objects, root / "left", "left")
+            right = EventLog(objects, root / "right", "right")
+            first_merger = EventLog(objects, root / "first", "first")
+            second_merger = EventLog(objects, root / "second", "second")
+            _, base = left.append_event(
+                CardEvent(
+                    type=EventType.CARD_CREATED,
+                    realm_id="default",
+                    card_id="card-1",
+                    author_principal="test",
+                    author_instance="left",
+                    payload=Card(id="card-1", title="base").model_dump(mode="json"),
+                )
+            )
+            right.advance_ref("default", base.hash)
+            _, left_head = left.append_event(
+                CardEvent(
+                    type=EventType.CARD_UPDATED,
+                    realm_id="default",
+                    card_id="card-1",
+                    author_principal="test",
+                    author_instance="left",
+                    payload={
+                        "title": "left",
+                        "updated_at": "2026-07-24T12:00:00+00:00",
+                    },
+                )
+            )
+            _, right_head = right.append_event(
+                CardEvent(
+                    type=EventType.CARD_UPDATED,
+                    realm_id="default",
+                    card_id="card-1",
+                    author_principal="test",
+                    author_instance="right",
+                    payload={
+                        "body": "right",
+                        "updated_at": "2026-07-24T13:00:00Z",
+                    },
+                )
+            )
+            compatible, first_health = first_merger.compatible_histories(
+                left_head.hash, right_head.hash
+            )
+            reverse_compatible, second_health = second_merger.compatible_histories(
+                right_head.hash, left_head.hash
+            )
+            self.assertTrue(compatible, first_health)
+            self.assertTrue(reverse_compatible, second_health)
+            self.assertEqual(
+                first_health["automatic_resolutions"][0]["value"],
+                "2026-07-24T13:00:00Z",
+            )
+            first = first_merger.merge_heads(
+                "default",
+                left_head.hash,
+                right_head.hash,
+                "sync:auto",
+                automatic_resolutions=first_health["automatic_resolutions"],
+            )
+            second = second_merger.merge_heads(
+                "default",
+                right_head.hash,
+                left_head.hash,
+                "sync:auto",
+                automatic_resolutions=second_health["automatic_resolutions"],
+            )
             self.assertEqual(first.hash, second.hash)
 
     def test_three_instance_disjoint_histories_converge_without_operator_conflict(
