@@ -1,196 +1,220 @@
-<article class="card-detail" data-card-detail data-card-id="{{ card.id }}">
+<article class="card-detail" data-card-detail data-card-id="{{ card.id }}" data-card-realm="{{ card.realm_id }}">
   <header class="card-detail-header">
-    <div class="card-detail-heading">
-      <div class="compact-card-meta">
-        <span class="badge">{{ card.kind.value }}</span>
-        <form class="inline-select-form status-{{ card.lane.value }}"
-              hx-post="/partials/cards/{{ card.id }}?realm={{ card.realm_id }}"
-              hx-target="#card-detail-dialog-content"
-              hx-swap="innerHTML"
-              hx-trigger="change">
-          <input type="hidden" name="csrf" value="{{ csrf_token }}">
-          <label class="sr-only" for="card-lane-{{ card.id }}">Lane</label>
-          <select id="card-lane-{{ card.id }}" name="lane" aria-label="Change lane">
-            {% for lane in lanes %}<option value="{{ lane.value }}" {% if card.lane == lane %}selected{% endif %}>{{ lane.value | capitalize }}</option>{% endfor %}
-          </select>
-        </form>
-        {% if card.summary_stale %}<span class="summary-stale">Summary needs review</span>{% endif %}
+    <div class="card-detail-header-main">
+      <div class="card-detail-heading">
+        <div class="compact-card-meta">
+          <span class="badge">{{ card.kind.value }}</span>
+          <form class="inline-select-form status-{{ card.lane.value }}"
+                hx-post="/partials/cards/{{ card.id }}?realm={{ card.realm_id }}"
+                hx-target="#card-detail-dialog-content"
+                hx-swap="innerHTML"
+                hx-trigger="change">
+            <input type="hidden" name="csrf" value="{{ csrf_token }}">
+            <label class="sr-only" for="card-lane-{{ card.id }}">Lane</label>
+            <select id="card-lane-{{ card.id }}" name="lane" aria-label="Change lane">
+              {% for lane in lanes %}<option value="{{ lane.value }}" {% if card.lane == lane %}selected{% endif %}>{{ lane.value | capitalize }}</option>{% endfor %}
+            </select>
+          </form>
+          {% if project %}<a href="/projects?realm={{ card.realm_id }}&project={{ project.id }}">{{ project.title }}</a>{% endif %}
+        </div>
+        <div class="inline-edit-field inline-edit-title" data-inline-edit-field>
+          <h2 id="card-detail-title" tabindex="-1">
+            <button type="button" class="inline-edit-trigger" data-inline-edit-open aria-label="Edit title">{{ card.title }}</button>
+          </h2>
+          <form class="inline-edit-form" data-inline-edit-form hidden
+                hx-post="/partials/cards/{{ card.id }}?realm={{ card.realm_id }}"
+                hx-target="#card-detail-dialog-content"
+                hx-swap="innerHTML">
+            <input type="hidden" name="csrf" value="{{ csrf_token }}">
+            <label class="sr-only" for="card-title-input-{{ card.id }}">Title</label>
+            <input id="card-title-input-{{ card.id }}" type="text" name="title" value="{{ card.title }}" required data-inline-edit-input>
+            <div class="inline-edit-actions">
+              <button type="submit" class="small">Save</button>
+              <button type="button" class="ghost small" data-inline-edit-cancel>Cancel</button>
+            </div>
+          </form>
+        </div>
       </div>
-      <div class="inline-edit-field inline-edit-title" data-inline-edit-field>
-        <h2 id="card-detail-title" tabindex="-1">
-          <button type="button" class="inline-edit-trigger" data-inline-edit-open aria-label="Edit title">{{ card.title }}</button>
-        </h2>
-        <form class="inline-edit-form" data-inline-edit-form hidden
-              hx-post="/partials/cards/{{ card.id }}?realm={{ card.realm_id }}"
-              hx-target="#card-detail-dialog-content"
-              hx-swap="innerHTML">
-          <input type="hidden" name="csrf" value="{{ csrf_token }}">
-          <label class="sr-only" for="card-title-input-{{ card.id }}">Title</label>
-          <input id="card-title-input-{{ card.id }}" type="text" name="title" value="{{ card.title }}" required data-inline-edit-input>
-          <div class="inline-edit-actions">
-            <button type="submit" class="small">Save</button>
-            <button type="button" class="ghost small" data-inline-edit-cancel>Cancel</button>
-          </div>
-        </form>
+      <div class="card-detail-actions">
+        <button type="button" class="ghost danger"
+                hx-delete="/partials/cards/{{ card.id }}?realm={{ card.realm_id }}"
+                hx-target="#card-detail-dialog-content"
+                hx-confirm="Delete this card permanently?">Delete</button>
+        <button type="button" class="ghost" data-card-dialog-close aria-label="Close card details">Close</button>
       </div>
-      {% if project %}<a href="/projects?realm={{ card.realm_id }}&project={{ project.id }}">{{ project.title }}</a>{% endif %}
     </div>
-    <div class="card-detail-actions">
-      <button type="button" class="ghost danger"
-              hx-delete="/partials/cards/{{ card.id }}?realm={{ card.realm_id }}"
-              hx-target="#card-detail-dialog-content"
-              hx-confirm="Delete this card permanently?">Delete</button>
-      <button type="button" class="ghost" data-card-dialog-close aria-label="Close card details">Close</button>
+
+    {% if card.lane.value == 'waiting' or card.summary_stale or critical_watch %}
+    <div class="card-critical-status" role="status" aria-live="polite">
+      {% if card.lane.value == 'waiting' %}<span><strong>Blocked:</strong> this card is waiting.</span>{% endif %}
+      {% if card.summary_stale %}<span><strong>Summary needs review.</strong></span>{% endif %}
+      {% if critical_watch %}<span><strong>Pull request:</strong> {{ critical_watch.last_error or 'supervision is blocked.' }}</span>{% endif %}
     </div>
+    {% endif %}
+
+    <div class="card-detail-tabs"
+         role="tablist"
+         aria-label="Card detail sections"
+         data-card-tab-list>
+      <button type="button"
+              id="card-tab-summary-{{ card.id }}"
+              class="card-detail-tab"
+              role="tab"
+              aria-selected="true"
+              aria-controls="card-panel-summary-{{ card.id }}"
+              tabindex="0"
+              data-card-tab="summary">Summary</button>
+      <button type="button"
+              id="card-tab-agent-{{ card.id }}"
+              class="card-detail-tab"
+              role="tab"
+              aria-selected="false"
+              aria-controls="card-panel-agent-{{ card.id }}"
+              tabindex="-1"
+              data-card-tab="agent">Agent</button>
+      <button type="button"
+              id="card-tab-activity-{{ card.id }}"
+              class="card-detail-tab"
+              role="tab"
+              aria-selected="false"
+              aria-controls="card-panel-activity-{{ card.id }}"
+              tabindex="-1"
+              data-card-tab="activity">Activity</button>
+    </div>
+    <p class="sr-only" aria-live="polite" data-card-tab-announcer></p>
   </header>
 
-  <section class="card-detail-section" aria-labelledby="card-summary-title">
-    <div class="section-heading-inline">
-      <h3 id="card-summary-title">Summary</h3>
-      <span class="muted">{{ card.summary_source.value }}{% if card.summary_updated_at %} · {{ card.summary_updated_at.strftime('%b %-d, %Y') }}{% endif %}</span>
-    </div>
-    <div class="inline-edit-field" data-inline-edit-field>
-      <div class="inline-edit-trigger inline-edit-block" data-inline-edit-open tabindex="0" aria-label="Edit summary">
-        <span class="card-markdown card-detail-summary" data-card-markdown>
-          <span hidden data-card-markdown-source>{{ card.summary | tojson }}</span>
-        </span>
-      </div>
-      <form class="inline-edit-form" data-inline-edit-form hidden
-            hx-post="/partials/cards/{{ card.id }}?realm={{ card.realm_id }}"
-            hx-target="#card-detail-dialog-content"
-            hx-swap="innerHTML">
-        <input type="hidden" name="csrf" value="{{ csrf_token }}">
-        <label class="sr-only" for="card-summary-input-{{ card.id }}">Summary</label>
-        <textarea id="card-summary-input-{{ card.id }}" name="summary" rows="4" data-inline-edit-input>{{ card.summary }}</textarea>
-        <small>Saving a summary records manual provenance.</small>
-        <div class="inline-edit-actions">
-          <button type="submit" class="small">Save</button>
-          <button type="button" class="ghost small" data-inline-edit-cancel>Cancel</button>
+  <div class="card-detail-tab-content">
+    <section id="card-panel-summary-{{ card.id }}"
+             class="card-detail-panel"
+             role="tabpanel"
+             tabindex="0"
+             aria-labelledby="card-tab-summary-{{ card.id }}"
+             data-card-tab-panel="summary">
+      <section class="card-detail-section" aria-labelledby="card-summary-title">
+        <div class="section-heading-inline">
+          <h3 id="card-summary-title">Summary</h3>
+          <span class="muted">{{ card.summary_source.value }}{% if card.summary_updated_at %} · {{ card.summary_updated_at.strftime('%b %-d, %Y') }}{% endif %}</span>
         </div>
-      </form>
-    </div>
-  </section>
+        <div class="inline-edit-field" data-inline-edit-field>
+          <div class="inline-edit-trigger inline-edit-block" data-inline-edit-open tabindex="0" aria-label="Edit summary">
+            <span class="card-markdown card-detail-summary" data-card-markdown>
+              <span hidden data-card-markdown-source>{{ card.summary | tojson }}</span>
+            </span>
+          </div>
+          <form class="inline-edit-form" data-inline-edit-form hidden
+                hx-post="/partials/cards/{{ card.id }}?realm={{ card.realm_id }}"
+                hx-target="#card-detail-dialog-content"
+                hx-swap="innerHTML">
+            <input type="hidden" name="csrf" value="{{ csrf_token }}">
+            <label class="sr-only" for="card-summary-input-{{ card.id }}">Summary</label>
+            <textarea id="card-summary-input-{{ card.id }}" name="summary" rows="4" data-inline-edit-input>{{ card.summary }}</textarea>
+            <small>Saving a summary records manual provenance.</small>
+            <div class="inline-edit-actions">
+              <button type="submit" class="small">Save</button>
+              <button type="button" class="ghost small" data-inline-edit-cancel>Cancel</button>
+            </div>
+          </form>
+        </div>
+      </section>
 
-  <section class="card-detail-section" aria-labelledby="card-details-title">
-    <h3 id="card-details-title">Details</h3>
-    <div class="inline-edit-field" data-inline-edit-field>
-      <div class="inline-edit-trigger inline-edit-block" data-inline-edit-open tabindex="0" aria-label="Edit details">
-        {% if card.body %}
-        <span class="card-markdown card-detail-body" data-card-markdown>
-          <span hidden data-card-markdown-source>{{ card.body | tojson }}</span>
-        </span>
-        {% else %}<span class="muted">No additional details. Click to add them.</span>{% endif %}
-      </div>
-      <form class="inline-edit-form markdown-editor" data-inline-edit-form data-markdown-editor hidden
-            hx-post="/partials/cards/{{ card.id }}?realm={{ card.realm_id }}"
-            hx-target="#card-detail-dialog-content"
-            hx-swap="innerHTML">
-        <input type="hidden" name="csrf" value="{{ csrf_token }}">
-        <div class="markdown-editor-tabs" role="tablist" aria-label="Details editor mode">
-          <button type="button" class="markdown-editor-tab" role="tab" aria-selected="true" data-markdown-tab="edit">Edit</button>
-          <button type="button" class="markdown-editor-tab ghost" role="tab" aria-selected="false" data-markdown-tab="preview">Preview</button>
+      <section class="card-detail-section" aria-labelledby="card-details-title">
+        <h3 id="card-details-title">Description</h3>
+        <div class="inline-edit-field" data-inline-edit-field>
+          <div class="inline-edit-trigger inline-edit-block" data-inline-edit-open tabindex="0" aria-label="Edit description">
+            {% if card.body %}
+            <span class="card-markdown card-detail-body" data-card-markdown>
+              <span hidden data-card-markdown-source>{{ card.body | tojson }}</span>
+            </span>
+            {% else %}<span class="muted">No description. Click to add one.</span>{% endif %}
+          </div>
+          <form class="inline-edit-form markdown-editor" data-inline-edit-form data-markdown-editor hidden
+                hx-post="/partials/cards/{{ card.id }}?realm={{ card.realm_id }}"
+                hx-target="#card-detail-dialog-content"
+                hx-swap="innerHTML">
+            <input type="hidden" name="csrf" value="{{ csrf_token }}">
+            <div class="markdown-editor-tabs" role="tablist" aria-label="Description editor mode">
+              <button type="button" class="markdown-editor-tab" role="tab" aria-selected="true" data-markdown-tab="edit">Edit</button>
+              <button type="button" class="markdown-editor-tab ghost" role="tab" aria-selected="false" data-markdown-tab="preview">Preview</button>
+            </div>
+            <div role="tabpanel" data-markdown-panel="edit">
+              <label class="sr-only" for="card-body-input-{{ card.id }}">Description</label>
+              <textarea id="card-body-input-{{ card.id }}" name="body" rows="10" data-inline-edit-input data-markdown-input>{{ card.body }}</textarea>
+            </div>
+            <div class="card-markdown markdown-editor-preview" role="tabpanel" data-markdown-panel="preview" data-markdown-preview hidden></div>
+            <div class="inline-edit-actions">
+              <button type="submit" class="small">Save</button>
+              <button type="button" class="ghost small" data-inline-edit-cancel>Cancel</button>
+            </div>
+          </form>
         </div>
-        <div role="tabpanel" data-markdown-panel="edit">
-          <label class="sr-only" for="card-body-input-{{ card.id }}">Details</label>
-          <textarea id="card-body-input-{{ card.id }}" name="body" rows="10" data-inline-edit-input data-markdown-input>{{ card.body }}</textarea>
-        </div>
-        <div class="card-markdown markdown-editor-preview" role="tabpanel" data-markdown-panel="preview" data-markdown-preview hidden></div>
-        <div class="inline-edit-actions">
-          <button type="submit" class="small">Save</button>
-          <button type="button" class="ghost small" data-inline-edit-cancel>Cancel</button>
-        </div>
-      </form>
-    </div>
-  </section>
+      </section>
 
-  <div class="card-detail-grid">
-    <section class="card-detail-section" aria-labelledby="card-metadata-title">
-      <h3 id="card-metadata-title">Metadata</h3>
-      <dl class="detail-list">
-        <div><dt>Owner</dt><dd>{{ card.owner_principal or 'Unassigned' }}</dd></div>
-        <div><dt>Instance</dt><dd>{{ card.preferred_instance or 'Any eligible instance' }}</dd></div>
-        <div><dt>Updated</dt><dd><time datetime="{{ card.updated_at.isoformat() }}">{{ card.updated_at.strftime('%Y-%m-%d %H:%M') }}</time></dd></div>
-        <div><dt>Created</dt><dd><time datetime="{{ card.created_at.isoformat() }}">{{ card.created_at.strftime('%Y-%m-%d %H:%M') }}</time></dd></div>
-        {% if card.tags %}<div><dt>Tags</dt><dd>{{ card.tags | join(', ') }}</dd></div>{% endif %}
-      </dl>
+      <div class="card-detail-grid">
+        <section class="card-detail-section" aria-labelledby="card-metadata-title">
+          <h3 id="card-metadata-title">Metadata</h3>
+          <dl class="detail-list">
+            <div><dt>Owner</dt><dd>{{ card.owner_principal or 'Unassigned' }}</dd></div>
+            <div><dt>Instance</dt><dd>{{ card.preferred_instance or 'Any eligible instance' }}</dd></div>
+            <div><dt>Updated</dt><dd><time datetime="{{ card.updated_at.isoformat() }}">{{ card.updated_at.strftime('%Y-%m-%d %H:%M') }}</time></dd></div>
+            <div><dt>Created</dt><dd><time datetime="{{ card.created_at.isoformat() }}">{{ card.created_at.strftime('%Y-%m-%d %H:%M') }}</time></dd></div>
+            {% if card.tags %}<div><dt>Tags</dt><dd>{{ card.tags | join(', ') }}</dd></div>{% endif %}
+          </dl>
+        </section>
+
+        <section class="card-detail-section" aria-labelledby="card-related-title">
+          <h3 id="card-related-title">Related work</h3>
+          {% if parent %}<p>Parent: <a href="?realm={{ parent.realm_id }}&card={{ parent.id }}&tab=summary" data-card-detail-link data-card-id="{{ parent.id }}" data-card-realm="{{ parent.realm_id }}">{{ parent.title }}</a></p>{% endif %}
+          {% if project and project.repos %}
+          <p class="muted">Repositories</p>
+          <ul class="detail-link-list">
+            {% for repo in project.repos %}<li><a href="{{ repo.url }}" target="_blank" rel="noopener">{{ repo.url }}</a>{% if repo.branch %} · {{ repo.branch }}{% endif %}</li>{% endfor %}
+          </ul>
+          {% endif %}
+          {% if children %}
+          <ul class="detail-link-list">
+            {% for child in children %}<li><a href="?realm={{ child.realm_id }}&card={{ child.id }}&tab=summary" data-card-detail-link data-card-id="{{ child.id }}" data-card-realm="{{ child.realm_id }}">{{ child.title }}</a></li>{% endfor %}
+          </ul>
+          {% elif not parent %}<p class="muted">No parent or dependent cards linked.</p>{% endif %}
+        </section>
+      </div>
+
+      {% if pr_watches %}
+      <section class="card-detail-section" aria-labelledby="card-artifacts-title">
+        <div class="section-heading-inline"><h3 id="card-artifacts-title">Artifacts &amp; pull requests</h3><a href="/pull-requests?realm={{ card.realm_id }}&watch={{ pr_watches[0].id }}">Audit history</a></div>
+        <div class="artifact-list">
+          {% for watch in pr_watches %}
+          <article>
+            <a href="{{ watch.pr_url }}" target="_blank" rel="noopener">{{ watch.repository }}#{{ watch.pr_number }}</a>
+            <span class="badge">{{ watch.status.value }}</span>
+            {% if watch.last_error %}<p class="danger">{{ watch.last_error }}</p>{% endif %}
+          </article>
+          {% endfor %}
+        </div>
+      </section>
+      {% endif %}
     </section>
 
-    <section class="card-detail-section" aria-labelledby="card-related-title">
-      <h3 id="card-related-title">Related work</h3>
-      {% if parent %}<p>Parent: <a href="?realm={{ parent.realm_id }}&card={{ parent.id }}" data-card-detail-link data-card-id="{{ parent.id }}" data-card-realm="{{ parent.realm_id }}">{{ parent.title }}</a></p>{% endif %}
-      {% if project and project.repos %}
-      <p class="muted">Repositories</p>
-      <ul class="detail-link-list">
-        {% for repo in project.repos %}<li><a href="{{ repo.url }}" target="_blank" rel="noopener">{{ repo.url }}</a>{% if repo.branch %} · {{ repo.branch }}{% endif %}</li>{% endfor %}
-      </ul>
-      {% endif %}
-      {% if children %}
-      <ul class="detail-link-list">
-        {% for child in children %}<li><a href="?realm={{ child.realm_id }}&card={{ child.id }}" data-card-detail-link data-card-id="{{ child.id }}" data-card-realm="{{ child.realm_id }}">{{ child.title }}</a></li>{% endfor %}
-      </ul>
-      {% elif not parent %}<p class="muted">No parent or dependent cards linked.</p>{% endif %}
+    <section id="card-panel-agent-{{ card.id }}"
+             class="card-detail-panel"
+             role="tabpanel"
+             tabindex="0"
+             aria-labelledby="card-tab-agent-{{ card.id }}"
+             data-card-tab-panel="agent"
+             data-card-tab-src="/partials/cards/{{ card.id }}/agent?realm={{ card.realm_id }}"
+             hidden>
+      <div class="card-tab-state" role="status"><p>Agent details load when this tab is selected.</p></div>
+    </section>
+
+    <section id="card-panel-activity-{{ card.id }}"
+             class="card-detail-panel"
+             role="tabpanel"
+             tabindex="0"
+             aria-labelledby="card-tab-activity-{{ card.id }}"
+             data-card-tab-panel="activity"
+             data-card-tab-src="/partials/cards/{{ card.id }}/activity?realm={{ card.realm_id }}"
+             hidden>
+      <div class="card-tab-state" role="status"><p>Activity loads when this tab is selected.</p></div>
     </section>
   </div>
-
-  <section class="card-detail-section" aria-labelledby="card-activity-title">
-    <h3 id="card-activity-title">Activity</h3>
-    <ol class="activity-timeline">
-      <li><span>Card created</span><time datetime="{{ card.created_at.isoformat() }}">{{ card.created_at.strftime('%b %-d, %H:%M') }}</time></li>
-      {% if card.updated_at != card.created_at %}<li><span>Card updated</span><time datetime="{{ card.updated_at.isoformat() }}">{{ card.updated_at.strftime('%b %-d, %H:%M') }}</time></li>{% endif %}
-      {% for entry in card_knowledge %}<li><span>{{ entry.summary }}</span><time datetime="{{ entry.created_at.isoformat() }}">{{ entry.created_at.strftime('%b %-d, %H:%M') }}</time></li>{% endfor %}
-    </ol>
-  </section>
-
-  {% if pr_watches %}
-  <section class="card-detail-section" aria-labelledby="card-artifacts-title">
-    <div class="section-heading-inline"><h3 id="card-artifacts-title">Artifacts &amp; pull requests</h3><a href="/pull-requests?realm={{ card.realm_id }}&watch={{ pr_watches[0].id }}">Audit history</a></div>
-    <div class="artifact-list">
-      {% for watch in pr_watches %}
-      <article>
-        <a href="{{ watch.pr_url }}" target="_blank" rel="noopener">{{ watch.repository }}#{{ watch.pr_number }}</a>
-        <span class="badge">{{ watch.status.value }}</span>
-        {% if watch.last_error %}<p class="danger">{{ watch.last_error }}</p>{% endif %}
-      </article>
-      {% endfor %}
-    </div>
-  </section>
-  {% endif %}
-
-  <section class="card-detail-section" aria-labelledby="card-agent-title">
-    <div class="section-heading-inline">
-      <div><h3 id="card-agent-title">Agent</h3><p class="muted">Selecting a card never starts work. Start or resume explicitly.</p></div>
-      {% if agent_enabled | default(true) %}
-      <button type="button" data-card-agent-start>{{ 'Resume agent' if current_session else 'Start agent' }}</button>
-      {% endif %}
-    </div>
-    {% if related_sessions %}
-    <ul class="detail-link-list session-links">
-      {% for session in related_sessions %}<li><a href="/agent?session={{ session.id }}">{{ session.title or session.label or 'Card agent' }}</a> <span class="status status-{{ session.status }}">{{ session.status }}</span></li>{% endfor %}
-    </ul>
-    {% endif %}
-    {% if agent_enabled | default(true) %}
-    <div id="card-agent-pane-{{ card.id }}"
-         class="card-agent-pane"
-         data-card-agent-pane
-         hx-preserve="true"
-         hidden>
-      {% with
-          session_id=current_session.id if current_session else '',
-          create_label='card:' ~ card.id,
-          card_id=card.id,
-          show_model=true,
-          show_mode=true,
-          show_thinking=false,
-          show_system_prompts=false,
-          show_queue=false,
-          show_metrics=false,
-          compact=true,
-          auto_start=false
-      %}
-        {% include "partials/agent/chat-widget.html" %}
-      {% endwith %}
-    </div>
-    {% endif %}
-  </section>
-
 </article>

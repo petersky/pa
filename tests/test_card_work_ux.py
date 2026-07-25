@@ -472,19 +472,35 @@ class CoreWorkUiRouteTests(unittest.TestCase):
     def test_detail_agent_is_explicit_and_responsive_breakpoints_exist(self) -> None:
         root = Path(__file__).parents[1] / "src" / "pa" / "server"
         detail = (root / "templates" / "partials" / "card-detail.html").read_text()
+        agent_detail = (
+            root / "templates" / "partials" / "card-detail-agent.html"
+        ).read_text()
+        activity_detail = (
+            root / "templates" / "partials" / "card-detail-activity.html"
+        ).read_text()
         script = (root / "static" / "js" / "spa.js").read_text()
         markdown = (root / "static" / "js" / "agent-chat.js").read_text()
         css = (root / "static" / "style.css").read_text()
 
-        self.assertIn("data-card-agent-start", detail)
-        self.assertIn("auto_start=false", detail)
-        self.assertIn('hx-preserve="true"', detail)
-        self.assertIn("Selecting a card never starts work", detail)
+        self.assertIn("data-card-agent-start", agent_detail)
+        self.assertIn("auto_start=false", agent_detail)
+        self.assertIn('hx-preserve="true"', agent_detail)
+        self.assertIn("Selecting a card never starts work", agent_detail)
         self.assertIn("data-inline-edit-open", detail)
         self.assertIn('data-markdown-tab="edit"', detail)
         self.assertIn('data-markdown-tab="preview"', detail)
+        self.assertIn('role="tablist"', detail)
+        self.assertIn('data-card-tab="summary"', detail)
+        self.assertIn('data-card-tab="agent"', detail)
+        self.assertIn('data-card-tab="activity"', detail)
+        self.assertIn('data-card-tab-src="/partials/cards/', detail)
+        self.assertIn("data-card-activity-filter", activity_detail)
         self.assertNotIn("card-edit-surface", detail)
-        self.assertIn("history.pushState({ paCard", script)
+        self.assertIn("paCardDepth", script)
+        self.assertIn('url.searchParams.set("tab", name)', script)
+        self.assertIn("loadCardTab", script)
+        self.assertIn('event.key === "Home"', script)
+        self.assertIn('event.key === "End"', script)
         self.assertIn("renderCardMarkdown", script)
         self.assertIn("renderMarkdownInto(preview", script)
         self.assertIn('ADD_TAGS: ["audio", "iframe", "picture", "source", "track", "video"]', markdown)
@@ -493,7 +509,67 @@ class CoreWorkUiRouteTests(unittest.TestCase):
         self.assertIn("@media (max-width: 1000px)", css)
         self.assertIn("@media (max-width: 700px)", css)
         self.assertIn("width: 100vw", css)
+        self.assertIn("position: sticky", css)
+        self.assertIn("100dvh", css)
+        self.assertIn("env(safe-area-inset-bottom)", css)
         self.assertIn("prefers-reduced-motion", css)
+
+    def test_detail_tabs_lazy_load_agent_and_ordered_activity(self) -> None:
+        with TestClient(self.app) as client:
+            card = self.app.state.ctx.store.create_card(
+                CardCreate(
+                    title="A very long card title " * 12,
+                    body="Summary loads before execution details.",
+                    lane=CardLane.WAITING,
+                )
+            )
+            self.app.state.ctx.store.save_session(
+                AgentSession(
+                    agent_name="codex",
+                    card_id=card.id,
+                    title="Lazy agent session",
+                    status="working",
+                    model_id="gpt-5",
+                    mode_id="code",
+                    cwd="/worktrees/card-tabs",
+                    config_json={
+                        "execution_context": {
+                            "instance": {"name": "macmini"},
+                            "approval_policy": "on-request",
+                            "repositories": [
+                                {
+                                    "repository_url": "https://github.com/petersky/pa",
+                                    "branch": "pa/card-tabs",
+                                    "base_sha": "a" * 40,
+                                }
+                            ],
+                        }
+                    },
+                )
+            )
+
+            summary = client.get(f"/partials/cards/{card.id}/detail")
+            agent = client.get(f"/partials/cards/{card.id}/agent")
+            activity = client.get(f"/partials/cards/{card.id}/activity")
+            missing_agent = client.get("/partials/cards/missing/agent")
+            missing_activity = client.get("/partials/cards/missing/activity")
+
+        self.assertEqual(summary.status_code, 200)
+        self.assertIn('data-card-tab="summary"', summary.text)
+        self.assertIn('data-card-tab-panel="agent"', summary.text)
+        self.assertIn("Blocked:", summary.text)
+        self.assertNotIn("Lazy agent session", summary.text)
+        self.assertEqual(agent.status_code, 200)
+        self.assertIn("Lazy agent session", agent.text)
+        self.assertIn("macmini", agent.text)
+        self.assertIn("gpt-5", agent.text)
+        self.assertIn("pa/card-tabs", agent.text)
+        self.assertEqual(activity.status_code, 200)
+        self.assertIn("Agent session working", activity.text)
+        self.assertIn('data-activity-kind="card"', activity.text)
+        self.assertIn('data-activity-kind="agent"', activity.text)
+        self.assertEqual(missing_agent.status_code, 404)
+        self.assertEqual(missing_activity.status_code, 404)
 
     def test_core_icon_controls_and_async_surfaces_have_accessible_names(self) -> None:
         root = Path(__file__).parents[1] / "src" / "pa" / "server" / "templates"
