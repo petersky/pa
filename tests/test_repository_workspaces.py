@@ -640,6 +640,47 @@ def test_workspace_reprovision_preserves_remote_authority(tmp_path: Path) -> Non
     assert session.config_json["execution_context"]["instance"]["id"] == "instance-1"
 
 
+def test_workspace_recovery_rematerializes_cwd_from_data_dir(tmp_path: Path) -> None:
+    workspace_manager, _, _ = manager_for(tmp_path)
+    manager = AgentSessionManager(workspace_manager.settings, workspace_manager.store)
+    stale_cwd = workspace_manager.settings.data_dir / "agent-workspaces" / "stale"
+    stale_cwd.mkdir(parents=True)
+    session = AgentSession(id="recovery-session", agent_name="codex", cwd=str(stale_cwd))
+
+    asyncio.run(
+        manager._prepare_workspace(
+            session, requested_cwd=str(stale_cwd), provider_id="codex"
+        )
+    )
+
+    assert session.cwd != str(stale_cwd)
+    assert Path(session.cwd).is_dir()
+    assert workspace_manager.settings.data_dir not in Path(session.cwd).parents
+
+
+def test_missing_project_records_actionable_recoverable_state(tmp_path: Path) -> None:
+    workspace_manager, _, _ = manager_for(tmp_path)
+    workspace_manager.store.get_project.return_value = None
+    manager = AgentSessionManager(workspace_manager.settings, workspace_manager.store)
+    session = AgentSession(
+        id="recovery-session",
+        agent_name="codex",
+        project_id="missing-project",
+    )
+
+    with pytest.raises(WorkspaceProvisioningError, match="sync or link"):
+        asyncio.run(
+            manager._prepare_workspace(
+                session, requested_cwd=None, provider_id="codex"
+            )
+        )
+
+    state = session.config_json["provisioning"]
+    assert state["retryable"] is True
+    assert state["error_code"] == "project_unavailable_on_instance"
+    assert "Sync or link" in state["action"]
+
+
 def test_agent_session_records_retryable_provisioning_failure(tmp_path: Path) -> None:
     workspace_manager, _, _ = manager_for(tmp_path)
     settings = workspace_manager.settings

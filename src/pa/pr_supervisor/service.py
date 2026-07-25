@@ -24,7 +24,6 @@ from pa.pr_supervisor.gating import (
     redact_external_value,
 )
 from pa.pr_supervisor.github import GitHubClient, GitHubCredentials
-from pa.prompts import RenderedPrompt
 from pa.pr_supervisor.models import (
     GateResult,
     GitHubCapability,
@@ -37,6 +36,8 @@ from pa.pr_supervisor.models import (
     utcnow,
 )
 from pa.pr_supervisor.store import PRSupervisorStore, StaleFenceError
+from pa.prompts import RenderedPrompt
+from pa.repository.workspace import WorkspaceProvisioningError
 
 if TYPE_CHECKING:
     from pa.core.async_runtime import AsyncRuntime
@@ -210,6 +211,13 @@ class ExecutorDispatcher:
                         principal_id=session.principal_id,
                         card_id=watch.card_id or session.card_id,
                         project_id=watch.project_id or session.project_id,
+                    )
+                except WorkspaceProvisioningError as exc:
+                    logger.warning(
+                        "Could not resume executor session %s; "
+                        "workspace will be rematerialized: %s",
+                        session.id,
+                        exc,
                     )
                 except Exception:
                     logger.exception(
@@ -1087,9 +1095,15 @@ class PRSupervisor:
             )
             self._authority_last_success_at = utcnow()
             self._authority_last_error = None
-        except httpx.HTTPError, RuntimeError:
-            self._authority_last_error = "capability heartbeat failed"
-            logger.warning("PR supervisor capability heartbeat failed")
+        except (httpx.HTTPError, RuntimeError) as exc:
+            detail = str(exc).strip()
+            self._authority_last_error = (
+                f"{type(exc).__name__}: {detail}" if detail else type(exc).__name__
+            )[:500]
+            logger.warning(
+                "PR supervisor capability heartbeat failed: %s",
+                self._authority_last_error,
+            )
 
     async def _eligible_capabilities(self, repository: str) -> list[GitHubCapability]:
         authority = self._authority_url()

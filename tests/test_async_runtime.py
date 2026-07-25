@@ -4,6 +4,7 @@ import asyncio
 import threading
 import time
 import unittest
+from unittest.mock import patch
 
 from pa.core.async_runtime import (
     AsyncRuntime,
@@ -46,6 +47,19 @@ class AsyncRuntimeTests(unittest.IsolatedAsyncioTestCase):
         release.set()
         self.assertEqual(await task, "done")
         self.assertLess(unrelated_ms, 25)
+
+    async def test_expected_disk_operation_uses_evidence_based_warning_threshold(
+        self,
+    ) -> None:
+        self.runtime.slow_call_seconds = 0.001
+        with patch("pa.core.async_runtime.logger.warning") as warning:
+            await self.runtime.run_blocking(
+                "sync.object_collect", lambda: time.sleep(0.01)
+            )
+        warning.assert_not_called()
+        metrics = self.runtime.snapshot()["operations"]["sync.object_collect"]
+        self.assertEqual(metrics["completed"], 1)
+        self.assertGreater(metrics["max_runtime_ms"], 1)
 
     async def test_queue_is_bounded(self) -> None:
         release = threading.Event()
