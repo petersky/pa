@@ -293,6 +293,9 @@ class Kernel:
             for router in entry.module.ui_routers():
                 app.include_router(router)
 
+        from pa.openapi import install_openapi_contract
+
+        install_openapi_contract(app)
         self._install_auth_middleware(app)
 
         if self.ctx.settings.debug:

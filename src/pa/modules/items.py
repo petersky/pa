@@ -670,7 +670,7 @@ class ItemsModule(Module):
 
         @mcp.tool()
         def list_items(
-            kind: str | None = None, status: str | None = None
+            kind: ItemKind | None = None, status: ItemStatus | None = None
         ) -> list[dict]:
             """List goals, tasks, projects, and concerns."""
             return request_local_pa(
@@ -683,8 +683,8 @@ class ItemsModule(Module):
         @mcp.tool()
         def list_cards(
             realm: str | None = None,
-            lane: str | None = None,
-            kind: str | None = None,
+            lane: CardLane | None = None,
+            kind: CardKind | None = None,
         ) -> list[dict]:
             """List cards in a realm."""
             return request_local_pa(
@@ -696,10 +696,10 @@ class ItemsModule(Module):
 
         @mcp.tool()
         def create_item(
-            kind: str,
+            kind: ItemKind,
             title: str,
             body: str = "",
-            status: str = "open",
+            status: ItemStatus = ItemStatus.OPEN,
             parent_id: str | None = None,
         ) -> dict:
             """Create a goal, task, project, or concern."""
@@ -714,6 +714,88 @@ class ItemsModule(Module):
                     "status": status,
                     "parent_id": parent_id,
                 },
+            )
+
+        @mcp.tool()
+        def update_item(
+            item_id: str,
+            title: str | None = None,
+            body: str | None = None,
+            status: ItemStatus | None = None,
+            parent_id: str | None = None,
+        ) -> dict | None:
+            """Update an item's mutable fields."""
+            return request_local_pa(
+                ctx.settings,
+                "PATCH",
+                f"/api/items/{item_id}",
+                json={
+                    key: value
+                    for key, value in {
+                        "title": title,
+                        "body": body,
+                        "status": status,
+                        "parent_id": parent_id,
+                    }.items()
+                    if value is not None
+                },
+                allow_not_found=True,
+            )
+
+        @mcp.tool()
+        def create_card(
+            title: str,
+            kind: CardKind = CardKind.TASK,
+            body: str = "",
+            lane: CardLane = CardLane.INBOX,
+            realm: str = "default",
+            parent_id: str | None = None,
+            project_id: str | None = None,
+        ) -> dict:
+            """Create a card in a realm."""
+            return request_local_pa(
+                ctx.settings,
+                "POST",
+                "/api/cards",
+                json={
+                    "realm_id": realm,
+                    "kind": kind,
+                    "title": title,
+                    "body": body,
+                    "lane": lane,
+                    "parent_id": parent_id,
+                    "project_id": project_id,
+                },
+            )
+
+        @mcp.tool()
+        def update_card(
+            card_id: str,
+            title: str | None = None,
+            body: str | None = None,
+            lane: CardLane | None = None,
+            parent_id: str | None = None,
+            project_id: str | None = None,
+            realm: str = "default",
+        ) -> dict | None:
+            """Update a card's mutable fields."""
+            return request_local_pa(
+                ctx.settings,
+                "PATCH",
+                f"/api/cards/{card_id}",
+                params={"realm": realm},
+                json={
+                    key: value
+                    for key, value in {
+                        "title": title,
+                        "body": body,
+                        "lane": lane,
+                        "parent_id": parent_id,
+                        "project_id": project_id,
+                    }.items()
+                    if value is not None
+                },
+                allow_not_found=True,
             )
 
         @mcp.tool()
