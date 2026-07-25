@@ -382,6 +382,59 @@ class CompletionReconciliationTests(unittest.TestCase):
 
         asyncio.run(run())
 
+    def test_outage_records_structured_exponential_retry(self) -> None:
+        async def run() -> None:
+            with tempfile.TemporaryDirectory() as tmp:
+                ledger, _runtime, _supervisor, _outbox, reconciler = self.make_fixture(
+                    Path(tmp), supervisor_state="authority_unreachable"
+                )
+                reconciler.rng = MagicMock()
+                reconciler.rng.uniform.return_value = 1.0
+                reconciler.retry_seconds = 2.0
+                await reconciler.handle_completion("session-1", {})
+                first = ledger.get("dispatch-1")
+                first_delay = (
+                    first.reconciliation_next_retry_at - first.reconciliation_updated_at
+                ).total_seconds()
+                self.assertEqual(
+                    first.reconciliation_condition, "authority_unavailable"
+                )
+                self.assertIn("unreachable", first.reconciliation_last_dependency_error)
+                self.assertIn("Retry exact-head", first.reconciliation_recovery_action)
+                first.reconciliation_next_retry_at = None
+                ledger.put(first)
+                await reconciler._advance(first)
+                second = ledger.get("dispatch-1")
+                second_delay = (
+                    second.reconciliation_next_retry_at
+                    - second.reconciliation_updated_at
+                ).total_seconds()
+                self.assertGreaterEqual(first_delay, 1.9)
+                self.assertGreaterEqual(second_delay, 3.9)
+
+        asyncio.run(run())
+
+    def test_operator_retry_is_idempotent_and_recovers_after_outage(self) -> None:
+        async def run() -> None:
+            with tempfile.TemporaryDirectory() as tmp:
+                ledger, runtime, supervisor, _outbox, reconciler = self.make_fixture(
+                    Path(tmp), supervisor_state="authority_unreachable", max_attempts=1
+                )
+                await reconciler.handle_completion("session-1", {})
+                self.assertEqual(
+                    ledger.get("dispatch-1").reconciliation_state, "exhausted"
+                )
+                supervisor.state = "ready"
+                first = await reconciler.retry("dispatch-1")
+                second = await reconciler.retry("dispatch-1")
+                self.assertEqual(first.reconciliation_state, "prompted")
+                self.assertEqual(
+                    second.reconciliation_prompt_id, first.reconciliation_prompt_id
+                )
+                self.assertEqual(runtime.enqueued, 1)
+
+        asyncio.run(run())
+
 
 if __name__ == "__main__":
     unittest.main()

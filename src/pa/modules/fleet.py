@@ -2666,6 +2666,29 @@ def retry_dispatch(
     return record.public_dict()
 
 
+@router.post("/fleet/dispatch-jobs/{dispatch_id}/reconcile", status_code=202)
+async def reconcile_dispatch_completion(
+    request: Request, dispatch_id: str
+) -> dict[str, Any]:
+    """Idempotently repair a stranded card-linked completion."""
+    require_user(request)
+    record = _dispatch_store(request).get(dispatch_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Dispatch not found")
+    _require_dispatch_access(request, record)
+    reconciler = request.app.state.ctx.services.get("completion_reconciler")
+    if not reconciler:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "reconciliation_unavailable", "recoverable": True},
+        )
+    try:
+        repaired = await reconciler.retry(dispatch_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return repaired.public_dict()
+
+
 @router.post("/fleet/dispatch-jobs/{dispatch_id}/cancel", status_code=202)
 def cancel_dispatch(
     request: Request,

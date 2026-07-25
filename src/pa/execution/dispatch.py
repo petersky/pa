@@ -95,6 +95,9 @@ class DispatchRecord(BaseModel):
     card_lane_after: str | None = None
     reconciliation_state: str = "not_requested"
     reconciliation_reason: str | None = None
+    reconciliation_condition: str | None = None
+    reconciliation_last_dependency_error: str | None = None
+    reconciliation_recovery_action: str | None = None
     reconciliation_recoverable: bool = False
     reconciliation_attempts: int = 0
     reconciliation_prompt_count: int = 0
@@ -143,6 +146,9 @@ class DispatchRecord(BaseModel):
         data["card_reconciliation"] = {
             "state": self.reconciliation_state,
             "reason": self.reconciliation_reason,
+            "condition": self.reconciliation_condition,
+            "last_dependency_error": self.reconciliation_last_dependency_error,
+            "recovery_action": self.reconciliation_recovery_action,
             "recoverable": self.reconciliation_recoverable,
             "attempts": self.reconciliation_attempts,
             "prompt_count": self.reconciliation_prompt_count,
