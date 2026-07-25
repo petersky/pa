@@ -16,6 +16,7 @@ from pa.domain.card_summaries import fallback_card_summary
 from pa.domain.models import (
     AgentSession,
     Card,
+    CardAttachment,
     CardCreate,
     CardEvent,
     CardKind,
@@ -243,6 +244,7 @@ class CardProjection:
             ("summary_source", "TEXT NOT NULL DEFAULT 'fallback'"),
             ("summary_updated_at", "TEXT"),
             ("summary_stale", "INTEGER NOT NULL DEFAULT 0"),
+            ("attachments", "TEXT NOT NULL DEFAULT '[]'"),
         ):
             if col not in card_cols:
                 conn.execute(f"ALTER TABLE cards ADD COLUMN {col} {decl}")
@@ -484,6 +486,10 @@ class CardProjection:
             self._apply_updated(event)
         elif event.type == EventType.CARD_DELETED:
             self._apply_deleted(event)
+        elif event.type == EventType.ATTACHMENT_CREATED:
+            self._apply_attachment_created(event)
+        elif event.type == EventType.ATTACHMENT_REMOVED:
+            self._apply_attachment_removed(event)
         elif event.type == EventType.LEASE_GRANTED:
             self._apply_lease(event)
         elif event.type == EventType.LEASE_RELEASED:
@@ -685,12 +691,15 @@ class CardProjection:
             or updated_at,
             summary_stale=bool(p.get("summary_stale", False)),
             lane=CardLane(
-                p.get("lane")
-                or lane_from_legacy_status(p.get("status", "open")).value
+                p.get("lane") or lane_from_legacy_status(p.get("status", "open")).value
             ),
             parent_id=p.get("parent_id"),
             project_id=p.get("project_id"),
             tags=p.get("tags", []),
+            attachments=[
+                CardAttachment.model_validate(value)
+                for value in p.get("attachments", [])
+            ],
             preferred_instance=p.get("preferred_instance"),
             preferred_capabilities=p.get("preferred_capabilities", []),
             lease_holder_instance=p.get("lease_holder_instance"),
@@ -841,6 +850,36 @@ class CardProjection:
         if event.card_id:
             self._delete_card_projection(event.card_id, realm_id=event.realm_id)
 
+    def _apply_attachment_created(self, event: CardEvent) -> None:
+        if not event.card_id:
+            return
+        card = self.get_card(event.card_id, realm_id=event.realm_id)
+        if not card:
+            return
+        attachment = CardAttachment.model_validate(event.payload)
+        existing = {item.attachment_id: item for item in card.attachments}
+        existing[attachment.attachment_id] = attachment
+        card.attachments = list(existing.values())
+        card.updated_at = _coerce_datetime(
+            event.payload.get("card_updated_at")
+        ) or datetime.now(UTC)
+        self._upsert_card(card)
+
+    def _apply_attachment_removed(self, event: CardEvent) -> None:
+        if not event.card_id:
+            return
+        card = self.get_card(event.card_id, realm_id=event.realm_id)
+        if not card:
+            return
+        attachment_id = str(event.payload.get("attachment_id") or "")
+        card.attachments = [
+            item for item in card.attachments if item.attachment_id != attachment_id
+        ]
+        card.updated_at = _coerce_datetime(
+            event.payload.get("card_updated_at")
+        ) or datetime.now(UTC)
+        self._upsert_card(card)
+
     def _delete_card_projection(
         self, card_id: str, *, realm_id: str | None = None
     ) -> bool:
@@ -890,11 +929,11 @@ class CardProjection:
                 """
                 INSERT OR REPLACE INTO cards
                 (id, realm_id, kind, title, body, summary, summary_source,
-                 summary_updated_at, summary_stale, lane, parent_id, project_id, tags, visibility,
+                 summary_updated_at, summary_stale, lane, parent_id, project_id, tags, attachments, visibility,
                  owner_principal, preferred_instance, preferred_capabilities,
                  lease_holder_instance, lease_holder_principal, lease_expires_at,
                  created_by_principal, created_by_instance, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     card.id,
@@ -912,6 +951,9 @@ class CardProjection:
                     card.parent_id,
                     card.project_id,
                     json.dumps(card.tags),
+                    json.dumps(
+                        [item.model_dump(mode="json") for item in card.attachments]
+                    ),
                     card.visibility,
                     card.owner_principal,
                     card.preferred_instance,
@@ -973,6 +1015,62 @@ class CardProjection:
         else:
             self._upsert_card(card)
         return card
+
+    @serialized_mutation
+    def add_attachment(
+        self, attachment: CardAttachment, *, principal_id: str, instance_id: str
+    ) -> Card:
+        card = self.get_card(attachment.card_id, realm_id=attachment.realm_id)
+        if not card:
+            raise ValueError("Card not found")
+        if len(card.attachments) >= 10:
+            raise ValueError("A card can have at most 10 attachments")
+        if (
+            sum(item.size for item in card.attachments) + attachment.size
+            > 100 * 1024 * 1024
+        ):
+            raise ValueError("Card attachments exceed the 100 MB total limit")
+        payload = attachment.model_dump(mode="json")
+        payload["card_updated_at"] = datetime.now(UTC).isoformat()
+        event = CardEvent(
+            type=EventType.ATTACHMENT_CREATED,
+            realm_id=attachment.realm_id,
+            card_id=attachment.card_id,
+            author_principal=principal_id,
+            author_instance=instance_id,
+            payload=payload,
+        )
+        self.commit_event(event)
+        return self.get_card(attachment.card_id, realm_id=attachment.realm_id)
+
+    @serialized_mutation
+    def remove_attachment(
+        self,
+        card_id: str,
+        attachment_id: str,
+        *,
+        realm_id: str,
+        principal_id: str,
+        instance_id: str,
+    ) -> Card | None:
+        card = self.get_card(card_id, realm_id=realm_id)
+        if not card or not any(
+            item.attachment_id == attachment_id for item in card.attachments
+        ):
+            return None
+        event = CardEvent(
+            type=EventType.ATTACHMENT_REMOVED,
+            realm_id=realm_id,
+            card_id=card_id,
+            author_principal=principal_id,
+            author_instance=instance_id,
+            payload={
+                "attachment_id": attachment_id,
+                "card_updated_at": datetime.now(UTC).isoformat(),
+            },
+        )
+        self.commit_event(event)
+        return self.get_card(card_id, realm_id=realm_id)
 
     def _on_commit(self, commit) -> None:
         pass  # wired by Store
@@ -2013,6 +2111,12 @@ class CardProjection:
             parent_id=row["parent_id"],
             project_id=row["project_id"] if "project_id" in keys else None,
             tags=json.loads(row["tags"]),
+            attachments=[
+                CardAttachment.model_validate(value)
+                for value in json.loads(
+                    row["attachments"] if "attachments" in keys else "[]"
+                )
+            ],
             visibility=row["visibility"],
             owner_principal=row["owner_principal"],
             preferred_instance=row["preferred_instance"],

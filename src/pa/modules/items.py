@@ -12,6 +12,7 @@ from pathlib import Path
 from urllib.parse import quote, urlencode, urlsplit
 from uuid import uuid4
 
+import httpx
 from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import (
     FileResponse,
@@ -21,6 +22,7 @@ from fastapi.responses import (
     StreamingResponse,
 )
 
+from pa.attachments import AttachmentError, AttachmentStore, safe_filename
 from pa.auth.csrf import token_for_request
 from pa.auth.middleware import get_principal_id
 from pa.config import get_settings
@@ -28,6 +30,7 @@ from pa.core.context import AppContext
 from pa.core.contracts import Module
 from pa.core.ui.pages import PageDefinition, PageRegistry
 from pa.domain.models import (
+    CardAttachment,
     CardCreate,
     CardKind,
     CardLane,
@@ -501,9 +504,7 @@ def _card_activity_context(request: Request, card) -> dict:
 
     return {
         "card": card,
-        "activity": sorted(
-            entries, key=lambda entry: entry["timestamp"], reverse=True
-        ),
+        "activity": sorted(entries, key=lambda entry: entry["timestamp"], reverse=True),
     }
 
 
@@ -765,6 +766,123 @@ def list_items(
     return [item.model_dump(mode="json") for item in items]
 
 
+def _attachment_store(request: Request) -> AttachmentStore:
+    service = request.app.state.ctx.services.get("attachment_store")
+    if not isinstance(service, AttachmentStore):
+        service = AttachmentStore(request.app.state.ctx.settings.data_dir)
+        request.app.state.ctx.register_service("attachment_store", service)
+    return service
+
+
+def _card_attachment_or_404(
+    request: Request, card_id: str, attachment_id: str, realm: str | None = None
+):
+    realm_id = realm or request.app.state.ctx.settings.primary_realm
+    card = get_store().get_card(card_id, realm_id=realm_id)
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+    attachment = next(
+        (item for item in card.attachments if item.attachment_id == attachment_id), None
+    )
+    if not attachment:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    return card, attachment
+
+
+@router.post("/cards/{card_id}/attachments", status_code=201)
+async def create_card_attachment_api(
+    request: Request,
+    card_id: str,
+    file: UploadFile = File(...),
+    realm: str | None = None,
+) -> dict:
+    realm_id = realm or request.app.state.ctx.settings.primary_realm
+    card = get_store().get_card(card_id, realm_id=realm_id)
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+    runtime = request.app.state.ctx.require_service("async_runtime")
+    try:
+        sha256, size = await runtime.run_blocking(
+            "cards.attachments.ingest",
+            _attachment_store(request).ingest,
+            file.file,
+            timeout=120.0,
+        )
+        attachment = CardAttachment(
+            card_id=card.id,
+            realm_id=realm_id,
+            filename=safe_filename(file.filename or "attachment"),
+            media_type=_attachment_media_type(
+                file.filename or "attachment", file.content_type
+            ),
+            size=size,
+            sha256=sha256,
+            blob_ref=f"sha256:{sha256}",
+            created_by_principal=get_principal_id(request),
+            created_by_instance=request.app.state.ctx.settings.instance_id,
+            visibility=card.visibility,
+        )
+        get_store().add_attachment(
+            attachment,
+            principal_id=get_principal_id(request),
+            instance_id=request.app.state.ctx.settings.instance_id,
+        )
+        return attachment.model_dump(mode="json")
+    except AttachmentError as exc:
+        raise HTTPException(
+            status_code=413 if not exc.recoverable else 409, detail=exc.detail()
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+    finally:
+        await file.close()
+
+
+@router.get("/cards/{card_id}/attachments/{attachment_id}")
+def download_card_attachment_api(
+    request: Request,
+    card_id: str,
+    attachment_id: str,
+    realm: str | None = None,
+    download: bool = False,
+) -> FileResponse:
+    _card, attachment = _card_attachment_or_404(request, card_id, attachment_id, realm)
+    blobs = _ensure_attachment_available(request, attachment)
+    inline = (
+        attachment.media_type in SAFE_IMAGE_TYPES
+        or attachment.media_type.startswith(("video/", "audio/"))
+    )
+    return FileResponse(
+        blobs.blob_path(attachment.sha256),
+        filename=attachment.filename,
+        media_type=attachment.media_type,
+        content_disposition_type="attachment" if download or not inline else "inline",
+        headers={
+            "Content-Security-Policy": "sandbox; default-src 'none'; img-src 'self'; media-src 'self'",
+            "X-Content-Type-Options": "nosniff",
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "private, no-store",
+            "Digest": f"sha-256={attachment.sha256}",
+        },
+    )
+
+
+@router.delete("/cards/{card_id}/attachments/{attachment_id}")
+def remove_card_attachment_api(
+    request: Request, card_id: str, attachment_id: str, realm: str | None = None
+) -> dict:
+    realm_id = realm or request.app.state.ctx.settings.primary_realm
+    _card_attachment_or_404(request, card_id, attachment_id, realm_id)
+    card = get_store().remove_attachment(
+        card_id,
+        attachment_id,
+        realm_id=realm_id,
+        principal_id=get_principal_id(request),
+        instance_id=request.app.state.ctx.settings.instance_id,
+    )
+    return card.model_dump(mode="json")
+
+
 @router.post("/items", status_code=201)
 def create_item(request: Request, response: Response, data: ItemCreate) -> dict:
     _mark_legacy_item_api(response)
@@ -915,50 +1033,78 @@ async def create_card_modal_ui(
     uploads = [upload for upload in (files or []) if upload.filename]
     runtime = request.app.state.ctx.require_service("async_runtime")
     attachments: list[dict[str, str | int | Path]] = []
-    try:
-        attachments = await runtime.run_blocking(
-            "cards.attachments.persist",
-            _persist_card_attachments,
-            _attachment_root(request),
-            uploads,
-            timeout=120.0,
-        )
-        composed_body = _compose_card_body(
-            body,
-            link_urls=link_urls or [],
-            link_labels=link_labels or [],
-            attachments=attachments,
-            file_tokens=file_tokens or [],
-        )
-        cleaned_summary = summary.strip()
-        settings = request.app.state.ctx.settings
-        card = store.create_card(
-            CardCreate(
-                realm_id=realm,
-                kind=kind,
-                title=cleaned_title,
-                body=composed_body,
-                summary=cleaned_summary,
-                summary_source=(CardSummarySource.MANUAL if cleaned_summary else None),
-                lane=lane,
-                parent_id=selected_parent,
-                project_id=selected_project,
-                tags=_comma_separated(tags),
-                preferred_instance=preferred_instance.strip() or None,
-                preferred_capabilities=_comma_separated(preferred_capabilities),
+    settings = request.app.state.ctx.settings
+    principal = get_principal_id(request)
+    card = store.create_card(
+        CardCreate(
+            realm_id=realm,
+            kind=kind,
+            title=cleaned_title,
+            body=_compose_card_body(
+                body,
+                link_urls=link_urls or [],
+                link_labels=link_labels or [],
+                attachments=[],
+                file_tokens=file_tokens or [],
             ),
-            principal_id=get_principal_id(request),
-            instance_id=settings.instance_id,
-        )
-    except BaseException:
-        if attachments:
-            await runtime.run_blocking(
-                "cards.attachments.cleanup",
-                _delete_attachment_batch,
-                attachments,
-                timeout=30.0,
+            summary=summary.strip(),
+            summary_source=(CardSummarySource.MANUAL if summary.strip() else None),
+            lane=lane,
+            parent_id=selected_parent,
+            project_id=selected_project,
+            tags=_comma_separated(tags),
+            preferred_instance=preferred_instance.strip() or None,
+            preferred_capabilities=_comma_separated(preferred_capabilities),
+        ),
+        principal_id=principal,
+        instance_id=settings.instance_id,
+    )
+    try:
+        for index, upload in enumerate(uploads, 1):
+            sha256, size = await runtime.run_blocking(
+                "cards.attachments.ingest",
+                _attachment_store(request).ingest,
+                upload.file,
+                timeout=120.0,
             )
-        raise
+            filename = safe_filename(upload.filename or "", index)
+            attachment = CardAttachment(
+                card_id=card.id,
+                realm_id=realm,
+                filename=filename,
+                media_type=_attachment_media_type(filename, upload.content_type),
+                size=size,
+                sha256=sha256,
+                blob_ref=f"sha256:{sha256}",
+                created_by_principal=principal,
+                created_by_instance=settings.instance_id,
+                visibility=card.visibility,
+            )
+            card = store.add_attachment(
+                attachment, principal_id=principal, instance_id=settings.instance_id
+            )
+            attachments.append(
+                {
+                    **attachment.model_dump(mode="json"),
+                    "url": f"/card-attachments/{attachment.attachment_id}/{quote(attachment.filename, safe='')}",
+                }
+            )
+        if attachments:
+            card = store.update_card(
+                card.id,
+                CardUpdate(
+                    body=_compose_card_body(
+                        body,
+                        link_urls=link_urls or [],
+                        link_labels=link_labels or [],
+                        attachments=attachments,
+                        file_tokens=file_tokens or [],
+                    )
+                ),
+                realm_id=realm,
+                principal_id=principal,
+                instance_id=settings.instance_id,
+            )
     finally:
         for upload in uploads:
             await upload.close()
@@ -970,6 +1116,70 @@ async def create_card_modal_ui(
     )
 
 
+def _ensure_attachment_available(
+    request: Request, attachment: CardAttachment
+) -> AttachmentStore:
+    blobs = _attachment_store(request)
+    if blobs.has_verified_blob(attachment.sha256, attachment.size):
+        return blobs
+    fleet = request.app.state.ctx.services.get("fleet_registry")
+    sources = [item for item in (fleet.list_instances() if fleet else []) if item.url]
+    sources.sort(key=lambda item: item.instance_id != attachment.created_by_instance)
+    settings = request.app.state.ctx.settings
+    sources = [item for item in sources if item.instance_id != settings.instance_id]
+    headers = {"X-PA-Origin-Instance-ID": settings.instance_id}
+    if settings.sync_token:
+        headers["Authorization"] = f"Bearer {settings.sync_token}"
+    failures: list[dict[str, object]] = []
+    for source in sources:
+        try:
+            with httpx.stream(
+                "GET",
+                f"{source.url.rstrip('/')}/api/fleet/attachments/{attachment.card_id}/{attachment.attachment_id}",
+                params={"realm_id": attachment.realm_id},
+                headers=headers,
+                timeout=120.0,
+            ) as response:
+                if response.status_code >= 400:
+                    failures.append(
+                        {
+                            "instance_id": source.instance_id,
+                            "status": response.status_code,
+                        }
+                    )
+                    continue
+                if response.headers.get("X-PA-Attachment-SHA256") != attachment.sha256:
+                    raise HTTPException(
+                        status_code=409,
+                        detail={
+                            "code": "attachment_source_substitution",
+                            "source_instance_id": source.instance_id,
+                            "recoverable": False,
+                        },
+                    )
+                blobs.ingest_chunks(
+                    response.iter_bytes(1024 * 1024),
+                    expected_sha256=attachment.sha256,
+                    expected_size=attachment.size,
+                )
+                return blobs
+        except httpx.HTTPError as exc:
+            failures.append(
+                {"instance_id": source.instance_id, "error": str(exc)[:300]}
+            )
+        except AttachmentError as exc:
+            raise HTTPException(status_code=409, detail=exc.detail()) from exc
+    raise HTTPException(
+        status_code=503,
+        detail={
+            "code": "attachment_source_unavailable",
+            "recoverable": True,
+            "source_instance_id": attachment.created_by_instance,
+            "attempts": failures,
+        },
+    )
+
+
 @ui_router.get("/card-attachments/{attachment_id}/{filename}")
 def card_attachment(
     request: Request,
@@ -978,10 +1188,77 @@ def card_attachment(
 ) -> FileResponse:
     if not ATTACHMENT_ID_RE.fullmatch(attachment_id) or Path(filename).name != filename:
         raise HTTPException(status_code=404, detail="Attachment not found")
+    for manifest_card in get_store().list_cards():
+        manifest_item = next(
+            (
+                item
+                for item in manifest_card.attachments
+                if item.attachment_id == attachment_id and item.filename == filename
+            ),
+            None,
+        )
+        if not manifest_item:
+            continue
+        blobs = _ensure_attachment_available(request, manifest_item)
+        inline = (
+            manifest_item.media_type in SAFE_IMAGE_TYPES
+            or manifest_item.media_type.startswith(("video/", "audio/"))
+        )
+        return FileResponse(
+            blobs.blob_path(manifest_item.sha256),
+            filename=manifest_item.filename,
+            media_type=manifest_item.media_type,
+            content_disposition_type="inline" if inline else "attachment",
+            headers={
+                "Content-Security-Policy": "sandbox; default-src 'none'; img-src 'self'; media-src 'self'",
+                "X-Content-Type-Options": "nosniff",
+                "Accept-Ranges": "bytes",
+                "Cache-Control": "private, no-store",
+            },
+        )
     root = _attachment_root(request).resolve()
     path = (root / attachment_id / filename).resolve()
     if not path.is_relative_to(root) or not path.is_file():
         raise HTTPException(status_code=404, detail="Attachment not found")
+    legacy_url = f"/card-attachments/{attachment_id}/{quote(filename, safe='')}"
+    realm_id = _active_realm(request)
+    store = get_store()
+    for legacy_card in store.list_cards(realm_id=realm_id):
+        if legacy_url not in legacy_card.body:
+            continue
+        with path.open("rb") as legacy_source:
+            sha256, size = _attachment_store(request).ingest(legacy_source)
+        migrated = CardAttachment(
+            card_id=legacy_card.id,
+            realm_id=realm_id,
+            filename=safe_filename(filename),
+            media_type=_attachment_media_type(path.name, None),
+            size=size,
+            sha256=sha256,
+            blob_ref=f"sha256:{sha256}",
+            created_by_principal=legacy_card.created_by_principal or "migration:legacy",
+            created_by_instance=legacy_card.created_by_instance
+            or request.app.state.ctx.settings.instance_id,
+            visibility=legacy_card.visibility,
+        )
+        store.add_attachment(
+            migrated,
+            principal_id="migration:legacy",
+            instance_id=request.app.state.ctx.settings.instance_id,
+        )
+        store.update_card(
+            legacy_card.id,
+            CardUpdate(
+                body=legacy_card.body.replace(
+                    legacy_url,
+                    f"/api/cards/{legacy_card.id}/attachments/{migrated.attachment_id}",
+                )
+            ),
+            realm_id=realm_id,
+            principal_id="migration:legacy",
+            instance_id=request.app.state.ctx.settings.instance_id,
+        )
+        break
     media_type = _attachment_media_type(path.name, None)
     inline = media_type in SAFE_IMAGE_TYPES or media_type.startswith(
         ("video/", "audio/")
@@ -1398,6 +1675,45 @@ class ItemsModule(Module):
                 params={"realm": realm},
                 json=changes,
                 allow_not_found=True,
+            )
+
+        @mcp.tool()
+        def create_card_attachment(
+            card_id: str,
+            source_path: str,
+            realm: str = "default",
+            filename: str | None = None,
+            media_type: str = "application/octet-stream",
+        ) -> dict:
+            """Attach a local file through PA's authenticated API; bytes become a durable fleet blob."""
+            path = Path(source_path).expanduser().resolve()
+            if not path.is_file():
+                raise ValueError("source_path must be an existing regular file")
+            with path.open("rb") as source:
+                return request_local_pa(
+                    ctx.settings,
+                    "POST",
+                    f"/api/cards/{card_id}/attachments",
+                    params={"realm": realm},
+                    files={
+                        "file": (
+                            safe_filename(filename or path.name),
+                            source,
+                            media_type,
+                        )
+                    },
+                )
+
+        @mcp.tool()
+        def remove_card_attachment(
+            card_id: str, attachment_id: str, realm: str = "default"
+        ) -> dict:
+            """Remove an attachment reference through a durable realm event."""
+            return request_local_pa(
+                ctx.settings,
+                "DELETE",
+                f"/api/cards/{card_id}/attachments/{attachment_id}",
+                params={"realm": realm},
             )
 
         @mcp.tool()
