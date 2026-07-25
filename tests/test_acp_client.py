@@ -332,6 +332,7 @@ class AgentConfigurationAdmissionTests(unittest.IsolatedAsyncioTestCase):
         manager.settings = Settings(data_dir=Path(tmp))
         manager.store = store
         manager.browser = MagicMock()
+        manager._should_abort_admission = MagicMock(return_value=False)
         runtime = AgentSessionRuntime(manager, session)
         return runtime, store
 
@@ -654,6 +655,78 @@ class AgentSessionRestoreTests(unittest.TestCase):
             )
 
         asyncio.run(run())
+
+    def test_connect_aborts_session_new_during_shutdown(self) -> None:
+        from pa.server.shutdown import reset_shutdown_event, signal_shutdown
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = MagicMock()
+            acp = MagicMock()
+            acp.initialize = AsyncMock(
+                return_value={
+                    "agentCapabilities": {
+                        "loadSession": True,
+                        "sessionCapabilities": {
+                            "resume": None,
+                            "list": {},
+                        },
+                    }
+                }
+            )
+            acp.list_sessions = AsyncMock(
+                return_value=SimpleNamespace(sessions=[])
+            )
+            acp.load_session = AsyncMock()
+            acp.new_session = AsyncMock(
+                return_value=SimpleNamespace(session_id="should-not-create")
+            )
+            context = MagicMock()
+            context.__aenter__ = AsyncMock(return_value=(acp, MagicMock()))
+            context.__aexit__ = AsyncMock()
+            existing = AgentSession(
+                id="pa-session",
+                agent_name="cursor",
+                external_session_id="stale-session",
+                status="disconnected",
+            )
+            connection = AgentConnection(
+                Settings(data_dir=Path(tmp)),
+                store,
+                provider_spec=AgentProviderSpec(
+                    id="cursor",
+                    display_name="Cursor",
+                    command="agent",
+                ),
+            )
+
+            async def run() -> None:
+                reset_shutdown_event()
+                try:
+                    with (
+                        patch("pa.acp.client.spawn_agent", return_value=context),
+                        patch("pa.acp.client.pa_mcp_servers", return_value=[]),
+                    ):
+                        # Signal after list resolves so we exercise the
+                        # session/new gate rather than preflight.
+                        async def list_then_shutdown():
+                            signal_shutdown()
+                            return SimpleNamespace(sessions=[])
+
+                        acp.list_sessions = AsyncMock(side_effect=list_then_shutdown)
+                        with self.assertRaisesRegex(
+                            RuntimeError, "ACP connect aborted: shutting down"
+                        ):
+                            await connection.connect(
+                                resume_external_id="stale-session",
+                                existing_session=existing,
+                            )
+                finally:
+                    reset_shutdown_event()
+
+            asyncio.run(run())
+
+            acp.new_session.assert_not_awaited()
+            self.assertEqual(existing.external_session_id, "stale-session")
 
 
 if __name__ == "__main__":

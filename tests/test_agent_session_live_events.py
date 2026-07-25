@@ -566,6 +566,56 @@ class AgentSessionLiveEventTests(unittest.TestCase):
                 active_session_ids=set()
             )
 
+    def test_shutdown_aborts_remaining_durable_resumes(self) -> None:
+        from pa.server.shutdown import reset_shutdown_event, signal_shutdown
+
+        with tempfile.TemporaryDirectory() as tmp:
+            sessions = [
+                AgentSession(
+                    id="session-a",
+                    agent_name="cursor",
+                    external_session_id="ext-a",
+                    status="disconnected",
+                ),
+                AgentSession(
+                    id="session-b",
+                    agent_name="cursor",
+                    external_session_id="ext-b",
+                    status="disconnected",
+                ),
+            ]
+            store = MagicMock()
+            store.list_sessions.return_value = sessions
+            manager = AgentSessionManager(Settings(data_dir=Path(tmp)), store)
+            manager.workspace_manager.reconcile_terminal_state = MagicMock(
+                return_value={}
+            )
+            manager.workspace_manager.collect_garbage = MagicMock(return_value={})
+            resumed: list[str] = []
+
+            async def resume_one(snap, _full):
+                resumed.append(snap.session_id)
+                signal_shutdown()
+                manager._accepting = False
+                manager._quiescing = True
+
+            manager._resume_from_snapshot = AsyncMock(side_effect=resume_one)
+            manager.attach_default = AsyncMock()
+            manager._mark_recovery_interrupted = AsyncMock()
+
+            async def run() -> None:
+                reset_shutdown_event()
+                try:
+                    await manager.start(resume=True)
+                finally:
+                    reset_shutdown_event()
+
+            asyncio.run(run())
+
+            self.assertEqual(resumed, ["session-b"])
+            manager.attach_default.assert_not_awaited()
+            manager._mark_recovery_interrupted.assert_not_awaited()
+
     def test_wake_reconciliation_marks_resume_failure_recoverable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             session = AgentSession(

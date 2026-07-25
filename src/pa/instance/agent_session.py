@@ -390,6 +390,8 @@ class AgentSessionRuntime:
         provider_spec=None,
         initial_configuration: SessionConfigurationRequest | None = None,
     ) -> AgentSession:
+        if self.manager._should_abort_admission():
+            raise RuntimeError("Agent is quiescing")
         browser_config = dict((self.session.config_json or {}).get("browser") or {})
         if browser_config.get("attached"):
             attachment = await self.manager.browser.attach(
@@ -1448,6 +1450,11 @@ class AgentSessionManager:
     def quiescing(self) -> bool:
         return self._quiescing
 
+    def _should_abort_admission(self) -> bool:
+        from pa.server.shutdown import is_shutting_down
+
+        return (not self._accepting) or self._quiescing or is_shutting_down()
+
     def get(self, session_id: str) -> AgentSessionRuntime | None:
         return self._runtimes.get(session_id)
 
@@ -1616,8 +1623,21 @@ class AgentSessionManager:
                 )
             logger.info("Instance agent disabled")
             return
+        from pa.server.shutdown import is_shutting_down
+
+        # Never undo a shutdown fence. stop() leaves quiescing=True; clearing
+        # that is fine on a later intentional start, but not once TERM has been
+        # observed — otherwise a cancelled startup task can re-admit session/new.
+        if is_shutting_down():
+            logger.info("Skipping ACP startup because shutdown began")
+            return
         self._accepting = True
         self._quiescing = False
+        if is_shutting_down():
+            self._accepting = False
+            self._quiescing = True
+            logger.info("Skipping ACP startup because shutdown began")
+            return
 
         if self._resume_on_start:
             recovery: dict[str, SessionSnapshot] = {}
@@ -1639,16 +1659,34 @@ class AgentSessionManager:
                 recovery[session.id] = self._snapshot_from_persisted(session)
             try:
                 for sess in recovery.values():
+                    if self._should_abort_admission():
+                        logger.info(
+                            "Aborting remaining ACP resumes because shutdown began"
+                        )
+                        break
                     try:
                         await self._resume_from_snapshot(
                             sess, snapshot or QuiesceSnapshot(reason="recovery")
                         )
+                    except asyncio.CancelledError:
+                        raise
                     except Exception as exc:
+                        if self._should_abort_admission():
+                            logger.info(
+                                "ACP resume for %s aborted during shutdown",
+                                sess.session_id,
+                            )
+                            break
                         self._last_error = str(exc)
                         await self._mark_recovery_interrupted(sess, exc)
                         logger.exception("Failed to resume session %s", sess.session_id)
                 # Legacy top-level queue → default session
-                if snapshot and snapshot.resume and snapshot.queued_prompts:
+                if (
+                    not self._should_abort_admission()
+                    and snapshot
+                    and snapshot.resume
+                    and snapshot.queued_prompts
+                ):
                     default = await self.attach_default()
                     for item in snapshot.queued_prompts:
                         item.session_id = default.session_id
@@ -1671,7 +1709,7 @@ class AgentSessionManager:
 
         # A no-resume boot is intentionally inert until an explicit admission.
         # Durable nonterminal sessions remain recoverable on a later normal boot.
-        if self._resume_on_start:
+        if self._resume_on_start and not self._should_abort_admission():
             try:
                 await self.attach_default()
                 self._last_error = None
@@ -1739,6 +1777,8 @@ class AgentSessionManager:
     async def _resume_from_snapshot(
         self, snap: SessionSnapshot, full: QuiesceSnapshot
     ) -> AgentSessionRuntime | None:
+        if self._should_abort_admission():
+            raise RuntimeError("Agent is quiescing")
         existing = (
             await self._offload(
                 "sqlite.agent_session_read", self.store.get_session, snap.session_id
@@ -1879,7 +1919,7 @@ class AgentSessionManager:
     ) -> AgentSessionRuntime:
         if not self.settings.agent_enabled:
             raise RuntimeError("Agent disabled")
-        if not self._accepting or self._quiescing:
+        if self._should_abort_admission():
             raise RuntimeError("Agent is quiescing")
 
         effective_principal_id = (
