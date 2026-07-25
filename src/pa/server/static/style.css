@@ -393,18 +393,40 @@ a:hover { color: var(--pa-accent-hover); }
   flex: 1;
 }
 
+.brand-block {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.5rem;
+  line-height: 1;
+}
+
 .brand-link {
   color: var(--pa-text);
   font-weight: 600;
   font-size: 1rem;
-  padding: 0.25rem 0.35rem;
+  line-height: 1.1;
+  padding: 0.12rem 0.35rem 0.08rem;
   border-radius: 6px;
-  flex-shrink: 0;
 }
 
 .brand-link:hover {
   color: var(--pa-accent);
   background: var(--pa-accent-subtle);
+}
+
+.brand-instance {
+  color: var(--pa-text-muted);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  line-height: 1.1;
+  max-width: 10rem;
+  overflow: hidden;
+  padding: 0.03rem 0.2rem 0.08rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ── Top nav buttons ── */
@@ -450,12 +472,6 @@ a:hover { color: var(--pa-accent-hover); }
   align-items: center;
   gap: 0.25rem;
   flex-shrink: 0;
-}
-
-.instance-indicator {
-  cursor: default;
-  pointer-events: none;
-  opacity: 0.85;
 }
 
 .icon-btn, .status-btn {

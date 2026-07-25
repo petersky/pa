@@ -49,12 +49,17 @@
   </div>
   <header class="site-header">
     <div class="header-start">
-      <a href="/"
-         hx-get="/"
-         hx-target="#app-view"
-         hx-push-url="true"
-         hx-swap="innerHTML"
-         class="brand-link">PA</a>
+      <div class="brand-block">
+        <a href="/"
+           hx-get="/"
+           hx-target="#app-view"
+           hx-push-url="true"
+           hx-swap="innerHTML"
+           class="brand-link">PA</a>
+        <span class="brand-instance" data-pa-instance-name="{{ instance_name }}">
+          <span class="sr-only">Instance: </span>{{ instance_name }}
+        </span>
+      </div>
       {% include "partials/top-nav.html" %}
     </div>
     {% include "partials/chrome-actions.html" %}

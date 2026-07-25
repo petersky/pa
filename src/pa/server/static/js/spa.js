@@ -31,10 +31,9 @@
 
   function updateTitle() {
     const active = document.querySelector(".nav-btn.active span:last-child");
-    const instance = document.querySelector(".instance-indicator");
+    const instance = document.querySelector("[data-pa-instance-name]");
     if (active && instance) {
-      const name = instance.getAttribute("title") || "PA";
-      const label = name.replace(/^Instance:\s*/, "");
+      const label = instance.getAttribute("data-pa-instance-name") || "PA";
       document.title = active.textContent.trim() + " — " + label;
     }
   }
