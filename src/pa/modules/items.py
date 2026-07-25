@@ -467,12 +467,35 @@ def cards_partial(
     lane: CardLane | None = None,
     realm: str | None = None,
     project: str | None = None,
+    limit: int = 10,
 ) -> HTMLResponse:
     context = _cards_context(request, lane=lane)
+    done_total = 0
+    done_visible = 0
+    done_show_more_count = 0
+    done_show_more_query = ""
+    if lane == CardLane.DONE:
+        done_total = len(context["cards"])
+        done_limit = max(10, limit)
+        context["cards"] = context["cards"][:done_limit]
+        done_visible = len(context["cards"])
+        done_show_more_count = min(10, done_total - done_visible)
+        if done_show_more_count:
+            show_more_params = dict(request.query_params)
+            show_more_params["lane"] = CardLane.DONE.value
+            show_more_params["limit"] = str(done_visible + done_show_more_count)
+            done_show_more_query = urlencode(show_more_params)
     return _templates(request).TemplateResponse(
         request,
         "partials/cards.html",
-        {**context, "lane": lane},
+        {
+            **context,
+            "lane": lane,
+            "done_total": done_total,
+            "done_visible": done_visible,
+            "done_show_more_count": done_show_more_count,
+            "done_show_more_query": done_show_more_query,
+        },
     )
 
 
