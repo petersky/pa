@@ -1089,6 +1089,20 @@ class FleetUpdateUiTests(unittest.TestCase):
         self.assertIn("refreshFleetUpdateCheck().then", script)
         self.assertIn('name="install_timeout"', template)
 
+    def test_update_is_modal_and_restores_isolated_persisted_instance_jobs(self) -> None:
+        root = Path(__file__).parents[1]
+        script = (root / "src/pa/server/static/js/fleet.js").read_text()
+        template = (root / "src/pa/server/templates/pages/fleet.html").read_text()
+        style = (root / "src/pa/server/static/style.css").read_text()
+        self.assertIn('<dialog class="fleet-update-dialog"', template)
+        self.assertIn('id="pa-fleet-update-progress"', template)
+        self.assertIn("restoreFleetUpdate(fleetUpdateInstanceId)", script)
+        self.assertIn("job.instance_id !== fleetUpdateInstanceId", script)
+        self.assertIn("generation !== fleetUpdateGeneration", script)
+        self.assertIn("closeFleetUpdateWatcher()", script)
+        self.assertIn("job.progress_percent", script)
+        self.assertIn(".fleet-update-dialog::backdrop", style)
+
     def test_live_health_is_single_flight_generation_safe_and_terminal(self) -> None:
         root = Path(__file__).parents[1]
         script = (root / "src/pa/server/static/js/fleet.js").read_text()

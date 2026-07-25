@@ -2025,6 +2025,32 @@ code {
   gap: 0.5rem;
 }
 
+.fleet-update-dialog {
+  width: min(44rem, calc(100vw - 2rem));
+  max-height: min(92vh, 52rem);
+  padding: 0;
+  overflow: auto;
+  border: 1px solid var(--pa-border);
+  border-radius: 12px;
+  color: var(--pa-text);
+  background: var(--pa-surface-raised);
+  box-shadow: 0 1.5rem 5rem rgb(0 0 0 / 0.35);
+}
+.fleet-update-dialog::backdrop {
+  background: rgb(0 0 0 / 0.56);
+  backdrop-filter: blur(2px);
+}
+.fleet-update-dialog > .stack { padding: 1rem 1.15rem; }
+.fleet-update-dialog .panel-header h3 { margin: 0; }
+.fleet-update-progress { display: grid; gap: 0.4rem; }
+.fleet-update-progress > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.fleet-update-progress progress { width: 100%; }
+#pa-fleet-update-log { max-height: 15rem; overflow: auto; }
+
 .agent-new-session-error {
   color: var(--pa-danger);
   font-size: 0.85rem;

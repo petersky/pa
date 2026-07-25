@@ -134,6 +134,21 @@ class FleetUpdateStoreTests(unittest.TestCase):
         self.assertEqual(reloaded.phase, UpdatePhase.PREFLIGHT)
         self.assertEqual(reloaded.events[-1]["message"], "Checking peer")
 
+    def test_persists_progress_and_backfills_legacy_jobs(self) -> None:
+        store = FleetUpdateJobStore(self.data_dir)
+        job = store.create(self.instance, FleetUpdateRequest(), "release")
+        store.event(job, UpdatePhase.RESTARTING, "Restarting")
+
+        reloaded = FleetUpdateJobStore(self.data_dir).get(job.job_id)
+        self.assertEqual(reloaded.progress_percent, 80)
+
+        path = self.data_dir / "fleet_update_jobs" / f"{job.job_id}.json"
+        payload = __import__("json").loads(path.read_text())
+        del payload["progress_percent"]
+        path.write_text(__import__("json").dumps(payload))
+        legacy = FleetUpdateJobStore(self.data_dir).get(job.job_id)
+        self.assertEqual(legacy.progress_percent, 80)
+
     def test_restart_recovery_resumes_nonterminal_job(self) -> None:
         settings = Settings(data_dir=self.data_dir, sync_token="secret")
         fleet = FleetRegistry(self.data_dir, settings.fleet_id)

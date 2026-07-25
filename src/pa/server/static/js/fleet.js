@@ -1580,6 +1580,62 @@
   }
 
   var fleetUpdateName = "";
+  var fleetUpdateInstanceId = "";
+  var fleetUpdateSource = null;
+  var fleetUpdateGeneration = 0;
+
+  function closeFleetUpdateWatcher() {
+    fleetUpdateGeneration += 1;
+    if (fleetUpdateSource) fleetUpdateSource.close();
+    fleetUpdateSource = null;
+  }
+
+  function renderFleetUpdateJob(job) {
+    if (!job || job.instance_id !== fleetUpdateInstanceId) return;
+    var log = $("#pa-fleet-update-log");
+    var status = $("#pa-fleet-update-status");
+    var phase = $("#pa-fleet-update-phase");
+    var percent = $("#pa-fleet-update-percent");
+    var progress = $("#pa-fleet-update-progress");
+    var progressWrap = $("#pa-fleet-update-progress-wrap");
+    var submit = $("#pa-fleet-update-form button[type=submit]");
+    var value = Math.max(0, Math.min(100, Number(job.progress_percent) || 0));
+    var terminal = job.phase === "succeeded" || job.phase === "failed";
+    if (progressWrap) progressWrap.hidden = false;
+    if (phase) phase.textContent = String(job.phase || "pending").replace(/_/g, " ");
+    if (percent) percent.textContent = value + "%";
+    if (progress) {
+      progress.value = value;
+      progress.textContent = value + "%";
+    }
+    if (submit) submit.disabled = !terminal;
+    if (log) {
+      log.textContent = (job.events || []).map(function (item) {
+        return "[" + (item.phase || "update") + "] " + (item.message || "");
+      }).join("\n");
+      log.scrollTop = log.scrollHeight;
+    }
+    if (status) {
+      status.textContent = job.phase === "succeeded"
+        ? "Verified PA " + (job.verified_version || "unknown") + " on " + job.instance_name + "."
+        : (job.phase === "failed" ? (job.error || "Update failed") :
+          ((job.events || []).length ? job.events[job.events.length - 1].message : "Update pending…"));
+    }
+  }
+
+  async function restoreFleetUpdate(instanceId) {
+    var generation = fleetUpdateGeneration;
+    var jobs = await api(
+      "/api/fleet/instances/" + encodeURIComponent(instanceId) + "/update"
+    );
+    if (generation !== fleetUpdateGeneration || instanceId !== fleetUpdateInstanceId) return;
+    var latest = jobs && jobs[0];
+    if (!latest) return;
+    renderFleetUpdateJob(latest);
+    if (latest.phase !== "succeeded" && latest.phase !== "failed") {
+      watchFleetUpdate(instanceId, latest.job_id);
+    }
+  }
 
   async function refreshFleetUpdateCheck() {
     var form = $("#pa-fleet-update-form");
@@ -1599,31 +1655,31 @@
   }
 
   function watchFleetUpdate(instanceId, jobId) {
-    var log = $("#pa-fleet-update-log");
-    var status = $("#pa-fleet-update-status");
+    if (instanceId !== fleetUpdateInstanceId) return;
+    if (fleetUpdateSource) fleetUpdateSource.close();
+    var generation = fleetUpdateGeneration;
     var source = new EventSource(
       "/api/fleet/instances/" + encodeURIComponent(instanceId) +
       "/update/" + encodeURIComponent(jobId) + "/events"
     );
-    source.addEventListener("phase", function (event) {
-      var item = JSON.parse(event.data || "{}");
-      if (log) {
-        log.textContent += (log.textContent ? "\n" : "") +
-          "[" + (item.phase || "update") + "] " + (item.message || "");
-        log.scrollTop = log.scrollHeight;
-      }
-      if (status) status.textContent = item.message || item.phase || "Updating…";
+    fleetUpdateSource = source;
+    source.addEventListener("status", function (event) {
+      if (generation !== fleetUpdateGeneration || instanceId !== fleetUpdateInstanceId) return;
+      renderFleetUpdateJob(JSON.parse(event.data || "{}"));
     });
     source.addEventListener("done", function (event) {
       var job = JSON.parse(event.data || "{}");
       source.close();
-      if (status) status.textContent = job.phase === "succeeded"
-        ? "Verified PA " + (job.verified_version || "unknown") + " on " + job.instance_name + "."
-        : (job.error || "Update failed");
+      if (fleetUpdateSource === source) fleetUpdateSource = null;
+      if (generation !== fleetUpdateGeneration || instanceId !== fleetUpdateInstanceId) return;
+      renderFleetUpdateJob(job);
       loadLiveStatus();
     });
     source.onerror = function () {
-      if (source.readyState === EventSource.CLOSED && status) {
+      var status = $("#pa-fleet-update-status");
+      if (generation === fleetUpdateGeneration &&
+          instanceId === fleetUpdateInstanceId &&
+          source.readyState === EventSource.CLOSED && status) {
         status.textContent = "Update event stream closed; refresh to inspect the persisted result.";
       }
     };
@@ -1842,7 +1898,14 @@
     if (target && target.id === "app-view" && liveStatusRequest) {
       abortLiveStatus();
     }
+    if (target && target.id === "app-view") closeFleetUpdateWatcher();
   });
+
+  document.addEventListener("close", function (event) {
+    if (event.target && event.target.id === "pa-fleet-update-dialog") {
+      closeFleetUpdateWatcher();
+    }
+  }, true);
 
   document.addEventListener("keydown", function (event) {
     if (event.key !== "Enter" && event.key !== " ") return;
@@ -2228,16 +2291,26 @@
 
     var updateBtn = e.target.closest("[data-fleet-update]");
     if (updateBtn) {
-      var panel = $("#pa-fleet-update-panel");
+      var dialog = $("#pa-fleet-update-dialog");
       var updateForm = $("#pa-fleet-update-form");
-      if (!panel || !updateForm) return;
-      updateForm.elements.instance_id.value = updateBtn.getAttribute("data-fleet-update") || "";
+      if (!dialog || !updateForm) return;
+      closeFleetUpdateWatcher();
+      fleetUpdateInstanceId = updateBtn.getAttribute("data-fleet-update") || "";
+      updateForm.elements.instance_id.value = fleetUpdateInstanceId;
       fleetUpdateName = updateBtn.getAttribute("data-instance-name") || "this instance";
       var row = updateBtn.closest("tr[data-fleet-instance]");
       updateForm.elements.channel.value = (row && row.dataset.updateChannel) || "release";
-      panel.hidden = false;
-      panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      refreshFleetUpdateCheck().catch(function (err) {
+      var updateLog = $("#pa-fleet-update-log");
+      var updateStatus = $("#pa-fleet-update-status");
+      var progressWrap = $("#pa-fleet-update-progress-wrap");
+      if (updateLog) updateLog.textContent = "";
+      if (updateStatus) updateStatus.textContent = "Loading persisted update state…";
+      if (progressWrap) progressWrap.hidden = true;
+      var submit = updateForm.querySelector("button[type=submit]");
+      if (submit) submit.disabled = false;
+      if (typeof dialog.showModal === "function") dialog.showModal();
+      else dialog.setAttribute("open", "");
+      Promise.all([restoreFleetUpdate(fleetUpdateInstanceId), refreshFleetUpdateCheck()]).catch(function (err) {
         var confirmText = $("#pa-fleet-update-confirm");
         if (confirmText) confirmText.textContent = err.message;
       });
@@ -2245,8 +2318,9 @@
     }
 
     if (e.target.closest("[data-fleet-update-cancel]")) {
-      var updatePanel = $("#pa-fleet-update-panel");
-      if (updatePanel) updatePanel.hidden = true;
+      closeFleetUpdateWatcher();
+      var updateDialog = $("#pa-fleet-update-dialog");
+      if (updateDialog && updateDialog.open) updateDialog.close();
       return;
     }
 
@@ -2314,6 +2388,7 @@
           body: updateBody,
         });
       }).then(function (job) {
+        renderFleetUpdateJob(job);
         watchFleetUpdate(updateInstanceId, job.job_id);
       }).catch(function (err) {
         if (updateStatus) updateStatus.textContent = err.message;

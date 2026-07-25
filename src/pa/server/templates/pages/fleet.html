@@ -135,8 +135,9 @@
         <button type="button" class="ghost" id="pa-codex-login-cancel">Close</button>
       </div>
     </div>
-    <div class="panel-inset stack" id="pa-fleet-update-panel" hidden>
-      <div class="panel-header"><h3>Fleet update</h3></div>
+    <dialog class="fleet-update-dialog" id="pa-fleet-update-dialog" aria-labelledby="pa-fleet-update-title">
+      <div class="stack" id="pa-fleet-update-panel">
+      <div class="panel-header"><h3 id="pa-fleet-update-title">Fleet update</h3><button class="ghost" type="button" data-fleet-update-cancel aria-label="Close fleet update">Close</button></div>
       <form class="stack" id="pa-fleet-update-form">
         <input type="hidden" name="instance_id">
         <p id="pa-fleet-update-confirm"></p>
@@ -149,9 +150,14 @@
         <label><input name="force" type="checkbox"> Continue if agent drain times out</label>
         <div class="form-actions"><button class="primary" type="submit">Confirm update</button><button class="ghost" type="button" data-fleet-update-cancel>Cancel</button></div>
       </form>
+      <div class="fleet-update-progress" id="pa-fleet-update-progress-wrap" hidden>
+        <div><strong id="pa-fleet-update-phase">Pending</strong><span id="pa-fleet-update-percent">0%</span></div>
+        <progress id="pa-fleet-update-progress" max="100" value="0">0%</progress>
+      </div>
       <pre id="pa-fleet-update-log" aria-live="polite"></pre>
       <p class="muted small" id="pa-fleet-update-status"></p>
-    </div>
+      </div>
+    </dialog>
     {% else %}
     <p class="empty">No fleet instances registered.</p>
     {% endif %}

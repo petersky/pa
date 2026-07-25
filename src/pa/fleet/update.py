@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 import httpx
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from pa.config import Settings
 from pa.core.io import atomic_write_json
@@ -40,6 +40,18 @@ class UpdatePhase(StrEnum):
 
 
 TERMINAL_PHASES = {UpdatePhase.SUCCEEDED, UpdatePhase.FAILED}
+
+PHASE_PROGRESS = {
+    UpdatePhase.PENDING: 0,
+    UpdatePhase.PREFLIGHT: 10,
+    UpdatePhase.QUIESCING: 25,
+    UpdatePhase.INSTALLING: 45,
+    UpdatePhase.WAITING_INSTALL: 65,
+    UpdatePhase.RESTARTING: 80,
+    UpdatePhase.VERIFYING: 90,
+    UpdatePhase.SUCCEEDED: 100,
+    UpdatePhase.FAILED: 100,
+}
 
 
 class FleetUpdateRequest(BaseModel):
@@ -68,6 +80,7 @@ class FleetUpdateJob(BaseModel):
     health_timeout: float = 180.0
     install_timeout: float = 900.0
     phase: UpdatePhase = UpdatePhase.PENDING
+    progress_percent: int = Field(default=0, ge=0, le=100)
     current_version: str | None = None
     current_identity: str | None = None
     available_version: str | None = None
@@ -84,6 +97,14 @@ class FleetUpdateJob(BaseModel):
     install_deadline: datetime | None = None
     health_deadline: datetime | None = None
     initial_process_id: int | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def backfill_progress(cls, value: Any) -> Any:
+        if isinstance(value, dict) and "progress_percent" not in value:
+            phase = UpdatePhase(value.get("phase", UpdatePhase.PENDING))
+            return {**value, "progress_percent": PHASE_PROGRESS[phase]}
+        return value
 
     def public_dict(self) -> dict[str, Any]:
         return self.model_dump(mode="json")
@@ -183,6 +204,7 @@ class FleetUpdateJobStore:
 
     def event(self, job: FleetUpdateJob, phase: UpdatePhase, message: str) -> None:
         job.phase = phase
+        job.progress_percent = PHASE_PROGRESS[phase]
         job.events.append(
             {
                 "seq": job.next_event_seq,
