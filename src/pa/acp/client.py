@@ -576,6 +576,19 @@ class AgentConnection:
         if pending:
             await asyncio.gather(*pending, return_exceptions=True)
 
+    async def _abort_connect_if_shutting_down(self, *, stage: str) -> None:
+        from pa.server.shutdown import is_shutting_down
+
+        if not is_shutting_down():
+            return
+        logger.info(
+            "ACP connect aborted during %s because shutdown began",
+            stage,
+        )
+        if self._ctx is not None or self._proc is not None:
+            await self.disconnect(timeout=0.5, force=True)
+        raise RuntimeError("ACP connect aborted: shutting down")
+
     async def connect(
         self,
         *,
@@ -590,6 +603,7 @@ class AgentConnection:
     ) -> AgentSession:
         if not self.settings.agent_enabled:
             raise RuntimeError("Agent connection disabled (PA_AGENT_ENABLED=false)")
+        await self._abort_connect_if_shutting_down(stage="preflight")
 
         if self.wire_path:
             self._wire = await self._offload(
@@ -628,6 +642,7 @@ class AgentConnection:
             env=child_env,
         )
         self._conn, self._proc = await self._ctx.__aenter__()  # noqa: SIM117
+        await self._abort_connect_if_shutting_down(stage="initialize")
         self._init_response = await self._conn.initialize(
             protocol_version=PROTOCOL_VERSION,
             client_capabilities=ClientCapabilities(
@@ -637,6 +652,7 @@ class AgentConnection:
                 )
             ),
         )
+        await self._abort_connect_if_shutting_down(stage="post-initialize")
         self._resume_supported = _agent_supports_resume(self._init_response)
         self._load_supported = _agent_supports_load(self._init_response)
         self._list_supported = _agent_supports_session_list(self._init_response)
@@ -685,6 +701,7 @@ class AgentConnection:
                     resume_external_id, load_cwd = resolved
                     self.session_cwd = load_cwd
             if not skip_restore:
+                await self._abort_connect_if_shutting_down(stage=restore_method)
                 try:
                     restore = (
                         self._conn.resume_session
@@ -731,6 +748,11 @@ class AgentConnection:
                     status="idle",
                 )
         else:
+            # Missing session/list entries fall back to session/new. Never do that
+            # while the host is dying — Cursor often omits brand-new unprompted
+            # sessions from the next process's session/list, which cascades into
+            # more orphan creates on the following boot.
+            await self._abort_connect_if_shutting_down(stage="session/new")
             acp_session = await self._conn.new_session(
                 cwd=session_cwd,
                 mcp_servers=mcp,

@@ -160,6 +160,63 @@ class RequestPathResponsivenessTests(unittest.IsolatedAsyncioTestCase):
 
 
 class StartupResponsivenessTests(unittest.IsolatedAsyncioTestCase):
+    async def test_shutdown_fences_agent_before_module_teardown(self) -> None:
+        from pa.core.contracts import Module
+
+        module_saw_fenced = asyncio.Event()
+        resume_started = asyncio.Event()
+        allow_resume_finish = asyncio.Event()
+
+        class SlowModule(Module):
+            @property
+            def name(self) -> str:
+                return "slow-shutdown"
+
+            async def on_shutdown(self, app, ctx) -> None:
+                agent = ctx.services.get("instance_agent")
+                if agent and (not agent._accepting) and agent._quiescing:
+                    module_saw_fenced.set()
+                await asyncio.sleep(0.05)
+
+        async def slow_start(**_kwargs) -> None:
+            resume_started.set()
+            await allow_resume_finish.wait()
+
+        fake_agent = SimpleNamespace(
+            browser=SimpleNamespace(async_runtime=None),
+            _accepting=True,
+            _quiescing=False,
+            connected=False,
+            start=AsyncMock(side_effect=slow_start),
+            stop=AsyncMock(),
+            list_runtimes=lambda: [],
+            quiesce=AsyncMock(),
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                data_dir=Path(tmp) / "data",
+                workspace_root=Path(tmp) / "workspaces",
+                agent_enabled=True,
+            )
+            kernel = Kernel.boot(settings=settings, load_modules=False)
+            kernel.registry.register(SlowModule())
+            app = FastAPI()
+            with patch(
+                "pa.instance.agent_session.get_instance_agent",
+                return_value=fake_agent,
+            ):
+                await kernel.startup(app)
+                await resume_started.wait()
+                # Background start is still in flight; shutdown must fence before
+                # module teardown even while that task is blocked.
+                shutdown_task = asyncio.create_task(kernel.shutdown(app))
+                await asyncio.wait_for(module_saw_fenced.wait(), timeout=1.0)
+                self.assertFalse(fake_agent._accepting)
+                self.assertTrue(fake_agent._quiescing)
+                allow_resume_finish.set()
+                await shutdown_task
+                fake_agent.stop.assert_awaited()
+
     async def test_consume_once_skip_resume_reaches_agent_start(self) -> None:
         fake_agent = SimpleNamespace(
             browser=SimpleNamespace(async_runtime=None),

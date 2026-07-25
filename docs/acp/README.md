@@ -112,7 +112,10 @@ Existing durable sessions remain nonterminal and can be reopened explicitly or
 recovered by a later normal boot; the flag never closes or discards user work.
 `--no-acp-quiesce` selects the fast-stop path: PA rejects new prompts, cancels
 background startup, and force-stops provider processes without waiting for a
-quiesce snapshot.
+quiesce snapshot. On any stop, PA fences admissions and cancels background ACP
+resume before module teardown, and aborts in-flight `session/new` once shutdown
+is signaled, so a dying process cannot create provider sessions the next boot
+will fail to find in `session/list`.
 
 Closing a laptop lid suspends the local operating system. PA cannot execute work
 while its host is asleep. Continuous execution requires routing the work to an

@@ -178,19 +178,12 @@ class Kernel:
 
         await self.ctx.hooks.emit("app.shutdown", app=app, ctx=self.ctx)
 
-        for entry in reversed(self.registry.modules):
-            try:
-                await asyncio.wait_for(
-                    entry.module.on_shutdown(app, self.ctx), timeout=10.0
-                )
-            except asyncio.TimeoutError:
-                logger.error("Timed out shutting down module %s", entry.module.name)
-
+        # Fence + cancel ACP startup before module teardown. Module on_shutdown
+        # can take seconds; leaving resume running there lets connect() call
+        # session/new while Uvicorn is already shutting down.
         agent_start_task = self.ctx.services.get("agent_start_task")
         agent: AgentSessionManager | None = self.ctx.services.get("instance_agent")
         if agent:
-            # Fence admissions before cancellation so a startup task cannot
-            # attach another provider while shutdown is taking ownership.
             agent._accepting = False
             agent._quiescing = True
         if agent_start_task and not agent_start_task.done():
@@ -199,6 +192,15 @@ class Kernel:
                 await asyncio.wait_for(agent_start_task, timeout=5.0)
             except (asyncio.CancelledError, asyncio.TimeoutError):
                 pass
+
+        for entry in reversed(self.registry.modules):
+            try:
+                await asyncio.wait_for(
+                    entry.module.on_shutdown(app, self.ctx), timeout=10.0
+                )
+            except asyncio.TimeoutError:
+                logger.error("Timed out shutting down module %s", entry.module.name)
+
         if agent:
             import os
 
