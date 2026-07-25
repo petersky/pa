@@ -28,6 +28,7 @@ from pa.domain.models import (
     ItemKind,
     ItemStatus,
     ItemUpdate,
+    lane_from_legacy_status,
     KnowledgeEntry,
     Project,
     ProjectCreate,
@@ -44,7 +45,6 @@ from pa.domain.models import (
     RepositoryUpdate,
     RepositoryVisibility,
     TranscriptEvent,
-    _STATUS_TO_LANE,
 )
 from pa.sync.event_log import EventLog
 
@@ -680,7 +680,10 @@ class CardProjection:
             summary_updated_at=_coerce_datetime(p.get("summary_updated_at"))
             or updated_at,
             summary_stale=bool(p.get("summary_stale", False)),
-            lane=CardLane(p.get("lane", "inbox")),
+            lane=CardLane(
+                p.get("lane")
+                or lane_from_legacy_status(p.get("status", "open")).value
+            ),
             parent_id=p.get("parent_id"),
             project_id=p.get("project_id"),
             tags=p.get("tags", []),
@@ -789,7 +792,11 @@ class CardProjection:
         card = self.get_card(event.card_id, realm_id=event.realm_id)
         if not card:
             return
-        payload = event.payload
+        payload = dict(event.payload)
+        # Histories written before cards became canonical used item ``status``.
+        # Translate during projection without rewriting the durable event.
+        if "lane" not in payload and "status" in payload:
+            payload["lane"] = lane_from_legacy_status(payload["status"]).value
         if "body" in payload and "summary" not in payload:
             if card.summary_source == CardSummarySource.FALLBACK:
                 card.summary = fallback_card_summary(payload.get("body", ""))
@@ -1550,7 +1557,7 @@ class CardProjection:
     def list_items(
         self, kind: ItemKind | None = None, status: ItemStatus | None = None
     ) -> list[Item]:
-        lane = _STATUS_TO_LANE.get(status) if status else None
+        lane = lane_from_legacy_status(status) if status else None
         cards = self.list_cards(
             kind=CardKind(kind.value) if kind else None,
             lane=lane,

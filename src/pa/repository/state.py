@@ -519,6 +519,8 @@ class RepositoryStateService:
             repository_id = await self.inspector.resolve_repository_id_async(
                 requested, runtime
             )
+            inspection_error = str(exc)
+
             def persist_error() -> RepositoryObservation:
                 snapshots = self.store.load()
                 previous = next(
@@ -534,7 +536,7 @@ class RepositoryStateService:
                     failed = previous.model_copy(
                         update={
                             "observed_at": datetime.now(UTC),
-                            "inspection_error": str(exc),
+                            "inspection_error": inspection_error,
                         }
                     )
                 else:
@@ -542,12 +544,12 @@ class RepositoryStateService:
                         repository_id=repository_id,
                         path=str(requested),
                         instance_id=self.instance_id,
-                        inspection_error=str(exc),
+                        inspection_error=inspection_error,
                     )
                 snapshots[self._key(failed)] = failed
                 self.store.save(snapshots)
                 return RepositoryObservation(
-                    snapshot=failed, state="error", state_reason=str(exc)
+                    snapshot=failed, state="error", state_reason=inspection_error
                 )
 
             return await runtime.run_blocking(

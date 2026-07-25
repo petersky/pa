@@ -82,6 +82,7 @@ class DispatchRecord(BaseModel):
     error_code: str | None = None
     recoverable: bool = True
     cancel_requested: bool = False
+    control_operations: dict[str, str] = Field(default_factory=dict)
     prompt_acknowledged_at: datetime | None = None
     prompt_ack: dict[str, Any] | None = None
     knowledge_recorded_at: datetime | None = None
