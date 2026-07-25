@@ -13,11 +13,11 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
-from pa.browser.cdp import CdpPage
+from pa.browser.cdp import CdpError, CdpPage
 from pa.browser.manager import BrowserAttachment, BrowserManager
+from pa.core.async_runtime import AsyncRuntime
 from pa.core.context import AppContext
 from pa.core.contracts import Module
-from pa.core.async_runtime import AsyncRuntime
 
 router = APIRouter(prefix="/agent/sessions/{session_id}/browser")
 
@@ -97,12 +97,16 @@ async def browser_screenshot(request: Request, session_id: str) -> Response:
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(status_code=503, detail="Attached browser is unavailable") from exc
+        raise HTTPException(
+            status_code=503, detail="Attached browser is unavailable"
+        ) from exc
     return Response(image, media_type="image/png")
 
 
 @router.post("/navigate")
-async def browser_navigate(request: Request, session_id: str, body: NavigateBody) -> dict:
+async def browser_navigate(
+    request: Request, session_id: str, body: NavigateBody
+) -> dict:
     await _page(request, session_id).navigate(body.url)
     return await _runtime(request, session_id).browser_state()
 
@@ -121,8 +125,26 @@ async def browser_resize(request: Request, session_id: str, body: ResizeBody) ->
 
 @router.post("/click")
 async def browser_click(request: Request, session_id: str, body: ClickBody) -> dict:
-    await _page(request, session_id).command("Input.dispatchMouseEvent", {"type": "mousePressed", "x": body.x, "y": body.y, "button": "left", "clickCount": 1})
-    await _page(request, session_id).command("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": body.x, "y": body.y, "button": "left", "clickCount": 1})
+    await _page(request, session_id).command(
+        "Input.dispatchMouseEvent",
+        {
+            "type": "mousePressed",
+            "x": body.x,
+            "y": body.y,
+            "button": "left",
+            "clickCount": 1,
+        },
+    )
+    await _page(request, session_id).command(
+        "Input.dispatchMouseEvent",
+        {
+            "type": "mouseReleased",
+            "x": body.x,
+            "y": body.y,
+            "button": "left",
+            "clickCount": 1,
+        },
+    )
     return {"ok": True}
 
 
@@ -229,9 +251,7 @@ class McpBrowserController:
         session.config_json = config
         self.store.save_session(session)
 
-    async def persist_session_attributes_async(
-        self, *, url: str | None = None
-    ) -> None:
+    async def persist_session_attributes_async(self, *, url: str | None = None) -> None:
         if self.async_runtime:
             await self.async_runtime.run_blocking(
                 "browser.session_persist",
@@ -244,12 +264,19 @@ class McpBrowserController:
 
 _SNAPSHOT_JS = """(() => {
   const visible = el => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none'; };
-  return Array.from(document.querySelectorAll('a,button,input,textarea,select,[role],h1,h2,h3,p'))
+  const elements = Array.from(document.querySelectorAll('a,button,input,textarea,select,[role],h1,h2,h3,p'))
     .filter(visible).slice(0, 300).map((el, index) => ({
       index, tag: el.tagName.toLowerCase(), role: el.getAttribute('role') || '',
       text: (el.innerText || el.value || el.getAttribute('aria-label') || '').trim().slice(0, 500),
       href: el.href || '', disabled: !!el.disabled
     }));
+  return {
+    document: {
+      ready_state: document.readyState, url: location.href, title: document.title,
+      body_text: (document.body?.innerText || '').trim().slice(0, 2000)
+    },
+    elements
+  };
 })()"""
 
 
@@ -292,7 +319,9 @@ class BrowserModule(Module):
             )
             await page.resize(width, height, device_scale_factor=device_scale_factor)
             if url != "about:blank":
-                await page.navigate(url)
+                await page.navigate_and_wait(url)
+            else:
+                await page.wait_until_usable()
             controller.attributes = {
                 "width": width,
                 "height": height,
@@ -312,12 +341,12 @@ class BrowserModule(Module):
         async def browser_open(url: str) -> str:
             """Open a URL in PA's browser, starting a default headless browser if needed."""
             page = await controller.ensure_page()
-            await page.navigate(url)
+            diagnostic = await page.navigate_and_wait(url)
             state = await controller.state()
             await controller.persist_session_attributes_async(
                 url=state.get("url") or url
             )
-            return json.dumps(await page.metadata())
+            return json.dumps({**await page.metadata(), "document": diagnostic})
 
         @mcp.tool()
         async def browser_resize(
@@ -348,7 +377,13 @@ class BrowserModule(Module):
         async def browser_detach() -> str:
             """Stop a browser started by the agent. Session-attached browsers remain user-owned."""
             if not controller.attachment:
-                return json.dumps({"attached": bool(controller.page()), "detached": False, "owner": "session"})
+                return json.dumps(
+                    {
+                        "attached": bool(controller.page()),
+                        "detached": False,
+                        "owner": "session",
+                    }
+                )
             await controller.manager.detach(controller.session_key)
             controller.attachment = None
             controller.attributes = {}
@@ -360,7 +395,33 @@ class BrowserModule(Module):
         async def browser_snapshot() -> str:
             """Return a compact snapshot of visible, interactive page content."""
             page = await controller.ensure_page()
-            return json.dumps({"page": await page.metadata(), "elements": await page.evaluate(_SNAPSHOT_JS)}, ensure_ascii=False)
+            snapshot = await page.evaluate(_SNAPSHOT_JS)
+            document = dict(snapshot.get("document") or {})
+            elements = list(snapshot.get("elements") or [])
+            url = str(document.get("url") or "")
+            if url.startswith(("chrome-error://", "edge-error://")):
+                raise CdpError(
+                    "Browser snapshot is an error page: "
+                    f"{document.get('title') or document.get('body_text') or url}"
+                )
+            diagnostic = None
+            if not elements:
+                diagnostic = {
+                    "code": "empty_snapshot",
+                    "message": (
+                        "The page loaded but exposed no visible interactive or text "
+                        "elements. Inspect document/body_text or take a screenshot."
+                    ),
+                }
+            return json.dumps(
+                {
+                    "page": await page.metadata(),
+                    "document": document,
+                    "elements": elements,
+                    "diagnostic": diagnostic,
+                },
+                ensure_ascii=False,
+            )
 
         @mcp.tool()
         async def browser_click(selector: str) -> str:
@@ -387,4 +448,6 @@ class BrowserModule(Module):
             """Capture the current attached browser viewport as a PNG image."""
             from mcp.server.fastmcp import Image
 
-            return Image(data=await (await controller.ensure_page()).screenshot(), format="png")
+            return Image(
+                data=await (await controller.ensure_page()).screenshot(), format="png"
+            )
