@@ -34,6 +34,23 @@
   padding: 0.75rem 0.85rem 0;
 }
 
+.fleet-topology-actions {
+  display: grid;
+  justify-items: end;
+  gap: 0.35rem;
+}
+
+.fleet-topology-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.3rem;
+}
+
+.fleet-topology-controls button {
+  min-width: 2.25rem;
+}
+
 .fleet-topology-heading h3,
 .fleet-table-heading h3,
 .fleet-topology-heading p,
@@ -42,9 +59,11 @@
 }
 
 .fleet-topology {
+  position: relative;
   width: 100%;
   min-height: 25rem;
   overflow: hidden;
+  touch-action: none;
 }
 
 .fleet-topology svg {
@@ -53,6 +72,34 @@
   min-width: 0;
   height: auto;
   min-height: 25rem;
+  cursor: grab;
+  user-select: none;
+}
+
+.fleet-topology.is-panning svg {
+  cursor: grabbing;
+}
+
+.fleet-topology-state {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  margin: 0;
+  max-width: calc(100% - 2rem);
+  padding: 0.45rem 0.65rem;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--pa-surface) 92%, transparent);
+  text-align: center;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.fleet-topology-state[hidden] {
+  display: none;
+}
+
+.fleet-topology-pan-surface {
+  fill: transparent;
+  pointer-events: all;
 }
 
 .fleet-topology svg.fleet-topology-compact {
@@ -63,12 +110,14 @@
 .fleet-edge {
   cursor: pointer;
   outline: none;
+  transition: opacity 120ms ease;
 }
 
 .fleet-node rect {
   fill: var(--pa-surface);
   stroke: var(--pa-border);
   stroke-width: 3;
+  vector-effect: non-scaling-stroke;
 }
 
 .fleet-node text {
@@ -100,20 +149,25 @@
 
 .fleet-node:focus rect,
 .fleet-node:hover rect,
-.fleet-edge:focus line,
-.fleet-edge:focus path,
-.fleet-edge:hover line,
-.fleet-edge:hover path {
+.fleet-edge:focus .fleet-edge-visual,
+.fleet-edge:hover .fleet-edge-visual {
   stroke: var(--pa-focus);
   stroke-width: 5;
 }
 
-.fleet-edge line,
-.fleet-edge path {
+.fleet-edge .fleet-edge-visual {
   fill: none;
   stroke: var(--pa-accent);
   stroke-width: 3;
-  marker-end: url(#fleet-arrow);
+  vector-effect: non-scaling-stroke;
+}
+
+.fleet-edge-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 18;
+  pointer-events: stroke;
+  vector-effect: non-scaling-stroke;
 }
 
 .fleet-edge text {
@@ -122,14 +176,29 @@
   paint-order: stroke;
   stroke: var(--pa-surface);
   stroke-width: 4px;
+  pointer-events: none;
 }
 
 .fleet-edge-degraded line,
-.fleet-edge-degraded path { stroke: var(--pa-danger); stroke-dasharray: 8 5; }
+.fleet-edge-degraded .fleet-edge-visual { stroke: var(--pa-danger); stroke-dasharray: 8 5; }
 .fleet-edge-stale line,
-.fleet-edge-stale path { stroke: var(--pa-accent); stroke-dasharray: 8 5; }
+.fleet-edge-stale .fleet-edge-visual { stroke: var(--pa-accent); stroke-dasharray: 8 5; }
 .fleet-edge-unavailable line,
-.fleet-edge-unavailable path { stroke: var(--pa-text-muted); stroke-dasharray: 2 7; }
+.fleet-edge-unavailable .fleet-edge-visual { stroke: var(--pa-text-muted); stroke-dasharray: 2 7; }
+
+.fleet-node.fleet-selected rect,
+.fleet-edge.fleet-selected .fleet-edge-visual {
+  stroke: var(--pa-focus);
+  stroke-width: 6;
+}
+
+.fleet-topology.has-transient-emphasis .fleet-transient-dimmed:not(.fleet-selected) {
+  opacity: 0.42;
+}
+
+.fleet-edge marker path {
+  fill: context-stroke;
+}
 
 .fleet-route-equivalent {
   margin: 0 0.85rem 0.85rem;
@@ -237,6 +306,8 @@
   }
   .fleet-topology-heading,
   .fleet-table-heading { display: grid; }
+  .fleet-topology-actions { justify-items: start; }
+  .fleet-topology-controls { justify-content: flex-start; }
   .fleet-table-scroll { overflow: visible; }
   .fleet-instance-table,
   .fleet-instance-table tbody,

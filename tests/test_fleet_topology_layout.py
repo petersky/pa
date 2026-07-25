@@ -53,7 +53,40 @@ class FleetTopologyBrowserLayoutTests(unittest.TestCase):
                         "dimensions": {},
                     },
                 ],
-                "edges": [],
+                "edges": [
+                    {
+                        "id": "sync-local-monica",
+                        "kind": "sync",
+                        "source": "local",
+                        "target": "monica",
+                        "status": "healthy",
+                        "label": "default",
+                    },
+                    {
+                        "id": "dispatch-monica-local",
+                        "kind": "dispatch",
+                        "source": "monica",
+                        "target": "local",
+                        "status": "degraded",
+                        "label": "running",
+                    },
+                    {
+                        "id": "repository-mini",
+                        "kind": "repository",
+                        "source": "mac-mini",
+                        "target": "mac-mini",
+                        "status": "healthy",
+                        "label": "petersky/pa",
+                    },
+                    {
+                        "id": "supervisor-mini-local",
+                        "kind": "supervisor",
+                        "source": "mac-mini",
+                        "target": "local",
+                        "status": "healthy",
+                        "label": "PR petersky/pa#1",
+                    },
+                ],
             }
         ).replace("</", "<\\/")
         fixture = f"""<!doctype html>
@@ -62,8 +95,15 @@ class FleetTopologyBrowserLayoutTests(unittest.TestCase):
 <div id="pa-fleet-root">
   <script type="application/json" id="pa-fleet-overview-data">{overview}</script>
   <section id="fixture-panel" style="width: 358px">
+    <div class="fleet-topology-controls" role="group" aria-label="Topology viewport controls">
+      <button type="button" data-fleet-topology-action="zoom-out">−</button>
+      <button type="button" data-fleet-topology-action="zoom-in">+</button>
+      <button type="button" data-fleet-topology-action="reset">Reset <span data-fleet-topology-scale>100%</span></button>
+      <button type="button" data-fleet-topology-action="fit">Fit topology</button>
+    </div>
     <div id="pa-fleet-topology" class="fleet-topology">
       <svg viewBox="0 0 960 420" role="img" aria-label="Fleet instance and activity topology"></svg>
+      <p data-fleet-topology-state>Loading cached topology…</p>
     </div>
     <details class="fleet-route-equivalent">
       <summary>Route and placement list</summary>
@@ -80,6 +120,7 @@ class FleetTopologyBrowserLayoutTests(unittest.TestCase):
     var panel = document.querySelector("#fixture-panel");
     var host = document.querySelector("#pa-fleet-topology");
     var svg = host.querySelector("svg");
+    var autoNodeCount = svg.querySelectorAll("[data-fleet-node]").length;
 
     function inspect(name, width) {{
       panel.style.width = width + "px";
@@ -100,7 +141,7 @@ class FleetTopologyBrowserLayoutTests(unittest.TestCase):
             bounds.bottom <= svgRect.bottom + epsilon;
         }}),
         noHorizontalOverflow: host.scrollWidth <= host.clientWidth,
-        tabStops: svg.querySelectorAll('[role="button"][tabindex="0"]').length,
+        tabStops: svg.querySelectorAll('[data-fleet-node][role="button"][tabindex="0"]').length,
         labelPixels: 12 * svg.getScreenCTM().a,
         routesAfterGraph: document.querySelector(".fleet-route-equivalent")
           .getBoundingClientRect().top >= svgRect.bottom - epsilon,
@@ -121,6 +162,67 @@ class FleetTopologyBrowserLayoutTests(unittest.TestCase):
     tablet.focusedNode = document.activeElement.dataset.fleetNode;
     var desktop = inspect("desktop", 960);
     desktop.focusedNode = document.activeElement.dataset.fleetNode;
+    desktop.autoNodeCount = autoNodeCount;
+
+    var controller = api.controller();
+    var firstEdge = svg.querySelector('[data-fleet-edge="sync-local-monica"]');
+    var firstEdgePath = firstEdge.querySelector(".fleet-edge-visual");
+    firstEdge.dispatchEvent(new MouseEvent("click", {{ bubbles: true }}));
+    firstEdge = svg.querySelector('[data-fleet-edge="sync-local-monica"]');
+    desktop.edgeDomStable = firstEdge.querySelector(".fleet-edge-visual") === firstEdgePath;
+    firstEdge.dispatchEvent(new PointerEvent("pointerover", {{ bubbles: true }}));
+    var nodeElsewhere = svg.querySelector('[data-fleet-node="mac-mini"]');
+    nodeElsewhere.dispatchEvent(new PointerEvent("pointerover", {{ bubbles: true }}));
+    desktop.selectedSurvivesHover = firstEdge.classList.contains("fleet-selected");
+    desktop.edgesAfterHover = svg.querySelectorAll("[data-fleet-edge]").length;
+    desktop.visibleEdgePaths = Array.from(svg.querySelectorAll(".fleet-edge-visual"))
+      .every(function (path) {{
+        var style = getComputedStyle(path);
+        return style.display !== "none" && style.visibility !== "hidden" &&
+          Number(style.opacity || 1) > 0;
+      }});
+    svg.dispatchEvent(new PointerEvent("pointerout", {{ bubbles: true }}));
+    desktop.edgesAfterExit = svg.querySelectorAll("[data-fleet-edge]").length;
+
+    document.querySelector('[data-fleet-topology-action="zoom-in"]').click();
+    var zoomed = Object.assign({{}}, controller.viewport);
+    api.render();
+    desktop.viewportPreserved = controller.viewport.scale === zoomed.scale &&
+      controller.viewport.x === zoomed.x && controller.viewport.y === zoomed.y;
+    desktop.wheelAccepted = !svg.dispatchEvent(new WheelEvent("wheel", {{
+      bubbles: true, cancelable: true, deltaY: -100, clientX: 480, clientY: 210
+    }}));
+    desktop.wheelScale = controller.viewport.scale;
+
+    var surface = svg.querySelector("[data-fleet-pan-surface]");
+    surface.dispatchEvent(new PointerEvent("pointerdown", {{
+      bubbles: true, cancelable: true, pointerId: 41, button: 0, clientX: 200, clientY: 200
+    }}));
+    svg.dispatchEvent(new PointerEvent("pointermove", {{
+      bubbles: true, pointerId: 41, clientX: 250, clientY: 230
+    }}));
+    desktop.panMoved = controller.viewport.x !== zoomed.x || controller.viewport.y !== zoomed.y;
+    svg.dispatchEvent(new PointerEvent("pointercancel", {{
+      bubbles: true, pointerId: 41
+    }}));
+    desktop.panCancelled = !host.classList.contains("is-panning") &&
+      controller.pointerId === null;
+
+    document.querySelector('[data-fleet-topology-action="reset"]').click();
+    desktop.resetScale = controller.viewport.scale;
+    desktop.resetX = controller.viewport.x;
+    desktop.resetY = controller.viewport.y;
+    document.querySelector('[data-fleet-topology-action="fit"]').click();
+    desktop.fitWithinBounds = controller.viewport.scale >= 0.5 &&
+      controller.viewport.scale <= 3;
+    var zoomIn = document.querySelector('[data-fleet-topology-action="zoom-in"]');
+    var zoomOut = document.querySelector('[data-fleet-topology-action="zoom-out"]');
+    for (var zoomIndex = 0; zoomIndex < 20; zoomIndex += 1) zoomIn.click();
+    desktop.maxScale = controller.viewport.scale;
+    desktop.zoomInDisabled = zoomIn.disabled;
+    for (var zoomOutIndex = 0; zoomOutIndex < 40; zoomOutIndex += 1) zoomOut.click();
+    desktop.minScale = controller.viewport.scale;
+    desktop.zoomOutDisabled = zoomOut.disabled;
 
     var output = document.createElement("pre");
     output.id = "result";
@@ -166,6 +268,25 @@ class FleetTopologyBrowserLayoutTests(unittest.TestCase):
         self.assertEqual(by_name["desktop"]["mode"], "radial")
         self.assertEqual(by_name["desktop"]["viewBox"], "0 0 960 420")
         self.assertEqual(by_name["desktop"]["focusedNode"], "mac-mini")
+        self.assertEqual(by_name["desktop"]["autoNodeCount"], 3)
+        self.assertTrue(by_name["desktop"]["selectedSurvivesHover"])
+        self.assertTrue(by_name["desktop"]["edgeDomStable"])
+        self.assertEqual(by_name["desktop"]["edgesAfterHover"], 4)
+        self.assertTrue(by_name["desktop"]["visibleEdgePaths"])
+        self.assertEqual(by_name["desktop"]["edgesAfterExit"], 4)
+        self.assertTrue(by_name["desktop"]["viewportPreserved"])
+        self.assertTrue(by_name["desktop"]["wheelAccepted"])
+        self.assertGreater(by_name["desktop"]["wheelScale"], 1)
+        self.assertTrue(by_name["desktop"]["panMoved"])
+        self.assertTrue(by_name["desktop"]["panCancelled"])
+        self.assertEqual(by_name["desktop"]["resetScale"], 1)
+        self.assertEqual(by_name["desktop"]["resetX"], 0)
+        self.assertEqual(by_name["desktop"]["resetY"], 0)
+        self.assertTrue(by_name["desktop"]["fitWithinBounds"])
+        self.assertEqual(by_name["desktop"]["maxScale"], 3)
+        self.assertTrue(by_name["desktop"]["zoomInDisabled"])
+        self.assertEqual(by_name["desktop"]["minScale"], 0.5)
+        self.assertTrue(by_name["desktop"]["zoomOutDisabled"])
 
         for layout in layouts:
             with self.subTest(viewport=layout["name"]):

@@ -905,6 +905,7 @@
   }
 
   var fleetOverview = null;
+  var fleetOverviewRoot = null;
   var selectedFleetItem = null;
   var fleetRefresh = null;
   var fleetRenderedSnapshot = null;
@@ -916,7 +917,7 @@
       return JSON.parse(source.textContent || "{}");
     } catch (err) {
       setLiveBanner("Cached overview could not be decoded · Use Refresh to retry.");
-      return null;
+      return { version: 1, dimensions: [], nodes: [], edges: [] };
     }
   }
 
@@ -1397,38 +1398,352 @@
     };
   }
 
-  var fleetTopologyObserver = null;
-  var observedFleetTopologyHost = null;
-  var observedFleetTopologyWidth = 0;
-  var fleetTopologyResizeFrame = null;
+  var FLEET_TOPOLOGY_MIN_SCALE = 0.5;
+  var FLEET_TOPOLOGY_MAX_SCALE = 3;
+  var fleetTopologyController = null;
+  var fleetTopologySerial = 0;
 
-  function observeFleetTopology(host) {
-    if (typeof ResizeObserver !== "function" || observedFleetTopologyHost === host) return;
-    if (fleetTopologyObserver) fleetTopologyObserver.disconnect();
-    observedFleetTopologyHost = host;
-    observedFleetTopologyWidth = Math.round(host.getBoundingClientRect().width);
-    fleetTopologyObserver = new ResizeObserver(function (entries) {
-      var width = entries[0] && Math.round(entries[0].contentRect.width);
-      if (!width || Math.abs(width - observedFleetTopologyWidth) < 2) return;
-      observedFleetTopologyWidth = width;
-      if (fleetTopologyResizeFrame) cancelAnimationFrame(fleetTopologyResizeFrame);
-      fleetTopologyResizeFrame = requestAnimationFrame(function () {
-        fleetTopologyResizeFrame = null;
-        renderFleetTopology();
-      });
-    });
-    fleetTopologyObserver.observe(host);
+  function clampFleetTopologyScale(scale) {
+    return Math.max(
+      FLEET_TOPOLOGY_MIN_SCALE,
+      Math.min(FLEET_TOPOLOGY_MAX_SCALE, Number(scale) || 1)
+    );
   }
 
-  function renderFleetTopology(snapshot) {
-    var current = snapshot || fleetRenderedSnapshot;
-    var host = $("#pa-fleet-topology");
-    var svg = host && $("svg", host);
+  function topologyViewportAfterZoom(viewport, scale, center) {
+    var previous = viewport || { x: 0, y: 0, scale: 1 };
+    var nextScale = clampFleetTopologyScale(scale);
+    var ratio = nextScale / previous.scale;
+    var point = center || { x: 0, y: 0 };
+    return {
+      x: point.x - (point.x - previous.x) * ratio,
+      y: point.y - (point.y - previous.y) * ratio,
+      scale: nextScale,
+      userSet: true
+    };
+  }
+
+  function topologyEventPoint(svg, event) {
+    var rect = svg.getBoundingClientRect();
+    var viewBox = svg.viewBox && svg.viewBox.baseVal;
+    var width = viewBox && viewBox.width || 960;
+    var height = viewBox && viewBox.height || 420;
+    return {
+      x: (event.clientX - rect.left) * width / (rect.width || 1) +
+        (viewBox && viewBox.x || 0),
+      y: (event.clientY - rect.top) * height / (rect.height || 1) +
+        (viewBox && viewBox.y || 0)
+    };
+  }
+
+  function syncTopologyElement(current, incoming) {
+    Array.prototype.slice.call(current.attributes || []).forEach(function (attribute) {
+      if (!incoming.hasAttribute(attribute.name)) current.removeAttribute(attribute.name);
+    });
+    Array.prototype.slice.call(incoming.attributes || []).forEach(function (attribute) {
+      if (current.getAttribute(attribute.name) !== attribute.value) {
+        current.setAttribute(attribute.name, attribute.value);
+      }
+    });
+    var currentChildren = Array.prototype.slice.call(current.childNodes || []);
+    var incomingChildren = Array.prototype.slice.call(incoming.childNodes || []);
+    incomingChildren.forEach(function (nextChild, index) {
+      var existing = currentChildren[index];
+      if (!existing) {
+        current.appendChild(nextChild.cloneNode(true));
+        return;
+      }
+      if (
+        existing.nodeType !== nextChild.nodeType ||
+        (existing.nodeType === 1 && existing.tagName !== nextChild.tagName)
+      ) {
+        current.replaceChild(nextChild.cloneNode(true), existing);
+        return;
+      }
+      if (existing.nodeType === 1) syncTopologyElement(existing, nextChild);
+      else if (existing.nodeValue !== nextChild.nodeValue) {
+        existing.nodeValue = nextChild.nodeValue;
+      }
+    });
+    while (current.childNodes.length > incomingChildren.length) {
+      current.removeChild(current.lastChild);
+    }
+  }
+
+  function FleetTopologyController(host) {
+    this.host = host;
+    this.svg = $("svg", host);
+    this.panel = host.closest ? host.closest(".fleet-topology-panel") : host.parentElement;
+    this.state = $("[data-fleet-topology-state]", host);
+    this.snapshot = null;
+    this.layout = null;
+    this.layoutSignature = "";
+    this.viewport = { x: 0, y: 0, scale: 1, userSet: false };
+    this.pointerId = null;
+    this.pointerOrigin = null;
+    this.viewportOrigin = null;
+    this.observedWidth = Math.round(host.getBoundingClientRect().width);
+    this.resizeFrame = null;
+    this.markerId = "fleet-arrow-" + (++fleetTopologySerial);
+    this.handlers = {};
+    this.bind();
+  }
+
+  FleetTopologyController.prototype.bind = function () {
+    var controller = this;
+    var svg = this.svg;
+    if (!svg) return;
+    this.handlers.wheel = function (event) {
+      var factor = event.deltaY < 0 ? 1.12 : 1 / 1.12;
+      var nextScale = clampFleetTopologyScale(controller.viewport.scale * factor);
+      if (Math.abs(nextScale - controller.viewport.scale) < 0.001) return;
+      event.preventDefault();
+      controller.viewport = topologyViewportAfterZoom(
+        controller.viewport,
+        nextScale,
+        topologyEventPoint(svg, event)
+      );
+      controller.updateTransform();
+    };
+    this.handlers.pointerdown = function (event) {
+      if (!event.target.closest || !event.target.closest("[data-fleet-pan-surface]")) return;
+      if (event.button != null && event.button !== 0) return;
+      event.preventDefault();
+      controller.pointerId = event.pointerId;
+      controller.pointerOrigin = topologyEventPoint(svg, event);
+      controller.viewportOrigin = Object.assign({}, controller.viewport);
+      controller.host.classList.add("is-panning");
+      if (svg.setPointerCapture) {
+        try { svg.setPointerCapture(event.pointerId); } catch (ignore) {}
+      }
+    };
+    this.handlers.pointermove = function (event) {
+      if (controller.pointerId !== event.pointerId || !controller.pointerOrigin) return;
+      var point = topologyEventPoint(svg, event);
+      controller.viewport = {
+        x: controller.viewportOrigin.x + point.x - controller.pointerOrigin.x,
+        y: controller.viewportOrigin.y + point.y - controller.pointerOrigin.y,
+        scale: controller.viewportOrigin.scale,
+        userSet: true
+      };
+      controller.updateTransform();
+    };
+    this.handlers.pointerend = function (event) {
+      if (controller.pointerId !== event.pointerId) return;
+      controller.cancelPan();
+    };
+    this.handlers.pointerover = function (event) {
+      controller.setTransientTarget(event.target);
+    };
+    this.handlers.pointerout = function (event) {
+      if (event.relatedTarget && svg.contains(event.relatedTarget)) {
+        controller.setTransientTarget(event.relatedTarget);
+      } else {
+        controller.clearTransientTarget();
+      }
+    };
+    this.handlers.focusin = function (event) {
+      controller.setTransientTarget(event.target);
+    };
+    this.handlers.focusout = function (event) {
+      if (event.relatedTarget && svg.contains(event.relatedTarget)) {
+        controller.setTransientTarget(event.relatedTarget);
+      } else {
+        controller.clearTransientTarget();
+      }
+    };
+    this.handlers.control = function (event) {
+      var button = event.target.closest &&
+        event.target.closest("[data-fleet-topology-action]");
+      if (!button || !controller.panel || !controller.panel.contains(button)) return;
+      event.preventDefault();
+      var action = button.dataset.fleetTopologyAction;
+      if (action === "zoom-in") controller.zoomBy(1.25);
+      if (action === "zoom-out") controller.zoomBy(0.8);
+      if (action === "reset") controller.resetViewport(true);
+      if (action === "fit") controller.fitViewport(true);
+    };
+    svg.addEventListener("wheel", this.handlers.wheel, { passive: false });
+    svg.addEventListener("pointerdown", this.handlers.pointerdown);
+    svg.addEventListener("pointermove", this.handlers.pointermove);
+    svg.addEventListener("pointerup", this.handlers.pointerend);
+    svg.addEventListener("pointercancel", this.handlers.pointerend);
+    svg.addEventListener("lostpointercapture", this.handlers.pointerend);
+    svg.addEventListener("pointerover", this.handlers.pointerover);
+    svg.addEventListener("pointerout", this.handlers.pointerout);
+    svg.addEventListener("focusin", this.handlers.focusin);
+    svg.addEventListener("focusout", this.handlers.focusout);
+    if (this.panel) this.panel.addEventListener("click", this.handlers.control);
+    if (typeof ResizeObserver === "function") {
+      this.observer = new ResizeObserver(function (entries) {
+        var width = entries[0] && Math.round(entries[0].contentRect.width);
+        if (!width || Math.abs(width - controller.observedWidth) < 2) return;
+        controller.observedWidth = width;
+        controller.scheduleRender();
+      });
+      this.observer.observe(this.host);
+    }
+  };
+
+  FleetTopologyController.prototype.destroy = function () {
+    this.cancelPan();
+    if (this.observer) this.observer.disconnect();
+    if (this.resizeFrame) cancelAnimationFrame(this.resizeFrame);
+    if (this.svg) {
+      this.svg.removeEventListener("wheel", this.handlers.wheel);
+      this.svg.removeEventListener("pointerdown", this.handlers.pointerdown);
+      this.svg.removeEventListener("pointermove", this.handlers.pointermove);
+      this.svg.removeEventListener("pointerup", this.handlers.pointerend);
+      this.svg.removeEventListener("pointercancel", this.handlers.pointerend);
+      this.svg.removeEventListener("lostpointercapture", this.handlers.pointerend);
+      this.svg.removeEventListener("pointerover", this.handlers.pointerover);
+      this.svg.removeEventListener("pointerout", this.handlers.pointerout);
+      this.svg.removeEventListener("focusin", this.handlers.focusin);
+      this.svg.removeEventListener("focusout", this.handlers.focusout);
+    }
+    if (this.panel) this.panel.removeEventListener("click", this.handlers.control);
+    this.host.classList.remove("is-panning", "has-transient-emphasis");
+    this.snapshot = null;
+  };
+
+  FleetTopologyController.prototype.cancelPan = function () {
+    var pointerId = this.pointerId;
+    this.pointerId = null;
+    this.pointerOrigin = null;
+    this.viewportOrigin = null;
+    this.host.classList.remove("is-panning");
+    if (
+      pointerId != null &&
+      this.svg &&
+      this.svg.hasPointerCapture &&
+      this.svg.hasPointerCapture(pointerId)
+    ) {
+      try { this.svg.releasePointerCapture(pointerId); } catch (ignore) {}
+    }
+  };
+
+  FleetTopologyController.prototype.scheduleRender = function () {
+    var controller = this;
+    if (this.resizeFrame) cancelAnimationFrame(this.resizeFrame);
+    this.resizeFrame = requestAnimationFrame(function () {
+      controller.resizeFrame = null;
+      if (controller.snapshot) controller.render(controller.snapshot);
+    });
+  };
+
+  FleetTopologyController.prototype.updateControls = function () {
+    if (!this.panel) return;
+    var scale = this.viewport.scale;
+    var zoomIn = $('[data-fleet-topology-action="zoom-in"]', this.panel);
+    var zoomOut = $('[data-fleet-topology-action="zoom-out"]', this.panel);
+    var reset = $('[data-fleet-topology-action="reset"]', this.panel);
+    var scaleLabel = $("[data-fleet-topology-scale]", this.panel);
+    if (zoomIn) zoomIn.disabled = scale >= FLEET_TOPOLOGY_MAX_SCALE - 0.001;
+    if (zoomOut) zoomOut.disabled = scale <= FLEET_TOPOLOGY_MIN_SCALE + 0.001;
+    if (reset) {
+      reset.disabled = Math.abs(scale - 1) < 0.001 &&
+        Math.abs(this.viewport.x) < 0.5 && Math.abs(this.viewport.y) < 0.5;
+    }
+    if (scaleLabel) scaleLabel.textContent = Math.round(scale * 100) + "%";
+  };
+
+  FleetTopologyController.prototype.updateTransform = function () {
+    var viewport = $("[data-fleet-topology-viewport]", this.svg);
+    if (viewport) {
+      viewport.setAttribute(
+        "transform",
+        "translate(" + this.viewport.x + " " + this.viewport.y + ") scale(" +
+          this.viewport.scale + ")"
+      );
+    }
+    this.host.dataset.fleetTopologyScale = String(this.viewport.scale);
+    this.updateControls();
+  };
+
+  FleetTopologyController.prototype.resetViewport = function (userSet) {
+    this.viewport = { x: 0, y: 0, scale: 1, userSet: !!userSet };
+    this.updateTransform();
+  };
+
+  FleetTopologyController.prototype.zoomBy = function (factor) {
+    if (!this.layout) return;
+    this.viewport = topologyViewportAfterZoom(
+      this.viewport,
+      this.viewport.scale * factor,
+      { x: this.layout.width / 2, y: this.layout.height / 2 }
+    );
+    this.updateTransform();
+  };
+
+  FleetTopologyController.prototype.fitViewport = function (userSet) {
+    if (!this.layout) return;
+    var content = $("[data-fleet-topology-content]", this.svg);
+    var bounds = content && content.getBBox ? content.getBBox() : null;
+    if (!bounds || !bounds.width || !bounds.height) {
+      this.resetViewport(userSet);
+      return;
+    }
+    var padding = 36;
+    var scale = clampFleetTopologyScale(Math.min(
+      (this.layout.width - padding * 2) / bounds.width,
+      (this.layout.height - padding * 2) / bounds.height
+    ));
+    this.viewport = {
+      x: this.layout.width / 2 - (bounds.x + bounds.width / 2) * scale,
+      y: this.layout.height / 2 - (bounds.y + bounds.height / 2) * scale,
+      scale: scale,
+      userSet: !!userSet
+    };
+    this.updateTransform();
+  };
+
+  FleetTopologyController.prototype.setTransientTarget = function (target) {
+    var item = target && target.closest &&
+      target.closest("[data-fleet-node], [data-fleet-edge]");
+    if (!item || !this.svg.contains(item)) {
+      this.clearTransientTarget();
+      return;
+    }
+    var nodeId = item.getAttribute("data-fleet-node");
+    var edgeId = item.getAttribute("data-fleet-edge");
+    var nodes = $all("[data-fleet-node]", this.svg);
+    var edges = $all("[data-fleet-edge]", this.svg);
+    nodes.concat(edges).forEach(function (candidate) {
+      var related = candidate === item;
+      if (nodeId && candidate.hasAttribute("data-fleet-edge")) {
+        related = candidate.dataset.fleetSource === nodeId ||
+          candidate.dataset.fleetTarget === nodeId;
+      } else if (edgeId && candidate.hasAttribute("data-fleet-node")) {
+        related = candidate.dataset.fleetNode === item.dataset.fleetSource ||
+          candidate.dataset.fleetNode === item.dataset.fleetTarget;
+      }
+      candidate.classList.toggle("fleet-transient-dimmed", !related);
+    });
+    this.host.classList.add("has-transient-emphasis");
+  };
+
+  FleetTopologyController.prototype.clearTransientTarget = function () {
+    $all(".fleet-transient-dimmed", this.svg).forEach(function (item) {
+      item.classList.remove("fleet-transient-dimmed");
+    });
+    this.host.classList.remove("has-transient-emphasis");
+  };
+
+  FleetTopologyController.prototype.render = function (current) {
+    var host = this.host;
+    var svg = this.svg;
     if (!svg || !current) return;
-    observeFleetTopology(host);
-    var nodes = current.nodes;
+    this.cancelPan();
+    this.snapshot = current;
+    var nodes = current.nodes || [];
     var edges = current.overview.edges || [];
     var layout = fleetTopologyLayout(nodes, host.getBoundingClientRect().width);
+    var signature = layout.mode + "|" + layout.viewBox + "|" + nodes.map(function (item) {
+      return item.node.id;
+    }).sort().join("\u0000");
+    var layoutChanged = !!this.layoutSignature && this.layoutSignature !== signature;
+    this.layout = layout;
+    this.layoutSignature = signature;
     var active = document.activeElement;
     var focusedKind = active && active.closest && active.closest("[data-fleet-node]")
       ? "node"
@@ -1439,8 +1754,19 @@
     svg.classList.toggle("fleet-topology-multi", nodes.length > 1);
     svg.classList.toggle("fleet-topology-compact", layout.mode !== "radial");
     var positions = layout.positions;
+    var selectedNodeId = current.selection && current.selection.kind === "node"
+      ? current.selection.id : "";
+    var selectedEdgeId = current.selection && current.selection.kind === "edge"
+      ? current.selection.id
+      : (current.selection && current.selection.kind === "edge-item"
+        ? current.selection.edgeId : "");
     var parts = [
-      '<defs><marker id="fleet-arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z"></path></marker></defs>'
+      '<defs><marker id="' + this.markerId +
+        '" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">' +
+        '<path d="M0,0 L10,4 L0,8 z" fill="context-stroke"></path></marker></defs>',
+      '<rect class="fleet-topology-pan-surface" data-fleet-pan-surface x="0" y="0" width="' +
+        layout.width + '" height="' + layout.height + '"></rect>',
+      '<g data-fleet-topology-viewport><g data-fleet-topology-content>'
     ];
     var parallelEdges = {};
     edges.forEach(function (edge) {
@@ -1467,17 +1793,18 @@
       var parallelIndex = siblings.indexOf(edge);
       var parallelOffset = (parallelIndex - (siblings.length - 1) / 2) * 200;
       var visualLabel = edge.kind + (edge.count > 1 ? " ×" + edge.count : "");
+      var path;
+      var labelX;
+      var labelY;
       if (edge.source === edge.target) {
         var loopLift = 92 + Math.abs(parallelOffset);
         var loopSpread = 115 + parallelIndex * 16;
-        parts.push('<g class="fleet-edge fleet-edge-' + escapeHtml(visualStatus) +
-          '" data-fleet-edge="' + escapeHtml(edge.id) + '" tabindex="0" role="button" aria-label="' +
-          label + '"><title>' + label + '</title><path d="M ' + (from.x + 58) + " " +
-          (from.y - 28) + " C " + (from.x + loopSpread) + " " + (from.y - loopLift) + ", " +
-          (from.x - loopSpread) + " " + (from.y - loopLift) + ", " + (from.x - 58) + " " +
-          (from.y - 28) + '"></path><text x="' + from.x + '" y="' +
-          (from.y - loopLift + 10) + '" text-anchor="middle">' +
-          escapeHtml(visualLabel) + "</text></g>");
+        path = "M " + (from.x + 58) + " " + (from.y - 28) + " C " +
+          (from.x + loopSpread) + " " + (from.y - loopLift) + ", " +
+          (from.x - loopSpread) + " " + (from.y - loopLift) + ", " +
+          (from.x - 58) + " " + (from.y - 28);
+        labelX = from.x;
+        labelY = from.y - loopLift + 10;
       } else {
         var canonicalIds = [String(edge.source), String(edge.target)].sort();
         var canonicalFrom = positions[canonicalIds[0]];
@@ -1487,16 +1814,21 @@
         var length = Math.sqrt(dx * dx + dy * dy) || 1;
         var controlX = (from.x + to.x) / 2 - dy / length * parallelOffset;
         var controlY = (from.y + to.y) / 2 + dx / length * parallelOffset;
-        var midX = (from.x + 2 * controlX + to.x) / 4;
-        var midY = (from.y + 2 * controlY + to.y) / 4;
-        parts.push('<g class="fleet-edge fleet-edge-' + escapeHtml(visualStatus) +
-          '" data-fleet-edge="' + escapeHtml(edge.id) + '" tabindex="0" role="button" aria-label="' +
-          label + '"><title>' + label + '</title><path d="M ' + from.x + " " + from.y +
-          " Q " + controlX + " " + controlY + ", " + to.x + " " + to.y +
-          '"></path><text x="' + midX + '" y="' + (midY - 8) +
-          '" text-anchor="middle">' + escapeHtml(visualLabel) + "</text></g>");
+        labelX = (from.x + 2 * controlX + to.x) / 4;
+        labelY = (from.y + 2 * controlY + to.y) / 4 - 8;
+        path = "M " + from.x + " " + from.y + " Q " + controlX + " " +
+          controlY + ", " + to.x + " " + to.y;
       }
-    });
+      parts.push('<g class="fleet-edge fleet-edge-' + escapeHtml(visualStatus) +
+        (selectedEdgeId === edge.id ? " fleet-selected" : "") +
+        '" data-fleet-edge="' + escapeHtml(edge.id) + '" data-fleet-source="' +
+        escapeHtml(edge.source) + '" data-fleet-target="' + escapeHtml(edge.target) +
+        '" tabindex="0" role="button" aria-label="' + label + '"><title>' + label +
+        '</title><path class="fleet-edge-hit" d="' + path +
+        '"></path><path class="fleet-edge-visual" marker-end="url(#' + this.markerId +
+        ')" d="' + path + '"></path><text x="' + labelX + '" y="' + labelY +
+        '" text-anchor="middle">' + escapeHtml(visualLabel) + "</text></g>");
+    }, this);
     nodes.forEach(function (nodeState) {
       var node = nodeState.node;
       var pos = positions[node.id];
@@ -1522,7 +1854,9 @@
         ? "upgrade " + (update.value.available_version || update.value.latest || "available")
         : (update.state === "fresh" ? "current" : update.state);
       parts.push('<g class="fleet-node fleet-node-' + escapeHtml(nodeState.topologyStatus) +
-        (node.local ? " fleet-node-local" : "") + '" data-fleet-node="' + escapeHtml(node.id) +
+        (node.local ? " fleet-node-local" : "") +
+        (selectedNodeId === node.id ? " fleet-selected" : "") +
+        '" data-fleet-node="' + escapeHtml(node.id) +
         '" tabindex="0" role="button" aria-label="' + escapeHtml(nodeState.accessibleLabel) + '"><title>' +
         escapeHtml(nodeState.accessibleLabel) + '</title><rect x="' + (pos.x - 94) + '" y="' + (pos.y - 58) +
         '" width="188" height="116" rx="14"></rect><text class="fleet-node-name" x="' +
@@ -1536,20 +1870,98 @@
         '</text><text class="fleet-node-freshness" x="' + pos.x + '" y="' + (pos.y + 49) +
         '" text-anchor="middle">' + escapeHtml(nodeState.freshness) + "</text></g>");
     });
-    svg.innerHTML = parts.join("");
+    parts.push("</g></g>");
+    var markup = parts.join("");
+    var existingContent = $("[data-fleet-topology-content]", svg);
+    if (!layoutChanged && existingContent && typeof document.createElementNS === "function") {
+      var scratch = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      scratch.innerHTML = markup;
+      var incomingContent = $("[data-fleet-topology-content]", scratch);
+      var existingItems = Object.create(null);
+      $all(":scope > [data-fleet-edge], :scope > [data-fleet-node]", existingContent)
+        .forEach(function (item) {
+          var key = item.hasAttribute("data-fleet-edge")
+            ? "edge:" + item.dataset.fleetEdge
+            : "node:" + item.dataset.fleetNode;
+          existingItems[key] = item;
+        });
+      var cursor = existingContent.firstElementChild;
+      $all(":scope > [data-fleet-edge], :scope > [data-fleet-node]", incomingContent)
+        .forEach(function (incoming) {
+          var key = incoming.hasAttribute("data-fleet-edge")
+            ? "edge:" + incoming.dataset.fleetEdge
+            : "node:" + incoming.dataset.fleetNode;
+          var existing = existingItems[key];
+          if (existing) {
+            syncTopologyElement(existing, incoming);
+            delete existingItems[key];
+          } else {
+            existing = incoming.cloneNode(true);
+          }
+          if (existing !== cursor) existingContent.insertBefore(existing, cursor);
+          cursor = existing.nextElementSibling;
+        });
+      Object.keys(existingItems).forEach(function (key) {
+        existingItems[key].remove();
+      });
+    } else {
+      svg.innerHTML = markup;
+    }
+    if (layoutChanged) this.resetViewport(false);
+    else this.updateTransform();
+    this.clearTransientTarget();
+    if (this.state) {
+      this.state.hidden = nodes.length > 0;
+      this.state.textContent = current.refresh && current.refresh.warning
+        ? "Topology refresh failed. Use Refresh all to retry."
+        : (current.refresh && current.refresh.message
+          ? current.refresh.message
+          : "No cached fleet topology yet. Refreshing automatically…");
+    }
     if (focusedId) {
-      var focused = svg.querySelector(
-        '[data-fleet-' + focusedKind + '="' + CSS.escape(focusedId) + '"]'
-      );
+      var selector = '[data-fleet-' + focusedKind + '="' +
+        String(focusedId).replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"]';
+      var focused = svg.querySelector(selector);
       if (focused) focused.focus({ preventScroll: true });
     }
     renderFleetEdgeList(current);
+  };
+
+  function ensureFleetTopologyController(host) {
+    if (
+      fleetTopologyController &&
+      (fleetTopologyController.host !== host || !fleetTopologyController.host.isConnected)
+    ) {
+      fleetTopologyController.destroy();
+      fleetTopologyController = null;
+    }
+    if (!fleetTopologyController && host) {
+      fleetTopologyController = new FleetTopologyController(host);
+    }
+    return fleetTopologyController;
+  }
+
+  function destroyFleetTopologyController() {
+    if (!fleetTopologyController) return;
+    fleetTopologyController.destroy();
+    fleetTopologyController = null;
+  }
+
+  function renderFleetTopology(snapshot) {
+    var current = snapshot || fleetRenderedSnapshot;
+    var host = $("#pa-fleet-topology");
+    if (!host || !current) return;
+    ensureFleetTopologyController(host).render(current);
   }
 
   if (window.PA_TEST) {
     window.__paFleetTopology = {
       layout: fleetTopologyLayout,
-      render: renderFleetTopology
+      render: renderFleetTopology,
+      clampScale: clampFleetTopologyScale,
+      viewportAfterZoom: topologyViewportAfterZoom,
+      controller: function () { return fleetTopologyController; },
+      destroy: destroyFleetTopologyController
     };
   }
 
@@ -1731,12 +2143,18 @@
       return Promise.resolve();
     }
     var seq = ++liveStatusSeq;
+    var discoveredNodes = false;
     liveStatusController = typeof AbortController === "function" ? new AbortController() : null;
-    api(
+    var metadataRequest = api(
       "/api/fleet/overview",
       liveStatusController ? { signal: liveStatusController.signal } : {}
     ).then(function (snapshot) {
       if (seq !== liveStatusSeq || !snapshot) return;
+      var existingIds = Object.create(null);
+      (fleetOverview.nodes || []).forEach(function (node) { existingIds[node.id] = true; });
+      discoveredNodes = (snapshot.nodes || []).some(function (node) {
+        return !existingIds[node.id];
+      });
       fleetOverview = mergeFleetOverviewMetadata(fleetOverview, snapshot);
       renderFleetOverview(createFleetSnapshot(fleetOverview, fleetRefresh, selectedFleetItem));
     }).catch(function (error) {
@@ -1852,54 +2270,118 @@
     var workers = [];
     var concurrency = Math.min(4, work.length);
     for (var index = 0; index < concurrency; index += 1) workers.push(worker());
-    liveStatusRequest = Promise.all(workers).finally(function () {
+    liveStatusRequest = Promise.all(workers.concat([metadataRequest])).finally(function () {
       if (seq !== liveStatusSeq) return;
       clearTimeout(liveStatusTimer);
       liveStatusTimer = null;
       liveStatusController = null;
       liveStatusRequest = null;
+      if (discoveredNodes) {
+        setTimeout(function () {
+          if (seq === liveStatusSeq && fleetOverviewRoot === $("#pa-fleet-root")) {
+            loadLiveStatus(false);
+          }
+        }, 0);
+      }
     });
     return liveStatusRequest;
   }
 
+  function teardownFleetOverview() {
+    if (liveStatusRequest || liveStatusController) abortLiveStatus();
+    destroyFleetTopologyController();
+    fleetOverviewRoot = null;
+    fleetOverview = null;
+    fleetRefresh = null;
+    fleetRenderedSnapshot = null;
+    selectedFleetItem = null;
+  }
+
   function maybeLoadLiveStatus() {
-    if (!$("#pa-fleet-root")) return;
+    var root = $("#pa-fleet-root");
+    if (!root) return;
+    if (fleetOverviewRoot === root) {
+      if (!fleetTopologyController && fleetRenderedSnapshot) {
+        renderFleetTopology(fleetRenderedSnapshot);
+      }
+      return;
+    }
+    if (fleetOverviewRoot && fleetOverviewRoot !== root) teardownFleetOverview();
+    fleetOverviewRoot = root;
+    selectedFleetItem = null;
     fleetOverview = readFleetOverview();
     fleetRefresh = null;
-    renderFleetOverview();
+    if (fleetOverview) renderFleetOverview();
     loadLiveStatus(false);
   }
 
-  document.addEventListener("DOMContentLoaded", function () {
+  function initializeFleetPage() {
     maybeLoadLiveStatus();
     maybeLoadRemoteOperations();
     maybeLoadSyncStatus();
-  });
-  var fleetResizeTimer = null;
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initializeFleetPage);
+  } else {
+    setTimeout(initializeFleetPage, 0);
+  }
+
   window.addEventListener("resize", function () {
-    clearTimeout(fleetResizeTimer);
-    fleetResizeTimer = setTimeout(renderFleetTopology, 80);
+    if (fleetTopologyController && !fleetTopologyController.observer) {
+      fleetTopologyController.scheduleRender();
+    }
   });
-  document.body.addEventListener("htmx:afterSwap", function (evt) {
-    var target = evt.target;
+
+  function fleetSwapTarget(evt) {
+    return (evt && evt.detail && evt.detail.ctx && evt.detail.ctx.target) ||
+      (evt && evt.detail && evt.detail.target) ||
+      (evt && evt.target);
+  }
+
+  function fleetSwapContainsRoot(evt) {
+    var target = fleetSwapTarget(evt);
+    return target &&
+      (target.id === "app-view" ||
+        target.id === "pa-fleet-root" ||
+        (target.querySelector && target.querySelector("#pa-fleet-root")));
+  }
+
+  function afterFleetSwap(evt) {
+    if (fleetSwapContainsRoot(evt)) initializeFleetPage();
+  }
+
+  function beforeFleetSwap(evt) {
+    var target = fleetSwapTarget(evt);
     if (
       target &&
       (target.id === "app-view" ||
         target.id === "pa-fleet-root" ||
-        (target.querySelector && target.querySelector("#pa-fleet-root")))
+        (fleetOverviewRoot && target.contains && target.contains(fleetOverviewRoot)))
     ) {
-      maybeLoadLiveStatus();
-      maybeLoadRemoteOperations();
-      maybeLoadSyncStatus();
+      teardownFleetOverview();
+      closeFleetUpdateWatcher();
     }
+  }
+
+  document.body.addEventListener("htmx:after:swap", afterFleetSwap);
+  document.body.addEventListener("htmx:afterSwap", afterFleetSwap);
+  document.body.addEventListener("htmx:before:swap", beforeFleetSwap);
+  document.body.addEventListener("htmx:beforeSwap", beforeFleetSwap);
+  document.addEventListener("htmx:historyRestore", function () {
+    setTimeout(initializeFleetPage, 0);
   });
-  document.body.addEventListener("htmx:beforeSwap", function (evt) {
-    var target = evt.target;
-    if (target && target.id === "app-view" && liveStatusRequest) {
-      abortLiveStatus();
-    }
-    if (target && target.id === "app-view") closeFleetUpdateWatcher();
+  window.addEventListener("pageshow", function () {
+    setTimeout(initializeFleetPage, 0);
   });
+  window.addEventListener("popstate", function () {
+    setTimeout(initializeFleetPage, 0);
+  });
+  window.addEventListener("online", function () {
+    maybeLoadLiveStatus();
+    if ($("#pa-fleet-root") && !liveStatusRequest) loadLiveStatus(false);
+  });
+  window.addEventListener("pagehide", teardownFleetOverview);
 
   document.addEventListener("close", function (event) {
     if (event.target && event.target.id === "pa-fleet-update-dialog") {
@@ -1973,6 +2455,7 @@
     var topologyNode = e.target.closest("[data-fleet-node]");
     if (topologyNode) {
       renderFleetDetail("node", topologyNode.getAttribute("data-fleet-node"));
+      renderFleetTopology(createFleetSnapshot(fleetOverview, fleetRefresh, selectedFleetItem));
       return;
     }
     var topologyEdgeItem = e.target.closest("[data-fleet-edge-item]");
@@ -1982,11 +2465,13 @@
         topologyEdgeItem.getAttribute("data-fleet-edge-item"),
         topologyEdgeItem.getAttribute("data-fleet-edge-parent")
       );
+      renderFleetTopology(createFleetSnapshot(fleetOverview, fleetRefresh, selectedFleetItem));
       return;
     }
     var topologyEdge = e.target.closest("[data-fleet-edge]");
     if (topologyEdge) {
       renderFleetDetail("edge", topologyEdge.getAttribute("data-fleet-edge"));
+      renderFleetTopology(createFleetSnapshot(fleetOverview, fleetRefresh, selectedFleetItem));
       return;
     }
     var instanceRetry = e.target.closest("[data-fleet-retry-instance]");

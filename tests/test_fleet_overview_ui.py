@@ -18,9 +18,11 @@ const vm = require("vm");
 const assert = require("assert");
 global.window = {
   innerWidth: 1200,
+  PA_TEST: true,
   addEventListener: function () {},
 };
 global.document = {
+  readyState: "loading",
   querySelector: function () { return null; },
   querySelectorAll: function () { return []; },
   addEventListener: function () {},
@@ -237,5 +239,50 @@ snapshot.nodes.forEach(function (item) {
   assert.ok(item.accessibleLabel.includes("freshness fresh"));
   assert.ok(!item.accessibleLabel.includes("timeout"));
 });
+"""
+        )
+
+    def test_zoom_is_pointer_centered_and_bounded(self) -> None:
+        self.run_node(
+            r"""
+const topology = window.__paFleetTopology;
+assert.strictEqual(topology.clampScale(0.1), 0.5);
+assert.strictEqual(topology.clampScale(7), 3);
+const initial = { x: 12, y: -8, scale: 1, userSet: false };
+const center = { x: 320, y: 210 };
+const worldBefore = {
+  x: (center.x - initial.x) / initial.scale,
+  y: (center.y - initial.y) / initial.scale,
+};
+const zoomed = topology.viewportAfterZoom(initial, 2, center);
+assert.strictEqual(zoomed.scale, 2);
+assert.strictEqual((center.x - zoomed.x) / zoomed.scale, worldBefore.x);
+assert.strictEqual((center.y - zoomed.y) / zoomed.scale, worldBefore.y);
+assert.strictEqual(topology.viewportAfterZoom(zoomed, 99, center).scale, 3);
+assert.strictEqual(topology.viewportAfterZoom(zoomed, 0.01, center).scale, 0.5);
+"""
+        )
+
+    def test_partial_metadata_adds_nodes_without_erasing_cached_fields(self) -> None:
+        self.run_node(
+            r"""
+const cached = overview(["local"]);
+cached.edges = [{
+  id: "route-local-peer", kind: "sync", source: "local", target: "peer-a",
+  status: "stale", details: {}
+}];
+cached.nodes[0].dimensions.providers = field("providers", "stale", 2);
+const incoming = overview(["local", "peer-a"]);
+incoming.generated_at = "2026-07-25T20:00:00Z";
+incoming.edges = [{
+  id: "route-local-peer", kind: "sync", source: "local", target: "peer-a",
+  status: "healthy", details: {}
+}];
+const merged = model.mergeMetadata(cached, incoming);
+assert.deepStrictEqual(merged.nodes.map(function (item) { return item.id; }), ["local", "peer-a"]);
+assert.strictEqual(merged.nodes[0].dimensions.providers.state, "stale");
+assert.strictEqual(merged.edges.length, 1);
+assert.strictEqual(merged.edges[0].status, "healthy");
+assert.strictEqual(merged.generated_at, incoming.generated_at);
 """
         )
