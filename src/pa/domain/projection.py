@@ -7,8 +7,8 @@ import sqlite3
 import threading
 from contextlib import contextmanager
 from datetime import UTC, datetime
-from pathlib import Path
 from functools import wraps
+from pathlib import Path
 from typing import Callable, Iterator, TypeVar
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
@@ -29,7 +29,6 @@ from pa.domain.models import (
     ItemKind,
     ItemStatus,
     ItemUpdate,
-    lane_from_legacy_status,
     KnowledgeEntry,
     Project,
     ProjectCreate,
@@ -46,6 +45,7 @@ from pa.domain.models import (
     RepositoryUpdate,
     RepositoryVisibility,
     TranscriptEvent,
+    lane_from_legacy_status,
 )
 from pa.sync.event_log import EventLog
 
@@ -184,6 +184,9 @@ class CardProjection:
                     external_session_id TEXT,
                     origin_instance_id TEXT,
                     origin_instance_name TEXT,
+                    authority_instance_id TEXT,
+                    dispatch_id TEXT,
+                    realm_id TEXT NOT NULL DEFAULT 'default',
                     item_id TEXT,
                     card_id TEXT,
                     principal_id TEXT,
@@ -278,6 +281,9 @@ class CardProjection:
         for col, decl in (
             ("origin_instance_id", "TEXT"),
             ("origin_instance_name", "TEXT"),
+            ("authority_instance_id", "TEXT"),
+            ("dispatch_id", "TEXT"),
+            ("realm_id", "TEXT NOT NULL DEFAULT 'default'"),
             ("cwd", "TEXT"),
             ("title", "TEXT"),
             ("label", "TEXT"),
@@ -1683,10 +1689,11 @@ class CardProjection:
                 """
                 INSERT OR REPLACE INTO agent_sessions
                 (id, agent_name, external_session_id, origin_instance_id, origin_instance_name,
+                 authority_instance_id, dispatch_id, realm_id,
                  item_id, card_id, project_id, principal_id,
                  status, cwd, title, label, model_id, mode_id, config_json, metrics_json,
                  created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     session.id,
@@ -1694,6 +1701,9 @@ class CardProjection:
                     session.external_session_id,
                     session.origin_instance_id,
                     session.origin_instance_name,
+                    session.authority_instance_id,
+                    session.dispatch_id,
+                    session.realm_id,
                     session.item_id or session.card_id,
                     session.card_id or session.item_id,
                     session.project_id,
@@ -2157,6 +2167,13 @@ class CardProjection:
             origin_instance_name=(
                 row["origin_instance_name"] if "origin_instance_name" in keys else None
             ),
+            authority_instance_id=(
+                row["authority_instance_id"]
+                if "authority_instance_id" in keys
+                else None
+            ),
+            dispatch_id=row["dispatch_id"] if "dispatch_id" in keys else None,
+            realm_id=(row["realm_id"] if "realm_id" in keys else "default"),
             item_id=row["item_id"],
             card_id=row["card_id"] if "card_id" in keys else row["item_id"],
             project_id=row["project_id"] if "project_id" in keys else None,

@@ -25,7 +25,7 @@ from pa.pr_supervisor.models import (
     PRWatchEvent,
     PRWatchStatus,
 )
-from pa.pr_supervisor.service import PRSupervisor
+from pa.pr_supervisor.service import ProvenanceValidationError, PRSupervisor
 from pa.pr_supervisor.store import PRSupervisorStore
 
 router = APIRouter()
@@ -39,6 +39,11 @@ def _service(request: Request) -> PRSupervisor:
 
 def _store(request: Request) -> PRSupervisorStore:
     return request.app.state.ctx.require_service("pr_supervisor_store")
+
+
+def _provenance_http_error(exc: ProvenanceValidationError) -> HTTPException:
+    status = 404 if exc.code in {"watch_not_found"} else 422
+    return HTTPException(status_code=status, detail=exc.http_detail())
 
 
 async def _offload(request: Request, operation: str, call, *args, **kwargs):
@@ -111,9 +116,32 @@ async def create_watch(request: Request, body: dict[str, Any]) -> dict[str, Any]
     repository = str(body.get("repository") or "")
     if not repository:
         raise HTTPException(status_code=400, detail="repository required")
+    session_id = body.get("originating_session_id")
+    inferred_fields = {
+        field: body.get(field)
+        for field in (
+            "card_id",
+            "project_id",
+            "repository_id",
+            "dispatch_id",
+            "originating_instance_id",
+            "authority_instance_id",
+            "originating_principal_id",
+        )
+        if body.get(field) is not None
+    }
+    if inferred_fields and not session_id:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "originating_session_required",
+                "message": "Linked provenance must be resolved from a canonical session.",
+                "fields": sorted(inferred_fields),
+            },
+        )
     policy = body.get("policy")
     if not policy:
-        resolved = await _offload(
+        resolved_policy = await _offload(
             request,
             "sqlite.pr_policy_read",
             resolve_policy,
@@ -122,12 +150,14 @@ async def create_watch(request: Request, body: dict[str, Any]) -> dict[str, Any]
             realm_id=realm_id,
             repository=repository,
         )
-        policy = resolved.model_dump(mode="json")
+        policy = resolved_policy.model_dump(mode="json")
     try:
         watch = PRWatch(
             realm_id=realm_id,
             project_id=body.get("project_id"),
             card_id=body.get("card_id"),
+            repository_id=body.get("repository_id"),
+            dispatch_id=body.get("dispatch_id"),
             repository=repository,
             pr_number=int(body.get("pr_number") or 0),
             pr_url=str(
@@ -136,19 +166,27 @@ async def create_watch(request: Request, body: dict[str, Any]) -> dict[str, Any]
             ),
             base_branch=body.get("base_branch"),
             head_sha=body.get("head_sha"),
-            originating_instance_id=body.get("originating_instance_id")
-            or settings.instance_id,
-            originating_session_id=body.get("originating_session_id"),
-            originating_agent=body.get("originating_agent"),
-            executor_cwd=body.get("executor_cwd"),
+            originating_instance_id=body.get("originating_instance_id"),
+            authority_instance_id=body.get("authority_instance_id"),
+            originating_session_id=session_id,
+            originating_principal_id=body.get("originating_principal_id"),
             policy=policy,
             required_capabilities=body.get("required_capabilities") or [],
         )
+        service = _service(request)
+        stored = (
+            await service.register_watch_from_session(
+                watch, source=f"api:{get_principal_id(request)}"
+            )
+            if session_id
+            else await service.register_watch(
+                watch, source=f"api:{get_principal_id(request)}"
+            )
+        )
+    except ProvenanceValidationError as exc:
+        raise _provenance_http_error(exc) from exc
     except (ValueError, TypeError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    stored = await _service(request).register_watch(
-        watch, source=f"api:{get_principal_id(request)}"
-    )
     return stored.model_dump(mode="json")
 
 
@@ -165,6 +203,35 @@ def get_watch(request: Request, watch_id: str) -> dict[str, Any]:
         ],
         "notifications": _store(request).list_dispatches(watch_id),
     }
+
+
+@router.get("/pr-supervisor/provenance/issues")
+async def provenance_issues(
+    request: Request,
+    realm: str | None = None,
+    include_retired: bool = True,
+) -> dict[str, Any]:
+    realm_id = realm or request.app.state.ctx.settings.primary_realm
+    issues = await _service(request).provenance_diagnostics(
+        realm_id=realm_id, include_retired=include_retired
+    )
+    return {"realm_id": realm_id, "count": len(issues), "issues": issues}
+
+
+@router.post("/pr-supervisor/watches/{watch_id}/provenance/repair")
+async def repair_provenance(
+    request: Request, watch_id: str, body: dict[str, Any]
+) -> dict[str, Any]:
+    try:
+        repaired = await _service(request).repair_watch_provenance(
+            watch_id,
+            originating_session_id=str(body.get("originating_session_id") or ""),
+            idempotency_key=str(body.get("idempotency_key") or ""),
+            actor=get_principal_id(request),
+        )
+    except ProvenanceValidationError as exc:
+        raise _provenance_http_error(exc) from exc
+    return repaired.model_dump(mode="json")
 
 
 @router.post("/pr-supervisor/watches/{watch_id}/refresh")
@@ -189,20 +256,58 @@ async def create_pull_request(request: Request, body: dict[str, Any]) -> dict[st
     settings = request.app.state.ctx.settings
     repository = str(body.get("repository") or "")
     realm_id = str(body.get("realm_id") or settings.primary_realm)
-    project_id = body.get("project_id")
+    session_id = body.get("originating_session_id")
     if not repository or not body.get("title") or not body.get("head"):
         raise HTTPException(
             status_code=400, detail="repository, title, and head are required"
+        )
+    linked_fields = {
+        field: body.get(field)
+        for field in (
+            "card_id",
+            "project_id",
+            "repository_id",
+            "dispatch_id",
+            "authority_instance_id",
+        )
+        if body.get(field) is not None
+    }
+    if linked_fields and not session_id:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "originating_session_required",
+                "message": "Linked provenance must be resolved before creating the pull request.",
+                "fields": sorted(linked_fields),
+            },
         )
     policy = await _offload(
         request,
         "sqlite.pr_policy_read",
         resolve_policy,
         request.app.state.ctx.store,
-        project_id=project_id,
+        project_id=body.get("project_id"),
         realm_id=realm_id,
         repository=repository,
     )
+    provisional = PRWatch(
+        realm_id=realm_id,
+        project_id=body.get("project_id"),
+        card_id=body.get("card_id"),
+        repository_id=body.get("repository_id"),
+        dispatch_id=body.get("dispatch_id"),
+        authority_instance_id=body.get("authority_instance_id"),
+        repository=repository,
+        pr_number=1,
+        pr_url=f"https://github.com/{repository}/pull/pending",
+        originating_session_id=session_id,
+        policy=policy,
+    )
+    if session_id:
+        try:
+            provisional = await service.resolve_session_provenance(provisional)
+        except ProvenanceValidationError as exc:
+            raise _provenance_http_error(exc) from exc
     try:
         pr = await service.github.create_pull_request(
             repository,
@@ -215,25 +320,14 @@ async def create_pull_request(request: Request, body: dict[str, Any]) -> dict[st
         )
     except GitHubAPIError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    provisional.pr_number = int(pr["number"])
+    provisional.pr_url = str(pr.get("html_url") or "")
+    provisional.base_branch = str(
+        (pr.get("base") or {}).get("ref") or body.get("base") or "main"
+    )
+    provisional.head_sha = str((pr.get("head") or {}).get("sha") or "") or None
     watch = await service.register_watch(
-        PRWatch(
-            realm_id=realm_id,
-            project_id=project_id,
-            card_id=body.get("card_id"),
-            repository=repository,
-            pr_number=int(pr["number"]),
-            pr_url=str(pr.get("html_url") or ""),
-            base_branch=str(
-                (pr.get("base") or {}).get("ref") or body.get("base") or "main"
-            ),
-            head_sha=str((pr.get("head") or {}).get("sha") or "") or None,
-            originating_instance_id=settings.instance_id,
-            originating_session_id=body.get("originating_session_id"),
-            originating_agent=body.get("originating_agent"),
-            executor_cwd=body.get("executor_cwd"),
-            policy=policy,
-        ),
-        source=f"pull_request_create:{get_principal_id(request)}",
+        provisional, source=f"pull_request_create:{get_principal_id(request)}"
     )
     return {
         "pull_request": {
@@ -307,15 +401,23 @@ def update_policy(
 # Fleet-internal replica, authority, and dispatch routes accept the PA sync token
 # through AuthMiddleware's instance-route allowlist.
 @router.post("/pr-supervisor/replicas")
-def ingest_replica(request: Request, body: dict[str, Any]) -> dict[str, Any]:
+async def ingest_replica(request: Request, body: dict[str, Any]) -> dict[str, Any]:
     watch = PRWatch.model_validate(body.get("watch") or body)
+    try:
+        watch = await _service(request).validate_replica_provenance(watch)
+    except ProvenanceValidationError as exc:
+        raise _provenance_http_error(exc) from exc
     stored = _store(request).upsert_watch(watch, preserve_lease=True)
     return stored.model_dump(mode="json")
 
 
 @router.post("/pr-supervisor/retirements")
-def ingest_retirement(request: Request, body: dict[str, Any]) -> dict[str, Any]:
+async def ingest_retirement(request: Request, body: dict[str, Any]) -> dict[str, Any]:
     incoming = PRWatch.model_validate(body.get("watch") or {})
+    try:
+        incoming = await _service(request).validate_replica_provenance(incoming)
+    except ProvenanceValidationError as exc:
+        raise _provenance_http_error(exc) from exc
     store = _store(request)
     existing = store.find_watch(
         incoming.realm_id, incoming.repository, incoming.pr_number
@@ -348,14 +450,17 @@ def ingest_retirement(request: Request, body: dict[str, Any]) -> dict[str, Any]:
 
 
 @router.post("/pr-supervisor/watches/{watch_id}/lease")
-def acquire_lease(
+async def acquire_lease(
     request: Request, watch_id: str, body: dict[str, Any]
 ) -> dict[str, Any]:
     canonical_id = watch_id
     if body.get("watch"):
-        stored = _store(request).upsert_watch(
-            PRWatch.model_validate(body["watch"]), preserve_lease=True
-        )
+        incoming = PRWatch.model_validate(body["watch"])
+        try:
+            incoming = await _service(request).validate_replica_provenance(incoming)
+        except ProvenanceValidationError as exc:
+            raise _provenance_http_error(exc) from exc
+        stored = _store(request).upsert_watch(incoming, preserve_lease=True)
         canonical_id = stored.id
     capability = GitHubCapability.model_validate(body.get("capability") or {})
     _store(request).save_capability(capability)
@@ -379,6 +484,10 @@ def heartbeat(request: Request, body: dict[str, Any]) -> dict[str, Any]:
 async def dispatch_executor(request: Request, body: dict[str, Any]) -> dict[str, Any]:
     service = _service(request)
     watch = PRWatch.model_validate(body.get("watch") or {})
+    try:
+        watch = await service.validate_replica_provenance(watch)
+    except ProvenanceValidationError as exc:
+        raise _provenance_http_error(exc) from exc
     await service._offload(
         "sqlite.pr_supervisor_watch_write", service.store.upsert_watch, watch
     )
@@ -523,6 +632,7 @@ class PRSupervisorModule(Module):
             workspace_manager=getattr(
                 ctx.services.get("instance_agent"), "workspace_manager", None
             ),
+            dispatch_store=ctx.services.get("dispatch_store"),
             fleet_registry=ctx.services.get("fleet_registry"),
             peer_table=ctx.services.get("peer_table"),
             async_runtime=async_runtime,
@@ -727,6 +837,39 @@ class PRSupervisorModule(Module):
                 if updated
                 else config,
             }
+
+        @mcp.tool()
+        async def diagnose_pr_watch_provenance(
+            realm: str = "default", include_retired: bool = True
+        ) -> dict[str, Any]:
+            """Detect malformed, shortened, missing, or mismatched watch provenance."""
+            return await async_runtime.run_blocking(
+                "mcp.pr_watch_provenance_diagnostics_http",
+                request_local_pa,
+                ctx.settings,
+                "GET",
+                "/api/pr-supervisor/provenance/issues",
+                params={"realm": realm, "include_retired": include_retired},
+            )
+
+        @mcp.tool()
+        async def repair_pr_watch_provenance(
+            watch_id: str,
+            originating_session_id: str,
+            idempotency_key: str,
+        ) -> dict[str, Any]:
+            """Audited relink of a corrupt watch to one explicit canonical session."""
+            return await async_runtime.run_blocking(
+                "mcp.pr_watch_provenance_repair_http",
+                request_local_pa,
+                ctx.settings,
+                "POST",
+                f"/api/pr-supervisor/watches/{watch_id}/provenance/repair",
+                json={
+                    "originating_session_id": originating_session_id,
+                    "idempotency_key": idempotency_key,
+                },
+            )
 
         @mcp.tool()
         def github_integration_capability() -> dict[str, Any]:

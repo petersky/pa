@@ -27,6 +27,11 @@ class SessionDurabilityPersistenceTests(unittest.TestCase):
                 external_session_id="provider-thread-7",
                 origin_instance_id="monica-id",
                 origin_instance_name="monica",
+                authority_instance_id="0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+                dispatch_id="33333333-3333-4333-8333-333333333333",
+                realm_id="engineering",
+                card_id="44444444-4444-4444-8444-444444444444",
+                project_id="55555555-5555-4555-8555-555555555555",
                 status="idle",
             )
             writer.save_session(session)
@@ -47,6 +52,18 @@ class SessionDurabilityPersistenceTests(unittest.TestCase):
 
             self.assertEqual(restored.origin_instance_id, "monica-id")
             self.assertEqual(restored.origin_instance_name, "monica")
+            self.assertEqual(
+                restored.authority_instance_id,
+                "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+            )
+            self.assertEqual(
+                restored.dispatch_id, "33333333-3333-4333-8333-333333333333"
+            )
+            self.assertEqual(restored.realm_id, "engineering")
+            self.assertEqual(restored.card_id, "44444444-4444-4444-8444-444444444444")
+            self.assertEqual(
+                restored.project_id, "55555555-5555-4555-8555-555555555555"
+            )
             self.assertEqual(restored.external_session_id, "provider-thread-7")
             self.assertEqual(events[0].payload["message"], "continue")
 

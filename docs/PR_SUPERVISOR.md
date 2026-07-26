@@ -6,15 +6,59 @@ session is not involved and may be offline.
 
 ## What is persisted
 
-Each watch links a realm, project, card, GitHub repository and PR, current head
-SHA, originating PA instance/session/agent, executor worktree, copied policy,
+Each verified watch persists the exact canonical realm, repository, project,
+card, dispatch, originating principal, executing instance, and agent-session IDs,
+alongside the GitHub PR, current head SHA, executor worktree, copied policy,
 required capabilities, lease owner/fence, current GitHub snapshot, polling state,
-and a complete append-only audit history. State lives in
+and append-only audit history. State lives in
 `<PA_DATA_DIR>/pr_supervisor.db` and is recovered on restart.
 
-PA safely migrates discoverable associations at startup. An open card containing
-an exact `https://github.com/OWNER/REPO/pull/NUMBER` URL gets a watch if none
-exists. PA does not guess from branch names or issue URLs.
+At startup PA may discover an exact
+`https://github.com/OWNER/REPO/pull/NUMBER` URL in an open card. Discovery can
+create an **unlinked** legacy watch, but it never turns the surrounding card,
+branch, path, label, prompt, or URL into provenance. An operator must explicitly
+relink an old watch to one canonical session before merged-card disposition is
+allowed.
+
+## Canonical provenance and repair
+
+Workspace directories and Git branch names intentionally remain compact. Their
+card/session components are non-authoritative display and storage slugs; they
+may be shortened and hash-suffixed. No durable identity is parsed from them.
+
+A session-backed watch is accepted only through the session's owning/executing
+instance. The server resolves version-1 provenance from the durable session,
+its structured execution context, and (for remote work) the durable dispatch
+record. Caller-supplied IDs are comparison assertions only. PA rejects before
+creating a watch when an ID is shortened, malformed, noncanonical, absent from
+the named realm, or mismatched across session/card/project/repository/dispatch.
+The accepting lease authority never replaces the true executing instance ID.
+The same validation runs for fleet replicas, authority lease recovery,
+retirement forwarding, and executor dispatch.
+
+Use this read-only diagnostic endpoint to locate historical unverified or
+shortened values without rewriting Store or EventLog history:
+
+```
+GET /api/pr-supervisor/provenance/issues
+```
+
+Repair requires an explicit, full canonical session ID and an idempotency key:
+
+```
+POST /api/pr-supervisor/watches/WATCH_ID/provenance/repair
+{
+  "originating_session_id": "FULL-SESSION-UUID",
+  "idempotency_key": "operator-ticket-or-command-id"
+}
+```
+
+The server resolves every linked entity again, refuses ambiguous or mismatched
+relationships, updates only the watch projection, and appends a
+`provenance_repaired` audit event containing before/after values and
+`guessed: false`. Repeating an already-applied repair is a no-op. MCP exposes the
+same workflow as `diagnose_pr_watch_provenance` and
+`repair_pr_watch_provenance`.
 
 ## Lease authority and worker failover
 
@@ -229,6 +273,7 @@ PR page, linked card, and linked agent-session list. MCP provides:
 - `refresh_pr_watch`, `retire_pr_watch`;
 - `create_supervised_pull_request`;
 - `set_project_pr_policy`;
+- `diagnose_pr_watch_provenance`, `repair_pr_watch_provenance`;
 - `github_integration_capability`.
 
 Operational counters include active watches, polls, leases, webhooks, audit

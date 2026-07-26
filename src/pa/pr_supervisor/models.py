@@ -119,7 +119,9 @@ class PRSnapshot(BaseModel):
 
     @property
     def stale(self) -> bool:
-        return bool(self.confirmed_head_sha and self.confirmed_head_sha != self.head_sha)
+        return bool(
+            self.confirmed_head_sha and self.confirmed_head_sha != self.head_sha
+        )
 
     @property
     def merged(self) -> bool:
@@ -135,15 +137,20 @@ class PRWatch(BaseModel):
     realm_id: str = "default"
     project_id: str | None = None
     card_id: str | None = None
+    repository_id: str | None = None
+    dispatch_id: str | None = None
     repository: str
     pr_number: int = Field(gt=0)
     pr_url: str
     base_branch: str | None = None
     head_sha: str | None = None
     originating_instance_id: str | None = None
+    authority_instance_id: str | None = None
     originating_session_id: str | None = None
+    originating_principal_id: str | None = None
     originating_agent: str | None = None
     executor_cwd: str | None = None
+    provenance_version: int = Field(default=0, ge=0)
     policy: PRPolicy = Field(default_factory=PRPolicy)
     required_capabilities: list[str] = Field(default_factory=list)
     status: PRWatchStatus = PRWatchStatus.ACTIVE

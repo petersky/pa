@@ -64,15 +64,20 @@ class PRSupervisorStore:
                     realm_id TEXT NOT NULL,
                     project_id TEXT,
                     card_id TEXT,
+                    repository_id TEXT,
+                    dispatch_id TEXT,
                     repository TEXT NOT NULL,
                     pr_number INTEGER NOT NULL,
                     pr_url TEXT NOT NULL,
                     base_branch TEXT,
                     head_sha TEXT,
                     originating_instance_id TEXT,
+                    authority_instance_id TEXT,
                     originating_session_id TEXT,
+                    originating_principal_id TEXT,
                     originating_agent TEXT,
                     executor_cwd TEXT,
+                    provenance_version INTEGER NOT NULL DEFAULT 0,
                     policy_json TEXT NOT NULL DEFAULT '{}',
                     required_capabilities_json TEXT NOT NULL DEFAULT '[]',
                     status TEXT NOT NULL DEFAULT 'active',
@@ -135,6 +140,21 @@ class PRSupervisorStore:
                 );
                 """
             )
+            columns = {
+                row[1]
+                for row in conn.execute("PRAGMA table_info(pr_watches)").fetchall()
+            }
+            for column, declaration in (
+                ("repository_id", "TEXT"),
+                ("dispatch_id", "TEXT"),
+                ("authority_instance_id", "TEXT"),
+                ("originating_principal_id", "TEXT"),
+                ("provenance_version", "INTEGER NOT NULL DEFAULT 0"),
+            ):
+                if column not in columns:
+                    conn.execute(
+                        f"ALTER TABLE pr_watches ADD COLUMN {column} {declaration}"
+                    )
 
     def upsert_watch(self, watch: PRWatch, *, preserve_lease: bool = True) -> PRWatch:
         with self._conn(immediate=True) as conn:
@@ -210,17 +230,21 @@ class PRSupervisorStore:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO pr_watches (
-                    id, realm_id, project_id, card_id, repository, pr_number,
-                    pr_url, base_branch, head_sha, originating_instance_id,
-                    originating_session_id, originating_agent, executor_cwd,
+                    id, realm_id, project_id, card_id, repository_id, dispatch_id,
+                    repository, pr_number,
+                    pr_url, base_branch, head_sha, originating_instance_id, authority_instance_id,
+                    originating_session_id, originating_principal_id,
+                    originating_agent, executor_cwd, provenance_version,
                     policy_json, required_capabilities_json, status,
                     owner_instance_id, fence_token, lease_expires_at, state_json,
                     condition_fingerprint, condition_version, stable_head_since,
                     stable_head_observations, next_poll_at, poll_attempt,
                     last_error, created_at, updated_at, retired_at
                 ) VALUES (
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?
                 )
                 """,
                 self._watch_values(watch),
@@ -233,15 +257,20 @@ class PRSupervisorStore:
             watch.realm_id,
             watch.project_id,
             watch.card_id,
+            watch.repository_id,
+            watch.dispatch_id,
             watch.repository,
             watch.pr_number,
             watch.pr_url,
             watch.base_branch,
             watch.head_sha,
             watch.originating_instance_id,
+            watch.authority_instance_id,
             watch.originating_session_id,
+            watch.originating_principal_id,
             watch.originating_agent,
             watch.executor_cwd,
+            watch.provenance_version,
             watch.policy.model_dump_json(),
             json.dumps(watch.required_capabilities),
             watch.status.value,
@@ -768,15 +797,20 @@ class PRSupervisorStore:
             realm_id=row["realm_id"],
             project_id=row["project_id"],
             card_id=row["card_id"],
+            repository_id=row["repository_id"],
+            dispatch_id=row["dispatch_id"],
             repository=row["repository"],
             pr_number=row["pr_number"],
             pr_url=row["pr_url"],
             base_branch=row["base_branch"],
             head_sha=row["head_sha"],
             originating_instance_id=row["originating_instance_id"],
+            authority_instance_id=row["authority_instance_id"],
             originating_session_id=row["originating_session_id"],
+            originating_principal_id=row["originating_principal_id"],
             originating_agent=row["originating_agent"],
             executor_cwd=row["executor_cwd"],
+            provenance_version=row["provenance_version"],
             policy=json.loads(row["policy_json"] or "{}"),
             required_capabilities=json.loads(row["required_capabilities_json"] or "[]"),
             status=row["status"],

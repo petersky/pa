@@ -10,7 +10,7 @@ import re
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 
@@ -34,6 +34,7 @@ from pa.pr_supervisor.models import (
     PRWatch,
     PRWatchEvent,
     PRWatchStatus,
+    canonical_repository_name,
     utcnow,
 )
 from pa.pr_supervisor.store import PRSupervisorStore, StaleFenceError
@@ -48,6 +49,47 @@ logger = logging.getLogger(__name__)
 _PR_URL = re.compile(
     r"https://github\.com/(?P<repository>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/pull/(?P<number>\d+)"
 )
+
+
+class ProvenanceValidationError(ValueError):
+    """Actionable rejection at a canonical provenance ingestion boundary."""
+
+    def __init__(self, code: str, message: str, **detail: Any) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.detail = detail
+
+    def http_detail(self) -> dict[str, Any]:
+        return {"code": self.code, "message": self.message, **self.detail}
+
+
+def canonical_uuid(
+    value: str | None, field: str, *, required: bool = True
+) -> str | None:
+    if not value:
+        if required:
+            raise ProvenanceValidationError(
+                "provenance_id_required", f"{field} is required", field=field
+            )
+        return None
+    try:
+        parsed = str(UUID(value))
+    except (ValueError, AttributeError) as exc:
+        raise ProvenanceValidationError(
+            "malformed_provenance_id",
+            f"{field} must be a full canonical UUID; shortened workspace slugs are not valid",
+            field=field,
+            value=value,
+        ) from exc
+    if parsed != value:
+        raise ProvenanceValidationError(
+            "noncanonical_provenance_id",
+            f"{field} must use the canonical lowercase hyphenated UUID form",
+            field=field,
+            value=value,
+        )
+    return parsed
 
 
 class ExecutorDispatcher:
@@ -132,6 +174,7 @@ class ExecutorDispatcher:
         headers: dict[str, str] = {}
         if self.settings.sync_token:
             headers["Authorization"] = f"Bearer {self.settings.sync_token}"
+        headers["X-PA-Origin-Instance-ID"] = self.settings.instance_id
         owns = self.http_client is None
         client = self.http_client or httpx.AsyncClient(timeout=30.0)
         try:
@@ -338,6 +381,7 @@ class PRSupervisor:
         dispatcher: ExecutorDispatcher | None = None,
         agent_manager=None,
         workspace_manager=None,
+        dispatch_store=None,
         fleet_registry=None,
         peer_table=None,
         http_client: httpx.AsyncClient | None = None,
@@ -372,6 +416,7 @@ class PRSupervisor:
         self.workspace_manager = workspace_manager or getattr(
             agent_manager, "workspace_manager", None
         )
+        self.dispatch_store = dispatch_store
         self.dispatcher = dispatcher or ExecutorDispatcher(
             settings,
             domain_store,
@@ -544,19 +589,14 @@ class PRSupervisor:
     async def register_watch(
         self, watch: PRWatch, *, source: str = "api", replicate: bool = True
     ) -> PRWatch:
-        if not watch.originating_instance_id:
-            watch.originating_instance_id = self.settings.instance_id
-        if watch.originating_session_id:
-            session = await self._offload(
-                "sqlite.agent_session_read",
-                self.domain_store.get_session,
-                watch.originating_session_id,
+        if watch.originating_session_id and watch.provenance_version < 1:
+            raise ProvenanceValidationError(
+                "unverified_session_provenance",
+                "Session-backed watches must be resolved through register_watch_from_session.",
+                originating_session_id=watch.originating_session_id,
             )
-            if isinstance(session, AgentSession):
-                watch.originating_agent = watch.originating_agent or session.agent_name
-                watch.executor_cwd = watch.executor_cwd or session.cwd
-                watch.card_id = watch.card_id or session.card_id
-                watch.project_id = watch.project_id or session.project_id
+        if not watch.originating_instance_id and not watch.originating_session_id:
+            watch.originating_instance_id = self.settings.instance_id
         if not watch.required_capabilities:
             watch.required_capabilities = [
                 "pr-supervisor",
@@ -576,14 +616,569 @@ class PRSupervisor:
                 "pr_number": stored.pr_number,
                 "card_id": stored.card_id,
                 "project_id": stored.project_id,
+                "repository_id": stored.repository_id,
+                "dispatch_id": stored.dispatch_id,
                 "originating_instance_id": stored.originating_instance_id,
+                "authority_instance_id": stored.authority_instance_id,
                 "originating_session_id": stored.originating_session_id,
+                "originating_principal_id": stored.originating_principal_id,
+                "provenance_version": stored.provenance_version,
                 "originating_agent": stored.originating_agent,
                 "policy": stored.policy.model_dump(mode="json"),
             },
         )
         if replicate:
             await self._replicate(stored)
+        return stored
+
+    async def resolve_session_provenance(self, watch: PRWatch) -> PRWatch:
+        """Resolve canonical watch provenance from one durable local session."""
+        session_id = canonical_uuid(
+            watch.originating_session_id, "originating_session_id"
+        )
+        session = await self._offload(
+            "sqlite.agent_session_read", self.domain_store.get_session, session_id
+        )
+        if not isinstance(session, AgentSession):
+            raise ProvenanceValidationError(
+                "originating_session_not_found",
+                "The canonical originating session does not exist on this instance.",
+                originating_session_id=session_id,
+                action="Register from the session's owning instance or relink explicitly.",
+            )
+        realm_id = session.realm_id or self.settings.primary_realm
+        if watch.realm_id != realm_id:
+            raise ProvenanceValidationError(
+                "provenance_realm_mismatch",
+                "The session and requested PR watch belong to different realms.",
+                session_realm=realm_id,
+                requested_realm=watch.realm_id,
+            )
+        origin_instance_id = canonical_uuid(
+            session.origin_instance_id, "session.origin_instance_id"
+        )
+        if origin_instance_id != self.settings.instance_id:
+            raise ProvenanceValidationError(
+                "session_owner_instance_mismatch",
+                "The session is not owned by the instance accepting registration.",
+                session_instance_id=origin_instance_id,
+                accepting_instance_id=self.settings.instance_id,
+                action="Register the watch on the session's owning instance.",
+            )
+        card_id = canonical_uuid(
+            session.card_id or session.item_id, "session.card_id", required=False
+        )
+        project_id = canonical_uuid(
+            session.project_id, "session.project_id", required=False
+        )
+        dispatch_id = canonical_uuid(
+            session.dispatch_id, "session.dispatch_id", required=False
+        )
+        authority_instance_id = canonical_uuid(
+            session.authority_instance_id or origin_instance_id,
+            "session.authority_instance_id",
+            required=False,
+        )
+        if (
+            authority_instance_id
+            and authority_instance_id != origin_instance_id
+            and not dispatch_id
+        ):
+            raise ProvenanceValidationError(
+                "remote_dispatch_link_missing",
+                "A remotely owned session must retain its canonical dispatch linkage.",
+                originating_session_id=session_id,
+                authority_instance_id=authority_instance_id,
+            )
+        card = None
+        if card_id:
+            card = await self._offload(
+                "sqlite.card_read",
+                self.domain_store.get_card,
+                card_id,
+                realm_id=realm_id,
+            )
+            if not card:
+                raise ProvenanceValidationError(
+                    "provenance_card_not_found",
+                    "The session's canonical card does not exist in its realm.",
+                    card_id=card_id,
+                    realm_id=realm_id,
+                )
+        project = None
+        if project_id:
+            project = await self._offload(
+                "sqlite.project_read",
+                self.domain_store.get_project,
+                project_id,
+                realm_id=realm_id,
+            )
+            if not project:
+                raise ProvenanceValidationError(
+                    "provenance_project_not_found",
+                    "The session's canonical project does not exist in its realm.",
+                    project_id=project_id,
+                    realm_id=realm_id,
+                )
+        if card and card.project_id != project_id:
+            raise ProvenanceValidationError(
+                "card_project_provenance_mismatch",
+                "The session project does not match the canonical card project.",
+                card_project_id=card.project_id,
+                session_project_id=project_id,
+            )
+        principal_id = session.principal_id
+        if not principal_id:
+            raise ProvenanceValidationError(
+                "originating_principal_missing",
+                "The durable session has no originating principal.",
+                originating_session_id=session_id,
+            )
+
+        execution = dict((session.config_json or {}).get("execution_context") or {})
+        matches: list[str] = []
+        for repository_context in execution.get("repositories") or []:
+            if not isinstance(repository_context, dict):
+                continue
+            repository_id = canonical_uuid(
+                repository_context.get("repository_id"),
+                "execution_context.repositories[].repository_id",
+            )
+            repository = await self._offload(
+                "sqlite.repository_read",
+                self.domain_store.get_repository,
+                repository_id,
+                realm_id=realm_id,
+            )
+            if not repository:
+                raise ProvenanceValidationError(
+                    "provenance_repository_not_found",
+                    "A repository in the session execution context no longer exists in its realm.",
+                    repository_id=repository_id,
+                    realm_id=realm_id,
+                )
+            try:
+                same_repository = canonical_repository_name(
+                    repository.url
+                ) == canonical_repository_name(watch.repository)
+            except ValueError:
+                same_repository = False
+            if same_repository:
+                matches.append(repository_id)
+        matches = sorted(set(matches))
+        if not matches:
+            raise ProvenanceValidationError(
+                "repository_not_in_session_context",
+                "The PR repository is not one of the session's structured repositories.",
+                repository=watch.repository,
+                originating_session_id=session_id,
+                action="Use the repository linked in PA's execution context; paths and branches are not authoritative.",
+            )
+        if len(matches) != 1:
+            raise ProvenanceValidationError(
+                "ambiguous_repository_provenance",
+                "Multiple canonical repositories match this PR; operator selection is required.",
+                repository=watch.repository,
+                repository_ids=matches,
+            )
+        repository_id = matches[0]
+
+        if dispatch_id:
+            if not self.dispatch_store:
+                raise ProvenanceValidationError(
+                    "dispatch_store_unavailable",
+                    "The durable dispatch store is unavailable for provenance verification.",
+                    dispatch_id=dispatch_id,
+                )
+            dispatch = await self._offload(
+                "dispatch.record_read", self.dispatch_store.get, dispatch_id
+            )
+            if not dispatch:
+                raise ProvenanceValidationError(
+                    "provenance_dispatch_not_found",
+                    "The session's canonical dispatch does not exist.",
+                    dispatch_id=dispatch_id,
+                )
+            dispatch_mismatches = {
+                field: {"dispatch": expected, "session": actual}
+                for field, expected, actual in (
+                    ("session_id", dispatch.session_id, session_id),
+                    ("card_id", dispatch.card_id, card_id),
+                    ("project_id", dispatch.project_id, project_id),
+                    ("realm_id", dispatch.realm_id, realm_id),
+                    (
+                        "target_instance_id",
+                        dispatch.target_instance_id,
+                        origin_instance_id,
+                    ),
+                    ("principal_id", dispatch.principal_id, principal_id),
+                    (
+                        "authority_instance_id",
+                        dispatch.authority_instance_id,
+                        authority_instance_id,
+                    ),
+                )
+                if expected != actual
+            }
+            if dispatch_mismatches:
+                raise ProvenanceValidationError(
+                    "dispatch_session_provenance_mismatch",
+                    "The durable dispatch and session provenance do not match.",
+                    dispatch_id=dispatch_id,
+                    mismatches=dispatch_mismatches,
+                )
+
+        expected = {
+            "card_id": card_id,
+            "project_id": project_id,
+            "repository_id": repository_id,
+            "dispatch_id": dispatch_id,
+            "originating_instance_id": origin_instance_id,
+            "authority_instance_id": authority_instance_id,
+            "originating_principal_id": principal_id,
+        }
+        supplied = {
+            "card_id": watch.card_id,
+            "project_id": watch.project_id,
+            "repository_id": watch.repository_id,
+            "dispatch_id": watch.dispatch_id,
+            "originating_instance_id": watch.originating_instance_id,
+            "authority_instance_id": watch.authority_instance_id,
+            "originating_principal_id": watch.originating_principal_id,
+        }
+        for field, value in supplied.items():
+            if value is not None and field != "originating_principal_id":
+                canonical_uuid(value, field, required=False)
+            if value is not None and value != expected[field]:
+                raise ProvenanceValidationError(
+                    "caller_provenance_mismatch",
+                    f"Caller-supplied {field} does not match the durable session context.",
+                    field=field,
+                    supplied=value,
+                    canonical=expected[field],
+                )
+
+        watch.card_id = card_id
+        watch.project_id = project_id
+        watch.repository_id = repository_id
+        watch.dispatch_id = dispatch_id
+        watch.originating_instance_id = origin_instance_id
+        watch.authority_instance_id = authority_instance_id
+        watch.originating_session_id = session_id
+        watch.originating_principal_id = principal_id
+        watch.originating_agent = session.agent_name
+        watch.executor_cwd = session.cwd
+        watch.provenance_version = 1
+        return watch
+
+    async def register_watch_from_session(
+        self, watch: PRWatch, *, source: str = "api"
+    ) -> PRWatch:
+        resolved = await self.resolve_session_provenance(watch)
+        existing = await self._offload(
+            "sqlite.pr_supervisor_watch_read",
+            self.store.find_watch,
+            resolved.realm_id,
+            resolved.repository,
+            resolved.pr_number,
+        )
+        if existing:
+            same = all(
+                getattr(existing, field) == getattr(resolved, field)
+                for field in (
+                    "card_id",
+                    "project_id",
+                    "repository_id",
+                    "dispatch_id",
+                    "originating_instance_id",
+                    "authority_instance_id",
+                    "originating_session_id",
+                    "originating_principal_id",
+                )
+            )
+            if existing.provenance_version >= 1 and same:
+                return existing
+            raise ProvenanceValidationError(
+                "existing_watch_provenance_conflict",
+                "This PR already has different or unverified provenance.",
+                watch_id=existing.id,
+                action="Use the audited provenance repair endpoint; registration never rewrites an existing relationship.",
+            )
+        return await self.register_watch(resolved, source=source)
+
+    async def validate_replica_provenance(self, watch: PRWatch) -> PRWatch:
+        """Validate server-resolved provenance without requiring a remote session copy."""
+        if watch.provenance_version == 0:
+            return watch
+        if watch.provenance_version != 1:
+            raise ProvenanceValidationError(
+                "unsupported_provenance_version",
+                "Only canonical watch provenance version 1 is supported.",
+                provenance_version=watch.provenance_version,
+            )
+        required_fields = (
+            "repository_id",
+            "originating_instance_id",
+            "authority_instance_id",
+            "originating_session_id",
+        )
+        for field in required_fields:
+            canonical_uuid(getattr(watch, field), field)
+        if (
+            watch.authority_instance_id != watch.originating_instance_id
+            and not watch.dispatch_id
+        ):
+            raise ProvenanceValidationError(
+                "remote_dispatch_link_missing",
+                "A remote watch must retain its canonical dispatch linkage.",
+                originating_instance_id=watch.originating_instance_id,
+                authority_instance_id=watch.authority_instance_id,
+            )
+        for field in ("card_id", "project_id", "dispatch_id"):
+            canonical_uuid(getattr(watch, field), field, required=False)
+        repository = await self._offload(
+            "sqlite.repository_read",
+            self.domain_store.get_repository,
+            watch.repository_id,
+            realm_id=watch.realm_id,
+        )
+        if not repository:
+            raise ProvenanceValidationError(
+                "provenance_repository_not_found",
+                "The replicated repository does not exist in the watch realm.",
+                repository_id=watch.repository_id,
+                realm_id=watch.realm_id,
+            )
+        try:
+            repository_matches = canonical_repository_name(
+                repository.url
+            ) == canonical_repository_name(watch.repository)
+        except ValueError:
+            repository_matches = False
+        if not repository_matches:
+            raise ProvenanceValidationError(
+                "repository_identity_mismatch",
+                "The repository ID and GitHub repository name do not match.",
+                repository_id=watch.repository_id,
+                repository=watch.repository,
+            )
+        if watch.card_id:
+            card = await self._offload(
+                "sqlite.card_read",
+                self.domain_store.get_card,
+                watch.card_id,
+                realm_id=watch.realm_id,
+            )
+            if not card:
+                raise ProvenanceValidationError(
+                    "provenance_card_not_found",
+                    "The replicated card does not exist in the watch realm.",
+                    card_id=watch.card_id,
+                    realm_id=watch.realm_id,
+                )
+            if card.project_id != watch.project_id:
+                raise ProvenanceValidationError(
+                    "card_project_provenance_mismatch",
+                    "The replicated watch project does not match the canonical card.",
+                    card_project_id=card.project_id,
+                    watch_project_id=watch.project_id,
+                )
+        if watch.project_id:
+            project = await self._offload(
+                "sqlite.project_read",
+                self.domain_store.get_project,
+                watch.project_id,
+                realm_id=watch.realm_id,
+            )
+            if not project:
+                raise ProvenanceValidationError(
+                    "provenance_project_not_found",
+                    "The replicated project does not exist in the watch realm.",
+                    project_id=watch.project_id,
+                    realm_id=watch.realm_id,
+                )
+        if watch.dispatch_id and self.dispatch_store:
+            dispatch = await self._offload(
+                "dispatch.record_read", self.dispatch_store.get, watch.dispatch_id
+            )
+            if dispatch:
+                mismatches = {
+                    field: {"dispatch": expected, "watch": actual}
+                    for field, expected, actual in (
+                        (
+                            "session_id",
+                            dispatch.session_id,
+                            watch.originating_session_id,
+                        ),
+                        ("card_id", dispatch.card_id, watch.card_id),
+                        ("project_id", dispatch.project_id, watch.project_id),
+                        ("realm_id", dispatch.realm_id, watch.realm_id),
+                        (
+                            "target_instance_id",
+                            dispatch.target_instance_id,
+                            watch.originating_instance_id,
+                        ),
+                        (
+                            "authority_instance_id",
+                            dispatch.authority_instance_id,
+                            watch.authority_instance_id,
+                        ),
+                        (
+                            "principal_id",
+                            dispatch.principal_id,
+                            watch.originating_principal_id,
+                        ),
+                    )
+                    if expected != actual
+                }
+                if mismatches:
+                    raise ProvenanceValidationError(
+                        "dispatch_watch_provenance_mismatch",
+                        "The replicated watch conflicts with the durable dispatch.",
+                        dispatch_id=watch.dispatch_id,
+                        mismatches=mismatches,
+                    )
+        return watch
+
+    async def provenance_diagnostics(
+        self, *, realm_id: str, include_retired: bool = True
+    ) -> list[dict[str, Any]]:
+        watches = await self._offload(
+            "sqlite.pr_supervisor_watch_read",
+            self.store.list_watches,
+            realm_id=realm_id,
+            include_retired=include_retired,
+        )
+        diagnostics: list[dict[str, Any]] = []
+        for watch in watches:
+            issues: list[dict[str, Any]] = []
+            linked = bool(
+                watch.card_id
+                or watch.originating_session_id
+                or watch.dispatch_id
+                or watch.repository_id
+            )
+            if linked and watch.provenance_version < 1:
+                issues.append(
+                    {
+                        "code": "unverified_legacy_provenance",
+                        "message": "The watch predates server-resolved provenance.",
+                    }
+                )
+            for field in (
+                "card_id",
+                "project_id",
+                "repository_id",
+                "dispatch_id",
+                "originating_instance_id",
+                "authority_instance_id",
+                "originating_session_id",
+            ):
+                value = getattr(watch, field)
+                if not value:
+                    continue
+                try:
+                    canonical_uuid(value, field)
+                except ProvenanceValidationError as exc:
+                    issues.append(exc.http_detail())
+            if watch.provenance_version >= 1 and watch.originating_session_id:
+                try:
+                    await self.resolve_session_provenance(watch.model_copy(deep=True))
+                except ProvenanceValidationError as exc:
+                    issues.append(exc.http_detail())
+            if issues:
+                diagnostics.append(
+                    {
+                        "watch_id": watch.id,
+                        "repository": watch.repository,
+                        "pr_number": watch.pr_number,
+                        "status": watch.status.value,
+                        "issues": issues,
+                        "repair": {
+                            "method": "POST",
+                            "path": f"/api/pr-supervisor/watches/{watch.id}/provenance/repair",
+                            "required": ["originating_session_id", "idempotency_key"],
+                            "guesses": False,
+                        },
+                    }
+                )
+        return diagnostics
+
+    async def repair_watch_provenance(
+        self,
+        watch_id: str,
+        *,
+        originating_session_id: str,
+        idempotency_key: str,
+        actor: str,
+    ) -> PRWatch:
+        if not idempotency_key.strip():
+            raise ProvenanceValidationError(
+                "repair_idempotency_key_required",
+                "An idempotency_key is required for audited provenance repair.",
+            )
+        existing = await self._offload(
+            "sqlite.pr_supervisor_watch_read", self.store.get_watch, watch_id
+        )
+        if not existing:
+            raise ProvenanceValidationError(
+                "watch_not_found", "PR watch not found", watch_id=watch_id
+            )
+        candidate = PRWatch(
+            realm_id=existing.realm_id,
+            repository=existing.repository,
+            pr_number=existing.pr_number,
+            pr_url=existing.pr_url,
+            originating_session_id=originating_session_id,
+            policy=existing.policy,
+        )
+        resolved = await self.resolve_session_provenance(candidate)
+        before = {
+            field: getattr(existing, field)
+            for field in (
+                "card_id",
+                "project_id",
+                "repository_id",
+                "dispatch_id",
+                "originating_instance_id",
+                "authority_instance_id",
+                "originating_session_id",
+                "originating_principal_id",
+                "provenance_version",
+            )
+        }
+        resolved_values = {field: getattr(resolved, field) for field in before}
+        if (
+            before == resolved_values
+            and existing.originating_agent == resolved.originating_agent
+            and existing.executor_cwd == resolved.executor_cwd
+        ):
+            return existing
+        repaired = existing.model_copy(deep=True)
+        for field in before:
+            setattr(repaired, field, getattr(resolved, field))
+        repaired.originating_agent = resolved.originating_agent
+        repaired.executor_cwd = resolved.executor_cwd
+        stored = await self._offload(
+            "sqlite.pr_supervisor_watch_write",
+            self.store.upsert_watch,
+            repaired,
+            preserve_lease=True,
+        )
+        after = {field: getattr(stored, field) for field in before}
+        await self._audit(
+            stored,
+            "provenance_repaired",
+            f"{stored.id}:provenance-repair:{idempotency_key.strip()}",
+            source=f"repair:{actor}",
+            payload={
+                "before": before,
+                "after": after,
+                "originating_session_id": originating_session_id,
+                "guessed": False,
+            },
+        )
+        await self._replicate(stored)
         return stored
 
     async def refresh_watch(self, watch_id: str) -> PRWatch | None:
@@ -1278,6 +1873,7 @@ class PRSupervisor:
         headers: dict[str, str] = {}
         if self.settings.sync_token:
             headers["Authorization"] = f"Bearer {self.settings.sync_token}"
+        headers["X-PA-Origin-Instance-ID"] = self.settings.instance_id
         response = await self._observe(
             "http.pr_supervisor_peer",
             self.http_client.post(url, headers=headers, json=payload),
@@ -1290,6 +1886,7 @@ class PRSupervisor:
         headers: dict[str, str] = {}
         if self.settings.sync_token:
             headers["Authorization"] = f"Bearer {self.settings.sync_token}"
+        headers["X-PA-Origin-Instance-ID"] = self.settings.instance_id
         response = await self._observe(
             "http.pr_supervisor_peer",
             self.http_client.get(url, headers=headers),
@@ -1336,15 +1933,12 @@ class PRSupervisor:
                 await self.register_watch(
                     PRWatch(
                         realm_id=card.realm_id,
-                        project_id=card.project_id,
-                        card_id=card.id,
                         repository=repository,
                         pr_number=number,
                         pr_url=match.group(0),
-                        originating_instance_id=card.created_by_instance,
                         policy=PRPolicy.model_validate(policy_data),
                     ),
-                    source="migration",
+                    source="legacy_discovery_unlinked",
                 )
                 migrated += 1
         if migrated:
