@@ -31,6 +31,7 @@ from pa.core.async_runtime import AsyncRuntime
 from pa.core.context import AppContext
 from pa.core.contracts import Module
 from pa.core.io import atomic_write_json
+from pa.core.logging import redact_log_text
 from pa.core.ui.pages import PageDefinition, PageRegistry
 from pa.domain.models import (
     CardAttachment,
@@ -2081,6 +2082,8 @@ async def peer_update(request: Request, body: dict) -> dict:
         "target_identity": release.revision or release.tag or release.version,
         "channel": channel,
         "error": None,
+        "restart_state": None,
+        "restart_diagnostic": None,
     }
     if not existing:
         await _offload_request(
@@ -2093,6 +2096,9 @@ async def peer_update(request: Request, body: dict) -> dict:
         )
 
     async def _install_and_restart() -> None:
+        from pa.cli import service as svc
+        from pa.instance.quiesce import request_skip_quiesce
+
         await asyncio.sleep(0.25)
         try:
             exact_target = await _offload_request(
@@ -2145,9 +2151,9 @@ async def peer_update(request: Request, body: dict) -> dict:
             )
             restarting_operation = {
                 **installed_operation,
-                "status": "restarting",
-                "restart_stage": "requested",
-                "message": "Handing restart control to the host service manager",
+                "status": "restart_requested",
+                "restart_state": "restart_requested",
+                "message": "Restart requested; waiting for peer health.",
             }
             await _offload_request(
                 request,
@@ -2157,9 +2163,6 @@ async def peer_update(request: Request, body: dict) -> dict:
                 operation_id,
                 restarting_operation,
             )
-            from pa.cli import service as svc
-            from pa.instance.quiesce import request_skip_quiesce
-
             await _offload_request(
                 request,
                 "filesystem.quiesce_marker_write",
@@ -2174,16 +2177,47 @@ async def peer_update(request: Request, body: dict) -> dict:
                 _write_peer_operation(
                     settings,
                     operation_id,
-                    {**current, "status": "restarting", "message": message},
+                    {**current, "message": redact_log_text(message)},
                 )
 
-            await _offload_request(
+            diagnostic = await _offload_request(
                 request,
                 "lifecycle.service_restart",
                 svc.request_restart,
                 settings,
                 progress=restart_progress,
+                operation_id=operation_id,
                 timeout=120.0,
+            )
+            diagnostic_payload = diagnostic.public_dict()
+            response_lost = diagnostic.state == "restart_response_lost"
+            current = (
+                await _offload_request(
+                    request,
+                    "filesystem.fleet_peer_update_read",
+                    _read_peer_operation,
+                    settings,
+                    operation_id,
+                )
+                or restarting_operation
+            )
+            await _offload_request(
+                request,
+                "filesystem.fleet_peer_update_write",
+                _write_peer_operation,
+                settings,
+                operation_id,
+                {
+                    **current,
+                    "status": (
+                        "verification_required"
+                        if response_lost
+                        else "restart_requested"
+                    ),
+                    "restart_state": diagnostic.state,
+                    "restart_diagnostic": diagnostic_payload,
+                    "message": "Restart requested; waiting for peer health.",
+                },
             )
         except Exception as exc:
             current = (
@@ -2196,7 +2230,41 @@ async def peer_update(request: Request, body: dict) -> dict:
                 )
                 or operation
             )
-            restart_was_requested = current.get("status") == "restarting"
+            restart_was_requested = current.get("status") in {
+                "restart_requested",
+                "verification_required",
+            }
+            rejected = isinstance(exc, svc.RestartRejectedError)
+            diagnostic = getattr(exc, "diagnostic", None)
+            diagnostic_payload = (
+                diagnostic.public_dict()
+                if diagnostic is not None
+                else {
+                    "state": (
+                        "restart_response_lost"
+                        if restart_was_requested
+                        else "install_failed"
+                    ),
+                    "backend": "unknown",
+                    "command": [],
+                    "started_at": None,
+                    "completed_at": datetime.now(UTC).isoformat(),
+                    "duration_ms": None,
+                    "exit_code": None,
+                    "signal": None,
+                    "stdout": "",
+                    "stderr": redact_log_text(exc),
+                }
+            )
+            status = "failed"
+            message = "Installation failed"
+            if restart_was_requested:
+                status = "restart_rejected" if rejected else "verification_required"
+                message = (
+                    "Restart command was rejected by the host service manager."
+                    if rejected
+                    else "Restart requested; waiting for peer health."
+                )
             await _offload_request(
                 request,
                 "filesystem.fleet_peer_update_write",
@@ -2205,14 +2273,11 @@ async def peer_update(request: Request, body: dict) -> dict:
                 operation_id,
                 {
                     **current,
-                    "status": "restart_failed" if restart_was_requested else "failed",
-                    "error": str(exc),
-                    "message": (
-                        "The restart request reported an error; the controller will "
-                        "verify peer health"
-                        if restart_was_requested
-                        else "Installation failed"
-                    ),
+                    "status": status,
+                    "restart_state": diagnostic_payload["state"],
+                    "restart_diagnostic": diagnostic_payload,
+                    "error": redact_log_text(exc),
+                    "message": message,
                 },
             )
             return

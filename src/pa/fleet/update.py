@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from pa.config import Settings
 from pa.core.io import atomic_write_json
+from pa.core.logging import redact_log_text
 
 if TYPE_CHECKING:
     from pa.core.async_runtime import AsyncRuntime
@@ -97,6 +98,8 @@ class FleetUpdateJob(BaseModel):
     install_deadline: datetime | None = None
     health_deadline: datetime | None = None
     initial_process_id: int | None = None
+    restart_state: str | None = None
+    restart_diagnostic: dict[str, Any] | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -202,14 +205,30 @@ class FleetUpdateJobStore:
         job.updated_at = datetime.now(UTC)
         atomic_write_json(self.directory / f"{job.job_id}.json", job.public_dict())
 
-    def event(self, job: FleetUpdateJob, phase: UpdatePhase, message: str) -> None:
+    def event(
+        self,
+        job: FleetUpdateJob,
+        phase: UpdatePhase,
+        message: str,
+        *,
+        severity: str | None = None,
+    ) -> None:
         job.phase = phase
         job.progress_percent = PHASE_PROGRESS[phase]
+        if severity is None:
+            severity = (
+                "error"
+                if phase == UpdatePhase.FAILED
+                else "success"
+                if phase == UpdatePhase.SUCCEEDED
+                else "info"
+            )
         job.events.append(
             {
                 "seq": job.next_event_seq,
                 "at": datetime.now(UTC).isoformat(),
                 "phase": phase.value,
+                "severity": severity,
                 "message": message,
             }
         )
@@ -261,9 +280,7 @@ async def _peer_json(
 
 
 @asynccontextmanager
-async def _update_client(
-    client: httpx.AsyncClient | None, *, read_timeout: float
-):
+async def _update_client(client: httpx.AsyncClient | None, *, read_timeout: float):
     if client is not None:
         yield client
         return
@@ -286,16 +303,23 @@ async def run_update_job(
 
     async def offload(operation: str, call, *args, **kwargs):
         if async_runtime:
-            return await async_runtime.run_blocking(
-                operation, call, *args, **kwargs
-            )
+            return await async_runtime.run_blocking(operation, call, *args, **kwargs)
         # Compatibility for direct library/CLI use. The server always injects
         # AsyncRuntime; keeping the legacy path synchronous avoids silently
         # borrowing asyncio's unbounded default executor.
         return call(*args, **kwargs)
 
-    async def event(phase: UpdatePhase, message: str) -> None:
-        await offload("fleet.update_event_write", store.event, job, phase, message)
+    async def event(
+        phase: UpdatePhase, message: str, *, severity: str | None = None
+    ) -> None:
+        await offload(
+            "fleet.update_event_write",
+            store.event,
+            job,
+            phase,
+            message,
+            severity=severity,
+        )
 
     async def persist() -> None:
         await offload("fleet.update_job_write", store.persist, job)
@@ -516,32 +540,72 @@ async def run_update_job(
                         "GET", f"{base}/api/fleet/peer-update/{job.job_id}"
                     )
                     operation_status = str(operation.get("status") or "")
+                    diagnostic = operation.get("restart_diagnostic")
+                    if isinstance(diagnostic, dict):
+                        job.restart_diagnostic = {
+                            str(key): (
+                                redact_log_text(value)
+                                if isinstance(value, str)
+                                else [
+                                    redact_log_text(item)
+                                    if isinstance(item, str)
+                                    else item
+                                    for item in value
+                                ]
+                                if isinstance(value, list)
+                                else value
+                            )
+                            for key, value in diagnostic.items()
+                        }
+                        job.restart_state = (
+                            str(
+                                operation.get("restart_state")
+                                or diagnostic.get("state")
+                                or ""
+                            )
+                            or None
+                        )
+                        await persist()
                     if operation_status == "failed":
                         raise RuntimeError(
                             f"Peer installation failed: {operation.get('error') or 'unknown error'}"
                         )
+                    if operation_status == "restart_rejected":
+                        raise RuntimeError(
+                            "Peer restart command was rejected: "
+                            f"{operation.get('error') or 'host service manager rejected the request'}"
+                        )
+                    ambiguous_restart = operation_status in {
+                        "restart_failed",  # legacy peers used this for response loss
+                        "verification_required",
+                    }
                     operation_message = str(operation.get("message") or "")
-                    if operation_message and operation_message != last_operation_message:
+                    if ambiguous_restart:
+                        operation_message = (
+                            "Restart requested; waiting for peer health."
+                        )
+                        if not job.restart_state:
+                            job.restart_state = "restart_response_lost"
+                    if (
+                        operation_message
+                        and operation_message != last_operation_message
+                    ):
                         last_operation_message = operation_message
                         await event(UpdatePhase.WAITING_INSTALL, operation_message)
                     if operation_status in {
                         "installed",
-                        "restarting",
-                        "restart_failed",
+                        "restarting",  # legacy peer compatibility
+                        "restart_failed",  # legacy ambiguous acknowledgement
+                        "restart_requested",
+                        "verification_required",
                         "completed",
                     }:
                         job.health_deadline = datetime.now(UTC) + timedelta(
                             seconds=job.health_timeout
                         )
-                        restart_note = "Installation complete; waiting for restarted peer health"
-                        if operation_status == "restart_failed":
-                            restart_note = (
-                                "Restart command reported an error after installation; "
-                                "verifying peer health before declaring failure"
-                            )
                         await event(
                             UpdatePhase.RESTARTING,
-                            restart_note,
+                            "Restart requested; waiting for peer health.",
                         )
                         break
                     last_install_error = (
@@ -581,11 +645,25 @@ async def run_update_job(
             health_attempt += 1
             try:
                 status = await poll_peer_json("GET", f"{base}/api/status")
+                reported_process_id = status.get("process_id")
+                try:
+                    reported_process_id = (
+                        int(reported_process_id)
+                        if reported_process_id is not None
+                        else None
+                    )
+                except TypeError, ValueError:
+                    reported_process_id = None
                 if status.get("instance_id") != job.instance_id:
-                    last_error = "peer identity changed after restart"
+                    raise RuntimeError(
+                        "Post-restart peer identity verification failed: expected "
+                        f"{job.instance_id}, got {status.get('instance_id') or 'none'}"
+                    )
+                elif job.initial_process_id is not None and reported_process_id is None:
+                    last_error = "peer did not report a process id after restart"
                 elif (
                     job.initial_process_id is not None
-                    and status.get("process_id") == job.initial_process_id
+                    and reported_process_id == job.initial_process_id
                 ):
                     last_error = "peer is healthy but has not restarted yet"
                 else:
@@ -597,24 +675,26 @@ async def run_update_job(
                         UpdatePhase.VERIFYING,
                         f"Peer reports version {job.verified_version or 'unknown'}",
                     )
-                    if normalize_track(job.channel) == ReleaseTrack.DEV:
-                        installed_version = (
-                            str(status.get("installed_version") or "") or None
-                        )
-                        installed_channel = normalize_track(
-                            str(status.get("install_channel") or "release")
-                        )
-                        version_matches_install = False
-                        if job.verified_version and installed_version:
-                            try:
-                                version_matches_install = (
-                                    compare_versions(
-                                        job.verified_version, installed_version
-                                    )
-                                    == 0
+                    installed_version = (
+                        str(status.get("installed_version") or "") or None
+                    )
+                    channel_value = str(status.get("install_channel") or "") or None
+                    installed_channel = (
+                        normalize_track(channel_value) if channel_value else None
+                    )
+                    expected_channel = normalize_track(job.channel)
+                    version_matches_install = installed_version is None
+                    if job.verified_version and installed_version:
+                        try:
+                            version_matches_install = (
+                                compare_versions(
+                                    job.verified_version, installed_version
                                 )
-                            except ValueError:
-                                version_matches_install = False
+                                == 0
+                            )
+                        except ValueError:
+                            version_matches_install = False
+                    if expected_channel == ReleaseTrack.DEV:
                         verified = (
                             installed_channel == ReleaseTrack.DEV
                             and job.verified_identity == job.expected_identity
@@ -624,24 +704,44 @@ async def run_update_job(
                             last_error = (
                                 f"expected dev revision {job.expected_identity}, peer reports "
                                 f"revision {job.verified_identity or 'none'}, channel "
-                                f"{installed_channel}, running {job.verified_version or 'none'}, "
-                                f"installed {installed_version or 'none'}"
+                                f"{installed_channel or 'none'}, running "
+                                f"{job.verified_version or 'none'}, installed "
+                                f"{installed_version or 'none'}"
                             )
                     else:
                         try:
-                            verified = bool(
+                            running_matches = bool(
                                 job.verified_version
                                 and compare_versions(
                                     job.verified_version, job.expected_version
                                 )
                                 == 0
                             )
+                            installed_matches = bool(
+                                installed_version is None
+                                or compare_versions(
+                                    installed_version, job.expected_version
+                                )
+                                == 0
+                            )
                         except ValueError:
-                            verified = False
+                            running_matches = installed_matches = False
+                        channel_matches = bool(
+                            installed_channel is None
+                            or installed_channel == expected_channel
+                        )
+                        verified = (
+                            running_matches
+                            and installed_matches
+                            and version_matches_install
+                            and channel_matches
+                        )
                         if not verified:
                             last_error = (
-                                f"expected {job.expected_version} (semantic version), peer "
-                                f"reports {job.verified_version or 'no version'}"
+                                f"expected {job.expected_version} on {expected_channel}, peer "
+                                f"reports running {job.verified_version or 'none'}, installed "
+                                f"{installed_version or 'none'}, channel "
+                                f"{installed_channel or 'none'}"
                             )
                     if not verified:
                         raise RuntimeError(f"Version verification failed: {last_error}")

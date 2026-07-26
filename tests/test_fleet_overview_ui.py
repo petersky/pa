@@ -7,7 +7,6 @@ import subprocess
 import unittest
 from pathlib import Path
 
-
 SCRIPT_PATH = (
     Path(__file__).parents[1] / "src" / "pa" / "server" / "static" / "js" / "fleet.js"
 )
@@ -81,7 +80,9 @@ function apply(state, generation, nodeId, dimension, value, elapsedMs) {
 """
 
 
-@unittest.skipUnless(shutil.which("node"), "node is required for Fleet UI behavior tests")
+@unittest.skipUnless(
+    shutil.which("node"), "node is required for Fleet UI behavior tests"
+)
 class FleetOverviewUiStateTests(unittest.TestCase):
     def run_node(self, body: str) -> None:
         subprocess.run(
@@ -329,5 +330,43 @@ assert.strictEqual(merged.nodes[0].dimensions.providers.state, "stale");
 assert.strictEqual(merged.edges.length, 1);
 assert.strictEqual(merged.edges[0].status, "healthy");
 assert.strictEqual(merged.generated_at, incoming.generated_at);
+"""
+        )
+
+    def test_restart_ambiguity_is_neutral_and_rejection_is_error(self) -> None:
+        self.run_node(
+            r"""
+const present = window.__paFleetUpdatePresentation;
+const ambiguous = present({
+  phase: "restarting", instance_name: "monica", events: [{
+    phase: "restarting", severity: "info",
+    message: "Restart requested; waiting for peer health."
+  }]
+});
+assert.strictEqual(ambiguous.severity, "info");
+assert.ok(ambiguous.logText.includes("[info] [restarting]"));
+assert.ok(!ambiguous.logText.includes("[error]"));
+
+const succeeded = present({
+  phase: "succeeded", instance_name: "monica", verified_version: "0.2.23",
+  events: [
+    { phase: "restarting", severity: "info", message: "Restart requested; waiting for peer health." },
+    { phase: "succeeded", severity: "success", message: "Verified PA 0.2.23" }
+  ]
+});
+assert.strictEqual(succeeded.severity, "success");
+assert.strictEqual(succeeded.statusText, "Verified PA 0.2.23 on monica.");
+assert.ok(!succeeded.logText.includes("[error]"));
+
+const rejected = present({
+  phase: "failed", instance_name: "monica", error: "Peer restart command was rejected",
+  events: [{
+    phase: "failed", severity: "error",
+    message: "Update failed: Peer restart command was rejected"
+  }]
+});
+assert.strictEqual(rejected.severity, "error");
+assert.ok(rejected.logText.includes("[error] [failed]"));
+assert.ok(rejected.statusText.includes("rejected"));
 """
         )

@@ -2131,6 +2131,28 @@
     fleetUpdateSource = null;
   }
 
+  function fleetUpdatePresentation(job) {
+    var events = (job && job.events) || [];
+    var terminalSeverity = job && job.phase === "failed"
+      ? "error"
+      : (job && job.phase === "succeeded" ? "success" : "info");
+    var statusText = job && job.phase === "succeeded"
+      ? "Verified PA " + (job.verified_version || "unknown") + " on " + job.instance_name + "."
+      : (job && job.phase === "failed" ? (job.error || "Update failed") :
+        (events.length ? events[events.length - 1].message : "Update pending…"));
+    return {
+      severity: terminalSeverity,
+      statusText: statusText,
+      logText: events.map(function (item) {
+        var severity = item.severity || (item.phase === "failed" ? "error" : "info");
+        return "[" + severity + "] [" + (item.phase || "update") + "] " +
+          (item.message || "");
+      }).join("\n")
+    };
+  }
+
+  if (window.PA_TEST) window.__paFleetUpdatePresentation = fleetUpdatePresentation;
+
   function renderFleetUpdateJob(job) {
     if (!job || job.instance_id !== fleetUpdateInstanceId) return;
     var log = $("#pa-fleet-update-log");
@@ -2142,6 +2164,7 @@
     var submit = $("#pa-fleet-update-form button[type=submit]");
     var value = Math.max(0, Math.min(100, Number(job.progress_percent) || 0));
     var terminal = job.phase === "succeeded" || job.phase === "failed";
+    var presentation = fleetUpdatePresentation(job);
     if (progressWrap) progressWrap.hidden = false;
     if (phase) phase.textContent = String(job.phase || "pending").replace(/_/g, " ");
     if (percent) percent.textContent = value + "%";
@@ -2151,16 +2174,12 @@
     }
     if (submit) submit.disabled = !terminal;
     if (log) {
-      log.textContent = (job.events || []).map(function (item) {
-        return "[" + (item.phase || "update") + "] " + (item.message || "");
-      }).join("\n");
+      log.textContent = presentation.logText;
       log.scrollTop = log.scrollHeight;
     }
     if (status) {
-      status.textContent = job.phase === "succeeded"
-        ? "Verified PA " + (job.verified_version || "unknown") + " on " + job.instance_name + "."
-        : (job.phase === "failed" ? (job.error || "Update failed") :
-          ((job.events || []).length ? job.events[job.events.length - 1].message : "Update pending…"));
+      status.textContent = presentation.statusText;
+      status.dataset.severity = presentation.severity;
     }
   }
 
