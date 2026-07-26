@@ -12,7 +12,13 @@
       <form class="stack" hx-post="/partials/knowledge" hx-target="#knowledge-main-list" hx-swap="innerHTML">
         <input type="hidden" name="csrf" value="{{ csrf_token }}">
         <input type="hidden" name="session_id" value="{{ promote_session_id }}">
-        {% if promote_session_id %}<p class="muted">Promoting a conclusion from session <code>{{ promote_session_id }}</code>. Write the durable conclusion—not the raw transcript.</p>{% endif %}
+        {% if promote_session_id %}
+        <p class="muted">Promoting a conclusion from session <code>{{ promote_session_id }}</code>. Write the durable conclusion—not the raw transcript. PA records the canonical final-message range as provenance.</p>
+        <div class="filter-grid">
+          <label>First event <input type="number" min="1" name="start_seq" placeholder="Optional"></label>
+          <label>Last event <input type="number" min="1" name="end_seq" placeholder="Optional"></label>
+        </div>
+        {% endif %}
         <label>Content <textarea name="summary" rows="4" required placeholder="Record the durable fact or decision, including why it matters."></textarea></label>
         <div class="filter-grid">
           <label>Type
@@ -35,7 +41,7 @@
         </div>
         <label>Supersedes memory ID <input name="supersedes_id" placeholder="Optional earlier entry ID"></label>
         <label>Tags <input name="tags" placeholder="comma, separated"></label>
-        <button type="submit">Save memory</button>
+        <button type="submit">{{ 'Promote to memory' if promote_session_id else 'Save memory' }}</button>
       </form>
     </details>
   </header>
@@ -47,10 +53,23 @@
       <select name="kind"><option value="">All types</option>{% for value in knowledge_kinds %}<option value="{{ value.value }}" {% if knowledge_filters.kind == value.value %}selected{% endif %}>{{ value.value | title }}</option>{% endfor %}</select>
     </label>
     <label>Lifecycle
-      <select name="status"><option value="">All states</option>{% for value in knowledge_statuses %}<option value="{{ value.value }}" {% if knowledge_filters.status == value.value %}selected{% endif %}>{{ value.value | title }}</option>{% endfor %}</select>
+      <select name="status"><option value="">All states</option>{% for value in knowledge_statuses %}<option value="{{ value.value }}" {% if knowledge_filters.status == value.value %}selected{% endif %}>{{ 'Pending review' if value.value == 'review' else value.value | title }}</option>{% endfor %}</select>
     </label>
     <label>Scope <input name="scope" value="{{ knowledge_filters.scope }}" placeholder="realm, project:…, card:…"></label>
+    <label>Source
+      <select name="source"><option value="">All sources</option>{% for value in knowledge_sources %}<option value="{{ value }}" {% if knowledge_filters.source == value %}selected{% endif %}>{{ value | title }}</option>{% endfor %}</select>
+    </label>
     <div class="form-actions"><button type="submit">Apply</button><a class="text-btn" href="/knowledge?realm={{ active_realm }}">Clear</a></div>
+  </form>
+
+  <form id="memory-bulk-form" class="form-actions memory-bulk-actions"
+        hx-post="/partials/knowledge/bulk"
+        hx-target="#knowledge-main-list" hx-swap="innerHTML"
+        aria-label="Bulk memory lifecycle actions">
+    <input type="hidden" name="csrf" value="{{ csrf_token }}">
+    <span class="muted small">Selected records retain their audit evidence.</span>
+    <button type="submit" class="ghost small" name="action" value="archive">Archive selected</button>
+    <button type="submit" class="ghost small" name="action" value="supersede">Supersede selected</button>
   </form>
 
   <div id="knowledge-main-list" class="scroll-region" aria-live="polite">

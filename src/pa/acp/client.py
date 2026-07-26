@@ -43,7 +43,7 @@ from pa.config import Settings
 from pa.domain.models import AgentSession
 from pa.domain.store import Store
 from pa.instance.quiesce import ImageAttachment
-from pa.knowledge.capture import capture_from_updates
+from pa.knowledge.capture import has_policy_memory_candidate
 from pa.packaging.paths import resolve_executable
 
 if TYPE_CHECKING:
@@ -141,6 +141,28 @@ def normalize_session_update(update: Any) -> dict[str, Any]:
             codex_meta = meta.get("codex") or {} if isinstance(meta, dict) else {}
             payload["phase"] = (
                 codex_meta.get("phase") if isinstance(codex_meta, dict) else None
+            )
+            payload["content_mode"] = (
+                plain.get("contentMode")
+                or plain.get("content_mode")
+                or plain.get("operation")
+                or (
+                    codex_meta.get("contentMode")
+                    or codex_meta.get("content_mode")
+                    or codex_meta.get("operation")
+                    if isinstance(codex_meta, dict)
+                    else None
+                )
+            )
+            payload["final"] = bool(
+                plain.get("final")
+                or plain.get("isFinal")
+                or plain.get("is_final")
+                or (
+                    codex_meta.get("final") or codex_meta.get("is_final")
+                    if isinstance(codex_meta, dict)
+                    else False
+                )
             )
         elif update_type in {"tool_call", "tool_call_update"}:
             payload["tool_call_id"] = plain.get("toolCallId") or plain.get(
@@ -492,6 +514,7 @@ class AgentConnection:
         self.modes: dict[str, Any] | None = None
         self.config_options: list[Any] | None = None
         self.last_usage: dict[str, Any] | None = None
+        self.last_memory_candidate: bool = False
         self._wire_lock = asyncio.Lock()
         self._wire_tasks: set[asyncio.Task[None]] = set()
         self._wire_task_limit = 1024
@@ -887,15 +910,12 @@ class AgentConnection:
                 await self._mark_transport_dead()
             raise
 
+        # Session updates remain durable audit history. Memory creation is a
+        # separate, explicit promotion action over that canonical transcript.
         updates = self._client.drain_updates() if self._client else []
-        await self._offload(
-            "agent.knowledge_capture",
-            capture_from_updates,
-            self.store,
-            session_id=self.session.id,
-            item_id=item_id,
-            updates=updates,
-            timeout=60.0,
+        self.last_memory_candidate = bool(
+            getattr(self.settings, "memory_auto_capture_enabled", False) is True
+            and has_policy_memory_candidate(updates)
         )
 
         usage = usage_to_dict(getattr(response, "usage", None))

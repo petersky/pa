@@ -64,8 +64,7 @@ class AcpImagePromptTests(unittest.TestCase):
         )
 
         async def run() -> None:
-            with patch("pa.acp.client.capture_from_updates"):
-                await connection.prompt("What is shown?", images=[_image()])
+            await connection.prompt("What is shown?", images=[_image()])
 
         asyncio.run(run())
         prompt = connection._conn.prompt.await_args.kwargs["prompt"]
@@ -300,6 +299,7 @@ assert.strictEqual(window.PAAgentChat.anchoredScrollTop(75, 400, 650), 325);
 const fs = require("fs");
 const vm = require("vm");
 const assert = require("assert");
+let lastSanitizeConfig = null;
 global.window = {
   marked: { parse: function (raw, options) {
     assert.strictEqual(options.breaks, true);
@@ -309,6 +309,7 @@ global.window = {
       '<a href="javascript:alert(1)" onclick="alert(1)">bad</a><script>alert(1)</script>';
   } },
   DOMPurify: { sanitize: function (html, config) {
+    lastSanitizeConfig = config;
     assert.ok(config.FORBID_TAGS.includes("form"));
     assert.ok(config.FORBID_ATTR.includes("style"));
     return html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
@@ -330,6 +331,11 @@ assert.ok(html.includes("<pre><code>"));
 assert.ok(!html.includes("<script"));
 assert.ok(!html.includes("onclick"));
 assert.ok(!html.includes("javascript:"));
+window.PAAgentChat.renderMarkdown("**bold** embedded", { allowEmbeddedMedia: false });
+["audio", "embed", "iframe", "object", "picture", "video"].forEach(function (tag) {
+  assert.ok(lastSanitizeConfig.FORBID_TAGS.includes(tag));
+});
+assert.deepStrictEqual(lastSanitizeConfig.ADD_TAGS, []);
 """
         subprocess.run(
             [shutil.which("node"), "-e", program, str(script_path)],

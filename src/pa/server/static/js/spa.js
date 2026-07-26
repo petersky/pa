@@ -24,9 +24,14 @@
   }
 
   function swapTarget(event) {
-    return (event.detail && event.detail.ctx && event.detail.ctx.target) ||
-      (event.detail && event.detail.target) ||
-      null;
+    var detail = event.detail || {};
+    var candidate = detail.target || (detail.ctx && detail.ctx.target) || event.target;
+    if (typeof candidate === "string") {
+      candidate = document.querySelector(candidate);
+    }
+    return candidate && typeof candidate.querySelectorAll === "function"
+      ? candidate
+      : null;
   }
 
   function updateTitle() {
@@ -368,7 +373,10 @@
       return Promise.resolve();
     }
     element.setAttribute("aria-busy", "true");
-    return window.PAAgentChat.renderMarkdownAsync(markdown).then(function (html) {
+    var options = element.classList.contains("memory-markdown")
+      ? { allowEmbeddedMedia: false }
+      : undefined;
+    return window.PAAgentChat.renderMarkdownAsync(markdown, options).then(function (html) {
       element.innerHTML = html;
       element.removeAttribute("aria-busy");
       decorateLinks(element);
@@ -386,6 +394,18 @@
       var markdown = cardMarkdownSource(element);
       renderMarkdownInto(element, markdown);
     });
+  }
+
+  function observeMarkdownMutations() {
+    if (typeof MutationObserver !== "function" || !document.body) return;
+    var observer = new MutationObserver(function (records) {
+      records.forEach(function (record) {
+        record.addedNodes.forEach(function (node) {
+          if (node && node.nodeType === 1) renderCardMarkdown(node);
+        });
+      });
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
   }
 
   function setMarkdownEditorTab(editor, name) {
@@ -1107,9 +1127,12 @@
     });
   });
 
-  document.body.addEventListener("htmx:after:swap", function (event) {
+  function handleAfterSwap(event) {
     var target = swapTarget(event);
-    if (target) renderCardMarkdown(target);
+    // HTMX 4 variants disagree about whether the after-swap target is the
+    // source element, selector text, or replaced node. Re-scan the document so
+    // every swapped Markdown surface is idempotently rendered from its source.
+    renderCardMarkdown(document);
     if (target && target.id === "app-view") {
       setActiveNav(window.location.pathname);
       updateTitle();
@@ -1137,6 +1160,9 @@
       }
       document.body.dispatchEvent(new CustomEvent("boardRefresh"));
     }
+  }
+  ["htmx:after:swap", "htmx:afterSwap"].forEach(function (eventName) {
+    document.body.addEventListener(eventName, handleAfterSwap);
   });
 
   document.body.addEventListener("htmx:after:history:update", function () {
@@ -1337,6 +1363,7 @@
     initAgentReconnect();
     decorateLinks(document);
     renderCardMarkdown(document);
+    observeMarkdownMutations();
     checkServerBuild();
     var dialog = cardDialog();
     if (dialog) {

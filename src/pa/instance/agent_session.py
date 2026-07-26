@@ -43,6 +43,7 @@ from pa.instance.quiesce import (
     load_quiesce_snapshot,
     save_quiesce_snapshot,
 )
+from pa.knowledge.capture import capture_from_updates
 from pa.repository.workspace import (
     WorkspaceManager,
     WorkspaceProvisioningError,
@@ -1016,6 +1017,27 @@ class AgentSessionRuntime:
                 )
                 self._flush_transcript()
                 await self._drain_transcripts()
+                if (
+                    self.connection
+                    and self.connection.last_memory_candidate
+                    and self.manager.settings.memory_auto_capture_enabled
+                ):
+                    try:
+                        await self._offload(
+                            "agent.knowledge_candidate",
+                            capture_from_updates,
+                            self.store,
+                            session_id=self.session_id,
+                            item_id=item.card_id,
+                            updates=[],
+                            enabled=True,
+                            eligible=True,
+                            timeout=60.0,
+                        )
+                    except Exception:
+                        logger.exception("Failed to queue optional Memory candidate")
+                    finally:
+                        self.connection.last_memory_candidate = False
                 if self.manager.completion_handler and item.card_id:
                     try:
                         from pa.execution.disposition import extract_card_disposition

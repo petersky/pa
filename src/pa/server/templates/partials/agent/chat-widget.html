@@ -75,6 +75,8 @@
           <button type="button" class="ghost" data-acw-recover hidden>Recover session</button>
           <button type="button" class="ghost" data-acw-restart>Restart session</button>
           <button type="button" class="ghost" data-acw-history hidden>Open durable history</button>
+          <a class="text-btn" data-acw-promote
+             href="/knowledge{% if sid %}?session={{ sid }}{% endif %}">Promote to memory</a>
           <button type="button" class="ghost danger" data-acw-end>End session</button>
         </div>
       </details>
