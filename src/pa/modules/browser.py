@@ -2,24 +2,33 @@
 
 from __future__ import annotations
 
-import asyncio
-import atexit
+import base64
 import json
 import os
-from pathlib import Path
-from uuid import uuid4
+from typing import Any
+from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
+from pa.auth.middleware import get_principal_id
 from pa.browser.cdp import CdpError, CdpPage
-from pa.browser.manager import BrowserAttachment, BrowserManager
-from pa.core.async_runtime import AsyncRuntime
+from pa.browser.session import (
+    MAX_ACTIONS,
+    MAX_COORDINATE,
+    MAX_PAUSE_SECONDS,
+    MAX_TOTAL_PAUSE_SECONDS,
+    NAMED_KEYS,
+    BrowserScope,
+    BrowserSessionError,
+    BrowserSessionManager,
+)
 from pa.core.context import AppContext
 from pa.core.contracts import Module
 
 router = APIRouter(prefix="/agent/sessions/{session_id}/browser")
+automation_router = APIRouter(prefix="/browser")
 
 
 def _runtime(request: Request, session_id: str):
@@ -54,6 +63,45 @@ class ClickBody(BaseModel):
 
 class TypeBody(BaseModel):
     text: str = Field(max_length=100_000)
+
+
+class AutomationBody(BaseModel):
+    agent_session_id: str
+    browser_handle: str | None = None
+    operation_id: str | None = None
+    share_handle: str | None = None
+    authorized_session_id: str | None = None
+    ttl_seconds: int = Field(default=300, ge=30, le=900)
+    url: str | None = None
+    width: int = Field(default=1440, ge=320, le=7680)
+    height: int = Field(default=900, ge=240, le=4320)
+    device_scale_factor: float = Field(default=1, ge=0.25, le=4)
+    selector: str | None = None
+    ref: str | None = None
+    x: float | None = Field(default=None, ge=-MAX_COORDINATE, le=MAX_COORDINATE)
+    y: float | None = Field(default=None, ge=-MAX_COORDINATE, le=MAX_COORDINATE)
+    button: str | int | None = "left"
+    click_count: int = Field(default=1, ge=1, le=3)
+    modifiers: list[str] = Field(default_factory=list, max_length=4)
+    key: str | None = None
+    text: str | None = Field(default=None, max_length=100_000)
+    clear: bool = True
+    submit: bool = False
+    delay_ms: int = Field(default=0, ge=0, le=1000)
+    delta_x: float = 0
+    delta_y: float = 0
+    source_selector: str | None = None
+    source_ref: str | None = None
+    source_x: float | None = Field(default=None, ge=-MAX_COORDINATE, le=MAX_COORDINATE)
+    source_y: float | None = Field(default=None, ge=-MAX_COORDINATE, le=MAX_COORDINATE)
+    target_selector: str | None = None
+    target_ref: str | None = None
+    target_x: float | None = Field(default=None, ge=-MAX_COORDINATE, le=MAX_COORDINATE)
+    target_y: float | None = Field(default=None, ge=-MAX_COORDINATE, le=MAX_COORDINATE)
+    steps: int = Field(default=10, ge=1, le=50)
+    actions: list[dict[str, Any]] | None = Field(
+        default=None, min_length=1, max_length=MAX_ACTIONS
+    )
 
 
 @router.post("/attach")
@@ -154,130 +202,315 @@ async def browser_type(request: Request, session_id: str, body: TypeBody) -> dic
     return {"ok": True}
 
 
-class McpBrowserController:
-    """Use a session-attached browser or own an agent-started headless browser."""
-
-    def __init__(
-        self,
-        data_dir: Path,
-        store=None,
-        async_runtime: AsyncRuntime | None = None,
-    ) -> None:
-        self.manager = BrowserManager(
-            data_dir / "mcp-browser", async_runtime=async_runtime
+def _scope(request: Request, agent_session_id: str) -> BrowserScope:
+    try:
+        UUID(agent_session_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "ownership_failure",
+                "message": "agent_session_id must be the full canonical session UUID.",
+            },
+        ) from exc
+    ctx = request.app.state.ctx
+    stored = ctx.store.get_session(agent_session_id)
+    principal = get_principal_id(request)
+    if not stored or getattr(stored, "principal_id", None) != principal:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "ownership_failure",
+                "message": "The authenticated principal does not own this agent session.",
+            },
         )
-        self.store = store
-        self.async_runtime = async_runtime
-        self.attachment: BrowserAttachment | None = None
-        self.session_key = str(uuid4())
-        self.attributes: dict[str, int | float] = {}
-        atexit.register(self.close)
+    return BrowserScope(principal, agent_session_id, ctx.settings.instance_id)
 
-    def close(self) -> None:
-        if self.attachment and self.attachment.process.returncode is None:
-            self.attachment.process.terminate()
 
-    def page(self) -> CdpPage | None:
-        endpoint = os.environ.get("PA_BROWSER_CDP_URL")
-        if endpoint:
-            return CdpPage(endpoint, os.environ.get("PA_BROWSER_TARGET_ID"))
-        if self.attachment and self.attachment.process.returncode is None:
-            return self.attachment.page
-        return None
+def _browser_sessions(request: Request) -> BrowserSessionManager:
+    return request.app.state.ctx.require_service("browser_sessions")
 
-    async def ensure_page(
-        self,
-        *,
-        url: str = "about:blank",
-        width: int = 1440,
-        height: int = 900,
-        device_scale_factor: float = 1,
-    ) -> CdpPage:
-        page = self.page()
-        if page:
-            return page
-        self.attachment = await self.manager.attach(
-            self.session_key,
-            url=url,
-            width=width,
-            height=height,
-            device_scale_factor=device_scale_factor,
-        )
-        self.attributes = {
-            "width": width,
-            "height": height,
-            "device_scale_factor": device_scale_factor,
-        }
-        return self.attachment.page
 
-    async def state(self) -> dict:
-        page = self.page()
-        if not page:
-            return {"attached": False}
-        state = {"attached": True, **await page.metadata()}
-        if self.attachment:
-            state.update(
-                width=self.attachment.width,
-                height=self.attachment.height,
-                device_scale_factor=self.attachment.device_scale_factor,
-                owner="agent",
+async def _ensure_attached(
+    manager: BrowserSessionManager, scope: BrowserScope, body: AutomationBody
+) -> None:
+    if body.browser_handle:
+        return
+    try:
+        manager.resolve(scope)
+    except BrowserSessionError as exc:
+        if exc.code != "browser_not_attached":
+            raise
+        await manager.attach(scope)
+
+
+def _browser_http_error(exc: BrowserSessionError) -> HTTPException:
+    status = 403 if exc.code == "ownership_failure" else 409
+    if exc.code.startswith("invalid_") or exc.code in {
+        "unsupported_button",
+        "unsupported_key",
+        "quota_exceeded",
+    }:
+        status = 422
+    if exc.code in {"browser_unavailable", "browser_protocol_error"}:
+        status = 503
+    if exc.code == "timeout":
+        status = 504
+    return HTTPException(status_code=status, detail=exc.as_dict())
+
+
+@automation_router.get("/capabilities")
+async def browser_capabilities() -> dict[str, Any]:
+    return {
+        "schema": "pa.browser-capabilities/v1",
+        "common_actions": [
+            "attach",
+            "state",
+            "open",
+            "snapshot",
+            "click",
+            "hover",
+            "type",
+            "press",
+            "scroll",
+            "drag",
+            "resize",
+            "back",
+            "screenshot",
+            "detach",
+        ],
+        "advanced_actions": [
+            "pointer_move",
+            "pointer_down",
+            "pointer_up",
+            "key_down",
+            "key_press",
+            "key_up",
+            "wheel",
+            "pause",
+        ],
+        "buttons": {"names": ["left", "middle", "right"], "numbers": [0, 1, 2]},
+        "modifiers": ["Alt", "Control", "Meta", "Shift"],
+        "named_keys": sorted(NAMED_KEYS),
+        "limits": {
+            "max_actions": MAX_ACTIONS,
+            "max_pause_ms": MAX_PAUSE_SECONDS * 1000,
+            "max_total_pause_ms": MAX_TOTAL_PAUSE_SECONDS * 1000,
+            "max_coordinate": MAX_COORDINATE,
+            "coordinate_unit": "viewport_css_pixel",
+            "wheel_unit": "css_pixel",
+        },
+        "cli": "pa browser --help",
+        "http": {
+            "capabilities": "GET /api/browser/capabilities",
+            "operations": "POST /api/browser/{operation}",
+            "authentication": "PA bearer token required",
+        },
+    }
+
+
+@automation_router.post("/{operation}")
+async def browser_automation(
+    request: Request, operation: str, body: AutomationBody
+) -> dict[str, Any]:
+    manager = _browser_sessions(request)
+    scope = _scope(request, body.agent_session_id)
+    try:
+        if operation == "attach":
+            return await manager.attach(
+                scope,
+                url=body.url or "about:blank",
+                width=body.width,
+                height=body.height,
+                device_scale_factor=body.device_scale_factor,
+                share_handle=body.share_handle,
             )
-        else:
-            state["owner"] = "session"
-            viewport = await page.viewport()
-            self.attributes = viewport
-            state.update(viewport)
-        return state
-
-    def persist_session_attributes(self, *, url: str | None = None) -> None:
-        session_id = os.environ.get("PA_BROWSER_SESSION_ID")
-        if not session_id or not self.store or not self.attributes:
-            return
-        session = self.store.get_session(session_id)
-        if not session:
-            return
-        config = dict(session.config_json or {})
-        browser_config = dict(config.get("browser") or {})
-        browser_config.update(
-            attached=True,
-            attachment_id=os.environ.get("PA_BROWSER_ATTACHMENT_ID"),
-            width=self.attributes["width"],
-            height=self.attributes["height"],
-            device_scale_factor=self.attributes["device_scale_factor"],
-        )
-        if url:
-            browser_config["url"] = url
-        config["browser"] = browser_config
-        session.config_json = config
-        self.store.save_session(session)
-
-    async def persist_session_attributes_async(self, *, url: str | None = None) -> None:
-        if self.async_runtime:
-            await self.async_runtime.run_blocking(
-                "browser.session_persist",
-                self.persist_session_attributes,
-                url=url,
+        if operation == "state":
+            return await manager.state(scope, handle=body.browser_handle)
+        if operation == "share":
+            if not body.authorized_session_id:
+                raise BrowserSessionError(
+                    "invalid_share_target", "authorized_session_id is required."
+                )
+            try:
+                UUID(body.authorized_session_id)
+            except ValueError as exc:
+                raise BrowserSessionError(
+                    "invalid_share_target",
+                    "authorized_session_id must be a full canonical session UUID.",
+                ) from exc
+            target_session = request.app.state.ctx.store.get_session(
+                body.authorized_session_id
             )
-            return
-        await asyncio.to_thread(self.persist_session_attributes, url=url)
+            if (
+                not target_session
+                or getattr(target_session, "principal_id", None) != scope.principal_id
+            ):
+                raise BrowserSessionError(
+                    "ownership_failure",
+                    "The authenticated principal does not own the authorized share target session.",
+                )
+            return await manager.share(
+                scope,
+                authorized_session_id=body.authorized_session_id,
+                handle=body.browser_handle,
+                ttl_seconds=body.ttl_seconds,
+            )
+        if operation == "detach":
+            return await manager.detach(scope, handle=body.browser_handle)
+        if operation not in {
+            "open",
+            "snapshot",
+            "click",
+            "hover",
+            "type",
+            "press",
+            "scroll",
+            "drag",
+            "actions",
+            "back",
+            "resize",
+            "screenshot",
+        }:
+            raise BrowserSessionError(
+                "invalid_operation", f"Unsupported browser operation {operation!r}."
+            )
+        await _ensure_attached(manager, scope, body)
+        common = {"handle": body.browser_handle, "operation_id": body.operation_id}
+        if operation == "open":
+            if not body.url:
+                raise BrowserSessionError("invalid_url", "url is required.")
+            return await manager.open(scope, url=body.url, **common)
+        if operation == "snapshot":
+            return await manager.snapshot(scope, handle=body.browser_handle)
+        if operation == "click":
+            return await manager.click(
+                scope,
+                selector=body.selector,
+                ref=body.ref,
+                x=body.x,
+                y=body.y,
+                button=body.button,
+                click_count=body.click_count,
+                modifiers=body.modifiers,
+                **common,
+            )
+        if operation == "hover":
+            return await manager.hover(
+                scope,
+                selector=body.selector,
+                ref=body.ref,
+                x=body.x,
+                y=body.y,
+                modifiers=body.modifiers,
+                **common,
+            )
+        if operation == "type":
+            if body.text is None:
+                raise BrowserSessionError("invalid_text", "text is required.")
+            return await manager.type_text(
+                scope,
+                selector=body.selector,
+                ref=body.ref,
+                text=body.text,
+                clear=body.clear,
+                submit=body.submit,
+                delay_ms=body.delay_ms,
+                modifiers=body.modifiers,
+                **common,
+            )
+        if operation == "press":
+            if body.key is None:
+                raise BrowserSessionError("unsupported_key", "key is required.")
+            return await manager.press(
+                scope, key=body.key, modifiers=body.modifiers, **common
+            )
+        if operation == "scroll":
+            return await manager.scroll(
+                scope,
+                delta_x=body.delta_x,
+                delta_y=body.delta_y,
+                selector=body.selector,
+                ref=body.ref,
+                x=body.x,
+                y=body.y,
+                **common,
+            )
+        if operation == "drag":
+            return await manager.drag(
+                scope,
+                source_selector=body.source_selector,
+                source_ref=body.source_ref,
+                source_x=body.source_x,
+                source_y=body.source_y,
+                target_selector=body.target_selector,
+                target_ref=body.target_ref,
+                target_x=body.target_x,
+                target_y=body.target_y,
+                button=body.button,
+                steps=body.steps,
+                **common,
+            )
+        if operation == "actions":
+            return await manager.actions(scope, actions=body.actions or [], **common)
+        if operation == "back":
+            return await manager.back(scope, **common)
+        if operation == "resize":
+            return await manager.resize(
+                scope,
+                width=body.width,
+                height=body.height,
+                device_scale_factor=body.device_scale_factor,
+                **common,
+            )
+        if operation == "screenshot":
+            data = await manager.screenshot(scope, handle=body.browser_handle)
+            return {
+                "ok": True,
+                "browser_handle": manager.resolve(scope, body.browser_handle).handle,
+                "media_type": "image/png",
+                "data_base64": base64.b64encode(data).decode("ascii"),
+            }
+        raise BrowserSessionError(
+            "invalid_operation", f"Unsupported browser operation {operation!r}."
+        )
+    except BrowserSessionError as exc:
+        raise _browser_http_error(exc) from exc
+
+    except CdpError as exc:
+        error = BrowserSessionError("browser_protocol_error", str(exc), retryable=True)
+        raise _browser_http_error(error) from exc
+    except RuntimeError as exc:
+        error = BrowserSessionError(
+            "browser_unavailable",
+            "The managed browser is unavailable; attach again after checking the server browser installation.",
+            retryable=True,
+        )
+        raise _browser_http_error(error) from exc
 
 
-_SNAPSHOT_JS = """(() => {
-  const visible = el => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none'; };
-  const elements = Array.from(document.querySelectorAll('a,button,input,textarea,select,[role],h1,h2,h3,p'))
-    .filter(visible).slice(0, 300).map((el, index) => ({
-      index, tag: el.tagName.toLowerCase(), role: el.getAttribute('role') || '',
-      text: (el.innerText || el.value || el.getAttribute('aria-label') || '').trim().slice(0, 500),
-      href: el.href || '', disabled: !!el.disabled
-    }));
-  return {
-    document: {
-      ready_state: document.readyState, url: location.href, title: document.title,
-      body_text: (document.body?.innerText || '').trim().slice(0, 2000)
-    },
-    elements
-  };
-})()"""
+def _mcp_execution_identity(ctx: AppContext) -> tuple[str, str]:
+    raw = os.environ.get("PA_EXECUTION_CONTEXT", "")
+    try:
+        execution = json.loads(raw) if raw else {}
+    except ValueError:
+        execution = {}
+    session_id = str(
+        execution.get("session_id") or os.environ.get("PA_BROWSER_SESSION_ID") or ""
+    )
+    instance = execution.get("instance") or {}
+    instance_id = str(instance.get("id") or ctx.settings.instance_id)
+    try:
+        UUID(session_id)
+    except ValueError as exc:
+        raise RuntimeError(
+            "Browser MCP requires a full canonical PA agent session ID in PA_EXECUTION_CONTEXT."
+        ) from exc
+    if instance_id != ctx.settings.instance_id:
+        raise RuntimeError(
+            "Browser MCP execution instance does not match the owning PA server."
+        )
+    return session_id, instance_id
 
 
 class BrowserModule(Module):
@@ -287,167 +520,334 @@ class BrowserModule(Module):
 
     @property
     def version(self) -> str:
-        return "0.1.0"
+        return "0.2.0"
 
     @property
     def description(self) -> str:
-        return "Session-scoped browser surface and automation tools"
+        return "Isolated browser sessions and Playwright-style automation"
+
+    async def on_startup(self, app, ctx: AppContext) -> None:
+        agent = ctx.require_service("instance_agent")
+        manager = BrowserSessionManager(
+            agent.browser,
+            instance_id=ctx.settings.instance_id,
+            attached_lookup=agent.browser.get,
+        )
+        await manager.start()
+        ctx.register_service("browser_sessions", manager)
+
+    async def on_shutdown(self, app, ctx: AppContext) -> None:
+        manager = ctx.services.get("browser_sessions")
+        if manager:
+            await manager.close()
 
     def api_routers(self):
-        return [("/api", router, ["browser"])]
+        return [
+            ("/api", router, ["browser"]),
+            ("/api", automation_router, ["browser-automation"]),
+        ]
 
     def register_mcp(self, mcp, ctx: AppContext) -> None:
-        controller = McpBrowserController(
-            ctx.settings.data_dir,
-            ctx.store,
-            ctx.require_service("async_runtime"),
-        )
+        from pa.mcp.local_api import request_local_pa
+
+        def call(operation: str, **payload: Any) -> dict[str, Any]:
+            session_id, _ = _mcp_execution_identity(ctx)
+            return request_local_pa(
+                ctx.settings,
+                "POST",
+                f"/api/browser/{operation}",
+                json={"agent_session_id": session_id, **payload},
+            )
 
         @mcp.tool()
-        async def browser_attach(
+        def browser_capabilities() -> dict[str, Any]:
+            """Return compact Browser action names, key/button semantics, and safety limits."""
+            return request_local_pa(ctx.settings, "GET", "/api/browser/capabilities")
+
+        @mcp.tool()
+        def browser_attach(
             url: str = "about:blank",
             width: int = 1440,
             height: int = 900,
             device_scale_factor: float = 1,
+            share_handle: str | None = None,
         ) -> str:
-            """Attach or start PA's headless browser. The agent may call this without user action."""
-            page = await controller.ensure_page(
-                url=url,
-                width=width,
-                height=height,
-                device_scale_factor=device_scale_factor,
+            """Attach this PA agent session to its isolated browser, or redeem an authorized share handle."""
+            return json.dumps(
+                call(
+                    "attach",
+                    url=url,
+                    width=width,
+                    height=height,
+                    device_scale_factor=device_scale_factor,
+                    share_handle=share_handle,
+                )
             )
-            await page.resize(width, height, device_scale_factor=device_scale_factor)
-            if url != "about:blank":
-                await page.navigate_and_wait(url)
-            else:
-                await page.wait_until_usable()
-            controller.attributes = {
-                "width": width,
-                "height": height,
-                "device_scale_factor": device_scale_factor,
-            }
-            await controller.persist_session_attributes_async(
-                url=None if url == "about:blank" else url
-            )
-            return json.dumps(await controller.state())
 
         @mcp.tool()
-        async def browser_state() -> str:
-            """Return whether a PA browser is available and its current attributes."""
-            return json.dumps(await controller.state())
+        def browser_state(browser_handle: str | None = None) -> str:
+            """Return this session's browser handle, ownership, target, viewport, and expiry."""
+            return json.dumps(call("state", browser_handle=browser_handle))
 
         @mcp.tool()
-        async def browser_open(url: str) -> str:
-            """Open a URL in PA's browser, starting a default headless browser if needed."""
-            page = await controller.ensure_page()
-            diagnostic = await page.navigate_and_wait(url)
-            state = await controller.state()
-            await controller.persist_session_attributes_async(
-                url=state.get("url") or url
+        def browser_open(
+            url: str, browser_handle: str | None = None, operation_id: str | None = None
+        ) -> str:
+            """Navigate the isolated browser; operation_id prevents duplicate transport retries."""
+            return json.dumps(
+                call(
+                    "open",
+                    url=url,
+                    browser_handle=browser_handle,
+                    operation_id=operation_id,
+                )
             )
-            return json.dumps({**await page.metadata(), "document": diagnostic})
 
         @mcp.tool()
-        async def browser_resize(
+        def browser_resize(
             width: int,
             height: int,
             device_scale_factor: float = 1,
+            browser_handle: str | None = None,
+            operation_id: str | None = None,
         ) -> str:
-            """Set PA's browser viewport width, height, and device scale factor."""
-            page = await controller.ensure_page(
-                width=width,
-                height=height,
-                device_scale_factor=device_scale_factor,
-            )
-            await page.resize(width, height, device_scale_factor=device_scale_factor)
-            if controller.attachment:
-                controller.attachment.width = width
-                controller.attachment.height = height
-                controller.attachment.device_scale_factor = device_scale_factor
-            controller.attributes = {
-                "width": width,
-                "height": height,
-                "device_scale_factor": device_scale_factor,
-            }
-            await controller.persist_session_attributes_async()
-            return json.dumps(await controller.state())
-
-        @mcp.tool()
-        async def browser_detach() -> str:
-            """Stop a browser started by the agent. Session-attached browsers remain user-owned."""
-            if not controller.attachment:
-                return json.dumps(
-                    {
-                        "attached": bool(controller.page()),
-                        "detached": False,
-                        "owner": "session",
-                    }
-                )
-            await controller.manager.detach(controller.session_key)
-            controller.attachment = None
-            controller.attributes = {}
-            state = await controller.state()
-            state["detached"] = True
-            return json.dumps(state)
-
-        @mcp.tool()
-        async def browser_snapshot() -> str:
-            """Return a compact snapshot of visible, interactive page content."""
-            page = await controller.ensure_page()
-            snapshot = await page.evaluate(_SNAPSHOT_JS)
-            document = dict(snapshot.get("document") or {})
-            elements = list(snapshot.get("elements") or [])
-            url = str(document.get("url") or "")
-            if url.startswith(("chrome-error://", "edge-error://")):
-                raise CdpError(
-                    "Browser snapshot is an error page: "
-                    f"{document.get('title') or document.get('body_text') or url}"
-                )
-            diagnostic = None
-            if not elements:
-                diagnostic = {
-                    "code": "empty_snapshot",
-                    "message": (
-                        "The page loaded but exposed no visible interactive or text "
-                        "elements. Inspect document/body_text or take a screenshot."
-                    ),
-                }
+            """Resize the browser viewport in CSS pixels."""
             return json.dumps(
-                {
-                    "page": await page.metadata(),
-                    "document": document,
-                    "elements": elements,
-                    "diagnostic": diagnostic,
-                },
-                ensure_ascii=False,
+                call(
+                    "resize",
+                    width=width,
+                    height=height,
+                    device_scale_factor=device_scale_factor,
+                    browser_handle=browser_handle,
+                    operation_id=operation_id,
+                )
             )
 
         @mcp.tool()
-        async def browser_click(selector: str) -> str:
-            """Click the first element matching a CSS selector."""
-            expression = f"""(() => {{ const el = document.querySelector({json.dumps(selector)}); if (!el) throw new Error('Element not found'); el.click(); return true; }})()"""
-            await (await controller.ensure_page()).evaluate(expression)
-            return "clicked"
+        def browser_detach(browser_handle: str | None = None) -> str:
+            """Detach; user-owned browsers are preserved and shared callers only detach themselves."""
+            return json.dumps(call("detach", browser_handle=browser_handle))
 
         @mcp.tool()
-        async def browser_type(selector: str, text: str, clear: bool = True) -> str:
-            """Focus an input matched by CSS selector and enter text."""
-            expression = f"""(() => {{ const el = document.querySelector({json.dumps(selector)}); if (!el) throw new Error('Element not found'); el.focus(); if ({json.dumps(clear)}) el.value = ''; el.value += {json.dumps(text)}; el.dispatchEvent(new Event('input', {{bubbles:true}})); el.dispatchEvent(new Event('change', {{bubbles:true}})); return true; }})()"""
-            await (await controller.ensure_page()).evaluate(expression)
-            return "typed"
+        def browser_share(
+            authorized_session_id: str,
+            browser_handle: str | None = None,
+            ttl_seconds: int = 300,
+        ) -> str:
+            """Mint a single-use share handle for one explicit canonical agent session."""
+            return json.dumps(
+                call(
+                    "share",
+                    authorized_session_id=authorized_session_id,
+                    browser_handle=browser_handle,
+                    ttl_seconds=ttl_seconds,
+                )
+            )
 
         @mcp.tool()
-        async def browser_back() -> str:
-            """Navigate the attached browser back one history entry."""
-            await (await controller.ensure_page()).evaluate("history.back(); true")
-            return "navigating back"
+        def browser_snapshot(browser_handle: str | None = None) -> str:
+            """Return visible content with target- and document-revision-bound element refs."""
+            return json.dumps(
+                call("snapshot", browser_handle=browser_handle), ensure_ascii=False
+            )
 
         @mcp.tool()
-        async def browser_screenshot():
-            """Capture the current attached browser viewport as a PNG image."""
+        def browser_click(
+            selector: str | None = None,
+            ref: str | None = None,
+            x: float | None = None,
+            y: float | None = None,
+            button: str | int = "left",
+            click_count: int = 1,
+            modifiers: list[str] | None = None,
+            browser_handle: str | None = None,
+            operation_id: str | None = None,
+        ) -> str:
+            """Click a selector/ref (preferred) or viewport coordinates with button, count, and modifiers."""
+            return json.dumps(
+                call(
+                    "click",
+                    selector=selector,
+                    ref=ref,
+                    x=x,
+                    y=y,
+                    button=button,
+                    click_count=click_count,
+                    modifiers=modifiers or [],
+                    browser_handle=browser_handle,
+                    operation_id=operation_id,
+                )
+            )
+
+        @mcp.tool()
+        def browser_hover(
+            selector: str | None = None,
+            ref: str | None = None,
+            x: float | None = None,
+            y: float | None = None,
+            modifiers: list[str] | None = None,
+            browser_handle: str | None = None,
+            operation_id: str | None = None,
+        ) -> str:
+            """Move the pointer to a selector/ref or explicit viewport coordinates."""
+            return json.dumps(
+                call(
+                    "hover",
+                    selector=selector,
+                    ref=ref,
+                    x=x,
+                    y=y,
+                    modifiers=modifiers or [],
+                    browser_handle=browser_handle,
+                    operation_id=operation_id,
+                )
+            )
+
+        @mcp.tool()
+        def browser_type(
+            selector: str | None,
+            text: str,
+            clear: bool = True,
+            submit: bool = False,
+            delay_ms: int = 0,
+            modifiers: list[str] | None = None,
+            ref: str | None = None,
+            browser_handle: str | None = None,
+            operation_id: str | None = None,
+        ) -> str:
+            """Focus and type; delay emits key events and submit submits its form or presses Enter."""
+            return json.dumps(
+                call(
+                    "type",
+                    selector=selector,
+                    ref=ref,
+                    text=text,
+                    clear=clear,
+                    submit=submit,
+                    delay_ms=delay_ms,
+                    modifiers=modifiers or [],
+                    browser_handle=browser_handle,
+                    operation_id=operation_id,
+                )
+            )
+
+        @mcp.tool()
+        def browser_press(
+            key: str,
+            modifiers: list[str] | None = None,
+            browser_handle: str | None = None,
+            operation_id: str | None = None,
+        ) -> str:
+            """Press one documented named key or Unicode character with an optional modifier chord."""
+            return json.dumps(
+                call(
+                    "press",
+                    key=key,
+                    modifiers=modifiers or [],
+                    browser_handle=browser_handle,
+                    operation_id=operation_id,
+                )
+            )
+
+        @mcp.tool()
+        def browser_press_key(
+            key: str,
+            modifiers: list[str] | None = None,
+            browser_handle: str | None = None,
+            operation_id: str | None = None,
+        ) -> str:
+            """Compatibility alias for browser_press."""
+            return browser_press(key, modifiers, browser_handle, operation_id)
+
+        @mcp.tool()
+        def browser_scroll(
+            delta_y: float,
+            delta_x: float = 0,
+            selector: str | None = None,
+            ref: str | None = None,
+            x: float | None = None,
+            y: float | None = None,
+            browser_handle: str | None = None,
+            operation_id: str | None = None,
+        ) -> str:
+            """Dispatch CSS-pixel wheel deltas at an element, coordinate, or viewport center."""
+            return json.dumps(
+                call(
+                    "scroll",
+                    delta_x=delta_x,
+                    delta_y=delta_y,
+                    selector=selector,
+                    ref=ref,
+                    x=x,
+                    y=y,
+                    browser_handle=browser_handle,
+                    operation_id=operation_id,
+                )
+            )
+
+        @mcp.tool()
+        def browser_drag(
+            source_selector: str | None = None,
+            target_selector: str | None = None,
+            source_ref: str | None = None,
+            target_ref: str | None = None,
+            source_x: float | None = None,
+            source_y: float | None = None,
+            target_x: float | None = None,
+            target_y: float | None = None,
+            button: str | int = "left",
+            steps: int = 10,
+            browser_handle: str | None = None,
+            operation_id: str | None = None,
+        ) -> str:
+            """Drag between selector/ref endpoints (preferred) or bounded viewport coordinates."""
+            return json.dumps(
+                call(
+                    "drag",
+                    source_selector=source_selector,
+                    target_selector=target_selector,
+                    source_ref=source_ref,
+                    target_ref=target_ref,
+                    source_x=source_x,
+                    source_y=source_y,
+                    target_x=target_x,
+                    target_y=target_y,
+                    button=button,
+                    steps=steps,
+                    browser_handle=browser_handle,
+                    operation_id=operation_id,
+                )
+            )
+
+        @mcp.tool()
+        def browser_actions(
+            actions: list[dict[str, Any]],
+            browser_handle: str | None = None,
+            operation_id: str | None = None,
+        ) -> str:
+            """Atomically execute a bounded sequence of pointer/key/wheel/pause input primitives."""
+            return json.dumps(
+                call(
+                    "actions",
+                    actions=actions,
+                    browser_handle=browser_handle,
+                    operation_id=operation_id,
+                )
+            )
+
+        @mcp.tool()
+        def browser_back(
+            browser_handle: str | None = None, operation_id: str | None = None
+        ) -> str:
+            """Navigate the isolated browser back one history entry."""
+            return json.dumps(
+                call("back", browser_handle=browser_handle, operation_id=operation_id)
+            )
+
+        @mcp.tool()
+        def browser_screenshot(browser_handle: str | None = None):
+            """Capture the current browser viewport as PNG."""
             from mcp.server.fastmcp import Image
 
-            return Image(
-                data=await (await controller.ensure_page()).screenshot(), format="png"
-            )
+            result = call("screenshot", browser_handle=browser_handle)
+            return Image(data=base64.b64decode(result["data_base64"]), format="png")

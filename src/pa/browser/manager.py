@@ -14,7 +14,7 @@ from uuid import uuid4
 
 import httpx
 
-from pa.browser.cdp import CdpPage
+from pa.browser.cdp import CdpPage, validate_browser_url
 from pa.core.async_runtime import AsyncRuntime
 
 logger = logging.getLogger(__name__)
@@ -136,6 +136,7 @@ class BrowserManager:
         height: int | None = None,
         device_scale_factor: float = 1,
     ) -> BrowserAttachment:
+        url = validate_browser_url(url)
         async with self._lock_for(session_id):
             width = width or int(os.environ.get("PA_BROWSER_WIDTH", "1440"))
             height = height or int(os.environ.get("PA_BROWSER_HEIGHT", "900"))
