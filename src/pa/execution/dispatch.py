@@ -10,12 +10,18 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import RLock
-from typing import TYPE_CHECKING, Any
+from typing import Any
 from uuid import uuid4
 
 import httpx
 from pydantic import BaseModel, Field
 
+from pa.core.async_runtime import (
+    AsyncRuntime,
+    AsyncRuntimeClosed,
+    BlockingOperationTimeout,
+    BlockingQueueFull,
+)
 from pa.core.io import atomic_write_json
 from pa.execution.progress import (
     MAX_PROGRESS_EVENTS,
@@ -30,9 +36,6 @@ from pa.execution.progress import (
     sanitize_progress_event,
     sanitize_text,
 )
-
-if TYPE_CHECKING:
-    from pa.core.async_runtime import AsyncRuntime
 
 logger = logging.getLogger(__name__)
 
@@ -1192,7 +1195,7 @@ class DispatchCapacityExhausted(ValueError):
 
 
 class DispatchWorker:
-    """Runs admitted dispatches outside the initiating HTTP request."""
+    """Supervise durable dispatch consumption on an isolated control lane."""
 
     def __init__(
         self,
@@ -1201,33 +1204,54 @@ class DispatchWorker:
         *,
         concurrency: int = 4,
         async_runtime: AsyncRuntime | None = None,
+        retry_seconds: float = 0.1,
+        retry_max_seconds: float = 5.0,
+        rng: random.Random | None = None,
     ) -> None:
-        self.store = store
-        self.handler = handler
-        self.concurrency = max(1, concurrency)
-        self.async_runtime = async_runtime
+        self.store, self.handler = store, handler
+        self.concurrency, self.async_runtime = max(1, concurrency), async_runtime
+        # This bounded control lane cannot be consumed by transcript/progress traffic.
+        self._control_runtime = (
+            AsyncRuntime(
+                max_workers=2, max_queue=16, default_timeout=10.0, slow_call_seconds=1.0
+            )
+            if async_runtime
+            else None
+        )
+        self.retry_seconds = max(0.01, retry_seconds)
+        self.retry_max_seconds = max(self.retry_seconds, retry_max_seconds)
+        self.rng = rng or random.Random()
         self._runner: asyncio.Task[None] | None = None
         self._active: dict[str, asyncio.Task[None]] = {}
-        self._wake = asyncio.Event()
-        self._closing = False
+        self._wake, self._closing = asyncio.Event(), False
+        self.state, self.generation, self.restart_count = "stopped", 0, 0
+        self.last_successful_poll_at: datetime | None = None
+        self.last_failure_at: datetime | None = None
+        self.last_failure_type: str | None = None
+        self.last_failure_message: str | None = None
+        self.queued_dispatch_count, self.oldest_queued_at = 0, None
+        self.poll_failures = 0
 
     def start(self) -> None:
         if not self._runner or self._runner.done():
-            self._closing = False
-            self._runner = asyncio.create_task(self._run())
+            self._closing, self.state = False, "starting"
+            self._runner = asyncio.create_task(
+                self._supervise(), name="pa-dispatch-supervisor"
+            )
 
     async def _offload(self, operation: str, call, *args, **kwargs):
-        if self.async_runtime:
-            return await self.async_runtime.run_blocking(
+        if self._control_runtime:
+            return await self._control_runtime.run_blocking(
                 operation, call, *args, **kwargs
             )
         return await asyncio.to_thread(call, *args, **kwargs)
 
     def wake(self) -> None:
+        self.start()
         self._wake.set()
 
     async def close(self) -> None:
-        self._closing = True
+        self._closing, self.state = True, "stopped"
         self._wake.set()
         tasks = [task for task in self._active.values() if not task.done()]
         for task in tasks:
@@ -1235,43 +1259,161 @@ class DispatchWorker:
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
         if self._runner:
+            self._runner.cancel()
             try:
-                await asyncio.wait_for(self._runner, timeout=1.0)
-            except asyncio.TimeoutError:
+                await asyncio.wait_for(
+                    asyncio.gather(self._runner, return_exceptions=True), timeout=1.0
+                )
+            except TimeoutError:
                 self._runner.cancel()
+        if self._control_runtime:
+            await self._control_runtime.close(drain_timeout=1.0)
+        self.state = "stopped"
 
-    async def _run(self) -> None:
+    def _record_failure(self, exc: BaseException) -> None:
+        self.last_failure_at = datetime.now(UTC)
+        self.last_failure_type = type(exc).__name__[:120]
+        self.last_failure_message = sanitize_text(
+            str(exc) or type(exc).__name__, limit=240
+        )
+        self.poll_failures += 1
+
+    def _backoff(self, failures: int) -> float:
+        ceiling = min(
+            self.retry_max_seconds,
+            self.retry_seconds * (2 ** min(max(0, failures - 1), 10)),
+        )
+        return self.rng.uniform(ceiling / 2, ceiling)
+
+    async def _wait(self, timeout: float) -> None:
+        self._wake.clear()
+        try:
+            await asyncio.wait_for(self._wake.wait(), timeout=timeout)
+        except TimeoutError:
+            pass
+
+    async def _supervise(self) -> None:
+        while not self._closing:
+            self.generation += 1
+            self.state = "starting"
+            try:
+                await self._run_generation()
+            except asyncio.CancelledError:
+                raise
+            except BaseException as exc:
+                self._record_failure(exc)
+                self.state = "failed"
+                logger.exception(
+                    "Dispatch worker generation terminated generation=%s failure_type=%s failure_message=%s",
+                    self.generation,
+                    self.last_failure_type,
+                    self.last_failure_message,
+                )
+            if self._closing:
+                break
+            self.restart_count += 1
+            self.state = "backing_off"
+            await self._wait(self._backoff(self.restart_count))
+        self.state = "stopped"
+
+    async def _run_generation(self) -> None:
         await self._offload(
             "dispatch.reconcile_interrupted", self.store.reconcile_interrupted
         )
+        consecutive_failures = 0
         while not self._closing:
+            finished = [task for task in self._active.values() if task.done()]
+            for task in finished:
+                if not task.cancelled():
+                    task.exception()
             self._active = {
                 key: task for key, task in self._active.items() if not task.done()
             }
             available = self.concurrency - len(self._active)
-            runnable = await self._offload(
-                "dispatch.runnable_read", self.store.runnable
+            try:
+                runnable = await self._offload(
+                    "dispatch.runnable_read", self.store.runnable
+                )
+            except asyncio.CancelledError:
+                raise
+            except (
+                BlockingQueueFull,
+                BlockingOperationTimeout,
+                AsyncRuntimeClosed,
+                TimeoutError,
+                OSError,
+            ) as exc:
+                consecutive_failures += 1
+                self._record_failure(exc)
+                self.state = "backing_off"
+                delay = self._backoff(consecutive_failures)
+                logger.warning(
+                    "Dispatch polling deferred generation=%s failure_type=%s failure_message=%s retry_seconds=%.3f",
+                    self.generation,
+                    self.last_failure_type,
+                    self.last_failure_message,
+                    delay,
+                )
+                await self._wait(delay)
+                continue
+            consecutive_failures = 0
+            self.last_successful_poll_at = datetime.now(UTC)
+            self.queued_dispatch_count = len(runnable)
+            self.oldest_queued_at = min(
+                (record.created_at for record in runnable), default=None
             )
+            self.state = "running"
             for record in runnable:
                 if available <= 0:
                     break
                 if record.dispatch_id in self._active:
                     continue
-                task = asyncio.create_task(self._execute(record))
+                task = asyncio.create_task(
+                    self._execute(record), name=f"pa-dispatch-{record.dispatch_id}"
+                )
                 self._active[record.dispatch_id] = task
                 available -= 1
-            if self._active:
-                self._wake.clear()
-                try:
-                    await asyncio.wait_for(self._wake.wait(), timeout=0.2)
-                except asyncio.TimeoutError:
-                    pass
-                continue
-            self._wake.clear()
-            try:
-                await asyncio.wait_for(self._wake.wait(), timeout=2.0)
-            except asyncio.TimeoutError:
-                pass
+            await self._wait(0.2 if self._active else 2.0)
+
+    def snapshot(self) -> dict[str, Any]:
+        age = (
+            max(0.0, (datetime.now(UTC) - self.oldest_queued_at).total_seconds())
+            if self.oldest_queued_at
+            else None
+        )
+        live = bool(self._runner and not self._runner.done() and not self._closing)
+        unhealthy = self.queued_dispatch_count > 0 and (
+            not live or self.state not in {"starting", "running", "backing_off"}
+        )
+        return {
+            "state": self.state,
+            "live": live,
+            "generation": self.generation,
+            "restart_count": self.restart_count,
+            "last_successful_poll_at": self.last_successful_poll_at.isoformat()
+            if self.last_successful_poll_at
+            else None,
+            "last_failure_at": self.last_failure_at.isoformat()
+            if self.last_failure_at
+            else None,
+            "last_failure": {
+                "type": self.last_failure_type,
+                "message": self.last_failure_message,
+            }
+            if self.last_failure_type
+            else None,
+            "queued_dispatch_count": self.queued_dispatch_count,
+            "oldest_queued_age_seconds": round(age, 3) if age is not None else None,
+            "active_dispatch_count": len(self._active),
+            "poll_failures": self.poll_failures,
+            "unhealthy": unhealthy,
+            "warning": "Durable queued dispatches have no live polling consumer."
+            if unhealthy
+            else None,
+            "control_lane": self._control_runtime.snapshot()
+            if self._control_runtime
+            else None,
+        }
 
     async def _execute(self, record: DispatchRecord) -> None:
         record.stage_attempts += 1
@@ -1283,13 +1425,13 @@ class DispatchWorker:
         except Exception as exc:
             logger.exception("Dispatch %s failed", record.dispatch_id)
             detail = getattr(exc, "detail", None)
-            code = "dispatch_failed"
-            recoverable = True
-            message = str(detail or exc)
+            code, recoverable, message = "dispatch_failed", True, str(detail or exc)
             if isinstance(detail, dict):
-                code = str(detail.get("code") or code)
-                recoverable = bool(detail.get("recoverable", True))
-                message = str(detail.get("message") or detail)
+                code, recoverable, message = (
+                    str(detail.get("code") or code),
+                    bool(detail.get("recoverable", True)),
+                    str(detail.get("message") or detail),
+                )
             await self._offload(
                 "dispatch.record_fail",
                 self.store.fail,

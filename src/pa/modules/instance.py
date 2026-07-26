@@ -141,6 +141,12 @@ async def async_runtime_status(request: Request) -> dict:
         if request.app.state.ctx.services.get("dispatch_worker")
         else 0,
     }
+    dispatch_worker = request.app.state.ctx.services.get("dispatch_worker")
+    if dispatch_worker:
+        snapshot["dispatch_worker"] = dispatch_worker.snapshot()
+    progress_service = request.app.state.ctx.services.get("progress_service")
+    if progress_service:
+        snapshot["progress_backpressure"] = progress_service.snapshot()
     provider_gate = request.app.state.ctx.services.get("provider_action_gate")
     if provider_gate:
         snapshot["queues"]["provider_actions"] = provider_gate.snapshot()
