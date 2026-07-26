@@ -3,15 +3,22 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+from datetime import UTC, datetime
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 
 from pa.config import Settings
 from pa.domain.instance_config import InstanceConfig, save_instance_config
 from pa.domain.models import FleetInstance, PeerRoute
 from pa.fleet.join import apply_join_response
-from pa.fleet.registry import FleetRegistry
+from pa.fleet.registry import (
+    FleetRegistry,
+    reconcile_snapshots,
+    semantic_snapshot,
+)
 from pa.modules.fleet import _verify_membership_envelope
 from pa.network.peer_table import PeerTable
 
@@ -199,3 +206,139 @@ def test_signed_roster_is_bound_to_issuer_and_reached_endpoint(tmp_path: Path) -
             envelope,
             expected_endpoint="http://attacker:8080",
         )
+
+
+def _snapshot(generation: int, *members: FleetInstance) -> dict:
+    return {
+        "schema_version": FleetRegistry.SCHEMA_VERSION,
+        "fleet_id": "fleet-a",
+        "generation": generation,
+        "instances": [member.model_dump(mode="json") for member in members],
+    }
+
+
+def test_equal_generation_ignores_timestamps_health_and_observation_order(
+    tmp_path: Path,
+) -> None:
+    members = [
+        _member("local", "http://local:8080"),
+        _member("monica", "http://monica:8080"),
+        _member("macmini", "http://mini:8080"),
+    ]
+    first = _snapshot(3, *members)
+    second = json.loads(json.dumps(first))
+    for index, member in enumerate(second["instances"]):
+        member["joined_at"] = datetime(2020 + index, 1, 1, tzinfo=UTC).isoformat()
+        member["updated_at"] = datetime(2024, 1, index + 1, tzinfo=UTC).isoformat()
+        member["last_seen"] = datetime(2025, 1, index + 1, tzinfo=UTC).isoformat()
+        member["healthy"] = not member["healthy"]
+        member["membership_generation"] = index + 1
+        member["endpoints"].reverse()
+    second["instances"].reverse()
+
+    assert semantic_snapshot(first) == semantic_snapshot(second)
+    selected = reconcile_snapshots([second, first])
+    assert selected == reconcile_snapshots([first, second])
+    assert selected["generation"] == 3
+
+    registry = FleetRegistry(tmp_path, "fleet-a")
+    registry.apply_snapshot(first)
+    result = registry.apply_snapshot(second, require_newer=False)
+    assert result["changed"] is False
+    assert registry.generation == 3
+
+
+def test_compatible_legacy_subset_rosters_merge_monotonically_and_idempotently() -> (
+    None
+):
+    local = _member("local", "http://local:8080")
+    monica = _member("monica", "http://monica:8080")
+    mini = _member("macmini", "http://mini:8080")
+    left = _snapshot(2, local, monica)
+    right = _snapshot(2, local, mini)
+
+    merged = reconcile_snapshots([left, right])
+    repeated = reconcile_snapshots([right, merged, left])
+
+    assert merged["generation"] == 3
+    assert [item["instance_id"] for item in merged["instances"]] == [
+        "local",
+        "macmini",
+        "monica",
+    ]
+    assert repeated == merged
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("name", "renamed"),
+        ("lifecycle_state", "disabled"),
+        ("credential_fingerprint", "other-credential"),
+        ("dispatch_capacity", 9),
+        ("zone", "other-zone"),
+    ],
+)
+def test_same_generation_stable_member_conflicts_require_resolution(
+    field: str, value: object
+) -> None:
+    original = _member("local", "http://local:8080")
+    changed = original.model_copy(deep=True, update={field: value})
+    with pytest.raises(ValueError, match="requires operator resolution"):
+        reconcile_snapshots([_snapshot(3, original), _snapshot(3, changed)])
+
+
+def test_compatible_subsets_reject_endpoint_identity_collision() -> None:
+    with pytest.raises(ValueError, match="conflicting canonical endpoint"):
+        reconcile_snapshots(
+            [
+                _snapshot(1, _member("one", "http://shared:8080")),
+                _snapshot(1, _member("two", "http://shared:8080")),
+            ]
+        )
+
+
+@pytest.mark.asyncio
+async def test_reconcile_reports_unreachable_peer_without_changing_membership(
+    tmp_path: Path,
+) -> None:
+    from pa.modules.fleet import reconcile_fleet_membership
+
+    settings = Settings(
+        data_dir=tmp_path,
+        instance_id="local",
+        instance_name="Local",
+        fleet_id="fleet-a",
+        sync_token="shared",
+    )
+    fleet = FleetRegistry(tmp_path, "fleet-a")
+    fleet.upsert_instance(_member("local", "http://local:8080"))
+    peers = PeerTable(tmp_path)
+    peers.add_route(
+        PeerRoute(
+            realm_id="personal",
+            target_url="http://unreachable:8080",
+            target_instance_id="missing",
+        )
+    )
+    client = MagicMock()
+    client.get.side_effect = httpx.ConnectError("unreachable")
+    ctx = MagicMock(settings=settings, services={"fleet_http_client": client})
+    ctx.require_service.side_effect = lambda name: {
+        "fleet_registry": fleet,
+        "peer_table": peers,
+    }[name]
+    request = MagicMock()
+    request.app.state.ctx = ctx
+    request.headers = {}
+
+    with patch("pa.modules.fleet.require_user", return_value=object()):
+        result = await reconcile_fleet_membership(request)
+
+    assert result["status"] == "converged"
+    assert result["before_generation"] == result["after_generation"] == 1
+    assert result["authenticated_peers"] == 0
+    assert result["unreachable_or_incompatible"][0]["url"] == (
+        "http://unreachable:8080"
+    )
+    assert result["rollout"] == []

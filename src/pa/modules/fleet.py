@@ -93,7 +93,7 @@ from pa.fleet.placement import (
     PlacementService,
     RoundRobinCursorStore,
 )
-from pa.fleet.registry import FleetRegistry
+from pa.fleet.registry import FleetRegistry, reconcile_snapshots, semantic_snapshot
 from pa.fleet.remote_install import (
     RemoteInstallRequest,
     get_job_store,
@@ -1324,36 +1324,26 @@ async def reconcile_fleet_membership(request: Request) -> dict[str, Any]:
                 failures.append({"url": url, "error": str(exc)[:300]})
     selected = before
     if reachable:
-        highest = max(int(item["snapshot"].get("generation", 0)) for item in reachable)
-        leaders = [
-            item
-            for item in reachable
-            if int(item["snapshot"].get("generation", 0)) == highest
-        ]
-        digests = {
-            hashlib.sha256(
-                json.dumps(item["snapshot"], sort_keys=True).encode()
-            ).hexdigest()
-            for item in leaders
-        }
-        if len(digests) != 1:
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    "conflicting canonical rosters at the same generation "
-                    "require operator resolution"
-                ),
+        try:
+            selected = reconcile_snapshots(
+                [before, *(item["snapshot"] for item in reachable)]
             )
-        selected = leaders[0]["snapshot"]
-        fleet.apply_snapshot(selected, actor=f"user:{get_principal_id(request)}")
+            fleet.apply_snapshot(
+                selected, actor=f"user:{get_principal_id(request)}", require_newer=False
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
     route_result = peer_table.reconcile_membership(
         fleet.list_instances(),
         realms=list(ctx.settings.subscribed_realms),
         local_instance_id=ctx.settings.instance_id,
     )
     after = fleet.snapshot()
+    rollout = await _rollout_membership(request)
     return {
-        "status": "repaired" if before != after else "converged",
+        "status": "repaired"
+        if semantic_snapshot(before) != semantic_snapshot(after)
+        else "converged",
         "before_generation": before["generation"],
         "after_generation": after["generation"],
         "members_before": len(before["instances"]),
@@ -1361,6 +1351,7 @@ async def reconcile_fleet_membership(request: Request) -> dict[str, Any]:
         "authenticated_peers": len(reachable),
         "unreachable_or_incompatible": failures,
         "routes": route_result,
+        "rollout": rollout,
         "unresolved_conflicts": [],
     }
 
