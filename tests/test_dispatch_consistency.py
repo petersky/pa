@@ -319,9 +319,7 @@ class CompletionTests(unittest.TestCase):
                             "conclusion": "success",
                         }
                     ],
-                    "review_threads": [
-                        {"path": "src/pa/example.py", "resolved": True}
-                    ],
+                    "review_threads": [{"path": "src/pa/example.py", "resolved": True}],
                     "merge_commit_sha": "c" * 40,
                 },
             )
@@ -359,9 +357,7 @@ class CompletionTests(unittest.TestCase):
             self.assertEqual(report.commit_sha, "b" * 40)
             self.assertEqual(report.merge_commit_sha, "c" * 40)
             self.assertEqual(report.ci_evidence, ["test: success"])
-            self.assertEqual(
-                report.review_evidence, ["src/pa/example.py: resolved"]
-            )
+            self.assertEqual(report.review_evidence, ["src/pa/example.py: resolved"])
 
     def test_duplicate_completion_updates_card_exactly_once(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -455,12 +451,12 @@ class CompletionTests(unittest.TestCase):
             self.assertEqual(result["card_disposition"]["lane_after"], "active")
             store.update_card.assert_not_called()
 
-    def test_stale_card_version_is_rejected_before_disposition(self) -> None:
+    def test_unrelated_card_edit_does_not_block_completion_or_lane(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), instance_id="authority")
             original = Card(id="card-1", title="original")
             changed = original.model_copy(
-                update={"title": "changed", "updated_at": datetime.now(UTC)}
+                update={"title": "operator edit", "updated_at": datetime.now(UTC)}
             )
             store = MagicMock()
             store.get_card.return_value = changed
@@ -472,6 +468,7 @@ class CompletionTests(unittest.TestCase):
                     card_id=original.id,
                     realm_id="default",
                     card_version=original.updated_at.isoformat(),
+                    card_snapshot=original.model_dump(mode="json"),
                     authority_instance_id="authority",
                     authority_url="http://authority",
                     target_instance_id="target",
@@ -482,30 +479,81 @@ class CompletionTests(unittest.TestCase):
             request = request_for(settings, store, {"dispatch_store": ledger})
             request.headers = {"idempotency-key": "mutation-1"}
 
-            with self.assertRaises(HTTPException) as raised:
-                complete_dispatch(
-                    request,
-                    "dispatch-1",
-                    DispatchCompletionBody(
-                        mutation_id="mutation-1",
-                        card_id=original.id,
-                        realm_id="default",
-                        card_version=original.updated_at.isoformat(),
-                        source_instance_id="target",
-                        session_id="session-1",
-                        disposition={
-                            "contract": "pa.card-disposition/v1",
-                            "lane": "done",
-                            "outcome": "done",
-                            "evidence": {"integration_required": False},
-                        },
-                    ),
-                )
-
-            self.assertEqual(
-                raised.exception.detail["code"], "authority_version_conflict"
+            result = complete_dispatch(
+                request,
+                "dispatch-1",
+                DispatchCompletionBody(
+                    mutation_id="mutation-1",
+                    card_id=original.id,
+                    realm_id="default",
+                    card_version=original.updated_at.isoformat(),
+                    source_instance_id="target",
+                    session_id="session-1",
+                    result={"stop_reason": "end_turn"},
+                    disposition={
+                        "contract": "pa.card-disposition/v1",
+                        "lane": "waiting",
+                        "outcome": "Ready for review",
+                        "evidence": {"integration_required": False},
+                    },
+                ),
             )
-            self.assertEqual(ledger.get("dispatch-1").state, "running")
+
+            self.assertTrue(result["acknowledged"])
+            self.assertEqual(result["reconciliation"]["state"], "applied")
+            self.assertEqual(ledger.get("dispatch-1").state, "completed")
+            self.assertEqual(store.update_card.call_args.args[1].lane, CardLane.WAITING)
+
+    def test_conflicting_operator_lane_is_preserved_after_ack(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="authority")
+            original = Card(id="card-1", title="original", lane=CardLane.ACTIVE)
+            changed = original.model_copy(
+                update={"lane": CardLane.WAITING, "updated_at": datetime.now(UTC)}
+            )
+            store = MagicMock()
+            store.get_card.return_value = changed
+            ledger = DispatchStore(settings.data_dir)
+            ledger.put(
+                DispatchRecord(
+                    dispatch_id="dispatch-1",
+                    mutation_id="mutation-1",
+                    card_id=original.id,
+                    realm_id="default",
+                    card_version=original.updated_at.isoformat(),
+                    card_snapshot=original.model_dump(mode="json"),
+                    authority_instance_id="authority",
+                    authority_url="http://authority",
+                    target_instance_id="target",
+                    session_id="session-1",
+                    state="running",
+                )
+            )
+            request = request_for(settings, store, {"dispatch_store": ledger})
+            request.headers = {"idempotency-key": "mutation-1"}
+            result = complete_dispatch(
+                request,
+                "dispatch-1",
+                DispatchCompletionBody(
+                    mutation_id="mutation-1",
+                    card_id=original.id,
+                    realm_id="default",
+                    card_version=original.updated_at.isoformat(),
+                    source_instance_id="target",
+                    session_id="session-1",
+                    disposition={
+                        "contract": "pa.card-disposition/v1",
+                        "lane": "done",
+                        "outcome": "done",
+                        "evidence": {"integration_required": False},
+                    },
+                ),
+            )
+            self.assertTrue(result["acknowledged"])
+            self.assertEqual(
+                result["reconciliation"]["state"], "conflict_requires_resolution"
+            )
+            self.assertEqual(ledger.get("dispatch-1").state, "completed")
             store.update_card.assert_not_called()
 
     def test_completion_from_wrong_target_is_rejected(self) -> None:
@@ -655,6 +703,69 @@ class RetryAndConflictTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(reloaded.state, "completion_pending")
             self.assertEqual(reloaded.attempts, 1)
             self.assertIn("offline", reloaded.last_error)
+
+    async def test_stable_semantic_conflict_stops_transport_retries(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = DispatchStore(Path(tmp))
+            ledger.put(
+                DispatchRecord(
+                    dispatch_id="dispatch-1",
+                    mutation_id="mutation-1",
+                    card_id="card-1",
+                    realm_id="default",
+                    card_version="v1",
+                    authority_instance_id="authority",
+                    authority_url="http://authority",
+                    target_instance_id="target",
+                    session_id="session-1",
+                    state="running",
+                )
+            )
+            outbox = CompletionOutbox(ledger, "secret", retry_seconds=0.01)
+            outbox.queue("session-1", {"stop_reason": "end_turn"})
+            response = MagicMock(status_code=409, text="authority_version_conflict")
+            response.json.return_value = {
+                "detail": {"code": "authority_version_conflict"}
+            }
+            with patch("pa.execution.dispatch.httpx.AsyncClient") as client:
+                client.return_value.post = AsyncMock(return_value=response)
+                await outbox._send(ledger.get("dispatch-1"))
+                self.assertEqual(client.return_value.post.await_count, 1)
+
+            reloaded = DispatchStore(Path(tmp)).get("dispatch-1")
+            self.assertEqual(reloaded.state, "completed")
+            self.assertEqual(reloaded.attempts, 1)
+            self.assertEqual(reloaded.completion_delivery_class, "semantic_conflict")
+            self.assertEqual(
+                reloaded.reconciliation_state, "conflict_requires_resolution"
+            )
+            self.assertIsNone(reloaded.completion_next_retry_at)
+
+    async def test_transport_retry_is_bounded_and_persisted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = DispatchStore(Path(tmp))
+            ledger.put(
+                DispatchRecord(
+                    dispatch_id="dispatch-1",
+                    mutation_id="mutation-1",
+                    authority_instance_id="authority",
+                    authority_url="http://authority",
+                    target_instance_id="target",
+                    session_id="session-1",
+                    state="running",
+                )
+            )
+            outbox = CompletionOutbox(ledger, "", retry_seconds=2, max_attempts=1)
+            outbox.queue("session-1", {})
+            with patch("pa.execution.dispatch.httpx.AsyncClient") as client:
+                client.return_value.post = AsyncMock(
+                    side_effect=httpx.ConnectError("offline")
+                )
+                await outbox._send(ledger.get("dispatch-1"))
+            reloaded = DispatchStore(Path(tmp)).get("dispatch-1")
+            self.assertEqual(reloaded.completion_delivery_class, "transport_exhausted")
+            self.assertEqual(reloaded.attempts, 1)
+            self.assertIsNone(reloaded.completion_next_retry_at)
 
     async def test_completion_uses_latest_running_dispatch_for_resumed_session(
         self,

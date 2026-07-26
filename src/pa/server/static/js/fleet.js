@@ -580,8 +580,16 @@
       if (dispatch.card_id && reconciliation.state &&
           reconciliation.state !== "not_requested" &&
           reconciliation.state !== "not_required") {
-        reconciliationText = '<p class="muted small">Reconciliation: ' +
-          escapeHtml(reconciliation.state) +
+        var reconciliationLabel = {
+          pending: "Completed; card update pending",
+          applied: "Completed; card update applied",
+          already_satisfied: "Completed; card already satisfied",
+          operator_state_preserved: "Completed; operator change preserved",
+          conflict_requires_resolution: "Completed; reconciliation needs attention",
+          not_applicable: "Completed; card update not applicable",
+        }[reconciliation.state] || reconciliation.state.replace(/_/g, " ");
+        reconciliationText = '<p class="muted small">' +
+          escapeHtml(reconciliationLabel) +
           (reconciliation.reason ? " · " + escapeHtml(reconciliation.reason) : "") +
           "</p>";
       }
