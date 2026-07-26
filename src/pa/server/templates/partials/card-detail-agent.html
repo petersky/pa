@@ -26,16 +26,23 @@
             <option value="policy:random_eligible">Random eligible</option>
           </optgroup>
           <optgroup label="Concrete instances">
-            <option value="instance:{{ local_instance_id }}">Local instance — {{ local_instance_name }}</option>
+            {% set local_capacity = fleet_capacity.get(local_instance_id, {}) %}
+            <option value="instance:{{ local_instance_id }}"
+                    data-capacity-summary="{{ local_capacity.get('summary', 'Capacity will be checked before admission') }}"
+                    data-capacity-eligible="{{ 'true' if local_capacity.get('eligible') else 'false' }}">Local instance — {{ local_instance_name }} · {{ local_capacity.get('summary', 'capacity pending') }}</option>
             {% for instance in fleet_instances %}
             {% if instance.instance_id != local_instance_id %}
-            <option value="instance:{{ instance.instance_id }}">Named instance — {{ instance.name }}</option>
+            {% set capacity = fleet_capacity.get(instance.instance_id, {}) %}
+            <option value="instance:{{ instance.instance_id }}"
+                    data-capacity-summary="{{ capacity.get('summary', 'Capacity will be checked before admission') }}"
+                    data-capacity-eligible="{{ 'true' if capacity.get('eligible') else 'false' }}">Named instance — {{ instance.name }} · {{ capacity.get('summary', 'capacity pending') }}</option>
             {% endif %}
             {% endfor %}
           </optgroup>
         </select>
         <button type="submit">Dispatch card</button>
       </div>
+      <p class="muted card-dispatch-hint" data-card-dispatch-utilization>Policies probe fresh utilization on every candidate before admission.</p>
       <p class="muted card-dispatch-hint">Policies use fresh health, provider authentication, workload, repository/worktree, capacity, and authorization checks.</p>
     </form>
 

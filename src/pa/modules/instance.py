@@ -4,12 +4,18 @@ import asyncio
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
-from pa.auth.middleware import get_principal_id
-from pa.config import get_settings
+from pa.auth.middleware import get_principal_id, require_user
 from pa.core.context import AppContext
 from pa.core.contracts import Module
+from pa.domain.instance_config import update_instance_config
+from pa.fleet.capacity import (
+    DEFAULT_DISPATCH_CAPACITY,
+    MAX_DISPATCH_CAPACITY,
+    DispatchCapacity,
+    effective_capacity,
+)
 from pa.instance.agent_session import AgentStartupNotReady
 from pa.instance.quiesce import QuiesceProgress
 from pa.modules.agent_lifecycle import startup_recovery_error
@@ -33,6 +39,31 @@ class RepositoryReconcileRequest(BaseModel):
 
 class WorkspaceReconcileRequest(BaseModel):
     collect: bool = True
+
+
+class CapacityConfigUpdate(BaseModel):
+    dispatch_capacity: int = Field(
+        default=DEFAULT_DISPATCH_CAPACITY, ge=1, le=MAX_DISPATCH_CAPACITY
+    )
+    dispatch_provider_capacities: dict[str, DispatchCapacity] = Field(
+        default_factory=dict
+    )
+
+    @field_validator("dispatch_provider_capacities")
+    @classmethod
+    def validate_provider_capacities(cls, value: dict[str, int]) -> dict[str, int]:
+        normalized: dict[str, int] = {}
+        for provider, limit in value.items():
+            key = provider.strip().lower()
+            if not key:
+                raise ValueError("provider capacity names cannot be empty")
+            if isinstance(limit, bool) or not 1 <= limit <= MAX_DISPATCH_CAPACITY:
+                raise ValueError(
+                    f"capacity for provider {provider!r} must be between 1 and "
+                    f"{MAX_DISPATCH_CAPACITY}"
+                )
+            normalized[key] = limit
+        return normalized
 
 
 def _unreachable_repository_instances(ctx: AppContext) -> set[str]:
@@ -412,8 +443,8 @@ async def agent_reconnect(request: Request) -> dict:
 
 
 @router.get("/config")
-def get_config() -> dict:
-    settings = get_settings()
+def get_config(request: Request) -> dict:
+    settings = request.app.state.ctx.settings
     return {
         "instance_id": settings.instance_id,
         "instance_name": settings.instance_name,
@@ -421,12 +452,68 @@ def get_config() -> dict:
         "subscribed_realms": settings.subscribed_realms,
         "zone": settings.zone,
         "capabilities": settings.capabilities,
+        "dispatch_capacity": settings.dispatch_capacity,
+        "dispatch_provider_capacities": settings.dispatch_provider_capacities,
+        "effective_dispatch_capacity": effective_capacity(
+            configured=settings.dispatch_capacity,
+            provider_capacities=settings.dispatch_provider_capacities,
+            capabilities=settings.capabilities,
+        ).model_dump(mode="json"),
         "relay_enabled": settings.relay_enabled,
         "host": settings.host,
         "port": settings.port,
         "agent_enabled": settings.agent_enabled,
         "peers": settings.peers,
         "debug": settings.debug,
+    }
+
+
+@router.patch("/config/capacity")
+def update_capacity_config(request: Request, body: CapacityConfigUpdate) -> dict:
+    """Validate, persist, and immediately advertise execution capacity."""
+
+    require_user(request)
+    ctx = request.app.state.ctx
+    updated = update_instance_config(
+        ctx.settings.data_dir,
+        dispatch_capacity=body.dispatch_capacity,
+        dispatch_provider_capacities=body.dispatch_provider_capacities,
+    )
+    ctx.settings.dispatch_capacity = updated.dispatch_capacity
+    ctx.settings.dispatch_provider_capacities = dict(
+        updated.dispatch_provider_capacities
+    )
+    fleet = ctx.services.get("fleet_registry")
+    if fleet:
+        from pa.fleet.join import owner_public_url
+
+        fleet.register_self(
+            ctx.settings.instance_id,
+            ctx.settings.instance_name,
+            owner_public_url(ctx.settings),
+            zone=ctx.settings.zone,
+            capabilities=list(ctx.settings.capabilities),
+            dispatch_capacity=ctx.settings.dispatch_capacity,
+            dispatch_provider_capacities=dict(
+                ctx.settings.dispatch_provider_capacities
+            ),
+            relay_enabled=ctx.settings.relay_enabled,
+            actor=f"user:{get_principal_id(request)}",
+        )
+    from pa.fleet.overview import cache_for
+
+    cache_for(ctx.settings.data_dir).invalidate(ctx.settings.instance_id, "activity")
+    effective = effective_capacity(
+        configured=ctx.settings.dispatch_capacity,
+        provider_capacities=ctx.settings.dispatch_provider_capacities,
+        capabilities=ctx.settings.capabilities,
+    )
+    return {
+        "ok": True,
+        "dispatch_capacity": ctx.settings.dispatch_capacity,
+        "dispatch_provider_capacities": ctx.settings.dispatch_provider_capacities,
+        "effective_dispatch_capacity": effective.model_dump(mode="json"),
+        "takes_effect": "immediately for new placement admissions",
     }
 
 
@@ -463,6 +550,27 @@ class InstanceModule(Module):
         def instance_info() -> dict:
             """Return information about this PA instance."""
             return request_local_pa(settings, "GET", "/api/instance")
+
+        @mcp.tool()
+        def get_dispatch_capacity() -> dict:
+            """Return configured and effective fleet execution capacity."""
+            return request_local_pa(settings, "GET", "/api/config")
+
+        @mcp.tool()
+        def set_dispatch_capacity(
+            dispatch_capacity: int,
+            provider_capacities: dict[str, int] | None = None,
+        ) -> dict:
+            """Validate and immediately apply fleet execution capacity."""
+            return request_local_pa(
+                settings,
+                "PATCH",
+                "/api/config/capacity",
+                json={
+                    "dispatch_capacity": dispatch_capacity,
+                    "dispatch_provider_capacities": provider_capacities or {},
+                },
+            )
 
         @mcp.tool()
         async def repository_inspect(path: str) -> dict:

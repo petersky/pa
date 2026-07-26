@@ -473,6 +473,35 @@ def _card_agent_context(request: Request, card) -> dict:
         if fleet
         else []
     )
+    from pa.fleet.capacity import effective_capacity
+    from pa.fleet.overview import build_overview
+
+    overview = build_overview(ctx, instances, []) if instances else {"nodes": []}
+    fleet_capacity: dict[str, dict] = {}
+    for node in overview.get("nodes", []):
+        activity = (node.get("dimensions") or {}).get("activity") or {}
+        value = activity.get("value") or {}
+        capacity = value.get("capacity") or effective_capacity(
+            configured=node.get("dispatch_capacity"),
+            provider_capacities=node.get("dispatch_provider_capacities") or {},
+            capabilities=node.get("capabilities") or [],
+        ).model_dump(mode="json")
+        consumed = int(capacity.get("consumed") or 0)
+        limit = int(capacity.get("limit") or 0)
+        freshness = activity.get("state") or "unavailable"
+        source = str(capacity.get("source") or "unknown").replace("_", " ")
+        fleet_capacity[node["id"]] = {
+            "consumed": consumed,
+            "limit": limit,
+            "source": source,
+            "freshness": freshness,
+            "eligible": freshness == "fresh" and limit > consumed,
+            "summary": (
+                f"{consumed}/{limit} slots used · {source} · {freshness}"
+                if limit
+                else f"capacity unavailable · {freshness}"
+            ),
+        }
     return {
         "card": card,
         "related_sessions": related_sessions,
@@ -480,6 +509,7 @@ def _card_agent_context(request: Request, card) -> dict:
         "dispatches": dispatches,
         "latest_dispatch": dispatches[0] if dispatches else None,
         "fleet_instances": instances,
+        "fleet_capacity": fleet_capacity,
         "local_instance_id": ctx.settings.instance_id,
         "local_instance_name": ctx.settings.instance_name,
         "agent_enabled": ctx.settings.agent_enabled,

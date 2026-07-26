@@ -1331,6 +1331,17 @@
           : "");
       setFieldState(activityEl, activity.state);
     }
+    var capacityEl = $("[data-fleet-capacity]", tr);
+    if (capacityEl) {
+      var utilization = (activity.value || {}).capacity || {};
+      var configured = utilization.limit || node.dispatch_capacity;
+      capacityEl.innerHTML = configured
+        ? "<strong>" + escapeHtml(utilization.consumed || 0) + "/" +
+          escapeHtml(configured) + ' used</strong><span class="muted small">' +
+          escapeHtml((utilization.source || (node.dispatch_capacity ? "configured" : "compatibility pending")).replace(/_/g, " ")) + "</span>"
+        : '<strong>pending</strong><span class="muted small">capacity probe unavailable</span>';
+      setFieldState(capacityEl, activity.state);
+    }
     var freshnessEl = $("[data-fleet-freshness]", tr);
     if (freshnessEl) {
       var observed = reach.observed_at || status.observed_at;
@@ -1507,7 +1518,13 @@
       '">' + escapeHtml(nodeState.freshness) + "</span></p>" +
       '<dl class="fleet-detail-list"><dt>Endpoint</dt><dd>' + escapeHtml(node.url) +
       "</dd><dt>Zone</dt><dd>" + escapeHtml(node.zone || "default") +
-      "</dd></dl>" + sections;
+      "</dd><dt>Capacity</dt><dd>" +
+      escapeHtml((function () {
+        var capacity = (fieldValue(node, "activity").value || {}).capacity || {};
+        var limit = capacity.limit || node.dispatch_capacity || "pending";
+        return (capacity.consumed || 0) + "/" + limit + " used · " +
+          String(capacity.source || (node.dispatch_capacity ? "configured" : "compatibility pending")).replace(/_/g, " ");
+      })()) + "</dd></dl>" + sections;
   }
 
   function fleetTopologyLayout(nodes, containerWidth) {

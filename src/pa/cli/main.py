@@ -92,6 +92,8 @@ def init(
         subscribed_realms=[realm] if realm else list(settings.subscribed_realms),
         zone=settings.zone,
         capabilities=list(settings.capabilities),
+        dispatch_capacity=settings.dispatch_capacity or 4,
+        dispatch_provider_capacities=dict(settings.dispatch_provider_capacities),
         relay_enabled=settings.relay_enabled,
         peers=peer_list,
         release_track=track or settings.release_track,
@@ -829,6 +831,8 @@ def fleet_join(
             url=instance_url,
             zone=settings.zone,
             capabilities=list(settings.capabilities),
+            dispatch_capacity=settings.dispatch_capacity,
+            dispatch_provider_capacities=dict(settings.dispatch_provider_capacities),
             sync_token=settings.sync_token,
         )
 

@@ -709,6 +709,22 @@
       });
       region.appendChild(list);
     }
+    var consumers = Array.isArray(error.consumer_links) ? error.consumer_links : [];
+    if (consumers.length) {
+      var consumerList = document.createElement("ul");
+      consumerList.className = "card-dispatch-rejections";
+      consumers.slice(0, 8).forEach(function (consumer) {
+        var item = document.createElement("li");
+        var link = document.createElement("a");
+        link.href = consumer.href || "/fleet?section=overview";
+        link.textContent = (consumer.kind || "work") + " · " +
+          (consumer.state || "active") + " · " + (consumer.slots || 1) + " slot" +
+          ((consumer.slots || 1) === 1 ? "" : "s");
+        item.appendChild(link);
+        consumerList.appendChild(item);
+      });
+      region.appendChild(consumerList);
+    }
     if (error.recovery_url) {
       var recovery = document.createElement("a");
       recovery.href = error.recovery_url;
@@ -728,6 +744,24 @@
     if (dispatchStatus && dispatchStatus.dataset.dispatchId) {
       pollCardDispatch(detail, dispatchStatus.dataset.dispatchId, 0);
     }
+    updateCardDispatchUtilization(detail.querySelector("[data-card-dispatch-form]"));
+  }
+
+  function updateCardDispatchUtilization(form) {
+    if (!form) return;
+    var select = form.elements.dispatch_target;
+    var output = form.querySelector("[data-card-dispatch-utilization]");
+    if (!select || !output) return;
+    var option = select.options[select.selectedIndex];
+    if (!option || !option.dataset.capacitySummary) {
+      output.textContent = "This policy probes fresh utilization on every candidate before admission.";
+      output.classList.remove("danger");
+      return;
+    }
+    var eligible = option.dataset.capacityEligible === "true";
+    output.textContent = option.dataset.capacitySummary +
+      (eligible ? " · currently eligible" : " · currently ineligible; dispatch will recheck fresh data");
+    output.classList.toggle("danger", !eligible);
   }
 
   function renderCardDialogError(cardId, realm, message) {
@@ -1438,6 +1472,12 @@
         submit.disabled = false;
         submit.textContent = "Retry dispatch";
       });
+  });
+
+  document.body.addEventListener("change", function (event) {
+    if (event.target && event.target.name === "dispatch_target") {
+      updateCardDispatchUtilization(event.target.closest("[data-card-dispatch-form]"));
+    }
   });
 
   document.body.addEventListener("click", function (event) {

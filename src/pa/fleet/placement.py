@@ -15,6 +15,12 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from pa.core.io import atomic_write_json
+from pa.fleet.capacity import (
+    DispatchCapacity,
+    EffectiveCapacity,
+    effective_capacity,
+    workload_counts,
+)
 
 
 class PlacementPolicy(StrEnum):
@@ -30,6 +36,10 @@ class PlacementCandidate(BaseModel):
     zone: str = "default"
     local: bool = False
     capabilities: list[str] = Field(default_factory=list)
+    dispatch_capacity: int | None = None
+    dispatch_provider_capacities: dict[str, DispatchCapacity] = Field(
+        default_factory=dict
+    )
     reachability: dict[str, Any] = Field(default_factory=dict)
     activity: dict[str, Any] = Field(default_factory=dict)
     providers: dict[str, Any] = Field(default_factory=dict)
@@ -49,6 +59,7 @@ class PlacementRequest(BaseModel):
     required_capabilities: list[str] = Field(default_factory=list)
     repository_ids: list[str] = Field(default_factory=list)
     allow_concurrent: bool = False
+    capacity_override: bool = False
 
 
 class PlacementDecision(BaseModel):
@@ -175,22 +186,32 @@ def _provider_ready(
     )
 
 
-def _capacity(candidate: PlacementCandidate) -> int:
-    for capability in candidate.capabilities:
-        if capability.startswith("capacity:"):
-            try:
-                return max(1, int(capability.partition(":")[2]))
-            except ValueError:
-                continue
-    return 4
-
-
-def _workload(candidate: PlacementCandidate) -> tuple[int, int, float]:
+def _capacity(
+    candidate: PlacementCandidate, provider: str | None = None
+) -> EffectiveCapacity:
     activity = _envelope(candidate, "activity").get("value") or {}
-    active = max(0, int(activity.get("active_sessions") or 0))
-    queued = max(0, int(activity.get("queued_prompts") or 0))
-    capacity = _capacity(candidate)
-    return active, queued, (active + queued) / capacity
+    advertised = activity.get("capacity") or {}
+    configured = candidate.dispatch_capacity
+    if configured is None:
+        configured = advertised.get("configured")
+    provider_capacities = candidate.dispatch_provider_capacities or advertised.get(
+        "provider_limits"
+    )
+    return effective_capacity(
+        configured=configured,
+        provider_capacities=provider_capacities,
+        capabilities=candidate.capabilities,
+        provider=provider,
+    )
+
+
+def _workload(
+    candidate: PlacementCandidate, provider: str | None = None
+) -> tuple[dict[str, Any], EffectiveCapacity, float]:
+    activity = _envelope(candidate, "activity").get("value") or {}
+    counts = workload_counts(activity, provider=provider)
+    capacity = _capacity(candidate, provider)
+    return counts, capacity, counts["consumed"] / capacity.limit
 
 
 def _repository_locality(
@@ -265,11 +286,13 @@ def _evaluate(
     if not provider_ready:
         reasons.append(provider_reason)
 
-    active, queued, normalized = _workload(candidate)
-    capacity = _capacity(candidate)
-    if active + queued >= capacity:
+    counts, capacity, normalized = _workload(candidate, request.provider)
+    if counts["consumed"] >= capacity.limit and not request.capacity_override:
         reasons.append(
-            f"capacity is exhausted ({active} active + {queued} queued of {capacity})"
+            "capacity is exhausted "
+            f"({counts['active']} working + {counts['queued']} queued + "
+            f"{counts['reservations']} reserved of {capacity.limit} "
+            f"{capacity.source} slots)"
         )
 
     locality, cached_repositories = _repository_locality(
@@ -301,9 +324,16 @@ def _evaluate(
     detail = {
         "instance_id": candidate.instance_id,
         "name": candidate.name,
-        "active": active,
-        "queued": queued,
-        "capacity": capacity,
+        "active": counts["active"],
+        "queued": counts["queued"],
+        "reserved": counts["reservations"],
+        "consumed": counts["consumed"],
+        "workload_semantics": counts["semantic_source"],
+        "capacity": capacity.limit,
+        "capacity_detail": capacity.model_dump(mode="json"),
+        "consumer_links": (_envelope(candidate, "activity").get("value") or {}).get(
+            "capacity_consumer_links", []
+        ),
         "cached_repository_ids": cached_repositories,
         "freshness": _freshness(candidate),
     }

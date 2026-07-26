@@ -11,6 +11,7 @@ from pa.domain.instance_config import (
     ensure_session_secret,
     merge_config_into_settings,
 )
+from pa.fleet.capacity import MAX_DISPATCH_CAPACITY, DispatchCapacity
 
 
 def default_data_dir() -> Path:
@@ -47,6 +48,12 @@ class Settings(BaseSettings):
     )
     zone: str = "default"
     capabilities: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    # Global execution slots. Four intentionally preserves the historical
+    # ceiling and is conservative when PA cannot infer host/provider limits.
+    dispatch_capacity: int | None = Field(default=None, ge=1, le=MAX_DISPATCH_CAPACITY)
+    dispatch_provider_capacities: dict[str, DispatchCapacity] = Field(
+        default_factory=dict
+    )
     relay_enabled: bool = False
 
     # Auth (T1)
@@ -134,6 +141,20 @@ class Settings(BaseSettings):
         ):
             raise ValueError("workspace_root must be outside data_dir")
         self.workspace_root = workspace_root
+        normalized_provider_limits: dict[str, int] = {}
+        for provider, limit in self.dispatch_provider_capacities.items():
+            key = str(provider).strip().lower()
+            if not key:
+                raise ValueError(
+                    "dispatch_provider_capacities provider names cannot be empty"
+                )
+            if isinstance(limit, bool) or not 1 <= int(limit) <= MAX_DISPATCH_CAPACITY:
+                raise ValueError(
+                    "dispatch_provider_capacities values must be integers from "
+                    f"1 to {MAX_DISPATCH_CAPACITY}"
+                )
+            normalized_provider_limits[key] = int(limit)
+        self.dispatch_provider_capacities = normalized_provider_limits
         return self
 
     @property

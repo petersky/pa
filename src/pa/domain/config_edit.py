@@ -20,7 +20,9 @@ from pa.update.registry import normalize_track
 
 FieldKind = Literal[
     "str",
+    "int",
     "bool",
+    "dict_int",
     "list_str",
     "optional_str",
     "optional_list_str",
@@ -62,6 +64,8 @@ SERVICE_KEYS = frozenset(
         "subscribed_realms",
         "peers",
         "capabilities",
+        "dispatch_capacity",
+        "dispatch_provider_capacities",
         "sync_token",
         "instance_url",
         "fleet_owner_url",
@@ -137,6 +141,16 @@ FIELD_SPECS: dict[str, FieldSpec] = {
         "list_str",
         "Advertised capability tags",
         list_ops=True,
+    ),
+    "dispatch_capacity": FieldSpec(
+        "dispatch_capacity",
+        "int",
+        "Global fleet dispatch/execution slots (1–256)",
+    ),
+    "dispatch_provider_capacities": FieldSpec(
+        "dispatch_provider_capacities",
+        "dict_int",
+        'Optional provider slot limits as JSON, e.g. {"codex": 2}',
     ),
     "relay_enabled": FieldSpec(
         "relay_enabled",
@@ -261,6 +275,19 @@ def parse_value(spec: FieldSpec, raw: str) -> Any:
     """Parse a CLI string into a typed config value."""
     if spec.kind == "bool":
         return _parse_bool(raw)
+    if spec.kind == "int":
+        try:
+            return int(raw.strip())
+        except ValueError as exc:
+            raise ConfigError(f"Invalid integer '{raw}'") from exc
+    if spec.kind == "dict_int":
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise ConfigError(f"Invalid JSON object: {exc}") from exc
+        if not isinstance(parsed, dict):
+            raise ConfigError("Value must be a JSON object of integer limits")
+        return parsed
     if spec.kind == "list_str":
         return _parse_list(raw)
     if spec.kind == "optional_list_str":
@@ -332,6 +359,34 @@ def _validate_agent_provider(value: str) -> str:
 def validate_field_value(key: str, value: Any) -> Any:
     """Domain validation beyond pydantic types. Returns normalized value."""
     spec = get_field_spec(key)
+
+    if key == "dispatch_capacity":
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ConfigError("dispatch_capacity must be an integer from 1 to 256")
+        if not 1 <= value <= 256:
+            raise ConfigError("dispatch_capacity must be between 1 and 256")
+        return value
+
+    if key == "dispatch_provider_capacities":
+        if not isinstance(value, dict):
+            raise ConfigError(
+                "dispatch_provider_capacities must be a JSON object of provider limits"
+            )
+        normalized: dict[str, int] = {}
+        for provider, limit in value.items():
+            provider_name = str(provider).strip().lower()
+            if not provider_name:
+                raise ConfigError("provider capacity names cannot be empty")
+            if (
+                isinstance(limit, bool)
+                or not isinstance(limit, int)
+                or not 1 <= limit <= 256
+            ):
+                raise ConfigError(
+                    f"capacity for provider {provider!r} must be an integer from 1 to 256"
+                )
+            normalized[provider_name] = limit
+        return normalized
 
     if spec.kind in ("list_str", "optional_list_str") and value is not None:
         if not isinstance(value, list) or not all(isinstance(x, str) for x in value):
@@ -410,6 +465,8 @@ def default_for_unset(spec: FieldSpec) -> Any:
         return defaults[spec.name]
     if spec.kind == "bool":
         return False
+    if spec.kind == "dict_int":
+        return {}
     if spec.kind in ("list_str",):
         return []
     if spec.kind in ("optional_list_str",):

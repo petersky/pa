@@ -107,7 +107,9 @@ def apply_reachability_settings(
         if url:
             parsed = urlparse(url)
             if parsed.scheme not in ("http", "https") or not parsed.netloc:
-                raise ValueError("instance_url must be an http(s) URL like http://macbook:8080")
+                raise ValueError(
+                    "instance_url must be an http(s) URL like http://macbook:8080"
+                )
             if (parsed.hostname or "").lower() in ("127.0.0.1", "localhost", "::1"):
                 raise ValueError(
                     "instance_url cannot be localhost/127.0.0.1 — use a Tailscale or LAN hostname"
@@ -251,6 +253,8 @@ async def join_fleet(
     url: str,
     zone: str = "default",
     capabilities: list[str] | None = None,
+    dispatch_capacity: int | None = None,
+    dispatch_provider_capacities: dict[str, int] | None = None,
     sync_token: str = "",
 ) -> dict:
     """POST to fleet owner to join."""
@@ -265,6 +269,8 @@ async def join_fleet(
         "url": url.rstrip("/"),
         "zone": zone,
         "capabilities": capabilities or [],
+        "dispatch_capacity": dispatch_capacity,
+        "dispatch_provider_capacities": dispatch_provider_capacities or {},
     }
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(
@@ -305,7 +311,9 @@ def wire_owner_peers(
         )
 
 
-def unwire_instance_peers(peer_table: PeerTable, *, instance_id: str = "", url: str = "") -> None:
+def unwire_instance_peers(
+    peer_table: PeerTable, *, instance_id: str = "", url: str = ""
+) -> None:
     """Remove peer routes for a removed fleet instance."""
     target_url = url.rstrip("/") if url else ""
     remaining = []
@@ -328,6 +336,8 @@ def register_joiner_on_owner(
     url: str,
     zone: str = "default",
     capabilities: list[str] | None = None,
+    dispatch_capacity: int | None = None,
+    dispatch_provider_capacities: dict[str, int] | None = None,
     realms: list[str] | None = None,
 ) -> tuple[FleetInstance, str]:
     """Register joiner, wire peers/sync, return (instance, sync_token)."""
@@ -339,6 +349,8 @@ def register_joiner_on_owner(
         url=url.rstrip("/"),
         zone=zone,
         capabilities=capabilities or [],
+        dispatch_capacity=dispatch_capacity,
+        dispatch_provider_capacities=dispatch_provider_capacities or {},
         healthy=True,
     )
     fleet.upsert_instance(inst)

@@ -1767,11 +1767,34 @@ class AgentSessionManager:
             )
 
     def progress(self) -> QuiesceProgress:
-        active = sum(1 for rt in self._runtimes.values() if rt.connected)
-        queued = sum(
-            len(rt._queue) + (1 if rt._in_flight else 0)
+        live = [
+            rt
             for rt in self._runtimes.values()
-        )
+            if rt.connected and not getattr(rt, "_closed", False)
+        ]
+        connected = len(live)
+        prompting = sum(1 for rt in live if rt.prompting)
+        queued = sum(len(rt._queue) for rt in live)
+        provider_concurrency: dict[str, dict[str, int]] = {}
+        for runtime in live:
+            provider = (runtime.session.agent_name or "unknown").strip().lower()
+            counts = provider_concurrency.setdefault(
+                provider,
+                {
+                    "connected_runtimes": 0,
+                    "idle_sessions": 0,
+                    "prompting_turns": 0,
+                    "active_capacity_consumers": 0,
+                    "queued_prompts": 0,
+                },
+            )
+            counts["connected_runtimes"] += 1
+            counts["queued_prompts"] += len(runtime._queue)
+            if runtime.prompting:
+                counts["prompting_turns"] += 1
+                counts["active_capacity_consumers"] += 1
+            else:
+                counts["idle_sessions"] += 1
         return QuiesceProgress(
             phase="quiescing"
             if self._quiescing
@@ -1779,8 +1802,15 @@ class AgentSessionManager:
             connected=self.connected,
             prompting=self.prompting,
             quiescing=self._quiescing,
-            active_sessions=active,
+            # active_sessions remains a mixed-version alias for connected
+            # runtimes. Placement never uses it when the typed fields exist.
+            active_sessions=connected,
+            connected_runtimes=connected,
+            idle_sessions=connected - prompting,
+            prompting_turns=prompting,
+            active_capacity_consumers=prompting,
             queued_prompts=queued,
+            provider_concurrency=provider_concurrency,
             message=self._status_message(),
             done=False,
             error=self._last_error,
@@ -1792,6 +1822,7 @@ class AgentSessionManager:
                         "status": rt.session.status,
                         "cwd": rt.session.cwd,
                         "label": rt.session.label,
+                        "provider": rt.session.agent_name,
                         "prompting": rt.prompting,
                         "queued": len(rt._queue),
                     }

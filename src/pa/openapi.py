@@ -98,8 +98,12 @@ def _document_remote_dispatch(schema: dict[str, Any]) -> None:
             "Accepts exactly one concrete `target_instance_id` or a centralized "
             "`placement_policy` (`best_match`, `least_busy`, `round_robin`, or "
             "`random_eligible`). PA considers only fresh, eligible instances, "
-            "persists the explainable resolved target before admission, and returns "
-            "that same target for idempotent retries."
+            "uses working turns plus queued prompts plus durable pre-start "
+            "reservations against the typed global/provider capacity, persists "
+            "the explainable resolved target and reservation before admission, "
+            "and returns that same target for idempotent retries. Idle/deferred "
+            "sessions do not consume capacity. Administrator overrides require "
+            "both `capacity_override=true` and `capacity_override_reason`."
         )
         placement.setdefault("parameters", []).append(
             {
@@ -124,8 +128,10 @@ def _document_remote_dispatch(schema: dict[str, Any]) -> None:
         placement["responses"].setdefault(
             "409",
             _error_response(
-                "No eligible instance, concurrent card dispatch, stale readiness, "
-                "or idempotency conflict."
+                "No eligible instance, exhausted capacity, concurrent card "
+                "dispatch, stale readiness, unauthorized override, or idempotency "
+                "conflict. Capacity errors include limit/source, working, queued, "
+                "reserved, freshness, and consumer links."
             ),
         )
 

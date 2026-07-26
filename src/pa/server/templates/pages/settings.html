@@ -220,6 +220,23 @@
 <section class="hidden" data-section="instance" hidden>
   <div class="panel">
     <div class="panel-header"><h2>Instance</h2></div>
+    <form class="stack" id="pa-capacity-settings-form">
+      <fieldset class="stack">
+        <legend>Fleet execution capacity</legend>
+        <p class="muted small">The global limit applies across providers. Optional provider limits apply together with the global limit; the lower limit wins. Idle and deferred sessions do not consume slots.</p>
+        <label>
+          <span>Global dispatch capacity</span>
+          <input type="number" name="dispatch_capacity" min="1" max="256" required value="{{ settings.dispatch_capacity or 4 }}">
+        </label>
+        <label>
+          <span>Provider limits (JSON)</span>
+          <textarea name="dispatch_provider_capacities" rows="3" spellcheck="false" placeholder='{"codex": 2}'>{{ settings.dispatch_provider_capacities | tojson }}</textarea>
+        </label>
+        <p class="muted small">Default: 4 slots. This preserves the historical ceiling and is intentionally conservative because PA cannot infer host resources or provider account limits. Legacy <code>capacity:N</code> tags remain readable only when a typed setting is absent.</p>
+        <button type="submit" class="primary">Save capacity</button>
+        <p class="muted small" id="pa-capacity-settings-status" role="status" hidden></p>
+      </fieldset>
+    </form>
     <dl class="settings-dl">
       <dt>PA version</dt>
       <dd>
@@ -453,6 +470,52 @@
         status.hidden = false;
         status.textContent = "Failed to save preferences.";
       }
+    }
+  });
+})();
+</script>
+<script>
+(function () {
+  var form = document.getElementById("pa-capacity-settings-form");
+  if (!form) return;
+  var status = document.getElementById("pa-capacity-settings-status");
+  form.addEventListener("submit", async function (event) {
+    event.preventDefault();
+    status.hidden = false;
+    status.classList.remove("danger");
+    status.textContent = "Validating capacity…";
+    var providerLimits;
+    try {
+      providerLimits = JSON.parse(form.dispatch_provider_capacities.value || "{}");
+    } catch (error) {
+      status.classList.add("danger");
+      status.textContent = "Provider limits must be a JSON object, for example {\"codex\": 2}.";
+      return;
+    }
+    var headers = {"Content-Type": "application/json", Accept: "application/json"};
+    var csrf = document.querySelector('meta[name="csrf-token"]');
+    if (csrf && csrf.content) headers["X-CSRF-Token"] = csrf.content;
+    try {
+      var response = await fetch("/api/config/capacity", {
+        method: "PATCH",
+        credentials: "same-origin",
+        headers: headers,
+        body: JSON.stringify({
+          dispatch_capacity: Number(form.dispatch_capacity.value),
+          dispatch_provider_capacities: providerLimits,
+        }),
+      });
+      var data = await response.json().catch(function () { return {}; });
+      if (!response.ok) throw data;
+      status.textContent = "Saved. New placement admissions now use " +
+        data.dispatch_capacity + " global slot" +
+        (data.dispatch_capacity === 1 ? "" : "s") + ".";
+    } catch (error) {
+      var detail = error && error.detail ? error.detail : error;
+      var message = detail && detail.message ? detail.message :
+        (Array.isArray(detail) ? detail.map(function (item) { return item.msg; }).join("; ") : "Capacity was not saved.");
+      status.classList.add("danger");
+      status.textContent = message;
     }
   });
 })();

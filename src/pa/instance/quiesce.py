@@ -214,7 +214,13 @@ class QuiesceProgress(BaseModel):
     prompting: bool = False
     quiescing: bool = False
     active_sessions: int = 0
+    connected_runtimes: int = 0
+    idle_sessions: int = 0
+    deferred_sessions: int = 0
+    prompting_turns: int = 0
+    active_capacity_consumers: int = 0
     queued_prompts: int = 0
+    provider_concurrency: dict[str, dict[str, int]] = Field(default_factory=dict)
     message: str = ""
     done: bool = False
     error: str | None = None
