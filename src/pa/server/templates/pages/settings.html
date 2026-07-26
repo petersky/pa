@@ -1,3 +1,4 @@
+{% from "macros/instance_identity.html" import instance_identity %}
 {% from "macros/layout.html" import page_layout, section_nav %}
 
 {% set left %}
@@ -227,10 +228,8 @@
         <span class="muted">(installed {{ status.installed_version }} — restart service to apply)</span>
         {% endif %}
       </dd>
-      <dt>Name</dt>
-      <dd>{{ status.instance_name }}</dd>
-      <dt>Instance ID</dt>
-      <dd><code>{{ status.instance_id }}</code></dd>
+      <dt>Instance</dt>
+      <dd>{{ instance_identity(status.instance_id) }}</dd>
       <dt>Data directory</dt>
       <dd><code>{{ status.data_dir }}</code></dd>
       <dt>Server</dt>

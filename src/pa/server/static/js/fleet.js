@@ -95,6 +95,41 @@
       .replace(/"/g, "&quot;");
   }
 
+  function fleetIdentityFallback(instanceId) {
+    var id = String(instanceId || "");
+    var node = fleetOverview && (fleetOverview.nodes || []).find(function (item) {
+      return String(item.id || "") === id;
+    });
+    return node && node.name
+      ? node.name
+      : "Unknown instance · " + id.slice(0, 8);
+  }
+
+  function identityHtml(instanceId, className) {
+    if (window.PAInstanceIdentity) {
+      return window.PAInstanceIdentity.html(instanceId, className);
+    }
+    var id = String(instanceId || "");
+    return id
+      ? '<span title="' + escapeHtml(id) + '">' +
+        escapeHtml(fleetIdentityFallback(id)) + "</span>"
+      : '<span class="muted">Unknown instance</span>';
+  }
+
+  function identityName(instanceId) {
+    return window.PAInstanceIdentity
+      ? window.PAInstanceIdentity.resolve(instanceId).displayName
+      : fleetIdentityFallback(instanceId);
+  }
+
+  function endpointIdentityHtml(instanceId) {
+    return instanceId ? identityHtml(instanceId) : '<span class="muted">external</span>';
+  }
+
+  function endpointIdentityName(instanceId) {
+    return instanceId ? identityName(instanceId) : "external";
+  }
+
   var remoteInstanceId = "";
   var remoteWatchers = {};
   var remoteLoadGeneration = 0;
@@ -158,8 +193,8 @@
         var status = item.status || "unknown";
         var badge = status === "reachable" ? "active" :
           status === "conflict" ? "blocked" : "open";
-        return "<tr><td><strong>" + escapeHtml(item.name || item.instance_id) +
-          "</strong>" + (item.url ? '<br><span class="muted small">' +
+        return "<tr><td>" + identityHtml(item.instance_id) +
+          (item.url ? '<br><span class="muted small">' +
           escapeHtml(item.url) + "</span>" : "") + "</td><td><span class=\"status status-" +
           badge + "\">" + escapeHtml(status) + "</span></td><td><code title=\"" +
           escapeHtml(item.head || "") + "\">" + escapeHtml(shortHead(item.head)) +
@@ -192,7 +227,7 @@
     });
     var peer = syncCurrentConflicts[0].peer || {};
     var queue = '<p class="muted small">Resolving ' +
-      escapeHtml(peer.name || peer.instance_id || "peer") +
+      identityHtml(peer.instance_id) +
       (remoteHeads.length > 1
         ? ". Other divergent peer heads remain queued after this merge."
         : ".") + "</p>";
@@ -205,25 +240,25 @@
           var itemPeer = item.peer || {};
           return '<option value="' + escapeHtml(head) + '"' +
             (head === remoteHead ? " selected" : "") + ">" +
-            escapeHtml(itemPeer.name || itemPeer.instance_id || shortHead(head)) +
+            escapeHtml(identityName(itemPeer.instance_id)) +
             " · " + escapeHtml(shortHead(head)) + "</option>";
         }).join("") + "</select></label>";
     }
     fields.innerHTML = queue + syncCurrentConflicts.map(function (item, index) {
       var local = item.local || {};
       var remote = item.remote || {};
-      var localLabel = (local.instance_name || local.instance_id || "local") +
-        ": " + displayValue(local.value);
-      var remoteLabel = (remote.instance_name || remote.instance_id ||
-        (item.peer && item.peer.name) || "peer") + ": " + displayValue(remote.value);
+      var localLabel = identityHtml(local.instance_id) +
+        ": " + escapeHtml(displayValue(local.value));
+      var remoteLabel = identityHtml(remote.instance_id || (item.peer && item.peer.instance_id)) +
+        ": " + escapeHtml(displayValue(remote.value));
       var title = item.entity + " " + item.id + " · " +
         (item.field === "__terminal__" ? "delete/archive vs edit" : item.field);
       return '<fieldset class="panel-inset" data-sync-conflict="' + index + '">' +
         "<legend><strong>" + escapeHtml(title) + "</strong></legend>" +
         '<label><input type="radio" name="sync-choice-' + index +
-        '" value="local" checked> ' + escapeHtml(localLabel) + "</label>" +
+        '" value="local" checked> ' + localLabel + "</label>" +
         '<label><input type="radio" name="sync-choice-' + index +
-        '" value="remote"> ' + escapeHtml(remoteLabel) + "</label>" +
+        '" value="remote"> ' + remoteLabel + "</label>" +
         (item.field === "__terminal__" ? "" :
           '<label><input type="radio" name="sync-choice-' + index +
           '" value="custom"> Custom value <input data-sync-custom="' + index +
@@ -761,7 +796,7 @@
       if (body) {
         body.innerHTML = '<p><strong>' + escapeHtml(session.title || session.label || session.id) +
           '</strong> <span class="badge">' + escapeHtml(session.status || "unknown") + '</span></p>' +
-          '<p class="muted small">' + escapeHtml((data.instance && data.instance.name) || instanceId) +
+          '<p class="muted small">' + identityHtml(instanceId) +
           ' · <span data-remote-audit-count></span></p>' +
           '<div class="pa-remote-audit-events"></div>';
         renderRemoteAuditEvents(
@@ -1363,7 +1398,7 @@
       var status = edgeVisualStatus(edge, snapshot);
       return '<li><button type="button" class="link-button" data-fleet-edge="' +
         escapeHtml(edge.id) + '">' + escapeHtml(edge.kind + ": " +
-          (edge.source || "external") + " → " + (edge.target || "external") +
+          endpointIdentityName(edge.source) + " → " + endpointIdentityName(edge.target) +
           " · " + (edge.label || edge.id) + " · " + status) + "</button></li>";
     }).join("") : '<li class="muted">No registered routes.</li>';
   }
@@ -1383,6 +1418,11 @@
     ) {
       current = createFleetSnapshot(fleetOverview, fleetRefresh, selectedFleetItem);
       fleetRenderedSnapshot = current;
+    if (window.PAInstanceIdentity) {
+      window.PAInstanceIdentity.setDirectory(current.nodes.map(function (state) {
+        return state.node || state;
+      }));
+    }
     }
     if (kind === "edge-item") {
       var parent = edgeById(edgeId, current);
@@ -1427,7 +1467,7 @@
       panel.innerHTML = "<h3>" + escapeHtml(edge.kind + " route") + "</h3>" +
         "<p><strong>" + escapeHtml(edge.label || edge.id) + "</strong></p>" +
         '<dl class="fleet-detail-list"><dt>Direction</dt><dd>' +
-        escapeHtml((edge.source || "external") + " → " + (edge.target || "external")) +
+        endpointIdentityHtml(edge.source) + " → " + endpointIdentityHtml(edge.target) +
         "</dd><dt>Status</dt><dd>" + escapeHtml(edgeVisualStatus(edge, current)) +
         "</dd><dt>Activities</dt><dd>" + escapeHtml(edge.count || 1) + "</dd>" +
         distinct + (statusSummary ? "<dt>Status counts</dt><dd>" +
@@ -1461,12 +1501,11 @@
         "</p>" + error + "<pre>" + escapeHtml(JSON.stringify(item.value, null, 2)) +
         "</pre></details>";
     }).join("");
-    panel.innerHTML = "<h3>" + escapeHtml(node.name) + "</h3><p>" +
+    panel.innerHTML = "<h3>" + identityHtml(node.id) + "</h3><p>" +
       escapeHtml(activityLabel(fieldValue(node, "activity").value)) +
       ' · <span class="fleet-freshness fleet-field-' + escapeHtml(nodeState.freshness) +
       '">' + escapeHtml(nodeState.freshness) + "</span></p>" +
-      '<dl class="fleet-detail-list"><dt>Instance</dt><dd><code>' + escapeHtml(node.id) +
-      "</code></dd><dt>Endpoint</dt><dd>" + escapeHtml(node.url) +
+      '<dl class="fleet-detail-list"><dt>Endpoint</dt><dd>' + escapeHtml(node.url) +
       "</dd><dt>Zone</dt><dd>" + escapeHtml(node.zone || "default") +
       "</dd></dl>" + sections;
   }
@@ -2644,7 +2683,7 @@
     var cliInstallButton = e.target.closest("[data-codex-cli-install]");
     if (cliInstallButton) {
       var cliInstance = cliInstallButton.getAttribute("data-codex-cli-install") || "";
-      if (!window.confirm("Install the official @openai/codex CLI on instance " + cliInstance + "?")) return;
+      if (!window.confirm("Install the official @openai/codex CLI on instance " + identityName(cliInstance) + "?")) return;
       cliInstallButton.disabled = true;
       api(codexLoginBase(cliInstance).replace(/\/login-jobs$/, "/codex-cli/install"), {
         method: "POST"
@@ -2665,7 +2704,7 @@
       var resumeInstance = $("#pa-codex-login-instance");
       var resumeInstructions = $("#pa-codex-login-instructions");
       if (resumePanel) resumePanel.hidden = false;
-      if (resumeInstance) resumeInstance.textContent = "Target instance: " + codexLoginInstance;
+      if (resumeInstance) resumeInstance.innerHTML = "Target instance: " + identityHtml(codexLoginInstance);
       if (resumeInstructions) resumeInstructions.textContent = "Restoring device authentication…";
       watchCodexLogin(codexLoginInstance, codexLoginJob).catch(function (err) {
         if (resumeInstructions) resumeInstructions.textContent = err.message;
@@ -2684,7 +2723,7 @@
       var instance = $("#pa-codex-login-instance");
       var instructions = $("#pa-codex-login-instructions");
       if (panel) panel.hidden = false;
-      if (instance) instance.textContent = "Target instance: " + codexLoginInstance;
+      if (instance) instance.innerHTML = "Target instance: " + identityHtml(codexLoginInstance);
       if (instructions) instructions.textContent = "No login has started. Confirm to continue.";
       return;
     }

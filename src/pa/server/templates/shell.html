@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+{% set serving_identity = resolve_instance_identity(instance_id) %}
 <html lang="en"
       data-theme="{{ theme_id | default('pa') }}"
       data-theme-id="{{ theme_id | default('pa') }}"
@@ -12,7 +13,7 @@
   <meta name="htmx-config" content='{"noSwap":[204,304,"4xx","5xx"]}'>
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
-  <title>{{ page.label | default('PA') }} — {{ instance_name }}</title>
+  <title>{{ page.label | default('PA') }} — {{ serving_identity.display_name }}</title>
   <link rel="stylesheet" href="{{ static_url('style.css') }}">
   <link id="pa-theme-variant" rel="stylesheet"
         href="{{ static_url('themes/' ~ (theme_id | default('pa')) ~ '/light.css') }}">
@@ -30,6 +31,8 @@
     })();
   </script>
   <script src="{{ static_url('js/theme.js') }}" defer></script>
+  <script type="application/json" id="pa-instance-identities">{{ instance_identity_directory() | tojson }}</script>
+  <script src="{{ static_url('js/instance-identity.js') }}" defer></script>
   <script src="{{ static_url('js/spa.js') }}" defer></script>
   <script src="{{ static_url('js/layout.js') }}" defer></script>
   <script src="{{ static_url('js/agent-chat-drafts.js') }}" defer></script>
@@ -56,8 +59,9 @@
            hx-push-url="true"
            hx-swap="innerHTML"
            class="brand-link">PA</a>
-        <span class="brand-instance" data-pa-instance-name="{{ instance_name }}">
-          <span class="sr-only">Instance: </span>{{ instance_name }}
+        {% from "macros/instance_identity.html" import instance_identity %}
+        <span class="brand-instance" data-pa-instance-name="{{ serving_identity.display_name }}">
+          <span class="sr-only">Instance: </span>{{ instance_identity(instance_id, 'instance-identity-brand') }}
         </span>
       </div>
       {% include "partials/top-nav.html" %}

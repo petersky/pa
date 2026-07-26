@@ -1,4 +1,5 @@
 {% from "macros/layout.html" import page_layout %}
+{% from "macros/instance_identity.html" import instance_identity %}
 
 {% set main %}
 <div class="panel">
@@ -13,7 +14,7 @@
   <div class="panel-inset">
     <h3>GitHub capability</h3>
     <p>
-      Instance {{ capability.instance_id }} ·
+      Instance {{ instance_identity(capability.instance_id) }} ·
       {% if capability.authenticated %}authenticated{% else %}not authenticated{% endif %} ·
       webhook {% if capability.webhook_configured %}configured{% else %}not configured{% endif %}
     </p>
@@ -45,7 +46,7 @@
     </p>
     <p>
       Head {{ watch.head_sha or 'unknown' }} · base {{ watch.base_branch or 'unknown' }} ·
-      owner {{ watch.owner_instance_id or 'unassigned' }} · fence {{ watch.fence_token }}
+      owner {% if watch.owner_instance_id %}{{ instance_identity(watch.owner_instance_id) }}{% else %}unassigned{% endif %} · fence {{ watch.fence_token }}
     </p>
     {% if watch.last_error %}<p class="danger">{{ watch.last_error }}</p>{% endif %}
     <h4>Audit history</h4>

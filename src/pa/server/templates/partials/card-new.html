@@ -78,15 +78,18 @@
       <span>Tags</span>
       <input type="text" name="tags" placeholder="ui, priority, follow-up">
     </label>
-    <label>
-      <span>Preferred instance</span>
-      <select name="preferred_instance">
-        <option value="">Any eligible instance</option>
-        {% for instance in instance_options %}
-        <option value="{{ instance.id }}">{{ instance.name }}</option>
-        {% endfor %}
-      </select>
-    </label>
+    <div class="instance-select-field">
+      <label>
+        <span>Preferred instance</span>
+        <select name="preferred_instance" data-instance-identity-select>
+          <option value="">Any eligible instance</option>
+          {% for instance in instance_options %}
+          <option value="{{ instance.id }}">{{ instance.display_name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <span class="instance-identity-selection" data-instance-identity-selection hidden></span>
+    </div>
 
     <label class="new-card-field-span-2">
       <span>Preferred capabilities</span>

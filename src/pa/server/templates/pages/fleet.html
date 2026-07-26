@@ -1,4 +1,5 @@
 {% from "macros/layout.html" import page_layout, section_nav %}
+{% from "macros/instance_identity.html" import instance_identity %}
 
 {% set left %}
 <div class="panel">
@@ -100,9 +101,9 @@
         {% set sync = dims.sync %}
         <tr data-fleet-instance="{{ node.id }}" tabindex="0">
           <td>
-            <button type="button" class="fleet-machine-select" data-fleet-node="{{ node.id }}"><strong>{{ node.name }}</strong>{% if node.local %}<span class="badge">local</span>{% endif %}</button>
+            <div class="fleet-machine-select">{{ instance_identity(node.id) }}{% if node.local %}<span class="badge">local</span>{% endif %}<button type="button" class="ghost small" data-fleet-node="{{ node.id }}" aria-label="Inspect {{ node.name }}">Inspect</button></div>
             <span class="muted small">{{ node.zone }}</span>
-            <details><summary class="muted small">Connection details</summary><dl><dt>Instance ID</dt><dd><code>{{ node.id }}</code></dd><dt>Endpoint</dt><dd><a href="{{ node.url }}" target="_blank" rel="noopener">{{ node.url }}</a></dd><dt>Capabilities</dt><dd>{{ node.capabilities | join(', ') or 'None reported' }}</dd></dl></details>
+            <details><summary class="muted small">Connection details</summary><dl><dt>Instance</dt><dd>{{ instance_identity(node.id) }}</dd><dt>Endpoint</dt><dd><a href="{{ node.url }}" target="_blank" rel="noopener">{{ node.url }}</a></dd><dt>Capabilities</dt><dd>{{ node.capabilities | join(', ') or 'None reported' }}</dd></dl></details>
           </td>
           <td>
             <div data-fleet-health class="fleet-field fleet-field-{{ reach.state }}">
@@ -197,14 +198,19 @@
       </div>
     </div>
 
-    <label class="pa-remote-instance-select">Instance
-      <select id="pa-remote-instance">
+    <div class="pa-remote-instance-select">
+      <label for="pa-remote-instance">Instance</label>
+      <div>
+        <select id="pa-remote-instance" data-instance-identity-select>
         <option value="">Choose a remote instance…</option>
         {% for inst in fleet_instances if inst.instance_id != settings.instance_id %}
-        <option value="{{ inst.instance_id }}" data-instance-name="{{ inst.name }}">{{ inst.name }} · {{ inst.url }}</option>
+        {% set remote_identity = resolve_instance_identity(inst.instance_id) %}
+        <option value="{{ inst.instance_id }}" data-instance-name="{{ remote_identity.name }}">{{ remote_identity.display_name }} · {{ inst.url }}</option>
         {% endfor %}
-      </select>
-    </label>
+        </select>
+        <span class="instance-identity-selection" data-instance-identity-selection hidden></span>
+      </div>
+    </div>
     <p class="muted small" id="pa-remote-status" aria-live="polite">Choose an instance to load its sessions.</p>
 
     <div class="pa-remote-operations-grid">

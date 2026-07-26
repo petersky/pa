@@ -31,10 +31,10 @@
       <option value="">Any owner</option>
       {% for owner in owners %}<option value="{{ owner }}" {% if filters.owner == owner %}selected{% endif %}>{{ owner }}</option>{% endfor %}
     </select></label>
-    <label><span>Instance</span><select name="instance">
+    <div class="instance-select-field"><label><span>Instance</span><select name="instance" data-instance-identity-select>
       <option value="">Any instance</option>
-      {% for instance in instances %}<option value="{{ instance }}" {% if filters.instance == instance %}selected{% endif %}>{{ instance }}</option>{% endfor %}
-    </select></label>
+      {% for instance in instances %}<option value="{{ instance.id }}" {% if filters.instance == instance.id %}selected{% endif %}>{{ instance.display_name }}</option>{% endfor %}
+    </select></label><span class="instance-identity-selection" data-instance-identity-selection hidden></span></div>
     <label><span>Blocked state</span><select name="blocked">
       <option value="">Any state</option>
       <option value="blocked" {% if filters.blocked == 'blocked' %}selected{% endif %}>Blocked</option>

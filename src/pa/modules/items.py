@@ -30,6 +30,11 @@ from pa.auth.middleware import get_principal_id
 from pa.config import get_settings
 from pa.core.context import AppContext
 from pa.core.contracts import Module
+from pa.core.ui.instance_identity import (
+    canonical_instance_identities,
+    present_instance_references,
+    resolve_instance_identity,
+)
 from pa.core.ui.pages import PageDefinition, PageRegistry
 from pa.domain.models import (
     CardAttachment,
@@ -496,7 +501,8 @@ def _card_activity_context(request: Request, card) -> dict:
                         "kind": "card",
                         "label": label,
                         "actor": event.author_principal,
-                        "detail": event.author_instance,
+                        "instance_id": event.author_instance,
+                        "detail": "",
                         "timestamp": event.timestamp,
                     }
                 )
@@ -510,7 +516,8 @@ def _card_activity_context(request: Request, card) -> dict:
                 "kind": "card",
                 "label": "Card created",
                 "actor": card.created_by_principal or "unknown",
-                "detail": card.created_by_instance or "",
+                "instance_id": card.created_by_instance or "",
+                "detail": "",
                 "timestamp": card.created_at,
             }
         )
@@ -526,7 +533,8 @@ def _card_activity_context(request: Request, card) -> dict:
                 "kind": "agent",
                 "label": f"Agent session {session.status}",
                 "actor": session.agent_name,
-                "detail": instance.get("name") or session.title or session.label or "",
+                "instance_id": instance.get("id") or session.origin_instance_id or "",
+                "detail": session.title or session.label or "",
                 "timestamp": session.updated_at,
             }
         )
@@ -537,13 +545,19 @@ def _card_activity_context(request: Request, card) -> dict:
             if dispatch.card_id != card.id:
                 continue
             for event in dispatch.events:
+                message = present_instance_references(
+                    request.app.state.ctx,
+                    event.message,
+                    dispatch.target_instance_id,
+                    dispatch.target_instance_name,
+                )
                 entries.append(
                     {
                         "id": f"dispatch-{dispatch.dispatch_id}-{event.seq}",
                         "kind": "dispatch",
-                        "label": event.message,
-                        "actor": dispatch.target_instance_name
-                        or dispatch.target_instance_id,
+                        "label": message,
+                        "actor": "Dispatch target",
+                        "instance_id": dispatch.target_instance_id,
                         "detail": event.state.replace("_", " "),
                         "timestamp": event.created_at,
                     }
@@ -745,9 +759,17 @@ def _cards_context(
         "owners": sorted(
             {card.owner_principal for card in all_cards if card.owner_principal}
         ),
-        "instances": sorted(
-            {card.preferred_instance for card in all_cards if card.preferred_instance}
-        ),
+        "instances": [
+            {
+                "id": instance_id,
+                "display_name": resolve_instance_identity(
+                    request.app.state.ctx, instance_id
+                )["display_name"],
+            }
+            for instance_id in sorted(
+                {card.preferred_instance for card in all_cards if card.preferred_instance}
+            )
+        ],
         "tags": sorted({tag for card in all_cards for tag in card.tags}),
         "filters": {
             "q": query,
@@ -807,20 +829,7 @@ def _new_card_context(request: Request) -> dict:
     projects = store.list_projects(realm_id=realm)
     if selected_project not in {project.id for project in projects}:
         selected_project = None
-    instances = [{"id": ctx.settings.instance_id, "name": ctx.settings.instance_name}]
-    fleet = ctx.services.get("fleet_registry")
-    if fleet:
-        known = {ctx.settings.instance_id}
-        for instance in fleet.list_instances():
-            if instance.instance_id in known:
-                continue
-            known.add(instance.instance_id)
-            instances.append(
-                {
-                    "id": instance.instance_id,
-                    "name": instance.name or instance.instance_id,
-                }
-            )
+    instances = canonical_instance_identities(ctx)
     return {
         "active_realm": realm,
         "selected_project": selected_project,

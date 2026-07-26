@@ -291,6 +291,17 @@ class Kernel:
         assets = self.ctx.require_service("assets")
         app.state.templates.env.globals["static_url"] = assets.url
         app.state.templates.env.globals["asset_version"] = assets.version
+        from pa.core.ui.instance_identity import (
+            canonical_instance_identities,
+            resolve_instance_identity,
+        )
+
+        app.state.templates.env.globals["instance_identity_directory"] = (
+            lambda: canonical_instance_identities(self.ctx)
+        )
+        app.state.templates.env.globals["resolve_instance_identity"] = (
+            lambda instance_id: resolve_instance_identity(self.ctx, instance_id)
+        )
 
         if DEFAULT_STATIC.exists():
             app.mount(

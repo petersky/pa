@@ -1,0 +1,14 @@
+{% macro instance_identity(instance_id, class_name='') -%}
+  {% if instance_id %}
+    {% set identity = resolve_instance_identity(instance_id) %}
+    <pa-instance-identity
+      instance-id="{{ identity.id }}"
+      resolved-name="{{ identity.name }}"
+      display-name="{{ identity.display_name }}"
+      {% if class_name %}class="{{ class_name }}"{% endif %}
+      title="{{ identity.id }}"
+    ><span class="instance-identity-name">{{ identity.display_name }}</span></pa-instance-identity>
+  {% else %}
+    <span class="muted">Unknown instance</span>
+  {% endif %}
+{%- endmacro %}

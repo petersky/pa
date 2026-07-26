@@ -291,10 +291,13 @@ class CoreWorkUiRouteTests(unittest.TestCase):
                 r'class="brand-link">PA</a>\s*'
                 r'<span class="brand-instance" data-pa-instance-name="UX test">',
             )
+            self.assertIn("<pa-instance-identity", non_local.text)
+            self.assertIn('instance-id="ux-test"', non_local.text)
             self.assertIn(
-                '<span class="sr-only">Instance: </span>UX test',
+                '<span class="instance-identity-name">UX test</span>',
                 non_local.text,
             )
+            self.assertIn('src="/static/js/instance-identity.js', non_local.text)
             self.assertNotIn("instance-indicator", non_local.text)
             self.assertNotIn('aria-label="Instance:', non_local.text)
             self.assertRegex(
@@ -316,12 +319,12 @@ class CoreWorkUiRouteTests(unittest.TestCase):
             local = client.get("/")
 
             self.assertEqual(local.status_code, 200)
-            self.assertIn('data-pa-instance-name="local"', local.text)
+            self.assertIn('data-pa-instance-name="UX test"', local.text)
             self.assertIn(
-                '<span class="sr-only">Instance: </span>local',
+                '<span class="instance-identity-name">UX test</span>',
                 local.text,
             )
-            self.assertNotIn('data-pa-instance-name="UX test"', local.text)
+            self.assertNotIn('data-pa-instance-name="local"', local.text)
 
     def test_header_instance_label_has_responsive_quiet_type_contract(self) -> None:
         root = Path(__file__).parents[1] / "src" / "pa" / "server"
