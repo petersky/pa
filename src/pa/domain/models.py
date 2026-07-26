@@ -4,6 +4,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, model_validator
 
+from pa.fleet.capacity import DispatchCapacity
+
 # --- Control plane (Fleet / Realm / Membership) ---
 
 
@@ -103,6 +105,11 @@ class FleetInstance(BaseModel):
     endpoints: list[str] = Field(default_factory=list)
     zone: str = "default"
     capabilities: list[str] = Field(default_factory=list)
+    # None identifies an older member that did not advertise the typed setting.
+    dispatch_capacity: int | None = Field(default=None, ge=1, le=256)
+    dispatch_provider_capacities: dict[str, DispatchCapacity] = Field(
+        default_factory=dict
+    )
     relay_enabled: bool = False
     lifecycle_state: str = "active"
     joined_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

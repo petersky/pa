@@ -49,6 +49,30 @@ with PAClient(
 candidates, resolves the request to a concrete instance before admission, and
 stores the explainable decision on the dispatch. The legacy concrete route
 `POST /api/fleet/instances/{instance_id}/agent/start` remains supported.
+Both routes use the capacity contract in
+[`FLEET_CAPACITY.md`](FLEET_CAPACITY.md). Rejections include working, queued,
+and reserved counts, the effective limit/source, freshness, and consumer links.
+An administrator may pass `capacity_override=true` only with a durable
+`capacity_override_reason`.
+
+`GET /api/config` returns `dispatch_capacity`,
+`dispatch_provider_capacities`, and `effective_dispatch_capacity`. Update the
+typed setting with:
+
+```http
+PATCH /api/config/capacity
+Content-Type: application/json
+
+{
+  "dispatch_capacity": 8,
+  "dispatch_provider_capacities": {"codex": 3}
+}
+```
+
+Values must be integers from 1 through 256. The response states that the
+change applies immediately to new placement admissions. CLI callers use `pa
+config set dispatch_capacity 8`; MCP callers use `get_dispatch_capacity` and
+`set_dispatch_capacity`.
 
 Keep the same idempotency key only when retrying the same logical mutation.
 Policy retries return the original dispatch and resolved target instead of

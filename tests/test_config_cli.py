@@ -79,6 +79,29 @@ class ConfigEditTests(unittest.TestCase):
         result = set_config_value(self.data_dir, "relay_enabled", "true")
         self.assertTrue(result.after)
 
+    def test_set_dispatch_capacity_and_provider_limits(self) -> None:
+        capacity = set_config_value(self.data_dir, "dispatch_capacity", "12")
+        self.assertEqual(capacity.after, 12)
+        providers = set_config_value(
+            self.data_dir,
+            "dispatch_provider_capacities",
+            '{"Codex": 3, "cursor": 2}',
+        )
+        self.assertEqual(providers.after, {"codex": 3, "cursor": 2})
+
+    def test_dispatch_capacity_rejects_zero_negative_and_unreasonable_values(
+        self,
+    ) -> None:
+        for value in ("0", "-1", "257", "not-a-number"):
+            with self.subTest(value=value), self.assertRaises(ConfigError):
+                set_config_value(self.data_dir, "dispatch_capacity", value)
+        with self.assertRaises(ConfigError):
+            set_config_value(
+                self.data_dir,
+                "dispatch_provider_capacities",
+                '{"codex": 0}',
+            )
+
     def test_add_remove_peers(self) -> None:
         add_config_value(self.data_dir, "peers", "http://macbook:8080")
         result = add_config_value(self.data_dir, "peers", "http://studio:8080")
@@ -149,6 +172,17 @@ class ConfigCliTests(unittest.TestCase):
                 get_result = self.runner.invoke(app, ["config", "get", "host"])
                 self.assertEqual(get_result.exit_code, 0, get_result.output)
                 self.assertEqual(get_result.output.strip(), "0.0.0.0")
+
+    def test_cli_capacity_contract(self) -> None:
+        from pa.cli.main import app
+
+        with patch("pa.cli.config_cmd._data_dir", return_value=self.data_dir):
+            result = self.runner.invoke(
+                app, ["config", "set", "dispatch_capacity", "16"]
+            )
+            self.assertEqual(result.exit_code, 0, result.output)
+            get_result = self.runner.invoke(app, ["config", "get", "dispatch_capacity"])
+            self.assertEqual(get_result.output.strip(), "16")
 
     def test_cli_rejects_invalid(self) -> None:
         from pa.cli.main import app

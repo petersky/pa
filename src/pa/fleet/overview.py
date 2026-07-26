@@ -19,6 +19,7 @@ from pa.core.async_runtime import AsyncRuntime
 from pa.core.io import atomic_write_json
 from pa.domain.models import FleetInstance
 from pa.execution.dispatch import TERMINAL_DISPATCH_STATES
+from pa.fleet.capacity import effective_capacity
 from pa.fleet.update import TERMINAL_PHASES
 from pa.pr_supervisor.models import (
     PRWatchStatus,
@@ -383,7 +384,11 @@ def _local_activity(ctx: Any) -> dict[str, Any]:
         for runtime in (manager.list_runtimes() if manager else [])
         if not getattr(runtime, "_closed", False)
     }
+    prompting_session_ids = {
+        runtime.session.id for runtime in runtime_by_id.values() if runtime.prompting
+    }
     sessions = []
+    deferred_sessions = 0
     for session in ctx.store.list_sessions():
         runtime = runtime_by_id.get(session.id)
         active = bool(runtime) or session.status in {
@@ -396,15 +401,26 @@ def _local_activity(ctx: Any) -> dict[str, Any]:
         }
         if not active:
             continue
+        if runtime and runtime.prompting:
+            semantic_state = "working"
+        elif runtime and runtime._queue:
+            semantic_state = "queued"
+        elif runtime:
+            semantic_state = "idle"
+        else:
+            semantic_state = "deferred"
+            deferred_sessions += 1
         sessions.append(
             {
                 "id": session.id,
                 "title": session.title or session.label or session.id,
                 "card_id": session.card_id or session.item_id,
                 "project_id": session.project_id,
-                "status": "working"
-                if runtime and runtime.prompting
-                else session.status,
+                "status": semantic_state,
+                "durable_status": session.status,
+                "connected": bool(runtime and runtime.connected),
+                "capacity_consuming": semantic_state in {"working", "queued"},
+                "provider": session.agent_name,
                 "queued": len(runtime._queue) if runtime else 0,
                 "cwd": session.cwd,
                 "updated_at": session.updated_at.isoformat(),
@@ -413,6 +429,7 @@ def _local_activity(ctx: Any) -> dict[str, Any]:
     dispatches = []
     dispatch_store = ctx.services.get("dispatch_store")
     if dispatch_store:
+        dispatch_store.expire_capacity_reservations()
         dispatches = [
             item.public_dict()
             for item in dispatch_store.list(limit=100)
@@ -422,6 +439,85 @@ def _local_activity(ctx: Any) -> dict[str, Any]:
                 or item.authority_instance_id == ctx.settings.instance_id
             )
         ]
+    reservation_states = {
+        "queued",
+        "checking_sync",
+        "materializing",
+        "starting_session",
+        "delivering_prompt",
+    }
+    reservations = [
+        item
+        for item in dispatches
+        if item.get("target_instance_id") == ctx.settings.instance_id
+        and item.get("state") in reservation_states
+        and item.get("session_id") not in prompting_session_ids
+    ]
+    completion_work = [
+        item
+        for item in dispatches
+        if item.get("state") == "completion_pending"
+        or (item.get("card_reconciliation") or {}).get("state")
+        in {"pending", "running", "retrying", "blocked"}
+    ]
+    provider_concurrency = {
+        provider: dict(counts)
+        for provider, counts in (progress.get("provider_concurrency") or {}).items()
+    }
+    for item in reservations:
+        provider = str(item.get("capacity_provider") or "unknown").lower()
+        counts = provider_concurrency.setdefault(
+            provider,
+            {
+                "connected_runtimes": 0,
+                "idle_sessions": 0,
+                "prompting_turns": 0,
+                "active_capacity_consumers": 0,
+                "queued_prompts": 0,
+            },
+        )
+        counts["dispatch_reservations"] = counts.get("dispatch_reservations", 0) + 1
+    effective = effective_capacity(
+        configured=ctx.settings.dispatch_capacity,
+        provider_capacities=ctx.settings.dispatch_provider_capacities,
+        capabilities=list(ctx.settings.capabilities),
+    )
+    capacity_links = [
+        {
+            "kind": "session",
+            "session_id": item["id"],
+            "href": f"/agent?session={item['id']}",
+            "state": item["status"],
+            "slots": 1 + int(item.get("queued") or 0),
+        }
+        for item in sessions
+        if item["capacity_consuming"]
+    ] + [
+        {
+            "kind": "dispatch",
+            "dispatch_id": item.get("dispatch_id"),
+            "card_id": item.get("card_id"),
+            "href": (
+                f"/?card={item.get('card_id')}" if item.get("card_id") else "/fleet"
+            ),
+            "state": item.get("state"),
+            "slots": 1,
+        }
+        for item in reservations
+    ]
+    logger.debug(
+        "fleet capacity utilization instance=%s configured=%s effective=%s "
+        "source=%s active=%s queued=%s reservations=%s connected=%s idle=%s",
+        ctx.settings.instance_id,
+        ctx.settings.dispatch_capacity,
+        effective.limit,
+        effective.source,
+        progress.get("active_capacity_consumers", 0),
+        progress.get("queued_prompts", 0),
+        len(reservations),
+        progress.get("connected_runtimes", 0),
+        progress.get("idle_sessions", 0),
+    )
     state = "idle"
     if is_shutting_down():
         state = "shutting_down"
@@ -459,7 +555,35 @@ def _local_activity(ctx: Any) -> dict[str, Any]:
         "state": state,
         "summary": progress.get("message") or state,
         "active_sessions": progress.get("active_sessions", len(sessions)),
+        "connected_runtimes": progress.get("connected_runtimes", 0),
+        "idle_sessions": progress.get("idle_sessions", 0),
+        "deferred_sessions": deferred_sessions,
+        "prompting_turns": progress.get("prompting_turns", 0),
+        "active_capacity_consumers": progress.get("active_capacity_consumers", 0),
         "queued_prompts": progress.get("queued_prompts", 0),
+        "dispatch_reservations": len(reservations),
+        "durable_dispatches_starting": len(reservations),
+        "completion_work": len(completion_work),
+        "provider_concurrency": provider_concurrency,
+        "capacity": {
+            **effective.model_dump(mode="json"),
+            "configured": ctx.settings.dispatch_capacity,
+            "provider_limits": dict(ctx.settings.dispatch_provider_capacities),
+            "consumed": progress.get("active_capacity_consumers", 0)
+            + progress.get("queued_prompts", 0)
+            + len(reservations),
+        },
+        "capacity_consumer_links": capacity_links,
+        "capacity_policy": {
+            "consumes": ["prompting_turns", "queued_prompts", "dispatch_reservations"],
+            "does_not_consume": [
+                "idle_sessions",
+                "deferred_sessions",
+                "completion_reconciliation",
+                "provider_login_jobs",
+                "control_plane_operations",
+            ],
+        },
         "sessions": sessions,
         "dispatches": dispatches,
         "current_dispatch": (
@@ -854,6 +978,8 @@ def build_overview(
             "url": inst.url,
             "zone": inst.zone,
             "capabilities": list(inst.capabilities),
+            "dispatch_capacity": inst.dispatch_capacity,
+            "dispatch_provider_capacities": dict(inst.dispatch_provider_capacities),
             "lifecycle_state": inst.lifecycle_state,
             "membership_generation": inst.membership_generation,
             "local": inst.instance_id == ctx.settings.instance_id,

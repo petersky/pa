@@ -2,8 +2,9 @@
 
 PA's canonical fleet roster is the versioned `FleetRegistry` snapshot. Each
 record contains a stable instance ID, display name, authenticated endpoints,
-zone, capabilities, lifecycle state, join/update/removal provenance, credential
-fingerprint, and the generation at which it changed.
+zone, capabilities, typed global/provider dispatch capacity, lifecycle state,
+join/update/removal provenance, credential fingerprint, and the generation at
+which it changed.
 
 Fleet Overview, instance-name resolution, dispatch placement, authority
 participation, update/readiness views, and direct peer routes consume this

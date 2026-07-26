@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -15,11 +15,14 @@ from pa.core.kernel import Kernel
 from pa.domain.models import CardCreate
 from pa.domain.store import reset_store
 from pa.execution.dispatch import (
+    CapacityAdmission,
     ConcurrentCardDispatch,
+    DispatchCapacityExhausted,
     DispatchIdempotencyConflict,
     DispatchRecord,
     DispatchStore,
 )
+from pa.fleet.capacity import effective_capacity, workload_counts
 from pa.fleet.placement import (
     PlacementCandidate,
     PlacementError,
@@ -240,6 +243,69 @@ def test_stale_authorization_capacity_provider_and_empty_sets_fail_explainably()
             service.resolve(_request(PlacementPolicy.BEST_MATCH), [])
 
 
+def test_capacity_precedence_and_documented_default_are_explicit() -> None:
+    configured = effective_capacity(configured=9, capabilities=["capacity:3"])
+    assert configured.limit == 9
+    assert configured.source == "configured"
+
+    legacy = effective_capacity(capabilities=["capacity:7"])
+    assert legacy.limit == 7
+    assert legacy.source == "legacy_capability"
+    assert legacy.legacy_capability == "capacity:7"
+
+    fallback = effective_capacity(capabilities=["capacity:0", "capacity:999"])
+    assert fallback.limit == 4
+    assert fallback.source == "documented_default"
+    assert "Conservative" in fallback.rationale
+
+
+def test_connected_idle_sessions_do_not_consume_capacity() -> None:
+    counts = workload_counts(
+        {
+            "connected_runtimes": 6,
+            "idle_sessions": 3,
+            "prompting_turns": 3,
+            "active_capacity_consumers": 3,
+            "queued_prompts": 0,
+            "dispatch_reservations": 0,
+        }
+    )
+    assert counts == {
+        "active": 3,
+        "queued": 0,
+        "reservations": 0,
+        "consumed": 3,
+        "semantic_source": "capacity_consumers",
+    }
+
+
+def test_provider_specific_limit_applies_with_global_limit() -> None:
+    candidate = _candidate("provider-limited", active=0, capacity=8)
+    candidate.dispatch_capacity = 8
+    candidate.dispatch_provider_capacities = {"codex": 2}
+    candidate.activity = _fresh(
+        {
+            "state": "working",
+            "active_capacity_consumers": 1,
+            "provider_concurrency": {
+                "codex": {
+                    "active_capacity_consumers": 1,
+                    "queued_prompts": 0,
+                    "dispatch_reservations": 1,
+                }
+            },
+        }
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        service = PlacementService(RoundRobinCursorStore(Path(tmp)))
+        with pytest.raises(PlacementError) as raised:
+            service.resolve(_request(PlacementPolicy.BEST_MATCH), [candidate])
+    rejected = raised.value.rejected_candidates[0]
+    assert rejected["capacity"] == 2
+    assert rejected["capacity_detail"]["source"] == "configured_provider"
+    assert rejected["reserved"] == 1
+
+
 def _record(
     *,
     key: str,
@@ -305,6 +371,92 @@ def test_admission_is_atomic_for_idempotency_and_concurrent_card_work() -> None:
                 )
             )
         assert sum(isinstance(item, ConcurrentCardDispatch) for item in results) == 1
+
+
+def test_last_slot_reservation_is_atomic_and_released_on_cancel_and_restart() -> None:
+    capacity = CapacityAdmission(limit=1, source="configured")
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp)
+        store = DispatchStore(path)
+
+        def admit(index: int):
+            try:
+                return store.admit(
+                    _record(
+                        key=f"slot-{index}",
+                        fingerprint=f"slot-{index}",
+                        target="a",
+                        card_id=f"card-{index}",
+                    ),
+                    capacity=capacity,
+                )
+            except DispatchCapacityExhausted as exc:
+                return exc
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(admit, [1, 2]))
+        assert sum(isinstance(item, DispatchCapacityExhausted) for item in results) == 1
+        admitted = next(item[0] for item in results if isinstance(item, tuple))
+
+        restarted = DispatchStore(path)
+        with pytest.raises(DispatchCapacityExhausted):
+            restarted.admit(
+                _record(
+                    key="after-restart",
+                    fingerprint="after-restart",
+                    target="a",
+                    card_id="card-after-restart",
+                ),
+                capacity=capacity,
+            )
+
+        restarted.transition(admitted, "cancelled", "operator cancelled")
+        replacement, duplicate = restarted.admit(
+            _record(
+                key="replacement",
+                fingerprint="replacement",
+                target="a",
+                card_id="card-replacement",
+            ),
+            capacity=capacity,
+        )
+        assert not duplicate
+        assert replacement.capacity_reserved_at is not None
+        assert admitted.capacity_release_reason == "cancelled"
+
+        replacement.capacity_reservation_expires_at = datetime.now(UTC) - timedelta(
+            seconds=1
+        )
+        restarted.put(replacement)
+        assert restarted.runnable() == []
+        assert replacement.state == "failed"
+        assert replacement.error_code == "capacity_reservation_timeout"
+        assert replacement.capacity_release_reason == "timeout"
+
+
+def test_capacity_override_is_durable_and_auditable() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        store = DispatchStore(Path(tmp))
+        record, duplicate = store.admit(
+            _record(
+                key="override",
+                fingerprint="override",
+                target="a",
+                card_id="card-override",
+            ),
+            capacity=CapacityAdmission(
+                limit=1,
+                source="configured",
+                observed_active=1,
+                override=True,
+                override_reason="Incident response approved by operator",
+            ),
+        )
+        assert not duplicate
+        assert record.capacity_override is True
+        assert (
+            record.capacity_override_reason == "Incident response approved by operator"
+        )
 
 
 class _FakeMcp:
@@ -383,3 +535,48 @@ def test_policy_dispatch_endpoint_retries_without_rerunning_placement() -> None:
             == "local"
         )
         assert candidates.call_count == 1
+
+
+def test_capacity_config_api_updates_live_fleet_advertisement() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        settings = Settings(
+            data_dir=Path(tmp),
+            instance_id="local",
+            instance_name="Local",
+            instance_url="http://pa.test:8080",
+            agent_enabled=False,
+            subscribed_realms=["default"],
+            peers=[],
+        )
+        app = Kernel.boot(settings=settings).build_app()
+        with TestClient(app) as client:
+            shell = client.get("/")
+            token = client.cookies.get("pa_csrf")
+            assert shell.status_code == 200
+            response = client.patch(
+                "/api/config/capacity",
+                headers={"X-CSRF-Token": token},
+                json={
+                    "dispatch_capacity": 11,
+                    "dispatch_provider_capacities": {"Codex": 3},
+                },
+            )
+            config = client.get("/api/config").json()
+            settings_page = client.get("/settings")
+            fleet_page = client.get("/fleet")
+            instance = next(
+                item
+                for item in client.get("/api/fleet/instances").json()
+                if item["instance_id"] == "local"
+            )
+
+        assert response.status_code == 200, response.text
+        assert "Fleet execution capacity" in settings_page.text
+        assert 'value="11"' in settings_page.text
+        assert "Capacity" in fleet_page.text
+        assert "11" in fleet_page.text
+        assert response.json()["takes_effect"].startswith("immediately")
+        assert config["dispatch_capacity"] == 11
+        assert config["dispatch_provider_capacities"] == {"codex": 3}
+        assert instance["dispatch_capacity"] == 11
+        assert instance["dispatch_provider_capacities"] == {"codex": 3}

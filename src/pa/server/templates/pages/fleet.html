@@ -87,7 +87,7 @@
     <div class="fleet-table-scroll">
     <table class="data-table fleet-instance-table" id="pa-fleet-instances">
       <thead>
-        <tr><th>Machine</th><th>Health &amp; sync</th><th>Software</th><th>Authentication</th><th>Activity</th><th>Freshness</th><th>Actions</th></tr>
+        <tr><th>Machine</th><th>Health &amp; sync</th><th>Software</th><th>Authentication</th><th>Activity</th><th>Capacity</th><th>Freshness</th><th>Actions</th></tr>
       </thead>
       <tbody>
         {% for node in fleet_overview.nodes %}
@@ -133,6 +133,16 @@
             <span class="muted small">{{ current_dispatch.summary if current_dispatch else (activity.value.summary if activity.value and activity.value.summary else 'No activity detail yet') }}</span>
             {% if current_dispatch and current_dispatch.freshness %}
             <span class="fleet-freshness fleet-field-{{ current_dispatch.freshness.state }}">{{ current_dispatch.freshness.state }}{% if current_dispatch.freshness.age_seconds is not none %} · {{ current_dispatch.freshness.age_seconds }}s{% endif %}</span>
+            {% endif %}
+          </td>
+          {% set capacity = activity.value.capacity if activity.value and activity.value.capacity else none %}
+          <td data-fleet-capacity class="fleet-field fleet-field-{{ activity.state }}">
+            {% if capacity %}
+            <strong>{{ capacity.consumed }}/{{ capacity.limit }} used</strong>
+            <span class="muted small">{{ capacity.source | replace('_', ' ') }}</span>
+            {% else %}
+            <strong>{{ node.dispatch_capacity or 'pending' }}</strong>
+            <span class="muted small">{{ 'configured' if node.dispatch_capacity else 'compatibility probe pending' }}</span>
             {% endif %}
           </td>
           <td data-fleet-freshness>

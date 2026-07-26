@@ -6,7 +6,7 @@ import asyncio
 import json
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import RLock
 from typing import TYPE_CHECKING, Any
@@ -48,6 +48,14 @@ DISPATCH_STAGES = {
     "cancelled",
 }
 TERMINAL_DISPATCH_STATES = {"failed", "completed", "cancelled"}
+CAPACITY_RESERVATION_STATES = {
+    "queued",
+    "checking_sync",
+    "materializing",
+    "starting_session",
+    "delivering_prompt",
+}
+CAPACITY_RESERVATION_TTL = timedelta(hours=1)
 RECOVERABLE_DISPATCH_STATES = {
     "checking_sync",
     "materializing",
@@ -90,6 +98,18 @@ class DispatchRecord(BaseModel):
     placement_policy: str = "named_instance"
     placement_decision: dict[str, Any] | None = None
     placement_resolved_at: datetime | None = None
+    capacity_limit: int | None = None
+    capacity_source: str | None = None
+    capacity_provider: str | None = None
+    capacity_observed_active: int = 0
+    capacity_observed_queued: int = 0
+    capacity_observed_reservations: int = 0
+    capacity_reserved_at: datetime | None = None
+    capacity_reservation_expires_at: datetime | None = None
+    capacity_released_at: datetime | None = None
+    capacity_release_reason: str | None = None
+    capacity_override: bool = False
+    capacity_override_reason: str | None = None
     allow_concurrent: bool = False
     session_id: str | None = None
     resume_requested: bool = False
@@ -258,6 +278,22 @@ class DispatchRecord(BaseModel):
         return data
 
 
+class CapacityAdmission(BaseModel):
+    """Fresh placement utilization rechecked atomically with ledger admission."""
+
+    limit: int = Field(ge=1, le=256)
+    source: str
+    provider: str | None = None
+    provider_specific: bool = False
+    observed_active: int = Field(default=0, ge=0)
+    observed_queued: int = Field(default=0, ge=0)
+    observed_reservations: int = Field(default=0, ge=0)
+    observed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    consumer_links: list[dict[str, Any]] = Field(default_factory=list)
+    override: bool = False
+    override_reason: str | None = None
+
+
 class DispatchStore:
     """Atomic JSON ledger shared by dispatch admission, worker, and outbox."""
 
@@ -371,6 +407,7 @@ class DispatchStore:
         record: DispatchRecord,
         *,
         idempotency_scope: str = "authority",
+        capacity: CapacityAdmission | None = None,
     ) -> tuple[DispatchRecord, bool]:
         """Atomically deduplicate and prevent unsafe concurrent card dispatch."""
         with self._lock:
@@ -414,6 +451,50 @@ class DispatchStore:
                 if active:
                     raise ConcurrentCardDispatch(active)
 
+            if capacity:
+                now = datetime.now(UTC)
+                current_reservations = [
+                    item
+                    for item in self._records.values()
+                    if item.target_instance_id == record.target_instance_id
+                    and item.state in CAPACITY_RESERVATION_STATES
+                    and (
+                        item.capacity_reservation_expires_at is None
+                        or item.capacity_reservation_expires_at > now
+                    )
+                    and (
+                        not capacity.provider_specific
+                        or item.capacity_provider == capacity.provider
+                    )
+                ]
+                reserved = max(
+                    capacity.observed_reservations, len(current_reservations)
+                )
+                consumed = (
+                    capacity.observed_active + capacity.observed_queued + reserved
+                )
+                if consumed >= capacity.limit and not capacity.override:
+                    raise DispatchCapacityExhausted(
+                        limit=capacity.limit,
+                        source=capacity.source,
+                        provider=capacity.provider,
+                        active=capacity.observed_active,
+                        queued=capacity.observed_queued,
+                        reservations=reserved,
+                        observed_at=capacity.observed_at,
+                        consumer_links=capacity.consumer_links,
+                    )
+                record.capacity_limit = capacity.limit
+                record.capacity_source = capacity.source
+                record.capacity_provider = capacity.provider
+                record.capacity_observed_active = capacity.observed_active
+                record.capacity_observed_queued = capacity.observed_queued
+                record.capacity_observed_reservations = reserved
+                record.capacity_reserved_at = now
+                record.capacity_reservation_expires_at = now + CAPACITY_RESERVATION_TTL
+                record.capacity_override = capacity.override
+                record.capacity_override_reason = capacity.override_reason
+
             record.state = "queued"
             record.events.append(
                 DispatchEvent(
@@ -425,6 +506,28 @@ class DispatchStore:
             record.updated_at = datetime.now(UTC)
             self._records[record.dispatch_id] = record
             self._save()
+            if capacity:
+                logger.info(
+                    "fleet capacity reservation admitted dispatch=%s target=%s "
+                    "provider=%s limit=%s source=%s active=%s queued=%s "
+                    "reservations=%s override=%s",
+                    record.dispatch_id,
+                    record.target_instance_id,
+                    capacity.provider,
+                    capacity.limit,
+                    capacity.source,
+                    capacity.observed_active,
+                    capacity.observed_queued,
+                    record.capacity_observed_reservations,
+                    capacity.override,
+                )
+                if capacity.override:
+                    logger.warning(
+                        "fleet capacity override dispatch=%s target=%s reason=%s",
+                        record.dispatch_id,
+                        record.target_instance_id,
+                        capacity.override_reason,
+                    )
             return record, False
 
     def put(self, record: DispatchRecord) -> DispatchRecord:
@@ -436,6 +539,78 @@ class DispatchStore:
             self._records[record.dispatch_id] = record
             self._save()
         return record
+
+    def retry_with_capacity(
+        self,
+        record: DispatchRecord,
+        capacity: CapacityAdmission,
+        *,
+        idempotency_key: str,
+    ) -> DispatchRecord:
+        """Atomically renew the same target reservation for a safe retry."""
+
+        with self._lock:
+            current = self._records.get(record.dispatch_id)
+            if not current or current.mutation_id != record.mutation_id:
+                raise ValueError("dispatch changed before retry admission")
+            if current.state not in {"failed", "cancelled"} or not current.recoverable:
+                raise ValueError(f"dispatch in {current.state} is not retryable")
+            now = datetime.now(UTC)
+            current_reservations = [
+                item
+                for item in self._records.values()
+                if item.dispatch_id != current.dispatch_id
+                and item.target_instance_id == current.target_instance_id
+                and item.state in CAPACITY_RESERVATION_STATES
+                and (
+                    item.capacity_reservation_expires_at is None
+                    or item.capacity_reservation_expires_at > now
+                )
+                and (
+                    not capacity.provider_specific
+                    or item.capacity_provider == capacity.provider
+                )
+            ]
+            reserved = max(capacity.observed_reservations, len(current_reservations))
+            consumed = capacity.observed_active + capacity.observed_queued + reserved
+            if consumed >= capacity.limit and not capacity.override:
+                raise DispatchCapacityExhausted(
+                    limit=capacity.limit,
+                    source=capacity.source,
+                    provider=capacity.provider,
+                    active=capacity.observed_active,
+                    queued=capacity.observed_queued,
+                    reservations=reserved,
+                    observed_at=capacity.observed_at,
+                    consumer_links=capacity.consumer_links,
+                )
+            current.capacity_limit = capacity.limit
+            current.capacity_source = capacity.source
+            current.capacity_provider = capacity.provider
+            current.capacity_observed_active = capacity.observed_active
+            current.capacity_observed_queued = capacity.observed_queued
+            current.capacity_observed_reservations = reserved
+            current.capacity_reserved_at = now
+            current.capacity_reservation_expires_at = now + CAPACITY_RESERVATION_TTL
+            current.capacity_released_at = None
+            current.capacity_release_reason = None
+            current.capacity_override = capacity.override
+            current.capacity_override_reason = capacity.override_reason
+            current.cancel_requested = False
+            current.last_error = None
+            current.error_code = None
+            current.control_operations[idempotency_key] = "retry"
+            current.state = "queued"
+            current.events.append(
+                DispatchEvent(
+                    seq=(current.events[-1].seq + 1 if current.events else 1),
+                    state="queued",
+                    message="Operator queued a safe retry with a fresh capacity reservation.",
+                )
+            )
+            current.updated_at = now
+            self._save()
+            return current
 
     def allocate_progress_sequence(self, dispatch_id: str) -> int:
         """Allocate a durable per-dispatch sequence across restarts and callbacks."""
@@ -850,7 +1025,16 @@ class DispatchStore:
     ) -> DispatchRecord:
         if state not in DISPATCH_STAGES:
             raise ValueError(f"unknown dispatch state: {state}")
+        previous_state = record.state
         record.state = state
+        if (
+            previous_state in CAPACITY_RESERVATION_STATES
+            and state not in CAPACITY_RESERVATION_STATES
+            and record.capacity_reserved_at
+            and not record.capacity_released_at
+        ):
+            record.capacity_released_at = datetime.now(UTC)
+            record.capacity_release_reason = state
         record.events.append(
             DispatchEvent(
                 seq=(record.events[-1].seq + 1 if record.events else 1),
@@ -875,7 +1059,53 @@ class DispatchStore:
         record.recoverable = recoverable
         return self.transition(record, "failed", message, detail=detail)
 
+    def expire_capacity_reservations(
+        self, *, now: datetime | None = None
+    ) -> list[DispatchRecord]:
+        """Fail timed-out pre-start work and durably release its slot."""
+
+        checked_at = now or datetime.now(UTC)
+        expired: list[DispatchRecord] = []
+        with self._lock:
+            for record in self._records.values():
+                if (
+                    record.state not in CAPACITY_RESERVATION_STATES
+                    or record.capacity_reservation_expires_at is None
+                    or record.capacity_reservation_expires_at > checked_at
+                ):
+                    continue
+                previous_state = record.state
+                record.state = "failed"
+                record.last_error = (
+                    "Capacity reservation timed out before execution started; "
+                    "retry to obtain a fresh reservation."
+                )
+                record.error_code = "capacity_reservation_timeout"
+                record.recoverable = True
+                record.capacity_released_at = checked_at
+                record.capacity_release_reason = "timeout"
+                record.events.append(
+                    DispatchEvent(
+                        seq=(record.events[-1].seq + 1 if record.events else 1),
+                        state="failed",
+                        message=record.last_error,
+                        detail={"previous_state": previous_state},
+                        created_at=checked_at,
+                    )
+                )
+                record.updated_at = checked_at
+                expired.append(record)
+            if expired:
+                self._save()
+                logger.warning(
+                    "fleet capacity reservations timed out count=%s dispatches=%s",
+                    len(expired),
+                    [record.dispatch_id for record in expired],
+                )
+        return expired
+
     def runnable(self) -> list[DispatchRecord]:
+        self.expire_capacity_reservations()
         return [record for record in self.list(limit=1000) if record.state == "queued"]
 
     def pending(self) -> list[DispatchRecord]:
@@ -923,6 +1153,39 @@ class ConcurrentCardDispatch(ValueError):
     def __init__(self, existing: DispatchRecord) -> None:
         super().__init__("card already has an active durable dispatch")
         self.existing = existing
+
+
+class DispatchCapacityExhausted(ValueError):
+    def __init__(
+        self,
+        *,
+        limit: int,
+        source: str,
+        provider: str | None,
+        active: int,
+        queued: int,
+        reservations: int,
+        observed_at: datetime,
+        consumer_links: list[dict[str, Any]],
+    ) -> None:
+        super().__init__("dispatch capacity is exhausted")
+        self.detail = {
+            "code": "capacity_exhausted",
+            "message": (
+                f"Capacity is exhausted: {active} working + {queued} queued + "
+                f"{reservations} reserved of {limit} {source} slots."
+            ),
+            "limit": limit,
+            "source": source,
+            "provider": provider,
+            "active_consumers": active,
+            "queued_prompts": queued,
+            "reservations": reservations,
+            "observed_at": observed_at.isoformat(),
+            "consumer_links": consumer_links,
+            "recoverable": True,
+            "recovery_url": "/fleet?section=overview",
+        }
 
 
 class DispatchWorker:

@@ -44,8 +44,10 @@ from pa.domain.models import (
     RealmRole,
 )
 from pa.execution.dispatch import (
+    CapacityAdmission,
     CompletionOutbox,
     ConcurrentCardDispatch,
+    DispatchCapacityExhausted,
     DispatchIdempotencyConflict,
     DispatchRecord,
     DispatchStore,
@@ -244,6 +246,8 @@ class RemoteAgentStartBody(BaseModel):
     idempotency_key: str | None = None
     resume_session_id: str | None = None
     allow_concurrent: bool = False
+    capacity_override: bool = False
+    capacity_override_reason: str | None = Field(default=None, max_length=500)
 
 
 class FleetDispatchBody(RemoteAgentStartBody):
@@ -788,9 +792,7 @@ def complete_dispatch(
                     else report.card_disposition
                 ),
                 "resulting_lane": (
-                    decision.applied_lane.value
-                    if decision
-                    else report.resulting_lane
+                    decision.applied_lane.value if decision else report.resulting_lane
                 ),
             }
         )
@@ -1035,6 +1037,8 @@ async def fleet_update_readiness(
         owner_public_url(settings),
         zone=settings.zone,
         capabilities=list(settings.capabilities),
+        dispatch_capacity=settings.dispatch_capacity,
+        dispatch_provider_capacities=dict(settings.dispatch_provider_capacities),
         relay_enabled=settings.relay_enabled,
     )
 
@@ -1112,7 +1116,9 @@ def _verify_membership_envelope(
         "membership": envelope.get("membership", {}),
     }
     payload = json.dumps(unsigned, sort_keys=True, separators=(",", ":")).encode()
-    expected = hmac.new(settings.sync_token.encode(), payload, hashlib.sha256).hexdigest()
+    expected = hmac.new(
+        settings.sync_token.encode(), payload, hashlib.sha256
+    ).hexdigest()
     if not settings.sync_token or not hmac.compare_digest(signature, expected):
         raise ValueError("membership signature is invalid")
     membership = unsigned["membership"]
@@ -1285,6 +1291,10 @@ def _overview_instance(request: Request, instance_id: str) -> FleetInstance:
             url=owner_public_url(ctx.settings),
             zone=ctx.settings.zone,
             capabilities=list(ctx.settings.capabilities),
+            dispatch_capacity=ctx.settings.dispatch_capacity,
+            dispatch_provider_capacities=dict(
+                ctx.settings.dispatch_provider_capacities
+            ),
             healthy=True,
         )
     raise HTTPException(status_code=404, detail="Fleet instance not found")
@@ -1365,6 +1375,8 @@ async def fleet_join(request: Request, body: dict) -> dict:
     url = body.get("url", "")
     zone = body.get("zone", "default")
     capabilities = body.get("capabilities", [])
+    dispatch_capacity = body.get("dispatch_capacity")
+    dispatch_provider_capacities = body.get("dispatch_provider_capacities", {})
     if not token or not joiner_id:
         raise HTTPException(status_code=400, detail="token and instance_id required")
 
@@ -1394,6 +1406,8 @@ async def fleet_join(request: Request, body: dict) -> dict:
             url=url or owner_url,
             zone=zone,
             capabilities=capabilities,
+            dispatch_capacity=dispatch_capacity,
+            dispatch_provider_capacities=dispatch_provider_capacities,
             realms=realms,
         )
     except ValueError as exc:
@@ -1493,6 +1507,8 @@ async def update_instance(request: Request, instance_id: str, body: dict) -> dic
         "endpoints",
         "zone",
         "capabilities",
+        "dispatch_capacity",
+        "dispatch_provider_capacities",
         "relay_enabled",
         "lifecycle_state",
         "credential_fingerprint",
@@ -3306,6 +3322,8 @@ async def _placement_candidates(
             zone=inst.zone,
             local=inst.instance_id == ctx.settings.instance_id,
             capabilities=list(inst.capabilities),
+            dispatch_capacity=inst.dispatch_capacity,
+            dispatch_provider_capacities=dict(inst.dispatch_provider_capacities),
             reachability=reachability,
             activity=activity,
             providers=providers,
@@ -3314,6 +3332,43 @@ async def _placement_candidates(
         )
 
     return list(await asyncio.gather(*(inspect(inst) for inst in instances)))
+
+
+def _capacity_admission_from_decision(
+    decision: dict[str, Any] | None,
+    *,
+    provider: str | None,
+    override: bool,
+    override_reason: str | None,
+) -> CapacityAdmission | None:
+    if not decision:
+        return None
+    chosen_id = decision.get("chosen_instance_id")
+    detail = next(
+        (
+            item
+            for item in decision.get("eligible_candidates") or []
+            if item.get("instance_id") == chosen_id
+        ),
+        None,
+    )
+    if not detail:
+        return None
+    capacity = detail.get("capacity_detail") or {}
+    observed_at = (detail.get("freshness") or {}).get("activity")
+    return CapacityAdmission(
+        limit=int(detail.get("capacity") or capacity.get("limit")),
+        source=str(capacity.get("source") or "unknown"),
+        provider=provider.strip().lower() if provider else None,
+        provider_specific=capacity.get("provider_limit") is not None,
+        observed_active=int(detail.get("active") or 0),
+        observed_queued=int(detail.get("queued") or 0),
+        observed_reservations=int(detail.get("reserved") or 0),
+        observed_at=observed_at or datetime.now(UTC),
+        consumer_links=list(detail.get("consumer_links") or []),
+        override=override,
+        override_reason=override_reason,
+    )
 
 
 def _placement_http_error(exc: PlacementError) -> HTTPException:
@@ -3336,6 +3391,25 @@ async def dispatch_fleet_work(request: Request, body: FleetDispatchBody) -> dict
     user = require_user(request)
     ctx = request.app.state.ctx
     settings = ctx.settings
+    if body.capacity_override:
+        if getattr(user, "role", None) != "admin":
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "capacity_override_forbidden",
+                    "message": "Only an administrator may override fleet capacity.",
+                    "recoverable": False,
+                },
+            )
+        if not (body.capacity_override_reason or "").strip():
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "capacity_override_reason_required",
+                    "message": "Record an operator reason for the capacity override.",
+                    "recoverable": True,
+                },
+            )
     selected_authority = body.authority_instance_id or settings.instance_id
     if selected_authority != settings.instance_id:
         if getattr(request.state, "instance_authenticated", False) is True:
@@ -3476,10 +3550,16 @@ async def dispatch_fleet_work(request: Request, body: FleetDispatchBody) -> dict
                 required_capabilities=required_capabilities,
                 repository_ids=repository_ids,
                 allow_concurrent=body.allow_concurrent,
+                capacity_override=body.capacity_override,
             ),
             candidates,
         )
     except PlacementError as exc:
+        logger.warning(
+            "fleet placement rejected code=%s candidates=%s",
+            exc.code,
+            exc.rejected_candidates,
+        )
         raise _placement_http_error(exc) from exc
 
     start_payload = body.model_dump(
@@ -3508,8 +3588,71 @@ async def start_remote_agent_work(
     instance_id: str,
     body: RemoteAgentStartBody,
 ) -> dict:
-    """Validate and durably admit remote work without waiting for a provider."""
-    return await _admit_remote_agent_work(request, instance_id, body)
+    """Apply named placement checks, then durably admit remote work."""
+    user = require_user(request)
+    if body.capacity_override:
+        if getattr(user, "role", None) != "admin":
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "capacity_override_forbidden",
+                    "message": "Only an administrator may override fleet capacity.",
+                    "recoverable": False,
+                },
+            )
+        if not (body.capacity_override_reason or "").strip():
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "capacity_override_reason_required",
+                    "message": "Record an operator reason for the capacity override.",
+                    "recoverable": True,
+                },
+            )
+    ctx = request.app.state.ctx
+    selected_authority = body.authority_instance_id or ctx.settings.instance_id
+    if (
+        selected_authority != ctx.settings.instance_id
+        or "placement_service" not in ctx.services
+    ):
+        # Forwarding must happen at the selected authority. The service fallback
+        # preserves direct internal callers that intentionally construct a
+        # minimal context; every booted HTTP/MCP surface registers placement.
+        return await _admit_remote_agent_work(request, instance_id, body)
+    fleet: FleetRegistry = ctx.require_service("fleet_registry")
+    candidates = await _placement_candidates(request, list(fleet.list_instances()))
+    placement: PlacementService = ctx.require_service("placement_service")
+    try:
+        decision = await _offload_request(
+            request,
+            "fleet.named_placement_resolve",
+            placement.resolve,
+            PlacementRequest(
+                realm_id=ctx.settings.primary_realm,
+                fleet_id=ctx.settings.fleet_id,
+                instance_id=instance_id,
+                card_id=body.card_id,
+                provider=body.provider,
+                model_id=body.model_id,
+                allow_concurrent=body.allow_concurrent,
+                capacity_override=body.capacity_override,
+            ),
+            candidates,
+        )
+    except PlacementError as exc:
+        logger.warning(
+            "fleet named placement rejected target=%s code=%s candidates=%s",
+            instance_id,
+            exc.code,
+            exc.rejected_candidates,
+        )
+        raise _placement_http_error(exc) from exc
+    return await _admit_remote_agent_work(
+        request,
+        instance_id,
+        body,
+        placement_decision=decision.model_dump(mode="json"),
+    )
 
 
 async def _admit_remote_agent_work(
@@ -3689,6 +3832,12 @@ async def _admit_remote_agent_work(
             ledger.admit,
             record,
             idempotency_scope=idempotency_scope,
+            capacity=_capacity_admission_from_decision(
+                placement_decision,
+                provider=body.provider,
+                override=body.capacity_override,
+                override_reason=body.capacity_override_reason,
+            ),
         )
     except DispatchIdempotencyConflict as exc:
         raise HTTPException(
@@ -3710,6 +3859,14 @@ async def _admit_remote_agent_work(
                 "recoverable": True,
             },
         ) from exc
+    except DispatchCapacityExhausted as exc:
+        logger.warning(
+            "fleet capacity admission rejected target=%s provider=%s detail=%s",
+            instance_id,
+            body.provider,
+            exc.detail,
+        )
+        raise HTTPException(status_code=409, detail=exc.detail) from exc
     if duplicate:
         return {
             "accepted": True,
@@ -3908,7 +4065,7 @@ def _repeat_dispatch_control(
 
 
 @router.post("/fleet/dispatch-jobs/{dispatch_id}/retry", status_code=202)
-def retry_dispatch(
+async def _retry_dispatch_api(
     request: Request,
     dispatch_id: str,
     body: DispatchControlBody | None = None,
@@ -3929,11 +4086,113 @@ def retry_dispatch(
                 "message": f"Dispatch in {record.state} cannot be retried safely.",
             },
         )
-    record.cancel_requested = False
-    record.last_error = None
-    record.error_code = None
-    record.control_operations[idempotency_key] = "retry"
-    ledger.transition(record, "queued", "Operator queued a safe retry.")
+    ctx = request.app.state.ctx
+    fleet: FleetRegistry = ctx.require_service("fleet_registry")
+    candidates = await _placement_candidates(request, list(fleet.list_instances()))
+    placement: PlacementService = ctx.require_service("placement_service")
+    provider = record.capacity_provider or record.request_payload.get("provider")
+    try:
+        decision = await _offload_request(
+            request,
+            "fleet.retry_placement_resolve",
+            placement.resolve,
+            PlacementRequest(
+                realm_id=record.realm_id,
+                fleet_id=ctx.settings.fleet_id,
+                instance_id=record.target_instance_id,
+                card_id=record.card_id,
+                provider=provider,
+                model_id=record.request_payload.get("model_id"),
+                allow_concurrent=True,
+            ),
+            candidates,
+        )
+        capacity = _capacity_admission_from_decision(
+            decision.model_dump(mode="json"),
+            provider=provider,
+            override=False,
+            override_reason=None,
+        )
+        if capacity is None:
+            raise PlacementError(
+                "capacity_unavailable",
+                "The original target did not return fresh capacity data.",
+            )
+        record.placement_decision = decision.model_dump(mode="json")
+        record.placement_resolved_at = datetime.now(UTC)
+        record = await _offload_request(
+            request,
+            "dispatch.retry_capacity_admission",
+            ledger.retry_with_capacity,
+            record,
+            capacity,
+            idempotency_key=idempotency_key,
+        )
+    except PlacementError as exc:
+        raise _placement_http_error(exc) from exc
+    except DispatchCapacityExhausted as exc:
+        raise HTTPException(status_code=409, detail=exc.detail) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "dispatch_retry_race",
+                "message": str(exc),
+                "recoverable": True,
+            },
+        ) from exc
+    worker = request.app.state.ctx.services.get("dispatch_worker")
+    if worker:
+        worker.wake()
+    return record.public_dict()
+
+
+def retry_dispatch(
+    request: Request,
+    dispatch_id: str,
+    body: DispatchControlBody | None = None,
+) -> dict[str, Any]:
+    """Synchronous internal compatibility helper; HTTP uses fresh async probes."""
+
+    require_user(request)
+    ledger = _dispatch_store(request)
+    record = ledger.get(dispatch_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Dispatch not found")
+    idempotency_key = _dispatch_control_key(request, body)
+    if _repeat_dispatch_control(record, "retry", idempotency_key):
+        return record.public_dict()
+    if record.state not in {"failed", "cancelled"} or not record.recoverable:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "dispatch_not_retryable",
+                "message": f"Dispatch in {record.state} cannot be retried safely.",
+            },
+        )
+    if record.capacity_limit:
+        capacity = CapacityAdmission(
+            limit=record.capacity_limit,
+            source=record.capacity_source or "unknown",
+            provider=record.capacity_provider,
+            observed_active=record.capacity_observed_active,
+            observed_queued=record.capacity_observed_queued,
+            observed_reservations=record.capacity_observed_reservations,
+        )
+        try:
+            record = ledger.retry_with_capacity(
+                record, capacity, idempotency_key=idempotency_key
+            )
+        except DispatchCapacityExhausted as exc:
+            raise HTTPException(status_code=409, detail=exc.detail) from exc
+    else:
+        # Legacy records predate reservations. Preserve their retry behavior;
+        # every newly admitted record carries capacity metadata.
+        record.cancel_requested = False
+        record.last_error = None
+        record.error_code = None
+        record.control_operations[idempotency_key] = "retry"
+        ledger.transition(record, "queued", "Operator queued a safe retry.")
     worker = request.app.state.ctx.services.get("dispatch_worker")
     if worker:
         worker.wake()
@@ -4589,6 +4848,8 @@ class FleetModule(Module):
             self_url,
             zone=settings.zone,
             capabilities=settings.capabilities,
+            dispatch_capacity=settings.dispatch_capacity,
+            dispatch_provider_capacities=dict(settings.dispatch_provider_capacities),
             relay_enabled=settings.relay_enabled,
         )
         ctx.register_service("fleet_registry", fleet)
@@ -4723,6 +4984,8 @@ class FleetModule(Module):
             mode_id: str | None = None,
             effort: str | None = None,
             allow_concurrent: bool = False,
+            capacity_override: bool = False,
+            capacity_override_reason: str | None = None,
         ) -> dict:
             """Resolve a concrete target or policy and durably dispatch a card."""
             key = idempotency_key.strip()
@@ -4747,6 +5010,8 @@ class FleetModule(Module):
                     "mode_id": mode_id,
                     "effort": effort,
                     "allow_concurrent": allow_concurrent,
+                    "capacity_override": capacity_override,
+                    "capacity_override_reason": capacity_override_reason,
                     "idempotency_key": key,
                 },
             )
@@ -4764,27 +5029,36 @@ class FleetModule(Module):
             effort: str | None = None,
             cwd: str | None = None,
             config: dict[str, str | bool] | None = None,
+            allow_concurrent: bool = False,
+            capacity_override: bool = False,
+            capacity_override_reason: str | None = None,
         ) -> dict:
             """Durably and idempotently dispatch an authoritative card to a fleet instance."""
             key = idempotency_key.strip()
             if not key:
                 raise ValueError("idempotency_key cannot be empty")
+            payload = {
+                "authority_instance_id": authority_instance_id,
+                "card_id": card_id,
+                "message": message,
+                "provider": provider,
+                "model_id": model_id,
+                "mode_id": mode_id,
+                "effort": effort,
+                "cwd": cwd,
+                "config": config or {},
+                "idempotency_key": key,
+            }
+            if allow_concurrent:
+                payload["allow_concurrent"] = True
+            if capacity_override:
+                payload["capacity_override"] = True
+                payload["capacity_override_reason"] = capacity_override_reason
             return request_local_pa(
                 ctx.settings,
                 "POST",
                 f"/api/fleet/instances/{instance_id}/agent/start",
-                json={
-                    "authority_instance_id": authority_instance_id,
-                    "card_id": card_id,
-                    "message": message,
-                    "provider": provider,
-                    "model_id": model_id,
-                    "mode_id": mode_id,
-                    "effort": effort,
-                    "cwd": cwd,
-                    "config": config or {},
-                    "idempotency_key": key,
-                },
+                json=payload,
             )
 
         @mcp.tool()

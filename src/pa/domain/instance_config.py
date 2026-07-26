@@ -9,6 +9,7 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 from pa.core.io import atomic_write_json
+from pa.fleet.capacity import MAX_DISPATCH_CAPACITY, DispatchCapacity
 
 
 class InstanceConfig(BaseModel):
@@ -24,6 +25,10 @@ class InstanceConfig(BaseModel):
     subscribed_realms: list[str] = Field(default_factory=lambda: ["default"])
     zone: str = "default"
     capabilities: list[str] = Field(default_factory=list)
+    dispatch_capacity: int | None = Field(default=None, ge=1, le=MAX_DISPATCH_CAPACITY)
+    dispatch_provider_capacities: dict[str, DispatchCapacity] = Field(
+        default_factory=dict
+    )
     relay_enabled: bool = False
     peers: list[str] = Field(default_factory=list)
     release_track: str = "release"
@@ -83,6 +88,7 @@ def merge_config_into_settings(data_dir: Path, settings_dict: dict) -> dict:
         "subscribed_realms": loaded.subscribed_realms,
         "zone": loaded.zone,
         "capabilities": loaded.capabilities,
+        "dispatch_provider_capacities": loaded.dispatch_provider_capacities,
         "relay_enabled": loaded.relay_enabled,
         "peers": loaded.peers,
         "release_track": loaded.release_track,
@@ -92,6 +98,8 @@ def merge_config_into_settings(data_dir: Path, settings_dict: dict) -> dict:
         "agent_command": loaded.agent_command,
         "agent_args": loaded.agent_args,
     }
+    if loaded.dispatch_capacity is not None:
+        mapping["dispatch_capacity"] = loaded.dispatch_capacity
     if loaded.host:
         mapping["host"] = loaded.host
     for key, value in mapping.items():

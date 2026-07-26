@@ -90,6 +90,9 @@ def test_card_modal_distinguishes_local_start_preference_and_durable_dispatch() 
         assert "policy:round_robin" in agent.text
         assert "policy:random_eligible" in agent.text
         assert "Local instance — Local" in agent.text
+        assert "slots used" in agent.text
+        assert "data-card-dispatch-utilization" in agent.text
+        assert "documented default" in agent.text
 
 
 def test_card_modal_renders_dispatch_progress_retry_and_session_links() -> None:

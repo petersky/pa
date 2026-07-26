@@ -14,7 +14,7 @@ from pa.domain.models import FleetInstance, FleetJoinToken
 
 
 class FleetRegistry:
-    SCHEMA_VERSION = 2
+    SCHEMA_VERSION = 3
 
     def __init__(self, data_dir: Path, fleet_id: str) -> None:
         self.fleet_id = fleet_id
@@ -123,6 +123,8 @@ class FleetRegistry:
         *,
         zone: str = "default",
         capabilities: list[str] | None = None,
+        dispatch_capacity: int | None = None,
+        dispatch_provider_capacities: dict[str, int] | None = None,
         relay_enabled: bool = False,
         actor: str = "",
     ) -> FleetInstance:
@@ -136,6 +138,9 @@ class FleetRegistry:
             and previous.url == normalized_url
             and previous.zone == zone
             and previous.capabilities == (capabilities or [])
+            and previous.dispatch_capacity == dispatch_capacity
+            and previous.dispatch_provider_capacities
+            == (dispatch_provider_capacities or {})
             and previous.relay_enabled == relay_enabled
         ):
             previous.last_seen = datetime.now(UTC)
@@ -147,6 +152,8 @@ class FleetRegistry:
             url=normalized_url,
             zone=zone,
             capabilities=capabilities or [],
+            dispatch_capacity=dispatch_capacity,
+            dispatch_provider_capacities=dispatch_provider_capacities or {},
             relay_enabled=relay_enabled,
             joined_by=actor,
             updated_by=actor,
