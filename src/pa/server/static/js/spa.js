@@ -782,6 +782,9 @@
   function loadCardDetail(cardId, realm, pushHistory, selectedTab) {
     var content = cardDialogContent();
     if (!content || !cardId) return;
+    if (window.PAAgentChat && typeof window.PAAgentChat.destroy === "function") {
+      window.PAAgentChat.destroy(content, "card-replaced");
+    }
     selectedTab = normalizedCardTab(selectedTab);
     if (cardDialogRequest) cardDialogRequest.abort();
     cardDialogRequest = new AbortController();
@@ -840,7 +843,12 @@
     cardDialogRequest = null;
     if (dialog && dialog.open) dialog.close();
     var content = cardDialogContent();
-    if (content) content.replaceChildren();
+    if (content) {
+      if (window.PAAgentChat && typeof window.PAAgentChat.destroy === "function") {
+        window.PAAgentChat.destroy(content, "card-closed");
+      }
+      content.replaceChildren();
+    }
     if (updateHistory && new URL(window.location.href).searchParams.has("card")) {
       if (cardDialogHasBaseEntry && cardDialogHistoryDepth > 0) {
         cardDialogBackNavigation = true;
