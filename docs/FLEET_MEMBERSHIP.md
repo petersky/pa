@@ -16,8 +16,7 @@ or remove membership.
 
 The authority serializes membership changes into monotonically increasing
 generations. Signed snapshots are idempotent. A receiver rejects cross-fleet,
-future-schema, stale, duplicate-ID, and duplicate-endpoint snapshots. Equal
-generation snapshots that differ require operator resolution. Removed members
+future-schema, stale, duplicate-ID, and duplicate-endpoint snapshots. Equal-generation snapshots compare canonical semantic membership: local health and observation fields, migration timestamps, provenance, and per-member generation hints do not create conflicts. Compatible subset inventories are deterministically merged at a new monotonic generation; stable identity, endpoint, lifecycle, credential, capacity, and configuration differences still require operator resolution. Removed members
 remain as tombstones and cannot be resurrected by a stale join or route.
 Temporary unreachability does not change lifecycle state.
 
@@ -38,8 +37,8 @@ fleet instance as appropriate.
 
 1. audits the local canonical projection and peer routes;
 2. fetches signed snapshots from known authenticated peer endpoints;
-3. selects only one unambiguous highest generation;
-4. installs it idempotently and rebuilds direct routes; and
+3. deterministically selects semantically equivalent leaders or safely merges compatible subsets;
+4. installs the monotonic result idempotently, rebuilds direct routes, and rolls it out to reachable members; and
 5. reports before/after generations, member counts, route changes, and
    unreachable or incompatible peers.
 

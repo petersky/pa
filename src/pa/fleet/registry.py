@@ -12,6 +12,130 @@ from uuid import uuid4
 from pa.core.io import atomic_write_json
 from pa.domain.models import FleetInstance, FleetJoinToken
 
+_SEMANTIC_MEMBER_FIELDS = {
+    "instance_id",
+    "name",
+    "url",
+    "endpoints",
+    "zone",
+    "capabilities",
+    "dispatch_capacity",
+    "dispatch_provider_capacities",
+    "relay_enabled",
+    "lifecycle_state",
+    "credential_fingerprint",
+}
+
+
+def semantic_member(inst: FleetInstance) -> dict[str, Any]:
+    """Return stable membership truth, excluding local observations/provenance."""
+    data = inst.model_dump(mode="json", include=_SEMANTIC_MEMBER_FIELDS)
+    data["endpoints"] = sorted(data["endpoints"])
+    data["capabilities"] = sorted(data["capabilities"])
+    return data
+
+
+def semantic_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a snapshot for equality and conflict decisions."""
+    members = [
+        semantic_member(FleetInstance.model_validate(item))
+        for item in snapshot.get("instances", [])
+    ]
+    return {
+        "fleet_id": snapshot.get("fleet_id"),
+        "instances": sorted(members, key=lambda item: item["instance_id"]),
+    }
+
+
+def _validated_instances(snapshot: dict[str, Any]) -> list[FleetInstance]:
+    incoming = [
+        FleetInstance.model_validate(item) for item in snapshot.get("instances", [])
+    ]
+    ids: set[str] = set()
+    endpoints: dict[str, str] = {}
+    conflicts: list[dict[str, str]] = []
+    for inst in incoming:
+        if inst.instance_id in ids:
+            conflicts.append({"type": "duplicate_id", "instance_id": inst.instance_id})
+        ids.add(inst.instance_id)
+        for endpoint in inst.endpoints:
+            owner = endpoints.get(endpoint)
+            if owner and owner != inst.instance_id:
+                conflicts.append(
+                    {
+                        "type": "duplicate_endpoint",
+                        "endpoint": endpoint,
+                        "instances": f"{owner},{inst.instance_id}",
+                    }
+                )
+            endpoints[endpoint] = inst.instance_id
+    if conflicts:
+        raise ValueError(f"ambiguous membership snapshot: {conflicts}")
+    return incoming
+
+
+def reconcile_snapshots(snapshots: list[dict[str, Any]]) -> dict[str, Any]:
+    """Deterministically select or merge compatible authenticated rosters."""
+    if not snapshots:
+        raise ValueError("at least one membership snapshot is required")
+    fleet_ids = {str(snapshot.get("fleet_id", "")) for snapshot in snapshots}
+    if len(fleet_ids) != 1:
+        raise ValueError("membership snapshots belong to different fleets")
+    generations = [int(snapshot.get("generation", 0)) for snapshot in snapshots]
+    schemas = [int(snapshot.get("schema_version", 1)) for snapshot in snapshots]
+    by_id: dict[str, tuple[dict[str, Any], str]] = {}
+    endpoint_owners: dict[str, str] = {}
+    for snapshot in snapshots:
+        for inst in _validated_instances(snapshot):
+            stable = semantic_member(inst)
+            serialized = json.dumps(
+                inst.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+            )
+            existing = by_id.get(inst.instance_id)
+            if existing and existing[0] != stable:
+                raise ValueError(
+                    f"conflicting canonical member {inst.instance_id} requires operator resolution"
+                )
+            if existing is None or serialized < existing[1]:
+                by_id[inst.instance_id] = (stable, serialized)
+            for endpoint in inst.endpoints:
+                owner = endpoint_owners.get(endpoint)
+                if owner and owner != inst.instance_id:
+                    raise ValueError(
+                        f"conflicting canonical endpoint {endpoint} belongs to both {owner} and {inst.instance_id}"
+                    )
+                endpoint_owners[endpoint] = inst.instance_id
+    merged_instances = [json.loads(by_id[key][1]) for key in sorted(by_id)]
+    highest = max(generations)
+    merged_semantic = {
+        "fleet_id": next(iter(fleet_ids)),
+        "instances": [by_id[key][0] for key in sorted(by_id)],
+    }
+    leaders = [
+        snapshot
+        for snapshot in snapshots
+        if int(snapshot.get("generation", 0)) == highest
+        and semantic_snapshot(snapshot) == merged_semantic
+    ]
+    if leaders:
+        selected = min(
+            leaders,
+            key=lambda snapshot: json.dumps(
+                snapshot, sort_keys=True, separators=(",", ":")
+            ),
+        )
+        return {
+            **selected,
+            "schema_version": max(schemas),
+            "instances": merged_instances,
+        }
+    return {
+        "schema_version": max(schemas),
+        "fleet_id": next(iter(fleet_ids)),
+        "generation": highest + 1,
+        "instances": merged_instances,
+    }
+
 
 class FleetRegistry:
     SCHEMA_VERSION = 3
@@ -255,47 +379,17 @@ class FleetRegistry:
         incoming_generation = int(snapshot.get("generation", 0))
         if require_newer and incoming_generation < self._generation:
             raise ValueError("stale membership snapshot")
-        if incoming_generation == self._generation:
-            current_payload = json.dumps(
-                self.snapshot(), sort_keys=True, separators=(",", ":")
-            )
-            incoming_payload = json.dumps(
-                snapshot, sort_keys=True, separators=(",", ":")
-            )
-            if current_payload != incoming_payload:
-                raise ValueError(
-                    "conflicting membership snapshot at the same generation"
-                )
-        incoming = [
-            FleetInstance.model_validate(item) for item in snapshot.get("instances", [])
-        ]
-        ids: set[str] = set()
-        endpoints: dict[str, str] = {}
-        conflicts: list[dict[str, str]] = []
-        for inst in incoming:
-            if inst.instance_id in ids:
-                conflicts.append(
-                    {"type": "duplicate_id", "instance_id": inst.instance_id}
-                )
-            ids.add(inst.instance_id)
-            for endpoint in inst.endpoints:
-                owner = endpoints.get(endpoint)
-                if owner and owner != inst.instance_id:
-                    conflicts.append(
-                        {
-                            "type": "duplicate_endpoint",
-                            "endpoint": endpoint,
-                            "instances": f"{owner},{inst.instance_id}",
-                        }
-                    )
-                endpoints[endpoint] = inst.instance_id
-        if conflicts:
-            raise ValueError(f"ambiguous membership snapshot: {conflicts}")
+        incoming = _validated_instances(snapshot)
+        if incoming_generation == self._generation and semantic_snapshot(
+            self.snapshot()
+        ) != semantic_snapshot(snapshot):
+            raise ValueError("conflicting membership snapshot at the same generation")
         before = self._generation
+        before_semantic = semantic_snapshot(self.snapshot())
         self._instances = {inst.instance_id: inst for inst in incoming}
         self._generation = incoming_generation
         self._save_instances()
-        changed = before != self._generation
+        changed = before_semantic != semantic_snapshot(self.snapshot())
         self._audit(
             "projection.apply",
             actor=actor,
