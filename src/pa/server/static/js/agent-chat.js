@@ -224,6 +224,11 @@
     };
 
     this.es = null;
+    this.esSessionId = "";
+    this.esApiBase = "";
+    this.sseReconnectCount = 0;
+    this.destroyed = false;
+    this.subscriptionGeneration = 0;
     this.lastSeq = 0;
     this.transcriptEvents = [];
     this.seenEvents = {};
@@ -455,10 +460,7 @@
   };
 
   AgentChatWidget.prototype.clearSelectedSession = function () {
-    if (this.es) {
-      this.es.close();
-      this.es = null;
-    }
+    this.closeSSE("session-cleared");
     this.sessionId = "";
     this.ownerInstanceId = "";
     this.sessionRoute = null;
@@ -627,6 +629,7 @@
   AgentChatWidget.prototype.openSession = function (sessionId, ownerInstanceId, options) {
     const self = this;
     options = options || {};
+    const generation = ++this.subscriptionGeneration;
     if (this.drafts && ownerInstanceId) this.drafts.setInstance(ownerInstanceId);
     if (this.drafts) this.drafts.switchSession(sessionId);
     this.sessionId = sessionId;
@@ -641,6 +644,7 @@
     this.setPlaceholder("Locating session owner…");
     return this.resolveSessionRoute(sessionId, this.ownerInstanceId)
       .then(function (route) {
+        if (self.destroyed || generation !== self.subscriptionGeneration) return null;
         self.sessionRoute = route;
         self.ownerInstanceId = route.owner && route.owner.instance_id || self.ownerInstanceId;
         self.root.dataset.ownerInstanceId = self.ownerInstanceId;
@@ -667,6 +671,7 @@
         }
         if (route.live) {
           return self.api("/sessions/" + encodeURIComponent(sessionId)).then(function (snap) {
+            if (self.destroyed || generation !== self.subscriptionGeneration) return null;
             if (self.startupRetryId) clearTimeout(self.startupRetryId);
             self.startupRetryId = null;
             self.showRecoveryActions({});
@@ -693,6 +698,7 @@
         });
       })
       .catch(function (err) {
+        if (self.destroyed || generation !== self.subscriptionGeneration) return null;
         if (self.retryAfterStartupRecovery(err)) return null;
         const code = apiErrorCode(err);
         if (code === "session_not_live" || code === "session_deleted") {
@@ -1170,19 +1176,37 @@
 
   AgentChatWidget.prototype.connectSSE = function () {
     const self = this;
-    if (this.es) {
-      this.es.close();
-      this.es = null;
-    }
-    if (!this.sessionId) return;
+    if (this.destroyed || !this.sessionId) return;
+    if (
+      this.es &&
+      this.esSessionId === this.sessionId &&
+      this.esApiBase === this.apiBase &&
+      this.es.readyState !== EventSource.CLOSED
+    ) return;
+    this.closeSSE("replaced");
     const url = this.apiBase + "/sessions/" + this.sessionId + "/events?after=" + this.lastSeq;
     const es = new EventSource(url);
     this.es = es;
+    this.esSessionId = this.sessionId;
+    this.esApiBase = this.apiBase;
+    this.sseReconnectCount = 0;
+    console.debug("[PA agent SSE] create", {
+      sessionId: this.esSessionId,
+      apiBase: this.esApiBase,
+      reconnectCount: this.sseReconnectCount,
+      readyState: es.readyState,
+    });
     es.onopen = function () {
+      if (self.es !== es || self.destroyed) {
+        es.close();
+        return;
+      }
       self.connectionNoticeShown = false;
       self.api("/sessions/" + self.sessionId).then(function (snap) {
+        if (self.es !== es || self.destroyed) return;
         self.applySnapshot(snap);
       }).catch(function (err) {
+        if (self.es !== es || self.destroyed) return;
         const code = apiErrorCode(err);
         if (code === "session_not_live" || code === "session_deleted") {
           self.resolveSessionNotLive(err, self.sessionId);
@@ -1234,6 +1258,14 @@
     // Do not also set es.onmessage — that would double-dispatch default
     // "message" events (addEventListener("message") is already registered).
     es.onerror = function () {
+      if (self.es !== es || self.destroyed) return;
+      self.sseReconnectCount += 1;
+      console.debug("[PA agent SSE] reconnect", {
+        sessionId: self.esSessionId,
+        apiBase: self.esApiBase,
+        reconnectCount: self.sseReconnectCount,
+        readyState: es.readyState,
+      });
       self.setStatus("offline");
       if (!self.connectionNoticeShown) {
         self.connectionNoticeShown = true;
@@ -1245,6 +1277,38 @@
         );
       }
     };
+  };
+
+  AgentChatWidget.prototype.closeSSE = function (reason) {
+    this.subscriptionGeneration += 1;
+    const es = this.es;
+    if (!es) return;
+    console.debug("[PA agent SSE] close", {
+      sessionId: this.esSessionId,
+      apiBase: this.esApiBase,
+      reason: reason || "unspecified",
+      reconnectCount: this.sseReconnectCount,
+      readyState: es.readyState,
+    });
+    es.close();
+    this.es = null;
+    this.esSessionId = "";
+    this.esApiBase = "";
+  };
+
+  AgentChatWidget.prototype.destroy = function (reason) {
+    if (this.destroyed) return;
+    this.destroyed = true;
+    this.closeSSE(reason || "widget-destroyed");
+    this.stopBrowserRefresh();
+    this.setTurnActive(false);
+    if (this.startupRetryId) clearTimeout(this.startupRetryId);
+    this.startupRetryId = null;
+    Object.keys(this.toolTimers).forEach(function (key) {
+      clearTimeout(this.toolTimers[key]);
+    }, this);
+    this.toolTimers = {};
+    if (this.root && this.root._acw === this) this.root._acw = null;
   };
 
   AgentChatWidget.prototype.handleEvent = function (event, replay, record) {
@@ -1991,10 +2055,7 @@
     if (!sessionId || (sessionId === this.sessionId && (!ownerInstanceId || ownerInstanceId === this.ownerInstanceId))) return;
     if (this.settingsDirty && !window.confirm("Discard unsaved Agent settings changes and switch sessions?")) return;
     if (this.settingsDirty) this.resetSettingsDraft();
-    if (this.es) {
-      this.es.close();
-      this.es = null;
-    }
+    this.closeSSE("session-switched");
     this.lastSeq = 0;
     this.transcriptEvents = [];
     this.seenEvents = {};
@@ -2011,10 +2072,7 @@
   AgentChatWidget.prototype.setApiBase = function (apiBase, instanceId) {
     const next = String(apiBase || "/api/agent").replace(/\/$/, "");
     if (next === this.apiBase) return;
-    if (this.es) {
-      this.es.close();
-      this.es = null;
-    }
+    this.closeSSE("api-base-changed");
     this.stopBrowserRefresh();
     this.apiBase = next;
     if (this.drafts) this.drafts.setInstance(instanceId);
@@ -2125,10 +2183,7 @@
     this.setTurnActive(false);
     this.setStatus("offline");
     this.setComposerEnabled(false);
-    if (this.es) {
-      this.es.close();
-      this.es = null;
-    }
+    this.closeSSE("session-ended");
     this.addBubble("system", message || "Session ended.", new Date().toISOString(), {
       system: true,
       forceVisible: true,
@@ -2282,8 +2337,7 @@
     if (!this.sessionId) return;
     this.api("/sessions/" + this.sessionId + "/close", { method: "POST", body: "{}" })
       .then(function () {
-        if (self.es) self.es.close();
-        self.es = null;
+        self.closeSSE("session-restarted");
         if (self.drafts) self.drafts.clear(true, "Draft cleared because this session ended.");
         if (self.drafts) self.drafts.switchSession("");
         self.sessionId = "";
@@ -2815,8 +2869,34 @@
     bindSessionSidebar(root);
   }
 
+  function destroyAll(scope, reason) {
+    const target = scope || document;
+    const roots = [];
+    if (target.matches && target.matches("[data-agent-chat]")) roots.push(target);
+    if (target.querySelectorAll) {
+      target.querySelectorAll("[data-agent-chat]").forEach(function (root) {
+        roots.push(root);
+      });
+    }
+    roots.forEach(function (root) {
+      if (root._acw && typeof root._acw.destroy === "function") {
+        root._acw.destroy(reason || "subtree-removed");
+      }
+    });
+  }
+
+  function closeAll(scope, reason) {
+    const target = scope || document;
+    if (target.querySelectorAll) {
+      target.querySelectorAll("[data-agent-chat]").forEach(function (root) {
+        if (root._acw) root._acw.closeSSE(reason || "page-suspended");
+      });
+    }
+  }
+
   window.PAAgentChat = {
     mount: mountAll,
+    destroy: destroyAll,
     AgentChatWidget: AgentChatWidget,
     refreshSessionList: refreshSessionList,
     anchoredScrollTop: anchoredScrollTop,
@@ -2828,6 +2908,16 @@
     mountAll(document);
   });
   if (window.addEventListener) {
+    window.addEventListener("pagehide", function (event) {
+      if (event.persisted) closeAll(document, "pagehide-persisted");
+      else destroyAll(document, "pagehide");
+    });
+    window.addEventListener("pageshow", function (event) {
+      if (!event.persisted) return;
+      document.querySelectorAll("[data-agent-chat]").forEach(function (root) {
+        if (root._acw && root._acw.sessionId) root._acw.connectSSE();
+      });
+    });
     window.addEventListener("popstate", function () {
       const root = document.querySelector(".page-agent [data-agent-chat]");
       if (!root || !root._acw) return;
@@ -2844,6 +2934,13 @@
     document.body && document.body.addEventListener(evt, function (e) {
       const target = (e.detail && (e.detail.target || (e.detail.ctx && e.detail.ctx.target))) || e.target;
       mountAll(target || document);
+    });
+  });
+  ["htmx:before:swap", "htmx:beforeSwap"].forEach(function (evt) {
+    document.body && document.body.addEventListener(evt, function (e) {
+      let target = (e.detail && (e.detail.target || (e.detail.ctx && e.detail.ctx.target))) || e.target;
+      if (typeof target === "string") target = document.querySelector(target);
+      destroyAll(target || document, "spa-swap");
     });
   });
 })();
