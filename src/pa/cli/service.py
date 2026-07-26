@@ -2,18 +2,21 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import shlex
 import shutil
 import subprocess
 import sys
 import time
-from xml.sax.saxutils import escape
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Callable
+from xml.sax.saxutils import escape
 
 from pa.config import Settings
+from pa.core.logging import redact_log_text
 from pa.packaging.service_env import service_environment
 
 LABEL = "com.pa.server"
@@ -36,6 +39,44 @@ class ServiceStatus:
     plist_path: Path
     log_path: Path
     backend: str = "none"
+
+
+@dataclass(frozen=True)
+class RestartDiagnostic:
+    """Structured evidence from the host-manager restart dispatch boundary."""
+
+    state: str
+    backend: str
+    command: list[str]
+    started_at: str
+    completed_at: str
+    duration_ms: float
+    exit_code: int | None
+    signal: int | None
+    stdout: str
+    stderr: str
+
+    def public_dict(self) -> dict[str, object]:
+        return {
+            "state": self.state,
+            "backend": self.backend,
+            "command": self.command,
+            "started_at": self.started_at,
+            "completed_at": self.completed_at,
+            "duration_ms": self.duration_ms,
+            "exit_code": self.exit_code,
+            "signal": self.signal,
+            "stdout": self.stdout,
+            "stderr": self.stderr,
+        }
+
+
+class RestartRejectedError(RuntimeError):
+    """The host manager synchronously rejected a restart dispatch."""
+
+    def __init__(self, message: str, diagnostic: RestartDiagnostic) -> None:
+        super().__init__(message)
+        self.diagnostic = diagnostic
 
 
 def _is_darwin() -> bool:
@@ -239,6 +280,51 @@ def _run_systemctl(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _run_systemd_run(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["systemd-run", "--user", *args],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+
+
+def _restart_diagnostic(
+    *,
+    state: str,
+    backend: str,
+    command: list[str],
+    started_at: datetime,
+    started_monotonic: float,
+    result: subprocess.CompletedProcess[str] | None = None,
+    stdout: object = "",
+    stderr: object = "",
+) -> RestartDiagnostic:
+    completed_at = datetime.now(UTC)
+    returncode = result.returncode if result is not None else None
+    signal = -returncode if returncode is not None and returncode < 0 else None
+    exit_code = returncode if returncode is not None and returncode >= 0 else None
+    return RestartDiagnostic(
+        state=state,
+        backend=backend,
+        command=command,
+        started_at=started_at.isoformat(),
+        completed_at=completed_at.isoformat(),
+        duration_ms=round((time.monotonic() - started_monotonic) * 1000, 3),
+        exit_code=exit_code,
+        signal=signal,
+        stdout=redact_log_text(result.stdout if result is not None else stdout),
+        stderr=redact_log_text(result.stderr if result is not None else stderr),
+    )
+
+
+def _systemd_restart_unit_name(operation_id: str | None) -> str:
+    identity = operation_id or f"{os.getpid()}-{time.time_ns()}"
+    digest = hashlib.sha256(identity.encode()).hexdigest()[:24]
+    return f"pa-update-restart-{digest}.service"
+
+
 def _launchctl_io_error(result: subprocess.CompletedProcess[str]) -> bool:
     text = f"{result.stderr or ''}\n{result.stdout or ''}".lower()
     return "input/output error" in text or "bootstrap failed: 5" in text
@@ -376,7 +462,9 @@ def start(settings: Settings | None = None) -> None:
     settings = settings or Settings()
     if _is_darwin():
         if not _plist_path().exists():
-            raise RuntimeError("PA service not installed. Run: pa install --service-only")
+            raise RuntimeError(
+                "PA service not installed. Run: pa install --service-only"
+            )
         if not _launchd_job_loaded():
             bootstrap()
         if _wait_launchd_running(timeout=5.0):
@@ -425,7 +513,9 @@ def restart(
     settings = settings or Settings()
     if _is_darwin():
         if not _plist_path().exists():
-            raise RuntimeError("PA service not installed. Run: pa install --service-only")
+            raise RuntimeError(
+                "PA service not installed. Run: pa install --service-only"
+            )
         # Unload fully, rewrite the plist, then bootstrap. RunAtLoad starts the
         # job; avoid kickstart -k unless the process never comes up.
         if _launchd_job_loaded():
@@ -461,7 +551,7 @@ def restart(
 
 def _schedule_launchd_rebootstrap(
     plist: Path, *, log_path: Path | None = None
-) -> None:
+) -> list[str]:
     """Detached bootout+bootstrap so an in-process updater can exit cleanly.
 
     Writing a new plist is not enough: launchd keeps the previously loaded job
@@ -518,19 +608,24 @@ done
 echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) bootstrap failed after retries"
 exit 1
 """
+    command = ["/bin/bash", "-c", script]
     subprocess.Popen(
-        ["/bin/bash", "-c", script],
+        command,
         start_new_session=True,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         close_fds=True,
     )
+    return command
 
 
 def request_restart(
-    settings: Settings | None = None, *, progress: ServiceProgress | None = None
-) -> None:
+    settings: Settings | None = None,
+    *,
+    progress: ServiceProgress | None = None,
+    operation_id: str | None = None,
+) -> RestartDiagnostic:
     """Ask the host manager to restart the service without managing our own exit.
 
     This path is for code running inside the PA service. A synchronous
@@ -548,29 +643,137 @@ def request_restart(
 
     if _is_darwin():
         if not _plist_path().exists():
-            raise RuntimeError("PA service not installed. Run: pa install --service-only")
+            raise RuntimeError(
+                "PA service not installed. Run: pa install --service-only"
+            )
+        started_at = datetime.now(UTC)
+        started_monotonic = time.monotonic()
         _report(
             progress,
             "Scheduling a launchd reload so the updated service definition is used.",
         )
-        _schedule_launchd_rebootstrap(
-            _plist_path(),
-            log_path=settings.data_dir / "logs" / "service-rebootstrap.log",
-        )
+        try:
+            command = _schedule_launchd_rebootstrap(
+                _plist_path(),
+                log_path=settings.data_dir / "logs" / "service-rebootstrap.log",
+            )
+        except OSError as exc:
+            command = ["/bin/bash", "-c", "<launchd rebootstrap script>"]
+            diagnostic = _restart_diagnostic(
+                state="restart_rejected",
+                backend="launchd",
+                command=command,
+                started_at=started_at,
+                started_monotonic=started_monotonic,
+                stderr=exc,
+            )
+            raise RestartRejectedError(str(exc), diagnostic) from exc
         _report(progress, "launchd reload scheduled; waiting for host-managed restart.")
-        return
+        return _restart_diagnostic(
+            state="restart_requested",
+            backend="launchd",
+            command=command,
+            started_at=started_at,
+            started_monotonic=started_monotonic,
+            result=subprocess.CompletedProcess(command, 0, "", ""),
+        )
 
     if _is_linux():
         _report(progress, "Reloading systemd unit definitions.")
+        reload_started_at = datetime.now(UTC)
+        reload_started_monotonic = time.monotonic()
+        reload_command = ["systemctl", "--user", "daemon-reload"]
         reload = _run_systemctl("daemon-reload")
         if reload.returncode != 0:
-            raise RuntimeError(reload.stderr.strip() or "systemctl daemon-reload failed")
-        _report(progress, "Handing the non-blocking restart to systemd.")
-        result = _run_systemctl("restart", "--no-block", SYSTEMD_UNIT)
-        if result.returncode != 0:
-            raise RuntimeError(result.stderr.strip() or "systemctl restart request failed")
-        _report(progress, "systemd accepted the restart request.")
-        return
+            diagnostic = _restart_diagnostic(
+                state="restart_rejected",
+                backend="systemd",
+                command=reload_command,
+                started_at=reload_started_at,
+                started_monotonic=reload_started_monotonic,
+                result=reload,
+            )
+            raise RestartRejectedError(
+                reload.stderr.strip() or "systemctl daemon-reload failed", diagnostic
+            )
+
+        # systemd-run asks the user manager to create a new transient unit. The
+        # delayed systemctl process therefore lives outside pa-server.service's
+        # cgroup and survives teardown of the service that requested the update.
+        transient_unit = _systemd_restart_unit_name(operation_id)
+        restart_command = [
+            "systemctl",
+            "--user",
+            "restart",
+            "--no-block",
+            SYSTEMD_UNIT,
+        ]
+        restart_script = f"sleep 1; exec {shlex.join(restart_command)}"
+        run_args = [
+            "--unit",
+            transient_unit,
+            "--collect",
+            "--no-block",
+            "--property",
+            "Type=oneshot",
+            "--",
+            "/bin/sh",
+            "-c",
+            restart_script,
+        ]
+        dispatch_command = ["systemd-run", "--user", *run_args]
+        started_at = datetime.now(UTC)
+        started_monotonic = time.monotonic()
+        _report(progress, "Requesting a detached systemd restart unit.")
+        try:
+            result = _run_systemd_run(*run_args)
+        except subprocess.TimeoutExpired as exc:
+            diagnostic = _restart_diagnostic(
+                state="restart_response_lost",
+                backend="systemd",
+                command=dispatch_command,
+                started_at=started_at,
+                started_monotonic=started_monotonic,
+                stdout=exc.stdout or "",
+                stderr=exc.stderr or exc,
+            )
+            _report(progress, "Restart requested; waiting for peer health.")
+            return diagnostic
+        except OSError as exc:
+            diagnostic = _restart_diagnostic(
+                state="restart_rejected",
+                backend="systemd",
+                command=dispatch_command,
+                started_at=started_at,
+                started_monotonic=started_monotonic,
+                stderr=exc,
+            )
+            raise RestartRejectedError(str(exc), diagnostic) from exc
+        if result.returncode > 0:
+            diagnostic = _restart_diagnostic(
+                state="restart_rejected",
+                backend="systemd",
+                command=dispatch_command,
+                started_at=started_at,
+                started_monotonic=started_monotonic,
+                result=result,
+            )
+            raise RestartRejectedError(
+                result.stderr.strip() or "systemd rejected restart request", diagnostic
+            )
+        state = (
+            "restart_response_lost" if result.returncode < 0 else "restart_requested"
+        )
+        diagnostic = _restart_diagnostic(
+            state=state,
+            backend="systemd",
+            command=dispatch_command,
+            started_at=started_at,
+            started_monotonic=started_monotonic,
+            result=result,
+        )
+        _report(progress, "Restart requested; waiting for peer health.")
+        return diagnostic
 
     raise RuntimeError(f"Unsupported platform: {sys.platform}")
 
@@ -602,7 +805,9 @@ def get_status(settings: Settings | None = None) -> ServiceStatus:
         if installed:
             result = _run_systemctl("is-active", SYSTEMD_UNIT)
             running = result.returncode == 0
-            loaded = running or _run_systemctl("is-enabled", SYSTEMD_UNIT).returncode == 0
+            loaded = (
+                running or _run_systemctl("is-enabled", SYSTEMD_UNIT).returncode == 0
+            )
 
     return ServiceStatus(
         installed=installed,

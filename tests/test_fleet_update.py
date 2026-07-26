@@ -5,31 +5,36 @@ from __future__ import annotations
 import asyncio
 import tempfile
 import threading
-from datetime import UTC, datetime, timedelta
 import unittest
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
-import pa.modules.fleet as fleet_module
 
+import pa.modules.fleet as fleet_module
+from pa.cli.service import RestartDiagnostic, RestartRejectedError
 from pa.config import Settings
 from pa.fleet.registry import FleetRegistry
 from pa.fleet.update import (
     FleetUpdateJobStore,
     FleetUpdateRequest,
     UpdatePhase,
+    _peer_json,
     recover_update_jobs,
     run_update_job,
 )
-from pa.fleet.update import _peer_json
 from pa.install.metadata import (
     InstallMetadata,
     load_install_metadata,
     save_install_metadata,
 )
-from pa.modules.fleet import _require_instance, fleet_instance_update_events, peer_update
+from pa.modules.fleet import (
+    _require_instance,
+    fleet_instance_update_events,
+    peer_update,
+)
 from pa.packaging.uv import resolve_uv_binary
 from pa.update.channels import (
     GitHubTrackChannel,
@@ -37,6 +42,33 @@ from pa.update.channels import (
     compare_versions,
     resolve_release,
 )
+
+
+def restart_diagnostic(state: str = "restart_requested") -> RestartDiagnostic:
+    return RestartDiagnostic(
+        state=state,
+        backend="systemd",
+        command=["systemd-run", "--user", "--unit", "pa-update-restart-test.service"],
+        started_at="2026-07-25T23:11:42+00:00",
+        completed_at="2026-07-25T23:11:42.100000+00:00",
+        duration_ms=100.0,
+        exit_code=(
+            0
+            if state == "restart_requested"
+            else 1
+            if state == "restart_rejected"
+            else None
+        ),
+        signal=15 if state == "restart_response_lost" else None,
+        stdout="queued",
+        stderr=(
+            "child terminated"
+            if state == "restart_response_lost"
+            else "permission denied"
+            if state == "restart_rejected"
+            else ""
+        ),
+    )
 
 
 class FleetUpdateStoreTests(unittest.TestCase):
@@ -133,6 +165,22 @@ class FleetUpdateStoreTests(unittest.TestCase):
         reloaded = FleetUpdateJobStore(self.data_dir).get(job.job_id)
         self.assertEqual(reloaded.phase, UpdatePhase.PREFLIGHT)
         self.assertEqual(reloaded.events[-1]["message"], "Checking peer")
+
+    def test_successful_job_durably_retains_restart_diagnostic(self) -> None:
+        store = FleetUpdateJobStore(self.data_dir)
+        job = store.create(self.instance, FleetUpdateRequest(), "release")
+        job.restart_state = "restart_response_lost"
+        job.restart_diagnostic = restart_diagnostic(
+            "restart_response_lost"
+        ).public_dict()
+        store.event(job, UpdatePhase.SUCCEEDED, "Verified PA 0.2.6")
+
+        reloaded = FleetUpdateJobStore(self.data_dir).get(job.job_id)
+        self.assertEqual(reloaded.phase, UpdatePhase.SUCCEEDED)
+        self.assertEqual(reloaded.restart_state, "restart_response_lost")
+        self.assertEqual(reloaded.restart_diagnostic["backend"], "systemd")
+        self.assertEqual(reloaded.restart_diagnostic["signal"], 15)
+        self.assertEqual(reloaded.events[-1]["severity"], "success")
 
     def test_persists_progress_and_backfills_legacy_jobs(self) -> None:
         store = FleetUpdateJobStore(self.data_dir)
@@ -234,7 +282,10 @@ class FleetUpdateWorkflowTests(unittest.IsolatedAsyncioTestCase):
 
         async def peer(_client, method, url, _settings, **_kwargs):
             if method == "GET" and "/api/fleet/peer-update/" in url:
-                return next(operation_statuses)
+                value = next(operation_statuses)
+                if isinstance(value, Exception):
+                    raise value
+                return value
             value = next(remaining)
             if isinstance(value, Exception):
                 raise value
@@ -494,6 +545,123 @@ class FleetUpdateWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(job.phase, UpdatePhase.SUCCEEDED)
         self.assertEqual(job.verified_version, job.expected_version)
 
+    async def test_ambiguous_restart_ack_is_neutral_and_diagnostic_survives_success(
+        self,
+    ) -> None:
+        diagnostic = restart_diagnostic("restart_response_lost").public_dict()
+        job = await self._run(
+            [
+                {"instance_id": "peer-1", "version": "0.2.5", "process_id": 10},
+                {"done": True},
+                {"target_version": "0.2.6"},
+                {"instance_id": "peer-1", "version": "0.2.6", "process_id": 11},
+            ],
+            install_statuses=[
+                {
+                    "status": "verification_required",
+                    "restart_state": "restart_response_lost",
+                    "restart_diagnostic": diagnostic,
+                    "message": "The restart request reported an error",
+                }
+            ],
+        )
+
+        self.assertEqual(job.phase, UpdatePhase.SUCCEEDED)
+        self.assertIsNone(job.error)
+        self.assertEqual(job.restart_state, "restart_response_lost")
+        self.assertEqual(job.restart_diagnostic["signal"], 15)
+        messages = [event["message"] for event in job.events]
+        self.assertNotIn("The restart request reported an error", messages)
+        self.assertIn("Restart requested; waiting for peer health.", messages)
+        self.assertFalse(
+            any(event["severity"] == "error" for event in job.events),
+            job.events,
+        )
+
+    async def test_temporary_peer_unreachability_then_verified_success(self) -> None:
+        job = await self._run(
+            [
+                {"instance_id": "peer-1", "version": "0.2.5", "process_id": 10},
+                {"done": True},
+                {"target_version": "0.2.6"},
+                {"instance_id": "peer-1", "version": "0.2.6", "process_id": 11},
+            ],
+            install_statuses=[
+                httpx.ConnectError("peer stopped during restart"),
+                {"status": "restart_requested"},
+            ],
+        )
+        self.assertEqual(job.phase, UpdatePhase.SUCCEEDED)
+        self.assertEqual(job.verified_version, "0.2.6")
+
+    async def test_confirmed_restart_rejection_is_prominent_and_retains_evidence(
+        self,
+    ) -> None:
+        diagnostic = restart_diagnostic("restart_rejected").public_dict()
+        job = await self._run(
+            [
+                {"instance_id": "peer-1", "version": "0.2.5"},
+                {"done": True},
+                {"target_version": "0.2.6"},
+            ],
+            install_statuses=[
+                {
+                    "status": "restart_rejected",
+                    "restart_state": "restart_rejected",
+                    "restart_diagnostic": diagnostic,
+                    "error": "permission denied",
+                }
+            ],
+        )
+        self.assertEqual(job.phase, UpdatePhase.FAILED)
+        self.assertIn("restart command was rejected", job.error.lower())
+        self.assertEqual(job.restart_diagnostic["exit_code"], 1)
+        self.assertEqual(job.events[-1]["severity"], "error")
+
+    async def test_old_process_is_not_accepted_as_restart_success(self) -> None:
+        job = await self._run(
+            [
+                {"instance_id": "peer-1", "version": "0.2.5", "process_id": 10},
+                {"done": True},
+                {"target_version": "0.2.6"},
+                {"instance_id": "peer-1", "version": "0.2.6", "process_id": 10},
+                {"instance_id": "peer-1", "version": "0.2.5", "process_id": 11},
+            ],
+        )
+        self.assertEqual(job.phase, UpdatePhase.FAILED)
+        self.assertIn("expected 0.2.6", job.error)
+
+    async def test_post_restart_identity_mismatch_fails(self) -> None:
+        job = await self._run(
+            [
+                {"instance_id": "peer-1", "version": "0.2.5"},
+                {"done": True},
+                {"target_version": "0.2.6"},
+                {"instance_id": "other", "version": "0.2.6"},
+            ],
+        )
+        self.assertEqual(job.phase, UpdatePhase.FAILED)
+        self.assertIn("Post-restart peer identity verification failed", job.error)
+
+    async def test_release_channel_mismatch_fails_even_when_version_matches(
+        self,
+    ) -> None:
+        job = await self._run(
+            [
+                {"instance_id": "peer-1", "version": "0.2.5"},
+                {"done": True},
+                {"target_version": "0.2.6"},
+                {
+                    "instance_id": "peer-1",
+                    "version": "0.2.6",
+                    "installed_version": "0.2.6",
+                    "install_channel": "dev",
+                },
+            ],
+        )
+        self.assertEqual(job.phase, UpdatePhase.FAILED)
+        self.assertIn("channel dev", job.error)
+
     async def _run_resumed(self, phase: UpdatePhase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -632,7 +800,9 @@ class PeerUpdateIdempotencyTests(unittest.IsolatedAsyncioTestCase):
             },
         )
 
-    async def test_active_installing_replay_returns_without_duplicate_task(self) -> None:
+    async def test_active_installing_replay_returns_without_duplicate_task(
+        self,
+    ) -> None:
         self._persist_installing()
         blocker = asyncio.Event()
         active = asyncio.create_task(blocker.wait())
@@ -658,14 +828,17 @@ class PeerUpdateIdempotencyTests(unittest.IsolatedAsyncioTestCase):
             patch("pa.update.channels.resolve_release", return_value=self.release),
             patch("pa.modules.fleet._peer_has_exact_release", return_value=False),
             patch("pa.update.runner.apply_update", return_value=update_result) as apply,
-            patch("pa.cli.service.request_restart"),
+            patch(
+                "pa.cli.service.request_restart",
+                return_value=restart_diagnostic(),
+            ),
             patch("pa.instance.quiesce.request_skip_quiesce"),
         ):
             await peer_update(self.request, self.body)
             await fleet_module._peer_update_task
         apply.assert_called_once()
         operation = fleet_module._read_peer_operation(self.settings, "job-123")
-        self.assertEqual(operation["status"], "restarting")
+        self.assertEqual(operation["status"], "restart_requested")
 
     async def test_stale_installing_exact_target_resumes_restart_without_reinstall(
         self,
@@ -675,7 +848,10 @@ class PeerUpdateIdempotencyTests(unittest.IsolatedAsyncioTestCase):
             patch("pa.update.channels.resolve_release", return_value=self.release),
             patch("pa.modules.fleet._peer_has_exact_release", return_value=True),
             patch("pa.update.runner.apply_update") as apply,
-            patch("pa.cli.service.request_restart") as restart,
+            patch(
+                "pa.cli.service.request_restart",
+                return_value=restart_diagnostic(),
+            ) as restart,
             patch("pa.instance.quiesce.request_skip_quiesce"),
         ):
             await peer_update(self.request, self.body)
@@ -683,7 +859,56 @@ class PeerUpdateIdempotencyTests(unittest.IsolatedAsyncioTestCase):
         apply.assert_not_called()
         restart.assert_called_once()
         operation = fleet_module._read_peer_operation(self.settings, "job-123")
-        self.assertEqual(operation["status"], "restarting")
+        self.assertEqual(operation["status"], "restart_requested")
+
+    async def test_restart_response_loss_is_verification_required_and_replay_safe(
+        self,
+    ) -> None:
+        self._persist_installing()
+        diagnostic = restart_diagnostic("restart_response_lost")
+        with (
+            patch("pa.update.channels.resolve_release", return_value=self.release),
+            patch("pa.modules.fleet._peer_has_exact_release", return_value=True),
+            patch("pa.cli.service.request_restart", return_value=diagnostic) as restart,
+            patch("pa.instance.quiesce.request_skip_quiesce"),
+        ):
+            await peer_update(self.request, self.body)
+            await fleet_module._peer_update_task
+        operation = fleet_module._read_peer_operation(self.settings, "job-123")
+        self.assertEqual(operation["status"], "verification_required")
+        self.assertEqual(operation["restart_state"], "restart_response_lost")
+        self.assertEqual(operation["restart_diagnostic"]["signal"], 15)
+        self.assertIsNone(operation["restart_diagnostic"]["exit_code"])
+        self.assertEqual(
+            operation["message"], "Restart requested; waiting for peer health."
+        )
+        restart.assert_called_once()
+
+        with patch("pa.update.channels.resolve_release") as resolve:
+            replay = await peer_update(self.request, self.body)
+        resolve.assert_not_called()
+        self.assertTrue(replay["accepted"])
+        self.assertEqual(replay["status"], "verification_required")
+
+    async def test_confirmed_restart_rejection_is_distinct_and_complete(self) -> None:
+        self._persist_installing()
+        diagnostic = restart_diagnostic("restart_rejected")
+        rejection = RestartRejectedError("permission denied", diagnostic)
+        with (
+            patch("pa.update.channels.resolve_release", return_value=self.release),
+            patch("pa.modules.fleet._peer_has_exact_release", return_value=True),
+            patch("pa.cli.service.request_restart", side_effect=rejection),
+            patch("pa.instance.quiesce.request_skip_quiesce"),
+        ):
+            await peer_update(self.request, self.body)
+            await fleet_module._peer_update_task
+        operation = fleet_module._read_peer_operation(self.settings, "job-123")
+        self.assertEqual(operation["status"], "restart_rejected")
+        self.assertEqual(operation["restart_state"], "restart_rejected")
+        self.assertEqual(operation["restart_diagnostic"]["backend"], "systemd")
+        self.assertEqual(operation["restart_diagnostic"]["exit_code"], 1)
+        self.assertEqual(operation["error"], "permission denied")
+        self.assertIn("rejected", operation["message"].lower())
 
 
 class FleetUpdateSSETests(unittest.IsolatedAsyncioTestCase):

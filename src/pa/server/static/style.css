@@ -2162,6 +2162,8 @@ code {
 }
 .fleet-update-progress progress { width: 100%; }
 #pa-fleet-update-log { max-height: 15rem; overflow: auto; }
+#pa-fleet-update-status[data-severity="error"] { color: var(--pa-danger); }
+#pa-fleet-update-status[data-severity="success"] { color: var(--pa-ok); }
 
 .agent-new-session-error {
   color: var(--pa-danger);

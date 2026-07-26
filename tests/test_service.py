@@ -2,22 +2,22 @@
 
 from __future__ import annotations
 
-import tempfile
-import unittest
 import asyncio
 import json
 import logging
+import tempfile
+import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from typer.testing import CliRunner
 
+from pa.acp.providers.metadata import save_credentials
 from pa.cli import service
 from pa.config import Settings
+from pa.core.kernel import Kernel
 from pa.core.logging import configure_logging
 from pa.domain.instance_config import InstanceConfig, save_instance_config
-from pa.acp.providers.metadata import save_credentials
-from pa.core.kernel import Kernel
 
 
 class InstallPlistTests(unittest.TestCase):
@@ -71,8 +71,8 @@ class InstallPlistTests(unittest.TestCase):
         self.assertIn("<key>KeepAlive</key>\n    <true/>", rendered)
         self.assertIn("<key>ExitTimeOut</key>\n    <integer>300</integer>", rendered)
 
-    def test_in_service_systemd_restart_reloads_unit_then_non_blocking(self) -> None:
-        accepted = MagicMock(returncode=0, stderr="", stdout="")
+    def test_in_service_systemd_restart_uses_detached_transient_unit(self) -> None:
+        accepted = MagicMock(returncode=0, stderr="", stdout="queued")
         progress = MagicMock()
         with (
             patch.object(service, "_is_darwin", return_value=False),
@@ -80,18 +80,81 @@ class InstallPlistTests(unittest.TestCase):
             patch.object(service, "find_service_binary", return_value=self.pa_bin),
             patch.object(service, "install_service") as install,
             patch.object(service, "_run_systemctl", return_value=accepted) as systemctl,
+            patch.object(
+                service, "_run_systemd_run", return_value=accepted
+            ) as systemd_run,
         ):
-            service.request_restart(self.settings, progress=progress)
+            diagnostic = service.request_restart(
+                self.settings, progress=progress, operation_id="operation-123"
+            )
 
         install.assert_called_once_with(self.settings, self.pa_bin)
+        systemctl.assert_called_once_with("daemon-reload")
+        args = systemd_run.call_args.args
         self.assertEqual(
-            [c.args for c in systemctl.call_args_list],
-            [
-                ("daemon-reload",),
-                ("restart", "--no-block", service.SYSTEMD_UNIT),
-            ],
+            args[:2], ("--unit", service._systemd_restart_unit_name("operation-123"))
         )
+        self.assertIn("--collect", args)
+        self.assertIn("--no-block", args)
+        self.assertIn("Type=oneshot", args)
+        self.assertIn("systemctl --user restart --no-block pa-server.service", args[-1])
+        self.assertEqual(diagnostic.state, "restart_requested")
+        self.assertEqual(diagnostic.backend, "systemd")
+        self.assertEqual(diagnostic.exit_code, 0)
+        self.assertIsNone(diagnostic.signal)
+        self.assertEqual(diagnostic.stdout, "queued")
+        self.assertGreaterEqual(diagnostic.duration_ms, 0)
         self.assertGreaterEqual(progress.call_count, 2)
+
+    def test_systemd_dispatch_signal_loss_requires_verification_not_failure(
+        self,
+    ) -> None:
+        reload = MagicMock(returncode=0, stderr="", stdout="")
+        interrupted = MagicMock(returncode=-15, stderr="teardown", stdout="accepted")
+        with (
+            patch.object(service, "_is_darwin", return_value=False),
+            patch.object(service, "_is_linux", return_value=True),
+            patch.object(service, "find_service_binary", return_value=None),
+            patch.object(service, "_run_systemctl", return_value=reload),
+            patch.object(service, "_run_systemd_run", return_value=interrupted),
+        ):
+            diagnostic = service.request_restart(
+                self.settings, operation_id="operation-123"
+            )
+
+        self.assertEqual(diagnostic.state, "restart_response_lost")
+        self.assertIsNone(diagnostic.exit_code)
+        self.assertEqual(diagnostic.signal, 15)
+        self.assertEqual(diagnostic.stdout, "accepted")
+        self.assertEqual(diagnostic.stderr, "teardown")
+
+    def test_systemd_rejection_is_confirmed_and_diagnostically_complete(self) -> None:
+        reload = MagicMock(returncode=0, stderr="", stdout="")
+        rejected = MagicMock(
+            returncode=1,
+            stderr="sync_token=super-secret permission denied",
+            stdout="manager reply",
+        )
+        with (
+            patch.object(service, "_is_darwin", return_value=False),
+            patch.object(service, "_is_linux", return_value=True),
+            patch.object(service, "find_service_binary", return_value=None),
+            patch.object(service, "_run_systemctl", return_value=reload),
+            patch.object(service, "_run_systemd_run", return_value=rejected),
+        ):
+            with self.assertRaises(service.RestartRejectedError) as raised:
+                service.request_restart(self.settings, operation_id="operation-123")
+
+        diagnostic = raised.exception.diagnostic
+        self.assertEqual(diagnostic.state, "restart_rejected")
+        self.assertEqual(diagnostic.backend, "systemd")
+        self.assertEqual(diagnostic.exit_code, 1)
+        self.assertIsNone(diagnostic.signal)
+        self.assertEqual(diagnostic.stdout, "manager reply")
+        self.assertIn("[redacted]", diagnostic.stderr)
+        self.assertNotIn("super-secret", diagnostic.stderr)
+        self.assertTrue(diagnostic.started_at)
+        self.assertTrue(diagnostic.completed_at)
 
     def test_in_service_launchd_restart_schedules_rebootstrap(self) -> None:
         settings = Settings(data_dir=Path(self._tmp.name))
@@ -105,8 +168,11 @@ class InstallPlistTests(unittest.TestCase):
             patch.object(service, "_run_launchctl") as launchctl,
         ):
             self.plist.write_text("installed")
-            service.request_restart(settings)
+            diagnostic = service.request_restart(settings)
 
+        self.assertEqual(diagnostic.state, "restart_requested")
+        self.assertEqual(diagnostic.backend, "launchd")
+        self.assertEqual(diagnostic.exit_code, 0)
         install.assert_called_once_with(settings, self.pa_bin)
         schedule.assert_called_once_with(
             self.plist,
@@ -142,9 +208,7 @@ class AutonomousHostControlsTests(unittest.TestCase):
             registry = MagicMock(modules=[])
             kernel = Kernel(ctx, registry)
 
-            with patch(
-                "pa.instance.quiesce.consume_skip_quiesce", return_value=False
-            ):
+            with patch("pa.instance.quiesce.consume_skip_quiesce", return_value=False):
                 asyncio.run(kernel.shutdown(MagicMock()))
 
             agent.quiesce.assert_awaited_once()
@@ -162,9 +226,7 @@ class AutonomousHostControlsTests(unittest.TestCase):
             ctx.services = {"instance_agent": agent}
             kernel = Kernel(ctx, MagicMock(modules=[]))
 
-            with patch(
-                "pa.instance.quiesce.consume_skip_quiesce", return_value=True
-            ):
+            with patch("pa.instance.quiesce.consume_skip_quiesce", return_value=True):
                 asyncio.run(kernel.shutdown(MagicMock()))
 
             agent.quiesce.assert_not_awaited()
