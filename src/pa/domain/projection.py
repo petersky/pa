@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import threading
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from functools import wraps
 from pathlib import Path
-from typing import Callable, Iterator, TypeVar
+from typing import TypeVar
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from pa.domain.card_summaries import fallback_card_summary
@@ -29,7 +31,9 @@ from pa.domain.models import (
     ItemKind,
     ItemStatus,
     ItemUpdate,
+    KnowledgeAuditEvent,
     KnowledgeEntry,
+    KnowledgeProvenance,
     Project,
     ProjectCreate,
     ProjectMembership,
@@ -211,9 +215,21 @@ class CardProjection:
                     review_at TEXT,
                     expires_at TEXT,
                     tags TEXT NOT NULL DEFAULT '[]',
+                    content_hash TEXT NOT NULL DEFAULT '',
+                    provenance TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS knowledge_audit_events (
+                    id TEXT PRIMARY KEY,
+                    knowledge_id TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    actor TEXT NOT NULL,
+                    payload TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_knowledge_audit_entry_time
+                    ON knowledge_audit_events(knowledge_id, created_at);
                 CREATE TABLE IF NOT EXISTS agent_transcript_events (
                     id TEXT PRIMARY KEY,
                     session_id TEXT NOT NULL,
@@ -334,11 +350,31 @@ class CardProjection:
             ("review_at", "TEXT"),
             ("expires_at", "TEXT"),
             ("updated_at", "TEXT"),
+            ("content_hash", "TEXT NOT NULL DEFAULT ''"),
+            ("provenance", "TEXT"),
         ):
             if knowledge_cols and col not in knowledge_cols:
                 conn.execute(f"ALTER TABLE knowledge ADD COLUMN {col} {decl}")
         if knowledge_cols and "updated_at" not in knowledge_cols:
             conn.execute("UPDATE knowledge SET updated_at = created_at")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS knowledge_audit_events (
+                id TEXT PRIMARY KEY,
+                knowledge_id TEXT NOT NULL,
+                action TEXT NOT NULL,
+                actor TEXT NOT NULL,
+                payload TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_knowledge_audit_entry_time
+            ON knowledge_audit_events(knowledge_id, created_at)
+            """
+        )
 
         repository_cols = {
             row[1] for row in conn.execute("PRAGMA table_info(repositories)").fetchall()
@@ -1918,13 +1954,18 @@ class CardProjection:
         return [self._row_to_transcript(row) for row in rows]
 
     def add_knowledge(self, entry: KnowledgeEntry) -> KnowledgeEntry:
+        if not entry.content_hash:
+            entry.content_hash = hashlib.sha256(entry.summary.encode("utf-8")).hexdigest()
         with self._conn() as conn:
             duplicate = conn.execute(
                 """SELECT * FROM knowledge
-                   WHERE lower(trim(summary)) = lower(trim(?))
-                     AND kind = ? AND scope = ? AND status = 'active'
+                   WHERE (
+                       (content_hash != '' AND content_hash = ?)
+                       OR lower(trim(summary)) = lower(trim(?))
+                   )
+                     AND kind = ? AND scope = ? AND status IN ('active', 'review')
                    ORDER BY updated_at DESC LIMIT 1""",
-                (entry.summary, entry.kind.value, entry.scope),
+                (entry.content_hash, entry.summary, entry.kind.value, entry.scope),
             ).fetchone()
             if duplicate:
                 return self._row_to_knowledge(duplicate)
@@ -1933,8 +1974,9 @@ class CardProjection:
                 INSERT INTO knowledge (
                     id, session_id, item_id, card_id, summary, source, source_url,
                     kind, status, scope, owner, confidence, supersedes_id,
-                    review_at, expires_at, tags, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    review_at, expires_at, tags, content_hash, provenance,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     entry.id,
@@ -1953,6 +1995,10 @@ class CardProjection:
                     entry.review_at.isoformat() if entry.review_at else None,
                     entry.expires_at.isoformat() if entry.expires_at else None,
                     json.dumps(entry.tags),
+                    entry.content_hash,
+                    json.dumps(entry.provenance.model_dump(mode="json"))
+                    if entry.provenance
+                    else None,
                     entry.created_at.isoformat(),
                     entry.updated_at.isoformat(),
                 ),
@@ -1968,6 +2014,7 @@ class CardProjection:
         kind: str | None = None,
         status: str | None = "active",
         scope: str | None = None,
+        source: str | None = None,
     ) -> list[KnowledgeEntry]:
         sql = "SELECT * FROM knowledge WHERE 1=1"
         params: list[str | int] = []
@@ -1987,6 +2034,9 @@ class CardProjection:
         if scope:
             sql += " AND scope = ?"
             params.append(scope)
+        if source:
+            sql += " AND source = ?"
+            params.append(source)
         sql += " ORDER BY updated_at DESC, created_at DESC LIMIT ?"
         params.append(limit)
         with self._conn() as conn:
@@ -2009,13 +2059,17 @@ class CardProjection:
             return current
         for key, value in changes.items():
             setattr(current, key, value)
+        if "summary" in changes:
+            current.content_hash = hashlib.sha256(
+                current.summary.encode("utf-8")
+            ).hexdigest()
         current.updated_at = datetime.now(UTC)
         with self._conn() as conn:
             conn.execute(
                 """
                 UPDATE knowledge SET summary=?, source=?, source_url=?, kind=?, status=?,
                     scope=?, owner=?, confidence=?, supersedes_id=?, review_at=?, expires_at=?,
-                    tags=?, updated_at=? WHERE id=?
+                    tags=?, content_hash=?, updated_at=? WHERE id=?
                 """,
                 (
                     current.summary,
@@ -2030,11 +2084,75 @@ class CardProjection:
                     current.review_at.isoformat() if current.review_at else None,
                     current.expires_at.isoformat() if current.expires_at else None,
                     json.dumps(current.tags),
+                    current.content_hash,
                     current.updated_at.isoformat(),
                     entry_id,
                 ),
             )
         return current
+
+    def add_knowledge_audit(self, event: KnowledgeAuditEvent) -> KnowledgeAuditEvent:
+        with self._conn() as conn:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO knowledge_audit_events
+                (id, knowledge_id, action, actor, payload, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event.id,
+                    event.knowledge_id,
+                    event.action,
+                    event.actor,
+                    json.dumps(event.payload),
+                    event.created_at.isoformat(),
+                ),
+            )
+        return event
+
+    def list_knowledge_audit(
+        self, knowledge_id: str, *, limit: int = 100
+    ) -> list[KnowledgeAuditEvent]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM knowledge_audit_events
+                WHERE knowledge_id = ?
+                ORDER BY created_at DESC, id DESC LIMIT ?
+                """,
+                (knowledge_id, limit),
+            ).fetchall()
+        return [
+            KnowledgeAuditEvent(
+                id=row["id"],
+                knowledge_id=row["knowledge_id"],
+                action=row["action"],
+                actor=row["actor"],
+                payload=json.loads(row["payload"] or "{}"),
+                created_at=datetime.fromisoformat(row["created_at"]),
+            )
+            for row in rows
+        ]
+
+    def list_transcript_events_range(
+        self,
+        session_id: str,
+        *,
+        start_seq: int | None = None,
+        end_seq: int | None = None,
+    ) -> list[TranscriptEvent]:
+        sql = "SELECT * FROM agent_transcript_events WHERE session_id = ?"
+        params: list[str | int] = [session_id]
+        if start_seq is not None:
+            sql += " AND seq >= ?"
+            params.append(start_seq)
+        if end_seq is not None:
+            sql += " AND seq <= ?"
+            params.append(end_seq)
+        sql += " ORDER BY seq ASC"
+        with self._conn() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [self._row_to_transcript(row) for row in rows]
 
     @serialized_mutation
     def rebuild_from_log(self, realm_id: str) -> None:
@@ -2232,6 +2350,12 @@ class CardProjection:
             if "expires_at" in keys and row["expires_at"]
             else None,
             tags=json.loads(row["tags"]),
+            content_hash=row["content_hash"] if "content_hash" in keys else "",
+            provenance=KnowledgeProvenance.model_validate(
+                json.loads(row["provenance"])
+            )
+            if "provenance" in keys and row["provenance"]
+            else None,
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"])
             if "updated_at" in keys and row["updated_at"]

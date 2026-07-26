@@ -9,6 +9,7 @@ import shutil
 from datetime import UTC, datetime, timedelta
 from itertools import zip_longest
 from pathlib import Path
+from typing import Literal
 from urllib.parse import quote, urlencode, urlsplit
 from uuid import uuid4
 
@@ -21,6 +22,7 @@ from fastapi.responses import (
     RedirectResponse,
     StreamingResponse,
 )
+from pydantic import BaseModel, Field
 
 from pa.attachments import AttachmentError, AttachmentStore, safe_filename
 from pa.auth.csrf import token_for_request
@@ -41,6 +43,7 @@ from pa.domain.models import (
     ItemKind,
     ItemStatus,
     ItemUpdate,
+    KnowledgeAuditEvent,
     KnowledgeEntry,
     KnowledgeKind,
     KnowledgeStatus,
@@ -48,6 +51,12 @@ from pa.domain.models import (
 )
 from pa.domain.session_selection import preferred_sessions_by_card
 from pa.domain.store import get_store
+from pa.knowledge.capture import (
+    audit_knowledge_records,
+    promote_from_transcript,
+    record_lifecycle_change,
+    regenerate_knowledge,
+)
 
 router = APIRouter()
 ui_router = APIRouter()
@@ -63,6 +72,37 @@ SAFE_IMAGE_TYPES = {
     "image/png",
     "image/webp",
 }
+
+
+class KnowledgePromotionRequest(BaseModel):
+    session_id: str
+    summary: str | None = None
+    start_seq: int | None = Field(default=None, ge=1)
+    end_seq: int | None = Field(default=None, ge=1)
+    kind: KnowledgeKind = KnowledgeKind.MEMORY
+    scope: str = "realm"
+    source_url: str | None = None
+    confidence: float | None = Field(default=None, ge=0, le=1)
+    card_id: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    supersedes_id: str | None = None
+    review_at: datetime | None = None
+    expires_at: datetime | None = None
+
+
+class KnowledgeBulkRequest(BaseModel):
+    ids: list[str] = Field(min_length=1, max_length=500)
+    action: Literal["archive", "supersede"]
+
+
+def _require_memory_editor(request: Request) -> str:
+    user = getattr(request.state, "user", None)
+    if not user or getattr(user, "role", "viewer") not in {"editor", "admin"}:
+        raise HTTPException(
+            status_code=403,
+            detail="Memory promotion and lifecycle changes require editor access",
+        )
+    return get_principal_id(request)
 
 
 @router.get("/cards/events")
@@ -683,9 +723,15 @@ def _knowledge_context(request: Request) -> dict:
     kind = request.query_params.get("kind", "").strip() or None
     status = request.query_params.get("status", "active").strip() or None
     scope = request.query_params.get("scope", "").strip() or None
+    source = request.query_params.get("source", "").strip() or None
     return {
         "knowledge": store.list_knowledge(
-            limit=100, search=query or None, kind=kind, status=status, scope=scope
+            limit=100,
+            search=query or None,
+            kind=kind,
+            status=status,
+            scope=scope,
+            source=source,
         ),
         "cards": store.list_cards(realm_id=realm),
         "items": store.list_cards(realm_id=realm),
@@ -697,7 +743,9 @@ def _knowledge_context(request: Request) -> dict:
             "kind": kind or "",
             "status": status or "",
             "scope": scope or "",
+            "source": source or "",
         },
+        "knowledge_sources": ["promoted", "manual", "generated", "imported"],
         "promote_session_id": request.query_params.get("session", ""),
         "realms": get_settings().subscribed_realms,
         "active_realm": realm,
@@ -938,6 +986,7 @@ def list_knowledge(
     kind: KnowledgeKind | None = None,
     status: KnowledgeStatus | None = KnowledgeStatus.ACTIVE,
     scope: str | None = None,
+    source: str | None = None,
 ) -> list[dict]:
     entries = get_store().list_knowledge(
         item_id=item_id,
@@ -946,22 +995,125 @@ def list_knowledge(
         kind=kind.value if kind else None,
         status=status.value if status else None,
         scope=scope,
+        source=source,
     )
     return [entry.model_dump(mode="json") for entry in entries]
 
 
 @router.post("/knowledge", status_code=201)
 def create_knowledge(request: Request, data: KnowledgeEntry) -> dict:
+    actor = _require_memory_editor(request)
     if not data.owner:
-        data.owner = get_principal_id(request)
-    return get_store().add_knowledge(data).model_dump(mode="json")
+        data.owner = actor
+    if data.source in {"acp_session", "promoted"} and not data.provenance:
+        raise HTTPException(
+            status_code=422,
+            detail="Transcript-derived Memory must use the promotion API with provenance",
+        )
+    entry = get_store().add_knowledge(data)
+    get_store().add_knowledge_audit(
+        KnowledgeAuditEvent(
+            knowledge_id=entry.id,
+            action="created",
+            actor=actor,
+            payload={"source": entry.source, "scope": entry.scope},
+        )
+    )
+    return entry.model_dump(mode="json")
+
+
+@router.post("/knowledge/promote", status_code=201)
+def promote_knowledge(request: Request, data: KnowledgePromotionRequest) -> dict:
+    actor = _require_memory_editor(request)
+    try:
+        entry = promote_from_transcript(
+            get_store(),
+            session_id=data.session_id,
+            actor=actor,
+            summary=data.summary,
+            start_seq=data.start_seq,
+            end_seq=data.end_seq,
+            kind=data.kind,
+            scope=data.scope,
+            source_url=data.source_url,
+            confidence=data.confidence,
+            card_id=data.card_id,
+            tags=data.tags,
+            supersedes_id=data.supersedes_id,
+            review_at=data.review_at,
+            expires_at=data.expires_at,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return entry.model_dump(mode="json")
+
+
+@router.get("/knowledge/audit")
+def audit_knowledge() -> dict:
+    records = audit_knowledge_records(get_store())
+    return {"records": records, "count": len(records), "mutated": False}
+
+
+@router.get("/knowledge/{entry_id}/audit")
+def knowledge_audit_events(entry_id: str) -> list[dict]:
+    if not get_store().get_knowledge(entry_id):
+        raise HTTPException(status_code=404, detail="Memory not found")
+    return [
+        event.model_dump(mode="json")
+        for event in get_store().list_knowledge_audit(entry_id)
+    ]
+
+
+@router.post("/knowledge/{entry_id}/regenerate", status_code=201)
+def regenerate_knowledge_api(request: Request, entry_id: str) -> dict:
+    actor = _require_memory_editor(request)
+    try:
+        entry = regenerate_knowledge(get_store(), entry_id=entry_id, actor=actor)
+    except ValueError as exc:
+        status = 404 if str(exc).startswith("Memory not found:") else 409
+        raise HTTPException(status_code=status, detail=str(exc)) from exc
+    return entry.model_dump(mode="json")
+
+
+@router.post("/knowledge/bulk")
+def bulk_update_knowledge(request: Request, data: KnowledgeBulkRequest) -> dict:
+    actor = _require_memory_editor(request)
+    status = (
+        KnowledgeStatus.ARCHIVED
+        if data.action == "archive"
+        else KnowledgeStatus.SUPERSEDED
+    )
+    updated: list[str] = []
+    missing: list[str] = []
+    for entry_id in dict.fromkeys(data.ids):
+        try:
+            record_lifecycle_change(
+                get_store(),
+                entry_id=entry_id,
+                status=status,
+                actor=actor,
+                action=f"bulk_{data.action}",
+            )
+            updated.append(entry_id)
+        except ValueError:
+            missing.append(entry_id)
+    return {"updated": updated, "missing": missing, "status": status.value}
 
 
 @router.patch("/knowledge/{entry_id}")
-def update_knowledge(entry_id: str, data: KnowledgeUpdate) -> dict:
+def update_knowledge(request: Request, entry_id: str, data: KnowledgeUpdate) -> dict:
+    actor = _require_memory_editor(request)
     entry = get_store().update_knowledge(entry_id, data)
     if not entry:
         raise HTTPException(status_code=404, detail="Memory not found")
+    get_store().add_knowledge_audit(
+        KnowledgeAuditEvent(
+            knowledge_id=entry.id,
+            action="updated",
+            actor=actor,
+            payload={"fields": sorted(data.model_fields_set)},
+        )
+    )
     return entry.model_dump(mode="json")
 
 
@@ -1499,29 +1651,63 @@ def create_knowledge_ui(
     confidence: str = Form(""),
     card_id: str = Form(""),
     session_id: str = Form(""),
+    start_seq: int | None = Form(None),
+    end_seq: int | None = Form(None),
     supersedes_id: str = Form(""),
     review_at: datetime | None = Form(None),
     expires_at: datetime | None = Form(None),
     tags: str = Form(""),
 ) -> HTMLResponse:
-    get_store().add_knowledge(
-        KnowledgeEntry(
-            summary=summary.strip(),
-            kind=kind,
-            scope=scope.strip() or "realm",
-            source="promoted" if session_id else "manual",
-            source_url=source_url.strip() or None,
-            owner=owner.strip() or get_principal_id(request),
-            confidence=float(confidence) if confidence.strip() else None,
-            card_id=card_id or None,
-            item_id=card_id or None,
-            session_id=session_id or None,
-            supersedes_id=supersedes_id or None,
-            review_at=review_at,
-            expires_at=expires_at,
-            tags=[tag.strip() for tag in tags.split(",") if tag.strip()],
+    actor = _require_memory_editor(request)
+    parsed_tags = [tag.strip() for tag in tags.split(",") if tag.strip()]
+    if session_id:
+        try:
+            promote_from_transcript(
+                get_store(),
+                session_id=session_id,
+                actor=actor,
+                summary=summary,
+                start_seq=start_seq,
+                end_seq=end_seq,
+                kind=kind,
+                scope=scope.strip() or "realm",
+                source_url=source_url.strip() or None,
+                owner=owner.strip() or actor,
+                confidence=float(confidence) if confidence.strip() else None,
+                card_id=card_id or None,
+                tags=parsed_tags,
+                supersedes_id=supersedes_id or None,
+                review_at=review_at,
+                expires_at=expires_at,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+    else:
+        entry = get_store().add_knowledge(
+            KnowledgeEntry(
+                summary=summary,
+                kind=kind,
+                scope=scope.strip() or "realm",
+                source="manual",
+                source_url=source_url.strip() or None,
+                owner=owner.strip() or actor,
+                confidence=float(confidence) if confidence.strip() else None,
+                card_id=card_id or None,
+                item_id=card_id or None,
+                supersedes_id=supersedes_id or None,
+                review_at=review_at,
+                expires_at=expires_at,
+                tags=parsed_tags,
+            )
         )
-    )
+        get_store().add_knowledge_audit(
+            KnowledgeAuditEvent(
+                knowledge_id=entry.id,
+                action="created",
+                actor=actor,
+                payload={"source": "manual", "scope": entry.scope},
+            )
+        )
     return knowledge_partial(request)
 
 
@@ -1531,8 +1717,54 @@ def update_knowledge_status_ui(
     entry_id: str,
     status: KnowledgeStatus = Form(...),
 ) -> HTMLResponse:
-    if not get_store().update_knowledge(entry_id, KnowledgeUpdate(status=status)):
+    actor = _require_memory_editor(request)
+    try:
+        record_lifecycle_change(
+            get_store(), entry_id=entry_id, status=status, actor=actor
+        )
+    except ValueError:
         raise HTTPException(status_code=404, detail="Memory not found")
+    return knowledge_partial(request)
+
+
+@ui_router.post(
+    "/partials/knowledge/{entry_id}/regenerate", response_class=HTMLResponse
+)
+def regenerate_knowledge_ui(request: Request, entry_id: str) -> HTMLResponse:
+    actor = _require_memory_editor(request)
+    try:
+        regenerate_knowledge(get_store(), entry_id=entry_id, actor=actor)
+    except ValueError as exc:
+        status = 404 if str(exc).startswith("Memory not found:") else 409
+        raise HTTPException(status_code=status, detail=str(exc)) from exc
+    return knowledge_partial(request)
+
+
+@ui_router.post("/partials/knowledge/bulk", response_class=HTMLResponse)
+def bulk_update_knowledge_ui(
+    request: Request,
+    ids: list[str] = Form(default=[]),
+    action: str = Form(...),
+) -> HTMLResponse:
+    actor = _require_memory_editor(request)
+    if action not in {"archive", "supersede"}:
+        raise HTTPException(status_code=422, detail="Unsupported bulk action")
+    status = (
+        KnowledgeStatus.ARCHIVED
+        if action == "archive"
+        else KnowledgeStatus.SUPERSEDED
+    )
+    for entry_id in dict.fromkeys(ids):
+        try:
+            record_lifecycle_change(
+                get_store(),
+                entry_id=entry_id,
+                status=status,
+                actor=actor,
+                action=f"bulk_{action}",
+            )
+        except ValueError:
+            continue
     return knowledge_partial(request)
 
 
@@ -1857,4 +2089,47 @@ class ItemsModule(Module):
                 "GET",
                 "/api/knowledge",
                 params={"item_id": item_id, "limit": limit},
+            )
+
+        @mcp.tool()
+        def promote_session_memory(
+            session_id: str,
+            summary: str,
+            kind: str = "memory",
+            scope: str = "realm",
+            start_seq: int | None = None,
+            end_seq: int | None = None,
+        ) -> dict:
+            """Explicitly promote one curated conclusion with transcript provenance."""
+            return request_local_pa(
+                ctx.settings,
+                "POST",
+                "/api/knowledge/promote",
+                json={
+                    "session_id": session_id,
+                    "summary": summary,
+                    "kind": kind,
+                    "scope": scope,
+                    "start_seq": start_seq,
+                    "end_seq": end_seq,
+                },
+            )
+
+        @mcp.tool()
+        def audit_knowledge_capture() -> dict:
+            """Report likely corrupt or unintended Memory without mutating it."""
+            return request_local_pa(
+                ctx.settings,
+                "GET",
+                "/api/knowledge/audit",
+            )
+
+        @mcp.tool()
+        def regenerate_memory(entry_id: str) -> dict:
+            """Supersede Memory from its canonical source transcript."""
+            return request_local_pa(
+                ctx.settings,
+                "POST",
+                f"/api/knowledge/{entry_id}/regenerate",
+                json={},
             )

@@ -608,6 +608,22 @@ class KnowledgeStatus(StrEnum):
     SUPERSEDED = "superseded"
 
 
+class KnowledgeProvenance(BaseModel):
+    """Exact, structured lineage for a curated Memory record."""
+
+    source_session_id: str | None = None
+    source_event_start: int | None = Field(default=None, ge=1)
+    source_event_end: int | None = Field(default=None, ge=1)
+    source_event_ids: list[str] = Field(default_factory=list)
+    source_message_ids: list[str] = Field(default_factory=list)
+    actor: str
+    action: str
+    transformation: str
+    source_content_hash: str | None = None
+    regenerated_from_id: str | None = None
+    recorded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
 class KnowledgeEntry(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     session_id: str | None = None
@@ -625,6 +641,8 @@ class KnowledgeEntry(BaseModel):
     review_at: datetime | None = None
     expires_at: datetime | None = None
     tags: list[str] = Field(default_factory=list)
+    content_hash: str = ""
+    provenance: KnowledgeProvenance | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
@@ -642,6 +660,15 @@ class KnowledgeUpdate(BaseModel):
     review_at: datetime | None = None
     expires_at: datetime | None = None
     tags: list[str] | None = None
+
+
+class KnowledgeAuditEvent(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    knowledge_id: str
+    action: str
+    actor: str
+    payload: dict = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class InstanceInfo(BaseModel):
