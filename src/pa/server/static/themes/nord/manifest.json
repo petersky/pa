@@ -1,0 +1,9 @@
+{
+  "id": "nord",
+  "name": "Nord",
+  "description": "Arctic blue-gray with crisp frost accents",
+  "variants": [
+    {"id": "light", "label": "Light"},
+    {"id": "dark", "label": "Dark"}
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "id": "solarized",
+  "name": "Solarized",
+  "description": "Precision warm neutrals with blue and cyan accents",
+  "variants": [
+    {"id": "light", "label": "Light"},
+    {"id": "dark", "label": "Dark"}
+  ]
+}

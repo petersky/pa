@@ -1,0 +1,20 @@
+[data-theme="go-hawks"][data-appearance="dark"] {
+  color-scheme: dark;
+
+  --pa-bg: #061522;
+  --pa-surface: #0b2538;
+  --pa-surface-raised: #12334a;
+  --pa-border: #31536a;
+  --pa-text: #f1f5f7;
+  --pa-text-muted: #a9bbc7;
+  --pa-accent: #8fdb4c;
+  --pa-accent-hover: #b0ef77;
+  --pa-accent-subtle: #1d4027;
+  --pa-ok: #8fdb4c;
+  --pa-warn: #ffd166;
+  --pa-danger: #ff7c72;
+  --pa-shadow: 0 1px 4px rgb(0 0 0 / 0.45);
+  --pa-focus: 0 0 0 3px rgb(143 219 76 / 0.36);
+  --pa-chat-thought-bg: #102d41;
+  --pa-chat-tool-bg: #243a25;
+}

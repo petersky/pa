@@ -1,0 +1,20 @@
+[data-theme="monokai-pro"][data-appearance="dark"] {
+  color-scheme: dark;
+
+  --pa-bg: #19181a;
+  --pa-surface: #272629;
+  --pa-surface-raised: #343336;
+  --pa-border: #49474d;
+  --pa-text: #fcfcfa;
+  --pa-text-muted: #b7b3b8;
+  --pa-accent: #ff75b5;
+  --pa-accent-hover: #ff9aca;
+  --pa-accent-subtle: #512b41;
+  --pa-ok: #a9dc76;
+  --pa-warn: #ffd866;
+  --pa-danger: #ff6188;
+  --pa-shadow: 0 1px 4px rgb(0 0 0 / 0.42);
+  --pa-focus: 0 0 0 3px rgb(255 117 181 / 0.34);
+  --pa-chat-thought-bg: #302f32;
+  --pa-chat-tool-bg: #494126;
+}

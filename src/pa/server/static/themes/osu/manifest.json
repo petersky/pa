@@ -1,0 +1,9 @@
+{
+  "id": "osu",
+  "name": "OSU",
+  "description": "Oregon State-inspired orange, black, and white",
+  "variants": [
+    {"id": "light", "label": "Light"},
+    {"id": "dark", "label": "Dark"}
+  ]
+}

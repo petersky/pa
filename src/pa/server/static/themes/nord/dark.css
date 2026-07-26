@@ -1,0 +1,20 @@
+[data-theme="nord"][data-appearance="dark"] {
+  color-scheme: dark;
+
+  --pa-bg: #242933;
+  --pa-surface: #2e3440;
+  --pa-surface-raised: #3b4252;
+  --pa-border: #4c566a;
+  --pa-text: #eceff4;
+  --pa-text-muted: #b8c0d0;
+  --pa-accent: #88c0d0;
+  --pa-accent-hover: #a3d4df;
+  --pa-accent-subtle: #334957;
+  --pa-ok: #a3be8c;
+  --pa-warn: #ebcb8b;
+  --pa-danger: #bf616a;
+  --pa-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
+  --pa-focus: 0 0 0 3px rgb(136 192 208 / 0.35);
+  --pa-chat-thought-bg: #353c49;
+  --pa-chat-tool-bg: #494435;
+}

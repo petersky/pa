@@ -1,0 +1,9 @@
+{
+  "id": "ayu",
+  "name": "ayu",
+  "description": "Clean neutral surfaces with golden amber accents",
+  "variants": [
+    {"id": "light", "label": "Light"},
+    {"id": "dark", "label": "Dark"}
+  ]
+}

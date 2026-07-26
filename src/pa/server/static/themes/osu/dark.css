@@ -1,0 +1,20 @@
+[data-theme="osu"][data-appearance="dark"] {
+  color-scheme: dark;
+
+  --pa-bg: #12100f;
+  --pa-surface: #201c19;
+  --pa-surface-raised: #2b2521;
+  --pa-border: #463b34;
+  --pa-text: #fffaf5;
+  --pa-text-muted: #c4b8ae;
+  --pa-accent: #ff6f2c;
+  --pa-accent-hover: #ff915d;
+  --pa-accent-subtle: #45200f;
+  --pa-ok: #67c77a;
+  --pa-warn: #ffc16b;
+  --pa-danger: #ff8278;
+  --pa-shadow: 0 1px 3px rgb(0 0 0 / 0.45);
+  --pa-focus: 0 0 0 3px rgb(255 111 44 / 0.38);
+  --pa-chat-thought-bg: #29231f;
+  --pa-chat-tool-bg: #3b2418;
+}
