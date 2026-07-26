@@ -1,3 +1,4 @@
+{% from "macros/instance_identity.html" import instance_identity %}
 {% macro compact_card(card, project=None, session=None, progress=None, movable=false, lanes=[], title_only=false) %}
 <article class="compact-card item-{{ card.kind.value }}{% if title_only %} is-title-only{% endif %}"
          {% if movable %}draggable="true"{% endif %}
@@ -44,7 +45,7 @@
     <span>
       {% if session %}Agent {{ session.status }}
       {% elif card.owner_principal %}{{ card.owner_principal }}
-      {% elif card.preferred_instance %}{{ card.preferred_instance }}
+      {% elif card.preferred_instance %}{{ instance_identity(card.preferred_instance) }}
       {% else %}Unassigned{% endif %}
     </span>
     <time datetime="{{ card.updated_at.isoformat() }}">

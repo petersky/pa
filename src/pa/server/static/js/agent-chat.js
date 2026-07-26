@@ -2370,10 +2370,15 @@
           li.setAttribute("role", "button");
           li.tabIndex = 0;
           if (activeId && s.id === activeId) li.classList.add("active");
+          const sessionInstanceId = s.origin_instance_id || s.instance_id || "";
+          const sessionIdentity = sessionInstanceId && window.PAInstanceIdentity
+            ? window.PAInstanceIdentity.html(sessionInstanceId)
+            : "";
           li.innerHTML =
             "<strong>" + escapeHtml(s.title || s.label || "Agent") + "</strong>" +
             '<span class="muted">' + escapeHtml(s.status || "") + "</span>" +
-            '<span class="muted agent-session-runtime">' + escapeHtml(
+            '<span class="muted agent-session-runtime">' + sessionIdentity +
+            (sessionIdentity ? " · " : "") + escapeHtml(
               [s.agent_name, s.model_id, s.mode_id].filter(Boolean).join(" · ")
             ) + "</span>" +
             sessionConfigSummary(s.config_json);

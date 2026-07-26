@@ -5,6 +5,75 @@
   line-height: 1.45;
 }
 
+pa-instance-identity {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+  gap: 0.25rem;
+  vertical-align: middle;
+}
+
+.instance-identity-name {
+  min-width: 0;
+  max-width: 24rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.instance-identity-copy {
+  display: inline-grid;
+  width: 1.6rem;
+  min-width: 1.6rem;
+  height: 1.6rem;
+  padding: 0.25rem;
+  place-items: center;
+  border: 0;
+  border-radius: 0.3rem;
+  background: transparent;
+  color: var(--pa-text-muted);
+}
+
+.instance-identity-copy:hover {
+  background: color-mix(in srgb, var(--pa-accent) 12%, transparent);
+  color: var(--pa-text);
+}
+
+.instance-identity-copy:focus-visible {
+  outline: 3px solid var(--pa-focus);
+  outline-offset: 2px;
+}
+
+.instance-identity-copy svg {
+  width: 1rem;
+  height: 1rem;
+  fill: currentColor;
+}
+
+.instance-identity-feedback {
+  color: var(--pa-text-muted);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.instance-select-field { min-width: 0; }
+.instance-select-field label { display: block; }
+.instance-identity-selection {
+  display: block;
+  margin-top: 0.3rem;
+}
+
+.instance-identity-copy-source {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+}
+
+.instance-identity-brand .instance-identity-feedback {
+  position: absolute;
+}
+
 /* Fleet overview — one state model rendered as topology and accessible list. */
 .fleet-overview-grid {
   display: grid;

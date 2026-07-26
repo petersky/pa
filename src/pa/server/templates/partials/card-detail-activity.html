@@ -1,3 +1,4 @@
+{% from "macros/instance_identity.html" import instance_identity %}
 <div class="card-tab-loaded" data-card-tab-loaded>
   <div class="section-heading-inline activity-heading">
     <div>
@@ -25,7 +26,7 @@
       <span class="activity-marker" aria-hidden="true"></span>
       <div>
         <strong>{{ entry.label }}</strong>
-        <p class="muted">{{ entry.actor }}{% if entry.detail %} · {{ entry.detail }}{% endif %}{% if entry.session_url %} · <a href="{{ entry.session_url }}">Exact session</a>{% endif %}</p>
+        <p class="muted">{{ entry.actor }}{% if entry.instance_id %} · {{ instance_identity(entry.instance_id) }}{% endif %}{% if entry.detail %} · {{ entry.detail }}{% endif %}{% if entry.session_url %} · <a href="{{ entry.session_url }}">Exact session</a>{% endif %}</p>
         {% if entry.details %}
         <details class="activity-details">
           <summary>Sanitized details</summary>

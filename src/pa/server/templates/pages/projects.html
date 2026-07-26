@@ -1,4 +1,5 @@
 {% from "macros/layout.html" import page_layout %}
+{% from "macros/instance_identity.html" import instance_identity %}
 
 {% set selected_project = project.id if project else '' %}
 {% set main %}
@@ -136,7 +137,7 @@
           <summary>Fleet checkouts ({{ linked.checkouts | length }})</summary>
           <ul>
             {% for checkout in linked.checkouts %}
-            <li><code>{{ checkout.instance_id }}</code>: {{ checkout.path }}{% if checkout.branch %} ({{ checkout.branch }}){% endif %}</li>
+            <li>{{ instance_identity(checkout.instance_id) }}: {{ checkout.path }}{% if checkout.branch %} ({{ checkout.branch }}){% endif %}</li>
             {% endfor %}
           </ul>
         </details>

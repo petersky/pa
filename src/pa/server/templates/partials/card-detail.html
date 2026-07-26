@@ -1,3 +1,4 @@
+{% from "macros/instance_identity.html" import instance_identity %}
 <article class="card-detail" data-card-detail data-card-id="{{ card.id }}" data-card-realm="{{ card.realm_id }}">
   <header class="card-detail-header">
     <div class="card-detail-header-main">
@@ -157,7 +158,7 @@
           <h3 id="card-metadata-title">Metadata</h3>
           <dl class="detail-list">
             <div><dt>Owner</dt><dd>{{ card.owner_principal or 'Unassigned' }}</dd></div>
-            <div><dt>Instance</dt><dd>{{ card.preferred_instance or 'Any eligible instance' }}</dd></div>
+            <div><dt>Instance</dt><dd>{% if card.preferred_instance %}{{ instance_identity(card.preferred_instance) }}{% else %}Any eligible instance{% endif %}</dd></div>
             <div><dt>Updated</dt><dd><time datetime="{{ card.updated_at.isoformat() }}">{{ card.updated_at.strftime('%Y-%m-%d %H:%M') }}</time></dd></div>
             <div><dt>Created</dt><dd><time datetime="{{ card.created_at.isoformat() }}">{{ card.created_at.strftime('%Y-%m-%d %H:%M') }}</time></dd></div>
             {% if card.tags %}<div><dt>Tags</dt><dd>{{ card.tags | join(', ') }}</dd></div>{% endif %}
