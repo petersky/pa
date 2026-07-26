@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
 
 from pa.core.async_runtime import (
@@ -27,7 +27,7 @@ from pa.fleet.overview import probe_dimension
 from pa.instance.agent_session import AgentSessionManager, AgentSessionRuntime
 from pa.modules.agent_providers import list_local_providers
 from pa.modules.files import browse_files
-from pa.modules.instance import health
+from pa.modules.instance import agent_reconnect, health
 from pa.modules.sync import router as sync_router
 from pa.pr_supervisor.github import GitHubCredentials
 from pa.pr_supervisor.models import GitHubCapability, PRWatch
@@ -161,6 +161,85 @@ class RequestPathResponsivenessTests(unittest.IsolatedAsyncioTestCase):
 
 
 class StartupResponsivenessTests(unittest.IsolatedAsyncioTestCase):
+    def test_global_reconnect_ui_treats_recovery_as_loading(self) -> None:
+        script = (
+            Path(__file__).parents[1] / "src/pa/server/static/js/spa.js"
+        ).read_text()
+        reconnect = script[
+            script.index("function initAgentReconnect()") :
+            script.index(
+                'document.body.addEventListener("htmx:config:request"',
+                script.index("function initAgentReconnect()"),
+            )
+        ]
+
+        self.assertIn('detail.code === "agent_recovery_in_progress"', reconnect)
+        self.assertIn('label.textContent = "Restoring sessions…"', reconnect)
+        self.assertIn("Math.min(5000", reconnect)
+        self.assertIn("if (!btn.isConnected) return", reconnect)
+
+    async def test_global_reconnect_uses_structured_startup_gate(self) -> None:
+        agent = MagicMock()
+        agent.startup_state.return_value = {
+            "phase": "recovering",
+            "complete": False,
+            "total": 3,
+            "recovered": 1,
+            "failed": 0,
+            "session_id": "session-slow",
+        }
+        request = SimpleNamespace(
+            app=SimpleNamespace(
+                state=SimpleNamespace(
+                    ctx=SimpleNamespace(
+                        require_service=lambda name: (
+                            agent if name == "instance_agent" else None
+                        )
+                    )
+                )
+            )
+        )
+
+        with self.assertRaises(HTTPException) as gated:
+            await agent_reconnect(request)
+
+        self.assertEqual(gated.exception.status_code, 503)
+        self.assertEqual(gated.exception.headers["Retry-After"], "1")
+        self.assertEqual(
+            gated.exception.detail["code"], "agent_recovery_in_progress"
+        )
+        self.assertEqual(gated.exception.detail["startup"]["recovered"], 1)
+        self.assertEqual(
+            gated.exception.detail["history_url"], "/api/agent/history"
+        )
+        agent.reconnect.assert_not_called()
+
+    async def test_concurrent_global_reconnect_attempts_coalesce(self) -> None:
+        entered = asyncio.Event()
+        release = asyncio.Event()
+
+        async def attach_default():
+            entered.set()
+            await release.wait()
+            return SimpleNamespace(connected=True)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                data_dir=Path(tmp) / "data",
+                workspace_root=Path(tmp) / "workspaces",
+            )
+            manager = AgentSessionManager(settings, MagicMock())
+            manager.attach_default = AsyncMock(side_effect=attach_default)
+
+            first = asyncio.create_task(manager.reconnect())
+            await entered.wait()
+            second = asyncio.create_task(manager.reconnect())
+            await asyncio.sleep(0)
+            release.set()
+
+            self.assertEqual(await asyncio.gather(first, second), [True, True])
+            manager.attach_default.assert_awaited_once()
+
     async def test_shutdown_fences_agent_before_module_teardown(self) -> None:
         from pa.core.contracts import Module
 

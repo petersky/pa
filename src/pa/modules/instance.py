@@ -10,7 +10,9 @@ from pa.auth.middleware import get_principal_id
 from pa.config import get_settings
 from pa.core.context import AppContext
 from pa.core.contracts import Module
+from pa.instance.agent_session import AgentStartupNotReady
 from pa.instance.quiesce import QuiesceProgress
+from pa.modules.agent_lifecycle import startup_recovery_error
 from pa.repository.state import RepositorySnapshotInput
 
 router = APIRouter()
@@ -385,7 +387,24 @@ async def agent_prompt(request: Request, body: dict) -> dict:
 @router.post("/agent/reconnect")
 async def agent_reconnect(request: Request) -> dict:
     agent = request.app.state.ctx.require_service("instance_agent")
-    connected = await agent.reconnect()
+    gated = startup_recovery_error(agent)
+    if gated:
+        raise gated
+    try:
+        connected = await agent.reconnect()
+    except AgentStartupNotReady:
+        # Recovery can begin between the readiness check and manager admission.
+        raise startup_recovery_error(agent) or HTTPException(
+            status_code=503,
+            detail={
+                "code": "agent_recovery_in_progress",
+                "message": "PA is restoring durable agent sessions. Try again shortly.",
+                "recoverable": True,
+                "retry_after_ms": 250,
+                "history_url": "/api/agent/history",
+            },
+            headers={"Retry-After": "1"},
+        ) from None
     return {
         "connected": connected,
         "error": agent.last_error,
