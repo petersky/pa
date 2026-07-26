@@ -29,6 +29,7 @@ from pa.instance.agent_session import (
     AgentStartupNotReady,
 )
 from pa.instance.quiesce import MAX_TOTAL_IMAGE_BYTES, ImageAttachment
+from pa.modules.agent_lifecycle import require_startup_ready
 
 router = APIRouter(prefix="/agent")
 logger = logging.getLogger(__name__)
@@ -102,35 +103,9 @@ def _session_reconciliation(request: Request, session_id: str) -> dict[str, Any]
     return record.public_dict()["card_reconciliation"]
 
 
-def _startup_state(manager) -> dict[str, Any]:
-    state = getattr(manager, "startup_state", None)
-    if callable(state):
-        return dict(state())
-    return {"phase": "ready", "complete": True, "error": None}
-
-
 def _require_session_traffic_ready(request: Request):
     manager = _manager(request)
-    state = _startup_state(manager)
-    if not state.get("complete", True):
-        failed = state.get("phase") == "failed"
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "code": (
-                    "agent_recovery_failed" if failed else "agent_recovery_in_progress"
-                ),
-                "message": (
-                    "Durable agent session recovery failed. Session history remains available."
-                    if failed
-                    else "PA is restoring durable agent sessions. Try again shortly."
-                ),
-                "recoverable": not failed,
-                "retry_after_ms": 250,
-                "startup": state,
-                "history_url": "/api/agent/history",
-            },
-        )
+    require_startup_ready(manager)
     return manager
 
 

@@ -1087,15 +1087,25 @@
     document.querySelectorAll("#pa-agent-reconnect").forEach(function (btn) {
       if (btn.dataset.bound) return;
       btn.dataset.bound = "1";
-      btn.addEventListener("click", function () {
+      var retryTimer = null;
+      var retryCount = 0;
+      function reconnect() {
+        retryTimer = null;
+        if (!btn.isConnected) return;
         btn.disabled = true;
+        btn.setAttribute("aria-busy", "true");
         fetch("/api/agent/reconnect", {
           method: "POST",
           headers: csrfHeader(),
         })
           .then(function (resp) {
             return resp.json().then(function (data) {
-              if (!resp.ok) throw new Error(data.detail || "Reconnect failed");
+              if (!resp.ok) {
+                var detail = data.detail || {};
+                var error = new Error(detail.message || "Reconnect failed");
+                error.detail = detail;
+                throw error;
+              }
               return data;
             });
           })
@@ -1107,12 +1117,26 @@
             showToast(data.error || "Agent still offline", "error");
           })
           .catch(function (err) {
+            var detail = err.detail || {};
+            if (detail.code === "agent_recovery_in_progress") {
+              var label = btn.querySelector(".status-label");
+              if (label) label.textContent = "Restoring sessions…";
+              btn.title = detail.message || "Restoring durable agent sessions";
+              var baseDelay = Math.max(250, Number(detail.retry_after_ms || 250));
+              var delay = Math.min(5000, baseDelay * Math.pow(2, retryCount++));
+              retryTimer = window.setTimeout(reconnect, delay);
+              return;
+            }
             showToast(err.message || "Reconnect failed", "error");
           })
           .finally(function () {
-            btn.disabled = false;
+            if (!retryTimer) {
+              btn.disabled = false;
+              btn.removeAttribute("aria-busy");
+            }
           });
-      });
+      }
+      btn.addEventListener("click", reconnect);
     });
   }
 

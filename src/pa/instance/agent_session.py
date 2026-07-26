@@ -1410,6 +1410,8 @@ class AgentSessionManager:
         self._startup_session_id: str | None = None
         self._default_label = "default"
         self._lock = asyncio.Lock()
+        self._reconnect_lock = asyncio.Lock()
+        self._reconnect_task: asyncio.Task[bool] | None = None
         self._label_locks: dict[str, asyncio.Lock] = {}
         self.async_runtime: AsyncRuntime | None = None
         self.browser = BrowserManager(settings.data_dir)
@@ -2303,6 +2305,26 @@ class AgentSessionManager:
     async def reconnect(self) -> bool:
         """Reconnect the default session (compat with chrome reconnect button)."""
         self.require_startup_complete()
+        async with self._reconnect_lock:
+            task = self._reconnect_task
+            if task is None or task.done():
+                task = asyncio.create_task(
+                    self._reconnect_default(),
+                    name="agent-default-reconnect",
+                )
+                self._reconnect_task = task
+        try:
+            # A disconnected HTTP client must not cancel the coalesced reconnect
+            # still awaited by other callers.
+            return await asyncio.shield(task)
+        finally:
+            if task.done():
+                async with self._reconnect_lock:
+                    if self._reconnect_task is task:
+                        self._reconnect_task = None
+
+    async def _reconnect_default(self) -> bool:
+        """Perform one reconnect attempt shared by all concurrent callers."""
         try:
             runtime = await self.attach_default()
             if runtime.connected:
