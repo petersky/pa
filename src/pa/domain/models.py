@@ -4,7 +4,6 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, model_validator
 
-
 # --- Control plane (Fleet / Realm / Membership) ---
 
 
@@ -566,6 +565,9 @@ class AgentSession(BaseModel):
     external_session_id: str | None = None
     origin_instance_id: str | None = None
     origin_instance_name: str | None = None
+    authority_instance_id: str | None = None
+    dispatch_id: str | None = None
+    realm_id: str = "default"
     item_id: str | None = None
     card_id: str | None = None
     project_id: str | None = None

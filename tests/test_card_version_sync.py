@@ -16,7 +16,13 @@ from pa.execution.lease import LeaseManager
 from pa.modules.fleet import DispatchMaterializeBody, materialize_dispatch
 from pa.sync.event_log import EventLog
 from pa.sync.object_store import ObjectStore
-from tests.test_dispatch_consistency import request_for
+from tests.test_dispatch_consistency import (
+    AUTHORITY_ID,
+    DISPATCH_ONE,
+    MUTATION_ONE,
+    TARGET_ID,
+    request_for,
+)
 
 
 class CardVersionSyncTests(unittest.TestCase):
@@ -71,19 +77,21 @@ class CardVersionSyncTests(unittest.TestCase):
             assert updated is not None
             replica.rebuild_from_log("default")
 
-            settings = Settings(data_dir=Path(tmp) / "target", instance_id="target")
+            settings = Settings(data_dir=Path(tmp) / "target", instance_id=TARGET_ID)
             request = request_for(settings, replica, {"event_log": _log})
+            request.state.instance_authenticated = True
+            request.headers = {"X-PA-Origin-Instance-ID": AUTHORITY_ID}
             result = materialize_dispatch(
                 request,
                 DispatchMaterializeBody(
-                    dispatch_id="dispatch-1",
-                    mutation_id="mutation-1",
+                    dispatch_id=DISPATCH_ONE,
+                    mutation_id=MUTATION_ONE,
                     card=updated.model_dump(mode="json"),
                     card_version=updated.updated_at.isoformat(),
                     realm_id="default",
-                    authority_instance_id="authority",
+                    authority_instance_id=AUTHORITY_ID,
                     authority_url="http://authority:8080",
-                    target_instance_id="target",
+                    target_instance_id=TARGET_ID,
                 ),
             )
             self.assertTrue(result["resolvable"])
@@ -100,20 +108,22 @@ class CardVersionSyncTests(unittest.TestCase):
             authority_card = authority.get_card(created.id, realm_id="default")
             assert authority_card is not None
 
-            settings = Settings(data_dir=Path(tmp) / "target", instance_id="target")
+            settings = Settings(data_dir=Path(tmp) / "target", instance_id=TARGET_ID)
             request = request_for(settings, replica, {"event_log": log})
+            request.state.instance_authenticated = True
+            request.headers = {"X-PA-Origin-Instance-ID": AUTHORITY_ID}
             with self.assertRaises(HTTPException) as raised:
                 materialize_dispatch(
                     request,
                     DispatchMaterializeBody(
-                        dispatch_id="dispatch-2",
-                        mutation_id="mutation-2",
+                        dispatch_id="66666666-6666-4666-8666-666666666666",
+                        mutation_id="77777777-7777-4777-8777-777777777777",
                         card=authority_card.model_dump(mode="json"),
                         card_version=authority_card.updated_at.isoformat(),
                         realm_id="default",
-                        authority_instance_id="authority",
+                        authority_instance_id=AUTHORITY_ID,
                         authority_url="http://authority:8080",
-                        target_instance_id="target",
+                        target_instance_id=TARGET_ID,
                     ),
                 )
             self.assertEqual(raised.exception.detail["code"], "stale_target_card")

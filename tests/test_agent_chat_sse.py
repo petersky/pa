@@ -24,8 +24,8 @@ from pa.modules.agent_chat import (
     _apply_initial_options,
     _runtime_or_404,
     create_session,
-    get_provider_options,
     get_agent_session_history,
+    get_provider_options,
     list_agent_session_history,
     list_agent_sessions,
     session_close,
@@ -504,6 +504,7 @@ class AgentChatSseTests(unittest.TestCase):
                 authority_instance_id="authority",
                 authority_url="http://authority",
                 target_instance_id="target",
+                principal_id="user:dispatch-owner",
                 state="materializing",
             )
             ledger.put(record)
@@ -531,7 +532,9 @@ class AgentChatSseTests(unittest.TestCase):
             manager.store.get_session.return_value = None
             manager.store.save_session = MagicMock()
             request = MagicMock()
-            request.app.state.ctx.settings = SimpleNamespace(data_dir=None)
+            request.app.state.ctx.settings = SimpleNamespace(
+                data_dir=None, instance_id="target"
+            )
             request.app.state.ctx.services = {"dispatch_store": ledger}
             body = CreateSessionBody(
                 label="card:card-1:dispatch:dispatch-1",
@@ -555,6 +558,14 @@ class AgentChatSseTests(unittest.TestCase):
             manager.create_session.assert_awaited_once()
             self.assertEqual(
                 manager.create_session.await_args.kwargs["session_id"], "session-new"
+            )
+            call = manager.create_session.await_args.kwargs
+            self.assertEqual(call["principal_id"], "user:dispatch-owner")
+            self.assertEqual(call["authority_instance_id"], "authority")
+            self.assertEqual(call["dispatch_id"], "dispatch-1")
+            self.assertEqual(call["realm_id"], "default")
+            self.assertEqual(
+                call["execution_context_seed"]["dispatch_id"], "dispatch-1"
             )
             self.assertEqual(record.session_id, "session-new")
 
@@ -581,7 +592,9 @@ class AgentChatSseTests(unittest.TestCase):
                 )
             )
             request = MagicMock()
-            request.app.state.ctx.settings = SimpleNamespace(data_dir=None)
+            request.app.state.ctx.settings = SimpleNamespace(
+                data_dir=None, instance_id="target"
+            )
             request.app.state.ctx.services = {"dispatch_store": ledger}
             manager = MagicMock()
 

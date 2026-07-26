@@ -75,9 +75,9 @@ AUTO_RECOVERY_SESSION_STATUSES = frozenset(
         "recoverable_interrupted",
     }
 )
-RECOVERY_RETAINED_SESSION_STATUSES = (
-    AUTO_RECOVERY_SESSION_STATUSES | {RECOVERY_BLOCKED_STATUS}
-)
+RECOVERY_RETAINED_SESSION_STATUSES = AUTO_RECOVERY_SESSION_STATUSES | {
+    RECOVERY_BLOCKED_STATUS
+}
 
 
 def _project_recovery_block(exc: BaseException) -> bool:
@@ -1297,6 +1297,10 @@ class AgentSessionRuntime:
             card_id=self.session.card_id or self.session.item_id,
             project_id=self.session.project_id,
             principal_id=self.session.principal_id,
+            authority_instance_id=self.session.authority_instance_id,
+            origin_instance_id=self.session.origin_instance_id,
+            dispatch_id=self.session.dispatch_id,
+            realm_id=self.session.realm_id,
             prompting=False,
             queue_paused=self._queue_paused,
             queued_prompts=list(self._queue),
@@ -1481,7 +1485,22 @@ class AgentSessionManager:
         """Provision or recover the durable workspace before spawning a provider."""
         prior_config = dict(session.config_json or {})
         prior_context = dict(prior_config.get("execution_context") or {})
-        authority_instance = prior_context.get("authority_instance")
+        prior_authority = dict(prior_context.get("authority_instance") or {})
+        prior_attachments = dict(prior_context.get("attachments") or {})
+        authority_instance = (
+            {
+                "id": session.authority_instance_id,
+                "name": prior_authority.get("name") or session.authority_instance_id,
+            }
+            if session.authority_instance_id
+            else prior_authority or None
+        )
+        provenance = {
+            "version": 1,
+            "realm_id": session.realm_id,
+            "principal_id": session.principal_id,
+            "dispatch_id": session.dispatch_id,
+        }
         if requested_cwd:
             requested_path = Path(requested_cwd).expanduser().resolve()
             data_dir = self.settings.data_dir.expanduser().resolve()
@@ -1543,6 +1562,12 @@ class AgentSessionManager:
             context = workspace.execution_context(self.settings, provider_id)
             if authority_instance:
                 context["authority_instance"] = authority_instance
+            if prior_attachments:
+                context["attachments"] = prior_attachments
+            context["realm_id"] = session.realm_id
+            context["principal_id"] = session.principal_id
+            context["dispatch_id"] = session.dispatch_id
+            context["provenance"] = provenance
             session.cwd = workspace.cwd
             config = dict(session.config_json or {})
             config["execution_context"] = context
@@ -1558,17 +1583,16 @@ class AgentSessionManager:
             )
             return context_environment(context)
         except Exception as exc:
-            project_blocked = bool(
-                session.project_id and _project_recovery_block(exc)
-            )
+            project_blocked = bool(session.project_id and _project_recovery_block(exc))
             session.status = (
-                RECOVERY_BLOCKED_STATUS
-                if project_blocked
-                else "provisioning_failed"
+                RECOVERY_BLOCKED_STATUS if project_blocked else "provisioning_failed"
             )
             config = dict(session.config_json or {})
-            if authority_instance:
-                config["execution_context"] = {"authority_instance": authority_instance}
+            if session.dispatch_id:
+                config["execution_context"] = {
+                    "authority_instance": authority_instance,
+                    "provenance": provenance,
+                }
             else:
                 config.pop("execution_context", None)
             config["provisioning"] = {
@@ -1807,12 +1831,8 @@ class AgentSessionManager:
             list_links = getattr(self.store, "list_project_repositories", None)
             if not callable(list_links):
                 return False
-            realm_id = getattr(
-                project, "realm_id", self.settings.primary_realm
-            )
-            return bool(
-                list_links(session.project_id, realm_id=realm_id)
-            )
+            realm_id = getattr(project, "realm_id", self.settings.primary_realm)
+            return bool(list_links(session.project_id, realm_id=realm_id))
 
         return await self._offload(
             "agent.project_recovery_availability",
@@ -1861,8 +1881,7 @@ class AgentSessionManager:
             active_session_ids.update(
                 item.session_id
                 for item in snapshot.sessions
-                if item.session_id
-                and item.status in RECOVERY_RETAINED_SESSION_STATUSES
+                if item.session_id and item.status in RECOVERY_RETAINED_SESSION_STATUSES
             )
         try:
             await self._offload(
@@ -1950,10 +1969,7 @@ class AgentSessionManager:
             # Reconcile every durable nonterminal admission that was not in the
             # quiesce file so it cannot silently disappear after restart.
             for session in reversed(persisted_sessions):
-                if (
-                    session.id not in recovery_eligibility
-                    or session.id in recovery
-                ):
+                if session.id not in recovery_eligibility or session.id in recovery:
                     continue
                 recovery[session.id] = self._snapshot_from_persisted(session)
             self._startup_total = len(recovery)
@@ -1989,9 +2005,7 @@ class AgentSessionManager:
                             logger.warning(
                                 "ACP recovery blocked for session %s: %s",
                                 sess.session_id,
-                                self._recovery_action(session)
-                                if session
-                                else str(exc),
+                                self._recovery_action(session) if session else str(exc),
                             )
                         else:
                             logger.exception(
@@ -2058,6 +2072,10 @@ class AgentSessionManager:
             card_id=session.card_id or session.item_id,
             project_id=session.project_id,
             principal_id=session.principal_id,
+            authority_instance_id=session.authority_instance_id,
+            origin_instance_id=session.origin_instance_id,
+            dispatch_id=session.dispatch_id,
+            realm_id=session.realm_id,
             prompting=bool(in_flight_raw),
             queue_paused=bool(durable.get("queue_paused")),
             queued_prompts=queued,
@@ -2131,9 +2149,7 @@ class AgentSessionManager:
                 raise
             except Exception as exc:
                 self._last_error = str(exc)
-                recovery_state = await self._mark_recovery_interrupted(
-                    snapshot, exc
-                )
+                recovery_state = await self._mark_recovery_interrupted(snapshot, exc)
                 if recovery_state == RECOVERY_BLOCKED_STATUS:
                     logger.warning(
                         "Explicit ACP recovery retry remains blocked for session "
@@ -2186,6 +2202,10 @@ class AgentSessionManager:
             card_id=snap.card_id,
             project_id=snap.project_id,
             principal_id=snap.principal_id,
+            authority_instance_id=snap.authority_instance_id,
+            origin_instance_id=snap.origin_instance_id,
+            dispatch_id=snap.dispatch_id,
+            realm_id=snap.realm_id,
         )
         session.cwd = snap.cwd or session.cwd
         session.label = snap.label or session.label
@@ -2289,6 +2309,9 @@ class AgentSessionManager:
         principal_id: str | None = None,
         card_id: str | None = None,
         project_id: str | None = None,
+        authority_instance_id: str | None = None,
+        dispatch_id: str | None = None,
+        realm_id: str | None = None,
         agent_env: dict[str, str] | None = None,
         resume_external_id: str | None = None,
         existing: AgentSession | None = None,
@@ -2296,6 +2319,7 @@ class AgentSessionManager:
         provider_override: str | None = None,
         project_tool_config: dict | None = None,
         initial_configuration: SessionConfigurationRequest | None = None,
+        execution_context_seed: dict[str, Any] | None = None,
         _startup_recovery: bool = False,
     ) -> AgentSessionRuntime:
         if not self.settings.agent_enabled:
@@ -2375,11 +2399,19 @@ class AgentSessionManager:
             principal_id=principal_id,
             card_id=card_id,
             project_id=project_id,
+            authority_instance_id=authority_instance_id or self.settings.instance_id,
+            dispatch_id=dispatch_id,
+            realm_id=realm_id or self.settings.primary_realm,
             item_id=card_id,
         )
         if existing:
             session.origin_instance_id = (
                 session.origin_instance_id or self.settings.instance_id
+            )
+            session.authority_instance_id = (
+                session.authority_instance_id
+                or authority_instance_id
+                or self.settings.instance_id
             )
             session.origin_instance_name = (
                 session.origin_instance_name or self.settings.instance_name
@@ -2395,6 +2427,12 @@ class AgentSessionManager:
                 session.item_id = card_id
             if project_id is not None:
                 session.project_id = project_id
+            if authority_instance_id is not None:
+                session.authority_instance_id = authority_instance_id
+            if dispatch_id is not None:
+                session.dispatch_id = dispatch_id
+            if realm_id is not None:
+                session.realm_id = realm_id
             if not provider_override and session.agent_name in {"instance", ""}:
                 session.agent_name = provider_id
             elif provider_override or not existing:
@@ -2405,6 +2443,12 @@ class AgentSessionManager:
                     session.agent_name = provider_id
         else:
             session.agent_name = provider_id
+        if execution_context_seed:
+            config = dict(session.config_json or {})
+            execution = dict(config.get("execution_context") or {})
+            execution.update(execution_context_seed)
+            config["execution_context"] = execution
+            session.config_json = config
         workspace_env = await self._prepare_workspace(
             session,
             requested_cwd=cwd or (existing.cwd if existing else None),

@@ -37,6 +37,12 @@ from pa.pr_supervisor.models import PRWatch
 from pa.sync.event_log import EventLog
 from pa.sync.object_store import ObjectStore
 
+AUTHORITY_ID = "0c7d8ecb-7e45-4579-8fa0-35159492d3f1"
+TARGET_ID = "2d22a9e1-a1a0-4900-8a8e-8284627aa6bf"
+DISPATCH_ONE = "33333333-3333-4333-8333-333333333333"
+MUTATION_ONE = "44444444-4444-4444-8444-444444444444"
+CARD_ONE = "45cd58e9-1dd7-44b9-9e07-2ae58d12e685"
+
 
 def request_for(settings: Settings, store: MagicMock, services: dict | None = None):
     ctx = MagicMock(settings=settings, store=store)
@@ -135,21 +141,23 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
 class MaterializationTests(unittest.TestCase):
     def test_missing_target_card_is_durably_materialized_at_exact_version(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            settings = Settings(data_dir=Path(tmp), instance_id="target")
-            card = Card(id="card-1", title="Fleet convergence")
+            settings = Settings(data_dir=Path(tmp), instance_id=TARGET_ID)
+            card = Card(id=CARD_ONE, title="Fleet convergence")
             store = MagicMock()
             store.get_card.return_value = None
             log = MagicMock()
             request = request_for(settings, store, {"event_log": log})
+            request.state.instance_authenticated = True
+            request.headers = {"X-PA-Origin-Instance-ID": AUTHORITY_ID}
             body = DispatchMaterializeBody(
-                dispatch_id="dispatch-1",
-                mutation_id="mutation-1",
+                dispatch_id=DISPATCH_ONE,
+                mutation_id=MUTATION_ONE,
                 card=card.model_dump(mode="json"),
                 card_version=card.updated_at.isoformat(),
                 realm_id="default",
-                authority_instance_id="authority",
+                authority_instance_id=AUTHORITY_ID,
                 authority_url="http://authority:8080",
-                target_instance_id="target",
+                target_instance_id=TARGET_ID,
             )
 
             result = materialize_dispatch(request, body)
@@ -158,35 +166,116 @@ class MaterializationTests(unittest.TestCase):
             log.append_event.assert_called_once()
             store.apply_event.assert_called_once()
             self.assertEqual(
-                DispatchStore(settings.data_dir).get("dispatch-1").card_id, "card-1"
+                DispatchStore(settings.data_dir).get(DISPATCH_ONE).card_id, CARD_ONE
             )
 
     def test_stale_target_returns_actionable_409(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            settings = Settings(data_dir=Path(tmp), instance_id="target")
-            target = Card(id="card-1", title="stale")
+            settings = Settings(data_dir=Path(tmp), instance_id=TARGET_ID)
+            target = Card(id=CARD_ONE, title="stale")
             authority = target.model_copy(
                 update={"title": "new", "updated_at": datetime.now(UTC)}
             )
             store = MagicMock()
             store.get_card.return_value = target
             request = request_for(settings, store, {"event_log": MagicMock()})
+            request.state.instance_authenticated = True
+            request.headers = {"X-PA-Origin-Instance-ID": AUTHORITY_ID}
             with self.assertRaises(HTTPException) as raised:
                 materialize_dispatch(
                     request,
                     DispatchMaterializeBody(
-                        dispatch_id="dispatch-1",
-                        mutation_id="mutation-1",
+                        dispatch_id=DISPATCH_ONE,
+                        mutation_id=MUTATION_ONE,
                         card=authority.model_dump(mode="json"),
                         card_version=authority.updated_at.isoformat(),
                         realm_id="default",
-                        authority_instance_id="authority",
+                        authority_instance_id=AUTHORITY_ID,
                         authority_url="http://authority",
-                        target_instance_id="target",
+                        target_instance_id=TARGET_ID,
                     ),
                 )
             self.assertEqual(raised.exception.status_code, 409)
             self.assertEqual(raised.exception.detail["code"], "stale_target_card")
+
+    def test_versioned_materialization_binds_full_ids_to_authenticated_authority(
+        self,
+    ) -> None:
+        authority_id = "0c7d8ecb-7e45-4579-8fa0-35159492d3f1"
+        target_id = "2d22a9e1-a1a0-4900-8a8e-8284627aa6bf"
+        dispatch_id = "33333333-3333-4333-8333-333333333333"
+        mutation_id = "44444444-4444-4444-8444-444444444444"
+        card_id = "45cd58e9-1dd7-44b9-9e07-2ae58d12e685"
+        project_id = "55555555-5555-4555-8555-555555555555"
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id=target_id)
+            card = Card(id=card_id, title="Canonical", project_id=project_id)
+            store = MagicMock()
+            store.get_card.return_value = None
+            request = request_for(settings, store, {"event_log": MagicMock()})
+            request.state.instance_authenticated = True
+
+            request.headers = {"X-PA-Origin-Instance-ID": authority_id}
+            body = DispatchMaterializeBody(
+                dispatch_id=dispatch_id,
+                mutation_id=mutation_id,
+                card=card.model_dump(mode="json"),
+                card_version=card.updated_at.isoformat(),
+                realm_id="default",
+                project_id=project_id,
+                principal_id="user:operator",
+                provenance_version=1,
+                authority_instance_id=authority_id,
+                authority_url="http://authority",
+                target_instance_id=target_id,
+            )
+
+            legacy_version = body.model_copy(
+                update={
+                    "dispatch_id": "88888888-8888-4888-8888-888888888888",
+                    "provenance_version": 0,
+                }
+            )
+            with self.assertRaises(HTTPException) as unsupported:
+                materialize_dispatch(request, legacy_version)
+            self.assertEqual(
+                unsupported.exception.detail["code"],
+                "unsupported_provenance_version",
+            )
+
+            result = materialize_dispatch(request, body)
+
+            self.assertTrue(result["resolvable"])
+            durable = DispatchStore(settings.data_dir).get(dispatch_id)
+            self.assertEqual(durable.dispatch_id, dispatch_id)
+            self.assertEqual(durable.card_id, card_id)
+            self.assertEqual(durable.project_id, project_id)
+            self.assertEqual(durable.authority_instance_id, authority_id)
+            self.assertEqual(durable.target_instance_id, target_id)
+            self.assertEqual(durable.principal_id, "user:operator")
+            self.assertEqual(durable.request_payload["provenance_version"], 1)
+
+            forged = body.model_copy(
+                update={"dispatch_id": "66666666-6666-4666-8666-666666666666"}
+            )
+            request.headers = {
+                "X-PA-Origin-Instance-ID": "77777777-7777-4777-8777-777777777777"
+            }
+            with self.assertRaises(HTTPException) as mismatch:
+                materialize_dispatch(request, forged)
+            self.assertEqual(
+                mismatch.exception.detail["code"], "dispatch_authority_mismatch"
+            )
+
+            request.headers = {"X-PA-Origin-Instance-ID": authority_id}
+            shortened = body.model_copy(
+                update={"dispatch_id": "33333333-3333-43-33333333"}
+            )
+            with self.assertRaises(HTTPException) as malformed:
+                materialize_dispatch(request, shortened)
+            self.assertEqual(
+                malformed.exception.detail["code"], "malformed_provenance_id"
+            )
 
 
 class CompletionTests(unittest.TestCase):

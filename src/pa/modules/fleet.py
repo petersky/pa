@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any, AsyncIterator, Literal
 from urllib.parse import quote
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
@@ -20,9 +20,9 @@ from pydantic import BaseModel, Field
 
 from pa.acp.configuration import SessionConfigurationRequest
 from pa.attachments import (
+    CHUNK_BYTES,
     AttachmentError,
     AttachmentStore,
-    CHUNK_BYTES,
     manifest_digest,
 )
 from pa.auth.middleware import get_principal_id, require_user
@@ -241,6 +241,9 @@ class DispatchMaterializeBody(BaseModel):
     card: dict[str, Any] | None = None
     card_version: str | None = None
     realm_id: str
+    project_id: str | None = None
+    principal_id: str = "user:local"
+    provenance_version: int = 1
     authority_instance_id: str
     authority_instance_name: str | None = None
     authority_url: str
@@ -267,6 +270,33 @@ class DispatchCompletionBody(BaseModel):
     disposition: Any = None
 
 
+def _canonical_dispatch_uuid(value: str | None, field: str) -> str:
+    """Reject display/storage slugs at the durable dispatch boundary."""
+    try:
+        parsed = str(UUID(value or ""))
+    except (ValueError, AttributeError) as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "malformed_provenance_id",
+                "field": field,
+                "value": value,
+                "message": f"{field} must be a full canonical UUID",
+            },
+        ) from exc
+    if parsed != value:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "noncanonical_provenance_id",
+                "field": field,
+                "value": value,
+                "message": f"{field} must use canonical lowercase UUID form",
+            },
+        )
+    return parsed
+
+
 def _dispatch_store(request: Request) -> DispatchStore:
     service = request.app.state.ctx.services.get("dispatch_store")
     if isinstance(service, DispatchStore):
@@ -281,6 +311,53 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
     """Make an exact authoritative card version resolvable before session creation."""
     _require_instance(request)
     settings = request.app.state.ctx.settings
+    if body.provenance_version != 1:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "unsupported_provenance_version",
+                "provenance_version": body.provenance_version,
+                "message": "Remote dispatch requires canonical provenance version 1",
+            },
+        )
+    if body.provenance_version == 1:
+        identifiers = {
+            "dispatch_id": body.dispatch_id,
+            "mutation_id": body.mutation_id,
+            "authority_instance_id": body.authority_instance_id,
+            "target_instance_id": body.target_instance_id,
+        }
+        card_id = str((body.card or {}).get("id") or "") or None
+        if card_id:
+            identifiers["card_id"] = card_id
+        if body.project_id:
+            identifiers["project_id"] = body.project_id
+        if body.session_id:
+            identifiers["session_id"] = body.session_id
+        for field, value in identifiers.items():
+            _canonical_dispatch_uuid(value, field)
+        caller = request.headers.get("X-PA-Origin-Instance-ID", "").strip()
+        _canonical_dispatch_uuid(caller, "authenticated_origin_instance_id")
+        if caller != body.authority_instance_id:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "dispatch_authority_mismatch",
+                    "authenticated_origin_instance_id": caller,
+                    "authority_instance_id": body.authority_instance_id,
+                    "recoverable": False,
+                },
+            )
+        if body.card and body.card.get("project_id") != body.project_id:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "dispatch_card_project_mismatch",
+                    "card_project_id": body.card.get("project_id"),
+                    "project_id": body.project_id,
+                    "recoverable": False,
+                },
+            )
     if body.target_instance_id != settings.instance_id:
         raise HTTPException(
             status_code=409,
@@ -385,6 +462,8 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
         dispatch_id=body.dispatch_id,
         mutation_id=body.mutation_id,
         card_id=card_id,
+        project_id=body.project_id,
+        principal_id=body.principal_id,
         realm_id=body.realm_id,
         card_version=body.card_version,
         authority_instance_id=body.authority_instance_id,
@@ -396,6 +475,7 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
         resume_session_id=body.session_id,
         state="materializing",
         attachment_evidence=attachment_evidence,
+        request_payload={"provenance_version": body.provenance_version},
     )
     try:
         ledger.put(record)
@@ -2299,6 +2379,9 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
         "card": record.card_snapshot,
         "card_version": record.card_version,
         "realm_id": record.realm_id,
+        "project_id": record.project_id,
+        "principal_id": record.principal_id,
+        "provenance_version": 1,
         "authority_instance_id": record.authority_instance_id,
         "authority_instance_name": record.authority_instance_name,
         "authority_url": record.authority_url,

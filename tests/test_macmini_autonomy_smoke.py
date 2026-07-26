@@ -17,6 +17,13 @@ from pa.modules.fleet import (
     complete_dispatch,
     materialize_dispatch,
 )
+from tests.test_dispatch_consistency import (
+    AUTHORITY_ID,
+    CARD_ONE,
+    DISPATCH_ONE,
+    MUTATION_ONE,
+    TARGET_ID,
+)
 
 
 def _request(settings, store, services, headers=None):
@@ -70,7 +77,7 @@ class MacMiniAutonomySmokeTest(unittest.TestCase):
                 check=True,
             )
 
-            card = Card(id="smoke-card", title="Autonomous smoke")
+            card = Card(id=CARD_ONE, title="Autonomous smoke")
             authority_store = MagicMock()
             authority_store.get_card.return_value = card.model_copy(
                 update={"lane": CardLane.ACTIVE, "preferred_instance": "target"}
@@ -79,21 +86,22 @@ class MacMiniAutonomySmokeTest(unittest.TestCase):
             target_store.get_card.return_value = None
             target_log = MagicMock()
             target = _request(
-                Settings(data_dir=target_data, instance_id="target"),
+                Settings(data_dir=target_data, instance_id=TARGET_ID),
                 target_store,
                 {"event_log": target_log},
+                headers={"X-PA-Origin-Instance-ID": AUTHORITY_ID},
             )
             materialized = materialize_dispatch(
                 target,
                 DispatchMaterializeBody(
-                    dispatch_id="dispatch-smoke",
-                    mutation_id="mutation-smoke",
+                    dispatch_id=DISPATCH_ONE,
+                    mutation_id=MUTATION_ONE,
                     card=card.model_dump(mode="json"),
                     card_version=card.updated_at.isoformat(),
                     realm_id="default",
-                    authority_instance_id="authority",
+                    authority_instance_id=AUTHORITY_ID,
                     authority_url="http://authority.invalid",
-                    target_instance_id="target",
+                    target_instance_id=TARGET_ID,
                 ),
             )
             self.assertTrue(materialized["resolvable"])
@@ -107,39 +115,39 @@ class MacMiniAutonomySmokeTest(unittest.TestCase):
             ledger = DispatchStore(authority_data)
             ledger.put(
                 DispatchRecord(
-                    dispatch_id="dispatch-smoke",
-                    mutation_id="mutation-smoke",
+                    dispatch_id=DISPATCH_ONE,
+                    mutation_id=MUTATION_ONE,
                     card_id=card.id,
                     realm_id="default",
                     card_version=card.updated_at.isoformat(),
-                    authority_instance_id="authority",
+                    authority_instance_id=AUTHORITY_ID,
                     authority_url="http://authority.invalid",
-                    target_instance_id="target",
+                    target_instance_id=TARGET_ID,
                     session_id=session["id"],
                     state="running",
                 )
             )
             authority = _request(
-                Settings(data_dir=authority_data, instance_id="authority"),
+                Settings(data_dir=authority_data, instance_id=AUTHORITY_ID),
                 authority_store,
                 {"dispatch_store": ledger},
-                {"idempotency-key": "mutation-smoke"},
+                {"idempotency-key": MUTATION_ONE},
             )
             ack = complete_dispatch(
                 authority,
-                "dispatch-smoke",
+                DISPATCH_ONE,
                 DispatchCompletionBody(
-                    mutation_id="mutation-smoke",
+                    mutation_id=MUTATION_ONE,
                     card_id=card.id,
                     realm_id="default",
                     card_version=card.updated_at.isoformat(),
-                    source_instance_id="target",
+                    source_instance_id=TARGET_ID,
                     session_id=session["id"],
                     result={"status": "complete"},
                 ),
             )
             self.assertTrue(ack["acknowledged"])
-            self.assertEqual(ledger.get("dispatch-smoke").state, "completed")
+            self.assertEqual(ledger.get(DISPATCH_ONE).state, "completed")
             self.assertEqual(ack["card_disposition"]["status"], "absent")
             authority_store.update_card.assert_not_called()
 

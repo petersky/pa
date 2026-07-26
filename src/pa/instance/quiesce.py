@@ -14,7 +14,6 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from pa.core.io import atomic_write_json
 
-
 MAX_PROMPT_IMAGES = 4
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 MAX_TOTAL_IMAGE_BYTES = 20 * 1024 * 1024
@@ -97,6 +96,10 @@ class SessionSnapshot(BaseModel):
     card_id: str | None = None
     project_id: str | None = None
     principal_id: str | None = None
+    authority_instance_id: str | None = None
+    origin_instance_id: str | None = None
+    dispatch_id: str | None = None
+    realm_id: str = "default"
     prompting: bool = False
     queue_paused: bool = False
     queued_prompts: list[QueuedPrompt] = Field(default_factory=list)

@@ -425,6 +425,29 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                     "recoverable": False,
                 },
             )
+        mismatches = {
+            field: {"expected": expected, "actual": actual}
+            for field, expected, actual in (
+                ("card_id", dispatch_record.card_id, body.card_id),
+                ("project_id", dispatch_record.project_id, body.project_id),
+                (
+                    "target_instance_id",
+                    dispatch_record.target_instance_id,
+                    settings.instance_id,
+                ),
+            )
+            if expected != actual
+        }
+        if mismatches:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "dispatch_provenance_mismatch",
+                    "message": "Session provenance does not match the materialized dispatch.",
+                    "mismatches": mismatches,
+                    "recoverable": False,
+                },
+            )
         if not body.resume and not dispatch_record.session_id:
 
             def reserve_dispatch_session() -> None:
@@ -486,6 +509,24 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
         new_session_configuration = _configuration_request(body, new_session_defaults)
     except ACPConfigurationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    dispatch_session_kwargs: dict[str, Any] = {}
+    if dispatch_record:
+        dispatch_session_kwargs = {
+            "principal_id": dispatch_record.principal_id,
+            "authority_instance_id": dispatch_record.authority_instance_id,
+            "dispatch_id": dispatch_record.dispatch_id,
+            "realm_id": dispatch_record.realm_id,
+            "execution_context_seed": {
+                "authority_instance": {
+                    "id": dispatch_record.authority_instance_id,
+                    "name": dispatch_record.authority_instance_name
+                    or dispatch_record.authority_instance_id,
+                },
+                "dispatch_id": dispatch_record.dispatch_id,
+                "attachments": dispatch_record.attachment_evidence
+                or {"verified": True, "attachments": []},
+            },
+        }
     try:
         if dispatch_record:
             linked_session_id = dispatch_record.session_id
@@ -506,7 +547,7 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                         label=body.label,
                         title=body.title,
                         cwd=body.cwd,
-                        principal_id=principal_id,
+                        **dispatch_session_kwargs,
                         card_id=body.card_id,
                         project_id=body.project_id,
                         surface=surface,
@@ -530,7 +571,7 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                         label=stored.label,
                         title=body.title or stored.title,
                         cwd=body.cwd or stored.cwd,
-                        principal_id=principal_id or stored.principal_id,
+                        **dispatch_session_kwargs,
                         card_id=body.card_id or stored.card_id,
                         project_id=body.project_id or stored.project_id,
                         existing=stored,
@@ -560,7 +601,7 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                     label=body.label,
                     title=body.title,
                     cwd=body.cwd,
-                    principal_id=principal_id,
+                    **dispatch_session_kwargs,
                     card_id=body.card_id,
                     project_id=body.project_id,
                     surface=surface,

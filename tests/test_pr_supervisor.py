@@ -16,8 +16,16 @@ from fastapi.testclient import TestClient
 
 from pa.config import Settings
 from pa.core.kernel import Kernel
-from pa.domain.models import AgentSession, Card, CardLane
+from pa.domain.models import (
+    AgentSession,
+    Card,
+    CardCreate,
+    CardLane,
+    ProjectCreate,
+    RepositoryCreate,
+)
 from pa.domain.store import reset_store
+from pa.execution.dispatch import DispatchRecord
 from pa.instance.agent_session import AgentSessionRuntime, reset_instance_agent
 from pa.pr_supervisor.gating import build_executor_prompt, evaluate_gate
 from pa.pr_supervisor.github import (
@@ -54,6 +62,7 @@ def watch(*, policy: PRPolicy | None = None) -> PRWatch:
         originating_instance_id="instance-a",
         originating_session_id="session-1",
         executor_cwd="/tmp/worktree",
+        provenance_version=1,
         policy=policy or PRPolicy(),
     )
 
@@ -913,6 +922,10 @@ class PRSupervisorServiceTests(unittest.IsolatedAsyncioTestCase):
         migrated = self.store.find_watch("default", "owner/repo", 17)
         self.assertEqual(migrated.policy.integration_branch, "release")
         self.assertEqual(migrated.policy.required_checks, ["release-ci"])
+        self.assertIsNone(migrated.card_id)
+        self.assertIsNone(migrated.project_id)
+        self.assertIsNone(migrated.originating_session_id)
+        self.assertEqual(migrated.provenance_version, 0)
 
     async def test_check_run_webhook_schedules_matching_watch(self) -> None:
         service = await self.make_service([snapshot()])
@@ -1166,12 +1179,13 @@ class PRSupervisorApiAndMcpTests(unittest.TestCase):
         reset_instance_agent()
         self.settings = Settings(
             data_dir=Path(self.tmp.name),
-            instance_id="api-instance",
+            instance_id="11111111-1111-4111-8111-111111111111",
             instance_url="http://api-instance",
             fleet_owner_url="http://api-instance",
             sync_token="fleet-secret",
             agent_enabled=False,
             peers=[],
+            subscribed_realms=["default"],
         )
 
     def tearDown(self) -> None:
@@ -1183,12 +1197,45 @@ class PRSupervisorApiAndMcpTests(unittest.TestCase):
         app = Kernel.boot(settings=self.settings).build_app()
         headers = {"Authorization": "Bearer fleet-secret"}
         with TestClient(app) as client:
+            repository = app.state.ctx.store.create_repository(
+                RepositoryCreate(url="https://github.com/owner/repo"),
+                instance_id=self.settings.instance_id,
+            )
+            project = app.state.ctx.store.create_project(
+                ProjectCreate(title="Project"),
+                instance_id=self.settings.instance_id,
+            )
+            self.assertTrue(
+                app.state.ctx.store.link_project_repository(
+                    project.id,
+                    repository.id,
+                    instance_id=self.settings.instance_id,
+                )
+            )
+            card = app.state.ctx.store.create_card(
+                CardCreate(title="Card", project_id=project.id),
+                instance_id=self.settings.instance_id,
+            )
+            session_id = "22222222-2222-4222-8222-222222222222"
             app.state.ctx.store.save_session(
                 AgentSession(
-                    id="session-1",
+                    id=session_id,
                     agent_name="codex",
+                    origin_instance_id=self.settings.instance_id,
                     status="closed",
-                    card_id="card-1",
+                    card_id=card.id,
+                    project_id=project.id,
+                    principal_id="user:local",
+                    config_json={
+                        "execution_context": {
+                            "repositories": [
+                                {
+                                    "repository_id": repository.id,
+                                    "repository_url": repository.url,
+                                }
+                            ]
+                        }
+                    },
                 )
             )
             capability = client.get("/api/pr-supervisor/capabilities", headers=headers)
@@ -1209,8 +1256,9 @@ class PRSupervisorApiAndMcpTests(unittest.TestCase):
                     "repository": "owner/repo",
                     "pr_number": 17,
                     "pr_url": "https://github.com/owner/repo/pull/17",
-                    "card_id": "card-1",
-                    "originating_session_id": "session-1",
+                    "card_id": card.id,
+                    "project_id": project.id,
+                    "originating_session_id": session_id,
                 },
             )
             self.assertEqual(created.status_code, 201, created.text)
@@ -1228,7 +1276,7 @@ class PRSupervisorApiAndMcpTests(unittest.TestCase):
             self.assertIn("Show closed sessions", session_page.text)
             self.assertNotIn("PR #17", session_page.text)
             session_history = client.get(
-                "/api/agent/history/session-1", headers=headers
+                f"/api/agent/history/{session_id}", headers=headers
             )
             self.assertEqual(session_history.status_code, 200)
             self.assertEqual(session_history.json()["pr_watches"][0]["id"], watch_id)
@@ -1299,6 +1347,245 @@ class PRSupervisorApiAndMcpTests(unittest.TestCase):
             )
             self.assertEqual(unsigned.status_code, 401)
 
+    def test_canonical_ingestion_rejects_slugs_forgery_and_audits_repair(self) -> None:
+        app = Kernel.boot(settings=self.settings).build_app()
+        headers = {"Authorization": "Bearer fleet-secret"}
+        with TestClient(app) as client:
+            repository = app.state.ctx.store.create_repository(
+                RepositoryCreate(url="https://github.com/owner/repo"),
+                instance_id=self.settings.instance_id,
+            )
+            project = app.state.ctx.store.create_project(
+                ProjectCreate(title="Canonical provenance"),
+                instance_id=self.settings.instance_id,
+            )
+            app.state.ctx.store.link_project_repository(
+                project.id,
+                repository.id,
+                instance_id=self.settings.instance_id,
+            )
+            canonical_card = app.state.ctx.store.create_card(
+                CardCreate(title="Canonical card", project_id=project.id),
+                instance_id=self.settings.instance_id,
+            )
+            forged_card = app.state.ctx.store.create_card(
+                CardCreate(title="Other card", project_id=project.id),
+                instance_id=self.settings.instance_id,
+            )
+            session_id = "45cd58e9-1dd7-44b9-9e07-2ae58d12e685"
+            app.state.ctx.store.save_session(
+                AgentSession(
+                    id=session_id,
+                    agent_name="codex",
+                    origin_instance_id=self.settings.instance_id,
+                    card_id=canonical_card.id,
+                    project_id=project.id,
+                    principal_id="user:local",
+                    status="closed",
+                    config_json={
+                        "execution_context": {
+                            "repositories": [
+                                {
+                                    "repository_id": repository.id,
+                                    "repository_url": repository.url,
+                                }
+                            ]
+                        }
+                    },
+                )
+            )
+
+            shortened = client.post(
+                "/api/pr-supervisor/watches",
+                headers=headers,
+                json={
+                    "repository": "owner/repo",
+                    "pr_number": 18,
+                    "originating_session_id": "45cd58e9-1dd7-44-32707629",
+                },
+            )
+            self.assertEqual(shortened.status_code, 422, shortened.text)
+            self.assertEqual(
+                shortened.json()["detail"]["code"], "malformed_provenance_id"
+            )
+
+            forged = client.post(
+                "/api/pr-supervisor/watches",
+                headers=headers,
+                json={
+                    "repository": "owner/repo",
+                    "pr_number": 18,
+                    "card_id": forged_card.id,
+                    "originating_session_id": session_id,
+                },
+            )
+            self.assertEqual(forged.status_code, 422, forged.text)
+            self.assertEqual(
+                forged.json()["detail"]["code"], "caller_provenance_mismatch"
+            )
+
+            cross_realm = client.post(
+                "/api/pr-supervisor/watches",
+                headers=headers,
+                json={
+                    "realm_id": "other",
+                    "repository": "owner/repo",
+                    "pr_number": 18,
+                    "originating_session_id": session_id,
+                },
+            )
+            self.assertEqual(cross_realm.status_code, 422, cross_realm.text)
+            self.assertEqual(
+                cross_realm.json()["detail"]["code"], "provenance_realm_mismatch"
+            )
+
+            created = client.post(
+                "/api/pr-supervisor/watches",
+                headers=headers,
+                json={
+                    "repository": "owner/repo",
+                    "pr_number": 18,
+                    "originating_session_id": session_id,
+                },
+            )
+            self.assertEqual(created.status_code, 201, created.text)
+            durable = created.json()
+            self.assertEqual(durable["originating_session_id"], session_id)
+            self.assertEqual(durable["card_id"], canonical_card.id)
+            self.assertEqual(durable["project_id"], project.id)
+            self.assertEqual(durable["repository_id"], repository.id)
+            self.assertEqual(
+                durable["originating_instance_id"], self.settings.instance_id
+            )
+            self.assertEqual(
+                durable["authority_instance_id"], self.settings.instance_id
+            )
+            self.assertEqual(durable["provenance_version"], 1)
+
+            remote_session_id = "88888888-8888-4888-8888-888888888888"
+            dispatch_id = "99999999-9999-4999-8999-999999999999"
+            authority_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+            dispatch_store = app.state.ctx.require_service("dispatch_store")
+            dispatch_store.put(
+                DispatchRecord(
+                    dispatch_id=dispatch_id,
+                    mutation_id="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                    card_id=canonical_card.id,
+                    project_id=project.id,
+                    realm_id="default",
+                    principal_id="user:local",
+                    authority_instance_id=authority_id,
+                    authority_url="http://authority",
+                    target_instance_id=self.settings.instance_id,
+                    session_id=remote_session_id,
+                    request_payload={"provenance_version": 1},
+                )
+            )
+            app.state.ctx.store.save_session(
+                AgentSession(
+                    id=remote_session_id,
+                    agent_name="codex",
+                    origin_instance_id=self.settings.instance_id,
+                    authority_instance_id=authority_id,
+                    dispatch_id=dispatch_id,
+                    card_id=canonical_card.id,
+                    project_id=project.id,
+                    principal_id="user:local",
+                    status="closed",
+                    config_json={
+                        "execution_context": {
+                            "repositories": [{"repository_id": repository.id}]
+                        }
+                    },
+                )
+            )
+            remote = client.post(
+                "/api/pr-supervisor/watches",
+                headers=headers,
+                json={
+                    "repository": "owner/repo",
+                    "pr_number": 20,
+                    "originating_session_id": remote_session_id,
+                },
+            )
+            self.assertEqual(remote.status_code, 201, remote.text)
+            self.assertEqual(remote.json()["dispatch_id"], dispatch_id)
+            self.assertEqual(remote.json()["authority_instance_id"], authority_id)
+            self.assertEqual(
+                remote.json()["originating_instance_id"], self.settings.instance_id
+            )
+            self.assertNotEqual(remote.json()["originating_instance_id"], authority_id)
+            self.assertEqual(remote.json()["originating_session_id"], remote_session_id)
+            self.assertEqual(remote.json()["card_id"], canonical_card.id)
+            remote_lease = client.post(
+                f"/api/pr-supervisor/watches/{remote.json()['id']}/lease",
+                headers=headers,
+                json={
+                    "watch": remote.json(),
+                    "instance_id": self.settings.instance_id,
+                    "capability": {
+                        "instance_id": self.settings.instance_id,
+                        "authenticated": True,
+                    },
+                },
+            )
+            self.assertEqual(remote_lease.status_code, 200, remote_lease.text)
+
+            legacy = PRWatch(
+                id="legacy-corrupt-watch",
+                realm_id="default",
+                repository="owner/repo",
+                pr_number=19,
+                pr_url="https://github.com/owner/repo/pull/19",
+                card_id="45cd58e9-1dd7-44-32707629",
+                originating_session_id="1cb4d40f-773d-43-0648f660",
+                originating_instance_id="2d22a9e1-a1a0-49-8284627a",
+                provenance_version=0,
+            )
+            supervisor_store = app.state.ctx.require_service("pr_supervisor_store")
+            supervisor_store.upsert_watch(legacy)
+            issues = client.get("/api/pr-supervisor/provenance/issues", headers=headers)
+            self.assertEqual(issues.status_code, 200, issues.text)
+            legacy_issue = next(
+                item
+                for item in issues.json()["issues"]
+                if item["watch_id"] == legacy.id
+            )
+            issue_codes = {issue["code"] for issue in legacy_issue["issues"]}
+            self.assertIn("unverified_legacy_provenance", issue_codes)
+            self.assertIn("malformed_provenance_id", issue_codes)
+
+            repair_payload = {
+                "originating_session_id": session_id,
+                "idempotency_key": "operator-relink-19",
+            }
+            repaired = client.post(
+                f"/api/pr-supervisor/watches/{legacy.id}/provenance/repair",
+                headers=headers,
+                json=repair_payload,
+            )
+            self.assertEqual(repaired.status_code, 200, repaired.text)
+            self.assertEqual(repaired.json()["card_id"], canonical_card.id)
+            self.assertEqual(repaired.json()["originating_session_id"], session_id)
+            self.assertEqual(repaired.json()["repository_id"], repository.id)
+            self.assertEqual(
+                repaired.json()["authority_instance_id"], self.settings.instance_id
+            )
+            self.assertEqual(repaired.json()["provenance_version"], 1)
+            repeated = client.post(
+                f"/api/pr-supervisor/watches/{legacy.id}/provenance/repair",
+                headers=headers,
+                json=repair_payload,
+            )
+            self.assertEqual(repeated.status_code, 200, repeated.text)
+            repair_events = [
+                event
+                for event in supervisor_store.list_events(legacy.id)
+                if event.event_type == "provenance_repaired"
+            ]
+            self.assertEqual(len(repair_events), 1)
+            self.assertFalse(repair_events[0].payload["guessed"])
+
     def test_mcp_registers_watch_policy_capability_and_ready_creation_controls(
         self,
     ) -> None:
@@ -1329,6 +1616,8 @@ class PRSupervisorApiAndMcpTests(unittest.TestCase):
             "retire_pr_watch",
             "create_supervised_pull_request",
             "set_project_pr_policy",
+            "diagnose_pr_watch_provenance",
+            "repair_pr_watch_provenance",
             "github_integration_capability",
         }
         self.assertTrue(expected.issubset(mcp.names))

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
@@ -10,9 +11,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from pa.config import Settings
 from pa.acp.providers.base import AgentProviderSpec
+from pa.config import Settings
 from pa.domain.models import AgentSession, ProjectRepository, Repository
+from pa.instance.agent_session import AgentSessionManager, AgentSessionRuntime
 from pa.instance.quiesce import QuiesceSnapshot, SessionSnapshot
 from pa.repository.workspace import (
     LinkedRepository,
@@ -21,7 +23,6 @@ from pa.repository.workspace import (
     WorkspaceProvisioningError,
     canonical_repository_identity,
 )
-from pa.instance.agent_session import AgentSessionManager, AgentSessionRuntime
 
 
 def git(path: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -407,13 +408,9 @@ def test_reconcile_done_card_on_lease_owner_enables_safe_cleanup(
     lease = manager.provision_repository(
         linked, project_id="project-1", session_id="session-1", card_id="card-1"
     )
-    manager.store.list_cards.return_value = [
-        SimpleNamespace(id="card-1", lane="done")
-    ]
+    manager.store.list_cards.return_value = [SimpleNamespace(id="card-1", lane="done")]
     manager.store.list_sessions.return_value = [
-        AgentSession(
-            id="session-1", agent_name="codex", status="closed"
-        )
+        AgentSession(id="session-1", agent_name="codex", status="closed")
     ]
 
     result = manager.reconcile_terminal_state()
@@ -620,6 +617,74 @@ def test_agent_session_provisions_before_provider_start_and_persists_context(
     start.assert_awaited_once()
 
 
+def test_remote_provider_environment_keeps_full_ids_while_slugs_stay_short(
+    tmp_path: Path,
+) -> None:
+    workspace_manager, repository, _ = manager_for(tmp_path)
+    target_id = "2d22a9e1-a1a0-4900-8a8e-8284627aa6bf"
+    authority_id = "0c7d8ecb-7e45-4579-8fa0-35159492d3f1"
+    dispatch_id = "33333333-3333-4333-8333-333333333333"
+    session_id = "1cb4d40f-773d-4363-8fd5-312da92dee7c"
+    colliding_session_id = "1cb4d40f-773d-4363-8fd5-ffffffffffff"
+    card_id = "45cd58e9-1dd7-44b9-9e07-2ae58d12e685"
+    colliding_card_id = "45cd58e9-1dd7-44b9-9e07-ffffffffffff"
+    repository_id = "66666666-6666-4666-8666-666666666666"
+    workspace_manager.settings.instance_id = target_id
+    repository.id = repository_id
+    manager = AgentSessionManager(workspace_manager.settings, workspace_manager.store)
+    spec = AgentProviderSpec(id="codex", display_name="Codex", command="codex-acp")
+    resolved = SimpleNamespace(provider_id="codex", spec=spec, source="instance")
+
+    async def run():
+        with (
+            patch(
+                "pa.instance.agent_session.resolve_agent_provider",
+                return_value=resolved,
+            ),
+            patch.object(AgentSessionRuntime, "start", new=AsyncMock()),
+        ):
+            return await manager.create_session(
+                session_id=session_id,
+                label=f"card:{card_id}:dispatch:{dispatch_id}",
+                card_id=card_id,
+                project_id="project-1",
+                principal_id="user:operator",
+                authority_instance_id=authority_id,
+                dispatch_id=dispatch_id,
+                realm_id="engineering",
+                provider_override="codex",
+            )
+
+    runtime = asyncio.run(run())
+    context = json.loads(spec.env["PA_EXECUTION_CONTEXT"])
+    lease = context["repositories"][0]
+
+    assert runtime.session.id == session_id
+    assert runtime.session.card_id == card_id
+    assert runtime.session.dispatch_id == dispatch_id
+    assert runtime.session.authority_instance_id == authority_id
+    assert context["session_id"] == session_id
+    assert context["card_id"] == card_id
+    assert context["instance"]["id"] == target_id
+    assert context["authority_instance"]["id"] == authority_id
+    assert context["provenance"] == {
+        "version": 1,
+        "realm_id": "engineering",
+        "principal_id": "user:operator",
+        "dispatch_id": dispatch_id,
+    }
+    assert lease["repository_id"] == repository_id
+    assert session_id not in lease["worktree_path"]
+    assert card_id not in lease["branch"]
+    assert WorkspaceManager._entity_key(card_id) != WorkspaceManager._entity_key(
+        colliding_card_id
+    )
+    assert len(WorkspaceManager._entity_key(session_id)) < len(session_id)
+    assert WorkspaceManager._entity_key(session_id) != WorkspaceManager._entity_key(
+        colliding_session_id
+    )
+
+
 def test_workspace_reprovision_preserves_remote_authority(tmp_path: Path) -> None:
     workspace_manager, _, _ = manager_for(tmp_path)
     manager = AgentSessionManager(workspace_manager.settings, workspace_manager.store)
@@ -645,7 +710,9 @@ def test_workspace_recovery_rematerializes_cwd_from_data_dir(tmp_path: Path) -> 
     manager = AgentSessionManager(workspace_manager.settings, workspace_manager.store)
     stale_cwd = workspace_manager.settings.data_dir / "agent-workspaces" / "stale"
     stale_cwd.mkdir(parents=True)
-    session = AgentSession(id="recovery-session", agent_name="codex", cwd=str(stale_cwd))
+    session = AgentSession(
+        id="recovery-session", agent_name="codex", cwd=str(stale_cwd)
+    )
 
     asyncio.run(
         manager._prepare_workspace(
@@ -670,9 +737,7 @@ def test_missing_project_records_actionable_blocked_state(tmp_path: Path) -> Non
 
     with pytest.raises(WorkspaceProvisioningError, match="sync or link"):
         asyncio.run(
-            manager._prepare_workspace(
-                session, requested_cwd=None, provider_id="codex"
-            )
+            manager._prepare_workspace(session, requested_cwd=None, provider_id="codex")
         )
 
     state = session.config_json["provisioning"]
@@ -702,13 +767,9 @@ def test_unmaterialized_project_links_record_blocked_state(tmp_path: Path) -> No
         project_id="project-1",
     )
 
-    with pytest.raises(
-        WorkspaceProvisioningError, match="links are not materialized"
-    ):
+    with pytest.raises(WorkspaceProvisioningError, match="links are not materialized"):
         asyncio.run(
-            manager._prepare_workspace(
-                session, requested_cwd=None, provider_id="codex"
-            )
+            manager._prepare_workspace(session, requested_cwd=None, provider_id="codex")
         )
 
     state = session.config_json["provisioning"]
