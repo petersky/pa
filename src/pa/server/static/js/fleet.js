@@ -503,6 +503,33 @@
       var transport = dispatch.dispatch_completion || {};
       var card = dispatch.card_completion || {};
       var reconciliation = dispatch.card_reconciliation || {};
+      var progress = dispatch.progress || {};
+      var checkpoint = progress.latest || null;
+      var freshness = progress.freshness || {};
+      var progressText = "";
+      if (checkpoint) {
+        var toolRows = (checkpoint.tool_details || []).map(function (detail) {
+          return "<li>" + escapeHtml(detail.title || "Tool") +
+            (detail.status ? " · " + escapeHtml(detail.status) : "") + "</li>";
+        }).join("");
+        var validationRows = (checkpoint.validations || []).map(function (validation) {
+          return "<li><code>" + escapeHtml(validation.command || "validation") +
+            "</code> · " + escapeHtml(validation.status || "unknown") + "</li>";
+        }).join("");
+        progressText = '<div class="dispatch-progress dispatch-progress-' +
+          escapeHtml(freshness.state || "delayed") + '"><p><strong>' +
+          escapeHtml((checkpoint.phase || "investigating").replace(/_/g, " ")) +
+          "</strong> · " + escapeHtml(checkpoint.summary || "Agent active") +
+          '</p><p class="muted small">Reporting ' +
+          escapeHtml(freshness.state || "delayed") +
+          (freshness.age_seconds == null ? "" : " · " + escapeHtml(freshness.age_seconds) + "s ago") +
+          "</p>" + (toolRows || validationRows
+            ? "<details><summary>Sanitized tool and validation details</summary><ul>" +
+              validationRows + toolRows + "</ul></details>"
+            : "") + "</div>";
+      } else if (progress.reporting === "lifecycle_only") {
+        progressText = '<p class="muted small">Lifecycle-only reporting from an older peer.</p>';
+      }
       var lifecycle = '<p class="muted small">Agent turn: ' +
         escapeHtml(turn.completed ? "completed" : "in progress") +
         (turn.stop_reason ? " (" + escapeHtml(turn.stop_reason) + ")" : "") +
@@ -537,7 +564,7 @@
         '<span class="status status-' + badge + '">' + escapeHtml(remoteDispatchStageLabel(state)) + "</span>" +
         '<p class="muted small"><code>' + escapeHtml(dispatch.dispatch_id) + "</code>" +
         (latest ? " · " + escapeHtml(latest) : "") + "</p></div>" + actions + "</div>" +
-        error + lifecycle + cardText + reconciliationText + outboxText +
+        error + progressText + lifecycle + cardText + reconciliationText + outboxText +
         (terminal ? "" : '<progress></progress>') + "</li>";
     }).join("");
   }
@@ -562,6 +589,13 @@
         if (target.card_reconciliation &&
             target.card_reconciliation.state !== "not_requested") {
           authority.card_reconciliation = target.card_reconciliation;
+          authority.updated_at = target.updated_at;
+        }
+        var authorityActivity = (((authority.progress || {}).freshness || {}).last_activity_at || "");
+        var targetActivity = (((target.progress || {}).freshness || {}).last_activity_at || "");
+        if (targetActivity > authorityActivity) {
+          authority.progress = target.progress;
+          authority.progress_events = target.progress_events;
           authority.updated_at = target.updated_at;
         }
         if (target.state === "completion_pending" || target.state === "completed") {
@@ -1179,6 +1213,9 @@
 
   function activityLabel(value) {
     value = value || {};
+    if (value.current_dispatch && value.current_dispatch.phase) {
+      return value.current_dispatch.phase.replace(/_/g, " ");
+    }
     var count = (value.sessions || []).length + (value.dispatches || []).length;
     var state = value.state || "unavailable";
     return count > 1 ? state + " +" + (count - 1) : state;
@@ -1243,9 +1280,20 @@
     var activityEl = $("[data-fleet-active-work]", tr);
     if (activityEl) {
       var activityValue = activity.value || {};
+      var currentDispatch = activityValue.current_dispatch || null;
+      var currentFreshness = currentDispatch && currentDispatch.freshness || {};
       activityEl.innerHTML = "<strong>" + escapeHtml(activityLabel(activityValue)) +
         '</strong><span class="muted small">' +
-        escapeHtml(activityValue.summary || "No activity detail yet") + "</span>";
+        escapeHtml(currentDispatch && currentDispatch.summary ||
+          activityValue.summary || "No activity detail yet") + "</span>" +
+        (currentDispatch
+          ? '<span class="fleet-freshness fleet-field-' +
+            escapeHtml(currentFreshness.state || "delayed") + '">' +
+            escapeHtml(currentFreshness.state || "delayed") +
+            (currentFreshness.age_seconds == null
+              ? "" : " · " + escapeHtml(currentFreshness.age_seconds) + "s") +
+            "</span>"
+          : "");
       setFieldState(activityEl, activity.state);
     }
     var freshnessEl = $("[data-fleet-freshness]", tr);

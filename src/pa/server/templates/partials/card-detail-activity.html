@@ -11,6 +11,7 @@
         <option value="card">Card changes</option>
         <option value="agent">Agent sessions</option>
         <option value="dispatch">Dispatches</option>
+        <option value="progress">Progress &amp; validation</option>
         <option value="pr">Pull requests</option>
         <option value="memory">Memory &amp; decisions</option>
       </select>
@@ -24,7 +25,17 @@
       <span class="activity-marker" aria-hidden="true"></span>
       <div>
         <strong>{{ entry.label }}</strong>
-        <p class="muted">{{ entry.actor }}{% if entry.detail %} · {{ entry.detail }}{% endif %}</p>
+        <p class="muted">{{ entry.actor }}{% if entry.detail %} · {{ entry.detail }}{% endif %}{% if entry.session_url %} · <a href="{{ entry.session_url }}">Exact session</a>{% endif %}</p>
+        {% if entry.details %}
+        <details class="activity-details">
+          <summary>Sanitized details</summary>
+          <dl>
+            {% for detail in entry.details %}
+            <div><dt>{{ detail.label }}</dt><dd>{{ detail.value or 'Recorded' }}</dd></div>
+            {% endfor %}
+          </dl>
+        </details>
+        {% endif %}
       </div>
       <time datetime="{{ entry.timestamp.isoformat() }}">{{ entry.timestamp.strftime('%b %-d, %H:%M') }}</time>
     </li>

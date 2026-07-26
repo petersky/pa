@@ -127,8 +127,12 @@
             {% else %}<span class="muted">{{ providers.state }}</span>{% endif %}
           </td>
           <td data-fleet-active-work class="fleet-field fleet-field-{{ activity.state }}">
-            <strong>{{ activity.value.state if activity.value and activity.value.state else activity.state }}</strong>
-            <span class="muted small">{{ activity.value.summary if activity.value and activity.value.summary else 'No activity detail yet' }}</span>
+            {% set current_dispatch = activity.value.current_dispatch if activity.value else none %}
+            <strong>{{ current_dispatch.phase | replace('_', ' ') if current_dispatch else (activity.value.state if activity.value and activity.value.state else activity.state) }}</strong>
+            <span class="muted small">{{ current_dispatch.summary if current_dispatch else (activity.value.summary if activity.value and activity.value.summary else 'No activity detail yet') }}</span>
+            {% if current_dispatch and current_dispatch.freshness %}
+            <span class="fleet-freshness fleet-field-{{ current_dispatch.freshness.state }}">{{ current_dispatch.freshness.state }}{% if current_dispatch.freshness.age_seconds is not none %} · {{ current_dispatch.freshness.age_seconds }}s{% endif %}</span>
+            {% endif %}
           </td>
           <td data-fleet-freshness>
             <span class="fleet-freshness fleet-field-{{ reach.state }}">{{ reach.state }}</span>

@@ -16,6 +16,19 @@ import httpx
 from pydantic import BaseModel, Field
 
 from pa.core.io import atomic_write_json
+from pa.execution.progress import (
+    MAX_PROGRESS_EVENTS,
+    MAX_PROGRESS_SEEN_KEYS,
+    CompletionReportV1,
+    DispatchProgressEventV1,
+    DispatchProgressHeartbeatV1,
+    ProgressIngestResult,
+    progress_freshness,
+    sanitize_completion_report,
+    sanitize_heartbeat,
+    sanitize_progress_event,
+    sanitize_text,
+)
 
 if TYPE_CHECKING:
     from pa.core.async_runtime import AsyncRuntime
@@ -107,12 +120,34 @@ class DispatchRecord(BaseModel):
     reconciliation_updated_at: datetime | None = None
     acknowledged_at: datetime | None = None
     events: list[DispatchEvent] = Field(default_factory=list)
+    progress_protocol_version: int | None = None
+    progress_next_sequence: int = 1
+    progress_events: list[DispatchProgressEventV1] = Field(default_factory=list)
+    progress_heartbeat: DispatchProgressHeartbeatV1 | None = None
+    progress_seen_keys: list[str] = Field(default_factory=list)
+    progress_conflicts: int = 0
+    progress_authority_history: list[dict[str, Any]] = Field(default_factory=list)
+    final_report: CompletionReportV1 | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
+    @property
+    def latest_progress(self) -> DispatchProgressEventV1 | None:
+        return max(
+            self.progress_events,
+            key=lambda event: (event.sequence, event.occurred_at),
+            default=None,
+        )
+
     def public_dict(self) -> dict[str, Any]:
         data = self.model_dump(
-            mode="json", exclude={"request_payload", "card_snapshot"}
+            mode="json",
+            exclude={
+                "request_payload",
+                "card_snapshot",
+                "progress_seen_keys",
+                "progress_next_sequence",
+            },
         )
         data["can_retry"] = self.state in {"failed", "cancelled"} and self.recoverable
         data["can_cancel"] = self.state in {
@@ -163,6 +198,56 @@ class DispatchRecord(BaseModel):
                 self.reconciliation_updated_at.isoformat()
                 if self.reconciliation_updated_at
                 else None
+            ),
+        }
+        latest = self.latest_progress
+        heartbeat = self.progress_heartbeat
+        last_activity = max(
+            (
+                value
+                for value in (
+                    latest.last_activity_at if latest else None,
+                    heartbeat.occurred_at if heartbeat else None,
+                )
+                if value is not None
+            ),
+            default=None,
+        )
+        sequences = sorted({event.sequence for event in self.progress_events})
+        sequence_gap = bool(
+            sequences
+            and sequences != list(range(sequences[0], sequences[-1] + 1))
+        )
+        progress_delivery_error = next(
+            (
+                payload.delivery_error
+                for payload in [
+                    heartbeat,
+                    *reversed(self.progress_events),
+                ]
+                if payload and payload.delivery_error
+            ),
+            None,
+        )
+        data["progress"] = {
+            "schema_version": self.progress_protocol_version,
+            "supported_versions": [1],
+            "latest": latest.model_dump(mode="json") if latest else None,
+            "heartbeat": heartbeat.model_dump(mode="json") if heartbeat else None,
+            "freshness": progress_freshness(
+                last_activity_at=last_activity,
+                dispatch_state=self.state,
+                last_error=self.last_error or progress_delivery_error,
+                protocol_version=self.progress_protocol_version,
+            ),
+            "delivery_error": progress_delivery_error,
+            "checkpoint_count": len(self.progress_events),
+            "sequence_gap": sequence_gap,
+            "conflicts": self.progress_conflicts,
+            "reporting": (
+                "structured"
+                if self.progress_protocol_version == 1
+                else "lifecycle_only"
             ),
         }
         return data
@@ -271,6 +356,409 @@ class DispatchStore:
             self._records[record.dispatch_id] = record
             self._save()
         return record
+
+    def allocate_progress_sequence(self, dispatch_id: str) -> int:
+        """Allocate a durable per-dispatch sequence across restarts and callbacks."""
+        with self._lock:
+            record = self._records.get(dispatch_id)
+            if not record:
+                raise ValueError("dispatch not found")
+            sequence = max(1, record.progress_next_sequence)
+            record.progress_next_sequence = sequence + 1
+            record.updated_at = datetime.now(UTC)
+            self._save()
+            return sequence
+
+    @staticmethod
+    def _validate_progress_provenance(
+        record: DispatchRecord,
+        payload: DispatchProgressEventV1 | DispatchProgressHeartbeatV1,
+    ) -> None:
+        prior_authorities = {
+            (
+                str(item.get("authority_instance_id") or ""),
+                str(item.get("authority_version") or ""),
+            )
+            for item in record.progress_authority_history
+        }
+        authority_matches = (
+            payload.authority_instance_id == record.authority_instance_id
+            and (
+                record.card_version in {None, ""}
+                or payload.authority_version in {None, "", record.card_version}
+            )
+        ) or (
+            payload.authority_instance_id,
+            str(payload.authority_version or ""),
+        ) in prior_authorities
+        mismatches = {
+            field: {"expected": expected, "actual": actual}
+            for field, expected, actual in (
+                ("dispatch_id", record.dispatch_id, payload.dispatch_id),
+                ("card_id", record.card_id, payload.card_id),
+                ("session_id", record.session_id, payload.acp_session_id),
+                (
+                    "originating_instance_id",
+                    record.target_instance_id,
+                    payload.originating_instance_id,
+                ),
+            )
+            if expected not in {None, ""}
+            and actual not in {None, ""}
+            and expected != actual
+        }
+        if not authority_matches:
+            mismatches["authority"] = {
+                "expected": {
+                    "instance_id": record.authority_instance_id,
+                    "version": record.card_version,
+                },
+                "actual": {
+                    "instance_id": payload.authority_instance_id,
+                    "version": payload.authority_version,
+                },
+            }
+        if mismatches:
+            raise ValueError(f"progress provenance mismatch: {mismatches}")
+        if record.progress_protocol_version not in {None, payload.schema_version}:
+            raise ValueError("unsupported progress schema version")
+
+    def transfer_progress_authority(
+        self,
+        dispatch_id: str,
+        *,
+        authority_instance_id: str,
+        authority_url: str,
+        authority_version: str | None,
+    ) -> DispatchRecord:
+        """Fence future events to a new authority without rewriting provenance."""
+        with self._lock:
+            record = self._records.get(dispatch_id)
+            if not record:
+                raise ValueError("dispatch not found")
+            if (
+                record.authority_instance_id == authority_instance_id
+                and record.card_version == authority_version
+            ):
+                return record
+            record.progress_authority_history.append(
+                {
+                    "authority_instance_id": record.authority_instance_id,
+                    "authority_version": record.card_version,
+                    "authority_url": record.authority_url,
+                    "last_sequence": record.progress_next_sequence - 1,
+                    "transferred_at": datetime.now(UTC).isoformat(),
+                }
+            )
+            record.progress_authority_history = record.progress_authority_history[-20:]
+            record.authority_instance_id = authority_instance_id
+            record.authority_url = authority_url
+            record.card_version = authority_version
+            record.updated_at = datetime.now(UTC)
+            self._save()
+            return record
+
+    def ingest_progress(
+        self, event: DispatchProgressEventV1, *, delivered: bool = False
+    ) -> ProgressIngestResult:
+        """Idempotently retain a bounded, safely reorderable checkpoint history."""
+        sanitized = sanitize_progress_event(event)
+        with self._lock:
+            record = self._records.get(sanitized.dispatch_id)
+            if not record:
+                raise ValueError("dispatch not found")
+            self._validate_progress_provenance(record, sanitized)
+            if delivered and sanitized.delivered_at is None:
+                sanitized.delivered_at = datetime.now(UTC)
+            if sanitized.idempotency_key in record.progress_seen_keys:
+                return ProgressIngestResult(
+                    accepted=True,
+                    status="duplicate",
+                    dispatch_id=record.dispatch_id,
+                    sequence=sanitized.sequence,
+                    idempotency_key=sanitized.idempotency_key,
+                )
+            same_sequence = next(
+                (
+                    existing
+                    for existing in record.progress_events
+                    if existing.sequence == sanitized.sequence
+                ),
+                None,
+            )
+            if same_sequence:
+                record.progress_conflicts += 1
+                record.progress_seen_keys.append(sanitized.idempotency_key)
+                record.progress_seen_keys = record.progress_seen_keys[
+                    -MAX_PROGRESS_SEEN_KEYS:
+                ]
+                record.updated_at = datetime.now(UTC)
+                self._save()
+                return ProgressIngestResult(
+                    accepted=False,
+                    status="conflict",
+                    dispatch_id=record.dispatch_id,
+                    sequence=sanitized.sequence,
+                    idempotency_key=sanitized.idempotency_key,
+                )
+            latest = record.latest_progress
+            if (
+                latest
+                and latest.phase == sanitized.phase
+                and latest.summary == sanitized.summary
+                and abs(
+                    (sanitized.occurred_at - latest.occurred_at).total_seconds()
+                )
+                <= 5
+            ):
+                record.progress_seen_keys.append(sanitized.idempotency_key)
+                record.progress_seen_keys = record.progress_seen_keys[
+                    -MAX_PROGRESS_SEEN_KEYS:
+                ]
+                record.updated_at = datetime.now(UTC)
+                self._save()
+                return ProgressIngestResult(
+                    accepted=True,
+                    status="coalesced",
+                    dispatch_id=record.dispatch_id,
+                    sequence=sanitized.sequence,
+                    idempotency_key=sanitized.idempotency_key,
+                )
+            previous_max = max(
+                (item.sequence for item in record.progress_events), default=0
+            )
+            record.progress_events.append(sanitized)
+            record.progress_events.sort(
+                key=lambda item: (item.sequence, item.occurred_at, item.idempotency_key)
+            )
+            record.progress_events = record.progress_events[-MAX_PROGRESS_EVENTS:]
+            record.progress_seen_keys.append(sanitized.idempotency_key)
+            record.progress_seen_keys = record.progress_seen_keys[
+                -MAX_PROGRESS_SEEN_KEYS:
+            ]
+            record.progress_protocol_version = sanitized.schema_version
+            record.progress_next_sequence = max(
+                record.progress_next_sequence, sanitized.sequence + 1
+            )
+            record.updated_at = datetime.now(UTC)
+            self._save()
+            return ProgressIngestResult(
+                accepted=True,
+                status="late" if sanitized.sequence < previous_max else "accepted",
+                dispatch_id=record.dispatch_id,
+                sequence=sanitized.sequence,
+                idempotency_key=sanitized.idempotency_key,
+            )
+
+    def ingest_heartbeat(
+        self,
+        heartbeat: DispatchProgressHeartbeatV1,
+        *,
+        delivered: bool = False,
+    ) -> ProgressIngestResult:
+        """Replace the freshness signal without appending activity history."""
+        sanitized = sanitize_heartbeat(heartbeat)
+        with self._lock:
+            record = self._records.get(sanitized.dispatch_id)
+            if not record:
+                raise ValueError("dispatch not found")
+            self._validate_progress_provenance(record, sanitized)
+            if sanitized.idempotency_key in record.progress_seen_keys:
+                return ProgressIngestResult(
+                    accepted=True,
+                    status="duplicate",
+                    dispatch_id=record.dispatch_id,
+                    sequence=sanitized.sequence,
+                    idempotency_key=sanitized.idempotency_key,
+                )
+            current = record.progress_heartbeat
+            if current and sanitized.sequence < current.sequence:
+                record.progress_seen_keys.append(sanitized.idempotency_key)
+                record.progress_seen_keys = record.progress_seen_keys[
+                    -MAX_PROGRESS_SEEN_KEYS:
+                ]
+                self._save()
+                return ProgressIngestResult(
+                    accepted=True,
+                    status="late",
+                    dispatch_id=record.dispatch_id,
+                    sequence=sanitized.sequence,
+                    idempotency_key=sanitized.idempotency_key,
+                )
+            if delivered and sanitized.delivered_at is None:
+                sanitized.delivered_at = datetime.now(UTC)
+            record.progress_heartbeat = sanitized
+            record.progress_seen_keys.append(sanitized.idempotency_key)
+            record.progress_seen_keys = record.progress_seen_keys[
+                -MAX_PROGRESS_SEEN_KEYS:
+            ]
+            record.progress_protocol_version = sanitized.schema_version
+            record.progress_next_sequence = max(
+                record.progress_next_sequence, sanitized.sequence + 1
+            )
+            record.updated_at = datetime.now(UTC)
+            self._save()
+            return ProgressIngestResult(
+                accepted=True,
+                status="accepted",
+                dispatch_id=record.dispatch_id,
+                sequence=sanitized.sequence,
+                idempotency_key=sanitized.idempotency_key,
+            )
+
+    def pending_progress(
+        self, originating_instance_id: str
+    ) -> list[
+        tuple[
+            DispatchRecord,
+            DispatchProgressEventV1 | DispatchProgressHeartbeatV1,
+        ]
+    ]:
+        pending: list[
+            tuple[
+                DispatchRecord,
+                DispatchProgressEventV1 | DispatchProgressHeartbeatV1,
+            ]
+        ] = []
+        with self._lock:
+            for record in self._records.values():
+                if record.target_instance_id != originating_instance_id:
+                    continue
+                for event in record.progress_events:
+                    if event.delivered_at is None:
+                        pending.append((record, event))
+                heartbeat = record.progress_heartbeat
+                if heartbeat and heartbeat.delivered_at is None:
+                    pending.append((record, heartbeat))
+        return sorted(
+            pending,
+            key=lambda pair: (
+                pair[1].occurred_at,
+                pair[1].sequence,
+                pair[1].idempotency_key,
+            ),
+        )
+
+    def mark_progress_delivered(self, dispatch_id: str, idempotency_key: str) -> None:
+        with self._lock:
+            record = self._records.get(dispatch_id)
+            if not record:
+                return
+            payloads: list[
+                DispatchProgressEventV1 | DispatchProgressHeartbeatV1
+            ] = list(record.progress_events)
+            if record.progress_heartbeat:
+                payloads.append(record.progress_heartbeat)
+            payload = next(
+                (
+                    item
+                    for item in payloads
+                    if item.idempotency_key == idempotency_key
+                ),
+                None,
+            )
+            if not payload:
+                return
+            payload.delivered_at = datetime.now(UTC)
+            payload.delivery_error = None
+            record.updated_at = datetime.now(UTC)
+            self._save()
+
+    def mark_progress_delivery_failed(
+        self, dispatch_id: str, idempotency_key: str, error: str
+    ) -> None:
+        with self._lock:
+            record = self._records.get(dispatch_id)
+            if not record:
+                return
+            payloads: list[
+                DispatchProgressEventV1 | DispatchProgressHeartbeatV1
+            ] = list(record.progress_events)
+            if record.progress_heartbeat:
+                payloads.append(record.progress_heartbeat)
+            payload = next(
+                (
+                    item
+                    for item in payloads
+                    if item.idempotency_key == idempotency_key
+                ),
+                None,
+            )
+            if not payload:
+                return
+            payload.delivery_attempts += 1
+            payload.delivery_error = sanitize_text(error, limit=240)
+            record.updated_at = datetime.now(UTC)
+            self._save()
+
+    def build_final_report(
+        self, dispatch_id: str, result: dict[str, Any]
+    ) -> CompletionReportV1 | None:
+        with self._lock:
+            record = self._records.get(dispatch_id)
+            if not record:
+                return None
+            latest = record.latest_progress
+            metadata_source = next(
+                (
+                    event
+                    for event in reversed(record.progress_events)
+                    if any(
+                        (
+                            event.branch,
+                            event.commit_sha,
+                            event.pr_url,
+                            event.pr_number,
+                        )
+                    )
+                ),
+                latest,
+            )
+            validations: list[Any] = []
+            for event in record.progress_events:
+                for validation in event.validations:
+                    if validation not in validations:
+                        validations.append(validation)
+            disposition = result.get("card_disposition")
+            outcome = sanitize_text(
+                (
+                    disposition.get("outcome")
+                    if isinstance(disposition, dict)
+                    else None
+                )
+                or (latest.summary if latest else None)
+                or "Agent work completed.",
+                limit=2000,
+            )
+            return CompletionReportV1(
+                outcome=outcome,
+                branch=metadata_source.branch if metadata_source else None,
+                commit_sha=metadata_source.commit_sha if metadata_source else None,
+                pr_url=metadata_source.pr_url if metadata_source else None,
+                pr_number=metadata_source.pr_number if metadata_source else None,
+                validations=validations[:20],
+                blockers=list(latest.blockers if latest else []),
+                card_disposition=(
+                    disposition if isinstance(disposition, dict) else None
+                ),
+                resulting_lane=(
+                    disposition.get("lane")
+                    if isinstance(disposition, dict)
+                    else None
+                ),
+            )
+
+    def set_final_report(
+        self, dispatch_id: str, report: CompletionReportV1
+    ) -> DispatchRecord:
+        with self._lock:
+            record = self._records.get(dispatch_id)
+            if not record:
+                raise ValueError("dispatch not found")
+            record.final_report = sanitize_completion_report(report)
+            record.updated_at = datetime.now(UTC)
+            self._save()
+            return record
 
     def transition(
         self,
@@ -570,6 +1058,11 @@ class CompletionOutbox:
                     "result": record.completion_payload or {},
                     "disposition": (record.completion_payload or {}).get(
                         "card_disposition"
+                    ),
+                    "final_report": (
+                        record.final_report.model_dump(mode="json")
+                        if record.final_report
+                        else None
                     ),
                 },
                 headers=headers,

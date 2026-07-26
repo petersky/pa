@@ -35,6 +35,7 @@ class FleetMcpTests(unittest.TestCase):
         expected = {
             "dispatch_card_to_instance",
             "get_dispatch",
+            "report_dispatch_progress",
             "retry_dispatch",
             "cancel_dispatch",
             "prompt_dispatch_session",
@@ -56,6 +57,12 @@ class FleetMcpTests(unittest.TestCase):
             self.assertEqual(
                 list(signature.parameters)[:2], ["dispatch_id", "idempotency_key"]
             )
+
+        progress = inspect.signature(self.mcp.functions["report_dispatch_progress"])
+        self.assertEqual(
+            list(progress.parameters)[:4],
+            ["dispatch_id", "phase", "summary", "idempotency_key"],
+        )
 
     def test_dispatch_uses_authenticated_local_durable_control_plane(self) -> None:
         authority_result = {
@@ -147,6 +154,35 @@ class FleetMcpTests(unittest.TestCase):
                 "message": "Continue",
                 "action": "append",
                 "idempotency_key": "prompt-1",
+            },
+        )
+
+        self.mcp.functions["report_dispatch_progress"](
+            "dispatch-1",
+            "testing",
+            "Focused tests passed",
+            "progress-1",
+            branch="agent/progress",
+            commit_sha="a" * 40,
+            changed_file_count=8,
+        )
+        self.local_api.assert_called_with(
+            self.ctx.settings,
+            "POST",
+            "/api/fleet/dispatch-jobs/dispatch-1/checkpoint",
+            json={
+                "schema_version": 1,
+                "phase": "testing",
+                "summary": "Focused tests passed",
+                "branch": "agent/progress",
+                "commit_sha": "a" * 40,
+                "pr_url": None,
+                "pr_number": None,
+                "changed_file_count": 8,
+                "blockers": [],
+                "retry_reason": None,
+                "operator_input": None,
+                "idempotency_key": "progress-1",
             },
         )
 

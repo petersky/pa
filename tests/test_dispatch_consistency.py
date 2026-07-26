@@ -18,6 +18,7 @@ from pa.execution.dispatch import (
     DispatchStore,
     DispatchWorker,
 )
+from pa.execution.progress import CompletionReportV1
 from pa.modules.fleet import (
     DispatchCompletionBody,
     DispatchControlBody,
@@ -158,16 +159,18 @@ class MaterializationTests(unittest.TestCase):
                 authority_instance_id=AUTHORITY_ID,
                 authority_url="http://authority:8080",
                 target_instance_id=TARGET_ID,
+                progress_versions=[99, 1],
             )
 
             result = materialize_dispatch(request, body)
 
             self.assertTrue(result["resolvable"])
+            self.assertEqual(result["progress_protocol_version"], 1)
             log.append_event.assert_called_once()
             store.apply_event.assert_called_once()
-            self.assertEqual(
-                DispatchStore(settings.data_dir).get(DISPATCH_ONE).card_id, CARD_ONE
-            )
+            durable = DispatchStore(settings.data_dir).get(DISPATCH_ONE)
+            self.assertEqual(durable.card_id, CARD_ONE)
+            self.assertEqual(durable.progress_protocol_version, 1)
 
     def test_stale_target_returns_actionable_409(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -279,6 +282,87 @@ class MaterializationTests(unittest.TestCase):
 
 
 class CompletionTests(unittest.TestCase):
+    def test_completion_report_is_enriched_from_linked_pr_watch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="authority")
+            card = Card(id="card-1", title="reported remotely")
+            store = MagicMock()
+            store.get_card.return_value = card
+            ledger = DispatchStore(settings.data_dir)
+            ledger.put(
+                DispatchRecord(
+                    dispatch_id="dispatch-1",
+                    mutation_id="mutation-1",
+                    card_id=card.id,
+                    realm_id="default",
+                    card_version=card.updated_at.isoformat(),
+                    authority_instance_id="authority",
+                    authority_url="http://authority",
+                    target_instance_id="target",
+                    session_id="session-1",
+                    state="running",
+                )
+            )
+            watch = PRWatch(
+                id="watch-1",
+                card_id=card.id,
+                repository="petersky/pa",
+                pr_number=999,
+                pr_url="https://github.com/petersky/pa/pull/999",
+                head_sha="b" * 40,
+                state={
+                    "head_sha": "b" * 40,
+                    "checks": [
+                        {
+                            "name": "test",
+                            "status": "completed",
+                            "conclusion": "success",
+                        }
+                    ],
+                    "review_threads": [
+                        {"path": "src/pa/example.py", "resolved": True}
+                    ],
+                    "merge_commit_sha": "c" * 40,
+                },
+            )
+            supervisor = MagicMock()
+            supervisor.list_watches.return_value = [watch]
+            request = request_for(
+                settings,
+                store,
+                {
+                    "dispatch_store": ledger,
+                    "pr_supervisor_store": supervisor,
+                },
+            )
+            request.headers = {"idempotency-key": "mutation-1"}
+
+            complete_dispatch(
+                request,
+                "dispatch-1",
+                DispatchCompletionBody(
+                    mutation_id="mutation-1",
+                    card_id=card.id,
+                    realm_id="default",
+                    card_version=card.updated_at.isoformat(),
+                    source_instance_id="target",
+                    session_id="session-1",
+                    final_report=CompletionReportV1(
+                        outcome="Ready for integration",
+                        commit_sha="a" * 40,
+                    ),
+                ),
+            )
+
+            report = ledger.get("dispatch-1").final_report
+            self.assertEqual(report.pr_number, 999)
+            self.assertEqual(report.commit_sha, "b" * 40)
+            self.assertEqual(report.merge_commit_sha, "c" * 40)
+            self.assertEqual(report.ci_evidence, ["test: success"])
+            self.assertEqual(
+                report.review_evidence, ["src/pa/example.py: resolved"]
+            )
+
     def test_duplicate_completion_updates_card_exactly_once(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), instance_id="authority")

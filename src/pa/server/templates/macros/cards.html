@@ -1,4 +1,4 @@
-{% macro compact_card(card, project=None, session=None, movable=false, lanes=[], title_only=false) %}
+{% macro compact_card(card, project=None, session=None, progress=None, movable=false, lanes=[], title_only=false) %}
 <article class="compact-card item-{{ card.kind.value }}{% if title_only %} is-title-only{% endif %}"
          {% if movable %}draggable="true"{% endif %}
          data-card-id="{{ card.id }}"
@@ -24,6 +24,22 @@
   <div class="card-markdown compact-card-summary" data-card-markdown>
     <span hidden data-card-markdown-source>{{ card.summary | tojson }}</span>
   </div>
+  {% if progress and progress.latest %}
+  <div class="compact-card-progress progress-{{ progress.freshness.state }}"
+       data-card-progress
+       data-progress-state="{{ progress.freshness.state }}">
+    <div>
+      <span class="status status-{{ 'blocked' if progress.latest.phase == 'blocked' else 'active' }}">{{ progress.latest.phase | replace('_', ' ') }}</span>
+      <strong>{{ progress.latest.summary }}</strong>
+    </div>
+    <span class="muted small">
+      {{ progress.freshness.state }}
+      {% if progress.freshness.age_seconds is not none %} · {{ progress.freshness.age_seconds }}s ago{% endif %}
+    </span>
+  </div>
+  {% elif progress and progress.reporting == 'lifecycle_only' %}
+  <p class="compact-card-progress muted small">Lifecycle-only reporting · {{ progress.dispatch_state | replace('_', ' ') }}</p>
+  {% endif %}
   <footer class="compact-card-footer">
     <span>
       {% if session %}Agent {{ session.status }}

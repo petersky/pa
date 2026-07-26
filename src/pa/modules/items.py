@@ -354,6 +354,38 @@ def _pr_watch_context(
     }
 
 
+def _latest_card_progress(request: Request, card_id: str) -> dict | None:
+    dispatch_store = request.app.state.ctx.services.get("dispatch_store")
+    if not dispatch_store:
+        return None
+    records = [
+        record
+        for record in dispatch_store.list(limit=1000)
+        if record.card_id == card_id
+    ]
+    if not records:
+        return None
+    active = [
+        record
+        for record in records
+        if record.state not in {"completed", "acknowledged", "failed", "cancelled"}
+    ]
+    record = max(active or records, key=lambda item: item.updated_at)
+    public = record.public_dict()
+    progress = dict(public.get("progress") or {})
+    progress.update(
+        {
+            "dispatch_id": record.dispatch_id,
+            "session_id": record.session_id,
+            "dispatch_state": record.state,
+            "target_instance_id": record.target_instance_id,
+            "target_instance_name": record.target_instance_name,
+            "updated_at": record.updated_at.isoformat(),
+        }
+    )
+    return progress
+
+
 def _card_summary_context(request: Request, card) -> dict:
     store = get_store()
     dispatch_store = request.app.state.ctx.services.get("dispatch_store")
@@ -386,6 +418,7 @@ def _card_summary_context(request: Request, card) -> dict:
             if candidate.parent_id == card.id
         ],
         "critical_watch": critical_watch,
+        "current_progress": _latest_card_progress(request, card.id),
         "card_reconciliations": (
             [
                 record.public_dict()["card_reconciliation"]
@@ -515,6 +548,88 @@ def _card_activity_context(request: Request, card) -> dict:
                         "timestamp": event.created_at,
                     }
                 )
+            for progress in dispatch.progress_events:
+                details = []
+                details.extend(
+                    {
+                        "label": validation.command,
+                        "value": validation.status
+                        + (
+                            f" · {validation.summary}"
+                            if validation.summary
+                            else ""
+                        ),
+                    }
+                    for validation in progress.validations
+                )
+                details.extend(
+                    {
+                        "label": tool.title,
+                        "value": " · ".join(
+                            value
+                            for value in (tool.kind, tool.status, tool.result)
+                            if value
+                        ),
+                    }
+                    for tool in progress.tool_details
+                )
+                details.extend(
+                    {"label": "Blocker", "value": blocker}
+                    for blocker in progress.blockers
+                )
+                if progress.operator_input:
+                    details.append(
+                        {
+                            "label": "Operator input requested",
+                            "value": progress.operator_input,
+                        }
+                    )
+                entries.append(
+                    {
+                        "id": (
+                            f"progress-{dispatch.dispatch_id}-"
+                            f"{progress.idempotency_key}"
+                        ),
+                        "kind": "progress",
+                        "label": progress.summary,
+                        "actor": dispatch.target_instance_name
+                        or progress.originating_instance_id,
+                        "detail": progress.phase.value.replace("_", " "),
+                        "timestamp": progress.occurred_at,
+                        "session_url": (
+                            f"/agent?session={progress.acp_session_id}"
+                            f"&instance={progress.originating_instance_id}"
+                        ),
+                        "details": details,
+                    }
+                )
+            if dispatch.final_report and not any(
+                event.kind.value == "final" for event in dispatch.progress_events
+            ):
+                entries.append(
+                    {
+                        "id": f"progress-report-{dispatch.dispatch_id}",
+                        "kind": "progress",
+                        "label": dispatch.final_report.outcome,
+                        "actor": dispatch.target_instance_name
+                        or dispatch.target_instance_id,
+                        "detail": "completion report",
+                        "timestamp": dispatch.final_report.created_at,
+                        "session_url": (
+                            f"/agent?session={dispatch.session_id}"
+                            f"&instance={dispatch.target_instance_id}"
+                            if dispatch.session_id
+                            else None
+                        ),
+                        "details": [
+                            {
+                                "label": validation.command,
+                                "value": validation.status,
+                            }
+                            for validation in dispatch.final_report.validations
+                        ],
+                    }
+                )
 
     watch_context = _pr_watch_context(request, card.id)
     for watch in watch_context["pr_watches"]:
@@ -602,6 +717,9 @@ def _cards_context(
     projects = store.list_projects(realm_id=realm)
     project_by_id = {project.id: project for project in projects}
     card_sessions = preferred_sessions_by_card(store.list_sessions())
+    card_progress = {
+        card.id: _latest_card_progress(request, card.id) for card in cards
+    }
     filter_params = {
         "realm": realm,
         "project": project_id or "",
@@ -623,6 +741,7 @@ def _cards_context(
             card.id: project_by_id.get(card.project_id) for card in cards
         },
         "card_sessions": card_sessions,
+        "card_progress": card_progress,
         "owners": sorted(
             {card.owner_principal for card in all_cards if card.owner_principal}
         ),
@@ -1531,6 +1650,24 @@ def card_detail_agent_partial(
         request,
         "partials/card-detail-agent.html",
         _card_agent_context(request, card),
+    )
+
+
+@ui_router.get("/partials/cards/{card_id}/progress", response_class=HTMLResponse)
+def card_detail_progress_partial(
+    request: Request, card_id: str, realm: str | None = None
+) -> HTMLResponse:
+    realm_id = realm or _active_realm(request)
+    card = get_store().get_card(card_id, realm_id=realm_id)
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+    return _templates(request).TemplateResponse(
+        request,
+        "partials/card-progress.html",
+        {
+            "card": card,
+            "current_progress": _latest_card_progress(request, card.id),
+        },
     )
 
 
