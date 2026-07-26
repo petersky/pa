@@ -584,10 +584,150 @@
     loadCardTab(detail, name);
   }
 
+
+  function dispatchOperationKey(prefix) {
+    if (window.crypto && typeof window.crypto.randomUUID === "function") {
+      return prefix + ":" + window.crypto.randomUUID();
+    }
+    return prefix + ":" + Date.now() + ":" + Math.random().toString(16).slice(2);
+  }
+
+  function dispatchIsTerminal(state) {
+    return ["failed", "completed", "cancelled", "acknowledged"].indexOf(state) !== -1;
+  }
+
+  function dispatchStateLabel(state) {
+    if (["materializing", "starting_session", "delivering_prompt"].indexOf(state) !== -1) return "starting";
+    return String(state || "queued").replace(/_/g, " ");
+  }
+
+  function renderCardDispatch(detail, dispatch) {
+    var region = detail && detail.querySelector("[data-card-dispatch-status]");
+    if (!region || !dispatch) return;
+    region.dataset.dispatchId = dispatch.dispatch_id || "";
+    region.replaceChildren();
+
+    var heading = document.createElement("div");
+    heading.className = "card-dispatch-status-heading";
+    var badge = document.createElement("span");
+    badge.className = "status status-" + String(dispatch.state || "queued").replace(/[^a-z_-]/g, "");
+    badge.textContent = dispatchStateLabel(dispatch.state);
+    var target = document.createElement("strong");
+    target.textContent = dispatch.target_instance_name || dispatch.target_instance_id || "Resolving target";
+    heading.append(badge, target);
+    region.appendChild(heading);
+
+    var events = Array.isArray(dispatch.events) ? dispatch.events : [];
+    var message = document.createElement("p");
+    message.textContent = events.length ? events[events.length - 1].message : "Dispatch admitted.";
+    region.appendChild(message);
+
+    if (dispatch.placement_decision && dispatch.placement_decision.tie_breaking_reason) {
+      var explanation = document.createElement("p");
+      explanation.className = "muted";
+      explanation.textContent = dispatch.placement_decision.tie_breaking_reason;
+      region.appendChild(explanation);
+    }
+    if (dispatch.last_error) {
+      var error = document.createElement("p");
+      error.className = "danger";
+      error.textContent = dispatch.last_error;
+      region.appendChild(error);
+    }
+
+    var links = document.createElement("div");
+    links.className = "card-dispatch-links";
+    if (dispatch.session_id) {
+      var session = document.createElement("a");
+      session.href = "/agent?session=" + encodeURIComponent(dispatch.session_id);
+      session.textContent = "Open durable session";
+      links.appendChild(session);
+    }
+    if (dispatch.can_retry) {
+      var retry = document.createElement("button");
+      retry.type = "button";
+      retry.className = "ghost small";
+      retry.dataset.cardDispatchRetry = dispatch.dispatch_id;
+      retry.textContent = "Retry dispatch";
+      links.appendChild(retry);
+    }
+    region.appendChild(links);
+
+    var form = detail.querySelector("[data-card-dispatch-form]");
+    if (form) {
+      var submit = form.querySelector('button[type="submit"]');
+      if (submit) {
+        submit.disabled = !dispatchIsTerminal(dispatch.state);
+        submit.textContent = dispatchIsTerminal(dispatch.state) ? "Dispatch card" : "Dispatch in progress…";
+      }
+      if (dispatchIsTerminal(dispatch.state)) form.dataset.idempotencyKey = "";
+    }
+  }
+
+  function pollCardDispatch(detail, dispatchId, delay) {
+    if (!detail || !dispatchId) return;
+    window.clearTimeout(detail._cardDispatchPollTimer);
+    detail._cardDispatchPollTimer = window.setTimeout(function () {
+      if (!document.contains(detail)) return;
+      fetch("/api/fleet/dispatch-jobs/" + encodeURIComponent(dispatchId), {
+        credentials: "same-origin",
+      })
+        .then(function (response) {
+          if (!response.ok) throw new Error("Dispatch status is temporarily unavailable.");
+          return response.json();
+        })
+        .then(function (dispatch) {
+          renderCardDispatch(detail, dispatch);
+          if (!dispatchIsTerminal(dispatch.state)) pollCardDispatch(detail, dispatchId, 1200);
+        })
+        .catch(function () {
+          pollCardDispatch(detail, dispatchId, 3000);
+        });
+    }, delay || 0);
+  }
+
+  function renderCardDispatchError(detail, payload) {
+    var region = detail && detail.querySelector("[data-card-dispatch-status]");
+    if (!region) return;
+    var error = payload && payload.detail ? payload.detail : payload || {};
+    region.replaceChildren();
+    var heading = document.createElement("strong");
+    heading.textContent = error.code === "no_eligible_instance" ? "No eligible target" : "Dispatch not admitted";
+    var message = document.createElement("p");
+    message.className = "danger";
+    message.textContent = error.message || "The fleet dispatch request failed.";
+    region.append(heading, message);
+    var rejected = Array.isArray(error.rejected_candidates) ? error.rejected_candidates : [];
+    if (rejected.length) {
+      var list = document.createElement("ul");
+      list.className = "card-dispatch-rejections";
+      rejected.slice(0, 5).forEach(function (candidate) {
+        var item = document.createElement("li");
+        item.textContent = (candidate.name || candidate.instance_id || "Instance") + ": " +
+          (Array.isArray(candidate.reasons) ? candidate.reasons.join("; ") : "not eligible");
+        list.appendChild(item);
+      });
+      region.appendChild(list);
+    }
+    if (error.recovery_url) {
+      var recovery = document.createElement("a");
+      recovery.href = error.recovery_url;
+      recovery.textContent = "Review Fleet readiness";
+      region.appendChild(recovery);
+    }
+    if (error.dispatch_id) {
+      pollCardDispatch(detail, error.dispatch_id, 0);
+    }
+  }
+
   function initCardDetail(detail, selectedTab) {
     if (!detail) return;
     activateCardTab(detail, selectedTab, false, false);
     initActivityPanel(detail.querySelector('[data-card-tab-panel="activity"]'));
+    var dispatchStatus = detail.querySelector("[data-card-dispatch-status]");
+    if (dispatchStatus && dispatchStatus.dataset.dispatchId) {
+      pollCardDispatch(detail, dispatchStatus.dataset.dispatchId, 0);
+    }
   }
 
   function renderCardDialogError(cardId, realm, message) {
@@ -1259,6 +1399,47 @@
     updateTitle();
   });
 
+
+  document.body.addEventListener("submit", function (event) {
+    var form = event.target.closest("[data-card-dispatch-form]");
+    if (!form) return;
+    event.preventDefault();
+    var detail = form.closest("[data-card-detail]");
+    var target = form.elements.dispatch_target.value;
+    var key = form.dataset.idempotencyKey || dispatchOperationKey("card-dispatch:" + detail.dataset.cardId);
+    form.dataset.idempotencyKey = key;
+    var payload = {
+      card_id: detail.dataset.cardId,
+      idempotency_key: key,
+    };
+    if (target.indexOf("policy:") === 0) payload.placement_policy = target.slice(7);
+    if (target.indexOf("instance:") === 0) payload.target_instance_id = target.slice(9);
+    var submit = form.querySelector('button[type="submit"]');
+    submit.disabled = true;
+    submit.textContent = "Checking fleet…";
+    fetch("/api/fleet/dispatch", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: Object.assign({"Content-Type": "application/json"}, csrfHeader()),
+      body: JSON.stringify(payload),
+    })
+      .then(function (response) {
+        return response.json().catch(function () { return {}; }).then(function (data) {
+          if (!response.ok) throw data;
+          return data;
+        });
+      })
+      .then(function (result) {
+        renderCardDispatch(detail, result.dispatch);
+        pollCardDispatch(detail, result.dispatch_id, 500);
+      })
+      .catch(function (error) {
+        renderCardDispatchError(detail, error);
+        submit.disabled = false;
+        submit.textContent = "Retry dispatch";
+      });
+  });
+
   document.body.addEventListener("click", function (event) {
     var newCardOpen = event.target.closest("[data-new-card-open]");
     if (newCardOpen) {
@@ -1320,6 +1501,32 @@
         markdownTab.closest("[data-markdown-editor]"),
         markdownTab.dataset.markdownTab
       );
+      return;
+    }
+    var dispatchRetry = event.target.closest("[data-card-dispatch-retry]");
+    if (dispatchRetry) {
+      var retryId = dispatchRetry.dataset.cardDispatchRetry;
+      dispatchRetry.disabled = true;
+      fetch("/api/fleet/dispatch-jobs/" + encodeURIComponent(retryId) + "/retry", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: Object.assign({"Content-Type": "application/json"}, csrfHeader()),
+        body: JSON.stringify({idempotency_key: dispatchOperationKey("dispatch-retry:" + retryId)}),
+      })
+        .then(function (response) {
+          return response.json().then(function (data) {
+            if (!response.ok) throw data;
+            return data;
+          });
+        })
+        .then(function (dispatch) {
+          renderCardDispatch(detail, dispatch);
+          pollCardDispatch(detail, retryId, 300);
+        })
+        .catch(function (error) {
+          renderCardDispatchError(detail, error);
+          dispatchRetry.disabled = false;
+        });
       return;
     }
     var agentButton = event.target.closest("[data-card-agent-start]");

@@ -43,6 +43,7 @@ def _is_hybrid_instance_api(path: str) -> bool:
             r"(?:/(?:retry|cancel|prompt))?",
             path,
         )
+        or path == "/api/fleet/dispatch"
         or re.fullmatch(r"/api/fleet/instances/\{[^}]+\}/agent/start", path)
         or re.fullmatch(r"/api/agent/sessions/\{[^}]+\}/prompt", path)
     )
@@ -90,6 +91,44 @@ def _document_operation(path: str, method: str, operation: dict[str, Any]) -> No
 
 
 def _document_remote_dispatch(schema: dict[str, Any]) -> None:
+    placement = schema["paths"].get("/api/fleet/dispatch", {}).get("post")
+    if placement:
+        placement["summary"] = "Resolve placement and durably dispatch work"
+        placement["description"] = (
+            "Accepts exactly one concrete `target_instance_id` or a centralized "
+            "`placement_policy` (`best_match`, `least_busy`, `round_robin`, or "
+            "`random_eligible`). PA considers only fresh, eligible instances, "
+            "persists the explainable resolved target before admission, and returns "
+            "that same target for idempotent retries."
+        )
+        placement.setdefault("parameters", []).append(
+            {
+                "name": "Idempotency-Key",
+                "in": "header",
+                "required": False,
+                "description": (
+                    "Stable logical request key. A retry returns the original "
+                    "resolved target instead of rerunning placement."
+                ),
+                "schema": {"type": "string", "minLength": 1},
+            }
+        )
+        placement["responses"]["202"] = {
+            "description": "Placement resolved and dispatch durably admitted.",
+            "content": {
+                "application/json": {
+                    "schema": {"$ref": "#/components/schemas/DispatchAdmission"}
+                }
+            },
+        }
+        placement["responses"].setdefault(
+            "409",
+            _error_response(
+                "No eligible instance, concurrent card dispatch, stale readiness, "
+                "or idempotency conflict."
+            ),
+        )
+
     operation = (
         schema["paths"]
         .get("/api/fleet/instances/{instance_id}/agent/start", {})

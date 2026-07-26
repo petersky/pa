@@ -82,7 +82,7 @@
       <label>
         <span>Preferred instance</span>
         <select name="preferred_instance" data-instance-identity-select>
-          <option value="">Any eligible instance</option>
+          <option value="">No preferred instance (metadata only)</option>
           {% for instance in instance_options %}
           <option value="{{ instance.id }}">{{ instance.display_name }}</option>
           {% endfor %}

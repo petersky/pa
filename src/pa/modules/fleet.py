@@ -45,6 +45,8 @@ from pa.domain.models import (
 )
 from pa.execution.dispatch import (
     CompletionOutbox,
+    ConcurrentCardDispatch,
+    DispatchIdempotencyConflict,
     DispatchRecord,
     DispatchStore,
     DispatchWorker,
@@ -76,6 +78,14 @@ from pa.fleet.join import (
 )
 from pa.fleet.membership import MembershipStore
 from pa.fleet.overview import DIMENSIONS, build_overview, cache_for, probe_dimension
+from pa.fleet.placement import (
+    PlacementCandidate,
+    PlacementError,
+    PlacementPolicy,
+    PlacementRequest,
+    PlacementService,
+    RoundRobinCursorStore,
+)
 from pa.fleet.registry import FleetRegistry
 from pa.fleet.remote_install import (
     RemoteInstallRequest,
@@ -233,6 +243,15 @@ class RemoteAgentStartBody(BaseModel):
     config: dict[str, str | bool] = Field(default_factory=dict)
     idempotency_key: str | None = None
     resume_session_id: str | None = None
+    allow_concurrent: bool = False
+
+
+class FleetDispatchBody(RemoteAgentStartBody):
+    """Authority-side dispatch target or placement policy."""
+
+    target_instance_id: str | None = None
+    placement_policy: PlacementPolicy | None = None
+    required_capabilities: list[str] = Field(default_factory=list)
 
 
 class DispatchControlBody(BaseModel):
@@ -3264,6 +3283,225 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
         )
 
 
+async def _placement_candidates(
+    request: Request, instances: list[FleetInstance]
+) -> list[PlacementCandidate]:
+    ctx = request.app.state.ctx
+
+    async def inspect(inst: FleetInstance) -> PlacementCandidate:
+        reachability, activity, providers, repositories = await asyncio.gather(
+            *(
+                probe_dimension(ctx, inst, dimension, force=True)
+                for dimension in (
+                    "reachability",
+                    "activity",
+                    "providers",
+                    "repositories",
+                )
+            )
+        )
+        return PlacementCandidate(
+            instance_id=inst.instance_id,
+            name=inst.name,
+            zone=inst.zone,
+            local=inst.instance_id == ctx.settings.instance_id,
+            capabilities=list(inst.capabilities),
+            reachability=reachability,
+            activity=activity,
+            providers=providers,
+            repositories=repositories,
+            authorized=True,
+        )
+
+    return list(await asyncio.gather(*(inspect(inst) for inst in instances)))
+
+
+def _placement_http_error(exc: PlacementError) -> HTTPException:
+    status = 404 if exc.code == "instance_not_found" else 409
+    return HTTPException(
+        status_code=status,
+        detail={
+            "code": exc.code,
+            "message": exc.message,
+            "recoverable": exc.recoverable,
+            "rejected_candidates": exc.rejected_candidates,
+            "recovery_url": "/fleet?section=overview",
+        },
+    )
+
+
+@router.post("/fleet/dispatch", status_code=202)
+async def dispatch_fleet_work(request: Request, body: FleetDispatchBody) -> dict:
+    """Resolve a concrete or policy target, then durably admit exactly once."""
+    user = require_user(request)
+    ctx = request.app.state.ctx
+    settings = ctx.settings
+    selected_authority = body.authority_instance_id or settings.instance_id
+    if selected_authority != settings.instance_id:
+        if getattr(request.state, "instance_authenticated", False) is True:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "wrong_authority",
+                    "message": "The selected authority did not receive the routed request.",
+                },
+            )
+        forwarded = body.model_dump(mode="json")
+        forwarded["authority_instance_id"] = selected_authority
+        return await _peer_authority_json(
+            request, selected_authority, "POST", "dispatch", body=forwarded
+        )
+    if bool(body.target_instance_id) == bool(body.placement_policy):
+        raise _placement_http_error(
+            PlacementError(
+                "invalid_placement_target",
+                "Choose exactly one named/local instance or placement policy.",
+                recoverable=False,
+            )
+        )
+
+    header_key = request.headers.get("idempotency-key")
+    if not isinstance(header_key, str):
+        header_key = None
+    idempotency_key = (header_key or body.idempotency_key or str(uuid4())).strip()
+    if not idempotency_key:
+        raise HTTPException(status_code=400, detail="Idempotency-Key cannot be empty")
+    placement_payload = body.model_dump(
+        mode="json", exclude={"authority_instance_id", "idempotency_key"}
+    )
+    placement_fingerprint = hashlib.sha256(
+        json.dumps(placement_payload, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    ledger = _dispatch_store(request)
+    existing = await _offload_request(
+        request,
+        "dispatch.idempotency_read",
+        ledger.by_authority_idempotency,
+        settings.instance_id,
+        idempotency_key,
+    )
+    if existing:
+        if existing.placement_request_fingerprint != placement_fingerprint:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "idempotency_conflict",
+                    "message": "This idempotency key was already used for a different fleet dispatch request.",
+                    "dispatch_id": existing.dispatch_id,
+                },
+            )
+        return {
+            "accepted": True,
+            "duplicate": True,
+            "dispatch_id": existing.dispatch_id,
+            "job_id": existing.dispatch_id,
+            "dispatch": existing.public_dict(),
+        }
+
+    store = ctx.store
+    realm_id = settings.primary_realm
+    card = (
+        await _offload_request(
+            request,
+            "sqlite.card_read",
+            store.get_card,
+            body.card_id,
+            realm_id=realm_id,
+        )
+        if body.card_id
+        else None
+    )
+    if body.card_id and not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+    project_id = body.project_id or (card.project_id if card else None)
+    project = (
+        await _offload_request(
+            request,
+            "sqlite.project_read",
+            store.get_project,
+            project_id,
+            realm_id=realm_id,
+        )
+        if project_id
+        else None
+    )
+    if project_id and not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    principal_id = get_principal_id(request)
+    if project and project.memberships:
+        authorized = any(
+            membership.principal_id == principal_id
+            for membership in project.memberships
+        )
+        if not authorized and getattr(user, "role", None) != "admin":
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "insufficient_authorization",
+                    "message": "This principal is not authorized to dispatch work for the linked project.",
+                    "recoverable": False,
+                },
+            )
+
+    repository_ids = (
+        [
+            repository.id
+            for repository, _link in store.list_project_repositories(
+                project_id, realm_id=realm_id
+            )
+        ]
+        if project_id
+        else []
+    )
+    required_capabilities = sorted(
+        set(body.required_capabilities)
+        | set(card.preferred_capabilities if card else [])
+    )
+    fleet: FleetRegistry = ctx.require_service("fleet_registry")
+    candidates = await _placement_candidates(request, list(fleet.list_instances()))
+    placement: PlacementService = ctx.require_service("placement_service")
+    try:
+        decision = await _offload_request(
+            request,
+            "fleet.placement_resolve",
+            placement.resolve,
+            PlacementRequest(
+                realm_id=realm_id,
+                fleet_id=settings.fleet_id,
+                policy=body.placement_policy,
+                instance_id=body.target_instance_id,
+                card_id=body.card_id,
+                provider=body.provider,
+                model_id=body.model_id,
+                required_capabilities=required_capabilities,
+                repository_ids=repository_ids,
+                allow_concurrent=body.allow_concurrent,
+            ),
+            candidates,
+        )
+    except PlacementError as exc:
+        raise _placement_http_error(exc) from exc
+
+    start_payload = body.model_dump(
+        mode="json",
+        exclude={
+            "target_instance_id",
+            "placement_policy",
+            "required_capabilities",
+        },
+    )
+    start_payload["authority_instance_id"] = settings.instance_id
+    start_payload["idempotency_key"] = idempotency_key
+    return await _admit_remote_agent_work(
+        request,
+        decision.chosen_instance_id,
+        RemoteAgentStartBody.model_validate(start_payload),
+        placement_decision=decision.model_dump(mode="json"),
+        placement_request_fingerprint=placement_fingerprint,
+        idempotency_scope="authority",
+    )
+
+
 @router.post("/fleet/instances/{instance_id}/agent/start", status_code=202)
 async def start_remote_agent_work(
     request: Request,
@@ -3271,6 +3509,18 @@ async def start_remote_agent_work(
     body: RemoteAgentStartBody,
 ) -> dict:
     """Validate and durably admit remote work without waiting for a provider."""
+    return await _admit_remote_agent_work(request, instance_id, body)
+
+
+async def _admit_remote_agent_work(
+    request: Request,
+    instance_id: str,
+    body: RemoteAgentStartBody,
+    *,
+    placement_decision: dict[str, Any] | None = None,
+    placement_request_fingerprint: str | None = None,
+    idempotency_scope: str = "target",
+) -> dict:
     require_user(request)
     ctx = request.app.state.ctx
     settings = ctx.settings
@@ -3324,8 +3574,9 @@ async def start_remote_agent_work(
         raise HTTPException(status_code=404, detail="Project not found")
     inst = _fleet_instance_or_404(request, instance_id)
     authority_url = settings.instance_url
-    if not authority_url or authority_url.startswith(
-        ("http://127.", "http://localhost")
+    if instance_id != settings.instance_id and (
+        not authority_url
+        or authority_url.startswith(("http://127.", "http://localhost"))
     ):
         raise HTTPException(
             status_code=409,
@@ -3337,16 +3588,24 @@ async def start_remote_agent_work(
         )
     payload = body.model_dump(
         mode="json",
-        exclude={"authority_instance_id", "idempotency_key", "resume_session_id"},
+        exclude={
+            "authority_instance_id",
+            "idempotency_key",
+            "resume_session_id",
+            "allow_concurrent",
+        },
     )
     payload["project_id"] = project_id
-    fingerprint = hashlib.sha256(
-        json.dumps(
-            {"target_instance_id": instance_id, "payload": payload},
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode()
-    ).hexdigest()
+    fingerprint = (
+        placement_request_fingerprint
+        or hashlib.sha256(
+            json.dumps(
+                {"target_instance_id": instance_id, "payload": payload},
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
+    )
     header_key = request.headers.get("idempotency-key")
     if not isinstance(header_key, str):
         header_key = None
@@ -3354,11 +3613,19 @@ async def start_remote_agent_work(
     if not idempotency_key:
         raise HTTPException(status_code=400, detail="Idempotency-Key cannot be empty")
     ledger = _dispatch_store(request)
+    existing_lookup = (
+        ledger.by_authority_idempotency
+        if idempotency_scope == "authority"
+        else ledger.by_idempotency
+    )
+    existing_key = (
+        settings.instance_id if idempotency_scope == "authority" else instance_id
+    )
     existing = await _offload_request(
         request,
         "dispatch.idempotency_read",
-        ledger.by_idempotency,
-        instance_id,
+        existing_lookup,
+        existing_key,
         idempotency_key,
     )
     if existing:
@@ -3383,6 +3650,7 @@ async def start_remote_agent_work(
         mutation_id=str(uuid4()),
         idempotency_key=idempotency_key,
         request_fingerprint=fingerprint,
+        placement_request_fingerprint=placement_request_fingerprint,
         card_id=card.id if card else None,
         project_id=project_id,
         realm_id=realm_id,
@@ -3399,17 +3667,57 @@ async def start_remote_agent_work(
         authority_url=authority_url,
         target_instance_id=instance_id,
         target_instance_name=inst.name,
+        placement_policy=str(
+            (placement_decision or {}).get("policy") or "named_instance"
+        ),
+        placement_decision=placement_decision
+        or {
+            "policy": "named_instance",
+            "chosen_instance_id": instance_id,
+            "chosen_instance_name": inst.name,
+            "tie_breaking_reason": "The concrete API target was requested directly.",
+        },
+        placement_resolved_at=datetime.now(UTC),
+        allow_concurrent=body.allow_concurrent,
         resume_requested=bool(body.resume_session_id),
         resume_session_id=body.resume_session_id,
     )
-    await _offload_request(
-        request,
-        "dispatch.record_write",
-        ledger.transition,
-        record,
-        "queued",
-        "Dispatch admitted for background execution.",
-    )
+    try:
+        record, duplicate = await _offload_request(
+            request,
+            "dispatch.record_write",
+            ledger.admit,
+            record,
+            idempotency_scope=idempotency_scope,
+        )
+    except DispatchIdempotencyConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "idempotency_conflict",
+                "message": "This idempotency key was already used for different remote work.",
+                "dispatch_id": exc.existing.dispatch_id,
+            },
+        ) from exc
+    except ConcurrentCardDispatch as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "card_dispatch_in_progress",
+                "message": "This card already has an active durable dispatch. Open it or explicitly allow concurrent dispatch.",
+                "dispatch_id": exc.existing.dispatch_id,
+                "state": exc.existing.state,
+                "recoverable": True,
+            },
+        ) from exc
+    if duplicate:
+        return {
+            "accepted": True,
+            "duplicate": True,
+            "dispatch_id": record.dispatch_id,
+            "job_id": record.dispatch_id,
+            "dispatch": record.public_dict(),
+        }
     worker = ctx.services.get("dispatch_worker")
     if worker:
         worker.wake()
@@ -4300,6 +4608,10 @@ class FleetModule(Module):
             "fleet_update_job_store", FleetUpdateJobStore(settings.data_dir)
         )
         ctx.register_service("dispatch_store", DispatchStore(settings.data_dir))
+        ctx.register_service(
+            "placement_service",
+            PlacementService(RoundRobinCursorStore(settings.data_dir)),
+        )
 
         pages: PageRegistry = ctx.require_service("pages")
         pages.register(
@@ -4397,6 +4709,47 @@ class FleetModule(Module):
 
     def register_mcp(self, mcp, ctx: AppContext) -> None:
         from pa.mcp.local_api import request_local_pa
+
+        @mcp.tool()
+        def dispatch_card(
+            card_id: str,
+            idempotency_key: str,
+            instance_id: str | None = None,
+            policy: PlacementPolicy | None = None,
+            message: str = "",
+            authority_instance_id: str | None = None,
+            provider: str | None = None,
+            model_id: str | None = None,
+            mode_id: str | None = None,
+            effort: str | None = None,
+            allow_concurrent: bool = False,
+        ) -> dict:
+            """Resolve a concrete target or policy and durably dispatch a card."""
+            key = idempotency_key.strip()
+            if not key:
+                raise ValueError("idempotency_key cannot be empty")
+            if bool(instance_id) == bool(policy):
+                raise ValueError("specify exactly one instance_id or policy")
+            return request_local_pa(
+                ctx.settings,
+                "POST",
+                "/api/fleet/dispatch",
+                json={
+                    "authority_instance_id": authority_instance_id,
+                    "card_id": card_id,
+                    "target_instance_id": instance_id,
+                    "placement_policy": (
+                        policy.value if isinstance(policy, PlacementPolicy) else policy
+                    ),
+                    "message": message,
+                    "provider": provider,
+                    "model_id": model_id,
+                    "mode_id": mode_id,
+                    "effort": effort,
+                    "allow_concurrent": allow_concurrent,
+                    "idempotency_key": key,
+                },
+            )
 
         @mcp.tool()
         def dispatch_card_to_instance(
