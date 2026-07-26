@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import random
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -127,6 +128,8 @@ class DispatchRecord(BaseModel):
     prompt_ack: dict[str, Any] | None = None
     knowledge_recorded_at: datetime | None = None
     completion_payload: dict[str, Any] | None = None
+    completion_envelope: dict[str, Any] | None = None
+    completion_received_at: datetime | None = None
     card_disposition_payload: dict[str, Any] | None = None
     card_disposition_status: str | None = None
     card_disposition_reason: str | None = None
@@ -143,6 +146,9 @@ class DispatchRecord(BaseModel):
     reconciliation_prompt_id: str | None = None
     reconciliation_next_retry_at: datetime | None = None
     reconciliation_updated_at: datetime | None = None
+    reconciliation_current_card: dict[str, Any] | None = None
+    completion_delivery_class: str | None = None
+    completion_next_retry_at: datetime | None = None
     acknowledged_at: datetime | None = None
     events: list[DispatchEvent] = Field(default_factory=list)
     progress_protocol_version: int | None = None
@@ -185,15 +191,27 @@ class DispatchRecord(BaseModel):
             "pending": self.state == "completion_pending",
             "attempts": self.attempts,
             "last_error": self.last_error
-            if self.state == "completion_pending"
+            if self.completion_delivery_class != "acknowledged"
             else None,
+            "classification": self.completion_delivery_class,
+            "next_retry_at": (
+                self.completion_next_retry_at.isoformat()
+                if self.completion_next_retry_at
+                else None
+            ),
         }
         data["agent_turn"] = {
             "completed": self.completion_payload is not None,
             "stop_reason": (self.completion_payload or {}).get("stop_reason"),
         }
         data["dispatch_completion"] = {
-            "completed": self.state in {"completed", "acknowledged"},
+            "completed": (
+                self.acknowledged_at is not None
+                or (
+                    self.state in {"completed", "acknowledged"}
+                    and self.completion_delivery_class != "semantic_conflict"
+                )
+            ),
             "acknowledged_at": self.acknowledged_at.isoformat()
             if self.acknowledged_at
             else None,
@@ -224,6 +242,7 @@ class DispatchRecord(BaseModel):
                 if self.reconciliation_updated_at
                 else None
             ),
+            "current_card": self.reconciliation_current_card,
         }
         latest = self.latest_progress
         heartbeat = self.progress_heartbeat
@@ -240,8 +259,7 @@ class DispatchRecord(BaseModel):
         )
         sequences = sorted({event.sequence for event in self.progress_events})
         sequence_gap = bool(
-            sequences
-            and sequences != list(range(sequences[0], sequences[-1] + 1))
+            sequences and sequences != list(range(sequences[0], sequences[-1] + 1))
         )
         progress_delivery_error = next(
             (
@@ -761,9 +779,7 @@ class DispatchStore:
                 latest
                 and latest.phase == sanitized.phase
                 and latest.summary == sanitized.summary
-                and abs(
-                    (sanitized.occurred_at - latest.occurred_at).total_seconds()
-                )
+                and abs((sanitized.occurred_at - latest.occurred_at).total_seconds())
                 <= 5
             ):
                 record.progress_seen_keys.append(sanitized.idempotency_key)
@@ -899,17 +915,13 @@ class DispatchStore:
             record = self._records.get(dispatch_id)
             if not record:
                 return
-            payloads: list[
-                DispatchProgressEventV1 | DispatchProgressHeartbeatV1
-            ] = list(record.progress_events)
+            payloads: list[DispatchProgressEventV1 | DispatchProgressHeartbeatV1] = (
+                list(record.progress_events)
+            )
             if record.progress_heartbeat:
                 payloads.append(record.progress_heartbeat)
             payload = next(
-                (
-                    item
-                    for item in payloads
-                    if item.idempotency_key == idempotency_key
-                ),
+                (item for item in payloads if item.idempotency_key == idempotency_key),
                 None,
             )
             if not payload:
@@ -926,17 +938,13 @@ class DispatchStore:
             record = self._records.get(dispatch_id)
             if not record:
                 return
-            payloads: list[
-                DispatchProgressEventV1 | DispatchProgressHeartbeatV1
-            ] = list(record.progress_events)
+            payloads: list[DispatchProgressEventV1 | DispatchProgressHeartbeatV1] = (
+                list(record.progress_events)
+            )
             if record.progress_heartbeat:
                 payloads.append(record.progress_heartbeat)
             payload = next(
-                (
-                    item
-                    for item in payloads
-                    if item.idempotency_key == idempotency_key
-                ),
+                (item for item in payloads if item.idempotency_key == idempotency_key),
                 None,
             )
             if not payload:
@@ -976,11 +984,7 @@ class DispatchStore:
                         validations.append(validation)
             disposition = result.get("card_disposition")
             outcome = sanitize_text(
-                (
-                    disposition.get("outcome")
-                    if isinstance(disposition, dict)
-                    else None
-                )
+                (disposition.get("outcome") if isinstance(disposition, dict) else None)
                 or (latest.summary if latest else None)
                 or "Agent work completed.",
                 limit=2000,
@@ -997,9 +1001,7 @@ class DispatchStore:
                     disposition if isinstance(disposition, dict) else None
                 ),
                 resulting_lane=(
-                    disposition.get("lane")
-                    if isinstance(disposition, dict)
-                    else None
+                    disposition.get("lane") if isinstance(disposition, dict) else None
                 ),
             )
 
@@ -1307,11 +1309,17 @@ class CompletionOutbox:
         token: str,
         *,
         retry_seconds: float = 5.0,
+        retry_max_seconds: float = 300.0,
+        max_attempts: int = 12,
+        rng: random.Random | None = None,
         async_runtime: AsyncRuntime | None = None,
     ) -> None:
         self.store = store
         self.token = token
         self.retry_seconds = retry_seconds
+        self.retry_max_seconds = max(retry_seconds, retry_max_seconds)
+        self.max_attempts = max(1, max_attempts)
+        self.rng = rng or random.Random()
         self.async_runtime = async_runtime
         self._task: asyncio.Task[None] | None = None
         self._wake = asyncio.Event()
@@ -1344,6 +1352,8 @@ class CompletionOutbox:
             return False
         record.completion_payload = payload
         record.last_error = None
+        record.completion_delivery_class = "pending"
+        record.completion_next_retry_at = None
         self.store.transition(
             record,
             "completion_pending",
@@ -1351,6 +1361,28 @@ class CompletionOutbox:
         )
         self._wake.set()
         return True
+
+    def retry_delivery(self, dispatch_id: str) -> DispatchRecord:
+        """Re-arm preserved completion evidence without changing its payload."""
+        record = self.store.get(dispatch_id)
+        if not record or record.completion_payload is None:
+            raise ValueError("dispatch has no preserved completion evidence")
+        if (
+            record.acknowledged_at
+            and record.completion_delivery_class != "semantic_conflict"
+        ):
+            return record
+        record.completion_delivery_class = "operator_retry"
+        record.completion_next_retry_at = None
+        record.reconciliation_condition = "operator_retry"
+        self.store.transition(
+            record,
+            "completion_pending",
+            "Operator re-armed preserved completion evidence for delivery.",
+            detail={"previous_attempts": record.attempts},
+        )
+        self._wake.set()
+        return record
 
     async def drain(self, timeout: float = 5.0) -> None:
         async def wait_empty() -> None:
@@ -1391,8 +1423,33 @@ class CompletionOutbox:
                     pass
                 continue
             for record in pending:
+                if record.completion_delivery_class in {
+                    "transport_exhausted",
+                    "permanent_failure",
+                    "semantic_conflict",
+                }:
+                    continue
+                if (
+                    record.completion_next_retry_at
+                    and record.completion_next_retry_at > datetime.now(UTC)
+                ):
+                    continue
                 await self._send(record)
-            await asyncio.sleep(self.retry_seconds)
+            await asyncio.sleep(min(self.retry_seconds, 1.0))
+
+    def _schedule_retry(self, record: DispatchRecord, error: str) -> None:
+        record.last_error = sanitize_text(error, limit=500)
+        if record.attempts >= self.max_attempts:
+            record.completion_delivery_class = "transport_exhausted"
+            record.completion_next_retry_at = None
+            return
+        ceiling = min(
+            self.retry_max_seconds,
+            self.retry_seconds * (2 ** max(0, record.attempts - 1)),
+        )
+        delay = self.rng.uniform(ceiling / 2, ceiling)
+        record.completion_delivery_class = "transport_retry"
+        record.completion_next_retry_at = datetime.now(UTC) + timedelta(seconds=delay)
 
     async def _send(self, record: DispatchRecord) -> None:
         record.attempts += 1
@@ -1444,6 +1501,8 @@ class CompletionOutbox:
                     record.card_lane_after = disposition.get("lane_after")
                 record.acknowledged_at = datetime.now(UTC)
                 record.last_error = None
+                record.completion_delivery_class = "acknowledged"
+                record.completion_next_retry_at = None
                 await self._offload(
                     "dispatch.record_complete",
                     self.store.transition,
@@ -1452,10 +1511,50 @@ class CompletionOutbox:
                     "Authority acknowledged dispatch completion separately from card disposition.",
                 )
             else:
-                record.last_error = (
-                    f"HTTP {response.status_code}: {response.text[:500]}"
-                )
-                await self._offload("dispatch.record_write", self.store.put, record)
+                try:
+                    detail = (
+                        await self._offload("dispatch.response_json", response.json)
+                    ).get("detail") or {}
+                except ValueError, AttributeError:
+                    detail = {}
+                code = str(detail.get("code") or "")
+                message = f"HTTP {response.status_code}: {response.text[:500]}"
+                if response.status_code == 409 and code in {
+                    "authority_version_conflict",
+                    "authority_card_missing",
+                }:
+                    record.last_error = sanitize_text(message, limit=500)
+                    record.completion_delivery_class = "semantic_conflict"
+                    record.completion_next_retry_at = None
+                    record.reconciliation_state = "conflict_requires_resolution"
+                    record.reconciliation_reason = f"A mixed-version authority rejected immutable completion before reconciliation: {code}."
+                    record.reconciliation_condition = (
+                        "peer_protocol_upgrade_or_operator_retry"
+                    )
+                    record.reconciliation_last_dependency_error = record.last_error
+                    record.reconciliation_recoverable = True
+                    record.reconciliation_updated_at = datetime.now(UTC)
+                    await self._offload(
+                        "dispatch.record_complete",
+                        self.store.transition,
+                        record,
+                        "completed",
+                        "Agent turn completed; legacy authority reconciliation needs attention.",
+                    )
+                elif response.status_code == 409 or response.status_code in {
+                    401,
+                    403,
+                    404,
+                    422,
+                }:
+                    record.last_error = sanitize_text(message, limit=500)
+                    record.completion_delivery_class = "permanent_failure"
+                    record.completion_next_retry_at = None
+                    record.recoverable = False
+                    await self._offload("dispatch.record_write", self.store.put, record)
+                else:
+                    self._schedule_retry(record, message)
+                    await self._offload("dispatch.record_write", self.store.put, record)
         except httpx.HTTPError as exc:
-            record.last_error = str(exc)
+            self._schedule_retry(record, str(exc))
             await self._offload("dispatch.record_write", self.store.put, record)

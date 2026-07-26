@@ -640,7 +640,7 @@ def finalize_dispatch_attachment(
 def complete_dispatch(
     request: Request, dispatch_id: str, body: DispatchCompletionBody
 ) -> dict:
-    """Apply an authenticated, version-aware completion exactly once at origin."""
+    """Acknowledge immutable completion, then reconcile mutable card intent."""
     ledger = _dispatch_store(request)
     record = ledger.get(dispatch_id)
     if not record:
@@ -652,18 +652,6 @@ def complete_dispatch(
         or request.headers.get("idempotency-key") != body.mutation_id
     ):
         raise HTTPException(status_code=409, detail={"code": "idempotency_conflict"})
-    if record.state in {"completed", "acknowledged"}:
-        return {
-            "dispatch_id": dispatch_id,
-            "acknowledged": True,
-            "duplicate": True,
-            "card_disposition": {
-                "status": record.card_disposition_status,
-                "lane_before": record.card_lane_before,
-                "lane_after": record.card_lane_after,
-                "reason": record.card_disposition_reason,
-            },
-        }
     if (
         body.source_instance_id != record.target_instance_id
         or body.card_id != record.card_id
@@ -681,63 +669,135 @@ def complete_dispatch(
                 "code": "completion_session_mismatch",
                 "expected": record.session_id,
                 "actual": body.session_id,
+                "recoverable": False,
             },
         )
+
+    envelope = body.model_dump(mode="json")
+    if record.acknowledged_at:
+        if record.completion_envelope and record.completion_envelope != envelope:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "completion_payload_conflict", "recoverable": False},
+            )
+        return _completion_ack(record, duplicate=True)
+
+    # This write is intentionally before every mutable card read or update.
+    record.session_id = body.session_id
+    record.completion_payload = body.result
+    record.completion_envelope = envelope
+    record.completion_received_at = datetime.now(UTC)
+    record.acknowledged_at = record.completion_received_at
+    record.card_disposition_payload = (
+        body.disposition if isinstance(body.disposition, dict) else None
+    )
+    record.reconciliation_state = "pending" if body.card_id else "not_applicable"
+    record.reconciliation_reason = "Immutable agent-turn completion acknowledged."
+    record.reconciliation_updated_at = record.completion_received_at
+    ledger.transition(
+        record,
+        "completed",
+        "Agent-turn completion durably acknowledged; card disposition is separate.",
+        detail={
+            "agent_turn_completed": True,
+            "reconciliation": record.reconciliation_state,
+        },
+    )
+
     card = (
         request.app.state.ctx.store.get_card(body.card_id, realm_id=body.realm_id)
         if body.card_id
         else None
     )
     if body.card_id and not card:
-        raise HTTPException(
-            status_code=409,
-            detail={"code": "authority_card_missing", "recoverable": True},
+        record.card_disposition_status = "not_applicable"
+        record.card_disposition_reason = (
+            "The authoritative card was deleted or is unavailable."
         )
-    expected_dispatch_transition = bool(card) and (
-        card.lane == CardLane.ACTIVE
-        and card.preferred_instance == body.source_instance_id
-    )
-    if (
-        card
-        and card.updated_at.isoformat() != body.card_version
-        and card.lane != CardLane.DONE
-        and not expected_dispatch_transition
-    ):
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code": "authority_version_conflict",
-                "expected": body.card_version,
-                "actual": card.updated_at.isoformat(),
-            },
-        )
+        record.reconciliation_state = "not_applicable"
+        record.reconciliation_condition = "card_missing"
+        record.reconciliation_recoverable = False
+        record.reconciliation_updated_at = datetime.now(UTC)
+        ledger.put(record)
+        return _completion_ack(record, duplicate=False)
+
     watches = []
     supervisor_store = request.app.state.ctx.services.get("pr_supervisor_store")
     if card and supervisor_store:
         watches = supervisor_store.list_watches(
-            realm_id=body.realm_id,
-            card_id=card.id,
-            include_retired=True,
+            realm_id=body.realm_id, card_id=card.id, include_retired=True
         )
     decision = (
         decide_card_disposition(
-            body.disposition,
-            current_lane=card.lane,
-            watches=watches,
+            body.disposition, current_lane=card.lane, watches=watches
         )
         if card
         else None
     )
-    if card and decision and decision.applied_lane != card.lane:
+    requested_lane = decision.applied_lane if decision else None
+    base_lane_value = (record.card_snapshot or {}).get("lane")
+    base_lane = (
+        CardLane(base_lane_value)
+        if base_lane_value in {lane.value for lane in CardLane}
+        else None
+    )
+    expected_dispatch_transition = bool(card) and (
+        card.lane == CardLane.ACTIVE
+        and card.preferred_instance == body.source_instance_id
+    )
+    record.card_lane_before = card.lane.value if card else None
+    record.reconciliation_current_card = (
+        {
+            "lane": card.lane.value,
+            "updated_at": card.updated_at.isoformat(),
+            "preferred_instance": card.preferred_instance,
+        }
+        if card
+        else None
+    )
+
+    if not decision or decision.requested_lane is None:
+        outcome = "not_applicable"
+        reason = decision.reason if decision else "No card disposition applies."
+    elif card.lane == requested_lane:
+        outcome = "already_satisfied"
+        reason = f"The card is already in requested lane {requested_lane.value}."
+    elif card.lane == CardLane.DONE:
+        outcome = "operator_state_preserved"
+        reason = "The newer authoritative Done state was preserved."
+    elif (
+        base_lane is not None
+        and card.lane != base_lane
+        and not expected_dispatch_transition
+    ):
+        outcome = "conflict_requires_resolution"
+        reason = (
+            f"Current lane {card.lane.value} conflicts with dispatch-base lane "
+            f"{base_lane.value}; requested {requested_lane.value} was not applied."
+        )
+    else:
         request.app.state.ctx.store.update_card(
             card.id,
-            CardUpdate(lane=decision.applied_lane),
+            CardUpdate(lane=requested_lane),
             realm_id=body.realm_id,
             principal_id="fleet:card-disposition",
             instance_id=request.app.state.ctx.settings.instance_id,
         )
-    record.session_id = body.session_id
-    record.completion_payload = body.result
+        outcome = "applied"
+        reason = decision.reason
+
+    record.card_disposition_status = decision.status if decision else "not_applicable"
+    record.card_disposition_reason = reason
+    record.card_lane_after = (
+        requested_lane.value if outcome == "applied" else card.lane.value
+    )
+    record.reconciliation_state = outcome
+    record.reconciliation_condition = (
+        "operator_resolution" if outcome == "conflict_requires_resolution" else None
+    )
+    record.reconciliation_recoverable = outcome == "conflict_requires_resolution"
+    record.reconciliation_updated_at = datetime.now(UTC)
+
     report = body.final_report
     if report:
         linked_watch = next(
@@ -751,83 +811,65 @@ def complete_dispatch(
             watches[0] if watches else None,
         )
         watch_state = dict(linked_watch.state or {}) if linked_watch else {}
-        checks = list(watch_state.get("checks") or [])
-        threads = list(watch_state.get("review_threads") or [])
         report = report.model_copy(
             update={
                 "pr_url": linked_watch.pr_url if linked_watch else report.pr_url,
-                "pr_number": (
-                    linked_watch.pr_number if linked_watch else report.pr_number
-                ),
+                "pr_number": linked_watch.pr_number
+                if linked_watch
+                else report.pr_number,
                 "commit_sha": (
                     str(watch_state.get("head_sha") or linked_watch.head_sha or "")
                     or report.commit_sha
-                    if linked_watch
-                    else report.commit_sha
-                ),
+                )
+                if linked_watch
+                else report.commit_sha,
                 "ci_evidence": [
                     sanitize_text(
-                        f"{item.get('name')}: "
-                        f"{item.get('conclusion') or item.get('status') or 'unknown'}",
+                        f"{item.get('name')}: {item.get('conclusion') or item.get('status') or 'unknown'}",
                         limit=240,
                     )
-                    for item in checks[:40]
+                    for item in list(watch_state.get("checks") or [])[:40]
                     if isinstance(item, dict)
                 ],
                 "review_evidence": [
                     sanitize_text(
-                        f"{item.get('path') or 'review'}: "
-                        f"{'resolved' if item.get('resolved') else 'open'}",
+                        f"{item.get('path') or 'review'}: {'resolved' if item.get('resolved') else 'open'}",
                         limit=240,
                     )
-                    for item in threads[:40]
+                    for item in list(watch_state.get("review_threads") or [])[:40]
                     if isinstance(item, dict)
                 ],
-                "merge_commit_sha": (
-                    str(watch_state.get("merge_commit_sha") or "") or None
-                ),
-                "card_disposition": (
-                    body.disposition
-                    if isinstance(body.disposition, dict)
-                    else report.card_disposition
-                ),
-                "resulting_lane": (
-                    decision.applied_lane.value if decision else report.resulting_lane
-                ),
+                "merge_commit_sha": str(watch_state.get("merge_commit_sha") or "")
+                or None,
+                "card_disposition": body.disposition
+                if isinstance(body.disposition, dict)
+                else report.card_disposition,
+                "resulting_lane": record.card_lane_after,
             }
         )
     record.final_report = sanitize_completion_report(report) if report else None
-    record.card_disposition_payload = (
-        body.disposition if isinstance(body.disposition, dict) else None
-    )
-    record.card_disposition_status = decision.status if decision else "not_applicable"
-    record.card_disposition_reason = (
-        decision.reason if decision else "Dispatch completion was not linked to a card."
-    )
-    record.card_lane_before = card.lane.value if card else None
-    record.card_lane_after = decision.applied_lane.value if decision else None
-    record.acknowledged_at = datetime.now(UTC)
-    ledger.transition(
-        record,
-        "completed",
-        "Dispatch completion acknowledged independently of card completion.",
-        detail={
-            "agent_turn_completed": True,
-            "card_disposition_status": record.card_disposition_status,
-            "card_lane_before": record.card_lane_before,
-            "card_lane_after": record.card_lane_after,
-            "reason": record.card_disposition_reason,
-        },
-    )
+    ledger.put(record)
+    return _completion_ack(record, duplicate=False)
+
+
+def _completion_ack(record: DispatchRecord, *, duplicate: bool) -> dict[str, Any]:
     return {
-        "dispatch_id": dispatch_id,
+        "dispatch_id": record.dispatch_id,
         "acknowledged": True,
-        "duplicate": False,
+        "duplicate": duplicate,
+        "acknowledged_at": record.acknowledged_at.isoformat()
+        if record.acknowledged_at
+        else None,
+        "agent_turn": {"completed": True},
         "card_disposition": {
             "status": record.card_disposition_status,
             "lane_before": record.card_lane_before,
             "lane_after": record.card_lane_after,
             "reason": record.card_disposition_reason,
+        },
+        "reconciliation": {
+            "state": record.reconciliation_state,
+            "condition": record.reconciliation_condition,
         },
     }
 
@@ -4209,6 +4251,25 @@ async def reconcile_dispatch_completion(
     if not record:
         raise HTTPException(status_code=404, detail="Dispatch not found")
     _require_dispatch_access(request, record)
+    outbox = request.app.state.ctx.services.get("completion_outbox")
+    if (
+        record.completion_payload is not None
+        and record.state in {"completion_pending", "completed"}
+        and (
+            record.reconciliation_state in {"conflict_requires_resolution", "pending"}
+            or record.completion_delivery_class
+            in {"transport_exhausted", "permanent_failure", "semantic_conflict"}
+        )
+    ):
+        if not outbox:
+            raise HTTPException(
+                status_code=503,
+                detail={"code": "completion_outbox_unavailable", "recoverable": True},
+            )
+        try:
+            return outbox.retry_delivery(dispatch_id).public_dict()
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
     reconciler = request.app.state.ctx.services.get("completion_reconciler")
     if not reconciler:
         raise HTTPException(
