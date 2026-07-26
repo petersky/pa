@@ -1,0 +1,9 @@
+{
+  "id": "go-hawks",
+  "name": "Go Hawks",
+  "description": "Seattle-inspired navy, action green, and silver",
+  "variants": [
+    {"id": "light", "label": "Light"},
+    {"id": "dark", "label": "Dark"}
+  ]
+}

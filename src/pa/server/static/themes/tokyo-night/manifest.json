@@ -1,0 +1,9 @@
+{
+  "id": "tokyo-night",
+  "name": "Tokyo Night",
+  "description": "Midnight indigo with electric blue and violet accents",
+  "variants": [
+    {"id": "light", "label": "Light"},
+    {"id": "dark", "label": "Dark"}
+  ]
+}

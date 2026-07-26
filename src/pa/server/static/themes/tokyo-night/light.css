@@ -1,0 +1,20 @@
+[data-theme="tokyo-night"][data-appearance="light"] {
+  color-scheme: light;
+
+  --pa-bg: #e9ecf5;
+  --pa-surface: #f7f8fc;
+  --pa-surface-raised: #ffffff;
+  --pa-border: #c8cde0;
+  --pa-text: #343b58;
+  --pa-text-muted: #66709a;
+  --pa-accent: #3453b8;
+  --pa-accent-hover: #263f91;
+  --pa-accent-subtle: #dfe6fb;
+  --pa-ok: #397a42;
+  --pa-warn: #916200;
+  --pa-danger: #b52f57;
+  --pa-shadow: 0 1px 4px rgb(52 59 88 / 0.12);
+  --pa-focus: 0 0 0 3px rgb(52 83 184 / 0.28);
+  --pa-chat-thought-bg: #e3e6f0;
+  --pa-chat-tool-bg: #f4e9c9;
+}

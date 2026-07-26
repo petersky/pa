@@ -1,0 +1,9 @@
+{
+  "id": "monokai-pro",
+  "name": "Monokai Pro",
+  "description": "Warm charcoal with vivid candy-colored accents",
+  "variants": [
+    {"id": "light", "label": "Light"},
+    {"id": "dark", "label": "Dark"}
+  ]
+}

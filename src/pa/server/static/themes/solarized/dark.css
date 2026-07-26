@@ -1,0 +1,20 @@
+[data-theme="solarized"][data-appearance="dark"] {
+  color-scheme: dark;
+
+  --pa-bg: #002b36;
+  --pa-surface: #073642;
+  --pa-surface-raised: #104653;
+  --pa-border: #2b5660;
+  --pa-text: #f3e9ce;
+  --pa-text-muted: #a9b8ad;
+  --pa-accent: #55c1e8;
+  --pa-accent-hover: #82d4ef;
+  --pa-accent-subtle: #164b59;
+  --pa-ok: #b4ca50;
+  --pa-warn: #e4b84d;
+  --pa-danger: #ff7069;
+  --pa-shadow: 0 1px 3px rgb(0 0 0 / 0.38);
+  --pa-focus: 0 0 0 3px rgb(85 193 232 / 0.34);
+  --pa-chat-thought-bg: #0b3d49;
+  --pa-chat-tool-bg: #4a4021;
+}

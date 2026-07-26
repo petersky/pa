@@ -1,0 +1,9 @@
+{
+  "id": "feelin-pretty",
+  "name": "Feelin' Pretty",
+  "description": "Playful pink, purple, and pastel tones",
+  "variants": [
+    {"id": "light", "label": "Light"},
+    {"id": "dark", "label": "Dark"}
+  ]
+}

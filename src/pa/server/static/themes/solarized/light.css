@@ -1,0 +1,20 @@
+[data-theme="solarized"][data-appearance="light"] {
+  color-scheme: light;
+
+  --pa-bg: #eee8d5;
+  --pa-surface: #fdf6e3;
+  --pa-surface-raised: #fffaf0;
+  --pa-border: #c9c2aa;
+  --pa-text: #314b52;
+  --pa-text-muted: #61777a;
+  --pa-accent: #086e93;
+  --pa-accent-hover: #005875;
+  --pa-accent-subtle: #d5e7e5;
+  --pa-ok: #587500;
+  --pa-warn: #9b6500;
+  --pa-danger: #b8322a;
+  --pa-shadow: 0 1px 3px rgb(88 74 45 / 0.14);
+  --pa-focus: 0 0 0 3px rgb(38 139 210 / 0.30);
+  --pa-chat-thought-bg: #e8e1cd;
+  --pa-chat-tool-bg: #f5e6bd;
+}
