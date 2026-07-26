@@ -390,6 +390,31 @@ class AgentSessionRuntime:
                 if self.connection:
                     self.connection.config_options = options
         self._append_transcript(event_type, normalized)
+        await self._report_progress(normalized)
+
+    async def _report_progress(self, update: dict[str, Any]) -> None:
+        handler = self.manager.progress_handler
+        if not handler:
+            return
+        try:
+            if inspect.iscoroutinefunction(handler):
+                result = handler(self.session_id, update)
+            else:
+                result = await self._offload(
+                    "agent.progress_callback",
+                    handler,
+                    self.session_id,
+                    update,
+                    timeout=15.0,
+                )
+            if asyncio.iscoroutine(result):
+                await result
+        except Exception:
+            # Progress is a retryable side channel. It must not interrupt the
+            # ACP transcript or successful agent work.
+            logger.exception(
+                "Failed to queue dispatch progress for session %s", self.session_id
+            )
 
     async def _on_permission(
         self, _external_session_id: str, request: dict[str, Any]
@@ -1058,6 +1083,17 @@ class AgentSessionRuntime:
                             payload["card_disposition"] = disposition
                         elif disposition_error:
                             payload["card_disposition_error"] = disposition_error[:1000]
+                        await self._report_progress(
+                            {
+                                "type": "turn_completed",
+                                "summary": (
+                                    disposition.get("outcome")
+                                    if isinstance(disposition, dict)
+                                    else "Agent work completed."
+                                ),
+                                "result": payload,
+                            }
+                        )
                         if inspect.iscoroutinefunction(self.manager.completion_handler):
                             result = self.manager.completion_handler(
                                 self.session_id, payload
@@ -1417,6 +1453,9 @@ class AgentSessionManager:
         self.browser = BrowserManager(settings.data_dir)
         self.workspace_manager = WorkspaceManager(settings, store)
         self.completion_handler: (
+            Callable[[str, dict[str, Any]], Awaitable[Any] | Any] | None
+        ) = None
+        self.progress_handler: (
             Callable[[str, dict[str, Any]], Awaitable[Any] | Any] | None
         ) = None
 

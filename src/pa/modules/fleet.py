@@ -49,6 +49,18 @@ from pa.execution.dispatch import (
     DispatchWorker,
 )
 from pa.execution.disposition import decide_card_disposition
+from pa.execution.progress import (
+    PROGRESS_SCHEMA_VERSION,
+    SUPPORTED_PROGRESS_VERSIONS,
+    CompletionReportV1,
+    DispatchProgressEventV1,
+    DispatchProgressHeartbeatV1,
+    ExplicitProgressCheckpointV1,
+    ProgressKind,
+    ProgressService,
+    sanitize_completion_report,
+    sanitize_text,
+)
 from pa.execution.reconciliation import CompletionReconciler
 from pa.fleet.control_plane import build_control_plane_status
 from pa.fleet.join import (
@@ -250,6 +262,7 @@ class DispatchMaterializeBody(BaseModel):
     authority_url: str
     target_instance_id: str
     session_id: str | None = None
+    progress_versions: list[int] = Field(default_factory=list, max_length=10)
     attachment_manifest: list[CardAttachment] = Field(default_factory=list)
     attachment_digest: str | None = None
 
@@ -269,6 +282,7 @@ class DispatchCompletionBody(BaseModel):
     session_id: str | None = None
     result: dict[str, Any] = Field(default_factory=dict)
     disposition: Any = None
+    final_report: CompletionReportV1 | None = None
 
 
 def _canonical_dispatch_uuid(value: str | None, field: str) -> str:
@@ -410,6 +424,14 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
         raise HTTPException(status_code=409, detail=exc.detail()) from exc
 
     ledger = _dispatch_store(request)
+    progress_protocol_version = next(
+        (
+            version
+            for version in sorted(body.progress_versions, reverse=True)
+            if version in SUPPORTED_PROGRESS_VERSIONS
+        ),
+        None,
+    )
     recorded = ledger.get(body.dispatch_id)
     if recorded:
         if recorded.mutation_id != body.mutation_id:
@@ -427,6 +449,7 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
             "resolvable": True,
             "duplicate": True,
             "session_id": recorded.session_id,
+            "progress_protocol_version": recorded.progress_protocol_version,
             "attachment_evidence": recorded.attachment_evidence,
         }
 
@@ -475,8 +498,12 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
         resume_requested=bool(body.session_id),
         resume_session_id=body.session_id,
         state="materializing",
+        progress_protocol_version=progress_protocol_version,
         attachment_evidence=attachment_evidence,
-        request_payload={"provenance_version": body.provenance_version},
+        request_payload={
+            "provenance_version": body.provenance_version,
+            "progress_versions": list(body.progress_versions),
+        },
     )
     try:
         ledger.put(record)
@@ -491,6 +518,7 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
         "card_version": body.card_version,
         "resolvable": True,
         "duplicate": False,
+        "progress_protocol_version": progress_protocol_version,
         "attachment_evidence": attachment_evidence,
     }
 
@@ -686,6 +714,67 @@ def complete_dispatch(
         )
     record.session_id = body.session_id
     record.completion_payload = body.result
+    report = body.final_report
+    if report:
+        linked_watch = next(
+            (
+                watch
+                for watch in watches
+                if not decision
+                or not decision.watch_id
+                or watch.id == decision.watch_id
+            ),
+            watches[0] if watches else None,
+        )
+        watch_state = dict(linked_watch.state or {}) if linked_watch else {}
+        checks = list(watch_state.get("checks") or [])
+        threads = list(watch_state.get("review_threads") or [])
+        report = report.model_copy(
+            update={
+                "pr_url": linked_watch.pr_url if linked_watch else report.pr_url,
+                "pr_number": (
+                    linked_watch.pr_number if linked_watch else report.pr_number
+                ),
+                "commit_sha": (
+                    str(watch_state.get("head_sha") or linked_watch.head_sha or "")
+                    or report.commit_sha
+                    if linked_watch
+                    else report.commit_sha
+                ),
+                "ci_evidence": [
+                    sanitize_text(
+                        f"{item.get('name')}: "
+                        f"{item.get('conclusion') or item.get('status') or 'unknown'}",
+                        limit=240,
+                    )
+                    for item in checks[:40]
+                    if isinstance(item, dict)
+                ],
+                "review_evidence": [
+                    sanitize_text(
+                        f"{item.get('path') or 'review'}: "
+                        f"{'resolved' if item.get('resolved') else 'open'}",
+                        limit=240,
+                    )
+                    for item in threads[:40]
+                    if isinstance(item, dict)
+                ],
+                "merge_commit_sha": (
+                    str(watch_state.get("merge_commit_sha") or "") or None
+                ),
+                "card_disposition": (
+                    body.disposition
+                    if isinstance(body.disposition, dict)
+                    else report.card_disposition
+                ),
+                "resulting_lane": (
+                    decision.applied_lane.value
+                    if decision
+                    else report.resulting_lane
+                ),
+            }
+        )
+    record.final_report = sanitize_completion_report(report) if report else None
     record.card_disposition_payload = (
         body.disposition if isinstance(body.disposition, dict) else None
     )
@@ -719,6 +808,98 @@ def complete_dispatch(
             "reason": record.card_disposition_reason,
         },
     }
+
+
+@router.get("/fleet/progress/capabilities")
+def progress_capabilities(request: Request) -> dict[str, Any]:
+    require_user(request)
+    return {
+        "schema": "pa.dispatch-progress",
+        "versions": SUPPORTED_PROGRESS_VERSIONS,
+        "checkpoint_limit": 200,
+        "heartbeat_separate": True,
+        "raw_tool_output": False,
+    }
+
+
+@router.post("/fleet/dispatch/{dispatch_id}/progress")
+def ingest_dispatch_progress(
+    request: Request,
+    dispatch_id: str,
+    body: DispatchProgressEventV1 | DispatchProgressHeartbeatV1,
+):
+    """Accept an authenticated target checkpoint exactly once at the authority."""
+    _require_instance(request)
+    ledger = _dispatch_store(request)
+    record = ledger.get(dispatch_id)
+    if not record:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "unknown_dispatch", "recoverable": True},
+        )
+    caller = request.headers.get("X-PA-Origin-Instance-ID", "").strip()
+    if (
+        caller != body.originating_instance_id
+        or caller != record.target_instance_id
+        or request.headers.get("idempotency-key") != body.idempotency_key
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "progress_provenance_mismatch",
+                "recoverable": False,
+            },
+        )
+    try:
+        result = (
+            ledger.ingest_heartbeat(body, delivered=True)
+            if body.kind == ProgressKind.HEARTBEAT
+            else ledger.ingest_progress(body, delivered=True)
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "progress_conflict",
+                "message": str(exc)[:1000],
+                "recoverable": False,
+            },
+        ) from exc
+    status_code = 208 if result.status == "duplicate" else 200
+    return JSONResponse(result.model_dump(mode="json"), status_code=status_code)
+
+
+@router.post("/fleet/dispatch-jobs/{dispatch_id}/checkpoint")
+async def report_dispatch_checkpoint(
+    request: Request,
+    dispatch_id: str,
+    body: ExplicitProgressCheckpointV1,
+) -> dict[str, Any]:
+    """Emit an allowlisted explicit checkpoint for a locally linked dispatch."""
+    record = _dispatch_store(request).get(dispatch_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Dispatch not found")
+    _require_dispatch_access(request, record)
+    service = request.app.state.ctx.services.get("progress_service")
+    if not service:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "progress_reporting_unavailable", "recoverable": True},
+        )
+    if record.progress_protocol_version != PROGRESS_SCHEMA_VERSION:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "progress_protocol_not_negotiated",
+                "supported_versions": SUPPORTED_PROGRESS_VERSIONS,
+                "recoverable": False,
+            },
+        )
+    try:
+        result = await service.explicit(dispatch_id, body)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return result.model_dump(mode="json")
 
 
 def _fleet_context(request: Request) -> dict:
@@ -2720,6 +2901,7 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
         "authority_url": record.authority_url,
         "target_instance_id": record.target_instance_id,
         "session_id": record.resume_session_id if record.resume_requested else None,
+        "progress_versions": SUPPORTED_PROGRESS_VERSIONS,
         "attachment_manifest": [
             item.model_dump(mode="json") for item in (card.attachments if card else [])
         ],
@@ -2761,6 +2943,12 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
         "attachments": [],
         "verified": True,
     }
+    negotiated_progress = materialized.get("progress_protocol_version")
+    record.progress_protocol_version = (
+        int(negotiated_progress)
+        if negotiated_progress in SUPPORTED_PROGRESS_VERSIONS
+        else None
+    )
     await _offload_ctx(ctx, "dispatch.record_write", ledger.put, record)
     if await _dispatch_cancelled(ctx, ledger, record):
         return
@@ -4107,6 +4295,16 @@ class FleetModule(Module):
         reconciler.start()
         ctx.register_service("completion_reconciler", reconciler)
         agent.completion_handler = reconciler.handle_completion
+        progress_service = ProgressService(
+            ctx.require_service("dispatch_store"),
+            instance_id=ctx.settings.instance_id,
+            token=ctx.settings.sync_token,
+            async_runtime=async_runtime,
+            session_manager=agent,
+        )
+        ctx.register_service("progress_service", progress_service)
+        agent.progress_handler = progress_service.observe
+        progress_service.start()
         outbox.start()
 
     async def on_shutdown(self, app, ctx: AppContext) -> None:
@@ -4116,6 +4314,9 @@ class FleetModule(Module):
         reconciler = ctx.services.get("completion_reconciler")
         if reconciler:
             await reconciler.close()
+        progress_service = ctx.services.get("progress_service")
+        if progress_service:
+            await progress_service.close()
         outbox = ctx.services.get("completion_outbox")
         if outbox:
             await outbox.close(timeout=5.0)
@@ -4182,6 +4383,57 @@ class FleetModule(Module):
                     else f"/api/fleet/dispatch-jobs/{dispatch_id}"
                 ),
                 allow_not_found=True,
+            )
+
+        @mcp.tool()
+        def report_dispatch_progress(
+            dispatch_id: str,
+            phase: Literal[
+                "investigating",
+                "planning",
+                "implementing",
+                "testing",
+                "opening_pr",
+                "waiting_ci",
+                "addressing_review",
+                "merging",
+                "blocked",
+                "retrying",
+                "completed",
+            ],
+            summary: str,
+            idempotency_key: str,
+            branch: str | None = None,
+            commit_sha: str | None = None,
+            pr_url: str | None = None,
+            pr_number: int | None = None,
+            changed_file_count: int | None = None,
+            blockers: list[str] | None = None,
+            retry_reason: str | None = None,
+            operator_input: str | None = None,
+        ) -> dict:
+            """Emit a sanitized structured checkpoint for a linked durable dispatch."""
+            key = idempotency_key.strip()
+            if not key:
+                raise ValueError("idempotency_key cannot be empty")
+            return request_local_pa(
+                ctx.settings,
+                "POST",
+                f"/api/fleet/dispatch-jobs/{dispatch_id}/checkpoint",
+                json={
+                    "schema_version": PROGRESS_SCHEMA_VERSION,
+                    "phase": phase,
+                    "summary": summary,
+                    "branch": branch,
+                    "commit_sha": commit_sha,
+                    "pr_url": pr_url,
+                    "pr_number": pr_number,
+                    "changed_file_count": changed_file_count,
+                    "blockers": blockers or [],
+                    "retry_reason": retry_reason,
+                    "operator_input": operator_input,
+                    "idempotency_key": key,
+                },
             )
 
         @mcp.tool()

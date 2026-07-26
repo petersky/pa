@@ -49,6 +49,11 @@ For model/agent callers, prefer the MCP tools: `dispatch_card_to_instance`,
 and never expose browser cookies. Set `authority_instance_id` explicitly when an
 always-on peer must own the durable dispatch independently of the caller.
 
+Structured live progress is described in
+[`DISPATCH_PROGRESS.md`](DISPATCH_PROGRESS.md). Agents may use
+`report_dispatch_progress`; ordinary ACP commentary and sanitized tool lifecycle
+updates are also derived automatically after version negotiation.
+
 ## Security boundaries
 
 - Browser UI requests retain session-cookie plus signed double-submit CSRF and

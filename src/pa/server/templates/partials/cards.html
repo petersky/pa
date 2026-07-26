@@ -6,6 +6,7 @@
       card,
       card_projects.get(card.id),
       card_sessions.get(card.id),
+      (card_progress.get(card.id) if card_progress is defined else none),
       movable=true,
       lanes=lanes,
       title_only=lane and lane.value == 'done'

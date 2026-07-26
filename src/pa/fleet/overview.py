@@ -433,6 +433,28 @@ def _local_activity(ctx: Any) -> dict[str, Any]:
         state = "queued"
     elif sessions:
         state = "active"
+    current_dispatch = None
+    structured = [
+        item
+        for item in dispatches
+        if (item.get("progress") or {}).get("latest")
+    ]
+    if structured:
+        current_dispatch = max(
+            structured,
+            key=lambda item: (
+                (item.get("progress") or {})
+                .get("freshness", {})
+                .get("last_activity_at")
+                or item.get("updated_at")
+                or ""
+            ),
+        )
+        current_progress = current_dispatch["progress"]
+        latest = current_progress["latest"]
+        phase = latest.get("phase") or state
+        state = "blocked" if phase == "blocked" else "working"
+        progress["message"] = latest.get("summary") or progress.get("message")
     return {
         "state": state,
         "summary": progress.get("message") or state,
@@ -440,6 +462,18 @@ def _local_activity(ctx: Any) -> dict[str, Any]:
         "queued_prompts": progress.get("queued_prompts", 0),
         "sessions": sessions,
         "dispatches": dispatches,
+        "current_dispatch": (
+            {
+                "dispatch_id": current_dispatch.get("dispatch_id"),
+                "card_id": current_dispatch.get("card_id"),
+                "session_id": current_dispatch.get("session_id"),
+                "phase": current_dispatch["progress"]["latest"].get("phase"),
+                "summary": current_dispatch["progress"]["latest"].get("summary"),
+                "freshness": current_dispatch["progress"].get("freshness"),
+            }
+            if current_dispatch
+            else None
+        ),
     }
 
 
@@ -861,7 +895,12 @@ def build_overview(
                     "target": item.target_instance_id,
                     "direction": "authority-to-target",
                     "status": "degraded" if item.last_error else "healthy",
-                    "label": f"{item.state} · {item.card_id or item.dispatch_id}",
+                    "label": (
+                        f"{item.latest_progress.phase.value} · "
+                        f"{item.card_id or item.dispatch_id}"
+                        if item.latest_progress
+                        else f"{item.state} · {item.card_id or item.dispatch_id}"
+                    ),
                     "details": item.public_dict(),
                 }
             )

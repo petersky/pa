@@ -1,0 +1,22 @@
+<div class="{% if current_progress %}card-live-progress progress-{{ current_progress.freshness.state }}{% else %}card-live-progress-empty{% endif %}"
+     data-card-live-progress
+     {% if current_progress %}data-progress-state="{{ current_progress.freshness.state }}"{% endif %}
+     hx-get="/partials/cards/{{ card.id }}/progress?realm={{ card.realm_id }}"
+     hx-trigger="every 15s"
+     hx-swap="outerHTML">
+  {% if current_progress %}
+    {% if current_progress.latest %}
+    <div>
+      <span class="status status-{{ 'blocked' if current_progress.latest.phase == 'blocked' else 'active' }}">{{ current_progress.latest.phase | replace('_', ' ') }}</span>
+      <strong>{{ current_progress.latest.summary }}</strong>
+    </div>
+    <div class="muted small">
+      {{ current_progress.freshness.state }}
+      {% if current_progress.freshness.age_seconds is not none %} · active {{ current_progress.freshness.age_seconds }}s ago{% endif %}
+      {% if current_progress.session_id %} · <a href="/agent?session={{ current_progress.session_id }}&instance={{ current_progress.target_instance_id }}">Open exact session</a>{% endif %}
+    </div>
+    {% else %}
+    <span class="muted">Structured progress unavailable; showing {{ current_progress.dispatch_state | replace('_', ' ') }} lifecycle state.</span>
+    {% endif %}
+  {% endif %}
+</div>
