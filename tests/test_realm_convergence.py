@@ -632,6 +632,11 @@ class RealmConvergenceTests(unittest.IsolatedAsyncioTestCase):
                     card_id=card.id,
                     message="Continue",
                     idempotency_key="realm-repair-dispatch",
+                    execution_contract={
+                        "version": 1,
+                        "profile": "research",
+                        "confirmed": True,
+                    },
                 ),
             )
             from pa.modules.fleet import _process_remote_dispatch

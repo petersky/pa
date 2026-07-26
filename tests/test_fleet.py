@@ -16,7 +16,9 @@ from fastapi import FastAPI, HTTPException
 
 from pa.config import Settings
 from pa.domain.instance_config import load_instance_config, update_instance_config
-from pa.domain.models import Card, CardLane, FleetInstance, Project, ProjectRepo
+from pa.domain.models import (
+    Card, CardLane, FleetInstance, Project, ProjectRepo, ProjectRepository, Repository
+)
 from pa.fleet.join import (
     apply_join_response,
     apply_reachability_settings,
@@ -1340,6 +1342,13 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
             store = MagicMock()
             store.get_card.return_value = card
             store.get_project.return_value = project
+            repository = Repository(
+                id="repo-1", url="https://github.com/petersky/pa.git", name="PA"
+            )
+            store.list_project_repositories.return_value = [(
+                repository,
+                ProjectRepository(project_id=project.id, repository_id=repository.id),
+            )]
             store.project_working_directory.return_value = "/srv/pa/remote"
             store.update_card.return_value = updated
 
