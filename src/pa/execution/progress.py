@@ -123,9 +123,7 @@ class DispatchProgressEventV1(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     schema_version: Literal[1] = PROGRESS_SCHEMA_VERSION
-    kind: Literal[ProgressKind.CHECKPOINT, ProgressKind.FINAL] = (
-        ProgressKind.CHECKPOINT
-    )
+    kind: Literal[ProgressKind.CHECKPOINT, ProgressKind.FINAL] = ProgressKind.CHECKPOINT
     card_id: str | None = None
     dispatch_id: str
     acp_session_id: str
@@ -236,7 +234,9 @@ class ExplicitProgressCheckpointV1(BaseModel):
     @model_validator(mode="after")
     def payload_is_bounded(self) -> ExplicitProgressCheckpointV1:
         if len(self.model_dump_json().encode()) > MAX_PROGRESS_PAYLOAD_BYTES:
-            raise ValueError("explicit progress checkpoint exceeds the 32 KB payload limit")
+            raise ValueError(
+                "explicit progress checkpoint exceeds the 32 KB payload limit"
+            )
         return self
 
 
@@ -346,15 +346,11 @@ def sanitize_progress_event(
     return event.model_copy(
         update={
             "summary": sanitize_text(event.summary),
-            "branch": sanitize_text(event.branch, limit=240)
-            if event.branch
-            else None,
+            "branch": sanitize_text(event.branch, limit=240) if event.branch else None,
             "commit_sha": sanitize_text(event.commit_sha, limit=80)
             if event.commit_sha
             else None,
-            "pr_url": sanitize_text(event.pr_url, limit=500)
-            if event.pr_url
-            else None,
+            "pr_url": sanitize_text(event.pr_url, limit=500) if event.pr_url else None,
             "validations": [
                 sanitize_validation(item)
                 for item in event.validations[:MAX_PROGRESS_VALIDATIONS]
@@ -384,9 +380,7 @@ def sanitize_progress_event(
                         "status": sanitize_text(item.status, limit=80)
                         if item.status
                         else None,
-                        "result": sanitize_text(
-                            item.result, limit=MAX_PROGRESS_DETAIL
-                        )
+                        "result": sanitize_text(item.result, limit=MAX_PROGRESS_DETAIL)
                         if item.result
                         else None,
                     }
@@ -516,12 +510,15 @@ def phase_for_update(update: dict[str, Any]) -> ProgressPhase:
 
 def derived_checkpoint(
     update: dict[str, Any],
-) -> tuple[
-    ProgressPhase,
-    str,
-    list[ProgressToolDetailV1],
-    list[ProgressValidationV1],
-] | None:
+) -> (
+    tuple[
+        ProgressPhase,
+        str,
+        list[ProgressToolDetailV1],
+        list[ProgressValidationV1],
+    ]
+    | None
+):
     """Derive only from visible commentary and allowlisted tool lifecycle fields."""
     event_type = str(update.get("type") or "")
     if event_type == "agent_thought_chunk":
@@ -617,6 +614,13 @@ class ProgressService:
         self._message_buffers: dict[tuple[str, str], str] = {}
         self._last_checkpoint_at: dict[str, datetime] = {}
         self._last_heartbeat_at: dict[str, datetime] = {}
+        # Bound progress derivation before it can submit work to the shared pool.
+        self._observe_slots = asyncio.Semaphore(4)
+        self._session_locks: dict[str, asyncio.Lock] = {}
+        self._session_records: dict[str, tuple[datetime, Any]] = {}
+        self._observations: dict[str, int] = {}
+        self._observe_waiters = 0
+        self._observe_max_waiters = 0
 
     async def _offload(self, operation: str, call, *args, **kwargs):
         if self.async_runtime:
@@ -654,12 +658,51 @@ class ProgressService:
             self._client = None
 
     async def observe(self, session_id: str, update: dict[str, Any]) -> None:
-        record = await self._offload(
-            "progress.dispatch_read", self.store.by_session, session_id
+        lock = self._session_locks.setdefault(session_id, asyncio.Lock())
+        self._observe_waiters += 1
+        self._observe_max_waiters = max(
+            self._observe_max_waiters, self._observe_waiters
         )
+        try:
+            async with self._observe_slots, lock:
+                self._observations[session_id] = (
+                    self._observations.get(session_id, 0) + 1
+                )
+                while len(self._observations) > 256:
+                    self._observations.pop(next(iter(self._observations)))
+                await self._observe(session_id, update)
+        finally:
+            self._observe_waiters -= 1
+            if len(self._session_locks) > 256:
+                for key, candidate in list(self._session_locks.items()):
+                    if key != session_id and not candidate.locked():
+                        self._session_locks.pop(key, None)
+                    if len(self._session_locks) <= 256:
+                        break
+
+    def snapshot(self) -> dict[str, Any]:
+        return {
+            "limit": 4,
+            "waiting": self._observe_waiters,
+            "max_waiting": self._observe_max_waiters,
+            "observations_by_session": dict(self._observations),
+            "cached_sessions": len(self._session_records),
+        }
+
+    async def _observe(self, session_id: str, update: dict[str, Any]) -> None:
+        now = datetime.now(UTC)
+        cached = self._session_records.get(session_id)
+        if cached and (now - cached[0]).total_seconds() < 5.0:
+            record = cached[1]
+        else:
+            record = await self._offload(
+                "progress.dispatch_read", self.store.by_session, session_id
+            )
+            self._session_records[session_id] = (now, record)
+            while len(self._session_records) > 256:
+                self._session_records.pop(next(iter(self._session_records)))
         if not record or record.progress_protocol_version != PROGRESS_SCHEMA_VERSION:
             return
-        now = datetime.now(UTC)
         event_type = str(update.get("type") or "")
         checkpoint_update = update
         if event_type == "agent_message_chunk":
@@ -811,9 +854,7 @@ class ProgressService:
         self._wake.set()
         return ingest
 
-    async def _heartbeat(
-        self, record: Any, phase: ProgressPhase, summary: str
-    ) -> None:
+    async def _heartbeat(self, record: Any, phase: ProgressPhase, summary: str) -> None:
         now = datetime.now(UTC)
         last = self._last_heartbeat_at.get(record.dispatch_id)
         if last and (now - last).total_seconds() < self.heartbeat_seconds:
