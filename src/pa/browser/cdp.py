@@ -81,6 +81,16 @@ class CdpPage:
                 "userGesture": True,
             },
         )
+        if result.get("exceptionDetails"):
+            details = result["exceptionDetails"]
+            exception = details.get("exception") or {}
+            raise CdpError(
+                str(
+                    exception.get("description")
+                    or details.get("text")
+                    or "JavaScript evaluation failed"
+                )
+            )
         remote = result.get("result") or {}
         if remote.get("subtype") == "error":
             raise CdpError(
