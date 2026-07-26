@@ -862,6 +862,7 @@ def fleet_join(
         subscribed_realms=result.get("subscribed_realms"),
         sync_token=result.get("sync_token"),
         peers=result.get("peers"),
+        membership_snapshot=result.get("membership"),
     )
     _reset()
     settings = get_settings()

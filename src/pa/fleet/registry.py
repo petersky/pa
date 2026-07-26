@@ -6,18 +6,24 @@ import json
 import secrets
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
+from uuid import uuid4
 
 from pa.core.io import atomic_write_json
 from pa.domain.models import FleetInstance, FleetJoinToken
 
 
 class FleetRegistry:
+    SCHEMA_VERSION = 2
+
     def __init__(self, data_dir: Path, fleet_id: str) -> None:
         self.fleet_id = fleet_id
         self.instances_path = data_dir / "fleet_instances.json"
         self.tokens_path = data_dir / "fleet_join_tokens.json"
+        self.audit_path = data_dir / "fleet_membership_audit.jsonl"
         self._instances: dict[str, FleetInstance] = {}
         self._tokens: dict[str, FleetJoinToken] = {}
+        self._generation = 0
         self._load()
 
     def _load(self) -> None:
@@ -30,10 +36,23 @@ class FleetRegistry:
             return
         try:
             data = json.loads(self.instances_path.read_text())
-            for item in data.get("instances", []):
+            if data.get("fleet_id") not in (None, "", self.fleet_id):
+                return
+            self._generation = max(self._generation, int(data.get("generation", 0)))
+            raw_instances = data.get("instances", [])
+            for item in raw_instances:
                 inst = FleetInstance.model_validate(item)
-                self._instances[inst.instance_id] = inst
-        except (json.JSONDecodeError, ValueError):
+                current = self._instances.get(inst.instance_id)
+                if (
+                    current is None
+                    or inst.membership_generation >= current.membership_generation
+                ):
+                    self._instances[inst.instance_id] = inst
+            if "schema_version" not in data:
+                # Legacy registries had no version. Member count is only a migration
+                # ordering hint; equal-sized but different rosters remain conflicts.
+                self._generation = max(self._generation, len(raw_instances))
+        except json.JSONDecodeError, ValueError:
             pass
 
     def _reload_tokens(self) -> None:
@@ -47,13 +66,47 @@ class FleetRegistry:
                 tok = FleetJoinToken.model_validate(item)
                 if tok.expires_at > now:
                     self._tokens[tok.token] = tok
-        except (json.JSONDecodeError, ValueError):
+        except json.JSONDecodeError, ValueError:
             pass
 
     def _save_instances(self) -> None:
         self.instances_path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {"instances": [i.model_dump(mode="json") for i in self._instances.values()]}
+        payload = self.snapshot()
         atomic_write_json(self.instances_path, payload)
+
+    def _audit(
+        self, action: str, *, actor: str = "", detail: dict[str, Any] | None = None
+    ) -> None:
+        self.audit_path.parent.mkdir(parents=True, exist_ok=True)
+        record = {
+            "event_id": str(uuid4()),
+            "timestamp": datetime.now(UTC).isoformat(),
+            "fleet_id": self.fleet_id,
+            "generation": self._generation,
+            "action": action,
+            "actor": actor or "system",
+            "detail": detail or {},
+        }
+        with self.audit_path.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(record, sort_keys=True) + "\n")
+
+    def snapshot(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.SCHEMA_VERSION,
+            "fleet_id": self.fleet_id,
+            "generation": self._generation,
+            "instances": [
+                item.model_dump(mode="json")
+                for item in sorted(
+                    self._instances.values(), key=lambda value: value.instance_id
+                )
+            ],
+        }
+
+    @property
+    def generation(self) -> int:
+        self._reload_instances()
+        return self._generation
 
     def _save_tokens(self) -> None:
         # Drop expired before save
@@ -71,46 +124,201 @@ class FleetRegistry:
         zone: str = "default",
         capabilities: list[str] | None = None,
         relay_enabled: bool = False,
+        actor: str = "",
     ) -> FleetInstance:
         self._reload_instances()
+        previous = self._instances.get(instance_id)
+        normalized_url = url.rstrip("/")
+        if (
+            previous
+            and previous.lifecycle_state == "active"
+            and previous.name == name
+            and previous.url == normalized_url
+            and previous.zone == zone
+            and previous.capabilities == (capabilities or [])
+            and previous.relay_enabled == relay_enabled
+        ):
+            previous.last_seen = datetime.now(UTC)
+            previous.healthy = True
+            return previous
         inst = FleetInstance(
             instance_id=instance_id,
             name=name,
-            url=url,
+            url=normalized_url,
             zone=zone,
             capabilities=capabilities or [],
             relay_enabled=relay_enabled,
+            joined_by=actor,
+            updated_by=actor,
             last_seen=datetime.now(UTC),
             healthy=True,
         )
+        if previous:
+            inst.joined_at = previous.joined_at
+            inst.joined_by = previous.joined_by
+        self._generation += 1
+        inst.membership_generation = self._generation
         self._instances[instance_id] = inst
         self._save_instances()
+        self._audit("member.upsert", actor=actor, detail={"instance_id": instance_id})
         return inst
 
-    def upsert_instance(self, inst: FleetInstance) -> FleetInstance:
+    def upsert_instance(self, inst: FleetInstance, *, actor: str = "") -> FleetInstance:
         self._reload_instances()
-        inst.last_seen = datetime.now(UTC)
+        previous = self._instances.get(inst.instance_id)
+        if previous and previous.lifecycle_state == "removed":
+            raise ValueError(
+                "removed member cannot be reintroduced; explicitly restore it"
+            )
+        incoming_endpoints = set(inst.endpoints)
+        for other in self._instances.values():
+            if (
+                other.instance_id == inst.instance_id
+                or other.lifecycle_state == "removed"
+            ):
+                continue
+            collision = incoming_endpoints.intersection(other.endpoints)
+            if collision:
+                raise ValueError(
+                    f"endpoint already belongs to canonical member {other.instance_id}: "
+                    f"{min(collision)}"
+                )
+        if previous:
+            inst.joined_at = previous.joined_at
+            inst.joined_by = previous.joined_by
+        self._generation += 1
+        inst.membership_generation = self._generation
+        inst.updated_at = datetime.now(UTC)
+        inst.updated_by = actor
         self._instances[inst.instance_id] = inst
         self._save_instances()
+        self._audit(
+            "member.upsert", actor=actor, detail={"instance_id": inst.instance_id}
+        )
         return inst
 
-    def list_instances(self) -> list[FleetInstance]:
+    def list_instances(self, *, include_removed: bool = False) -> list[FleetInstance]:
         self._reload_instances()
-        return list(self._instances.values())
+        values = list(self._instances.values())
+        if include_removed:
+            return values
+        return [item for item in values if item.lifecycle_state != "removed"]
 
-    def get_instance(self, instance_id: str) -> FleetInstance | None:
+    def get_instance(
+        self, instance_id: str, *, include_removed: bool = False
+    ) -> FleetInstance | None:
         self._reload_instances()
-        return self._instances.get(instance_id)
+        inst = self._instances.get(instance_id)
+        if inst and inst.lifecycle_state == "removed" and not include_removed:
+            return None
+        return inst
 
-    def remove_instance(self, instance_id: str) -> bool:
+    def remove_instance(self, instance_id: str, *, actor: str = "") -> bool:
         self._reload_instances()
-        if instance_id not in self._instances:
+        inst = self._instances.get(instance_id)
+        if not inst:
             return False
-        del self._instances[instance_id]
+        if inst.lifecycle_state == "removed":
+            return True
+        self._generation += 1
+        inst.lifecycle_state = "removed"
+        inst.removed_at = datetime.now(UTC)
+        inst.removed_by = actor
+        inst.updated_at = inst.removed_at
+        inst.updated_by = actor
+        inst.membership_generation = self._generation
         self._save_instances()
+        self._audit("member.remove", actor=actor, detail={"instance_id": instance_id})
         return True
 
-    def create_join_token(self, *, ttl_hours: int = 24, created_by: str = "") -> FleetJoinToken:
+    def apply_snapshot(
+        self,
+        snapshot: dict[str, Any],
+        *,
+        actor: str = "",
+        require_newer: bool = True,
+    ) -> dict[str, Any]:
+        """Apply an authenticated canonical projection without guessing identities."""
+        self._reload_instances()
+        if snapshot.get("fleet_id") != self.fleet_id:
+            raise ValueError("snapshot belongs to a different fleet")
+        schema = int(snapshot.get("schema_version", 1))
+        if schema > self.SCHEMA_VERSION:
+            raise ValueError(f"unsupported membership schema {schema}")
+        incoming_generation = int(snapshot.get("generation", 0))
+        if require_newer and incoming_generation < self._generation:
+            raise ValueError("stale membership snapshot")
+        if incoming_generation == self._generation:
+            current_payload = json.dumps(
+                self.snapshot(), sort_keys=True, separators=(",", ":")
+            )
+            incoming_payload = json.dumps(
+                snapshot, sort_keys=True, separators=(",", ":")
+            )
+            if current_payload != incoming_payload:
+                raise ValueError(
+                    "conflicting membership snapshot at the same generation"
+                )
+        incoming = [
+            FleetInstance.model_validate(item) for item in snapshot.get("instances", [])
+        ]
+        ids: set[str] = set()
+        endpoints: dict[str, str] = {}
+        conflicts: list[dict[str, str]] = []
+        for inst in incoming:
+            if inst.instance_id in ids:
+                conflicts.append(
+                    {"type": "duplicate_id", "instance_id": inst.instance_id}
+                )
+            ids.add(inst.instance_id)
+            for endpoint in inst.endpoints:
+                owner = endpoints.get(endpoint)
+                if owner and owner != inst.instance_id:
+                    conflicts.append(
+                        {
+                            "type": "duplicate_endpoint",
+                            "endpoint": endpoint,
+                            "instances": f"{owner},{inst.instance_id}",
+                        }
+                    )
+                endpoints[endpoint] = inst.instance_id
+        if conflicts:
+            raise ValueError(f"ambiguous membership snapshot: {conflicts}")
+        before = self._generation
+        self._instances = {inst.instance_id: inst for inst in incoming}
+        self._generation = incoming_generation
+        self._save_instances()
+        changed = before != self._generation
+        self._audit(
+            "projection.apply",
+            actor=actor,
+            detail={
+                "before_generation": before,
+                "after_generation": self._generation,
+                "changed": changed,
+            },
+        )
+        return {
+            "changed": changed,
+            "before_generation": before,
+            "after_generation": self._generation,
+            "members": len(self.list_instances()),
+        }
+
+    def audit_events(self, *, limit: int = 100) -> list[dict[str, Any]]:
+        if not self.audit_path.exists():
+            return []
+        records: list[dict[str, Any]] = []
+        for line in self.audit_path.read_text(encoding="utf-8").splitlines():
+            try:
+                records.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+        return records[-max(1, min(limit, 1000)) :]
+
+    def create_join_token(
+        self, *, ttl_hours: int = 24, created_by: str = ""
+    ) -> FleetJoinToken:
         self._reload_tokens()
         token = secrets.token_urlsafe(32)
         join = FleetJoinToken(

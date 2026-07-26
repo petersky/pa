@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import hmac
 import json
 import logging
 import re
@@ -741,7 +742,20 @@ def _fleet_context(request: Request) -> dict:
         )
     )
     instances = list(fleet.list_instances())
-    routes = peer_table.all_routes()
+    canonical_ids = {
+        item.instance_id for item in instances if item.lifecycle_state == "active"
+    }
+    canonical_urls = {
+        item.url.rstrip("/") for item in instances if item.lifecycle_state == "active"
+    }
+    routes = [
+        route
+        for route in peer_table.all_routes()
+        if (
+            route.target_instance_id in canonical_ids
+            or route.target_url.rstrip("/") in canonical_urls
+        )
+    ]
     return {
         "fleet_instances": instances,
         "fleet_overview": build_overview(ctx, instances, routes),
@@ -865,6 +879,198 @@ def list_fleet_instances(request: Request) -> list[dict]:
     return [i.model_dump(mode="json") for i in fleet.list_instances()]
 
 
+def _signed_membership(ctx: AppContext) -> dict[str, Any]:
+    if not ctx.settings.sync_token:
+        raise HTTPException(
+            status_code=503,
+            detail="Fleet authentication must be configured before membership exchange",
+        )
+    fleet: FleetRegistry = ctx.require_service("fleet_registry")
+    snapshot = fleet.snapshot()
+    envelope: dict[str, Any] = {
+        "issuer_instance_id": ctx.settings.instance_id,
+        "membership": snapshot,
+    }
+    payload = json.dumps(envelope, sort_keys=True, separators=(",", ":")).encode()
+    envelope["signature"] = hmac.new(
+        ctx.settings.sync_token.encode(), payload, hashlib.sha256
+    ).hexdigest()
+    return envelope
+
+
+def _verify_membership_envelope(
+    settings,
+    envelope: dict[str, Any],
+    *,
+    expected_issuer: str = "",
+    expected_endpoint: str = "",
+) -> dict[str, Any]:
+    signature = str(envelope.get("signature", ""))
+    unsigned = {
+        "issuer_instance_id": envelope.get("issuer_instance_id", ""),
+        "membership": envelope.get("membership", {}),
+    }
+    payload = json.dumps(unsigned, sort_keys=True, separators=(",", ":")).encode()
+    expected = hmac.new(settings.sync_token.encode(), payload, hashlib.sha256).hexdigest()
+    if not settings.sync_token or not hmac.compare_digest(signature, expected):
+        raise ValueError("membership signature is invalid")
+    membership = unsigned["membership"]
+    issuer = str(unsigned["issuer_instance_id"])
+    members = {
+        item.get("instance_id"): item
+        for item in membership.get("instances", [])
+        if isinstance(item, dict)
+    }
+    if expected_issuer and issuer != expected_issuer:
+        raise ValueError("signed membership issuer does not match authenticated origin")
+    if (
+        issuer not in members
+        or members[issuer].get("lifecycle_state", "active") != "active"
+    ):
+        raise ValueError("membership issuer is not an active canonical member")
+    if expected_endpoint:
+        endpoints = {
+            str(value).rstrip("/")
+            for value in members[issuer].get("endpoints", [])
+            if value
+        }
+        primary = str(members[issuer].get("url", "")).rstrip("/")
+        if primary:
+            endpoints.add(primary)
+        if expected_endpoint.rstrip("/") not in endpoints:
+            raise ValueError(
+                "signed membership issuer identity does not match the reached endpoint"
+            )
+    return membership
+
+
+@router.get("/fleet/membership")
+def fleet_membership(request: Request) -> dict[str, Any]:
+    """Return the authenticated, versioned canonical membership projection."""
+    _require_instance(request)
+    return _signed_membership(request.app.state.ctx)
+
+
+@router.post("/fleet/membership/apply")
+def apply_fleet_membership(request: Request, body: dict) -> dict[str, Any]:
+    """Install a signed canonical projection and derive routes from it."""
+    _require_instance(request)
+    ctx = request.app.state.ctx
+    try:
+        snapshot = _verify_membership_envelope(
+            ctx.settings,
+            body,
+            expected_issuer=request.headers.get("X-PA-Origin-Instance-ID", ""),
+        )
+        result = ctx.require_service("fleet_registry").apply_snapshot(
+            snapshot,
+            actor=f"instance:{body.get('issuer_instance_id', '')}",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    result["routes"] = ctx.require_service("peer_table").reconcile_membership(
+        ctx.require_service("fleet_registry").list_instances(),
+        realms=list(ctx.settings.subscribed_realms),
+        local_instance_id=ctx.settings.instance_id,
+    )
+    return result
+
+
+@router.get("/fleet/membership/audit")
+def fleet_membership_audit(request: Request, limit: int = 100) -> dict[str, Any]:
+    require_user(request)
+    fleet: FleetRegistry = request.app.state.ctx.require_service("fleet_registry")
+    return {
+        "fleet_id": fleet.fleet_id,
+        "generation": fleet.generation,
+        "events": fleet.audit_events(limit=limit),
+    }
+
+
+@router.post("/fleet/membership/reconcile")
+async def reconcile_fleet_membership(request: Request) -> dict[str, Any]:
+    """Audit local sources and repair from an unambiguous authenticated peer roster."""
+    require_user(request)
+    ctx = request.app.state.ctx
+    fleet: FleetRegistry = ctx.require_service("fleet_registry")
+    peer_table: PeerTable = ctx.require_service("peer_table")
+    before = fleet.snapshot()
+    candidates = {
+        route.target_url.rstrip("/")
+        for route in peer_table.all_routes()
+        if route.target_url
+    }
+    candidates.update(
+        member.url.rstrip("/")
+        for member in fleet.list_instances()
+        if member.instance_id != ctx.settings.instance_id and member.url
+    )
+    headers = _peer_headers(request)
+    reachable: list[dict[str, Any]] = []
+    failures: list[dict[str, str]] = []
+    async with _borrow_fleet_client(request, timeout=FLEET_DETAIL_TIMEOUT) as client:
+        for url in sorted(candidates):
+            try:
+                response = await client.get(
+                    f"{url}/api/fleet/membership",
+                    headers=headers,
+                    timeout=FLEET_DETAIL_TIMEOUT,
+                )
+                response.raise_for_status()
+                envelope = response.json()
+                snapshot = _verify_membership_envelope(
+                    ctx.settings,
+                    envelope,
+                    expected_endpoint=url,
+                )
+                reachable.append(
+                    {"url": url, "envelope": envelope, "snapshot": snapshot}
+                )
+            except (httpx.HTTPError, ValueError, TypeError) as exc:
+                failures.append({"url": url, "error": str(exc)[:300]})
+    selected = before
+    if reachable:
+        highest = max(int(item["snapshot"].get("generation", 0)) for item in reachable)
+        leaders = [
+            item
+            for item in reachable
+            if int(item["snapshot"].get("generation", 0)) == highest
+        ]
+        digests = {
+            hashlib.sha256(
+                json.dumps(item["snapshot"], sort_keys=True).encode()
+            ).hexdigest()
+            for item in leaders
+        }
+        if len(digests) != 1:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "conflicting canonical rosters at the same generation "
+                    "require operator resolution"
+                ),
+            )
+        selected = leaders[0]["snapshot"]
+        fleet.apply_snapshot(selected, actor=f"user:{get_principal_id(request)}")
+    route_result = peer_table.reconcile_membership(
+        fleet.list_instances(),
+        realms=list(ctx.settings.subscribed_realms),
+        local_instance_id=ctx.settings.instance_id,
+    )
+    after = fleet.snapshot()
+    return {
+        "status": "repaired" if before != after else "converged",
+        "before_generation": before["generation"],
+        "after_generation": after["generation"],
+        "members_before": len(before["instances"]),
+        "members_after": len(fleet.list_instances()),
+        "authenticated_peers": len(reachable),
+        "unreachable_or_incompatible": failures,
+        "routes": route_result,
+        "unresolved_conflicts": [],
+    }
+
+
 def _overview_instance(request: Request, instance_id: str) -> FleetInstance:
     ctx = request.app.state.ctx
     fleet: FleetRegistry = ctx.require_service("fleet_registry")
@@ -890,7 +1096,22 @@ def fleet_overview(request: Request) -> dict:
     ctx = request.app.state.ctx
     fleet: FleetRegistry = ctx.require_service("fleet_registry")
     peer_table: PeerTable = ctx.require_service("peer_table")
-    return build_overview(ctx, list(fleet.list_instances()), peer_table.all_routes())
+    instances = list(fleet.list_instances())
+    canonical_ids = {
+        item.instance_id for item in instances if item.lifecycle_state == "active"
+    }
+    canonical_urls = {
+        item.url.rstrip("/") for item in instances if item.lifecycle_state == "active"
+    }
+    routes = [
+        route
+        for route in peer_table.all_routes()
+        if (
+            route.target_instance_id in canonical_ids
+            or route.target_url.rstrip("/") in canonical_urls
+        )
+    ]
+    return build_overview(ctx, instances, routes)
 
 
 @router.get("/fleet/overview/local")
@@ -957,27 +1178,33 @@ async def fleet_join(request: Request, body: dict) -> dict:
     owner_url = owner_public_url(settings)
     peer_table: PeerTable = request.app.state.ctx.require_service("peer_table")
     realms = list(settings.subscribed_realms)
+    existing_members = list(fleet.list_instances())
 
-    inst, sync_token = await _offload_request(
-        request,
-        "filesystem.fleet_join_register",
-        register_joiner_on_owner,
-        fleet,
-        peer_table,
-        settings,
-        joiner_id=joiner_id,
-        name=name,
-        url=url or owner_url,
-        zone=zone,
-        capabilities=capabilities,
-        realms=realms,
-    )
+    try:
+        inst, sync_token = await _offload_request(
+            request,
+            "filesystem.fleet_join_register",
+            register_joiner_on_owner,
+            fleet,
+            peer_table,
+            settings,
+            joiner_id=joiner_id,
+            name=name,
+            url=url or owner_url,
+            zone=zone,
+            capabilities=capabilities,
+            realms=realms,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     owner_inst = await _offload_request(
         request,
         "filesystem.fleet_registry_read",
         fleet.get_instance,
         settings.instance_id,
     )
+    membership = _signed_membership(request.app.state.ctx)
+    rollout = await _rollout_membership(request, members=existing_members)
     return {
         "fleet_id": join.fleet_id,
         "owner_url": owner_url,
@@ -986,6 +1213,9 @@ async def fleet_join(request: Request, body: dict) -> dict:
         "sync_token": sync_token,
         "peers": [owner_url],
         "instance": inst.model_dump(mode="json"),
+        "membership": membership["membership"],
+        "membership_schema_version": FleetRegistry.SCHEMA_VERSION,
+        "rollout": rollout,
     }
 
 
@@ -1023,27 +1253,82 @@ async def register_remote(request: Request, body: dict) -> dict:
     if inst.url.lower().startswith(("javascript:", "data:", "vbscript:")):
         raise HTTPException(status_code=400, detail="Invalid instance URL scheme")
 
-    registered, sync_token = await _offload_request(
-        request,
-        "filesystem.fleet_join_register",
-        register_joiner_on_owner,
-        fleet,
-        peer_table,
-        settings,
-        joiner_id=inst.instance_id,
-        name=inst.name,
-        url=inst.url,
-        zone=inst.zone,
-        capabilities=inst.capabilities,
-        realms=list(settings.subscribed_realms),
-    )
+    try:
+        registered, sync_token = await _offload_request(
+            request,
+            "filesystem.fleet_join_register",
+            register_joiner_on_owner,
+            fleet,
+            peer_table,
+            settings,
+            joiner_id=inst.instance_id,
+            name=inst.name,
+            url=inst.url,
+            zone=inst.zone,
+            capabilities=inst.capabilities,
+            realms=list(settings.subscribed_realms),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     data = registered.model_dump(mode="json")
     data["sync_token_set"] = bool(sync_token)
+    data["membership_generation"] = fleet.generation
+    data["rollout"] = await _rollout_membership(request)
     return data
 
 
+@router.patch("/fleet/instances/{instance_id}")
+async def update_instance(request: Request, instance_id: str, body: dict) -> dict:
+    """Update canonical metadata while preserving stable identity."""
+    require_user(request)
+    ctx = request.app.state.ctx
+    fleet: FleetRegistry = ctx.require_service("fleet_registry")
+    current = fleet.get_instance(instance_id)
+    if not current:
+        raise HTTPException(status_code=404, detail="Instance not found")
+    allowed = {
+        "name",
+        "url",
+        "endpoints",
+        "zone",
+        "capabilities",
+        "relay_enabled",
+        "lifecycle_state",
+        "credential_fingerprint",
+    }
+    unknown = set(body) - allowed
+    if unknown:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unsupported membership fields: {sorted(unknown)}",
+        )
+    data = current.model_dump()
+    data.update(body)
+    if data.get("lifecycle_state") not in {"active", "disabled"}:
+        raise HTTPException(
+            status_code=422, detail="lifecycle_state must be active or disabled"
+        )
+    try:
+        updated = fleet.upsert_instance(
+            FleetInstance.model_validate(data),
+            actor=f"user:{get_principal_id(request)}",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    ctx.require_service("peer_table").reconcile_membership(
+        fleet.list_instances(),
+        realms=list(ctx.settings.subscribed_realms),
+        local_instance_id=ctx.settings.instance_id,
+    )
+    return {
+        "instance": updated.model_dump(mode="json"),
+        "generation": fleet.generation,
+        "rollout": await _rollout_membership(request),
+    }
+
+
 @router.delete("/fleet/instances/{instance_id}")
-def remove_instance(request: Request, instance_id: str) -> dict:
+async def remove_instance(request: Request, instance_id: str) -> dict:
     require_user(request)
     settings = request.app.state.ctx.settings
     fleet: FleetRegistry = request.app.state.ctx.require_service("fleet_registry")
@@ -1055,8 +1340,12 @@ def remove_instance(request: Request, instance_id: str) -> dict:
         raise HTTPException(status_code=404, detail="Instance not found")
     unwire_instance_peers(peer_table, instance_id=instance_id, url=inst.url)
     remove_peer_url(settings, inst.url)
-    fleet.remove_instance(instance_id)
-    return {"removed": instance_id}
+    fleet.remove_instance(instance_id, actor=f"user:{get_principal_id(request)}")
+    return {
+        "removed": instance_id,
+        "generation": fleet.generation,
+        "rollout": await _rollout_membership(request),
+    }
 
 
 @router.get("/fleet/health")
@@ -1482,6 +1771,46 @@ def _peer_headers(request: Request) -> dict[str, str]:
     if settings.sync_token:
         headers["Authorization"] = f"Bearer {settings.sync_token}"
     return headers
+
+
+async def _rollout_membership(
+    request: Request,
+    *,
+    members: list[FleetInstance] | None = None,
+) -> list[dict[str, str]]:
+    """Push the current generation and retain explicit pending diagnostics."""
+    ctx = request.app.state.ctx
+    roster = (
+        members
+        if members is not None
+        else ctx.require_service("fleet_registry").list_instances()
+    )
+    envelope = _signed_membership(ctx)
+    results: list[dict[str, str]] = []
+    async with _borrow_fleet_client(request, timeout=FLEET_DETAIL_TIMEOUT) as client:
+        for member in roster:
+            if member.instance_id == ctx.settings.instance_id or not member.url:
+                continue
+            try:
+                response = await client.post(
+                    f"{member.url.rstrip('/')}/api/fleet/membership/apply",
+                    json=envelope,
+                    headers=_peer_headers(request),
+                    timeout=FLEET_DETAIL_TIMEOUT,
+                )
+                response.raise_for_status()
+                results.append(
+                    {"instance_id": member.instance_id, "status": "converged"}
+                )
+            except httpx.HTTPError as exc:
+                results.append(
+                    {
+                        "instance_id": member.instance_id,
+                        "status": "pending",
+                        "detail": str(exc)[:200],
+                    }
+                )
+    return results
 
 
 def _require_instance(request: Request) -> None:

@@ -100,11 +100,30 @@ class FleetInstance(BaseModel):
     instance_id: str
     name: str
     url: str
+    endpoints: list[str] = Field(default_factory=list)
     zone: str = "default"
     capabilities: list[str] = Field(default_factory=list)
     relay_enabled: bool = False
+    lifecycle_state: str = "active"
+    joined_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    joined_by: str = ""
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_by: str = ""
+    removed_at: datetime | None = None
+    removed_by: str = ""
+    membership_generation: int = 1
+    credential_fingerprint: str = ""
     last_seen: datetime | None = None
     healthy: bool = False
+
+    @model_validator(mode="after")
+    def normalize_endpoints(self) -> FleetInstance:
+        self.url = self.url.rstrip("/")
+        normalized = [endpoint.rstrip("/") for endpoint in self.endpoints if endpoint]
+        if self.url and self.url not in normalized:
+            normalized.insert(0, self.url)
+        self.endpoints = list(dict.fromkeys(normalized))
+        return self
 
 
 class FleetJoinToken(BaseModel):

@@ -45,6 +45,8 @@ FLEET_INSTANCE_ROUTES = {
     ("GET", "/api/fleet/dispatch-jobs"),
     ("GET", "/api/repositories"),
     ("POST", "/api/repositories/reconcile"),
+    ("GET", "/api/fleet/membership"),
+    ("POST", "/api/fleet/membership/apply"),
 }
 
 CSRF_EXEMPT_PATHS = {
