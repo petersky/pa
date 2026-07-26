@@ -15,8 +15,8 @@ from pydantic import BaseModel, Field
 from pa.acp.providers.base import ProviderConfigureBody
 from pa.acp.providers.codex_auth import get_codex_login_store, resolve_codex_cli
 from pa.acp.providers.registry import get_provider
-from pa.acp.providers.resolve import list_provider_summaries
-from pa.core.async_runtime import BlockingQueueFull
+from pa.acp.providers.resolve import list_provider_summaries_bounded
+from pa.core.async_runtime import AsyncRuntime, BlockingQueueFull
 from pa.core.contracts import Module
 from pa.core.context import AppContext
 from pa.core.subprocesses import run_process
@@ -97,6 +97,20 @@ def _data_dir(request: Request):
     return request.app.state.ctx.settings.data_dir
 
 
+def _provider_services(request: Request) -> tuple[Any | None, Any | None]:
+    ctx = request.app.state.ctx
+    services = getattr(ctx, "services", None)
+    manager = services.get("instance_agent") if isinstance(services, dict) else None
+    runtime = services.get("async_runtime") if isinstance(services, dict) else None
+    if not isinstance(runtime, AsyncRuntime):
+        try:
+            candidate = ctx.require_service("async_runtime")
+            runtime = candidate if isinstance(candidate, AsyncRuntime) else None
+        except (AttributeError, KeyError, RuntimeError):
+            runtime = None
+    return manager, runtime
+
+
 async def _offload_request(
     request: Request,
     operation: str,
@@ -113,8 +127,9 @@ async def _offload_request(
 
 @router.get("")
 async def list_local_providers(request: Request) -> list[dict]:
-    return await _offload_request(
-        request, "provider.list", list_provider_summaries, _data_dir(request)
+    manager, runtime = _provider_services(request)
+    return await list_provider_summaries_bounded(
+        _data_dir(request), manager=manager, async_runtime=runtime
     )
 
 
@@ -124,14 +139,11 @@ async def get_local_provider(request: Request, provider_id: str) -> dict:
         get_provider(provider_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return await _offload_request(
-        request,
-        "provider.status",
-        _local_provider_action,
-        _data_dir(request),
-        provider_id,
-        "status",
+    manager, runtime = _provider_services(request)
+    summaries = await list_provider_summaries_bounded(
+        _data_dir(request), manager=manager, async_runtime=runtime
     )
+    return next(item for item in summaries if item.get("id") == provider_id)
 
 
 @router.post("/{provider_id}/install")
@@ -354,7 +366,12 @@ class AgentProvidersModule(Module):
         return "ACP provider install, configure, update, and probe APIs"
 
     def on_load(self, ctx: AppContext) -> None:
+        from pa.fleet.overview import cache_for
+
         ctx.register_service("provider_action_gate", ProviderActionGate())
+        cache_for(ctx.settings.data_dir).invalidate(
+            ctx.settings.instance_id, "providers"
+        )
 
     def api_routers(self):
         return [("/api", router, ["agent-providers"])]
@@ -377,8 +394,10 @@ class AgentProvidersModule(Module):
                 return await _fleet_proxy(
                     ctx, instance_id, "GET", "/api/agent/providers"
                 )
-            return await offload(
-                "provider.list", list_provider_summaries, settings.data_dir
+            return await list_provider_summaries_bounded(
+                settings.data_dir,
+                manager=ctx.services.get("instance_agent"),
+                async_runtime=runtime,
             )
 
         @mcp.tool()
@@ -393,13 +412,16 @@ class AgentProvidersModule(Module):
                     "GET",
                     f"/api/agent/providers/{provider_id}",
                 )
-            return await offload(
-                "provider.status",
-                _local_provider_action,
+            try:
+                get_provider(provider_id)
+            except KeyError as exc:
+                raise ValueError(str(exc)) from exc
+            summaries = await list_provider_summaries_bounded(
                 settings.data_dir,
-                provider_id,
-                "status",
+                manager=ctx.services.get("instance_agent"),
+                async_runtime=runtime,
             )
+            return next(item for item in summaries if item.get("id") == provider_id)
 
         @mcp.tool()
         async def agent_provider_install(
@@ -625,14 +647,17 @@ async def _run_provider_action(
     else:
         result = await execute()
     if result.returncode != 0:
-        detail = (result.stderr or result.stdout).strip()[-500:]
         raise RuntimeError(
-            f"Provider {action} failed with exit {result.returncode}: {detail}"
+            f"Provider {action} failed with exit {result.returncode}; "
+            "inspect provider logs on the target"
         )
     for line in reversed(result.stdout.splitlines()):
         if line.startswith("PA_PROVIDER_RESULT="):
             payload = json.loads(line.removeprefix("PA_PROVIDER_RESULT="))
             if isinstance(payload, dict):
+                from pa.fleet.overview import cache_for
+
+                cache_for(data_dir).invalidate_all("providers")
                 return payload
             break
     raise RuntimeError(f"Provider {action} returned an invalid result")
@@ -641,7 +666,11 @@ async def _run_provider_action(
 def _configure_local_provider(
     data_dir, provider_id: str, body: ProviderConfigureBody
 ) -> dict:
-    return get_provider(provider_id).configure(data_dir, body).model_dump(mode="json")
+    from pa.fleet.overview import cache_for
+
+    result = get_provider(provider_id).configure(data_dir, body).model_dump(mode="json")
+    cache_for(data_dir).invalidate_all("providers")
+    return result
 
 
 def _start_local_login(
@@ -669,6 +698,10 @@ def _read_local_login(data_dir, provider_id: str, job_id: str) -> dict:
     job = get_codex_login_store(data_dir).get(job_id)
     if provider_id != "codex" or not job:
         raise ValueError("Login job not found")
+    if job.state.value == "succeeded":
+        from pa.fleet.overview import cache_for
+
+        cache_for(data_dir).invalidate_all("providers")
     return job.public_dict()
 
 

@@ -841,6 +841,7 @@ async def fleet_overview_dimension(
             "instance_id": instance_id,
             "dimension": dimension,
             "generation": generation,
+            "snapshot_version": cache_for(ctx.settings.data_dir).revision,
             **value,
         },
         headers={
@@ -1045,7 +1046,9 @@ async def fleet_health(request: Request, instance_id: str | None = None) -> list
                     health_state = "down"
             if health_state == "up":
                 if is_local:
-                    from pa.acp.providers.resolve import list_provider_summaries
+                    from pa.acp.providers.resolve import (
+                        list_provider_summaries_bounded,
+                    )
                     from pa.release.version import read_version
 
                     try:
@@ -1061,12 +1064,19 @@ async def fleet_health(request: Request, instance_id: str | None = None) -> list
 
                     async def local_providers() -> tuple[str, list]:
                         try:
-                            value = await _offload_request(
-                                request,
-                                "fleet.provider_status",
-                                list_provider_summaries,
+                            services = request.app.state.ctx.services
+                            value = await list_provider_summaries_bounded(
                                 settings.data_dir,
-                                timeout=FLEET_DETAIL_TIMEOUT,
+                                manager=services.get("instance_agent")
+                                if isinstance(services, dict)
+                                else None,
+                                async_runtime=services.get("async_runtime")
+                                if isinstance(services, dict)
+                                and isinstance(
+                                    services.get("async_runtime"), AsyncRuntime
+                                )
+                                else None,
+                                timeout=max(0.1, FLEET_DETAIL_TIMEOUT - 0.1),
                             )
                             return "up", value
                         except TimeoutError, asyncio.TimeoutError:

@@ -100,9 +100,12 @@ state = apply(state, 7, "local", "providers", {
 }, 5500);
 let snapshot = model.createSnapshot(state.overview, state.refresh, { kind: "node", id: "local" });
 assert.strictEqual(state.refresh.completed, 1);
-assert.strictEqual(snapshot.nodesById.local.freshness, "timeout");
-assert.strictEqual(snapshot.selectedNode.freshness, "timeout");
-assert.ok(snapshot.nodesById.local.accessibleLabel.includes("freshness timeout"));
+assert.strictEqual(snapshot.nodesById.local.freshness, "partial");
+assert.strictEqual(snapshot.nodesById.local.topologyStatus, "fresh");
+assert.strictEqual(snapshot.selectedNode.freshness, "partial");
+assert.strictEqual(snapshot.selectedNode.node.dimensions.providers.state, "stale");
+assert.strictEqual(snapshot.selectedNode.node.dimensions.providers.last_attempt_state, "timeout");
+assert.ok(snapshot.nodesById.local.accessibleLabel.includes("freshness partial"));
 
 state = apply(state, 7, "local", "providers", field("providers", "fresh", 6001), 6001);
 snapshot = model.createSnapshot(state.overview, state.refresh, { kind: "node", id: "local" });
@@ -144,8 +147,10 @@ state = apply(state, 13, "local", "activity", {
 }, 10);
 let snapshot = model.createSnapshot(state.overview, state.refresh, { kind: "node", id: "local" });
 assert.strictEqual(snapshot.selectedNode, snapshot.nodesById.local);
-assert.strictEqual(snapshot.selectedNode.freshness, "error");
-assert.strictEqual(snapshot.selectedNode.node.dimensions.activity.state, "error");
+assert.strictEqual(snapshot.selectedNode.freshness, "partial");
+assert.strictEqual(snapshot.selectedNode.topologyStatus, "fresh");
+assert.strictEqual(snapshot.selectedNode.node.dimensions.activity.state, "stale");
+assert.strictEqual(snapshot.selectedNode.node.dimensions.activity.last_attempt_state, "error");
 
 state = apply(state, 13, "local", "activity", field("activity", "fresh", 12), 12);
 snapshot = model.createSnapshot(state.overview, state.refresh, { kind: "node", id: "local" });
@@ -206,6 +211,43 @@ assert.strictEqual(snapshot.selectedEdgeItem.status, "healthy");
 """
         )
 
+    def test_provider_badges_use_provider_state_not_node_freshness(self) -> None:
+        self.run_node(
+            r"""
+const codex = {
+  id: "codex", available: true, auth_configured: true,
+  auth_state: "authenticated", auth_method: "chatgpt_oauth"
+};
+const cursor = {
+  id: "cursor", available: true, auth_configured: true,
+  auth_state: "authenticated", auth_method: "cursor_account"
+};
+const optional = {
+  id: "openinterpreter", available: true, auth_configured: false,
+  auth_state: "not_configured", auth_method: "none"
+};
+assert.strictEqual(model.providerAuthState(codex), "authenticated");
+assert.strictEqual(model.providerBadgeClass(model.providerAuthState(codex)), "badge-ok");
+assert.strictEqual(model.providerBadgeClass(model.providerAuthState(cursor)), "badge-ok");
+assert.strictEqual(model.providerBadgeClass(model.providerAuthState(optional)), "badge-neutral");
+assert.strictEqual(model.providerBadgeClass("timed_out"), "badge-warning");
+assert.strictEqual(model.providerBadgeClass("signed_out"), "badge-danger");
+"""
+        )
+
+    def test_required_sync_timeout_still_marks_node_timed_out(self) -> None:
+        self.run_node(
+            r"""
+const current = overview(["local"]);
+current.nodes[0].dimensions.sync = {
+  state: "timeout", value: null, error: "deadline", observed_at: null
+};
+const snapshot = model.createSnapshot(current, null, { kind: "node", id: "local" });
+assert.strictEqual(snapshot.nodesById.local.freshness, "timeout");
+assert.strictEqual(snapshot.nodesById.local.topologyStatus, "timeout");
+"""
+        )
+
     def test_final_24_of_24_has_consistent_fresh_derived_state(self) -> None:
         self.run_node(
             r"""
@@ -225,7 +267,10 @@ ordered.forEach(function (item, index) {
 });
 assert.strictEqual(state.refresh.completed, 24);
 let snapshot = model.createSnapshot(state.overview, state.refresh, { kind: "node", id: "local" });
-assert.strictEqual(snapshot.nodesById.local.freshness, "timeout");
+assert.strictEqual(snapshot.nodesById.local.freshness, "partial");
+assert.strictEqual(snapshot.nodesById.local.topologyStatus, "fresh");
+assert.strictEqual(snapshot.nodesById.local.node.dimensions.providers.state, "stale");
+assert.strictEqual(snapshot.nodesById.local.node.dimensions.providers.last_attempt_state, "timeout");
 
 state = apply(state, 17, "local", "providers", field("providers", "fresh", 6001), 6001);
 snapshot = model.createSnapshot(state.overview, state.refresh, { kind: "node", id: "local" });

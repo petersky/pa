@@ -6,6 +6,8 @@ import logging
 import re
 import shutil
 import subprocess
+import time
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -94,18 +96,20 @@ class CodexProvider:
         return spec
 
     def status(self, data_dir: Path) -> ProviderStatus:
+        started = time.perf_counter()
+        attempted_at = datetime.now(UTC).isoformat()
         spec = self.resolve_spawn(data_dir=data_dir)
         direct = resolve_executable(_DEFAULT_COMMAND) or shutil.which(_DEFAULT_COMMAND)
         meta = load_metadata(data_dir, self.id)
         creds = load_credentials(data_dir, self.id)
         codex_cli = resolve_codex_cli(spec.env.get("CODEX_PATH"))
         auth = _codex_auth_status(codex_cli, creds=creds, env=spec.env)
+        auth_state = _codex_auth_state(auth, codex_cli=codex_cli)
         login_job = get_codex_login_store(data_dir).latest_active()
         version = None
         if direct:
             version = _run_version([str(direct), "--version"])
-        elif shutil.which("npx"):
-            version = _run_version(["npx", "-y", NPM_PACKAGE, "--version"])
+        duration_ms = (time.perf_counter() - started) * 1000
         return ProviderStatus(
             id=self.id,
             display_name=self.display_name,
@@ -117,8 +121,17 @@ class CodexProvider:
             version=version or (meta.version if meta else None),
             auth_configured=auth[0],
             auth_method=auth[1],
+            auth_state=auth_state,
             auth_status=auth[2],
             auth_error=auth[3],
+            auth_evidence=["configured_credential"]
+            if auth[0] and auth[1] in {"api_key", "access_token"}
+            else (["codex_cli_status"] if codex_cli else []),
+            last_attempted_at=attempted_at,
+            last_successful_at=attempted_at
+            if auth_state not in {"timed_out", "probe_failed", "unknown"}
+            else None,
+            probe_duration_ms=duration_ms,
             login_in_progress=login_job is not None,
             codex_cli_installed=codex_cli is not None,
             codex_cli_path=codex_cli,
@@ -172,8 +185,6 @@ class CodexProvider:
                 check=False,
             )
             ok = proc.returncode == 0
-            detail = (proc.stdout or "")[-400:]
-            err = (proc.stderr or "")[-400:]
             resolved = shutil.which(_DEFAULT_COMMAND)
             version = (
                 _run_version([resolved or _DEFAULT_COMMAND, "--version"])
@@ -196,13 +207,23 @@ class CodexProvider:
                 ok=ok,
                 message=("Installed " + NPM_PACKAGE)
                 if ok
-                else f"Install failed: {err or detail}",
+                else (
+                    f"Install failed (npm exit {proc.returncode}); "
+                    "inspect npm logs on the target"
+                ),
                 version=version,
                 command=str(resolved) if resolved else _DEFAULT_COMMAND,
-                detail={"stdout_tail": detail, "stderr_tail": err},
             )
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            return ProviderInstallResult(id=self.id, ok=False, message=str(exc))
+        except subprocess.TimeoutExpired:
+            return ProviderInstallResult(
+                id=self.id, ok=False, message="Codex ACP install timed out"
+            )
+        except OSError as exc:
+            return ProviderInstallResult(
+                id=self.id,
+                ok=False,
+                message=f"Codex ACP install failed ({type(exc).__name__})",
+            )
 
     def update(self, data_dir: Path) -> ProviderInstallResult:
         npm = shutil.which("npm")
@@ -238,16 +259,25 @@ class CodexProvider:
                         configured=True,
                     ),
                 )
-            err = (proc.stderr or proc.stdout or "").strip()[-500:]
             return ProviderInstallResult(
                 id=self.id,
                 ok=ok,
-                message="Updated" if ok else f"Update failed: {err}",
+                message="Updated"
+                if ok
+                else f"Update failed (npm exit {proc.returncode}); inspect npm logs on the target",
                 version=version,
                 command=str(resolved) if resolved else None,
             )
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            return ProviderInstallResult(id=self.id, ok=False, message=str(exc))
+        except subprocess.TimeoutExpired:
+            return ProviderInstallResult(
+                id=self.id, ok=False, message="Codex ACP update timed out"
+            )
+        except OSError as exc:
+            return ProviderInstallResult(
+                id=self.id,
+                ok=False,
+                message=f"Codex ACP update failed ({type(exc).__name__})",
+            )
 
     def configure(self, data_dir: Path, body: ProviderConfigureBody) -> ProviderStatus:
         meta = load_metadata(data_dir, self.id) or ProviderMetadata(provider_id=self.id)
@@ -286,7 +316,7 @@ class CodexProvider:
 def _run_version(cmd: list[str]) -> str | None:
     try:
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=30, check=False
+            cmd, capture_output=True, text=True, timeout=0.4, check=False
         )
         text = (proc.stdout or proc.stderr or "").strip()
         return text.splitlines()[0][:120] if text else None
@@ -339,6 +369,23 @@ def install_codex_cli() -> ProviderInstallResult:
     )
 
 
+def _codex_auth_state(
+    auth: tuple[bool, str, str, str | None], *, codex_cli: str | None
+) -> str:
+    configured, method, message, error = auth
+    if configured:
+        return "authenticated"
+    if "timed out" in (error or "").lower():
+        return "timed_out"
+    if error and codex_cli:
+        return "probe_failed"
+    if not codex_cli:
+        return "unavailable"
+    if method == "none" and "not signed in" in message.lower():
+        return "signed_out"
+    return "unknown"
+
+
 def _codex_auth_status(
     codex_cli: str | None, *, creds: dict[str, str], env: dict[str, str]
 ) -> tuple[bool, str, str, str | None]:
@@ -367,7 +414,7 @@ def _codex_auth_status(
             [codex_cli, "login", "status"],
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=2.5,
             check=False,
         )
     except subprocess.TimeoutExpired:

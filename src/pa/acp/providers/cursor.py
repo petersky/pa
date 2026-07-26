@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import logging
+import os
+import re
 import shutil
 import subprocess
+import time
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +21,7 @@ from pa.acp.providers.base import (
 )
 from pa.acp.providers.metadata import (
     ProviderMetadata,
+    load_credentials,
     load_metadata,
     merge_provider_env,
     save_metadata,
@@ -55,6 +60,12 @@ class CursorProvider:
         spec = self.default_spec()
         if command_override:
             spec.command = command_override
+        else:
+            resolved = resolve_executable(_DEFAULT_COMMAND) or resolve_executable(
+                "cursor-agent"
+            )
+            if resolved:
+                spec.command = str(resolved)
         if args_override is not None:
             spec.args = list(args_override)
         env: dict[str, str] = {}
@@ -66,12 +77,20 @@ class CursorProvider:
         return spec
 
     def status(self, data_dir: Path) -> ProviderStatus:
+        started = time.perf_counter()
+        attempted_at = datetime.now(UTC).isoformat()
         spec = self.resolve_spawn(data_dir=data_dir)
         resolved = resolve_executable(spec.command) or (
             Path(shutil.which(spec.command)) if shutil.which(spec.command) else None
         )
         meta = load_metadata(data_dir, self.id)
+        credentials = load_credentials(data_dir, self.id)
+        auth = _cursor_auth_status(
+            str(resolved) if resolved else None,
+            env={**spec.env, **credentials},
+        )
         version = _version(str(resolved) if resolved else spec.command)
+        duration_ms = (time.perf_counter() - started) * 1000
         return ProviderStatus(
             id=self.id,
             display_name=self.display_name,
@@ -80,7 +99,17 @@ class CursorProvider:
             command=spec.command,
             resolved_path=str(resolved) if resolved else None,
             version=version or (meta.version if meta else None),
-            auth_configured=True,  # Cursor uses its own login; not tracked here
+            auth_configured=auth[1],
+            auth_method=auth[2],
+            auth_state=auth[0],
+            auth_status=auth[3],
+            auth_error=auth[4],
+            auth_evidence=["cursor_cli_status"] if resolved else [],
+            last_attempted_at=attempted_at,
+            last_successful_at=attempted_at
+            if auth[0] not in {"timed_out", "probe_failed", "unknown"}
+            else None,
+            probe_duration_ms=duration_ms,
             install_method="path",
             last_probe=meta.last_probe if meta else None,
             meta={"args": spec.args},
@@ -129,8 +158,10 @@ class CursorProvider:
                 check=False,
             )
             ok = proc.returncode == 0
-            msg = (proc.stdout or proc.stderr or "").strip() or (
-                "Updated" if ok else "Update failed"
+            message = (
+                "Updated Cursor CLI"
+                if ok
+                else f"Cursor CLI update failed (exit {proc.returncode})"
             )
             version = _version(str(resolved))
             if ok:
@@ -147,13 +178,23 @@ class CursorProvider:
             return ProviderInstallResult(
                 id=self.id,
                 ok=ok,
-                message=msg[:500],
+                message=message,
                 version=version,
                 command=str(resolved),
             )
-        except (OSError, subprocess.TimeoutExpired) as exc:
+        except subprocess.TimeoutExpired:
             return ProviderInstallResult(
-                id=self.id, ok=False, message=str(exc), command=str(resolved)
+                id=self.id,
+                ok=False,
+                message="Cursor CLI update timed out",
+                command=str(resolved),
+            )
+        except OSError as exc:
+            return ProviderInstallResult(
+                id=self.id,
+                ok=False,
+                message=f"Cursor CLI update failed ({type(exc).__name__})",
+                command=str(resolved),
             )
 
     def configure(
@@ -184,13 +225,105 @@ class CursorProvider:
         return result
 
 
+def _cursor_auth_status(
+    executable: str | None, *, env: dict[str, str]
+) -> tuple[str, bool, str, str, str | None]:
+    """Probe Cursor's supported CLI status command without relaying its output."""
+    if env.get("CURSOR_API_KEY"):
+        return (
+            "authenticated",
+            True,
+            "api_key",
+            "Cursor API key configured for the target PA process.",
+            None,
+        )
+    if not executable:
+        return (
+            "unavailable",
+            False,
+            "none",
+            "Cursor CLI is not installed for the PA service user.",
+            "cursor CLI not found",
+        )
+    try:
+        proc = subprocess.run(
+            [executable, "status"],
+            capture_output=True,
+            text=True,
+            timeout=2.5,
+            check=False,
+            env={**os.environ, **env},
+        )
+    except subprocess.TimeoutExpired:
+        return (
+            "timed_out",
+            False,
+            "unknown",
+            "Cursor authentication status timed out; retry on the target.",
+            "cursor status timed out",
+        )
+    except OSError as exc:
+        return (
+            "probe_failed",
+            False,
+            "unknown",
+            "Unable to run Cursor authentication status for the PA service user.",
+            f"cursor status failed: {type(exc).__name__}",
+        )
+    output = "\n".join((proc.stdout or "", proc.stderr or "")).strip()
+    normalized = re.sub(r"\s+", " ", output).lower()
+    if any(
+        marker in normalized
+        for marker in (
+            "not authenticated",
+            "not logged in",
+            "signed out",
+            "login required",
+        )
+    ):
+        return (
+            "signed_out",
+            False,
+            "cursor_account",
+            "Signed out of Cursor for the PA service user.",
+            None,
+        )
+    authenticated = any(
+        marker in normalized
+        for marker in ("authenticated", "logged in", "login successful")
+    )
+    if proc.returncode == 0 and authenticated:
+        return (
+            "authenticated",
+            True,
+            "cursor_account",
+            "Signed in to Cursor for the PA service user.",
+            None,
+        )
+    if proc.returncode == 0:
+        return (
+            "unknown",
+            False,
+            "unknown",
+            "Cursor status succeeded, but its authentication state was not recognized.",
+            None,
+        )
+    return (
+        "probe_failed",
+        False,
+        "unknown",
+        "Cursor could not validate authentication for the PA service user.",
+        f"cursor status exited {proc.returncode}",
+    )
+
+
 def _version(command: str) -> str | None:
     try:
         proc = subprocess.run(
             [command, "--version"],
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=0.4,
             check=False,
         )
         text = (proc.stdout or proc.stderr or "").strip()

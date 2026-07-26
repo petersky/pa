@@ -116,7 +116,14 @@
           </td>
           <td data-fleet-providers class="fleet-field fleet-field-{{ providers.state }}">
             {% if providers.value %}
-              {% for provider in providers.value %}<span class="badge">{{ provider.display_name or provider.id }} · {{ 'ready' if provider.available else 'unavailable' }}</span>{% endfor %}
+              {% for provider in providers.value %}
+                {% set auth_state = provider.auth_state or ('authenticated' if provider.auth_configured else 'unknown') %}
+                {% set auth_method = provider.auth_method or 'none' %}
+                <span class="badge {% if auth_state == 'authenticated' %}badge-ok{% elif auth_state == 'signed_out' %}badge-danger{% elif auth_state in ['timed_out', 'probe_failed', 'unknown'] %}badge-warning{% else %}badge-neutral{% endif %}"
+                      aria-label="{{ provider.display_name or provider.id }}: {{ auth_state | replace('_', ' ') }}{% if auth_state == 'authenticated' and auth_method != 'none' %}, {{ auth_method | replace('_', ' ') }}{% endif %}">
+                  {{ provider.display_name or provider.id }} · {{ auth_state | replace('_', ' ') }}{% if auth_state == 'authenticated' and auth_method != 'none' %} · {{ auth_method | replace('_', ' ') }}{% endif %}
+                </span>
+              {% endfor %}
             {% else %}<span class="muted">{{ providers.state }}</span>{% endif %}
           </td>
           <td data-fleet-active-work class="fleet-field fleet-field-{{ activity.state }}">

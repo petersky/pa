@@ -17,8 +17,14 @@ def probe_acp_initialize(spec: AgentProviderSpec, *, timeout: float = 25.0) -> d
     try:
         return asyncio.run(_probe_async(spec, timeout=timeout))
     except Exception as exc:
-        logger.exception("ACP probe failed for %s", spec.id)
-        return {"ok": False, "error": str(exc), "provider_id": spec.id}
+        logger.warning(
+            "ACP probe failed for %s (%s)", spec.id, type(exc).__name__
+        )
+        return {
+            "ok": False,
+            "error": f"ACP initialize probe failed ({type(exc).__name__})",
+            "provider_id": spec.id,
+        }
 
 
 async def _probe_async(spec: AgentProviderSpec, *, timeout: float) -> dict[str, Any]:

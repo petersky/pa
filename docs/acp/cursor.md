@@ -1,7 +1,8 @@
 # Cursor ACP (`agent acp`)
 
 **Provider id:** `cursor`  
-**Last verified:** 2026-07-11 (from public Cursor docs + PA integration)  
+**Last verified:** 2026-07-25 (from public Cursor docs + PA integration)
+
 **Docs:** https://cursor.com/docs/cli/acp
 
 ## Spawn
@@ -15,8 +16,18 @@ PA resolves `agent` via PATH / service PATH. Install/update: Cursor CLI itself (
 
 ## Auth
 
-- ACP `authenticate` with Cursor login (`cursor_login` in Cursor’s docs).
-- PA does not manage Cursor credentials; users authenticate via Cursor CLI / account flows on the host.
+- ACP `authenticate` uses Cursor login (`cursor_login` in Cursor’s docs).
+- PA checks the supported `agent status` command (or `cursor-agent status` for that
+  executable name) as the same OS user and environment that launches ACP. A
+  target-scoped `CURSOR_API_KEY` is also recognized without returning its value.
+- A connected Cursor ACP runtime is corroborating evidence for the profiles of
+  those existing sessions. PA keeps the direct CLI result separately when it
+  differs, because another service user or profile can still have different auth.
+- PA reports `authenticated`, `signed out`, `unavailable`, `probe failed`, `timed
+  out`, or `unknown` instead of treating a missing optional token file or
+  unrecognized CLI output as a definitive sign-out.
+- PA does not copy Cursor credentials between instances. Users authenticate via
+  Cursor CLI/account flows on each target host.
 
 ## Capabilities (known)
 
