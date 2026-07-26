@@ -42,8 +42,8 @@
     return libsPromise || Promise.resolve();
   }
 
-  function renderMarkdownAsync(text) {
-    return ensureMarkdown().then(function () { return renderMarkdown(text); });
+  function renderMarkdownAsync(text, options) {
+    return ensureMarkdown().then(function () { return renderMarkdown(text, options); });
   }
 
   function csrfHeaders() {
@@ -61,21 +61,28 @@
       .replace(/"/g, "&quot;");
   }
 
-  function renderMarkdown(text) {
+  function renderMarkdown(text, options) {
     const raw = String(text || "");
+    const allowEmbeddedMedia = !options || options.allowEmbeddedMedia !== false;
     if (window.marked && window.DOMPurify) {
       try {
         const html = window.marked.parse(raw, { breaks: true });
-        const sanitized = window.DOMPurify.sanitize(html, {
+        const forbiddenTags = ["style", "form", "input", "button", "textarea", "select", "option"];
+        if (!allowEmbeddedMedia) {
+          forbiddenTags.push("audio", "embed", "iframe", "object", "picture", "source", "track", "video");
+        }
+        const sanitizeConfig = {
           USE_PROFILES: { html: true },
           ADD_TAGS: ["audio", "iframe", "picture", "source", "track", "video"],
           ADD_ATTR: [
             "allow", "allowfullscreen", "controls", "loading", "poster", "preload",
             "referrerpolicy", "sandbox", "srcset"
           ],
-          FORBID_TAGS: ["style", "form", "input", "button", "textarea", "select", "option"],
+          FORBID_TAGS: forbiddenTags,
           FORBID_ATTR: ["style"]
-        });
+        };
+        if (!allowEmbeddedMedia) sanitizeConfig.ADD_TAGS = [];
+        const sanitized = window.DOMPurify.sanitize(html, sanitizeConfig);
         if (typeof document === "undefined" || typeof document.createElement !== "function") {
           return sanitized;
         }
@@ -172,6 +179,7 @@
       rawToggle: root.querySelector("[data-acw-toggle-raw]"),
       recover: root.querySelector("[data-acw-recover]"),
       history: root.querySelector("[data-acw-history]"),
+      promote: root.querySelector("[data-acw-promote]"),
       working: root.querySelector("[data-acw-working]"),
       workingLabel: root.querySelector("[data-acw-working-label]"),
       turnTimer: root.querySelector("[data-acw-turn-timer]"),
@@ -625,6 +633,9 @@
     this.ownerInstanceId = ownerInstanceId || "";
     this.root.dataset.sessionId = sessionId;
     this.root.dataset.ownerInstanceId = this.ownerInstanceId;
+    if (this.els.promote) {
+      this.els.promote.href = "/knowledge?session=" + encodeURIComponent(sessionId);
+    }
     this._setRecoveryControl(false);
     this.showRecoveryActions({});
     this.setPlaceholder("Locating session owner…");

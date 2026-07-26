@@ -1,8 +1,7 @@
+import json
 from pathlib import Path
 from typing import Annotated
 from uuid import uuid4
-
-import json
 
 from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -67,6 +66,9 @@ class Settings(BaseSettings):
     agent_command: str | None = None
     agent_args: Annotated[list[str] | None, NoDecode] = None
     agent_enabled: bool = True
+    # Optional ACP final-fact candidates. Disabled by default; when enabled,
+    # only policy-marked candidates enter pending review.
+    memory_auto_capture_enabled: bool = False
 
     # Developer / debug
     debug: bool = False

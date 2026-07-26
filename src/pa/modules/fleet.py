@@ -494,7 +494,11 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
     }
 
 
-@router.get("/fleet/attachments/{card_id}/{attachment_id}")
+@router.get(
+    "/fleet/attachments/{card_id}/{attachment_id}",
+    response_class=FileResponse,
+    response_model=None,
+)
 def fetch_fleet_attachment(
     request: Request, card_id: str, attachment_id: str, realm_id: str
 ) -> FileResponse:

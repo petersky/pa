@@ -4,23 +4,50 @@
   <li class="memory-entry">
     <div class="memory-entry-header">
       <div class="metadata-row">
+        <label class="memory-select">
+          <input type="checkbox" name="ids" value="{{ entry.id }}" form="memory-bulk-form">
+          <span class="sr-only">Select this memory</span>
+        </label>
         <span class="badge">{{ entry.kind.value }}</span>
-        <span class="badge status-{{ entry.status.value }}">{{ entry.status.value }}</span>
+        <span class="badge status-{{ entry.status.value }}">{{ 'Pending review' if entry.status.value == 'review' else entry.status.value }}</span>
+        <span class="badge source-{{ entry.source }}">{{ entry.source | replace('_', ' ') }}</span>
         <span class="muted">{{ entry.scope }}</span>
       </div>
       <time class="muted" datetime="{{ entry.updated_at.isoformat() }}">Updated {{ entry.updated_at.strftime('%Y-%m-%d') }}</time>
     </div>
-    <p>{{ entry.summary }}</p>
+    <article class="card-markdown memory-markdown" data-card-markdown>
+      <span hidden data-card-markdown-source>{{ entry.summary | tojson }}</span>
+      <p>{{ entry.summary }}</p>
+    </article>
     <div class="metadata-row muted">
       {% if entry.owner %}<span>Owner: {{ entry.owner }}</span>{% endif %}
       {% if entry.confidence is not none %}<span>Confidence: {{ (entry.confidence * 100) | int }}%</span>{% endif %}
       <span>Source: {{ entry.source }}</span>
-      {% if entry.source_url %}<a href="{{ entry.source_url }}" target="_blank" rel="noopener">Open source</a>{% endif %}
+      {% if entry.source_url %}<a href="{{ entry.source_url }}" target="_blank" rel="noopener noreferrer">Open source</a>{% endif %}
       {% if entry.session_id %}<a href="/agent?session={{ entry.session_id }}">Session audit</a>{% endif %}
       {% if entry.review_at %}<span>Review {{ entry.review_at.strftime('%Y-%m-%d') }}</span>{% endif %}
       {% if entry.expires_at %}<span>Expires {{ entry.expires_at.strftime('%Y-%m-%d') }}</span>{% endif %}
       {% if entry.supersedes_id %}<span>Supersedes <code>{{ entry.supersedes_id }}</code></span>{% endif %}
     </div>
+    {% if entry.provenance %}
+    <details class="memory-provenance">
+      <summary>Source provenance</summary>
+      <dl>
+        <dt>Actor</dt><dd>{{ entry.provenance.actor }}</dd>
+        <dt>Action</dt><dd>{{ entry.provenance.action }}</dd>
+        <dt>Transcript events</dt>
+        <dd>
+          {% if entry.provenance.source_event_start %}
+          {{ entry.provenance.source_event_start }}–{{ entry.provenance.source_event_end }}
+          {% else %}Curated text; no assistant content event selected{% endif %}
+        </dd>
+        <dt>Transformation</dt><dd><code>{{ entry.provenance.transformation }}</code></dd>
+        {% if entry.provenance.source_content_hash %}
+        <dt>Source hash</dt><dd><code class="memory-hash">{{ entry.provenance.source_content_hash }}</code></dd>
+        {% endif %}
+      </dl>
+    </details>
+    {% endif %}
     {% if entry.tags %}<div class="metadata-row">{% for tag in entry.tags %}<span class="badge">{{ tag }}</span>{% endfor %}</div>{% endif %}
     <form class="inline-form" hx-post="/partials/knowledge/{{ entry.id }}/status" hx-target="#knowledge-main-list" hx-swap="innerHTML">
       <input type="hidden" name="csrf" value="{{ csrf_token }}">
@@ -30,6 +57,12 @@
       </select>
       <button type="submit" class="ghost small">Update lifecycle</button>
     </form>
+    {% if entry.session_id and (entry.source == 'acp_session' or 'auto-capture' in entry.tags) %}
+    <form class="inline-form" hx-post="/partials/knowledge/{{ entry.id }}/regenerate" hx-target="#knowledge-main-list" hx-swap="innerHTML">
+      <input type="hidden" name="csrf" value="{{ csrf_token }}">
+      <button type="submit" class="ghost small">Regenerate from transcript</button>
+    </form>
+    {% endif %}
   </li>
   {% endfor %}
 </ul>
