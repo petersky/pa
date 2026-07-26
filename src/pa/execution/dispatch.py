@@ -73,6 +73,7 @@ class DispatchRecord(BaseModel):
     mutation_id: str
     idempotency_key: str | None = None
     request_fingerprint: str | None = None
+    placement_request_fingerprint: str | None = None
     card_id: str | None = None
     project_id: str | None = None
     realm_id: str = "default"
@@ -86,6 +87,10 @@ class DispatchRecord(BaseModel):
     authority_url: str
     target_instance_id: str
     target_instance_name: str | None = None
+    placement_policy: str = "named_instance"
+    placement_decision: dict[str, Any] | None = None
+    placement_resolved_at: datetime | None = None
+    allow_concurrent: bool = False
     session_id: str | None = None
     resume_requested: bool = False
     resume_session_id: str | None = None
@@ -346,6 +351,81 @@ class DispatchStore:
                 ),
                 None,
             )
+
+    def by_authority_idempotency(
+        self, authority_instance_id: str, idempotency_key: str
+    ) -> DispatchRecord | None:
+        with self._lock:
+            return next(
+                (
+                    record
+                    for record in self._records.values()
+                    if record.authority_instance_id == authority_instance_id
+                    and record.idempotency_key == idempotency_key
+                ),
+                None,
+            )
+
+    def admit(
+        self,
+        record: DispatchRecord,
+        *,
+        idempotency_scope: str = "authority",
+    ) -> tuple[DispatchRecord, bool]:
+        """Atomically deduplicate and prevent unsafe concurrent card dispatch."""
+        with self._lock:
+            if idempotency_scope == "target":
+                existing = next(
+                    (
+                        item
+                        for item in self._records.values()
+                        if item.target_instance_id == record.target_instance_id
+                        and item.idempotency_key == record.idempotency_key
+                    ),
+                    None,
+                )
+            else:
+                existing = next(
+                    (
+                        item
+                        for item in self._records.values()
+                        if item.authority_instance_id == record.authority_instance_id
+                        and item.idempotency_key == record.idempotency_key
+                    ),
+                    None,
+                )
+            if existing:
+                if existing.request_fingerprint != record.request_fingerprint:
+                    raise DispatchIdempotencyConflict(existing)
+                return existing, True
+
+            if record.card_id and not record.allow_concurrent:
+                active = next(
+                    (
+                        item
+                        for item in self._records.values()
+                        if item.card_id == record.card_id
+                        and item.realm_id == record.realm_id
+                        and item.state
+                        not in {"failed", "completed", "cancelled", "acknowledged"}
+                    ),
+                    None,
+                )
+                if active:
+                    raise ConcurrentCardDispatch(active)
+
+            record.state = "queued"
+            record.events.append(
+                DispatchEvent(
+                    seq=1,
+                    state="queued",
+                    message="Dispatch admitted for background execution.",
+                )
+            )
+            record.updated_at = datetime.now(UTC)
+            self._records[record.dispatch_id] = record
+            self._save()
+            return record, False
 
     def put(self, record: DispatchRecord) -> DispatchRecord:
         with self._lock:
@@ -831,6 +911,18 @@ class DispatchStore:
             )
             reconciled.append(record)
         return reconciled
+
+
+class DispatchIdempotencyConflict(ValueError):
+    def __init__(self, existing: DispatchRecord) -> None:
+        super().__init__("idempotency key already belongs to different remote work")
+        self.existing = existing
+
+
+class ConcurrentCardDispatch(ValueError):
+    def __init__(self, existing: DispatchRecord) -> None:
+        super().__init__("card already has an active durable dispatch")
+        self.existing = existing
 
 
 class DispatchWorker:

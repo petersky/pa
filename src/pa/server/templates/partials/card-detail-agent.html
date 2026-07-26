@@ -3,12 +3,66 @@
   <div class="section-heading-inline">
     <div>
       <h3>Agent execution</h3>
-      <p class="muted">Selecting a card never starts work. Start or resume explicitly.</p>
+      <p class="muted">Selecting a card never starts work. Start or resume a local ACP session explicitly; durable fleet dispatch is a separate action.</p>
     </div>
     {% if agent_enabled | default(true) %}
-    <button type="button" data-card-agent-start>{{ 'Resume agent' if current_session else 'Start agent' }}</button>
+    <button type="button" data-card-agent-start>{{ 'Resume local agent' if current_session else 'Start local agent' }}</button>
     {% endif %}
   </div>
+
+  <section class="card-dispatch-panel" aria-labelledby="card-dispatch-title-{{ card.id }}">
+    <div>
+      <h4 id="card-dispatch-title-{{ card.id }}">Durable fleet dispatch</h4>
+      <p class="muted">Resolve a healthy target and queue this card through the fleet control plane. This does not change preferred-instance metadata.</p>
+    </div>
+    <form data-card-dispatch-form>
+      <label for="card-dispatch-target-{{ card.id }}">Dispatch target</label>
+      <div class="card-dispatch-controls">
+        <select id="card-dispatch-target-{{ card.id }}" name="dispatch_target" required>
+          <optgroup label="Placement policies">
+            <option value="policy:best_match">Best match</option>
+            <option value="policy:least_busy">Least busy</option>
+            <option value="policy:round_robin">Round-robin</option>
+            <option value="policy:random_eligible">Random eligible</option>
+          </optgroup>
+          <optgroup label="Concrete instances">
+            <option value="instance:{{ local_instance_id }}">Local instance — {{ local_instance_name }}</option>
+            {% for instance in fleet_instances %}
+            {% if instance.instance_id != local_instance_id %}
+            <option value="instance:{{ instance.instance_id }}">Named instance — {{ instance.name }}</option>
+            {% endif %}
+            {% endfor %}
+          </optgroup>
+        </select>
+        <button type="submit">Dispatch card</button>
+      </div>
+      <p class="muted card-dispatch-hint">Policies use fresh health, provider authentication, workload, repository/worktree, capacity, and authorization checks.</p>
+    </form>
+
+    <div class="card-dispatch-status"
+         data-card-dispatch-status
+         data-dispatch-id="{{ latest_dispatch.dispatch_id if latest_dispatch else '' }}"
+         role="status"
+         aria-live="polite">
+      {% if latest_dispatch %}
+      <div class="card-dispatch-status-heading">
+        <span class="status status-{{ latest_dispatch.state }}">{{ latest_dispatch.state | replace('_', ' ') }}</span>
+        <strong>{{ latest_dispatch.target_instance_name or latest_dispatch.target_instance_id }}</strong>
+      </div>
+      <p>{{ latest_dispatch.events[-1].message if latest_dispatch.events else 'Dispatch admitted.' }}</p>
+      {% if latest_dispatch.last_error %}<p class="danger">{{ latest_dispatch.last_error }}</p>{% endif %}
+      {% if latest_dispatch.placement_decision %}
+      <p class="muted">{{ latest_dispatch.placement_decision.tie_breaking_reason }}</p>
+      {% endif %}
+      <div class="card-dispatch-links">
+        {% if latest_dispatch.session_id %}<a href="/agent?session={{ latest_dispatch.session_id }}">Open durable session</a>{% endif %}
+        {% if latest_dispatch.can_retry %}<button type="button" class="ghost small" data-card-dispatch-retry="{{ latest_dispatch.dispatch_id }}">Retry dispatch</button>{% endif %}
+      </div>
+      {% else %}
+      <p class="muted">No durable fleet dispatch has been created for this card.</p>
+      {% endif %}
+    </div>
+  </section>
 
   {% if related_sessions %}
   <div class="agent-session-list">

@@ -15,6 +15,10 @@ from starlette.requests import Request
 
 from pa.config import Settings
 from pa.core.context import AppContext
+from pa.core.ui.instance_identity import (
+    canonical_instance_identities,
+    resolve_instance_identity,
+)
 from pa.core.ui.pages import PageRegistry
 from pa.modules.files import (
     _file_context,
@@ -48,7 +52,13 @@ class FileBrowserTests(unittest.TestCase):
             require_service=lambda _name: self.runtime,
         )
         self.request = Request(
-            {"type": "http", "method": "GET", "path": "/browse", "headers": [], "app": app}
+            {
+                "type": "http",
+                "method": "GET",
+                "path": "/browse",
+                "headers": [],
+                "app": app,
+            }
         )
 
     def tearDown(self) -> None:
@@ -109,9 +119,7 @@ class FileBrowserTests(unittest.TestCase):
                 SimpleNamespace(
                     cwd=str(paths["alice-session"]), principal_id="user:alice"
                 ),
-                SimpleNamespace(
-                    cwd=str(paths["bob-session"]), principal_id="user:bob"
-                ),
+                SimpleNamespace(cwd=str(paths["bob-session"]), principal_id="user:bob"),
             ]
             self.store.list_projects.return_value = [
                 SimpleNamespace(
@@ -170,8 +178,17 @@ class FileBrowserTests(unittest.TestCase):
             SimpleNamespace(version="test", url=lambda name: f"/static/{name}"),
         )
         self.request.app.state.ctx = ctx
-        templates_root = Path(__file__).parents[1] / "src" / "pa" / "server" / "templates"
-        self.request.app.state.templates = Jinja2Templates(directory=str(templates_root))
+        templates_root = (
+            Path(__file__).parents[1] / "src" / "pa" / "server" / "templates"
+        )
+        templates = Jinja2Templates(directory=str(templates_root))
+        templates.env.globals["instance_identity_directory"] = lambda: (
+            canonical_instance_identities(ctx)
+        )
+        templates.env.globals["resolve_instance_identity"] = lambda instance_id: (
+            resolve_instance_identity(ctx, instance_id)
+        )
+        self.request.app.state.templates = templates
 
         file_response = asyncio.run(browse_files(self.request, str(path)))
         file_html = file_response.body.decode()
@@ -187,8 +204,13 @@ class FileBrowserTests(unittest.TestCase):
         repo = self.root / "repo"
         repo.mkdir()
         subprocess.run(["git", "init", "-q", str(repo)], check=True)
-        subprocess.run(["git", "-C", str(repo), "config", "user.email", "pa@example.test"], check=True)
-        subprocess.run(["git", "-C", str(repo), "config", "user.name", "PA Tests"], check=True)
+        subprocess.run(
+            ["git", "-C", str(repo), "config", "user.email", "pa@example.test"],
+            check=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "config", "user.name", "PA Tests"], check=True
+        )
         path = repo / "app.py"
         path.write_text("first\nold\nlast\n")
         subprocess.run(["git", "-C", str(repo), "add", "app.py"], check=True)

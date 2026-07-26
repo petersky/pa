@@ -446,6 +446,7 @@ def _card_summary_context(request: Request, card) -> dict:
 
 def _card_agent_context(request: Request, card) -> dict:
     store = get_store()
+    ctx = request.app.state.ctx
     related_sessions = [
         session for session in store.list_sessions() if session.card_id == card.id
     ]
@@ -453,11 +454,35 @@ def _card_agent_context(request: Request, card) -> dict:
         (session for session in related_sessions if session.status != "closed"),
         None,
     )
+    dispatch_store = ctx.services.get("dispatch_store")
+    dispatches = (
+        [
+            record.public_dict()
+            for record in dispatch_store.list(limit=100)
+            if record.card_id == card.id and record.realm_id == card.realm_id
+        ]
+        if dispatch_store
+        else []
+    )
+    fleet = ctx.services.get("fleet_registry")
+    instances = (
+        sorted(
+            fleet.list_instances(),
+            key=lambda item: (item.name.lower(), item.instance_id),
+        )
+        if fleet
+        else []
+    )
     return {
         "card": card,
         "related_sessions": related_sessions,
         "current_session": current_session,
-        "agent_enabled": request.app.state.ctx.settings.agent_enabled,
+        "dispatches": dispatches,
+        "latest_dispatch": dispatches[0] if dispatches else None,
+        "fleet_instances": instances,
+        "local_instance_id": ctx.settings.instance_id,
+        "local_instance_name": ctx.settings.instance_name,
+        "agent_enabled": ctx.settings.agent_enabled,
     }
 
 

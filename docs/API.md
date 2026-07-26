@@ -30,24 +30,35 @@ with PAClient(
     pa.login("operator", "REDACTED")
     admission = pa.request(
         "POST",
-        "/api/fleet/instances/target/agent/start",
+        "/api/fleet/dispatch",
         instance_id="monica",
         idempotency_key="dispatch-2026-07-24-001",
         json={
             "authority_instance_id": "monica",
             "card_id": "9a5e8b7c-2d41-4f84-a32c-9128f97dbe20",
+            "placement_policy": "least_busy",
             "message": "Implement the linked task.",
             "provider": "codex",
         },
     ).json()
 ```
 
+`POST /api/fleet/dispatch` accepts exactly one of `target_instance_id` or
+`placement_policy`. Policies are `best_match`, `least_busy`, `round_robin`, and
+`random_eligible`. PA probes fresh readiness and workload, rejects ineligible
+candidates, resolves the request to a concrete instance before admission, and
+stores the explainable decision on the dispatch. The legacy concrete route
+`POST /api/fleet/instances/{instance_id}/agent/start` remains supported.
+
 Keep the same idempotency key only when retrying the same logical mutation.
-For model/agent callers, prefer the MCP tools: `dispatch_card_to_instance`,
-`get_dispatch`, `retry_dispatch`, `cancel_dispatch`, and
-`prompt_dispatch_session`. They authenticate to the owning PA server internally
-and never expose browser cookies. Set `authority_instance_id` explicitly when an
-always-on peer must own the durable dispatch independently of the caller.
+Policy retries return the original dispatch and resolved target instead of
+running placement again. For model/agent callers, prefer the `dispatch_card`
+MCP tool, which accepts either `instance_id` or `policy`; the compatibility
+`dispatch_card_to_instance`, `get_dispatch`, `retry_dispatch`,
+`cancel_dispatch`, and `prompt_dispatch_session` tools remain available. They
+authenticate to the owning PA server internally and never expose browser
+cookies. Set `authority_instance_id` explicitly when an always-on peer must own
+the durable dispatch independently of the caller.
 
 Structured live progress is described in
 [`DISPATCH_PROGRESS.md`](DISPATCH_PROGRESS.md). Agents may use
