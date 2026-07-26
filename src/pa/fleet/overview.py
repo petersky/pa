@@ -820,6 +820,8 @@ def build_overview(
             "url": inst.url,
             "zone": inst.zone,
             "capabilities": list(inst.capabilities),
+            "lifecycle_state": inst.lifecycle_state,
+            "membership_generation": inst.membership_generation,
             "local": inst.instance_id == ctx.settings.instance_id,
             "last_seen": inst.last_seen.isoformat() if inst.last_seen else None,
             "dimensions": dimensions,
@@ -831,6 +833,8 @@ def build_overview(
     local_id = ctx.settings.instance_id
     for index, route in enumerate(peer_routes):
         target = route.target_instance_id or by_url.get(route.target_url.rstrip("/"))
+        if target not in by_id:
+            continue
         edges.append(
             {
                 "id": f"route-{index}",
@@ -936,6 +940,9 @@ def build_overview(
     return {
         "version": 2,
         "snapshot_version": cache.revision,
+        "membership_version": getattr(
+            ctx.services.get("fleet_registry"), "generation", 0
+        ),
         "generated_at": _now(),
         "local_instance_id": local_id,
         "dimensions": list(DIMENSIONS),

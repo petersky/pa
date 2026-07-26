@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from pa.domain.models import PeerRoute, PeerRouteMode
+from pa.domain.models import FleetInstance, PeerRoute, PeerRouteMode
 
 
 class PeerTable:
@@ -20,7 +20,7 @@ class PeerTable:
         try:
             data = json.loads(self.path.read_text())
             self._routes = [PeerRoute.model_validate(r) for r in data.get("routes", [])]
-        except (json.JSONDecodeError, ValueError):
+        except json.JSONDecodeError, ValueError:
             self._routes = []
 
     def _save(self) -> None:
@@ -33,9 +33,11 @@ class PeerTable:
         self._save()
 
     def add_route(self, route: PeerRoute) -> None:
-        self._routes = [r for r in self._routes if not (
-            r.realm_id == route.realm_id and r.target_url == route.target_url
-        )]
+        self._routes = [
+            r
+            for r in self._routes
+            if not (r.realm_id == route.realm_id and r.target_url == route.target_url)
+        ]
         self._routes.append(route)
         self._save()
 
@@ -45,7 +47,9 @@ class PeerTable:
     def all_routes(self) -> list[PeerRoute]:
         return list(self._routes)
 
-    def sync_from_settings_peers(self, realm_id: str, peer_urls: list[str], zone: str = "default") -> None:
+    def sync_from_settings_peers(
+        self, realm_id: str, peer_urls: list[str], zone: str = "default"
+    ) -> None:
         for url in peer_urls:
             self.add_route(
                 PeerRoute(
@@ -61,3 +65,44 @@ class PeerTable:
         same = [r for r in routes if r.zone == local_zone]
         other = [r for r in routes if r.zone != local_zone]
         return same + other
+
+    def reconcile_membership(
+        self,
+        members: list[FleetInstance],
+        *,
+        realms: list[str],
+        local_instance_id: str,
+    ) -> dict[str, int]:
+        """Derive direct routes from canonical members, preserving explicit relays."""
+        before = list(self._routes)
+        explicit_relays = [
+            route for route in before if route.mode == PeerRouteMode.RELAY
+        ]
+        routes = list(explicit_relays)
+        for realm_id in realms:
+            for member in members:
+                if (
+                    member.instance_id == local_instance_id
+                    or member.lifecycle_state != "active"
+                    or not member.url
+                ):
+                    continue
+                routes.append(
+                    PeerRoute(
+                        realm_id=realm_id,
+                        target_url=member.url,
+                        target_instance_id=member.instance_id,
+                        zone=member.zone,
+                        mode=PeerRouteMode.DIRECT,
+                    )
+                )
+        unique: dict[tuple[str, str, str], PeerRoute] = {}
+        for route in routes:
+            key = (
+                route.realm_id,
+                route.target_instance_id or "",
+                route.target_url.rstrip("/"),
+            )
+            unique[key] = route
+        self.set_routes(list(unique.values()))
+        return {"before": len(before), "after": len(unique)}

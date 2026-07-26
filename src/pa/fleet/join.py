@@ -9,7 +9,11 @@ from urllib.parse import urlparse
 import httpx
 
 from pa.config import Settings
-from pa.domain.instance_config import InstanceConfig, load_instance_config, update_instance_config
+from pa.domain.instance_config import (
+    InstanceConfig,
+    load_instance_config,
+    update_instance_config,
+)
 from pa.domain.models import FleetInstance, PeerRoute
 from pa.fleet.registry import FleetRegistry
 from pa.network.peer_table import PeerTable
@@ -195,6 +199,7 @@ def apply_join_response(
     subscribed_realms: list[str] | None = None,
     sync_token: str | None = None,
     peers: list[str] | None = None,
+    membership_snapshot: dict | None = None,
 ) -> InstanceConfig:
     """Persist fleet join results into config.json."""
     peer_list: list[str] = []
@@ -221,7 +226,20 @@ def apply_join_response(
         updates["subscribed_realms"] = subscribed_realms
     if sync_token:
         updates["sync_token"] = sync_token
-    return update_instance_config(data_dir, **updates)
+    updated = update_instance_config(data_dir, **updates)
+    if membership_snapshot:
+        registry = FleetRegistry(data_dir, fleet_id)
+        registry.apply_snapshot(
+            membership_snapshot,
+            actor="fleet.join",
+            require_newer=False,
+        )
+        PeerTable(data_dir).reconcile_membership(
+            registry.list_instances(),
+            realms=subscribed_realms or [],
+            local_instance_id=updated.instance_id,
+        )
+    return updated
 
 
 async def join_fleet(
