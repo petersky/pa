@@ -557,6 +557,16 @@ def test_scratch_workspace_rejects_pa_data_dir(tmp_path: Path) -> None:
     )
     assert Path(workspace.cwd).is_dir()
     assert Path(workspace.cwd).is_relative_to(manager.root)
+    lease = manager.get_artifact_lease("session-2")
+    assert lease is not None
+    assert lease.path == workspace.cwd
+    assert lease.state == "ready"
+    assert (
+        workspace.execution_context(manager.settings, "cursor")["artifact_workspace"][
+            "id"
+        ]
+        == lease.id
+    )
 
 
 def test_managed_directory_symlink_cannot_escape_workspace_root(

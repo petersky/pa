@@ -622,6 +622,13 @@
     message.textContent = events.length ? events[events.length - 1].message : "Dispatch admitted.";
     region.appendChild(message);
 
+    if (dispatch.materialization_plan && dispatch.materialization_plan.summary) {
+      var plan = document.createElement("p");
+      plan.className = "muted";
+      plan.textContent = dispatch.materialization_plan.summary;
+      region.appendChild(plan);
+    }
+
     if (dispatch.placement_decision && dispatch.placement_decision.tie_breaking_reason) {
       var explanation = document.createElement("p");
       explanation.className = "muted";
@@ -697,6 +704,11 @@
     message.className = "danger";
     message.textContent = error.message || "The fleet dispatch request failed.";
     region.append(heading, message);
+    if (error.plan && error.plan.summary) {
+      var plan = document.createElement("p");
+      plan.textContent = error.plan.summary;
+      region.appendChild(plan);
+    }
     var rejected = Array.isArray(error.rejected_candidates) ? error.rejected_candidates : [];
     if (rejected.length) {
       var list = document.createElement("ul");
@@ -1453,6 +1465,13 @@
     var payload = {
       card_id: detail.dataset.cardId,
       idempotency_key: key,
+    };
+    var profile = form.elements.execution_profile.value;
+    payload.execution_contract = {
+      version: 1,
+      profile: profile,
+      confirmed: profile !== "automatic",
+      requirements: {},
     };
     if (target.indexOf("policy:") === 0) payload.placement_policy = target.slice(7);
     if (target.indexOf("instance:") === 0) payload.target_instance_id = target.slice(9);

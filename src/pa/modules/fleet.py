@@ -54,6 +54,11 @@ from pa.execution.dispatch import (
     DispatchWorker,
 )
 from pa.execution.disposition import decide_card_disposition
+from pa.execution.profiles import (
+    ExecutionContract,
+    MaterializationPlan,
+    resolve_materialization_plan,
+)
 from pa.execution.progress import (
     PROGRESS_SCHEMA_VERSION,
     SUPPORTED_PROGRESS_VERSIONS,
@@ -248,6 +253,7 @@ class RemoteAgentStartBody(BaseModel):
     allow_concurrent: bool = False
     capacity_override: bool = False
     capacity_override_reason: str | None = Field(default=None, max_length=500)
+    execution_contract: dict[str, Any] | None = None
 
 
 class FleetDispatchBody(RemoteAgentStartBody):
@@ -289,6 +295,7 @@ class DispatchMaterializeBody(BaseModel):
     progress_versions: list[int] = Field(default_factory=list, max_length=10)
     attachment_manifest: list[CardAttachment] = Field(default_factory=list)
     attachment_digest: str | None = None
+    materialization_plan: dict[str, Any] | None = None
 
 
 class AttachmentFinalizeBody(BaseModel):
@@ -402,6 +409,42 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
             status_code=409,
             detail={"code": "wrong_target", "expected": settings.instance_id},
         )
+    if body.materialization_plan is not None:
+        try:
+            bound_plan = MaterializationPlan.model_validate(body.materialization_plan)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "invalid_materialization_plan", "message": str(exc)},
+            ) from exc
+        if bound_plan.target_instance_id != settings.instance_id:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "stale_materialization_plan",
+                    "message": "The materialization target changed after preflight.",
+                    "recoverable": True,
+                },
+            )
+        if bound_plan.profile == "repository":
+            unavailable = [
+                item["repository_id"]
+                for item in bound_plan.repositories
+                if request.app.state.ctx.store.get_repository(
+                    item["repository_id"], body.realm_id
+                )
+                is None
+            ]
+            if unavailable:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "repository_context_required",
+                        "repositories": unavailable,
+                        "message": "Required repositories are unavailable on the target; no session was started.",
+                        "recoverable": True,
+                    },
+                )
     if body.attachment_digest is not None and body.attachment_digest != manifest_digest(
         body.attachment_manifest
     ):
@@ -475,6 +518,7 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
             "session_id": recorded.session_id,
             "progress_protocol_version": recorded.progress_protocol_version,
             "attachment_evidence": recorded.attachment_evidence,
+            "materialization_plan": recorded.materialization_plan,
         }
 
     store = request.app.state.ctx.store
@@ -524,6 +568,7 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
         state="materializing",
         progress_protocol_version=progress_protocol_version,
         attachment_evidence=attachment_evidence,
+        materialization_plan=body.materialization_plan,
         request_payload={
             "provenance_version": body.provenance_version,
             "progress_versions": list(body.progress_versions),
@@ -3048,6 +3093,7 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
             item.model_dump(mode="json") for item in (card.attachments if card else [])
         ],
         "attachment_digest": manifest_digest(card.attachments if card else []),
+        "materialization_plan": record.materialization_plan,
     }
     manifest = [
         CardAttachment.model_validate(item)
@@ -3831,6 +3877,46 @@ async def _admit_remote_agent_work(
             "dispatch": existing.public_dict(),
         }
 
+    project_repositories = (
+        list(store.list_project_repositories(project_id, realm_id=realm_id))
+        if project_id
+        else []
+    )
+    requested_contract = (
+        ExecutionContract.model_validate(body.execution_contract)
+        if body.execution_contract
+        else None
+    )
+    explicit_ids = [
+        item.repository_id
+        for item in (
+            requested_contract.requirements.repositories if requested_contract else []
+        )
+    ]
+    explicit_repositories = []
+    for repository_id in explicit_ids:
+        repository = store.get_repository(repository_id, realm_id)
+        if repository:
+            explicit_repositories.append(repository)
+    plan = resolve_materialization_plan(
+        requested=requested_contract,
+        card=card,
+        project=project,
+        project_repositories=project_repositories,
+        explicit_repositories=explicit_repositories,
+        target_instance_id=instance_id,
+    )
+    if not plan.admissible:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "materialization_preflight_required",
+                "message": plan.summary,
+                "plan": plan.model_dump(mode="json"),
+                "recoverable": True,
+            },
+        )
+
     record = DispatchRecord(
         mutation_id=str(uuid4()),
         idempotency_key=idempotency_key,
@@ -3841,6 +3927,7 @@ async def _admit_remote_agent_work(
         realm_id=realm_id,
         card_version=card.updated_at.isoformat() if card else None,
         card_snapshot=card.model_dump(mode="json") if card else None,
+        materialization_plan=plan.model_dump(mode="json"),
         request_payload=payload,
         principal_id=(
             f"instance:{request.headers.get('X-PA-Origin-Instance-ID', 'fleet')}"
@@ -5047,6 +5134,7 @@ class FleetModule(Module):
             allow_concurrent: bool = False,
             capacity_override: bool = False,
             capacity_override_reason: str | None = None,
+            execution_contract: dict[str, Any] | None = None,
         ) -> dict:
             """Resolve a concrete target or policy and durably dispatch a card."""
             key = idempotency_key.strip()
@@ -5073,6 +5161,7 @@ class FleetModule(Module):
                     "allow_concurrent": allow_concurrent,
                     "capacity_override": capacity_override,
                     "capacity_override_reason": capacity_override_reason,
+                    "execution_contract": execution_contract,
                     "idempotency_key": key,
                 },
             )
@@ -5093,6 +5182,7 @@ class FleetModule(Module):
             allow_concurrent: bool = False,
             capacity_override: bool = False,
             capacity_override_reason: str | None = None,
+            execution_contract: dict[str, Any] | None = None,
         ) -> dict:
             """Durably and idempotently dispatch an authoritative card to a fleet instance."""
             key = idempotency_key.strip()
@@ -5110,6 +5200,8 @@ class FleetModule(Module):
                 "config": config or {},
                 "idempotency_key": key,
             }
+            if execution_contract is not None:
+                payload["execution_contract"] = execution_contract
             if allow_concurrent:
                 payload["allow_concurrent"] = True
             if capacity_override:

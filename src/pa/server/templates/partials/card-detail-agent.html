@@ -16,7 +16,14 @@
       <p class="muted">Resolve a healthy target and queue this card through the fleet control plane. This does not change preferred-instance metadata.</p>
     </div>
     <form data-card-dispatch-form>
-      <label for="card-dispatch-target-{{ card.id }}">Dispatch target</label>
+      <label for="card-dispatch-profile-{{ card.id }}">Workspace profile</label>
+      <select id="card-dispatch-profile-{{ card.id }}" name="execution_profile" required>
+        <option value="automatic">Automatic (show a choice if ambiguous)</option>
+        <option value="repository">Repository work — verified isolated worktree</option>
+        <option value="research">Research/artifact work — no Git required</option>
+        <option value="operations">Operations/external tools — no source checkout</option>
+      </select>
+            <label for="card-dispatch-target-{{ card.id }}">Dispatch target</label>
       <div class="card-dispatch-controls">
         <select id="card-dispatch-target-{{ card.id }}" name="dispatch_target" required>
           <optgroup label="Placement policies">
@@ -57,6 +64,7 @@
         <strong>{{ latest_dispatch.target_instance_name or latest_dispatch.target_instance_id }}</strong>
       </div>
       <p>{{ latest_dispatch.events[-1].message if latest_dispatch.events else 'Dispatch admitted.' }}</p>
+      {% if latest_dispatch.materialization_plan %}<p class="muted">{{ latest_dispatch.materialization_plan.summary }}</p>{% endif %}
       {% if latest_dispatch.last_error %}<p class="danger">{{ latest_dispatch.last_error }}</p>{% endif %}
       {% if latest_dispatch.placement_decision %}
       <p class="muted">{{ latest_dispatch.placement_decision.tie_breaking_reason }}</p>

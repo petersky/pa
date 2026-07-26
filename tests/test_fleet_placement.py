@@ -522,6 +522,11 @@ def test_policy_dispatch_endpoint_retries_without_rerunning_placement() -> None:
                 "provider": "codex",
                 "model_id": "gpt-5",
                 "idempotency_key": "stable-policy-request",
+                "execution_contract": {
+                    "version": 1,
+                    "profile": "research",
+                    "confirmed": True,
+                },
             }
             first = client.post("/api/fleet/dispatch", headers=headers, json=body)
             second = client.post("/api/fleet/dispatch", headers=headers, json=body)

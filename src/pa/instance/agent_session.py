@@ -1467,8 +1467,10 @@ class AgentSessionManager:
             cache_for(self.settings.data_dir).invalidate(
                 self.settings.instance_id, "providers"
             )
-        except (OSError, RuntimeError, ValueError):
-            logger.warning("Could not invalidate Fleet provider snapshot", exc_info=True)
+        except OSError, RuntimeError, ValueError:
+            logger.warning(
+                "Could not invalidate Fleet provider snapshot", exc_info=True
+            )
 
     async def _offload(
         self, operation: str, call, *args, timeout: float | None = None, **kwargs
@@ -1550,6 +1552,8 @@ class AgentSessionManager:
         prior_context = dict(prior_config.get("execution_context") or {})
         prior_authority = dict(prior_context.get("authority_instance") or {})
         prior_attachments = dict(prior_context.get("attachments") or {})
+        materialization_plan = dict(prior_context.get("materialization_plan") or {})
+        execution_profile = materialization_plan.get("profile")
         authority_instance = (
             {
                 "id": session.authority_instance_id,
@@ -1587,15 +1591,54 @@ class AgentSessionManager:
         )
         try:
             workspace = None
-            if session.project_id:
+            if execution_profile == "repository":
+                if session.project_id:
+                    project = await self._offload(
+                        "sqlite.project_read",
+                        self.store.get_project,
+                        session.project_id,
+                    )
+                    if project is None:
+                        raise WorkspaceProvisioningError(
+                            f"Project {session.project_id} is not available on this instance; sync or link the project checkout, then retry workspace provisioning"
+                        )
+                    workspace = await self._offload(
+                        "workspace.project_provision",
+                        self.workspace_manager.provision_project,
+                        project_id=session.project_id,
+                        session_id=session.id,
+                        card_id=session.card_id,
+                        realm_id=getattr(
+                            project, "realm_id", self.settings.primary_realm
+                        ),
+                        provider_id=provider_id,
+                        timeout=900.0,
+                    )
+                else:
+                    workspace = await self._offload(
+                        "workspace.contract_provision",
+                        self.workspace_manager.provision_contract,
+                        repositories=list(
+                            materialization_plan.get("repositories") or []
+                        ),
+                        session_id=session.id,
+                        card_id=session.card_id,
+                        project_id=None,
+                        realm_id=session.realm_id,
+                        provider_id=provider_id,
+                        timeout=900.0,
+                    )
+                if workspace is None or not workspace.repositories:
+                    raise WorkspaceProvisioningError(
+                        "Repository materialization did not produce a verified leased worktree"
+                    )
+            elif not execution_profile and session.project_id:
                 project = await self._offload(
                     "sqlite.project_read", self.store.get_project, session.project_id
                 )
                 if project is None:
                     raise WorkspaceProvisioningError(
-                        f"Project {session.project_id} is not available on this "
-                        "instance; sync or link the project checkout, then retry "
-                        "workspace provisioning"
+                        f"Project {session.project_id} is not available on this instance; sync or link the project checkout, then retry workspace provisioning"
                     )
                 workspace = await self._offload(
                     "workspace.project_provision",
@@ -1607,10 +1650,12 @@ class AgentSessionManager:
                     provider_id=provider_id,
                     timeout=900.0,
                 )
-                if workspace is None:
-                    raise WorkspaceProvisioningError(
-                        "Project has no linked repositories to provision"
-                    )
+            if workspace is None and (
+                execution_profile == "repository" or session.project_id
+            ):
+                raise WorkspaceProvisioningError(
+                    "Project has no linked repositories to provision"
+                )
             if workspace is None:
                 workspace = await self._offload(
                     "workspace.scratch_provision",
@@ -1620,6 +1665,13 @@ class AgentSessionManager:
                     project_id=session.project_id,
                     requested_cwd=requested_cwd,
                     provider_id=provider_id,
+                    workspace_kind=(
+                        "operational"
+                        if execution_profile == "operations"
+                        else "artifact"
+                        if execution_profile == "research"
+                        else "scratch"
+                    ),
                     timeout=120.0,
                 )
             context = workspace.execution_context(self.settings, provider_id)

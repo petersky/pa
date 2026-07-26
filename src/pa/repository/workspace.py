@@ -94,6 +94,20 @@ class WorkspaceLease(BaseModel):
     expires_at: datetime
 
 
+class ArtifactWorkspaceLease(BaseModel):
+    id: str
+    session_id: str
+    card_id: str | None = None
+    project_id: str | None = None
+    path: str
+    kind: Literal["artifact", "operational", "scratch"] = "scratch"
+    fencing_token: int
+    state: Literal["ready", "failed", "completed", "cleaned"] = "ready"
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    expires_at: datetime
+
+
 class ProvisionedWorkspace(BaseModel):
     session_id: str
     card_id: str | None = None
@@ -103,6 +117,7 @@ class ProvisionedWorkspace(BaseModel):
     repositories: list[WorkspaceLease] = Field(default_factory=list)
     dependency_cache: str
     provider_context: dict[str, Any] = Field(default_factory=dict)
+    artifact_lease: ArtifactWorkspaceLease | None = None
 
     def execution_context(self, settings: Settings, provider_id: str) -> dict[str, Any]:
         repositories = [
@@ -136,6 +151,11 @@ class ProvisionedWorkspace(BaseModel):
             "approval_policy": "on-request",
             "provider": provider_id,
             "provider_context": self.provider_context,
+            "artifact_workspace": (
+                self.artifact_lease.model_dump(mode="json")
+                if self.artifact_lease
+                else None
+            ),
         }
 
 
@@ -248,6 +268,14 @@ class WorkspaceManager:
                     expires_at TEXT NOT NULL,
                     UNIQUE(repository_id, session_id)
                 );
+                CREATE TABLE IF NOT EXISTS artifact_workspace_leases (
+                    id TEXT PRIMARY KEY, session_id TEXT UNIQUE NOT NULL,
+                    card_id TEXT, project_id TEXT, path TEXT NOT NULL, kind TEXT NOT NULL,
+                    fencing_token INTEGER NOT NULL, state TEXT NOT NULL,
+                    created_at TEXT NOT NULL, updated_at TEXT NOT NULL, expires_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_artifact_expiry
+                    ON artifact_workspace_leases(expires_at, state);
                 CREATE TABLE IF NOT EXISTS workspace_fences (
                     repository_id TEXT PRIMARY KEY,
                     next_token INTEGER NOT NULL
@@ -406,6 +434,28 @@ class WorkspaceManager:
             rows = conn.execute(query, params).fetchall()
         return [self._row(row) for row in rows]
 
+    def _save_artifact_lease(
+        self, lease: ArtifactWorkspaceLease
+    ) -> ArtifactWorkspaceLease:
+        with self._connect() as conn:
+            conn.execute(
+                """INSERT OR REPLACE INTO artifact_workspace_leases
+                (id,session_id,card_id,project_id,path,kind,fencing_token,state,
+                 created_at,updated_at,expires_at)
+                VALUES (:id,:session_id,:card_id,:project_id,:path,:kind,:fencing_token,:state,
+                        :created_at,:updated_at,:expires_at)""",
+                lease.model_dump(mode="json"),
+            )
+        return lease
+
+    def get_artifact_lease(self, session_id: str) -> ArtifactWorkspaceLease | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM artifact_workspace_leases WHERE session_id=?",
+                (session_id,),
+            ).fetchone()
+        return ArtifactWorkspaceLease.model_validate(dict(row)) if row else None
+
     def linked_repositories(
         self, project_id: str, *, realm_id: str
     ) -> list[LinkedRepository]:
@@ -486,6 +536,60 @@ class WorkspaceManager:
             provider_context=provider_context.get(provider_id, {}),
         )
 
+    def provision_contract(
+        self,
+        *,
+        repositories: list[dict[str, Any]],
+        session_id: str,
+        card_id: str | None,
+        project_id: str | None,
+        realm_id: str,
+        provider_id: str,
+    ) -> ProvisionedWorkspace:
+        linked: list[LinkedRepository] = []
+        for requirement in repositories:
+            repository = self.store.get_repository(
+                requirement["repository_id"], realm_id
+            )
+            if repository is None:
+                raise WorkspaceProvisioningError(
+                    f"Repository {requirement['repository_id']} is unavailable on this instance"
+                )
+            linked.append(
+                LinkedRepository(
+                    repository=repository,
+                    branch=requirement.get("branch") or requirement.get("base_ref"),
+                )
+            )
+        if not linked:
+            raise WorkspaceProvisioningError(
+                "Repository profile has no repositories to provision"
+            )
+        leases = [
+            self.provision_repository(
+                item, project_id=project_id, session_id=session_id, card_id=card_id
+            )
+            for item in linked
+        ]
+        dependency_cache = self.dependency_root / self._entity_key(session_id)
+        self._assert_managed_path(dependency_cache)
+        dependency_cache.mkdir(parents=True, exist_ok=True)
+        return ProvisionedWorkspace(
+            session_id=session_id,
+            card_id=card_id,
+            project_id=project_id,
+            cwd=leases[0].worktree_path,
+            writable_roots=[lease.worktree_path for lease in leases],
+            repositories=leases,
+            dependency_cache=str(dependency_cache),
+            provider_context={
+                "sandbox": "workspace-write",
+                "approval_policy": "on-request",
+            }
+            if provider_id == "codex"
+            else {"workspace_mode": "isolated-checkout"},
+        )
+
     def scratch_workspace(
         self,
         *,
@@ -494,6 +598,7 @@ class WorkspaceManager:
         project_id: str | None,
         requested_cwd: str | None,
         provider_id: str,
+        workspace_kind: Literal["artifact", "operational", "scratch"] = "scratch",
     ) -> ProvisionedWorkspace:
         if requested_cwd:
             cwd = Path(requested_cwd).expanduser().resolve()
@@ -521,6 +626,18 @@ class WorkspaceManager:
             card_id=card_id,
             project_id=project_id,
             cwd=str(root),
+            artifact_lease=self._save_artifact_lease(
+                ArtifactWorkspaceLease(
+                    id=hashlib.sha256(f"artifact\0{session_id}".encode()).hexdigest(),
+                    session_id=session_id,
+                    card_id=card_id,
+                    project_id=project_id,
+                    path=str(root),
+                    kind=workspace_kind,
+                    fencing_token=self._next_fence(f"artifact:{session_id}"),
+                    expires_at=datetime.now(UTC) + self.LEASE_TTL,
+                )
+            ),
             writable_roots=[str(root)],
             dependency_cache=str(dependency_cache),
             provider_context={
@@ -532,7 +649,7 @@ class WorkspaceManager:
         self,
         linked: LinkedRepository,
         *,
-        project_id: str,
+        project_id: str | None,
         session_id: str,
         card_id: str | None,
     ) -> WorkspaceLease:
@@ -917,7 +1034,9 @@ class WorkspaceManager:
             self._increment_metric("completed_workspaces", count)
         return count
 
-    def reconcile_terminal_state(self, *, now: datetime | None = None) -> dict[str, int]:
+    def reconcile_terminal_state(
+        self, *, now: datetime | None = None
+    ) -> dict[str, int]:
         """Reconcile private leases from synced card and session terminal state.
 
         Workspace lease databases are intentionally instance-local, while cards
@@ -984,7 +1103,9 @@ class WorkspaceManager:
                 result["cards_completed"] + result["standalone_completed"],
             )
         if result["closed_expired"]:
-            self._increment_metric("expired_closed_workspaces", result["closed_expired"])
+            self._increment_metric(
+                "expired_closed_workspaces", result["closed_expired"]
+            )
         return result
 
     def expire_session(self, session_id: str, *, now: datetime | None = None) -> int:

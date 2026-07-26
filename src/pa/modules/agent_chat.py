@@ -500,6 +500,7 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                 "dispatch_id": dispatch_record.dispatch_id,
                 "attachments": dispatch_record.attachment_evidence
                 or {"verified": True, "attachments": []},
+                "materialization_plan": dispatch_record.materialization_plan,
             },
         }
     try:
