@@ -1239,6 +1239,19 @@ class FleetUpdateUiTests(unittest.TestCase):
         self.assertIn("performance.measure", script)
         self.assertIn('id="pa-fleet-refresh"', template)
 
+    def test_page_refresh_is_single_flight_abort_safe_and_generation_fenced(self) -> None:
+        root = Path(__file__).parents[1]
+        script = (root / "src/pa/server/static/js/fleet.js").read_text()
+        self.assertIn("if (fleetPageRefreshRequest && fleetPageRefreshUrl === url)", script)
+        self.assertIn("htmx.trigger(target, \"htmx:abort\")", script)
+        self.assertIn("isExpectedHtmxAbort(error)", script)
+        self.assertIn("X-PA-Navigation-Generation", script)
+        self.assertIn("generation !== fleetPageRefreshGeneration", script)
+        self.assertIn("evt.detail.shouldSwap = false", script)
+        self.assertIn("suppressExpectedFleetHtmxError", script)
+        self.assertIn("Fleet page refresh failed", script)
+        self.assertIn("abortFleetPageRefresh();\n    teardownFleetOverview();", script)
+
     def test_topology_is_accessible_responsive_and_has_no_js_equivalent(self) -> None:
         root = Path(__file__).parents[1]
         script = (root / "src/pa/server/static/js/fleet.js").read_text()
