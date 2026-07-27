@@ -8,6 +8,7 @@ from unittest.mock import patch
 from pa.acp.mcp_config import pa_mcp_servers
 from pa.auth.users import UserDirectory
 from pa.config import Settings
+from pa.mcp.owner_channel import owner_channel
 
 
 class PaMcpServersTests(unittest.TestCase):
@@ -23,6 +24,7 @@ class PaMcpServersTests(unittest.TestCase):
         return {
             "PA_DATA_DIR": str(settings.data_dir),
             "PA_LOCAL_API_URL": "http://127.0.0.1:9123",
+            "PA_LOCAL_API_ENDPOINT_TYPE": owner_channel(settings).endpoint_type,
             "PA_LOCAL_API_TOKEN": (
                 UserDirectory(settings.data_dir).ensure_default_user().cli_token
             ),

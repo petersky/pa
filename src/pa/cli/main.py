@@ -584,6 +584,9 @@ def serve(
     settings = get_settings()
     bind_host = host or settings.host
     bind_port = port or settings.port
+    # Keep the app factory and PA-owned children aligned with CLI overrides.
+    settings.host = bind_host
+    settings.port = bind_port
     typer.echo(f"Starting PA on http://{bind_host}:{bind_port}")
     if settings.debug:
         typer.echo("  Debug mode enabled")

@@ -9,11 +9,12 @@ from acp.schema import EnvVariable, McpServerStdio
 
 from pa.auth.users import UserDirectory
 from pa.config import Settings
+from pa.mcp.owner_channel import owner_channel
 
 
 def _local_api_url(settings: Settings) -> str:
     """Return the owning server's process-local API target."""
-    return f"http://127.0.0.1:{settings.port}"
+    return owner_channel(settings).url
 
 
 def pa_mcp_servers(settings: Settings) -> list[McpServerStdio]:
@@ -23,9 +24,11 @@ def pa_mcp_servers(settings: Settings) -> list[McpServerStdio]:
     # The server creates and forwards the CLI bearer token so the MCP child
     # never needs to create auth state. Mutations go through PA_LOCAL_API_URL.
     cli_token = UserDirectory(settings.data_dir).ensure_default_user().cli_token
+    channel = owner_channel(settings)
     owner_env = {
         "PA_DATA_DIR": str(settings.data_dir),
-        "PA_LOCAL_API_URL": _local_api_url(settings),
+        "PA_LOCAL_API_URL": channel.url,
+        "PA_LOCAL_API_ENDPOINT_TYPE": channel.endpoint_type,
         "PA_LOCAL_API_TOKEN": cli_token,
         "PA_INSTANCE_ID": settings.instance_id,
     }
