@@ -1510,13 +1510,17 @@ code {
   stroke-linecap: round;
 }
 
-.acw-rail-button[aria-expanded="true"] {
-  color: var(--pa-accent);
-  background: var(--pa-accent-subtle);
+.acw-rail-button:is(:hover:not(:disabled), :focus, :focus-visible, [aria-expanded="true"]) {
+  color: var(--pa-bg);
+  background: var(--pa-accent);
 }
 
 .acw-rail-button.is-active .acw-gears {
   color: var(--pa-accent);
+}
+
+.acw-rail-button.is-active:is(:hover:not(:disabled), :focus, :focus-visible, [aria-expanded="true"]) .acw-gears {
+  color: var(--pa-bg);
 }
 
 .acw-rail-button.is-active .acw-gear-a,
