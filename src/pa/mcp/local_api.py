@@ -12,7 +12,6 @@ import httpx
 
 from pa.auth.users import UserDirectory
 from pa.config import Settings
-from pa.mcp.owner_channel import owner_channel
 
 
 class LocalPAServerUnavailable(RuntimeError):
@@ -55,7 +54,8 @@ def local_pa_url(settings: Settings) -> str:
     explicit = os.environ.get("PA_LOCAL_API_URL", "").strip()
     if explicit:
         return explicit.rstrip("/")
-    return owner_channel(settings).url
+    host = settings.host if settings.host not in {"0.0.0.0", "::"} else "127.0.0.1"
+    return f"http://{host}:{settings.port}"
 
 
 def _validation_details(response: httpx.Response) -> list[dict[str, Any]] | None:
