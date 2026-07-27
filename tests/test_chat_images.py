@@ -146,6 +146,51 @@ class ChatPromptEndpointTests(unittest.TestCase):
 
 
 class ChatWidgetTemplateTests(unittest.TestCase):
+    def test_activity_rail_icons_remain_visible_across_interaction_states(
+        self,
+    ) -> None:
+        style_path = (
+            Path(__file__).parents[1]
+            / "src"
+            / "pa"
+            / "server"
+            / "static"
+            / "style.css"
+        )
+        style = style_path.read_text()
+        interaction_states = (
+            ":hover:not(:disabled), :focus, :focus-visible, "
+            '[aria-expanded="true"]'
+        )
+
+        self.assertIn(
+            f".acw-rail-button:is({interaction_states}) {{\n"
+            "  color: var(--pa-bg);\n"
+            "  background: var(--pa-accent);\n"
+            "}",
+            style,
+        )
+        self.assertIn(
+            ".acw-rail-button.is-active .acw-gears {\n"
+            "  color: var(--pa-accent);\n"
+            "}",
+            style,
+        )
+        self.assertIn(
+            f".acw-rail-button.is-active:is({interaction_states}) "
+            ".acw-gears {\n"
+            "  color: var(--pa-bg);\n"
+            "}",
+            style,
+        )
+        self.assertIn(
+            ".acw-rail-button.is-active .acw-gear-a,\n"
+            ".acw-rail-button.is-active .acw-gear-c {\n"
+            "  animation: acw-gear-clockwise 1.2s linear infinite;",
+            style,
+        )
+        self.assertIn("@media (prefers-reduced-motion: reduce)", style)
+
     def test_shared_widget_exposes_drop_target_and_attach_control(self) -> None:
         template_root = (
             Path(__file__).parents[1] / "src" / "pa" / "server" / "templates"
