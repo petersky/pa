@@ -1318,6 +1318,7 @@ class AgentSessionRuntime:
             "modes": conn.modes if conn else None,
             "config_options": conn.config_options if conn else None,
             "configuration": configuration,
+            "pa_mcp": conn.pa_mcp_health if conn else None,
             "metrics": self.session.metrics_json,
             "turn_started_at": self._turn_started_at.isoformat()
             if self._turn_started_at

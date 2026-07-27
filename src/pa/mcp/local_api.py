@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import os
+import threading
 import time
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 from uuid import uuid4
@@ -16,6 +18,18 @@ from pa.config import Settings
 
 class LocalPAServerUnavailable(RuntimeError):
     pass
+
+
+@dataclass
+class _Circuit:
+    failures: int = 0
+    retry_at: float = 0.0
+    last_failure: str | None = None
+    last_success: float | None = None
+
+
+_circuit = _Circuit()
+_circuit_lock = threading.Lock()
 
 
 class LocalPARequestError(LocalPAServerUnavailable):
@@ -156,7 +170,20 @@ def request_local_pa(
     }
     if expected_instance_id:
         headers["X-PA-MCP-Instance-ID"] = expected_instance_id
-    deadline = time.monotonic() + 10.0
+    now = time.monotonic()
+    with _circuit_lock:
+        retry_at = _circuit.retry_at
+        last_failure = _circuit.last_failure
+    if retry_at > now:
+        retry_in = max(0.0, retry_at - now)
+        endpoint_type = os.environ.get("PA_LOCAL_API_ENDPOINT_TYPE", "configured")
+        raise LocalPAServerUnavailable(
+            "The PA MCP owner channel is disconnected "
+            f"(classification={last_failure or 'unreachable'} "
+            f"endpoint={endpoint_type} retry_in={retry_in:.1f}s). "
+            "PA itself may still be healthy; do not write PA_DATA_DIR."
+        )
+    deadline = now + 2.0
     while True:
         try:
             response = httpx.request(
@@ -171,13 +198,42 @@ def request_local_pa(
             if allow_not_found and response.status_code == 404:
                 return None
             response.raise_for_status()
+            actual_instance_id = response.headers.get("X-PA-Instance-ID", "").strip()
+            if expected_instance_id and actual_instance_id != expected_instance_id:
+                raise LocalPARequestError(
+                    "PA MCP instance mismatch "
+                    f"(operation={method.upper()} endpoint={path} "
+                    f"correlation_id={correlation_id}): bridge instance "
+                    f"{expected_instance_id!r} reached server instance "
+                    f"{actual_instance_id or '<missing>'!r}.",
+                    operation=method.upper(),
+                    endpoint=path,
+                    status=response.status_code,
+                    correlation_id=correlation_id,
+                )
+            with _circuit_lock:
+                _circuit.failures = 0
+                _circuit.retry_at = 0.0
+                _circuit.last_failure = None
+                _circuit.last_success = time.time()
             if response.status_code == 204:
                 return None
             return response.json()
         except httpx.ConnectError as exc:
             if time.monotonic() >= deadline:
+                with _circuit_lock:
+                    _circuit.failures += 1
+                    _circuit.last_failure = "unreachable"
+                    _circuit.retry_at = time.monotonic() + min(
+                        0.25 * (2 ** (_circuit.failures - 1)), 5.0
+                    )
+                endpoint_type = os.environ.get(
+                    "PA_LOCAL_API_ENDPOINT_TYPE", "configured"
+                )
                 raise LocalPAServerUnavailable(
-                    "The owning PA server did not become reachable after 10 seconds. "
+                    "The PA MCP owner channel is unreachable "
+                    f"(endpoint={endpoint_type}); PA itself may still be healthy. "
+                    "Recovery probes will retry automatically. "
                     "Do not write PA_DATA_DIR from the MCP process."
                 ) from exc
             time.sleep(0.1)
