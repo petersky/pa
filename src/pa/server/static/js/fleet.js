@@ -74,17 +74,68 @@
     });
   }
 
+  var fleetPageRefreshGeneration = 0;
+  var fleetPageRefreshRequest = null;
+  var fleetPageRefreshUrl = "";
+  var fleetPageRefreshTarget = null;
+
+  function isExpectedHtmxAbort(error) {
+    var name = String(error && error.name || "");
+    var message = String(error && error.message || error || "").toLowerCase();
+    return name === "AbortError" ||
+      message.indexOf("signal is aborted") !== -1 ||
+      message.indexOf("request cancelled") !== -1 ||
+      message.indexOf("request canceled") !== -1;
+  }
+
+  function abortFleetPageRefresh() {
+    fleetPageRefreshGeneration += 1;
+    var target = fleetPageRefreshTarget;
+    fleetPageRefreshRequest = null;
+    fleetPageRefreshUrl = "";
+    fleetPageRefreshTarget = null;
+    if (target && window.htmx && htmx.trigger) {
+      htmx.trigger(target, "htmx:abort");
+    }
+  }
+
   function refreshFleetPage() {
     var section = "";
     try {
       section = new URL(window.location.href).searchParams.get("section") || "";
     } catch (e) {}
     var url = "/fleet" + (section ? "?section=" + encodeURIComponent(section) : "");
-    if (window.htmx) {
-      htmx.ajax("GET", url, { target: "#app-view", swap: "innerHTML", pushUrl: true });
-    } else {
+    if (!window.htmx) {
       location.href = url;
+      return Promise.resolve();
     }
+    if (fleetPageRefreshRequest && fleetPageRefreshUrl === url) {
+      return fleetPageRefreshRequest;
+    }
+    if (fleetPageRefreshRequest) abortFleetPageRefresh();
+    var generation = ++fleetPageRefreshGeneration;
+    var target = document.querySelector("#app-view");
+    fleetPageRefreshUrl = url;
+    fleetPageRefreshTarget = target;
+    var request = Promise.resolve(htmx.ajax("GET", url, {
+      target: target || "#app-view",
+      swap: "innerHTML",
+      pushUrl: true,
+      headers: { "X-PA-Navigation-Generation": String(generation) }
+    })).catch(function (error) {
+      if (generation !== fleetPageRefreshGeneration || isExpectedHtmxAbort(error)) return;
+      console.error("Fleet page refresh failed", {
+        operation: "fleet-page-refresh", url: url, generation: generation,
+        status: Number(error && error.status || 0) || "network"
+      });
+    }).finally(function () {
+      if (generation !== fleetPageRefreshGeneration) return;
+      fleetPageRefreshRequest = null;
+      fleetPageRefreshUrl = "";
+      fleetPageRefreshTarget = null;
+    });
+    fleetPageRefreshRequest = request;
+    return request;
   }
 
   function escapeHtml(text) {
@@ -2576,7 +2627,20 @@
     if (fleetSwapContainsRoot(evt)) initializeFleetPage();
   }
 
+  function fleetSwapGeneration(evt) {
+    var detail = evt && evt.detail || {};
+    var config = detail.requestConfig || detail.request || {};
+    var headers = config.headers || {};
+    return Number(headers["X-PA-Navigation-Generation"] || 0);
+  }
+
   function beforeFleetSwap(evt) {
+    var generation = fleetSwapGeneration(evt);
+    if (generation && generation !== fleetPageRefreshGeneration) {
+      if (evt.detail) evt.detail.shouldSwap = false;
+      if (evt.preventDefault) evt.preventDefault();
+      return;
+    }
     var target = fleetSwapTarget(evt);
     if (
       target &&
@@ -2589,6 +2653,18 @@
     }
   }
 
+  function suppressExpectedFleetHtmxError(evt) {
+    var generation = fleetSwapGeneration(evt);
+    var xhr = evt && evt.detail && evt.detail.xhr;
+    if (!generation || generation === fleetPageRefreshGeneration ||
+        (xhr && xhr.status !== 0)) return;
+    if (evt.preventDefault) evt.preventDefault();
+    if (evt.stopImmediatePropagation) evt.stopImmediatePropagation();
+  }
+
+  document.body.addEventListener("htmx:sendError", suppressExpectedFleetHtmxError);
+  document.body.addEventListener("htmx:responseError", suppressExpectedFleetHtmxError);
+  document.body.addEventListener("htmx:error", suppressExpectedFleetHtmxError);
   document.body.addEventListener("htmx:after:swap", afterFleetSwap);
   document.body.addEventListener("htmx:afterSwap", afterFleetSwap);
   document.body.addEventListener("htmx:before:swap", beforeFleetSwap);
@@ -2606,7 +2682,10 @@
     maybeLoadLiveStatus();
     if ($("#pa-fleet-root") && !liveStatusRequest) loadLiveStatus(false);
   });
-  window.addEventListener("pagehide", teardownFleetOverview);
+  window.addEventListener("pagehide", function () {
+    abortFleetPageRefresh();
+    teardownFleetOverview();
+  });
 
   document.addEventListener("close", function (event) {
     if (event.target && event.target.id === "pa-fleet-update-dialog") {
