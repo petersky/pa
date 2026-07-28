@@ -825,6 +825,9 @@ def _session_list_item(
         "requested_reasoning": configuration.get("requested", {}).get("reasoning"),
         "effective_reasoning": configuration.get("effective", {}).get("reasoning"),
         "configuration_state": configuration.get("state"),
+        "pa_mcp": runtime.connection.pa_mcp_health
+        if runtime and runtime.connection
+        else None,
         "config_json": config,
         "queue_length": len(runtime._queue) if runtime else len(queued),
         "last_seq": runtime._seq if runtime else durable.get("last_event_cursor", 0),

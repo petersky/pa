@@ -584,6 +584,20 @@ def serve(
     settings = get_settings()
     bind_host = host or settings.host
     bind_port = port or settings.port
+    # Child bridges must target this invocation's real listener, including CLI
+    # overrides, rather than an advertised fleet URL.
+    import os
+
+    rendered_owner_host = (
+        f"[{bind_host}]"
+        if ":" in bind_host and not bind_host.startswith("[")
+        else bind_host
+    )
+    if bind_host in {"0.0.0.0", ""}:
+        rendered_owner_host = "127.0.0.1"
+    elif bind_host in {"::", "[::]"}:
+        rendered_owner_host = "[::1]"
+    os.environ["PA_OWNER_API_URL"] = f"http://{rendered_owner_host}:{bind_port}"
     typer.echo(f"Starting PA on http://{bind_host}:{bind_port}")
     if settings.debug:
         typer.echo("  Debug mode enabled")

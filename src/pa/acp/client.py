@@ -23,7 +23,7 @@ from acp.schema import (
     WriteTextFileResponse,
 )
 
-from pa.acp.mcp_config import pa_mcp_servers
+from pa.acp.mcp_config import OwnerChannelError, pa_mcp_servers, probe_owner_channel
 from pa.acp.configuration import (
     ACPConfigurationError,
     SessionConfigurationRequest,
@@ -515,6 +515,11 @@ class AgentConnection:
         self.config_options: list[Any] | None = None
         self.last_usage: dict[str, Any] | None = None
         self.last_memory_candidate: bool = False
+        self.pa_mcp_health: dict[str, Any] = {
+            "state": "not_probed",
+            "last_success": None,
+            "last_failure": None,
+        }
         self._wire_lock = asyncio.Lock()
         self._wire_tasks: set[asyncio.Task[None]] = set()
         self._wire_task_limit = 1024
@@ -627,6 +632,39 @@ class AgentConnection:
         if not self.settings.agent_enabled:
             raise RuntimeError("Agent connection disabled (PA_AGENT_ENABLED=false)")
         await self._abort_connect_if_shutting_down(stage="preflight")
+        mcp = pa_mcp_servers(self.settings)
+        if mcp:
+            try:
+                owner_health = await self._offload(
+                    "acp.pa_mcp_owner_probe",
+                    probe_owner_channel,
+                    self.settings,
+                    timeout=5.0,
+                )
+            except OwnerChannelError as exc:
+                self.pa_mcp_health = {
+                    "state": "disconnected",
+                    "classification": exc.classification,
+                    "endpoint_type": exc.endpoint_kind,
+                    "last_success": None,
+                    "last_failure": datetime.now(UTC).isoformat(),
+                    "retry_state": "session_reconnect_required",
+                    "recovery": exc.recovery,
+                }
+                logger.error(
+                    "PA MCP owner channel admission failed",
+                    extra={"pa_mcp": self.pa_mcp_health},
+                )
+                raise
+            self.pa_mcp_health = {
+                **owner_health,
+                "last_success": datetime.now(UTC).isoformat(),
+                "last_failure": None,
+                "retry_state": "connected",
+            }
+            logger.info(
+                "PA MCP owner channel verified", extra={"pa_mcp": self.pa_mcp_health}
+            )
 
         if self.wire_path:
             self._wire = await self._offload(
@@ -698,8 +736,6 @@ class AgentConnection:
 
         session_cwd = cwd or str(self.settings.data_dir)
         self.session_cwd = session_cwd
-        mcp = pa_mcp_servers(self.settings)
-
         restored = False
         session_meta: dict[str, Any] = {}
         restore_method = (

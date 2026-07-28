@@ -127,6 +127,17 @@ async def async_runtime_status(request: Request) -> dict:
     )
     agent = request.app.state.ctx.services.get("instance_agent")
     runtimes = agent.list_runtimes() if agent else []
+    snapshot["pa_mcp"] = [
+        {
+            "session_id": item.session_id,
+            **(
+                item.connection.pa_mcp_health
+                if item.connection
+                else {"state": "disconnected"}
+            ),
+        }
+        for item in runtimes
+    ]
     snapshot["queues"] = {
         "agent_transcript_batches": sum(
             item._transcript_queue.qsize() for item in runtimes
