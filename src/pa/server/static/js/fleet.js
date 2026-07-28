@@ -76,8 +76,8 @@
 
   var fleetPageRefreshGeneration = 0;
   var fleetPageRefreshRequest = null;
+  var fleetPageRefreshController = null;
   var fleetPageRefreshUrl = "";
-  var fleetPageRefreshTarget = null;
 
   function isExpectedHtmxAbort(error) {
     var name = String(error && error.name || "");
@@ -90,13 +90,11 @@
 
   function abortFleetPageRefresh() {
     fleetPageRefreshGeneration += 1;
-    var target = fleetPageRefreshTarget;
+    var controller = fleetPageRefreshController;
     fleetPageRefreshRequest = null;
+    fleetPageRefreshController = null;
     fleetPageRefreshUrl = "";
-    fleetPageRefreshTarget = null;
-    if (target && window.htmx && htmx.trigger) {
-      htmx.trigger(target, "htmx:abort");
-    }
+    if (controller) controller.abort();
   }
 
   function refreshFleetPage() {
@@ -115,14 +113,40 @@
     if (fleetPageRefreshRequest) abortFleetPageRefresh();
     var generation = ++fleetPageRefreshGeneration;
     var target = document.querySelector("#app-view");
+    var controller = new AbortController();
+    var headers = {
+      Accept: "text/html",
+      "HX-Request": "true",
+      "HX-Target": "app-view",
+      "X-PA-Navigation-Generation": String(generation)
+    };
+    var csrf = document.querySelector('meta[name="csrf-token"]');
+    if (csrf && csrf.content) headers["X-CSRF-Token"] = csrf.content;
     fleetPageRefreshUrl = url;
-    fleetPageRefreshTarget = target;
-    var request = Promise.resolve(htmx.ajax("GET", url, {
-      target: target || "#app-view",
-      swap: "innerHTML",
-      pushUrl: true,
-      headers: { "X-PA-Navigation-Generation": String(generation) }
-    })).catch(function (error) {
+    fleetPageRefreshController = controller;
+    var request = fetch(url, {
+      credentials: "same-origin",
+      headers: headers,
+      signal: controller.signal
+    }).then(function (response) {
+      if (generation !== fleetPageRefreshGeneration) return null;
+      if (response.status === 204 || response.status === 304) return null;
+      if (!response.ok) {
+        var failure = new Error(response.statusText || "Fleet page refresh failed");
+        failure.status = response.status;
+        throw failure;
+      }
+      return response.text();
+    }).then(function (html) {
+      if (html === null || generation !== fleetPageRefreshGeneration) return;
+      if (!target) {
+        location.href = url;
+        return;
+      }
+      htmx.swap(target, html, { swapStyle: "innerHTML" });
+      history.pushState({}, "", url);
+      htmx.trigger(document.body, "htmx:pushedIntoHistory", { path: url });
+    }).catch(function (error) {
       if (generation !== fleetPageRefreshGeneration || isExpectedHtmxAbort(error)) return;
       console.error("Fleet page refresh failed", {
         operation: "fleet-page-refresh", url: url, generation: generation,
@@ -131,8 +155,8 @@
     }).finally(function () {
       if (generation !== fleetPageRefreshGeneration) return;
       fleetPageRefreshRequest = null;
+      fleetPageRefreshController = null;
       fleetPageRefreshUrl = "";
-      fleetPageRefreshTarget = null;
     });
     fleetPageRefreshRequest = request;
     return request;
@@ -2653,21 +2677,7 @@
     }
   }
 
-  function suppressExpectedFleetHtmxError(evt) {
-    var generation = fleetSwapGeneration(evt);
-    var xhr = evt && evt.detail && evt.detail.xhr;
-    if (!generation || generation === fleetPageRefreshGeneration ||
-        (xhr && xhr.status !== 0)) return;
-    if (evt.preventDefault) evt.preventDefault();
-    if (evt.stopImmediatePropagation) evt.stopImmediatePropagation();
-  }
-
-  document.body.addEventListener("htmx:sendError", suppressExpectedFleetHtmxError);
-  document.body.addEventListener("htmx:responseError", suppressExpectedFleetHtmxError);
-  document.body.addEventListener("htmx:error", suppressExpectedFleetHtmxError);
-  document.body.addEventListener("htmx:after:swap", afterFleetSwap);
   document.body.addEventListener("htmx:afterSwap", afterFleetSwap);
-  document.body.addEventListener("htmx:before:swap", beforeFleetSwap);
   document.body.addEventListener("htmx:beforeSwap", beforeFleetSwap);
   document.addEventListener("htmx:historyRestore", function () {
     setTimeout(initializeFleetPage, 0);

@@ -168,7 +168,7 @@ class StartupResponsivenessTests(unittest.IsolatedAsyncioTestCase):
         reconnect = script[
             script.index("function initAgentReconnect()") :
             script.index(
-                'document.body.addEventListener("htmx:config:request"',
+                'document.body.addEventListener("htmx:configRequest"',
                 script.index("function initAgentReconnect()"),
             )
         ]

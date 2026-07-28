@@ -165,13 +165,6 @@
     var target = (evt.detail && evt.detail.target) || null;
     if (target && target.id === "app-view") boot(target);
   });
-  document.body.addEventListener("htmx:after:swap", function (evt) {
-    var target =
-      (evt.detail && evt.detail.ctx && evt.detail.ctx.target) ||
-      (evt.detail && evt.detail.target) ||
-      null;
-    if (target && target.id === "app-view") boot(target);
-  });
 
   window.PALayout = { boot: boot, showSection: showSection };
 })();
