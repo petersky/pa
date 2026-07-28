@@ -2929,18 +2929,13 @@
       }
     });
   }
-  // HTMX 4 uses colon-separated event names (htmx:after:swap).
-  ["htmx:after:swap", "htmx:afterSwap"].forEach(function (evt) {
-    document.body && document.body.addEventListener(evt, function (e) {
-      const target = (e.detail && (e.detail.target || (e.detail.ctx && e.detail.ctx.target))) || e.target;
-      mountAll(target || document);
-    });
+  document.body && document.body.addEventListener("htmx:afterSwap", function (e) {
+    const target = (e.detail && e.detail.target) || e.target;
+    mountAll(target || document);
   });
-  ["htmx:before:swap", "htmx:beforeSwap"].forEach(function (evt) {
-    document.body && document.body.addEventListener(evt, function (e) {
-      let target = (e.detail && (e.detail.target || (e.detail.ctx && e.detail.ctx.target))) || e.target;
-      if (typeof target === "string") target = document.querySelector(target);
-      destroyAll(target || document, "spa-swap");
-    });
+  document.body && document.body.addEventListener("htmx:beforeSwap", function (e) {
+    let target = (e.detail && e.detail.target) || e.target;
+    if (typeof target === "string") target = document.querySelector(target);
+    destroyAll(target || document, "spa-swap");
   });
 })();

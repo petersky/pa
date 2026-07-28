@@ -547,7 +547,7 @@ class KnowledgeApiTests(unittest.TestCase):
         self.assertEqual(denied.status_code, 403)
         self.assertEqual(self.store.list_knowledge(), [])
 
-    def test_memory_markdown_rebinds_after_both_htmx_event_variants(self) -> None:
+    def test_memory_markdown_rebinds_after_supported_htmx_event(self) -> None:
         spa = (
             Path(__file__).parents[1]
             / "src"
@@ -558,7 +558,10 @@ class KnowledgeApiTests(unittest.TestCase):
             / "spa.js"
         ).read_text()
 
-        self.assertIn('["htmx:after:swap", "htmx:afterSwap"]', spa)
+        self.assertIn(
+            'document.body.addEventListener("htmx:afterSwap", handleAfterSwap)',
+            spa,
+        )
         self.assertIn("observeMarkdownMutations", spa)
         self.assertIn("renderCardMarkdown(document)", spa)
         self.assertIn("{ allowEmbeddedMedia: false }", spa)

@@ -74,9 +74,7 @@
 
   window.PAFileBrowser = { mount: mount };
   document.addEventListener("DOMContentLoaded", function () { mount(document); });
-  ["htmx:after:swap", "htmx:afterSwap"].forEach(function (name) {
-    document.body && document.body.addEventListener(name, function (event) {
-      mount(event.detail && event.detail.target || event.target || document);
-    });
+  document.body && document.body.addEventListener("htmx:afterSwap", function (event) {
+    mount(event.detail && event.detail.target || event.target || document);
   });
 })();

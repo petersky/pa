@@ -54,11 +54,9 @@
         controller.flush({ force: true });
       });
     });
-    ["htmx:before:swap", "htmx:beforeSwap"].forEach(function (name) {
-      document.addEventListener(name, function () {
-        forEachConnectedController(function (controller) {
-          controller.flush({ force: true });
-        });
+    document.addEventListener("htmx:beforeSwap", function () {
+      forEachConnectedController(function (controller) {
+        controller.flush({ force: true });
       });
     });
   }

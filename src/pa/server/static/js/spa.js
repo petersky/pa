@@ -1334,11 +1334,9 @@
     });
   }
 
-  document.body.addEventListener("htmx:config:request", function (event) {
+  document.body.addEventListener("htmx:configRequest", function (event) {
     var headers = csrfHeader();
-    var ctx = event.detail && event.detail.ctx;
-    var target = (ctx && ctx.request && ctx.request.headers) ||
-      (event.detail && event.detail.headers);
+    var target = event.detail && event.detail.headers;
     if (!target) return;
     Object.keys(headers).forEach(function (key) {
       target[key] = headers[key];
@@ -1379,30 +1377,30 @@
       document.body.dispatchEvent(new CustomEvent("boardRefresh"));
     }
   }
-  ["htmx:after:swap", "htmx:afterSwap"].forEach(function (eventName) {
-    document.body.addEventListener(eventName, handleAfterSwap);
-  });
+  document.body.addEventListener("htmx:afterSwap", handleAfterSwap);
 
-  document.body.addEventListener("htmx:after:history:update", function () {
+  function handleHistoryUpdate() {
     setActiveNav(window.location.pathname);
     updateTitle();
-  });
+  }
+  document.body.addEventListener("htmx:pushedIntoHistory", handleHistoryUpdate);
+  document.body.addEventListener("htmx:replacedInHistory", handleHistoryUpdate);
 
   document.addEventListener("htmx:historyRestore", function () {
     restoreCardFromHistory();
   });
 
-  document.body.addEventListener("htmx:response:error", function (event) {
-    var ctx = event.detail && event.detail.ctx;
+  document.body.addEventListener("htmx:responseError", function (event) {
     var source = (event.detail && event.detail.elt) ||
-      (ctx && (ctx.elt || ctx.source));
+      event.target;
     var form = source && typeof source.matches === "function"
       ? (source.matches("form") ? source : source.closest("form"))
       : null;
     var operation = form && form.dataset.operation;
     var message = "Request failed";
-    var text = ctx && ctx.text;
-    var statusText = ctx && ctx.response && ctx.response.raw && ctx.response.raw.statusText;
+    var xhr = event.detail && event.detail.xhr;
+    var text = xhr && xhr.responseText;
+    var statusText = xhr && xhr.statusText;
     if (text) {
       try {
         const data = JSON.parse(text);
