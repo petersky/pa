@@ -150,6 +150,11 @@ async def async_runtime_status(request: Request) -> dict:
     provider_gate = request.app.state.ctx.services.get("provider_action_gate")
     if provider_gate:
         snapshot["queues"]["provider_actions"] = provider_gate.snapshot()
+    from pa.acp.owner_channel import owner_channel_snapshot
+
+    snapshot["pa_mcp_owner_channel"] = owner_channel_snapshot(
+        request.app.state.ctx.settings.instance_id
+    )
     return snapshot
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import threading
 import time
 from enum import Enum
 from typing import Any
@@ -16,6 +17,27 @@ from pa.config import Settings
 
 class LocalPAServerUnavailable(RuntimeError):
     pass
+
+
+_connectivity_lock = threading.Lock()
+_next_connect_probe = 0.0
+_connect_failures = 0
+
+
+def _connection_succeeded() -> None:
+    global _connect_failures, _next_connect_probe
+    with _connectivity_lock:
+        _connect_failures = 0
+        _next_connect_probe = 0.0
+
+
+def _connection_failed() -> float:
+    global _connect_failures, _next_connect_probe
+    with _connectivity_lock:
+        _connect_failures += 1
+        delay = min(5.0, 0.25 * (2 ** min(_connect_failures - 1, 5)))
+        _next_connect_probe = time.monotonic() + delay
+        return delay
 
 
 class LocalPARequestError(LocalPAServerUnavailable):
@@ -54,8 +76,9 @@ def local_pa_url(settings: Settings) -> str:
     explicit = os.environ.get("PA_LOCAL_API_URL", "").strip()
     if explicit:
         return explicit.rstrip("/")
-    host = settings.host if settings.host not in {"0.0.0.0", "::"} else "127.0.0.1"
-    return f"http://{host}:{settings.port}"
+    from pa.acp.owner_channel import owner_endpoint
+
+    return owner_endpoint(settings).url
 
 
 def _validation_details(response: httpx.Response) -> list[dict[str, Any]] | None:
@@ -156,7 +179,18 @@ def request_local_pa(
     }
     if expected_instance_id:
         headers["X-PA-MCP-Instance-ID"] = expected_instance_id
-    deadline = time.monotonic() + 10.0
+    endpoint_type = os.environ.get("PA_LOCAL_API_ENDPOINT_TYPE", "derived")
+    with _connectivity_lock:
+        retry_at = _next_connect_probe
+    if retry_at > time.monotonic():
+        raise LocalPAServerUnavailable(
+            "PA MCP owner channel is disconnected "
+            f"(endpoint_type={endpoint_type}, "
+            f"retry_in={retry_at - time.monotonic():.2f}s). "
+            "The PA service may still be healthy; recovery probes continue "
+            "automatically. Do not write PA_DATA_DIR from the MCP process."
+        )
+    deadline = time.monotonic() + 2.0
     while True:
         try:
             response = httpx.request(
@@ -171,13 +205,27 @@ def request_local_pa(
             if allow_not_found and response.status_code == 404:
                 return None
             response.raise_for_status()
+            actual_instance_id = response.headers.get("X-PA-Instance-ID", "").strip()
+            if expected_instance_id and actual_instance_id != expected_instance_id:
+                _connection_failed()
+                raise LocalPAServerUnavailable(
+                    "PA MCP owner channel instance mismatch "
+                    f"(endpoint_type={endpoint_type}): expected "
+                    f"{expected_instance_id!r}, reached "
+                    f"{actual_instance_id or 'a server without identity'!r}."
+                )
+            _connection_succeeded()
             if response.status_code == 204:
                 return None
             return response.json()
         except httpx.ConnectError as exc:
             if time.monotonic() >= deadline:
+                delay = _connection_failed()
                 raise LocalPAServerUnavailable(
-                    "The owning PA server did not become reachable after 10 seconds. "
+                    "PA MCP owner channel is unreachable "
+                    f"(endpoint_type={endpoint_type}, retry_in={delay:.2f}s). "
+                    "The PA service may still be healthy on another interface. "
+                    "Verify the configured bind and process network namespace. "
                     "Do not write PA_DATA_DIR from the MCP process."
                 ) from exc
             time.sleep(0.1)

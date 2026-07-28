@@ -23,7 +23,6 @@ from acp.schema import (
     WriteTextFileResponse,
 )
 
-from pa.acp.mcp_config import pa_mcp_servers
 from pa.acp.configuration import (
     ACPConfigurationError,
     SessionConfigurationRequest,
@@ -35,6 +34,8 @@ from pa.acp.configuration import (
     state_current_value,
     validate_option_value,
 )
+from pa.acp.mcp_config import pa_mcp_servers
+from pa.acp.owner_channel import probe_owner_channel
 from pa.acp.providers.base import AgentProviderSpec
 from pa.acp.providers.registry import DEFAULT_PROVIDER_ID, get_provider
 from pa.acp.providers.resolve import _spawn_overrides
@@ -699,6 +700,15 @@ class AgentConnection:
         session_cwd = cwd or str(self.settings.data_dir)
         self.session_cwd = session_cwd
         mcp = pa_mcp_servers(self.settings)
+        # Fail admission before session/new or prompt delivery when the required
+        # PA MCP bridge cannot authenticate and identity-fence its sole writer.
+        if mcp:
+            await self._offload(
+                "acp.mcp_owner_probe",
+                probe_owner_channel,
+                self.settings,
+                timeout=10.0,
+            )
 
         restored = False
         session_meta: dict[str, Any] = {}

@@ -23,6 +23,7 @@ class PaMcpServersTests(unittest.TestCase):
         return {
             "PA_DATA_DIR": str(settings.data_dir),
             "PA_LOCAL_API_URL": "http://127.0.0.1:9123",
+            "PA_LOCAL_API_ENDPOINT_TYPE": "wildcard_ipv4",
             "PA_LOCAL_API_TOKEN": (
                 UserDirectory(settings.data_dir).ensure_default_user().cli_token
             ),
