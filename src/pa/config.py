@@ -73,6 +73,9 @@ class Settings(BaseSettings):
     agent_command: str | None = None
     agent_args: Annotated[list[str] | None, NoDecode] = None
     agent_enabled: bool = True
+    # Provider processes are comparatively expensive. Keep restart recovery
+    # bounded even when many sessions have durable unfinished work.
+    agent_recovery_concurrency: int = Field(default=2, ge=1, le=16)
     # Optional ACP final-fact candidates. Disabled by default; when enabled,
     # only policy-marked candidates enter pending review.
     memory_auto_capture_enabled: bool = False

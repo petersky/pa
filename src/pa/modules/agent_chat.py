@@ -126,7 +126,6 @@ def _durable_session_state(manager, session) -> dict[str, Any]:
         session.status
         not in {
             "closed",
-            "quiesced",
             RECOVERY_BLOCKED_STATUS,
         }
         and not live
@@ -140,7 +139,7 @@ def _durable_session_state(manager, session) -> dict[str, Any]:
             "live"
             if live
             else "session_closed"
-            if session.status in {"closed", "quiesced"}
+            if session.status == "closed"
             else "recovery_blocked"
             if session.status == RECOVERY_BLOCKED_STATUS
             else "provider_thread_lost"
@@ -1348,7 +1347,26 @@ async def session_prompt(request: Request, session_id: str, body: PromptBody) ->
     message = body.message.strip()
     if not message and not body.images:
         raise HTTPException(status_code=400, detail="message or image required")
-    runtime = _runtime_or_404(request, session_id)
+    runtime = None
+    durable_session = None
+    needs_recovery = False
+    try:
+        runtime = _runtime_or_404(request, session_id)
+    except HTTPException as exc:
+        detail = exc.detail if isinstance(exc.detail, dict) else {}
+        if (
+            exc.status_code != 409
+            or detail.get("code") != "session_not_live"
+            or not detail.get("recoverable")
+        ):
+            raise
+        mgr = _require_session_traffic_ready(request)
+        durable_session = await _offload(
+            mgr, "sqlite.agent_session_read", mgr.store.get_session, session_id
+        )
+        if durable_session is None:
+            raise
+        needs_recovery = True
     settings = request.app.state.ctx.settings
     principal_id = get_principal_id(request)
     user = getattr(request.state, "user", None)
@@ -1366,7 +1384,12 @@ async def session_prompt(request: Request, session_id: str, body: PromptBody) ->
     if (
         settings.auth_required is True
         and not instance_authenticated
-        and getattr(runtime.session, "principal_id", None) != principal_id
+        and getattr(
+            runtime.session if runtime is not None else durable_session,
+            "principal_id",
+            None,
+        )
+        != principal_id
         and getattr(user, "role", None) != "admin"
     ):
         raise HTTPException(
@@ -1376,6 +1399,20 @@ async def session_prompt(request: Request, session_id: str, body: PromptBody) ->
                 "message": "This principal does not own the linked agent session.",
             },
         )
+    if needs_recovery:
+        try:
+            runtime = await mgr.recover_session(session_id)
+        except (AgentSessionRecoveryError, RuntimeError) as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "session_recovery_failed",
+                    "message": str(exc),
+                    "recoverable": True,
+                    **_session_actions(session_id, recoverable=True),
+                },
+            ) from exc
+    assert runtime is not None
     if body.client_prompt_id:
         return await _submit_client_prompt(request, session_id, body, runtime, message)
     dispatch_record = None

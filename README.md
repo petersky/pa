@@ -120,6 +120,7 @@ Environment variables (prefix `PA_`):
 | `PA_AGENT_PROVIDER` | `cursor` | Default ACP provider (`cursor`, `codex`, or `openinterpreter`) |
 | `PA_AGENT_COMMAND` | _(provider default)_ | Optional spawn command override |
 | `PA_AGENT_ARGS` | _(provider default)_ | Optional spawn args override (JSON array or comma-separated) |
+| `PA_AGENT_RECOVERY_CONCURRENCY` | `2` | Maximum provider runtimes recovered concurrently at startup |
 | `PA_DEBUG` | `false` | Debug logging, hook history, dev tools |
 | `PA_DEV_TOOLS` | `false` | In-browser developer panel (auto-on with debug) |
 | `PA_LOG_LEVEL` | `INFO` | Log level (`DEBUG`, `INFO`, …) |
