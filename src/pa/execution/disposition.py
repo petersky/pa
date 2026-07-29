@@ -89,6 +89,22 @@ def extract_card_disposition(
     return disposition.model_dump(mode="json"), None
 
 
+def claims_card_disposition_contract(text: str) -> bool:
+    """Identify the contract path without treating arbitrary JSON as control."""
+    candidate = text.strip()
+    if candidate.startswith("```") and candidate.endswith("```"):
+        lines = candidate.splitlines()
+        if len(lines) >= 3 and lines[0].strip().lower() in {"```", "```json"}:
+            candidate = "\n".join(lines[1:-1]).strip()
+    try:
+        value = json.loads(candidate)
+    except json.JSONDecodeError, TypeError, ValueError:
+        return False
+    return isinstance(value, dict) and str(value.get("contract") or "").startswith(
+        "pa.card-disposition/"
+    )
+
+
 def decide_card_disposition(
     value: Any,
     *,
