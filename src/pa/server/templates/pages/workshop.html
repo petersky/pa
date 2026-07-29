@@ -1,0 +1,49 @@
+{% from "macros/layout.html" import page_layout %}
+
+{% set left %}
+<div class="panel workshop-intro">
+  <div class="panel-header"><h2>Workshop</h2></div>
+  <p class="muted small">A live floor view of canonical fleet state. Select any bay, worker, work order, or the sync rail to inspect it.</p>
+  <div class="workshop-controls">
+    <button type="button" class="ghost small active" data-workshop-view="floor" aria-pressed="true">Floor view</button>
+    <button type="button" class="ghost small" data-workshop-view="compact" aria-pressed="false">Compact list</button>
+  </div>
+  <dl class="workshop-legend small">
+    <dt><span class="workshop-mark" aria-hidden="true">●</span> Working</dt><dd>Structured active progress</dd>
+    <dt><span class="workshop-mark" aria-hidden="true">◇</span> Quiet-active</dt><dd>Live session without a supported activity signal</dd>
+    <dt><span class="workshop-mark" aria-hidden="true">△</span> Stale</dt><dd>Last-known or degraded data</dd>
+  </dl>
+</div>
+{% endset %}
+
+{% set main %}
+<div id="pa-workshop-root" class="workshop" data-realm="{{ primary_realm }}">
+  <script type="application/json" id="pa-workshop-data">{{ workshop | tojson }}</script>
+  <header class="workshop-header">
+    <div>
+      <p class="eyebrow">Fleet operations</p>
+      <h1>Floor view</h1>
+      <p class="muted">Current work, where it is running, and what needs attention.</p>
+    </div>
+    <div class="workshop-live" role="status" aria-live="polite">
+      <span class="workshop-live-mark" aria-hidden="true"></span>
+      <span data-workshop-live>Loading canonical state…</span>
+      <button type="button" class="ghost small" data-workshop-refresh>Refresh</button>
+    </div>
+  </header>
+
+  <div class="notice workshop-alert" data-workshop-alert hidden role="alert"></div>
+  <section class="workshop-sync" data-workshop-sync aria-label="Fleet synchronization status"></section>
+
+  <div class="workshop-layout">
+    <div class="workshop-scene" data-workshop-scene aria-label="Workshop floor view"></div>
+    <div class="workshop-compact" data-workshop-compact hidden aria-label="Accessible compact Workshop list"></div>
+    <aside class="panel workshop-inspector" data-workshop-inspector aria-live="polite">
+      <h2>Inspector</h2>
+      <p class="muted">Select an item on the floor for operational detail and safe links.</p>
+    </aside>
+  </div>
+</div>
+{% endset %}
+
+{{ page_layout(left, main) }}
