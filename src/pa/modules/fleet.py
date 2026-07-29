@@ -85,6 +85,7 @@ from pa.fleet.join import (
 )
 from pa.fleet.membership import MembershipStore
 from pa.fleet.overview import DIMENSIONS, build_overview, cache_for, probe_dimension
+from pa.fleet.workshop import build_workshop_snapshot
 from pa.fleet.placement import (
     PlacementCandidate,
     PlacementError,
@@ -1066,6 +1067,18 @@ def _fleet_context(request: Request) -> dict:
     }
 
 
+def _workshop_context(request: Request) -> dict:
+    ctx = request.app.state.ctx
+    fleet: FleetRegistry = ctx.require_service("fleet_registry")
+    peer_table: PeerTable = ctx.require_service("peer_table")
+    instances = list(fleet.list_instances())
+    overview = build_overview(ctx, instances, list(peer_table.all_routes()))
+    return {
+        "workshop": build_workshop_snapshot(ctx, overview),
+        "primary_realm": ctx.settings.primary_realm,
+    }
+
+
 @router.get("/fleet/readiness")
 def fleet_readiness(request: Request) -> dict:
     require_user(request)
@@ -1401,6 +1414,18 @@ def fleet_overview(request: Request) -> dict:
         )
     ]
     return build_overview(ctx, instances, routes)
+
+
+@router.get("/fleet/workshop")
+def fleet_workshop(request: Request) -> dict:
+    """Return one canonical, presentation-ready Workshop snapshot."""
+    require_user(request)
+    ctx = request.app.state.ctx
+    fleet: FleetRegistry = ctx.require_service("fleet_registry")
+    peer_table: PeerTable = ctx.require_service("peer_table")
+    instances = list(fleet.list_instances())
+    overview = build_overview(ctx, instances, list(peer_table.all_routes()))
+    return build_workshop_snapshot(ctx, overview)
 
 
 @router.get("/fleet/overview/local")
@@ -5182,6 +5207,17 @@ class FleetModule(Module):
                 template="pages/fleet.html",
                 nav_order=50,
                 context_builder=_fleet_context,
+            )
+        )
+        pages.register(
+            PageDefinition(
+                id="workshop",
+                path="/workshop",
+                label="Workshop",
+                icon="workshop",
+                template="pages/workshop.html",
+                nav_order=45,
+                context_builder=_workshop_context,
             )
         )
 
