@@ -6,20 +6,20 @@ import os
 import sys
 import time
 from dataclasses import dataclass
-from ipaddress import ip_address
-from urllib.parse import urlsplit
 
 import httpx
 from acp.schema import EnvVariable, McpServerStdio
 
 from pa.auth.users import UserDirectory
 from pa.config import Settings
+from pa.server.listeners import owner_socket_path
 
 
 @dataclass(frozen=True)
 class OwnerEndpoint:
     url: str
     kind: str
+    uds: str | None = None
 
 
 class OwnerChannelError(RuntimeError):
@@ -34,33 +34,27 @@ class OwnerChannelError(RuntimeError):
 
 
 def owner_endpoint(settings: Settings) -> OwnerEndpoint:
-    """Resolve the listener address without using an advertised/fleet URL.
-
-    ACP and its MCP bridge are child processes of PA and therefore share PA's
-    network namespace. Concrete binds are directly reachable there; wildcard
-    binds use a loopback address of the same family.
-    """
+    """Resolve the private owner channel without consulting web/fleet URLs."""
     explicit = os.environ.get("PA_OWNER_API_URL", "").strip()
     if explicit:
-        parsed = urlsplit(explicit)
-        host = parsed.hostname or ""
-        kind = "loopback" if host in {"localhost", "127.0.0.1", "::1"} else "concrete"
-        return OwnerEndpoint(explicit.rstrip("/"), kind)
-    host = settings.host.strip()
-    if host in {"0.0.0.0", ""}:
-        return OwnerEndpoint(f"http://127.0.0.1:{settings.port}", "wildcard_ipv4")
-    if host in {"::", "[::]"}:
-        return OwnerEndpoint(f"http://[::1]:{settings.port}", "wildcard_ipv6")
-    normalized = host[1:-1] if host.startswith("[") and host.endswith("]") else host
-    try:
-        address = ip_address(normalized)
-    except ValueError:
-        rendered = normalized
-        kind = "loopback" if normalized == "localhost" else "concrete_hostname"
-    else:
-        rendered = f"[{normalized}]" if address.version == 6 else normalized
-        kind = "loopback" if address.is_loopback else f"concrete_ipv{address.version}"
-    return OwnerEndpoint(f"http://{rendered}:{settings.port}", kind)
+        return OwnerEndpoint(explicit.rstrip("/"), "explicit_private_http")
+    path = os.environ.get("PA_OWNER_SOCKET", "").strip() or str(
+        owner_socket_path(settings)
+    )
+    return OwnerEndpoint("http://pa-owner", "unix", path)
+
+
+def _get_ready(endpoint: OwnerEndpoint, token: str, instance_id: str, timeout: float):
+    transport = httpx.HTTPTransport(uds=endpoint.uds) if endpoint.uds else None
+    with httpx.Client(transport=transport) as client:
+        return client.get(
+            f"{endpoint.url}/api/ready",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "X-PA-MCP-Instance-ID": instance_id,
+            },
+            timeout=timeout,
+        )
 
 
 def probe_owner_channel(settings: Settings, *, timeout: float = 4.0) -> dict[str, str]:
@@ -71,13 +65,11 @@ def probe_owner_channel(settings: Settings, *, timeout: float = 4.0) -> dict[str
     delay = 0.1
     while True:
         try:
-            response = httpx.get(
-                f"{endpoint.url}/api/ready",
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "X-PA-MCP-Instance-ID": settings.instance_id,
-                },
-                timeout=min(1.0, max(0.1, deadline - time.monotonic())),
+            response = _get_ready(
+                endpoint,
+                token,
+                settings.instance_id,
+                min(1.0, max(0.1, deadline - time.monotonic())),
             )
         except (httpx.ConnectError, httpx.TimeoutException) as exc:
             if time.monotonic() < deadline:
@@ -139,6 +131,7 @@ def pa_mcp_servers(settings: Settings) -> list[McpServerStdio]:
         "PA_DATA_DIR": str(settings.data_dir),
         "PA_LOCAL_API_URL": endpoint.url,
         "PA_LOCAL_API_ENDPOINT_TYPE": endpoint.kind,
+        **({"PA_LOCAL_API_SOCKET": endpoint.uds} if endpoint.uds else {}),
         "PA_LOCAL_API_TOKEN": cli_token,
         "PA_INSTANCE_ID": settings.instance_id,
     }

@@ -22,6 +22,7 @@ class InstanceConfig(BaseModel):
     pr_supervisor_authority_url: str = ""
     instance_url: str = ""
     host: str = ""
+    web_listeners: list[str] = Field(default_factory=list)
     subscribed_realms: list[str] = Field(default_factory=lambda: ["default"])
     zone: str = "default"
     capabilities: list[str] = Field(default_factory=list)
@@ -85,6 +86,7 @@ def merge_config_into_settings(data_dir: Path, settings_dict: dict) -> dict:
         "fleet_owner_url": loaded.fleet_owner_url,
         "pr_supervisor_authority_url": loaded.pr_supervisor_authority_url,
         "instance_url": loaded.instance_url,
+        "web_listeners": loaded.web_listeners,
         "subscribed_realms": loaded.subscribed_realms,
         "zone": loaded.zone,
         "capabilities": loaded.capabilities,

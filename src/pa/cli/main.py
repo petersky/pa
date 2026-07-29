@@ -584,21 +584,50 @@ def serve(
     settings = get_settings()
     bind_host = host or settings.host
     bind_port = port or settings.port
-    # Child bridges must target this invocation's real listener, including CLI
-    # overrides, rather than an advertised fleet URL.
+    if host:
+        settings.web_listeners = [host]
+    settings.host = bind_host
+    settings.port = bind_port
+
+    import json
     import os
 
-    rendered_owner_host = (
-        f"[{bind_host}]"
-        if ":" in bind_host and not bind_host.startswith("[")
-        else bind_host
+    from pa.server.listeners import (
+        bind_owner_socket,
+        bind_web_sockets,
+        close_sockets,
     )
-    if bind_host in {"0.0.0.0", ""}:
-        rendered_owner_host = "127.0.0.1"
-    elif bind_host in {"::", "[::]"}:
-        rendered_owner_host = "[::1]"
-    os.environ["PA_OWNER_API_URL"] = f"http://{rendered_owner_host}:{bind_port}"
-    typer.echo(f"Starting PA on http://{bind_host}:{bind_port}")
+
+    if reload:
+        raise typer.BadParameter(
+            "--reload is unavailable with supervised multi-listener startup; "
+            "use a service-manager restart loop"
+        )
+    explicit_owner_url = os.environ.get("PA_OWNER_API_URL", "").strip()
+    web_sockets, web_health = bind_web_sockets(settings)
+    if explicit_owner_url:
+        owner_socket = None
+        owner_path = None
+        all_sockets = list(web_sockets)
+        os.environ.pop("PA_OWNER_SOCKET", None)
+        typer.echo("Starting PA with explicit private HTTP owner-channel fallback")
+    else:
+        owner_socket, owner_path = bind_owner_socket(settings)
+        all_sockets = [owner_socket, *web_sockets]
+        os.environ["PA_OWNER_SOCKET"] = str(owner_path)
+        typer.echo(f"Starting PA owner channel on unix://{owner_path} (mode 0600)")
+    os.environ["PA_LISTENER_HEALTH"] = json.dumps(web_health)
+    for item in web_health:
+        typer.echo(
+            f"  Web {item['listener']}: {item['bind_state']}"
+            + (
+                f" ({item['failure_classification']})"
+                if item["failure_classification"]
+                else ""
+            )
+        )
+    if not web_sockets:
+        typer.echo("  No web listeners bound; private owner API remains available")
     if settings.debug:
         typer.echo("  Debug mode enabled")
     server_options = {
@@ -608,17 +637,15 @@ def serve(
         "log_level": "debug" if settings.debug else "info",
         "timeout_graceful_shutdown": 10,
     }
-    if reload:
-        # Uvicorn owns the reloader's child server. The hard grace deadline still
-        # applies; production service runs use ShutdownAwareServer below.
-        uvicorn.run("pa.server.app:create_app", reload=True, **server_options)
-        return
 
     from pa.server.shutdown import ShutdownAwareServer, reset_shutdown_event
 
     reset_shutdown_event()
     config = uvicorn.Config("pa.server.app:create_app", **server_options)
-    ShutdownAwareServer(config).run()
+    try:
+        ShutdownAwareServer(config).run(sockets=all_sockets)
+    finally:
+        close_sockets(all_sockets, owner_path)
 
 
 @app.command()

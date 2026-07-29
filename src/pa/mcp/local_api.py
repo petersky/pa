@@ -186,15 +186,25 @@ def request_local_pa(
     deadline = now + 2.0
     while True:
         try:
-            response = httpx.request(
-                method,
-                f"{local_pa_url(settings)}{path}",
-                params=_normalized_query_params(params),
-                json=json,
-                files=files,
-                headers=headers,
-                timeout=min(2.0, max(0.1, deadline - time.monotonic())),
-            )
+            socket_path = os.environ.get("PA_LOCAL_API_SOCKET", "").strip()
+            request_args = {
+                "params": _normalized_query_params(params),
+                "json": json,
+                "files": files,
+                "headers": headers,
+                "timeout": min(2.0, max(0.1, deadline - time.monotonic())),
+            }
+            if socket_path:
+                with httpx.Client(
+                    transport=httpx.HTTPTransport(uds=socket_path)
+                ) as client:
+                    response = client.request(
+                        method, f"{local_pa_url(settings)}{path}", **request_args
+                    )
+            else:
+                response = httpx.request(
+                    method, f"{local_pa_url(settings)}{path}", **request_args
+                )
             if allow_not_found and response.status_code == 404:
                 return None
             response.raise_for_status()

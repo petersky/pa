@@ -54,6 +54,7 @@ class FieldSpec:
 SERVICE_KEYS = frozenset(
     {
         "host",
+        "web_listeners",
         "instance_name",
         "release_track",
         "fleet_id",
@@ -75,7 +76,7 @@ SERVICE_KEYS = frozenset(
 )
 
 # Changing bind host requires a process restart to take effect.
-RESTART_KEYS = frozenset({"host"})
+RESTART_KEYS = frozenset({"host", "web_listeners"})
 
 FIELD_SPECS: dict[str, FieldSpec] = {
     "instance_id": FieldSpec(
@@ -124,6 +125,12 @@ FIELD_SPECS: dict[str, FieldSpec] = {
         "host",
         "optional_str",
         "Server bind address (e.g. 127.0.0.1 or 0.0.0.0)",
+    ),
+    "web_listeners": FieldSpec(
+        "web_listeners",
+        "list_str",
+        "Explicit web binds (HOST or HOST:PORT; bracket IPv6 with a port)",
+        list_ops=True,
     ),
     "subscribed_realms": FieldSpec(
         "subscribed_realms",
@@ -588,6 +595,7 @@ def refresh_after_mutate(data_dir: Path, result: MutateResult) -> bool:
         settings = Settings(data_dir=data_dir)
         cfg = result.config
         settings.host = cfg.host or "127.0.0.1"
+        settings.web_listeners = list(cfg.web_listeners)
         settings.instance_url = cfg.instance_url
         settings.instance_name = cfg.instance_name
         settings.release_track = cfg.release_track

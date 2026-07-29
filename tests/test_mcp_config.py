@@ -15,6 +15,7 @@ from pa.acp.mcp_config import (
 )
 from pa.auth.users import UserDirectory
 from pa.config import Settings
+from pa.server.listeners import owner_socket_path
 
 
 class PaMcpServersTests(unittest.TestCase):
@@ -30,8 +31,9 @@ class PaMcpServersTests(unittest.TestCase):
     def _owner_env(self, settings: Settings) -> dict[str, str]:
         return {
             "PA_DATA_DIR": str(settings.data_dir),
-            "PA_LOCAL_API_URL": "http://127.0.0.1:9123",
-            "PA_LOCAL_API_ENDPOINT_TYPE": "loopback",
+            "PA_LOCAL_API_URL": "http://pa-owner",
+            "PA_LOCAL_API_ENDPOINT_TYPE": "unix",
+            "PA_LOCAL_API_SOCKET": str(owner_socket_path(settings)),
             "PA_LOCAL_API_TOKEN": (
                 UserDirectory(settings.data_dir).ensure_default_user().cli_token
             ),
@@ -52,13 +54,11 @@ class PaMcpServersTests(unittest.TestCase):
                 os.environ, {**browser_env, "PA_OWNER_API_URL": ""}, clear=False
             ):
                 server = pa_mcp_servers(settings)[0]
+                expected = {**self._owner_env(settings), **browser_env}
 
             self.assertEqual(
                 {item.name: item.value for item in server.env},
-                {
-                    **self._owner_env(settings),
-                    **browser_env,
-                },
+                expected,
             )
             self.assertEqual(server.command, sys.executable)
             self.assertEqual(server.args, ["-m", "pa", "mcp"])
@@ -68,10 +68,11 @@ class PaMcpServersTests(unittest.TestCase):
             settings = self._settings(tmp)
             with patch.dict(os.environ, {}, clear=True):
                 server = pa_mcp_servers(settings)[0]
+                expected = self._owner_env(settings)
 
             self.assertEqual(
                 {item.name: item.value for item in server.env},
-                self._owner_env(settings),
+                expected,
             )
 
     def test_forwards_session_id_without_attached_browser(self):
@@ -81,30 +82,29 @@ class PaMcpServersTests(unittest.TestCase):
                 os.environ, {"PA_BROWSER_SESSION_ID": "session-1"}, clear=True
             ):
                 server = pa_mcp_servers(settings)[0]
+                expected = {
+                    **self._owner_env(settings),
+                    "PA_BROWSER_SESSION_ID": "session-1",
+                }
 
             self.assertEqual(
                 {item.name: item.value for item in server.env},
-                {
-                    **self._owner_env(settings),
-                    "PA_BROWSER_SESSION_ID": "session-1",
-                },
+                expected,
             )
 
-    def test_owner_endpoint_follows_concrete_and_wildcard_binds(self):
+    def test_owner_endpoint_is_independent_of_web_binds(self):
         with tempfile.TemporaryDirectory() as tmp:
             settings = self._settings(tmp)
-            cases = {
-                "0.0.0.0": ("http://127.0.0.1:9123", "wildcard_ipv4"),
-                "::": ("http://[::1]:9123", "wildcard_ipv6"),
-                "100.78.2.112": ("http://100.78.2.112:9123", "concrete_ipv4"),
-                "2001:db8::10": ("http://[2001:db8::10]:9123", "concrete_ipv6"),
-                "localhost": ("http://localhost:9123", "loopback"),
-            }
-            for host, expected in cases.items():
+            paths = set()
+            for host in ("0.0.0.0", "::", "100.78.2.112", "localhost"):
                 settings.host = host
                 with patch.dict(os.environ, {}, clear=True):
                     endpoint = owner_endpoint(settings)
-                self.assertEqual((endpoint.url, endpoint.kind), expected)
+                self.assertEqual(
+                    (endpoint.url, endpoint.kind), ("http://pa-owner", "unix")
+                )
+                paths.add(endpoint.uds)
+            self.assertEqual(len(paths), 1)
 
     def test_probe_classifies_owner_failures(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -125,7 +125,7 @@ class PaMcpServersTests(unittest.TestCase):
                     status, headers=headers, request=request, json={}
                 )
                 with (
-                    patch("pa.acp.mcp_config.httpx.get", return_value=response),
+                    patch("pa.acp.mcp_config._get_ready", return_value=response),
                     self.assertRaises(OwnerChannelError) as raised,
                 ):
                     probe_owner_channel(settings, timeout=0)
@@ -137,14 +137,12 @@ class PaMcpServersTests(unittest.TestCase):
             response = httpx.Response(
                 200,
                 headers={"X-PA-Instance-ID": "owner-instance"},
-                request=httpx.Request("GET", "http://127.0.0.1:9123/api/ready"),
+                request=httpx.Request("GET", "http://pa-owner/api/ready"),
                 json={"status": "ready"},
             )
             with (
                 patch.dict(os.environ, {"PA_OWNER_API_URL": ""}, clear=False),
-                patch("pa.acp.mcp_config.httpx.get", return_value=response),
+                patch("pa.acp.mcp_config._get_ready", return_value=response),
             ):
                 result = probe_owner_channel(settings, timeout=0)
-            self.assertEqual(
-                result, {"state": "connected", "endpoint_type": "loopback"}
-            )
+            self.assertEqual(result, {"state": "connected", "endpoint_type": "unix"})

@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     # resolved relative to data_dir so isolated/test instances remain isolated.
     workspace_root: Path | None = None
     host: str = "127.0.0.1"
+    # Explicit web binds; empty preserves the legacy single host bind.
+    # Entries are HOST or HOST:PORT; bracket IPv6 when specifying a port.
+    web_listeners: Annotated[list[str], NoDecode] = Field(default_factory=list)
     port: int = 8080
     peers: Annotated[list[str], NoDecode] = Field(default_factory=list)
 
@@ -101,7 +104,12 @@ class Settings(BaseSettings):
     install_method: str = "uv-tool"
 
     @field_validator(
-        "peers", "subscribed_realms", "capabilities", "agent_args", mode="before"
+        "peers",
+        "subscribed_realms",
+        "capabilities",
+        "agent_args",
+        "web_listeners",
+        mode="before",
     )
     @classmethod
     def _parse_env_list(cls, value: object) -> object:
