@@ -314,7 +314,12 @@ def agent_status(request: Request) -> dict:
             "message": "Agent not started",
         }
     progress = agent.progress()
-    return progress.model_dump(mode="json")
+    result = progress.model_dump(mode="json")
+    lifecycle = request.app.state.ctx.services.get("session_lifecycle")
+    result["session_lifecycle"] = {
+        "metrics": dict(lifecycle.metrics) if lifecycle else {},
+    }
+    return result
 
 
 @router.get("/agent/quiesce")
