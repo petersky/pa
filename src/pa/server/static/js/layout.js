@@ -139,6 +139,30 @@
     });
   }
 
+  function initProjectFilters(root) {
+    var scope = root || document;
+    scope.querySelectorAll("[data-projects-filter]").forEach(function (input) {
+      if (input.dataset.filterReady) return;
+      input.dataset.filterReady = "1";
+      var listName = input.getAttribute("data-projects-filter");
+      var list = scope.querySelector('[data-projects-list="' + listName + '"]');
+      if (!list) return;
+
+      input.addEventListener("input", function () {
+        var query = input.value.trim().toLowerCase();
+        var visible = 0;
+        list.querySelectorAll("[data-projects-name]").forEach(function (item) {
+          var matches = !query ||
+            (item.getAttribute("data-projects-name") || "").indexOf(query) !== -1;
+          item.hidden = !matches;
+          if (matches) visible += 1;
+        });
+        var empty = list.querySelector(".projects-filter-empty");
+        if (empty) empty.hidden = visible !== 0;
+      });
+    });
+  }
+
   document.addEventListener("click", function (e) {
     var link = e.target.closest("[data-section-link]");
     if (!link) return;
@@ -151,6 +175,7 @@
   function boot(root) {
     initResize(root);
     initSections(root);
+    initProjectFilters(root);
   }
 
   if (document.readyState === "loading") {
