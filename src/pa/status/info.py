@@ -6,6 +6,10 @@ import json
 import os
 
 from pa import __version__
+from pa.acp.environment import (
+    private_provider_environment_names,
+    sanitize_provider_environment,
+)
 from pa.cli import service as svc
 from pa.core.context import AppContext
 from pa.install.metadata import load_install_metadata
@@ -32,9 +36,33 @@ def build_status_snapshot(ctx: AppContext, *, module_count: int = 0) -> dict:
         web_listeners = json.loads(os.environ.get("PA_LISTENER_HEALTH", "[]"))
     except ValueError:
         web_listeners = []
-    owner_kind = (
-        "explicit_private_http" if os.environ.get("PA_OWNER_API_URL") else "unix"
-    )
+    from pa.server.listeners import owner_channel_health
+
+    bridge_health: dict = {
+        "state": "not_tested",
+        "classification": "no_live_session_probe",
+        "last_success": None,
+        "last_failure": None,
+        "retry_state": "probe_on_session_admission",
+    }
+    manager = ctx.services.get("instance_agent")
+    if manager is not None:
+        observed = []
+        try:
+            for runtime in manager.list_runtimes():
+                connection = getattr(runtime, "connection", None)
+                health = getattr(connection, "pa_mcp_health", None)
+                if health:
+                    observed.append(dict(health))
+        except Exception:
+            observed = []
+        failures = [item for item in observed if item.get("state") != "connected"]
+        if failures:
+            bridge_health = failures[-1]
+        elif observed:
+            bridge_health = observed[-1]
+
+    provider_environment = sanitize_provider_environment(os.environ)
 
     return {
         "version": __version__,
@@ -48,11 +76,14 @@ def build_status_snapshot(ctx: AppContext, *, module_count: int = 0) -> dict:
         "host": settings.host,
         "port": settings.port,
         "web_listeners": web_listeners,
-        "owner_channel": {
-            "endpoint_type": owner_kind,
-            "state": "bound",
-            "failure_classification": None,
-            "retry_state": "none",
+        "owner_channel": owner_channel_health(settings),
+        "mcp_bridge": bridge_health,
+        "provider_execution_environment": {
+            "sanitized": True,
+            "private_variables_present": private_provider_environment_names(
+                provider_environment
+            ),
+            "private_variables_removed": private_provider_environment_names(os.environ),
         },
         "binary": str(pa_bin) if pa_bin else None,
         "service_binary": str(service_bin) if service_bin else None,

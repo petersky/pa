@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -39,6 +40,15 @@ class ServiceStatus:
     plist_path: Path
     log_path: Path
     backend: str = "none"
+
+
+@dataclass(frozen=True)
+class LoadedServiceDefinition:
+    """Non-secret process definition reported by the active service manager."""
+
+    backend: str
+    command: str | None
+    environment: dict[str, str]
 
 
 @dataclass(frozen=True)
@@ -288,6 +298,72 @@ def _run_systemd_run(*args: str) -> subprocess.CompletedProcess[str]:
         check=False,
         timeout=30,
     )
+
+
+def _launchd_definition(output: str) -> LoadedServiceDefinition:
+    environment: dict[str, str] = {}
+    command: str | None = None
+    in_environment = False
+    for line in output.splitlines():
+        stripped = line.strip()
+        if stripped == "environment = {":
+            in_environment = True
+            continue
+        if in_environment and stripped == "}":
+            in_environment = False
+            continue
+        if in_environment and "=>" in stripped:
+            key, value = stripped.split("=>", 1)
+            environment[key.strip()] = value.strip().strip('"')
+            continue
+        if command is None and stripped.startswith("program = "):
+            command = stripped.removeprefix("program = ").strip().strip('"')
+    return LoadedServiceDefinition("launchd", command, environment)
+
+
+def _systemd_environment(output: str) -> dict[str, str]:
+    environment: dict[str, str] = {}
+    try:
+        entries = shlex.split(output)
+    except ValueError:
+        return environment
+    for entry in entries:
+        key, separator, value = entry.partition("=")
+        if separator and key:
+            environment[key] = value
+    return environment
+
+
+def loaded_service_definition() -> LoadedServiceDefinition | None:
+    """Read the command and environment held by the active service manager."""
+    if _is_darwin():
+        result = _run_launchctl("print", _domain_target())
+        if result.returncode != 0 or "Could not find service" in result.stdout:
+            return None
+        return _launchd_definition(result.stdout)
+    if _is_linux():
+        environment = _run_systemctl(
+            "show", SYSTEMD_UNIT, "--property=Environment", "--value"
+        )
+        command = _run_systemctl(
+            "show", SYSTEMD_UNIT, "--property=ExecStart", "--value"
+        )
+        if environment.returncode != 0 or command.returncode != 0:
+            return None
+        command_text = command.stdout.strip()
+        match = re.search(r"(?:^|[;{ ])path=([^ ;}]+)", command_text)
+        executable = match.group(1) if match else None
+        if executable is None and command_text:
+            try:
+                executable = shlex.split(command_text)[0]
+            except ValueError:
+                executable = None
+        return LoadedServiceDefinition(
+            "systemd",
+            executable,
+            _systemd_environment(environment.stdout),
+        )
+    return None
 
 
 def _restart_diagnostic(

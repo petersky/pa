@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from pa.acp.configuration import SessionConfigurationRequest
 from pa.acp.providers.base import AgentProviderSpec
 from pa.config import Settings
 from pa.domain.models import AgentSession, ProjectRepository, Repository
@@ -745,6 +746,46 @@ def test_agent_session_provisions_before_provider_start_and_persists_context(
     assert Path(runtime.session.cwd).is_dir()
     assert spec.env["PA_EXECUTION_CONTEXT"]
     start.assert_awaited_once()
+
+
+def test_agent_full_access_mode_is_applied_before_provider_and_mcp_startup(
+    tmp_path: Path,
+) -> None:
+    workspace_manager, _, _ = manager_for(tmp_path)
+    manager = AgentSessionManager(workspace_manager.settings, workspace_manager.store)
+    spec = AgentProviderSpec(id="codex", display_name="Codex", command="codex-acp")
+    resolved = SimpleNamespace(provider_id="codex", spec=spec, source="override")
+    requested = SessionConfigurationRequest.from_values(mode_id="agent-full-access")
+
+    async def run():
+        with (
+            patch(
+                "pa.instance.agent_session.resolve_agent_provider",
+                return_value=resolved,
+            ),
+            patch.object(AgentSessionRuntime, "start", new=AsyncMock()) as start,
+        ):
+            runtime = await manager.create_session(
+                label="card:card-1:dispatch:dispatch-1",
+                card_id="card-1",
+                project_id="project-1",
+                dispatch_id="dispatch-1",
+                provider_override="codex",
+                initial_configuration=requested,
+            )
+        return runtime, start
+
+    runtime, start = asyncio.run(run())
+
+    context = runtime.session.config_json["execution_context"]
+    assert runtime.session.mode_id == "agent-full-access"
+    assert spec.env["INITIAL_AGENT_MODE"] == "agent-full-access"
+    assert context["provider_context"]["sandbox"] == "danger-full-access"
+    assert context["provider_context"]["approval_policy"] == "never"
+    assert context["approval_policy"] == "never"
+    assert (
+        start.await_args.kwargs["initial_configuration"].mode_id == "agent-full-access"
+    )
 
 
 def test_remote_provider_environment_keeps_full_ids_while_slugs_stay_short(

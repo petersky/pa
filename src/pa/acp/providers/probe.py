@@ -7,19 +7,20 @@ import logging
 import os
 from typing import Any
 
+from pa.acp.environment import sanitize_provider_environment
 from pa.acp.providers.base import AgentProviderSpec
 
 logger = logging.getLogger(__name__)
 
 
-def probe_acp_initialize(spec: AgentProviderSpec, *, timeout: float = 25.0) -> dict[str, Any]:
+def probe_acp_initialize(
+    spec: AgentProviderSpec, *, timeout: float = 25.0
+) -> dict[str, Any]:
     """Spawn the provider briefly and call initialize; return capability summary."""
     try:
         return asyncio.run(_probe_async(spec, timeout=timeout))
     except Exception as exc:
-        logger.warning(
-            "ACP probe failed for %s (%s)", spec.id, type(exc).__name__
-        )
+        logger.warning("ACP probe failed for %s (%s)", spec.id, type(exc).__name__)
         return {
             "ok": False,
             "error": f"ACP initialize probe failed ({type(exc).__name__})",
@@ -41,7 +42,7 @@ async def _probe_async(spec: AgentProviderSpec, *, timeout: float) -> dict[str, 
     resolved = resolve_executable(command)
     if resolved:
         command = str(resolved)
-    child_env = {**os.environ, **spec.env}
+    child_env = sanitize_provider_environment(os.environ, spec.env)
     client = PAClient(store=_ProbeStore())  # type: ignore[arg-type]
     ctx = spawn_agent(
         client,

@@ -34,13 +34,21 @@ from pa.acp.configuration import (
     state_current_value,
     validate_option_value,
 )
-from pa.acp.mcp_config import OwnerChannelError, pa_mcp_servers, probe_owner_channel
+from pa.acp.environment import sanitize_provider_environment
+from pa.acp.mcp_config import (
+    McpHandshakeError,
+    OwnerChannelError,
+    pa_mcp_servers,
+    probe_owner_channel,
+    probe_pa_mcp_stdio,
+)
 from pa.acp.providers.base import AgentProviderSpec
 from pa.acp.providers.registry import DEFAULT_PROVIDER_ID, get_provider
 from pa.acp.providers.resolve import _spawn_overrides
 from pa.acp.sandbox_health import sandbox_health_registry
 from pa.acp.transport import spawn_agent
 from pa.config import Settings
+from pa.core.logging import redact_log_text
 from pa.domain.models import AgentSession
 from pa.domain.store import Store
 from pa.instance.quiesce import ImageAttachment
@@ -258,6 +266,8 @@ class PAClient(Client):
         self.auto_approve = auto_approve
         self.async_runtime = async_runtime
         self._updates: list[Any] = []
+        self._mcp_startup_failures: dict[str, str] = {}
+        self._mcp_startup_events: dict[str, asyncio.Event] = {}
 
     async def _offload(
         self, operation: str, call, *args, timeout: float | None = None, **kwargs
@@ -360,6 +370,19 @@ class PAClient(Client):
 
     async def session_update(self, session_id, update, **kwargs: Any) -> None:
         self._updates.append(update)
+        normalized = normalize_session_update(update)
+        if (
+            normalized.get("type") == "tool_call"
+            and normalized.get("tool_call_id") == "mcp_startup.pa"
+            and normalized.get("status") == "failed"
+        ):
+            detail = redact_log_text(
+                json.dumps(normalized.get("content") or [], default=str)
+            )
+            self._mcp_startup_failures[str(session_id)] = detail[:1000]
+            event = self._mcp_startup_events.get(str(session_id))
+            if event is not None:
+                event.set()
         self._wire(
             "in",
             {
@@ -374,6 +397,23 @@ class PAClient(Client):
             result = self.on_update(session_id, update)
             if inspect.isawaitable(result):
                 await result
+
+    async def wait_for_pa_mcp_startup_failure(
+        self, session_id: str, *, timeout: float
+    ) -> str | None:
+        """Observe provider-reported PA MCP startup failure for a bounded window."""
+        key = str(session_id)
+        failure = self._mcp_startup_failures.get(key)
+        if failure is not None:
+            return failure
+        event = self._mcp_startup_events.setdefault(key, asyncio.Event())
+        try:
+            await asyncio.wait_for(event.wait(), timeout=timeout)
+        except TimeoutError:
+            return None
+        finally:
+            self._mcp_startup_events.pop(key, None)
+        return self._mcp_startup_failures.get(key)
 
     async def read_text_file(
         self,
@@ -633,7 +673,10 @@ class AgentConnection:
         if not self.settings.agent_enabled:
             raise RuntimeError("Agent connection disabled (PA_AGENT_ENABLED=false)")
         await self._abort_connect_if_shutting_down(stage="preflight")
-        mcp = pa_mcp_servers(self.settings)
+        mcp = pa_mcp_servers(
+            self.settings,
+            session_environment=self.extra_env,
+        )
         if mcp:
             try:
                 owner_health = await self._offload(
@@ -659,12 +702,47 @@ class AgentConnection:
                 raise
             self.pa_mcp_health = {
                 **owner_health,
+                "server_probe": owner_health,
                 "last_success": datetime.now(UTC).isoformat(),
                 "last_failure": None,
-                "retry_state": "connected",
+                "retry_state": "bridge_probe_pending",
             }
             logger.info(
                 "PA MCP owner channel verified", extra={"pa_mcp": self.pa_mcp_health}
+            )
+            try:
+                bridge_health = await self._offload(
+                    "acp.pa_mcp_stdio_probe",
+                    probe_pa_mcp_stdio,
+                    self.settings,
+                    timeout=10.0,
+                    session_environment=self.extra_env,
+                )
+            except McpHandshakeError as exc:
+                self.pa_mcp_health = {
+                    **self.pa_mcp_health,
+                    "state": "disconnected",
+                    "classification": f"mcp_{exc.classification}",
+                    "bridge_probe": {
+                        "state": "disconnected",
+                        "classification": exc.classification,
+                    },
+                    "last_failure": datetime.now(UTC).isoformat(),
+                    "retry_state": "session_reconnect_required",
+                    "recovery": exc.recovery,
+                }
+                logger.error(
+                    "PA MCP stdio bridge admission failed",
+                    extra={"pa_mcp": self.pa_mcp_health},
+                )
+                raise
+            self.pa_mcp_health.update(
+                state="connected",
+                classification=None,
+                bridge_probe=bridge_health,
+                last_success=datetime.now(UTC).isoformat(),
+                last_failure=None,
+                retry_state="connected",
             )
 
         if self.wire_path:
@@ -696,7 +774,11 @@ class AgentConnection:
         # Pass a per-process environment. Mutating os.environ around an await
         # races concurrent session spawns and can leak one principal's provider
         # settings into another process.
-        child_env = {**os.environ, **(spec.env or {}), **self.extra_env}
+        child_env = sanitize_provider_environment(
+            os.environ,
+            spec.env,
+            self.extra_env,
+        )
         self._ctx = spawn_agent(
             self._client,
             command,
@@ -851,12 +933,38 @@ class AgentConnection:
                     status="connected",
                 )
 
+        assert self.session is not None
+        if mcp and spec.id == "codex" and self.session.external_session_id:
+            provider_failure = await self._client.wait_for_pa_mcp_startup_failure(
+                self.session.external_session_id,
+                timeout=2.0,
+            )
+            if provider_failure:
+                self.pa_mcp_health.update(
+                    state="disconnected",
+                    classification="mcp_provider_context_startup_failed",
+                    bridge_probe={
+                        "state": "disconnected",
+                        "classification": "provider_context_startup_failed",
+                    },
+                    last_failure=datetime.now(UTC).isoformat(),
+                    retry_state="session_reconnect_required",
+                )
+                raise McpHandshakeError(
+                    "provider_context_startup_failed",
+                    "Correct the provider sandbox/mode or owner endpoint, then reconnect the session.",
+                    provider_failure,
+                )
+            self.pa_mcp_health["provider_context_probe"] = {
+                "state": "usable",
+                "classification": "no_startup_failure",
+            }
+
         sandbox_health_registry.success(
             spec.id,
             "workspace-write",
             metadata={"stage": "session_admitted", "session_level": True},
         )
-        assert self.session is not None
         # Prefer the cwd actually used for resume/load (may come from session/list).
         self.session.cwd = self.session_cwd or session_cwd
         if title is not None:

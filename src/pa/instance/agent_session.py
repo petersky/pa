@@ -49,6 +49,7 @@ from pa.repository.workspace import (
     WorkspaceManager,
     WorkspaceProvisioningError,
     context_environment,
+    provider_execution_policy,
 )
 
 if TYPE_CHECKING:
@@ -1653,6 +1654,7 @@ class AgentSessionManager:
         *,
         requested_cwd: str | None,
         provider_id: str,
+        mode_id: str | None = None,
     ) -> dict[str, str]:
         """Provision or recover the durable workspace before spawning a provider."""
         prior_config = dict(session.config_json or {})
@@ -1782,6 +1784,12 @@ class AgentSessionManager:
                     timeout=120.0,
                 )
             context = workspace.execution_context(self.settings, provider_id)
+            execution_policy = provider_execution_policy(provider_id, mode_id)
+            if execution_policy:
+                context["approval_policy"] = execution_policy["approval_policy"]
+                provider_context = dict(context.get("provider_context") or {})
+                provider_context.update(execution_policy)
+                context["provider_context"] = provider_context
             if authority_instance:
                 context["authority_instance"] = authority_instance
             if prior_attachments:
@@ -2526,6 +2534,7 @@ class AgentSessionManager:
             session,
             requested_cwd=snap.cwd,
             provider_id=session.agent_name,
+            mode_id=session.mode_id,
         )
         if provider_spec is not None:
             provider_spec.env.update(workspace_env)
@@ -2694,6 +2703,19 @@ class AgentSessionManager:
             "agent.provider_resolve", resolve_provider_spec, timeout=30.0
         )
 
+        requested_mode = (
+            initial_configuration.mode_id
+            if initial_configuration is not None
+            else existing.mode_id
+            if existing
+            else None
+        )
+        if provider_id == "codex" and requested_mode:
+            # codex-acp chooses its sandbox before ACP initialize/session-new.
+            # Applying the mode later is too late and can silently start a
+            # workspace-write provider for an agent-full-access dispatch.
+            resolved_spec.env["INITIAL_AGENT_MODE"] = requested_mode
+
         session = existing or AgentSession(
             id=session_id or str(uuid4()),
             agent_name=provider_id,
@@ -2750,6 +2772,8 @@ class AgentSessionManager:
                     session.agent_name = provider_id
         else:
             session.agent_name = provider_id
+        if requested_mode:
+            session.mode_id = requested_mode
         if execution_context_seed:
             config = dict(session.config_json or {})
             execution = dict(config.get("execution_context") or {})
@@ -2760,6 +2784,7 @@ class AgentSessionManager:
             session,
             requested_cwd=cwd or (existing.cwd if existing else None),
             provider_id=provider_id,
+            mode_id=requested_mode,
         )
         effective_agent_env = dict(agent_env or {})
         effective_agent_env.update(workspace_env)

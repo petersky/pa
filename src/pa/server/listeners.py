@@ -2,19 +2,33 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import logging
 import os
 import socket
 import stat
 import tempfile
+import threading
+from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 from pa.config import Settings
 
 log = logging.getLogger(__name__)
 _UNIX_PATH_MAX = 103
+_owner_state_lock = threading.Lock()
+_owner_socket_registration: OwnerSocketRegistration | None = None
+_owner_health: dict[str, str | None] = {
+    "endpoint_type": "unix",
+    "state": "not_bound",
+    "last_success": None,
+    "last_failure": None,
+    "failure_classification": "not_bound",
+    "retry_state": "restart_required",
+}
 
 
 @dataclass(frozen=True)
@@ -26,6 +40,134 @@ class ListenerSpec:
     def label(self) -> str:
         host = f"[{self.host}]" if ":" in self.host else self.host
         return f"{host}:{self.port}"
+
+
+@dataclass(frozen=True)
+class OwnerSocketRegistration:
+    path: Path
+    device: int
+    inode: int
+    listener: socket.socket
+
+
+def _now() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+def _path_identity(path: Path) -> tuple[int, int, int] | None:
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        return None
+    return info.st_dev, info.st_ino, info.st_mode
+
+
+def _same_socket(
+    path: Path, *, device: int, inode: int, require_owner: bool = True
+) -> bool:
+    identity = _path_identity(path)
+    if identity is None:
+        return False
+    current_device, current_inode, mode = identity
+    if not stat.S_ISSOCK(mode):
+        return False
+    if require_owner:
+        try:
+            if path.lstat().st_uid != os.getuid():
+                return False
+        except OSError:
+            return False
+    return current_device == device and current_inode == inode
+
+
+def _set_owner_health(**values: str | None) -> None:
+    with _owner_state_lock:
+        _owner_health.update(values)
+
+
+def record_owner_probe(
+    *,
+    endpoint_type: str,
+    success: bool,
+    classification: str | None = None,
+    retry_state: str | None = None,
+) -> None:
+    """Maintain owner-channel probe evidence for status snapshots."""
+    if success:
+        _set_owner_health(
+            endpoint_type=endpoint_type,
+            state="connected",
+            last_success=_now(),
+            failure_classification=None,
+            retry_state=retry_state or "none",
+        )
+    else:
+        _set_owner_health(
+            endpoint_type=endpoint_type,
+            state="disconnected",
+            last_failure=_now(),
+            failure_classification=classification or "probe_failed",
+            retry_state=retry_state or "retry_required",
+        )
+
+
+def owner_channel_health(settings: Settings) -> dict[str, str | None]:
+    """Return live listener/path health, not merely historical bind success."""
+    explicit = os.environ.get("PA_OWNER_API_URL", "").strip()
+    with _owner_state_lock:
+        health = dict(_owner_health)
+        registration = _owner_socket_registration
+    if explicit:
+        previously_explicit = health.get("endpoint_type") == "explicit_private_http"
+        health["endpoint_type"] = "explicit_private_http"
+        if not previously_explicit:
+            health.update(
+                state="not_probed",
+                failure_classification="not_probed",
+                retry_state="probe_required",
+            )
+        return health
+
+    health["endpoint_type"] = "unix"
+    path = owner_socket_path(settings)
+    if registration is None or registration.path != path:
+        health.update(
+            state="unverified",
+            failure_classification="listener_not_owned_by_process",
+            retry_state="restart_required",
+        )
+        return health
+    if registration.listener.fileno() < 0:
+        health.update(
+            state="disconnected",
+            last_failure=_now(),
+            failure_classification="listener_closed",
+            retry_state="restart_required",
+        )
+        return health
+    identity = _path_identity(path)
+    if identity is None:
+        health.update(
+            state="disconnected",
+            last_failure=_now(),
+            failure_classification="socket_path_missing",
+            retry_state="restart_required",
+        )
+        return health
+    if not _same_socket(path, device=registration.device, inode=registration.inode):
+        health.update(
+            state="disconnected",
+            last_failure=_now(),
+            failure_classification="socket_identity_changed",
+            retry_state="restart_required",
+        )
+        return health
+    health.update(
+        state="bound",
+        failure_classification=None,
+        retry_state="none",
+    )
+    return health
 
 
 def parse_listener(value: str, default_port: int) -> ListenerSpec:
@@ -60,14 +202,17 @@ def web_listener_specs(settings: Settings) -> list[ListenerSpec]:
     return specs
 
 
-def owner_socket_path(settings: Settings) -> Path:
-    explicit = os.environ.get("PA_OWNER_SOCKET", "").strip()
+def owner_socket_path(
+    settings: Settings, environment: Mapping[str, str] | None = None
+) -> Path:
+    environment = os.environ if environment is None else environment
+    explicit = environment.get("PA_OWNER_SOCKET", "").strip()
     if explicit:
         path = Path(explicit)
     else:
-        runtime = os.environ.get("PA_RUNTIME_DIR", "").strip()
+        runtime = environment.get("PA_RUNTIME_DIR", "").strip()
         if not runtime:
-            xdg = os.environ.get("XDG_RUNTIME_DIR", "").strip()
+            xdg = environment.get("XDG_RUNTIME_DIR", "").strip()
             runtime = (
                 str(Path(xdg) / "pa")
                 if xdg
@@ -84,6 +229,7 @@ def owner_socket_path(settings: Settings) -> Path:
 
 
 def bind_owner_socket(settings: Settings) -> tuple[socket.socket, Path]:
+    global _owner_socket_registration
     if not hasattr(socket, "AF_UNIX"):
         raise RuntimeError(
             "Unix-domain owner channel is unsupported; configure PA_OWNER_API_URL "
@@ -100,23 +246,56 @@ def bind_owner_socket(settings: Settings) -> tuple[socket.socket, Path]:
         try:
             probe.settimeout(0.15)
             probe.connect(str(path))
-        except OSError:
+        except socket.timeout as exc:
+            raise RuntimeError(
+                f"owner socket probe timed out; refusing stale cleanup: {path}"
+            ) from exc
+        except OSError as exc:
+            if exc.errno != errno.ECONNREFUSED:
+                raise RuntimeError(
+                    "owner socket could not be safely classified as stale "
+                    f"({type(exc).__name__}, errno={exc.errno}); refusing cleanup: {path}"
+                ) from exc
+            if not _same_socket(path, device=info.st_dev, inode=info.st_ino):
+                raise RuntimeError(
+                    f"owner socket identity changed during stale probe: {path}"
+                ) from exc
             path.unlink()
         else:
             raise RuntimeError(f"owner socket is already active: {path}")
         finally:
             probe.close()
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    registration: OwnerSocketRegistration | None = None
     try:
         sock.bind(str(path))
+        bound = path.lstat()
+        registration = OwnerSocketRegistration(
+            path=path,
+            device=bound.st_dev,
+            inode=bound.st_ino,
+            listener=sock,
+        )
         os.chmod(path, 0o600)
         sock.listen(socket.SOMAXCONN)
         sock.setblocking(False)
     except BaseException:
         sock.close()
-        if path.exists() and stat.S_ISSOCK(path.lstat().st_mode):
+        if registration and _same_socket(
+            path, device=registration.device, inode=registration.inode
+        ):
             path.unlink()
         raise
+    with _owner_state_lock:
+        _owner_socket_registration = registration
+        _owner_health.update(
+            endpoint_type="unix",
+            state="bound",
+            last_success=_now(),
+            last_failure=None,
+            failure_classification=None,
+            retry_state="none",
+        )
     return sock, path
 
 
@@ -180,12 +359,27 @@ def bind_web_sockets(settings: Settings) -> tuple[list[socket.socket], list[dict
 
 
 def close_sockets(sockets: list[socket.socket], owner_path: Path | None) -> None:
+    global _owner_socket_registration
     for sock in sockets:
         sock.close()
     if owner_path is None:
         return
+    with _owner_state_lock:
+        registration = _owner_socket_registration
+        if registration and registration.path == owner_path:
+            _owner_socket_registration = None
     try:
-        if owner_path.exists() and stat.S_ISSOCK(owner_path.lstat().st_mode):
+        if registration and _same_socket(
+            owner_path,
+            device=registration.device,
+            inode=registration.inode,
+        ):
             owner_path.unlink()
     except OSError:
         log.warning("Could not remove PA owner socket %s", owner_path)
+    _set_owner_health(
+        state="closed",
+        last_failure=_now(),
+        failure_classification="listener_closed",
+        retry_state="restart_required",
+    )

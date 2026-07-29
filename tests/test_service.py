@@ -71,6 +71,30 @@ class InstallPlistTests(unittest.TestCase):
         self.assertIn("<key>KeepAlive</key>\n    <true/>", rendered)
         self.assertIn("<key>ExitTimeOut</key>\n    <integer>300</integer>", rendered)
 
+    def test_loaded_launchd_definition_preserves_runtime_owner_environment(
+        self,
+    ) -> None:
+        definition = service._launchd_definition(
+            """
+            program = /Users/test/.local/bin/pa
+            environment = {
+                PA_DATA_DIR => /Users/test/.pa
+                PA_RUNTIME_DIR => /private/tmp/pa-runtime
+                PA_OWNER_SOCKET => /private/tmp/pa-runtime/owner.sock
+            }
+            """
+        )
+
+        self.assertEqual(definition.command, "/Users/test/.local/bin/pa")
+        self.assertEqual(
+            definition.environment["PA_OWNER_SOCKET"],
+            "/private/tmp/pa-runtime/owner.sock",
+        )
+        self.assertEqual(
+            definition.environment["PA_RUNTIME_DIR"],
+            "/private/tmp/pa-runtime",
+        )
+
     def test_in_service_systemd_restart_uses_detached_transient_unit(self) -> None:
         accepted = MagicMock(returncode=0, stderr="", stdout="queued")
         progress = MagicMock()
