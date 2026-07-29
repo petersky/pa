@@ -54,7 +54,13 @@ def _projects_context(request: Request) -> dict:
     store = get_store()
     realm = _active_realm(request)
     project_id = request.query_params.get("project")
+    repository_id = request.query_params.get("repository")
     project = store.get_project(project_id, realm_id=realm) if project_id else None
+    selected_repository = (
+        store.get_repository(repository_id, realm_id=realm)
+        if repository_id
+        else None
+    )
     cards = (
         store.list_cards_for_project(project_id, realm_id=realm) if project_id else []
     )
@@ -117,6 +123,8 @@ def _projects_context(request: Request) -> dict:
             and repository.status == RepositoryStatus.ACTIVE
         ],
         "project": project,
+        "selected_repository": selected_repository,
+        "projects_view": request.query_params.get("view", "projects"),
         "cards": cards,
         "card_projects": {card.id: project for card in cards},
         "card_sessions": card_sessions,

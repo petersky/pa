@@ -727,7 +727,7 @@ class RepositoryRouteTests(unittest.TestCase):
                     ["body", "url"],
                 )
 
-                page = client.get("/projects")
+                page = client.get("/projects?view=repos")
                 self.assertIn('data-operation="Add repository"', page.text)
 
             reset_store()
@@ -946,7 +946,7 @@ class RepositoryRouteTests(unittest.TestCase):
 
                 page = client.get(f"/projects?realm=default&project={project_id}")
                 self.assertEqual(page.status_code, 200, page.text)
-                self.assertIn("Repository catalog", page.text)
+                self.assertIn('data-projects-filter="projects"', page.text)
                 self.assertIn("Linked repositories", page.text)
                 self.assertIn(
                     f"/projects/{project_id}/repositories/{repository_id}/unlink",
@@ -956,7 +956,23 @@ class RepositoryRouteTests(unittest.TestCase):
                     f"/projects/repositories/{repository_id}/checkout",
                     page.text,
                 )
-                self.assertIn("Provider metadata", page.text)
+                repositories_page = client.get(
+                    f"/projects?realm=default&view=repos&repository={repository_id}"
+                )
+                self.assertEqual(
+                    repositories_page.status_code, 200, repositories_page.text
+                )
+                self.assertIn('aria-current="page">Repos</a>', repositories_page.text)
+                self.assertIn(
+                    'data-projects-filter="repositories"', repositories_page.text
+                )
+                self.assertIn("+ New Repo", repositories_page.text)
+                self.assertIn("Save repository", repositories_page.text)
+                self.assertIn("Provider metadata", repositories_page.text)
+                self.assertIn(
+                    f"view=repos&repository={repository_id}",
+                    repositories_page.text,
+                )
 
                 update_response = client.post(
                     f"/projects/repositories/{repository_id}?realm=default&project={project_id}",
