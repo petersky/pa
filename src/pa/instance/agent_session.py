@@ -152,6 +152,8 @@ class AgentSessionRuntime:
         self._turn_started_at: datetime | None = None
         self._turn_agent_text: list[str] = []
         self._turn_final_text: list[str] = []
+        self._runtime_observed_at: datetime = datetime.now(UTC)
+        self._connection_generation = 0
 
     async def _offload(
         self, operation: str, call, *args, timeout: float | None = None, **kwargs
@@ -248,6 +250,7 @@ class AgentSessionRuntime:
     def _append_transcript(
         self, event_type: str, payload: dict[str, Any]
     ) -> dict[str, Any]:
+        self._runtime_observed_at = datetime.now(UTC)
         self._seq += 1
         te = TranscriptEvent(
             session_id=self.session_id,
@@ -490,6 +493,8 @@ class AgentSessionRuntime:
         provider_id = self.session.agent_name or DEFAULT_PROVIDER_ID
         if provider_id in {"instance", ""}:
             provider_id = DEFAULT_PROVIDER_ID
+        self._connection_generation += 1
+        self._runtime_observed_at = datetime.now(UTC)
         self.connection = AgentConnection(
             self.settings,
             self.store,
