@@ -453,7 +453,8 @@ def test_reconcile_closed_standalone_session_preserves_unpushed_work(
     blocked = manager.get(linked.repository.id, "session-1")
     assert blocked is not None
     assert blocked.state == "cleanup_blocked"
-    assert blocked.error == "worktree has unpushed commits"
+    assert "unique commits require merged PR evidence" in blocked.error
+    assert blocked.cleanup_evidence["unique_commits"]
     assert worktree.exists()
 
 
@@ -507,6 +508,125 @@ def test_cleanup_refreshes_remote_refs_before_classifying_commits(
     assert manager.collect_garbage()["cleaned"] == 1
     assert manager.metrics()["cleanup_fetches"] == 1
     assert not worktree.exists()
+
+
+def _terminal_watch(lease, head: str, merge_sha: str, *, status: str = "merged"):
+    return SimpleNamespace(
+        id="watch-1",
+        card_id=lease.card_id,
+        repository="example/pa",
+        pr_number=42,
+        originating_session_id=lease.session_id,
+        authority_instance_id="authority-1",
+        head_sha=head,
+        status=status,
+        state={
+            "state": status,
+            "head_sha": head,
+            "confirmed_head_sha": head,
+            "merge_commit_sha": merge_sha,
+            "supervisor_state": "retired_after_merge",
+        },
+        updated_at=datetime.now(UTC),
+    )
+
+
+@pytest.mark.parametrize("merge_method", ["squash", "rebase"])
+def test_deleted_pr_branch_is_cleaned_after_content_equivalence(
+    tmp_path: Path, merge_method: str
+) -> None:
+    manager, _, linked = manager_for(tmp_path)
+    lease = manager.provision_repository(
+        linked, project_id="project-1", session_id="session-1", card_id="card-1"
+    )
+    worktree = Path(lease.worktree_path)
+    git(worktree, "config", "user.email", "test@pa.invalid")
+    git(worktree, "config", "user.name", "PA Test")
+    (worktree / "README.md").write_text("first\n")
+    git(worktree, "add", "README.md")
+    git(worktree, "commit", "-m", "first")
+    if merge_method == "rebase":
+        (worktree / "feature.txt").write_text("second\n")
+        git(worktree, "add", "feature.txt")
+        git(worktree, "commit", "-m", "second")
+    head = git(worktree, "rev-parse", "HEAD").stdout.strip()
+    git(worktree, "push", "origin", f"HEAD:refs/heads/{lease.branch}")
+
+    integrator = tmp_path / "integrator"
+    subprocess.run(["git", "clone", str(linked.repository.url), str(integrator)], check=True)
+    git(integrator, "config", "user.email", "test@pa.invalid")
+    git(integrator, "config", "user.name", "PA Test")
+    (integrator / "main-only.txt").write_text("concurrent\n")
+    git(integrator, "add", "main-only.txt")
+    git(integrator, "commit", "-m", "concurrent main change")
+    if merge_method == "squash":
+        git(integrator, "merge", "--squash", f"origin/{lease.branch}")
+        git(integrator, "commit", "-m", "squash feature")
+    else:
+        commits = git(
+            worktree, "rev-list", "--reverse", f"{lease.base_sha}..{head}"
+        ).stdout.splitlines()
+        git(integrator, "fetch", "origin", lease.branch)
+        for commit in commits:
+            git(integrator, "cherry-pick", commit)
+    merge_sha = git(integrator, "rev-parse", "HEAD").stdout.strip()
+    git(integrator, "push", "origin", "main")
+    git(integrator, "push", "origin", "--delete", lease.branch)
+
+    manager.set_pr_watch_provider(
+        lambda **_: [_terminal_watch(lease, head, merge_sha)]
+    )
+    manager.mark_card_completed("card-1", merged=True)
+    manager.expire_session("session-1")
+
+    result = manager.collect_garbage()
+    cleaned = manager.get(linked.repository.id, "session-1")
+    assert result["cleaned"] == 1
+    assert cleaned is not None
+    assert cleaned.cleanup_decision == "safe_non_ancestor"
+    assert cleaned.cleanup_evidence["merge_method"] == merge_method
+    assert cleaned.cleanup_evidence["remote_branch_deleted"] is True
+    assert not worktree.exists()
+    assert not worktree.parent.exists()
+    assert (
+        git(
+            Path(lease.cache_path),
+            "show-ref",
+            "--verify",
+            f"refs/heads/{lease.branch}",
+            check=False,
+        ).returncode
+        != 0
+    )
+
+
+def test_closed_unmerged_pr_does_not_authorize_unique_commit_cleanup(
+    tmp_path: Path,
+) -> None:
+    manager, _, linked = manager_for(tmp_path)
+    lease = manager.provision_repository(
+        linked, project_id="project-1", session_id="session-1", card_id="card-1"
+    )
+    worktree = Path(lease.worktree_path)
+    git(worktree, "config", "user.email", "test@pa.invalid")
+    git(worktree, "config", "user.name", "PA Test")
+    (worktree / "README.md").write_text("unique\n")
+    git(worktree, "add", "README.md")
+    git(worktree, "commit", "-m", "unique")
+    head = git(worktree, "rev-parse", "HEAD").stdout.strip()
+    manager.set_pr_watch_provider(
+        lambda **_: [_terminal_watch(lease, head, head, status="closed")]
+    )
+    manager.mark_card_completed("card-1", merged=True)
+    manager.expire_session("session-1")
+
+    result = manager.collect_garbage()
+    blocked = manager.get(linked.repository.id, "session-1")
+    assert result["missing_evidence"] == 1
+    assert blocked is not None
+    assert blocked.state == "cleanup_blocked"
+    assert blocked.cleanup_evidence["unique_commits"] == [head]
+    assert worktree.exists()
 
 
 def test_active_session_renewal_extends_lease(tmp_path: Path) -> None:

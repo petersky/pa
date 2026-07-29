@@ -20,7 +20,7 @@ import tempfile
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Iterator, Literal
+from typing import Any, Callable, Iterator, Literal
 from urllib.parse import urlsplit, urlunsplit
 
 from pydantic import BaseModel, Field, field_validator
@@ -89,6 +89,8 @@ class WorkspaceLease(BaseModel):
     untracked: int = 0
     completed: bool = False
     merged: bool = False
+    cleanup_decision: str | None = None
+    cleanup_evidence: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     expires_at: datetime
@@ -213,6 +215,7 @@ class WorkspaceManager:
         self.dependency_root = self.root / "dependencies"
         self.lock_root = self.root / ".locks"
         self.db_path = self.root / "workspace_leases.db"
+        self._pr_watch_provider: Callable[..., list[Any]] | None = None
         for path in (
             self.cache_root,
             self.worktree_root,
@@ -290,6 +293,25 @@ class WorkspaceManager:
                     ON workspace_leases(expires_at, state);
                 """
             )
+            columns = {
+                row["name"]
+                for row in conn.execute(
+                    "PRAGMA table_info(workspace_leases)"
+                ).fetchall()
+            }
+            if "cleanup_decision" not in columns:
+                conn.execute(
+                    "ALTER TABLE workspace_leases ADD COLUMN cleanup_decision TEXT"
+                )
+            if "cleanup_evidence" not in columns:
+                conn.execute(
+                    "ALTER TABLE workspace_leases "
+                    "ADD COLUMN cleanup_evidence TEXT NOT NULL DEFAULT '{}'"
+                )
+
+    def set_pr_watch_provider(self, provider: Callable[..., list[Any]]) -> None:
+        """Attach the local durable PR-watch reader used for cleanup proof."""
+        self._pr_watch_provider = provider
 
     @staticmethod
     def _slug(value: str, *, limit: int = 32) -> str:
@@ -396,24 +418,34 @@ class WorkspaceManager:
 
     def _save(self, lease: WorkspaceLease) -> WorkspaceLease:
         data = lease.model_dump(mode="json")
+        data["cleanup_evidence"] = json.dumps(
+            data["cleanup_evidence"], sort_keys=True, separators=(",", ":")
+        )
         with self._connect() as conn:
             conn.execute(
                 """INSERT OR REPLACE INTO workspace_leases
                 (id, repository_id, repository_url, card_id, session_id, project_id,
                  cache_path, worktree_path, branch, base_sha, fencing_token, state,
                  stage, error, dirty, untracked, completed, merged, created_at,
-                 updated_at, expires_at)
+                 updated_at, expires_at, cleanup_decision, cleanup_evidence)
                 VALUES (:id,:repository_id,:repository_url,:card_id,:session_id,:project_id,
                         :cache_path,:worktree_path,:branch,:base_sha,:fencing_token,:state,
                         :stage,:error,:dirty,:untracked,:completed,:merged,:created_at,
-                        :updated_at,:expires_at)""",
+                        :updated_at,:expires_at,:cleanup_decision,:cleanup_evidence)""",
                 data,
             )
         return lease
 
     @staticmethod
     def _row(row: sqlite3.Row) -> WorkspaceLease:
-        return WorkspaceLease.model_validate(dict(row))
+        data = dict(row)
+        evidence = data.get("cleanup_evidence")
+        if isinstance(evidence, str):
+            try:
+                data["cleanup_evidence"] = json.loads(evidence)
+            except ValueError:
+                data["cleanup_evidence"] = {"invalid_record": evidence[:200]}
+        return WorkspaceLease.model_validate(data)
 
     def get(self, repository_id: str, session_id: str) -> WorkspaceLease | None:
         with self._connect() as conn:
@@ -1157,7 +1189,13 @@ class WorkspaceManager:
     ) -> dict[str, int]:
         now = now or datetime.now(UTC)
         active_session_ids = active_session_ids or set()
-        result = {"cleaned": 0, "blocked": 0, "retained": 0}
+        result = {
+            "cleaned": 0,
+            "blocked": 0,
+            "missing_evidence": 0,
+            "transient_retry": 0,
+            "retained": 0,
+        }
         candidates: dict[str, list[WorkspaceLease]] = {}
         for lease in self.list():
             if lease.state == "cleaned":
@@ -1176,10 +1214,23 @@ class WorkspaceManager:
                 refresh_error = self._refresh_origin_for_cleanup(Path(cache_path))
                 for lease in leases:
                     if refresh_error:
-                        self._block_cleanup(lease, refresh_error)
+                        self._block_cleanup(
+                            lease, refresh_error, decision="transient_retry"
+                        )
                         cleaned = False
+                        result["transient_retry"] += 1
                     else:
                         cleaned = self._cleanup_lease_locked(lease)
+                        if (
+                            not cleaned
+                            and lease.cleanup_decision == "missing_evidence"
+                        ):
+                            result["missing_evidence"] += 1
+                        elif (
+                            not cleaned
+                            and lease.cleanup_decision == "transient_retry"
+                        ):
+                            result["transient_retry"] += 1
                     key = "cleaned" if cleaned else "blocked"
                     result[key] += 1
                     self._increment_metric(
@@ -1207,12 +1258,150 @@ class WorkspaceManager:
         except Exception as exc:
             return f"could not refresh origin before cleanup: {str(exc)[:800]}"
 
-    def _block_cleanup(self, lease: WorkspaceLease, error: str) -> None:
+    def _block_cleanup(
+        self,
+        lease: WorkspaceLease,
+        error: str,
+        *,
+        decision: str = "safety_block",
+        evidence: dict[str, Any] | None = None,
+    ) -> None:
         lease.state = "cleanup_blocked"
         lease.stage = "cleanup"
         lease.error = error[:1000]
+        lease.cleanup_decision = decision
+        lease.cleanup_evidence = evidence or {}
         lease.updated_at = datetime.now(UTC)
         self._save(lease)
+        self._increment_metric(f"cleanup_{decision}")
+
+    def _terminal_pr_evidence(self, lease: WorkspaceLease) -> dict[str, Any] | None:
+        if not self._pr_watch_provider or not lease.card_id:
+            return None
+        try:
+            watches = self._pr_watch_provider(
+                card_id=lease.card_id, include_retired=True
+            )
+        except Exception as exc:
+            raise WorkspaceProvisioningError(
+                f"durable PR evidence is temporarily unavailable: {exc}"
+            ) from exc
+        parsed_repository = urlsplit(lease.repository_url)
+        expected_repository = (
+            parsed_repository.path.strip("/").removesuffix(".git").lower()
+            if parsed_repository.hostname
+            and parsed_repository.hostname.lower() == "github.com"
+            else None
+        )
+        for watch in sorted(watches, key=lambda item: item.updated_at, reverse=True):
+            state = watch.state or {}
+            head = str(state.get("head_sha") or watch.head_sha or "")
+            confirmed = str(state.get("confirmed_head_sha") or "")
+            merge_sha = str(state.get("merge_commit_sha") or "")
+            if (
+                str(getattr(watch.status, "value", watch.status)) == "merged"
+                and (
+                    expected_repository is None
+                    or watch.repository.lower() == expected_repository
+                )
+                and watch.originating_session_id == lease.session_id
+                and head
+                and confirmed == head
+                and merge_sha
+                and watch.authority_instance_id
+                and state.get("supervisor_state") == "retired_after_merge"
+            ):
+                return {
+                    "repository": watch.repository,
+                    "pr_number": watch.pr_number,
+                    "watch_id": watch.id,
+                    "watched_head_sha": head,
+                    "confirmed_head_sha": confirmed,
+                    "merge_commit_sha": merge_sha,
+                    "terminal_state": "merged",
+                    "authority_instance_id": watch.authority_instance_id,
+                    "authority_acknowledged": True,
+                }
+        return None
+
+    def _changed_paths(self, cache: Path, start: str, end: str) -> dict[str, str]:
+        output = self._git(
+            "-C", str(cache), "diff", "--no-renames", "--name-status", start, end
+        ).stdout
+        changes: dict[str, str] = {}
+        for line in output.splitlines():
+            status, _, path = line.partition("\t")
+            if path:
+                changes[path] = status[:1]
+        return changes
+
+    def _content_equivalence(
+        self, lease: WorkspaceLease, evidence: dict[str, Any]
+    ) -> tuple[bool, dict[str, Any]]:
+        cache = Path(lease.cache_path)
+        head = evidence["watched_head_sha"]
+        merge_sha = evidence["merge_commit_sha"]
+        branch_head = self._git(
+            "-C", str(cache), "rev-parse", lease.branch
+        ).stdout.strip()
+        if branch_head != head:
+            return False, {
+                **evidence,
+                "proof": "watched head does not match the local branch tip",
+                "local_branch_head": branch_head,
+            }
+        if self._git("-C", str(cache), "cat-file", "-e", f"{head}^{{commit}}", check=False).returncode:
+            return False, {**evidence, "proof": "missing watched head object"}
+        if self._git("-C", str(cache), "cat-file", "-e", f"{merge_sha}^{{commit}}", check=False).returncode:
+            return False, {**evidence, "proof": "missing merge commit object"}
+        source_changes = self._changed_paths(cache, lease.base_sha, head)
+        commit_count = int(
+            self._git(
+                "-C", str(cache), "rev-list", "--count", f"{lease.base_sha}..{head}"
+            ).stdout.strip()
+            or "0"
+        )
+        candidates = [("squash", f"{merge_sha}^")]
+        if commit_count > 0:
+            candidates.append(("rebase", f"{merge_sha}~{commit_count}"))
+        for method, target_base in candidates:
+            if self._git(
+                "-C", str(cache), "cat-file", "-e", f"{target_base}^{{commit}}",
+                check=False,
+            ).returncode:
+                continue
+            target_changes = self._changed_paths(cache, target_base, merge_sha)
+            if target_changes != source_changes:
+                continue
+            blobs_match = True
+            for path, status in source_changes.items():
+                if status == "D":
+                    continue
+                source_blob = self._git(
+                    "-C", str(cache), "rev-parse", f"{head}:{path}"
+                ).stdout.strip()
+                target_blob = self._git(
+                    "-C", str(cache), "rev-parse", f"{merge_sha}:{path}"
+                ).stdout.strip()
+                if source_blob != target_blob:
+                    blobs_match = False
+                    break
+            if blobs_match:
+                return True, {
+                    **evidence,
+                    "merge_method": method,
+                    "proof": "changed-path status and resulting blobs are equivalent",
+                    "source_base_sha": lease.base_sha,
+                    "target_base": target_base,
+                    "changed_paths": sorted(source_changes),
+                }
+        return False, {
+            **evidence,
+            "merge_method": "squash_or_rebase",
+            "proof": "content equivalence did not match",
+            "source_base_sha": lease.base_sha,
+            "changed_paths": sorted(source_changes),
+        }
 
     def _cleanup_lease_locked(self, lease: WorkspaceLease) -> bool:
         worktree = Path(lease.worktree_path)
@@ -1233,21 +1422,69 @@ class WorkspaceManager:
                     "--remotes=origin",
                 ).stdout.strip()
                 if unpushed:
-                    raise WorkspaceProvisioningError("worktree has unpushed commits")
+                    evidence = self._terminal_pr_evidence(lease)
+                    if not evidence:
+                        commits = unpushed.splitlines()
+                        self._block_cleanup(
+                            lease,
+                            "unique commits require merged PR evidence: "
+                            + ", ".join(commits[:12]),
+                            decision="missing_evidence",
+                            evidence={"unique_commits": commits},
+                        )
+                        return False
+                    evidence["remote_branch_deleted"] = bool(
+                        self._git(
+                            "-C",
+                            str(cache),
+                            "show-ref",
+                            "--verify",
+                            f"refs/remotes/origin/{lease.branch}",
+                            check=False,
+                        ).returncode
+                    )
+                    equivalent, proof = self._content_equivalence(lease, evidence)
+                    if not equivalent:
+                        proof["unique_commits"] = unpushed.splitlines()
+                        self._block_cleanup(
+                            lease,
+                            "unique commits are not proven integrated: "
+                            + ", ".join(unpushed.splitlines()[:12]),
+                            evidence=proof,
+                        )
+                        return False
+                    lease.cleanup_decision = "safe_non_ancestor"
+                    lease.cleanup_evidence = proof
+                else:
+                    lease.cleanup_decision = "safe_remote_ancestry"
+                    lease.cleanup_evidence = {
+                        "proof": "branch has no commits outside refreshed origin refs"
+                    }
                 self._git("-C", str(cache), "worktree", "remove", str(worktree))
+                for empty_parent in (worktree.parent, worktree.parent.parent):
+                    try:
+                        empty_parent.rmdir()
+                    except OSError:
+                        break
             self._git("-C", str(cache), "branch", "-D", lease.branch, check=False)
             lease.state = "cleaned"
             lease.stage = "cleaned"
             lease.error = None
             lease.updated_at = datetime.now(UTC)
             self._save(lease)
+            self._increment_metric("cleanup_success")
             return True
         except Exception as exc:
-            lease.state = "cleanup_blocked"
-            lease.stage = "cleanup"
-            lease.error = str(exc)[:1000]
-            lease.updated_at = datetime.now(UTC)
-            self._save(lease)
+            error = str(exc)
+            self._block_cleanup(
+                lease,
+                error,
+                decision=(
+                    "transient_retry"
+                    if error.startswith("durable PR evidence is temporarily unavailable")
+                    else "safety_block"
+                ),
+            )
             return False
 
 

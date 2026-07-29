@@ -416,6 +416,8 @@ class PRSupervisor:
         self.workspace_manager = workspace_manager or getattr(
             agent_manager, "workspace_manager", None
         )
+        if self.workspace_manager:
+            self.workspace_manager.set_pr_watch_provider(self.store.list_watches)
         self.dispatch_store = dispatch_store
         self.dispatcher = dispatcher or ExecutorDispatcher(
             settings,
