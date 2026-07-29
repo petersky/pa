@@ -531,7 +531,7 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
         raise HTTPException(
             status_code=409,
             detail={
-                "code": "stale_target_card",
+                "code": "target_sync_conflict",
                 "card_id": card_id,
                 "target_version": existing.updated_at.isoformat(),
                 "authority_version": body.card_version,
@@ -2857,9 +2857,141 @@ async def _transfer_missing_attachments(
                 raise HTTPException(status_code=response.status_code, detail=detail)
 
 
-async def _assert_dispatch_sync_health(request: Request, realm_id: str) -> None:
-    """Never choose an arbitrary realm head for remote work."""
+async def _assert_dispatch_sync_health(
+    request: Request,
+    realm_id: str,
+    target_instance_id: str | None = None,
+) -> dict[str, Any] | None:
+    """Validate authority state and the selected target without fleet-wide liveness."""
     settings = request.app.state.ctx.settings
+    if target_instance_id:
+        ctx = request.app.state.ctx
+        log = ctx.require_service("event_log")
+        durable_head = await _offload_request(
+            request, "filesystem.sync_head_read", log.get_head, realm_id
+        )
+        projection_head = await _offload_request(
+            request,
+            "sqlite.projection_head_read",
+            ctx.store.get_projection_head,
+            realm_id,
+        )
+        if durable_head != projection_head:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "authority_projection_stale",
+                    "message": "Dispatch blocked until the authority projection matches its durable realm head.",
+                    "realm_id": realm_id,
+                    "durable_head": durable_head,
+                    "projection_head": projection_head,
+                    "recoverable": True,
+                    "recovery_url": f"/fleet?section=sync&realm={quote(realm_id)}",
+                },
+            )
+        target = _fleet_instance_or_404(request, target_instance_id)
+        target_url = target.url.rstrip("/")
+        peer_urls = list(
+            dict.fromkeys([target_url, *(url.rstrip("/") for url in settings.peers)])
+        )
+        headers = _peer_headers(request)
+
+        async def read_peer_head(
+            client: httpx.AsyncClient, peer_url: str
+        ) -> dict[str, Any]:
+            try:
+                response = await _fleet_http(
+                    request,
+                    "http.fleet_sync_head",
+                    client.get(
+                        f"{peer_url.rstrip('/')}/api/sync/refs",
+                        params={"realm": realm_id},
+                        headers=headers,
+                        timeout=5.0,
+                    ),
+                    timeout=5.0,
+                )
+                response.raise_for_status()
+                refs = await _response_json(request, response)
+                head = next(
+                    (
+                        item.get("head_hash")
+                        for item in refs
+                        if item.get("realm_id") == realm_id
+                    ),
+                    None,
+                )
+                return {
+                    "url": peer_url,
+                    "status": "reachable" if head else "missing_head",
+                    "head": head,
+                }
+            except (httpx.HTTPError, TimeoutError) as exc:
+                return {
+                    "url": peer_url,
+                    "status": "unavailable",
+                    "head": None,
+                    "error": str(exc),
+                }
+            except ValueError as exc:
+                return {
+                    "url": peer_url,
+                    "status": "invalid_response",
+                    "head": None,
+                    "error": str(exc),
+                }
+
+        async with _borrow_fleet_client(request, timeout=5.0) as client:
+            observations = await asyncio.gather(
+                *(read_peer_head(client, url) for url in peer_urls)
+            )
+        target_observation = next(
+            item for item in observations if item["url"] == target_url
+        )
+        if target_observation["status"] != "reachable":
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "target_unavailable",
+                    "message": "The selected execution target did not report an authenticated realm head.",
+                    "realm_id": realm_id,
+                    "target_instance_id": target_instance_id,
+                    "target": target_observation,
+                    "recoverable": True,
+                },
+            )
+        if target_observation["head"] != durable_head:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "target_sync_conflict",
+                    "message": "The selected target does not share the authority realm head.",
+                    "realm_id": realm_id,
+                    "authority_head": durable_head,
+                    "target_head": target_observation["head"],
+                    "target_instance_id": target_instance_id,
+                    "recoverable": True,
+                    "recovery_url": f"/fleet?section=sync&realm={quote(realm_id)}",
+                },
+            )
+        degraded = [
+            item
+            for item in observations
+            if item["url"] != target_url
+            and (item["status"] != "reachable" or item.get("head") != durable_head)
+        ]
+        return {
+            "code": "unrelated_peers_degraded" if degraded else "scoped_sync_healthy",
+            "realm_id": realm_id,
+            "authority_head": durable_head,
+            "projection_head": projection_head,
+            "target_instance_id": target_instance_id,
+            "target_head": target_observation["head"],
+            "degraded_peers": degraded,
+            "safe_scoped_dispatch": True,
+            "checked_at": datetime.now(UTC).isoformat(),
+        }
+
     if not settings.peers:
         return
     engine = request.app.state.ctx.services.get("sync_engine")
@@ -3032,7 +3164,11 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
     )
     card = None
     if record.card_id:
-        await _assert_dispatch_sync_health(request, record.realm_id)
+        sync_evidence = await _assert_dispatch_sync_health(
+            request, record.realm_id, record.target_instance_id
+        )
+        if isinstance(sync_evidence, dict):
+            record.sync_evidence = sync_evidence
         card = await _offload_ctx(
             ctx,
             "sqlite.card_read",
@@ -3105,6 +3241,29 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
         )
         materialized = await _peer_dispatch_json(
             request, record.target_instance_id, materialize_payload
+        )
+    if record.card_id and (
+        materialized.get("dispatch_id") != record.dispatch_id
+        or materialized.get("card_id") != record.card_id
+        or materialized.get("card_version") != record.card_version
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "target_materialization_rejected",
+                "message": "The target did not acknowledge the exact authoritative dispatch snapshot.",
+                "expected": {
+                    "dispatch_id": record.dispatch_id,
+                    "card_id": record.card_id,
+                    "card_version": record.card_version,
+                },
+                "acknowledged": {
+                    "dispatch_id": materialized.get("dispatch_id"),
+                    "card_id": materialized.get("card_id"),
+                    "card_version": materialized.get("card_version"),
+                },
+                "recoverable": True,
+            },
         )
     if not materialized.get("resolvable") or (
         manifest and not (materialized.get("attachment_evidence") or {}).get("verified")

@@ -605,6 +605,14 @@
         ? dispatch.events[dispatch.events.length - 1].message : "";
       var error = dispatch.last_error
         ? '<p class="status status-blocked small">' + escapeHtml(dispatch.last_error) + "</p>" : "";
+      var syncEvidence = dispatch.sync_evidence || {};
+      var degradedPeers = syncEvidence.degraded_peers || [];
+      var syncWarning = degradedPeers.length
+        ? '<p class="status status-open small">Scoped dispatch remained safe; ' +
+          escapeHtml(degradedPeers.length) +
+          ' unrelated fleet peer' + (degradedPeers.length === 1 ? " was" : "s were") +
+          ' degraded and remain queued for normal sync convergence.</p>'
+        : "";
       var outbox = dispatch.completion_outbox || {};
       var outboxText = state === "completion_pending"
         ? '<p class="muted small">Completion outbox attempt ' + escapeHtml(outbox.attempts || 0) +
@@ -682,7 +690,7 @@
         '<span class="status status-' + badge + '">' + escapeHtml(remoteDispatchStageLabel(state)) + "</span>" +
         '<p class="muted small"><code>' + escapeHtml(dispatch.dispatch_id) + "</code>" +
         (latest ? " · " + escapeHtml(latest) : "") + "</p></div>" + actions + "</div>" +
-        error + progressText + lifecycle + cardText + reconciliationText + outboxText +
+        error + syncWarning + progressText + lifecycle + cardText + reconciliationText + outboxText +
         (terminal ? "" : '<progress></progress>') + "</li>";
     }).join("");
   }
