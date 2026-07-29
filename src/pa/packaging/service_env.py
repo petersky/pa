@@ -19,6 +19,7 @@ def service_environment(settings: Settings) -> dict[str, str]:
         "PA_DATA_DIR": str(settings.data_dir),
         "PA_HOST": settings.host,
         "PA_PORT": str(settings.port),
+        "PA_WEB_LISTENERS": _env_list(settings.web_listeners),
         "PA_INSTANCE_NAME": settings.instance_name,
         "PA_RELEASE_TRACK": settings.release_track,
         "PA_FLEET_ID": settings.fleet_id,
