@@ -1725,6 +1725,43 @@ code {
   font-size: 0.8rem;
 }
 
+.acw-disposition {
+  max-width: min(42rem, 94%);
+  border-inline-start: 0.35rem solid var(--pa-accent);
+  background: var(--pa-surface);
+  color: var(--pa-text);
+}
+.acw-disposition[data-card-disposition-status="invalid"],
+.acw-disposition[data-card-disposition-status="persistence-failed"],
+.acw-disposition[data-card-disposition-status="rejected"] {
+  border-inline-start-color: var(--pa-danger);
+}
+.acw-disposition[data-card-disposition-status="stale-head"],
+.acw-disposition[data-card-disposition-status="incomplete-evidence"] {
+  border-inline-start-color: var(--pa-warning);
+}
+.acw-disposition-title { display: block; }
+.acw-disposition-meta,
+.acw-disposition-reason { margin: 0.25rem 0 0; }
+.acw-disposition-evidence {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.15rem 0.65rem;
+  margin: 0.5rem 0;
+  font-size: 0.85rem;
+}
+.acw-disposition-evidence dt { font-weight: 600; }
+.acw-disposition-evidence dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.acw-disposition details { margin-top: 0.5rem; }
+.acw-disposition pre {
+  max-height: 14rem;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
 .acw-ts {
   font-size: 0.7rem;
 }

@@ -1065,7 +1065,10 @@ class AgentSessionRuntime:
                         self.connection.last_memory_candidate = False
                 if self.manager.completion_handler and item.card_id:
                     try:
-                        from pa.execution.disposition import extract_card_disposition
+                        from pa.execution.disposition import (
+                            claims_card_disposition_contract,
+                            extract_card_disposition,
+                        )
 
                         final_text = "".join(self._turn_final_text).strip()
                         if not final_text:
@@ -1083,6 +1086,24 @@ class AgentSessionRuntime:
                             payload["card_disposition"] = disposition
                         elif disposition_error:
                             payload["card_disposition_error"] = disposition_error[:1000]
+                        if disposition or claims_card_disposition_contract(final_text):
+                            self._append_transcript(
+                                "card_disposition",
+                                {
+                                    "content_type": (
+                                        "application/vnd.pa.card-disposition+json;"
+                                        "version=1"
+                                    ),
+                                    "contract": disposition,
+                                    "raw": final_text,
+                                    "persistence": "pending",
+                                    "authority_acknowledged": False,
+                                    "status": "valid" if disposition else "invalid",
+                                    "reason": disposition_error,
+                                },
+                            )
+                            self._flush_transcript()
+                            await self._drain_transcripts()
                         await self._report_progress(
                             {
                                 "type": "turn_completed",
@@ -1481,6 +1502,51 @@ class AgentSessionManager:
                 operation, call, *args, timeout=timeout, **kwargs
             )
         return await asyncio.to_thread(call, *args, **kwargs)
+
+    async def record_card_disposition_status(
+        self, session_id: str, payload: dict[str, Any]
+    ) -> None:
+        """Persist an owning-authority acknowledgement into the chat transcript."""
+        runtime = self.get(session_id)
+        if runtime and not getattr(runtime, "_closed", False):
+            try:
+                runtime._append_transcript("card_disposition", payload)
+                runtime._flush_transcript()
+                await runtime._drain_transcripts()
+            except Exception:
+                failed = dict(payload)
+                failed.update(
+                    {
+                        "persistence": "failed",
+                        "authority_acknowledged": True,
+                        "status": "persistence_failed",
+                        "reason": (
+                            "PA acknowledged the disposition, but the local "
+                            "transcript acknowledgement could not be persisted."
+                        ),
+                    }
+                )
+                runtime._emit_live(
+                    {
+                        "type": "card_disposition",
+                        "session_id": session_id,
+                        "payload": failed,
+                        "created_at": datetime.now(UTC).isoformat(),
+                    }
+                )
+                raise
+            return
+        event = TranscriptEvent(
+            session_id=session_id,
+            seq=self.store.next_transcript_seq(session_id),
+            event_type="card_disposition",
+            payload=payload,
+        )
+        await self._offload(
+            "sqlite.card_disposition_append",
+            self.store.append_transcript_events,
+            [event],
+        )
 
     async def _new_runtime(
         self,

@@ -1348,6 +1348,9 @@
           this.appendStream("agent", payload.message_id || "agent", payload.text || "", created);
         }
         break;
+      case "card_disposition":
+        this.renderCardDisposition(payload, created);
+        break;
       case "agent_thought_chunk":
         if (this.showThinking) {
           this.appendStream("thought", payload.message_id || "thought", payload.text || "", created);
@@ -1474,6 +1477,102 @@
     }
     this.els.messages.appendChild(row);
     return { row: row, bubble: bubble };
+  };
+
+  AgentChatWidget.prototype.renderCardDisposition = function (payload, ts) {
+    payload = payload || {};
+    const contract = payload.contract || {};
+    const raw = payload.raw || (contract.contract
+      ? JSON.stringify(contract, null, 2) : "");
+    if (raw) {
+      this.els.messages.querySelectorAll(".acw-msg-agent .acw-bubble-agent").forEach(function (bubble) {
+        if ((bubble.dataset.markdown || "").trim() === raw.trim()) {
+          bubble.closest(".acw-msg").hidden = true;
+        }
+      });
+    }
+
+    const existing = this.els.messages.querySelector("[data-card-disposition-status]");
+    if (existing) existing.closest(".acw-msg").remove();
+    const authority = payload.authority_acknowledged === true;
+    const reason = payload.reason || "";
+    const status = payload.status || "invalid";
+    let state = "pending";
+    if (payload.persistence === "failed") state = "persistence-failed";
+    else if (status === "invalid" || !contract.contract) state = "invalid";
+    else if (/head/i.test(reason) && /(stale|match|confirm)/i.test(reason)) state = "stale-head";
+    else if (status === "downgraded" || /(evidence|required|missing|not merged)/i.test(reason)) state = "incomplete-evidence";
+    else if (authority && ["applied", "preserved_done"].indexOf(status) >= 0) state = "accepted";
+    else if (authority) state = "rejected";
+
+    const lane = payload.lane_after || contract.lane || "unknown";
+    const outcome = contract.outcome || reason || "Card disposition could not be validated.";
+    const created = this.addBubble("system", "", ts, { forceVisible: true });
+    created.row.hidden = false;
+    created.bubble.classList.add("acw-disposition");
+    created.bubble.dataset.cardDispositionStatus = state;
+    created.bubble.setAttribute("role", "status");
+    created.bubble.setAttribute("aria-label", "Card disposition " + state);
+
+    const heading = document.createElement("strong");
+    heading.className = "acw-disposition-title";
+    heading.textContent = outcome;
+    created.bubble.appendChild(heading);
+    const meta = document.createElement("p");
+    meta.className = "acw-disposition-meta";
+    meta.textContent = "Lane: " + lane + " · " + (
+      authority ? "PA authority acknowledged: " + state : "Awaiting durable PA authority acknowledgement"
+    );
+    created.bubble.appendChild(meta);
+    if (reason && reason !== outcome) {
+      const explanation = document.createElement("p");
+      explanation.className = "acw-disposition-reason";
+      explanation.textContent = reason;
+      created.bubble.appendChild(explanation);
+    }
+
+    const evidence = contract.evidence || {};
+    const evidenceItems = [
+      ["Integration", evidence.integration_required],
+      ["PR watch", evidence.pr_watch_id],
+      ["Head", evidence.watched_head_sha],
+      ["Merge", evidence.merge_commit_sha],
+    ].filter(function (item) { return item[1] !== null && item[1] !== undefined && item[1] !== ""; });
+    if (evidenceItems.length) {
+      const list = document.createElement("dl");
+      list.className = "acw-disposition-evidence";
+      evidenceItems.forEach(function (item) {
+        const dt = document.createElement("dt");
+        const dd = document.createElement("dd");
+        dt.textContent = item[0];
+        dd.textContent = String(item[1]);
+        list.appendChild(dt);
+        list.appendChild(dd);
+      });
+      created.bubble.appendChild(list);
+    }
+
+    const details = document.createElement("details");
+    const summary = document.createElement("summary");
+    summary.textContent = "Diagnostics and raw payload";
+    details.appendChild(summary);
+    const pre = document.createElement("pre");
+    pre.textContent = raw || JSON.stringify(payload, null, 2);
+    details.appendChild(pre);
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.className = "ghost small";
+    copy.textContent = "Copy raw payload";
+    copy.addEventListener("click", function () {
+      const value = pre.textContent || "";
+      Promise.resolve(navigator.clipboard && navigator.clipboard.writeText
+        ? navigator.clipboard.writeText(value)
+        : Promise.reject(new Error("Clipboard unavailable")))
+        .then(function () { copy.textContent = "Copied"; })
+        .catch(function () { copy.textContent = "Copy unavailable"; });
+    });
+    details.appendChild(copy);
+    created.bubble.appendChild(details);
   };
 
   AgentChatWidget.prototype.renderMarkdownBubble = function (bubble) {

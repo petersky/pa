@@ -1456,6 +1456,8 @@ class CompletionOutbox:
         max_attempts: int = 12,
         rng: random.Random | None = None,
         async_runtime: AsyncRuntime | None = None,
+        disposition_notifier: Callable[[str, dict[str, Any]], Awaitable[Any] | Any]
+        | None = None,
     ) -> None:
         self.store = store
         self.token = token
@@ -1464,6 +1466,7 @@ class CompletionOutbox:
         self.max_attempts = max(1, max_attempts)
         self.rng = rng or random.Random()
         self.async_runtime = async_runtime
+        self.disposition_notifier = disposition_notifier
         self._task: asyncio.Task[None] | None = None
         self._wake = asyncio.Event()
         self._closing = False
@@ -1651,8 +1654,36 @@ class CompletionOutbox:
                     self.store.transition,
                     record,
                     "completed",
-                    "Authority acknowledged dispatch completion separately from card disposition.",
+                    (
+                        "Authority acknowledged dispatch completion separately "
+                        "from card disposition."
+                    ),
                 )
+                if self.disposition_notifier and record.session_id:
+                    notice = {
+                        "contract": (record.completion_payload or {}).get(
+                            "card_disposition"
+                        ),
+                        "persistence": "durable",
+                        "authority_acknowledged": True,
+                        "acknowledged_at": record.acknowledged_at.isoformat(),
+                        "status": record.card_disposition_status or "invalid",
+                        "reason": record.card_disposition_reason,
+                        "lane_before": record.card_lane_before,
+                        "lane_after": record.card_lane_after,
+                        "reconciliation_state": record.reconciliation_state,
+                    }
+                    try:
+                        result = self.disposition_notifier(record.session_id, notice)
+                        if asyncio.iscoroutine(result):
+                            await result
+                    except Exception:
+                        # The authority ACK is already durable. A local transcript
+                        # failure must not cause the immutable completion to be
+                        # redelivered or misrepresented as unacknowledged.
+                        logger.exception(
+                            "Failed to persist card-disposition acknowledgement"
+                        )
             else:
                 try:
                     detail = (

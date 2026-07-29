@@ -5058,6 +5058,9 @@ class FleetModule(Module):
             ctx.require_service("dispatch_store"),
             ctx.settings.sync_token,
             async_runtime=async_runtime,
+            disposition_notifier=ctx.require_service(
+                "instance_agent"
+            ).record_card_disposition_status,
         )
         ctx.register_service("completion_outbox", outbox)
         agent = ctx.require_service("instance_agent")
