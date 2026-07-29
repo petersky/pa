@@ -16,9 +16,10 @@ from pa.acp.providers.base import ProviderConfigureBody
 from pa.acp.providers.codex_auth import get_codex_login_store, resolve_codex_cli
 from pa.acp.providers.registry import get_provider
 from pa.acp.providers.resolve import list_provider_summaries_bounded
+from pa.acp.sandbox_health import sandbox_health_registry
 from pa.core.async_runtime import AsyncRuntime, BlockingQueueFull
-from pa.core.contracts import Module
 from pa.core.context import AppContext
+from pa.core.contracts import Module
 from pa.core.subprocesses import run_process
 from pa.domain.instance_config import update_instance_config
 
@@ -225,6 +226,25 @@ async def probe_provider(request: Request, provider_id: str) -> dict:
         async_runtime=request.app.state.ctx.require_service("async_runtime"),
         gate=request.app.state.ctx.services.get("provider_action_gate"),
     )
+
+
+@router.get("/{provider_id}/sandbox-health")
+async def get_provider_sandbox_health(provider_id: str) -> dict:
+    try:
+        get_provider(provider_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return sandbox_health_registry.get(provider_id, "workspace-write")
+
+
+@router.post("/{provider_id}/sandbox-health/clear")
+async def clear_provider_sandbox_health(provider_id: str) -> dict:
+    """Clear the temporary breaker; the next session performs a fresh probe."""
+    try:
+        get_provider(provider_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return sandbox_health_registry.clear(provider_id, "workspace-write")
 
 
 @router.post("/{provider_id}/login-jobs", status_code=202)

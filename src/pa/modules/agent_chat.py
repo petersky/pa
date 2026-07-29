@@ -16,6 +16,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, model_validator
 
 from pa.acp.configuration import ACPConfigurationError, SessionConfigurationRequest
+from pa.acp.sandbox_health import sandbox_health_registry
 from pa.auth.middleware import get_principal_id
 from pa.core.contracts import Module
 from pa.core.preferences import get_preferences_store
@@ -728,6 +729,28 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
     except HTTPException:
         raise
     except Exception as exc:
+        provider_id = str(body.provider or settings.agent_provider).strip().lower()
+        health = sandbox_health_registry.failure(
+            provider_id,
+            "workspace-write",
+            exc,
+            metadata={
+                "stage": "session_admission",
+                "session_level": True,
+                "dispatch_id": dispatch_record.dispatch_id if dispatch_record else None,
+            },
+        )
+        if dispatch_record and dispatch_store:
+            await _offload(
+                mgr,
+                "dispatch.sandbox_admission_failure",
+                dispatch_store.fail,
+                dispatch_record,
+                "Provider sandbox/session admission failed before prompt delivery.",
+                code=health["classification"],
+                recoverable=True,
+                detail={"sandbox_health": health},
+            )
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     if dispatch_record:
         if (
