@@ -23,7 +23,6 @@ from acp.schema import (
     WriteTextFileResponse,
 )
 
-from pa.acp.mcp_config import OwnerChannelError, pa_mcp_servers, probe_owner_channel
 from pa.acp.configuration import (
     ACPConfigurationError,
     SessionConfigurationRequest,
@@ -35,9 +34,11 @@ from pa.acp.configuration import (
     state_current_value,
     validate_option_value,
 )
+from pa.acp.mcp_config import OwnerChannelError, pa_mcp_servers, probe_owner_channel
 from pa.acp.providers.base import AgentProviderSpec
 from pa.acp.providers.registry import DEFAULT_PROVIDER_ID, get_provider
 from pa.acp.providers.resolve import _spawn_overrides
+from pa.acp.sandbox_health import sandbox_health_registry
 from pa.acp.transport import spawn_agent
 from pa.config import Settings
 from pa.domain.models import AgentSession
@@ -702,7 +703,20 @@ class AgentConnection:
             *list(spec.args or []),
             env=child_env,
         )
-        self._conn, self._proc = await self._ctx.__aenter__()  # noqa: SIM117
+        try:
+            self._conn, self._proc = await self._ctx.__aenter__()
+        except Exception as exc:
+            health = sandbox_health_registry.failure(
+                spec.id,
+                "workspace-write",
+                exc,
+                metadata={"stage": "provider_spawn", "session_level": True},
+            )
+            logger.error(
+                "ACP provider sandbox admission failed",
+                extra={"sandbox_health": health},
+            )
+            raise
         await self._abort_connect_if_shutting_down(stage="initialize")
         self._init_response = await self._conn.initialize(
             protocol_version=PROTOCOL_VERSION,
@@ -837,6 +851,11 @@ class AgentConnection:
                     status="connected",
                 )
 
+        sandbox_health_registry.success(
+            spec.id,
+            "workspace-write",
+            metadata={"stage": "session_admitted", "session_level": True},
+        )
         assert self.session is not None
         # Prefer the cwd actually used for resume/load (may come from session/list).
         self.session.cwd = self.session_cwd or session_cwd

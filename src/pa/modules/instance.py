@@ -125,6 +125,9 @@ async def async_runtime_status(request: Request) -> dict:
     """Cheap telemetry that remains independent of disk/network health."""
     runtime = request.app.state.ctx.require_service("async_runtime")
     snapshot = runtime.snapshot()
+    from pa.acp.sandbox_health import sandbox_health_registry
+
+    snapshot["sandbox_health"] = sandbox_health_registry.snapshot()
     snapshot["lifecycle"] = dict(
         request.app.state.ctx.services.get("agent_lifecycle") or {}
     )
