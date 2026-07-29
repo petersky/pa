@@ -97,7 +97,10 @@ async def ready(request: Request) -> dict:
             status_code=503,
             detail={"status": "starting", "missing_services": missing},
         )
-    paths = {route.path for route in request.app.routes}
+    # FastAPI's public OpenAPI view is stable across router implementations.
+    # Newer FastAPI releases may keep included routers in ``app.routes`` as
+    # internal objects without a ``path`` attribute.
+    paths = set(request.app.openapi().get("paths", {}))
     required_paths = {
         "/api/cards",
         "/api/items",
@@ -122,6 +125,9 @@ async def async_runtime_status(request: Request) -> dict:
     """Cheap telemetry that remains independent of disk/network health."""
     runtime = request.app.state.ctx.require_service("async_runtime")
     snapshot = runtime.snapshot()
+    from pa.acp.sandbox_health import sandbox_health_registry
+
+    snapshot["sandbox_health"] = sandbox_health_registry.snapshot()
     snapshot["lifecycle"] = dict(
         request.app.state.ctx.services.get("agent_lifecycle") or {}
     )
@@ -311,7 +317,12 @@ def agent_status(request: Request) -> dict:
             "message": "Agent not started",
         }
     progress = agent.progress()
-    return progress.model_dump(mode="json")
+    result = progress.model_dump(mode="json")
+    lifecycle = request.app.state.ctx.services.get("session_lifecycle")
+    result["session_lifecycle"] = {
+        "metrics": dict(lifecycle.metrics) if lifecycle else {},
+    }
+    return result
 
 
 @router.get("/agent/quiesce")

@@ -25,17 +25,28 @@ def build_asset_manifest(static_root: Path) -> AssetManifest:
 
 
 def compute_asset_version(static_root: Path) -> str:
-    """Fingerprint static tree from file mtimes + app version."""
+    """Fingerprint static tree contents and paths with the app version."""
     if not static_root.exists():
         return __version__.replace(".", "")
 
-    mtimes: list[float] = []
-    for path in static_root.rglob("*"):
-        if path.is_file():
-            mtimes.append(path.stat().st_mtime)
+    files = sorted(
+        (path for path in static_root.rglob("*") if path.is_file()),
+        key=lambda path: path.relative_to(static_root).as_posix(),
+    )
 
-    if not mtimes:
+    if not files:
         return __version__.replace(".", "")
 
-    payload = f"{__version__}:{max(mtimes)}:{len(mtimes)}"
-    return hashlib.sha256(payload.encode()).hexdigest()[:12]
+    digest = hashlib.sha256()
+    digest.update(__version__.encode())
+    digest.update(b"\0")
+    for path in files:
+        relative = path.relative_to(static_root).as_posix().encode()
+        digest.update(len(relative).to_bytes(8, "big"))
+        digest.update(relative)
+        with path.open("rb") as handle:
+            while chunk := handle.read(1024 * 1024):
+                digest.update(len(chunk).to_bytes(8, "big"))
+                digest.update(chunk)
+        digest.update((0).to_bytes(8, "big"))
+    return digest.hexdigest()[:12]

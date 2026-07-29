@@ -76,6 +76,10 @@ class Settings(BaseSettings):
     agent_command: str | None = None
     agent_args: Annotated[list[str] | None, NoDecode] = None
     agent_enabled: bool = True
+    # Idle sessions remain follow-up capable for one day unless a durable
+    # terminal workflow proves that they can close sooner.
+    agent_session_idle_retention_hours: float = Field(default=24.0, ge=0.01, le=8760)
+    agent_session_sweep_seconds: float = Field(default=30.0, ge=1.0, le=3600)
     # Optional ACP final-fact candidates. Disabled by default; when enabled,
     # only policy-marked candidates enter pending review.
     memory_auto_capture_enabled: bool = False
