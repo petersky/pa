@@ -5231,6 +5231,12 @@ class FleetModule(Module):
         reconciler.start()
         ctx.register_service("completion_reconciler", reconciler)
         agent.completion_handler = reconciler.handle_completion
+        from pa.instance.session_lifecycle import SessionLifecyclePolicy
+
+        lifecycle = SessionLifecyclePolicy(agent, ctx.services)
+        ctx.register_service("session_lifecycle", lifecycle)
+        if ctx.settings.agent_enabled:
+            lifecycle.start()
         progress_service = ProgressService(
             ctx.require_service("dispatch_store"),
             instance_id=ctx.settings.instance_id,
@@ -5244,6 +5250,9 @@ class FleetModule(Module):
         outbox.start()
 
     async def on_shutdown(self, app, ctx: AppContext) -> None:
+        lifecycle = ctx.services.get("session_lifecycle")
+        if lifecycle:
+            await lifecycle.close()
         dispatch_worker = ctx.services.get("dispatch_worker")
         if dispatch_worker:
             await dispatch_worker.close()
