@@ -21,6 +21,12 @@ from pa.fleet.capacity import (
     effective_capacity,
     workload_counts,
 )
+from pa.fleet.policy import (
+    DispatchIntent,
+    InstanceParticipationPolicy,
+    ParticipationMode,
+    compatibility_policy,
+)
 
 
 class PlacementPolicy(StrEnum):
@@ -34,6 +40,7 @@ class PlacementCandidate(BaseModel):
     instance_id: str
     name: str
     zone: str = "default"
+    lifecycle_state: str = "active"
     local: bool = False
     capabilities: list[str] = Field(default_factory=list)
     dispatch_capacity: int | None = None
@@ -46,6 +53,12 @@ class PlacementCandidate(BaseModel):
     repositories: dict[str, Any] = Field(default_factory=dict)
     authorized: bool = True
     authorization_reason: str | None = None
+    participation_policy: InstanceParticipationPolicy | None = None
+    participation_policy_explicit: bool = False
+    participation_policy_supported: bool = True
+    group_membership: str = "included"
+    group_id: str | None = None
+    self_protection: dict[str, Any] = Field(default_factory=dict)
 
 
 class PlacementRequest(BaseModel):
@@ -58,6 +71,20 @@ class PlacementRequest(BaseModel):
     model_id: str | None = None
     required_capabilities: list[str] = Field(default_factory=list)
     repository_ids: list[str] = Field(default_factory=list)
+    workload_profile: str = "research"
+    project_id: str | None = None
+    dispatch_intent: DispatchIntent = DispatchIntent.AUTOMATIC
+    requested_group_id: str | None = None
+    resolved_group_id: str | None = None
+    resolved_group_name: str | None = None
+    group_version: int | None = None
+    default_source: str | None = None
+    permitted_placement_policies: list[str] = Field(default_factory=list)
+    principal_id: str | None = None
+    participation_override_reason: str | None = None
+    policy_enforcement_active: bool = False
+    workspace_eligible: bool = True
+    workspace_reason: str | None = None
     allow_concurrent: bool = False
     capacity_override: bool = False
 
@@ -72,6 +99,16 @@ class PlacementDecision(BaseModel):
     scores: dict[str, dict[str, float]] = Field(default_factory=dict)
     tie_breaking_reason: str
     freshness: dict[str, str | None] = Field(default_factory=dict)
+    requested_group_id: str | None = None
+    resolved_group_id: str | None = None
+    resolved_group_name: str | None = None
+    group_version: int | None = None
+    default_source: str | None = None
+    workload_profile: str = "research"
+    dispatch_intent: str = DispatchIntent.AUTOMATIC.value
+    policy_versions: dict[str, int | None] = Field(default_factory=dict)
+    principal_id: str | None = None
+    participation_override_reason: str | None = None
 
 
 class PlacementError(RuntimeError):
@@ -105,11 +142,18 @@ class RoundRobinCursorStore:
         cursors = payload.get("cursors")
         return cursors if isinstance(cursors, dict) else {}
 
-    def choose(self, fleet_id: str, realm_id: str, eligible_ids: list[str]) -> str:
+    def choose(
+        self,
+        fleet_id: str,
+        realm_id: str,
+        eligible_ids: list[str],
+        *,
+        scope: str = "",
+    ) -> str:
         ordered = sorted(dict.fromkeys(eligible_ids))
         if not ordered:
             raise ValueError("round-robin requires at least one eligible instance")
-        key = f"{fleet_id}:{realm_id}"
+        key = f"{fleet_id}:{realm_id}:{scope}"
         with self._lock:
             cursors = self._load()
             previous = str((cursors.get(key) or {}).get("last_instance_id") or "")
@@ -251,21 +295,194 @@ def _evaluate(
     request: PlacementRequest, candidate: PlacementCandidate
 ) -> tuple[list[str], dict[str, float], dict[str, Any]]:
     reasons: list[str] = []
-    if not candidate.authorized:
-        reasons.append(candidate.authorization_reason or "principal is not authorized")
+    rejection_codes: list[str] = []
 
-    for dimension in ("reachability", "activity", "providers", "repositories"):
+    def reject(code: str, message: str) -> None:
+        if code not in rejection_codes:
+            rejection_codes.append(code)
+        if message not in reasons:
+            reasons.append(message)
+
+    if candidate.lifecycle_state != "active":
+        reject(
+            "instance_not_active",
+            f"canonical fleet lifecycle is {candidate.lifecycle_state}",
+        )
+    if candidate.group_membership == "explicitly_excluded_from_group":
+        reject(
+            "explicitly_excluded_from_group",
+            "instance is explicitly excluded from the resolved worker group",
+        )
+    elif candidate.group_membership != "included":
+        reject(
+            "not_in_requested_group",
+            "instance is not a member of the resolved worker group",
+        )
+
+    if not candidate.authorized:
+        reject(
+            "insufficient_authorization",
+            candidate.authorization_reason or "principal is not authorized",
+        )
+
+    policy = candidate.participation_policy or compatibility_policy(
+        candidate.instance_id, request.realm_id
+    )
+    privileged_override = (
+        request.dispatch_intent == DispatchIntent.PRIVILEGED_OVERRIDE
+    )
+    if (
+        request.dispatch_intent == DispatchIntent.AUTOMATIC
+        and (
+            not candidate.participation_policy_supported
+            or (
+                request.policy_enforcement_active
+                and not candidate.participation_policy_explicit
+            )
+        )
+    ):
+        reject(
+            "policy_unknown_on_mixed_version_peer",
+            "automatic placement cannot prove a synchronized participation policy "
+            "for this mixed-version peer",
+        )
+    if policy.participation_mode == ParticipationMode.DISABLED and not privileged_override:
+        reject(
+            "participation_disabled",
+            policy.reason or "instance policy disables all dispatched work",
+        )
+    elif request.dispatch_intent == DispatchIntent.AUTOMATIC and not bool(
+        policy.automatic_dispatch
+    ):
+        reject(
+            "automatic_participation_disabled",
+            policy.reason or "instance policy permits named/manual dispatch only",
+        )
+    elif request.dispatch_intent == DispatchIntent.MANUAL and not bool(
+        policy.manual_dispatch
+    ):
+        reject(
+            "manual_participation_disabled",
+            policy.reason or "instance policy does not permit named/manual dispatch",
+        )
+
+    workload_profile = request.workload_profile
+    hard_denied = set(policy.hard_denied_profiles) | set(
+        candidate.self_protection.get("denied_profiles") or []
+    )
+    if workload_profile in hard_denied:
+        reject(
+            "self_protective_workload_denied",
+            f"instance self-protection denies {workload_profile} work",
+        )
+    if workload_profile in policy.denied_profiles and not privileged_override:
+        reject(
+            "workload_profile_denied",
+            policy.reason or f"instance policy denies {workload_profile} work",
+        )
+    elif (
+        not privileged_override
+        and policy.allowed_profiles
+        and workload_profile not in policy.allowed_profiles
+    ):
+        reject(
+            "workload_profile_not_allowed",
+            f"instance policy does not allow {workload_profile} work",
+        )
+
+    if request.project_id and not privileged_override:
+        if request.project_id in policy.denied_project_ids:
+            reject(
+                "project_not_allowed",
+                "instance policy explicitly denies the requested project",
+            )
+        elif (
+            policy.allowed_project_ids
+            and request.project_id not in policy.allowed_project_ids
+        ):
+            reject(
+                "project_not_allowed",
+                "requested project is outside the instance policy allow-list",
+            )
+    for repository_id in request.repository_ids if not privileged_override else []:
+        if repository_id in policy.denied_repository_ids:
+            reject(
+                "repository_not_allowed",
+                f"instance policy explicitly denies repository {repository_id}",
+            )
+        elif (
+            policy.allowed_repository_ids
+            and repository_id not in policy.allowed_repository_ids
+        ):
+            reject(
+                "repository_not_allowed",
+                f"repository {repository_id} is outside the instance policy allow-list",
+            )
+    normalized_provider = (request.provider or "").strip().lower()
+    if normalized_provider:
+        if normalized_provider in {
+            value.casefold() for value in policy.denied_provider_ids
+        }:
+            reject(
+                "provider_denied",
+                f"instance policy denies provider {request.provider!r}",
+            )
+        elif policy.allowed_provider_ids and normalized_provider not in {
+            value.casefold() for value in policy.allowed_provider_ids
+        }:
+            reject(
+                "provider_not_allowed",
+                f"provider {request.provider!r} is outside the instance policy allow-list",
+            )
+    normalized_model = (request.model_id or "").strip().casefold()
+    if normalized_model:
+        if any(
+            normalized_model.startswith(value.casefold())
+            for value in policy.denied_model_families
+        ):
+            reject(
+                "model_family_denied",
+                f"instance policy denies model family {request.model_id!r}",
+            )
+        elif policy.allowed_model_families and not any(
+            normalized_model.startswith(value.casefold())
+            for value in policy.allowed_model_families
+        ):
+            reject(
+                "model_family_not_allowed",
+                f"model {request.model_id!r} is outside the instance policy allow-list",
+            )
+    if policy.maintenance:
+        reject("maintenance", "instance participation policy is in maintenance")
+    if policy.quiescing:
+        reject("quiescing", "instance participation policy is quiescing")
+    if not request.workspace_eligible:
+        reject(
+            "workspace_unavailable",
+            request.workspace_reason or "requested workspace cannot be materialized",
+        )
+
+    dimensions = ["reachability", "activity", "providers"]
+    if workload_profile == "repository" or request.repository_ids:
+        dimensions.append("repositories")
+    for dimension in dimensions:
         state = str(_envelope(candidate, dimension).get("state") or "unavailable")
         if state != "fresh":
-            reasons.append(f"{dimension} data is {state}; fresh data is required")
+            reject(
+                f"{dimension}_stale",
+                f"{dimension} data is {state}; fresh data is required",
+            )
 
     reachability = _envelope(candidate, "reachability").get("value") or {}
     if reachability.get("health") != "up":
-        reasons.append("instance is not online and healthy")
+        reject("instance_unreachable", "instance is not online and healthy")
 
     missing = sorted(set(request.required_capabilities) - set(candidate.capabilities))
     if missing:
-        reasons.append(f"missing required capabilities: {', '.join(missing)}")
+        reject(
+            "capability_unavailable",
+            f"missing required capabilities: {', '.join(missing)}",
+        )
 
     activity = _envelope(candidate, "activity").get("value") or {}
     lifecycle = str(activity.get("state") or "unknown")
@@ -276,23 +493,53 @@ def _evaluate(
         "shutting_down",
         "unavailable",
     }:
-        reasons.append(f"instance lifecycle is {lifecycle}")
+        reject("instance_unavailable", f"instance lifecycle is {lifecycle}")
     if bool(activity.get("quiescing")):
-        reasons.append("instance is quiescing")
+        reject("quiescing", "instance is quiescing")
 
     provider_ready, provider_reason, provider_score = _provider_ready(
         candidate, request.provider, request.model_id
     )
     if not provider_ready:
-        reasons.append(provider_reason)
+        reject("provider_unavailable", provider_reason)
 
     counts, capacity, normalized = _workload(candidate, request.provider)
+    profile_active_limit = policy.max_concurrent_by_profile.get(workload_profile)
+    if profile_active_limit is not None and counts["active"] >= profile_active_limit:
+        reject(
+            "profile_capacity_exhausted",
+            f"{workload_profile} active workload limit "
+            f"({profile_active_limit}) is exhausted",
+        )
+    profile_queue_limit = policy.max_queued_by_profile.get(workload_profile)
+    if profile_queue_limit is not None and counts["queued"] >= profile_queue_limit:
+        reject(
+            "profile_queue_exhausted",
+            f"{workload_profile} queued workload limit "
+            f"({profile_queue_limit}) is exhausted",
+        )
+    hard_limit = policy.hard_max_concurrent_by_profile.get(workload_profile)
+    advertised_hard_limit = (
+        candidate.self_protection.get("max_concurrent_by_profile") or {}
+    ).get(workload_profile)
+    hard_limits = [
+        int(value)
+        for value in (hard_limit, advertised_hard_limit)
+        if value is not None
+    ]
+    if hard_limits and counts["active"] >= min(hard_limits):
+        reject(
+            "self_protective_capacity_exhausted",
+            f"instance self-protective {workload_profile} limit "
+            f"({min(hard_limits)}) is exhausted",
+        )
     if counts["consumed"] >= capacity.limit and not request.capacity_override:
-        reasons.append(
+        reject(
+            "capacity_exhausted",
             "capacity is exhausted "
             f"({counts['active']} working + {counts['queued']} queued + "
             f"{counts['reservations']} reserved of {capacity.limit} "
-            f"{capacity.source} slots)"
+            f"{capacity.source} slots)",
         )
 
     locality, cached_repositories = _repository_locality(
@@ -308,8 +555,10 @@ def _evaluate(
             and workspace.get("card_id") == request.card_id
             and workspace.get("state") in {"provisioning", "ready"}
         ):
-            reasons.append(
-                "card already has a live worktree lease on this instance; resume it or allow a concurrent dispatch explicitly"
+            reject(
+                "workspace_unavailable",
+                "card already has a live worktree lease on this instance; resume "
+                "it or allow a concurrent dispatch explicitly",
             )
             break
 
@@ -336,6 +585,17 @@ def _evaluate(
         ),
         "cached_repository_ids": cached_repositories,
         "freshness": _freshness(candidate),
+        "group_id": candidate.group_id,
+        "group_membership": candidate.group_membership,
+        "workload_profile": workload_profile,
+        "dispatch_intent": request.dispatch_intent.value,
+        "policy_version": (
+            policy.version if candidate.participation_policy_explicit else None
+        ),
+        "policy_source": policy.source,
+        "policy_summary": policy.summary(),
+        "policy_reason": policy.reason,
+        "rejection_codes": rejection_codes,
     }
     return reasons, scores, detail
 
@@ -359,6 +619,17 @@ class PlacementService:
                 "Specify exactly one concrete instance_id or placement policy.",
                 recoverable=False,
             )
+        if (
+            request.policy
+            and request.permitted_placement_policies
+            and request.policy.value not in request.permitted_placement_policies
+        ):
+            raise PlacementError(
+                "placement_policy_not_allowed_for_group",
+                f"Placement policy {request.policy.value!r} is not permitted by "
+                f"group {request.resolved_group_id!r}.",
+                recoverable=False,
+            )
 
         rejected: list[dict[str, Any]] = []
         eligible: list[tuple[PlacementCandidate, dict[str, float], dict[str, Any]]] = []
@@ -367,8 +638,9 @@ class PlacementService:
             if request.instance_id and candidate.instance_id != request.instance_id:
                 continue
             if reasons:
-                rejected.append({**detail, "reasons": reasons})
+                rejected.append({**detail, "eligible": False, "reasons": reasons})
             else:
+                detail["eligible"] = True
                 eligible.append((candidate, scores, detail))
 
         if request.instance_id and not any(
@@ -383,7 +655,9 @@ class PlacementService:
             named = f" {request.instance_id!r}" if request.instance_id else ""
             raise PlacementError(
                 "no_eligible_instance",
-                f"No eligible fleet instance{named} passed fresh readiness, authorization, provider, repository, and capacity checks.",
+                f"No eligible fleet instance{named} passed group, participation, "
+                "workload, readiness, authorization, provider, repository, and "
+                "capacity checks. PA will not fall back to the authority/local instance.",
                 rejected_candidates=rejected,
                 recoverable=True,
             )
@@ -407,6 +681,10 @@ class PlacementService:
                 request.fleet_id,
                 request.realm_id,
                 [item[0].instance_id for item in ordered],
+                scope=(
+                    f"{request.resolved_group_id or 'ungrouped'}:"
+                    f"{request.workload_profile}"
+                ),
             )
             chosen = next(item for item in ordered if item[0].instance_id == chosen_id)
             tie_reason = "Advanced the durable fleet/realm cursor over the current sorted eligible membership."
@@ -455,4 +733,26 @@ class PlacementService:
             scores=score_map,
             tie_breaking_reason=tie_reason,
             freshness=selected_detail["freshness"],
+            requested_group_id=request.requested_group_id,
+            resolved_group_id=request.resolved_group_id,
+            resolved_group_name=request.resolved_group_name,
+            group_version=request.group_version,
+            default_source=request.default_source,
+            workload_profile=request.workload_profile,
+            dispatch_intent=request.dispatch_intent.value,
+            policy_versions={
+                candidate.instance_id: (
+                    candidate.participation_policy.version
+                    if candidate.participation_policy
+                    and candidate.participation_policy_explicit
+                    else None
+                )
+                for candidate, _scores, _detail in ordered
+            }
+            | {
+                str(item["instance_id"]): item.get("policy_version")
+                for item in rejected
+            },
+            principal_id=request.principal_id,
+            participation_override_reason=request.participation_override_reason,
         )

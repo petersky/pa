@@ -6,6 +6,7 @@
   <div class="panel-header"><h2>Fleet</h2></div>
   {{ section_nav([
     ('overview', 'Overview'),
+    ('participation', 'Groups & participation'),
     ('operations', 'Operations'),
     ('sync', 'Realm sync'),
     ('readiness', 'Readiness'),
@@ -100,10 +101,12 @@
         {% set activity = dims.activity %}
         {% set sync = dims.sync %}
         <tr data-fleet-instance="{{ node.id }}" tabindex="0">
-          <td>
-            <div class="fleet-machine-select">{{ instance_identity(node.id) }}{% if node.local %}<span class="badge">local</span>{% endif %}<button type="button" class="ghost small" data-fleet-node="{{ node.id }}" aria-label="Inspect {{ node.name }}">Inspect</button></div>
-            <span class="muted small">{{ node.zone }}</span>
-            <details><summary class="muted small">Connection details</summary><dl><dt>Instance</dt><dd>{{ instance_identity(node.id) }}</dd><dt>Endpoint</dt><dd><a href="{{ node.url }}" target="_blank" rel="noopener">{{ node.url }}</a></dd><dt>Capabilities</dt><dd>{{ node.capabilities | join(', ') or 'None reported' }}</dd></dl></details>
+	          <td>
+	            <div class="fleet-machine-select">{{ instance_identity(node.id) }}{% if node.local %}<span class="badge">local</span>{% endif %}<button type="button" class="ghost small" data-fleet-node="{{ node.id }}" aria-label="Inspect {{ node.name }}">Inspect</button></div>
+	            <span class="muted small">{{ node.zone }}</span>
+	            {% set overview_policy = participation_policies.get(node.id, {}) %}
+	            <span class="muted small" data-fleet-participation>{{ overview_policy.get('summary', 'Compatibility policy') }}</span>
+	            <details><summary class="muted small">Connection details</summary><dl><dt>Instance</dt><dd>{{ instance_identity(node.id) }}</dd><dt>Endpoint</dt><dd><a href="{{ node.url }}" target="_blank" rel="noopener">{{ node.url }}</a></dd><dt>Capabilities</dt><dd>{{ node.capabilities | join(', ') or 'None reported' }}</dd></dl></details>
           </td>
           <td>
             <div data-fleet-health class="fleet-field fleet-field-{{ reach.state }}">
@@ -195,6 +198,146 @@
     <p class="empty">No fleet instances registered.</p>
     {% endif %}
   </section>
+
+  <section class="stack hidden" data-section="participation" hidden>
+    <div class="panel-header">
+      <div>
+        <h2>Groups and participation</h2>
+        <p class="muted small">Groups define reusable scopes. Each instance policy remains the enforceable boundary for workload, project, repository, provider, model, intent, and capacity.</p>
+      </div>
+      <button type="button" class="ghost small" data-participation-migrate>Preview migration</button>
+    </div>
+    <p class="notice" data-participation-migration-status hidden aria-live="polite"></p>
+
+    <div class="fleet-policy-grid">
+      <div class="panel-inset stack">
+        <h3>Instance participation</h3>
+        {% for inst in fleet_instances %}
+        {% set policy = participation_policies.get(inst.instance_id, {}) %}
+        <details {% if inst.instance_id == '0c7d8ecb-7e45-4579-8fa0-35159492d3f1' %}open{% endif %}>
+          <summary>{{ inst.name }} — {{ policy.get('summary', 'Policy pending') }}</summary>
+          <form class="stack" data-participation-policy-form data-instance-id="{{ inst.instance_id }}">
+            <p class="muted small">Stable ID <code>{{ inst.instance_id }}</code> <button type="button" class="ghost small" data-copy-value="{{ inst.instance_id }}">Copy ID</button></p>
+            <label>Participation mode
+              <select name="participation_mode">
+                {% for value, label in [('automatic', 'Automatic placement allowed'), ('manual_only', 'Named/manual dispatch only'), ('disabled', 'No dispatched work')] %}
+                <option value="{{ value }}" {% if policy.get('participation_mode') == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <fieldset>
+              <legend>Workload profiles</legend>
+              {% for profile in ['repository', 'research', 'operations'] %}
+              <label><input type="checkbox" name="allowed_profiles" value="{{ profile }}" {% if profile in policy.get('allowed_profiles', []) %}checked{% endif %}> Allow {{ profile }}</label>
+              <label><input type="checkbox" name="denied_profiles" value="{{ profile }}" {% if profile in policy.get('denied_profiles', []) %}checked{% endif %}> Deny {{ profile }}</label>
+              {% endfor %}
+            </fieldset>
+            <label>Allowed project IDs <input name="allowed_project_ids" value="{{ policy.get('allowed_project_ids', []) | join(', ') }}" placeholder="Empty means unrestricted"></label>
+            <label>Denied project IDs <input name="denied_project_ids" value="{{ policy.get('denied_project_ids', []) | join(', ') }}"></label>
+            <label>Allowed repository IDs <input name="allowed_repository_ids" value="{{ policy.get('allowed_repository_ids', []) | join(', ') }}"></label>
+            <label>Denied repository IDs <input name="denied_repository_ids" value="{{ policy.get('denied_repository_ids', []) | join(', ') }}"></label>
+            <label>Allowed providers <input name="allowed_provider_ids" value="{{ policy.get('allowed_provider_ids', []) | join(', ') }}"></label>
+            <label>Allowed model families <input name="allowed_model_families" value="{{ policy.get('allowed_model_families', []) | join(', ') }}"></label>
+            <label>Reason <textarea name="reason" rows="2">{{ policy.get('reason', '') }}</textarea></label>
+            <label><input type="checkbox" name="confirm_enable"> Confirm and audit if this enables previously denied work</label>
+            <label>Enablement reason <input name="confirmation_reason" placeholder="Required only when enabling work"></label>
+            <button type="submit">Save participation policy</button>
+            <p class="muted small" data-participation-policy-status aria-live="polite"></p>
+          </form>
+        </details>
+        {% endfor %}
+      </div>
+
+      <div class="panel-inset stack">
+        <h3>Worker groups</h3>
+        <ul class="item-list compact" data-instance-group-list>
+          {% for group in instance_groups %}
+	          <li>
+	            <strong>{{ group.name }}</strong>
+            <span class="badge">{{ 'system' if group.system else group.lifecycle_state.value }}</span>
+            <p class="muted small">{{ group.description }}</p>
+	            <p class="muted small">ID <code>{{ group.id }}</code> · generation {{ group.membership_generation }} · version {{ group.version }}</p>
+	            {% if not group.system and not group.included_instance_ids and not group.selector.configured %}
+	            <p class="notice">Empty group: automatic placement will fail visibly.</p>
+	            {% endif %}
+	            {% if group.included_instance_ids | select('in', group.excluded_instance_ids) | list %}
+	            <p class="notice">Explicit exclusions override overlapping inclusions.</p>
+	            {% endif %}
+	            {% if group.included_instance_ids %}<p>Includes: {{ group.included_instance_ids | join(', ') }}</p>{% endif %}
+	            {% if group.excluded_instance_ids %}<p>Excludes: {{ group.excluded_instance_ids | join(', ') }}</p>{% endif %}
+	            {% if not group.system %}
+	            <form class="stack" data-instance-group-edit data-group-id="{{ group.id }}" data-group-version="{{ group.version }}">
+	              <label>Included stable IDs <input name="included_instance_ids" value="{{ group.included_instance_ids | join(', ') }}"></label>
+	              <label>Explicitly excluded stable IDs <input name="excluded_instance_ids" value="{{ group.excluded_instance_ids | join(', ') }}"></label>
+	              <div class="form-actions">
+	                <button type="submit" class="ghost small">Save membership</button>
+	                <button type="button" class="ghost danger small" data-instance-group-archive="{{ group.id }}">Archive</button>
+	              </div>
+	            </form>
+	            {% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+        <details>
+          <summary>Create custom group</summary>
+          <form class="stack" data-instance-group-create>
+            <label>Name <input name="name" required></label>
+            <label>Description <textarea name="description" rows="2"></textarea></label>
+            <label>Included stable instance IDs <input name="included_instance_ids" placeholder="Comma-separated UUIDs"></label>
+            <label>Excluded stable instance IDs <input name="excluded_instance_ids" placeholder="Comma-separated UUIDs"></label>
+            <button type="submit">Create group</button>
+            <p class="muted small" data-instance-group-status aria-live="polite"></p>
+          </form>
+        </details>
+      </div>
+    </div>
+
+    <div class="panel-inset stack">
+      <h3>Realm and project defaults</h3>
+      <form class="fleet-policy-grid" data-placement-default-form>
+        <label>Project
+          <select name="project_id">
+            <option value="">Realm default</option>
+            {% for project in projects %}<option value="{{ project.id }}">{{ project.title }}</option>{% endfor %}
+          </select>
+        </label>
+        <label>Workload profile
+          <select name="workload_profile">
+            <option value="">All profiles</option>
+            <option value="repository">Repository</option>
+            <option value="research">Research</option>
+            <option value="operations">Operations</option>
+          </select>
+        </label>
+        <label>Worker group
+          <select name="group_id" required>
+            {% for group in instance_groups if group.lifecycle_state.value == 'active' %}
+            <option value="{{ group.id }}">{{ group.name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <button type="submit">Set default</button>
+      </form>
+      <ul class="item-list compact">
+        {% for default in placement_defaults %}
+        <li>{{ default.project_id or 'Realm' }} · {{ default.workload_profile or 'all profiles' }} → <code>{{ default.group_id }}</code> · version {{ default.version }}</li>
+        {% else %}<li class="muted">No explicit defaults. Automatic placement uses the immutable automatic-workers group.</li>{% endfor %}
+      </ul>
+      <p class="muted small" data-placement-default-status aria-live="polite"></p>
+    </div>
+
+	    <details class="panel-inset">
+      <summary>Policy audit history</summary>
+      <ul class="item-list compact">
+        {% for event in fleet_policy_audit %}
+        <li><time datetime="{{ event.created_at.isoformat() }}">{{ event.created_at.strftime('%b %-d, %H:%M') }}</time> · {{ event.action | replace('_', ' ') }} · {{ event.entity_type }} <code>{{ event.entity_id }}</code> · {{ event.actor }}</li>
+        {% else %}<li class="muted">No policy mutations have been recorded.</li>{% endfor %}
+      </ul>
+	    </details>
+	    {% if participation_policies.values() | selectattr('explicit', 'equalto', false) | list %}
+	    <p class="notice">Some peers still have compatibility-derived policy. Once policy configuration exists, those peers are conservatively ineligible for automatic placement until migrated.</p>
+	    {% endif %}
+	  </section>
 
   <section class="stack hidden" data-section="operations" hidden>
     <div class="panel-header">

@@ -51,6 +51,16 @@ from pa.domain.models import (
     TranscriptEvent,
     lane_from_legacy_status,
 )
+from pa.fleet.policy import (
+    FleetPolicyAuditEvent,
+    GroupLifecycle,
+    InstanceGroup,
+    InstanceGroupCreate,
+    InstanceGroupUpdate,
+    InstanceParticipationPolicy,
+    PlacementDefault,
+    default_scope_key,
+)
 from pa.sync.event_log import EventLog
 
 T = TypeVar("T")
@@ -246,6 +256,40 @@ class CardProjection:
                     head_hash TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS instance_groups (
+                    realm_id TEXT NOT NULL,
+                    id TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    PRIMARY KEY(realm_id, id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_instance_groups_realm
+                    ON instance_groups(realm_id);
+                CREATE TABLE IF NOT EXISTS instance_participation_policies (
+                    realm_id TEXT NOT NULL,
+                    instance_id TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    PRIMARY KEY(realm_id, instance_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_instance_policies_realm
+                    ON instance_participation_policies(realm_id);
+                CREATE TABLE IF NOT EXISTS placement_defaults (
+                    realm_id TEXT NOT NULL,
+                    scope_key TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    PRIMARY KEY(realm_id, scope_key)
+                );
+                CREATE TABLE IF NOT EXISTS fleet_policy_audit_events (
+                    id TEXT PRIMARY KEY,
+                    realm_id TEXT NOT NULL,
+                    entity_type TEXT NOT NULL,
+                    entity_id TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    actor TEXT NOT NULL,
+                    payload TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_fleet_policy_audit_realm_time
+                    ON fleet_policy_audit_events(realm_id, created_at);
                 """
             )
             self._migrate_items_to_cards(conn)
@@ -556,6 +600,20 @@ class CardProjection:
             self._apply_repository_checkout_set(event)
         elif event.type == EventType.REPOSITORY_CHECKOUT_REMOVED:
             self._apply_repository_checkout_removed(event)
+        elif event.type in {
+            EventType.INSTANCE_GROUP_CREATED,
+            EventType.INSTANCE_GROUP_UPDATED,
+            EventType.INSTANCE_GROUP_ARCHIVED,
+            EventType.INSTANCE_GROUP_DELETED,
+        }:
+            self._apply_instance_group_event(event)
+        elif event.type == EventType.INSTANCE_PARTICIPATION_POLICY_UPDATED:
+            self._apply_instance_participation_policy_event(event)
+        elif event.type in {
+            EventType.PLACEMENT_DEFAULT_UPDATED,
+            EventType.PLACEMENT_DEFAULT_DELETED,
+        }:
+            self._apply_placement_default_event(event)
 
     @serialized_mutation
     def commit_event(self, event: CardEvent):
@@ -594,6 +652,159 @@ class CardProjection:
                 """,
                 (realm_id, head_hash, datetime.now(UTC).isoformat()),
             )
+
+    def _record_fleet_policy_audit(
+        self,
+        event: CardEvent,
+        *,
+        entity_type: str,
+        entity_id: str,
+    ) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO fleet_policy_audit_events
+                (id, realm_id, entity_type, entity_id, action, actor, payload,
+                 created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event.id,
+                    event.realm_id,
+                    entity_type,
+                    entity_id,
+                    event.type.value,
+                    event.author_principal,
+                    json.dumps(
+                        {
+                            "author_instance": event.author_instance,
+                            "event": event.payload,
+                        }
+                    ),
+                    event.timestamp.isoformat(),
+                ),
+            )
+
+    def _apply_instance_group_event(self, event: CardEvent) -> None:
+        group_id = str(event.payload.get("id") or "")
+        if not group_id:
+            return
+        if event.type == EventType.INSTANCE_GROUP_DELETED:
+            with self._conn() as conn:
+                conn.execute(
+                    "DELETE FROM instance_groups WHERE realm_id=? AND id=?",
+                    (event.realm_id, group_id),
+                )
+            self._record_fleet_policy_audit(
+                event, entity_type="instance_group", entity_id=group_id
+            )
+            return
+        with self._conn() as conn:
+            current = conn.execute(
+                "SELECT payload FROM instance_groups WHERE realm_id=? AND id=?",
+                (event.realm_id, group_id),
+            ).fetchone()
+            payload = json.loads(current["payload"]) if current else {}
+            payload.update(event.payload)
+            payload["realm_id"] = event.realm_id
+            group = InstanceGroup.model_validate(payload)
+            conn.execute(
+                """
+                INSERT INTO instance_groups (realm_id, id, payload)
+                VALUES (?, ?, ?)
+                ON CONFLICT(realm_id, id) DO UPDATE SET payload=excluded.payload
+                """,
+                (
+                    event.realm_id,
+                    group.id,
+                    json.dumps(group.model_dump(mode="json")),
+                ),
+            )
+        self._record_fleet_policy_audit(
+            event, entity_type="instance_group", entity_id=group_id
+        )
+
+    def _apply_instance_participation_policy_event(
+        self, event: CardEvent
+    ) -> None:
+        instance_id = str(event.payload.get("instance_id") or "")
+        if not instance_id:
+            return
+        with self._conn() as conn:
+            current = conn.execute(
+                """
+                SELECT payload FROM instance_participation_policies
+                WHERE realm_id=? AND instance_id=?
+                """,
+                (event.realm_id, instance_id),
+            ).fetchone()
+            payload = json.loads(current["payload"]) if current else {}
+            payload.update(event.payload)
+            payload["realm_id"] = event.realm_id
+            policy = InstanceParticipationPolicy.model_validate(payload)
+            conn.execute(
+                """
+                INSERT INTO instance_participation_policies
+                (realm_id, instance_id, payload) VALUES (?, ?, ?)
+                ON CONFLICT(realm_id, instance_id)
+                DO UPDATE SET payload=excluded.payload
+                """,
+                (
+                    event.realm_id,
+                    policy.instance_id,
+                    json.dumps(policy.model_dump(mode="json")),
+                ),
+            )
+        self._record_fleet_policy_audit(
+            event,
+            entity_type="instance_participation_policy",
+            entity_id=instance_id,
+        )
+
+    def _apply_placement_default_event(self, event: CardEvent) -> None:
+        scope_key = str(
+            event.payload.get("scope_key")
+            or default_scope_key(
+                event.payload.get("project_id"),
+                event.payload.get("workload_profile"),
+            )
+        )
+        if event.type == EventType.PLACEMENT_DEFAULT_DELETED:
+            with self._conn() as conn:
+                conn.execute(
+                    "DELETE FROM placement_defaults WHERE realm_id=? AND scope_key=?",
+                    (event.realm_id, scope_key),
+                )
+            self._record_fleet_policy_audit(
+                event, entity_type="placement_default", entity_id=scope_key
+            )
+            return
+        with self._conn() as conn:
+            current = conn.execute(
+                "SELECT payload FROM placement_defaults WHERE realm_id=? AND scope_key=?",
+                (event.realm_id, scope_key),
+            ).fetchone()
+            payload = json.loads(current["payload"]) if current else {}
+            payload.update(event.payload)
+            payload["realm_id"] = event.realm_id
+            payload.pop("scope_key", None)
+            default = PlacementDefault.model_validate(payload)
+            conn.execute(
+                """
+                INSERT INTO placement_defaults (realm_id, scope_key, payload)
+                VALUES (?, ?, ?)
+                ON CONFLICT(realm_id, scope_key)
+                DO UPDATE SET payload=excluded.payload
+                """,
+                (
+                    event.realm_id,
+                    default.scope_key,
+                    json.dumps(default.model_dump(mode="json")),
+                ),
+            )
+        self._record_fleet_policy_audit(
+            event, entity_type="placement_default", entity_id=scope_key
+        )
 
     def _apply_repository_created(self, event: CardEvent) -> None:
         p = event.payload
@@ -1569,6 +1780,327 @@ class CardProjection:
             ).fetchall()
         return [RepositoryCheckout(**dict(row)) for row in rows]
 
+    def list_instance_groups(
+        self, realm_id: str = "default", *, include_archived: bool = False
+    ) -> list[InstanceGroup]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT payload FROM instance_groups WHERE realm_id=?",
+                (realm_id,),
+            ).fetchall()
+        groups = [
+            InstanceGroup.model_validate(json.loads(row["payload"])) for row in rows
+        ]
+        if not include_archived:
+            groups = [
+                group
+                for group in groups
+                if group.lifecycle_state == GroupLifecycle.ACTIVE
+            ]
+        return sorted(groups, key=lambda group: (group.name.casefold(), group.id))
+
+    def get_instance_group(
+        self, group_id: str, realm_id: str = "default"
+    ) -> InstanceGroup | None:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT payload FROM instance_groups WHERE realm_id=? AND id=?",
+                (realm_id, group_id),
+            ).fetchone()
+        return (
+            InstanceGroup.model_validate(json.loads(row["payload"])) if row else None
+        )
+
+    @serialized_mutation
+    def create_instance_group(
+        self,
+        data: InstanceGroupCreate,
+        *,
+        principal_id: str = "user:local",
+        instance_id: str = "local",
+    ) -> InstanceGroup:
+        duplicate = next(
+            (
+                group
+                for group in self.list_instance_groups(
+                    data.realm_id, include_archived=True
+                )
+                if group.name.casefold() == data.name.strip().casefold()
+            ),
+            None,
+        )
+        if duplicate:
+            raise ValueError("an instance group with this name already exists")
+        now = datetime.now(UTC)
+        values = data.model_dump(mode="python")
+        values["name"] = data.name.strip()
+        group = InstanceGroup(
+            **values,
+            created_by=principal_id,
+            updated_by=principal_id,
+            created_at=now,
+            updated_at=now,
+        )
+        event = CardEvent(
+            type=EventType.INSTANCE_GROUP_CREATED,
+            realm_id=group.realm_id,
+            author_principal=principal_id,
+            author_instance=instance_id,
+            payload=group.model_dump(mode="json"),
+        )
+        self.commit_event(event) if self.event_log else self.apply_event(event)
+        return self.get_instance_group(group.id, group.realm_id) or group
+
+    @serialized_mutation
+    def update_instance_group(
+        self,
+        group_id: str,
+        data: InstanceGroupUpdate,
+        *,
+        realm_id: str = "default",
+        principal_id: str = "user:local",
+        instance_id: str = "local",
+    ) -> InstanceGroup | None:
+        group = self.get_instance_group(group_id, realm_id)
+        if not group:
+            return None
+        if data.expected_version is not None and data.expected_version != group.version:
+            raise ValueError(
+                f"instance group version changed: expected {data.expected_version}, "
+                f"found {group.version}"
+            )
+        updates = data.model_dump(
+            mode="python", exclude_unset=True, exclude={"expected_version"}
+        )
+        for key, value in updates.items():
+            if value is not None:
+                setattr(group, key, value)
+        group.version += 1
+        group.membership_generation += 1
+        group.updated_by = principal_id
+        group.updated_at = datetime.now(UTC)
+        group = InstanceGroup.model_validate(group.model_dump(mode="python"))
+        event_type = (
+            EventType.INSTANCE_GROUP_ARCHIVED
+            if group.lifecycle_state == GroupLifecycle.ARCHIVED
+            else EventType.INSTANCE_GROUP_UPDATED
+        )
+        event = CardEvent(
+            type=event_type,
+            realm_id=realm_id,
+            author_principal=principal_id,
+            author_instance=instance_id,
+            payload=group.model_dump(mode="json"),
+        )
+        self.commit_event(event) if self.event_log else self.apply_event(event)
+        return self.get_instance_group(group_id, realm_id)
+
+    @serialized_mutation
+    def delete_instance_group(
+        self,
+        group_id: str,
+        *,
+        realm_id: str = "default",
+        principal_id: str = "user:local",
+        instance_id: str = "local",
+    ) -> bool:
+        group = self.get_instance_group(group_id, realm_id)
+        if not group:
+            return False
+        event = CardEvent(
+            type=EventType.INSTANCE_GROUP_DELETED,
+            realm_id=realm_id,
+            author_principal=principal_id,
+            author_instance=instance_id,
+            payload={"id": group_id, "version": group.version + 1},
+        )
+        self.commit_event(event) if self.event_log else self.apply_event(event)
+        return True
+
+    def get_instance_participation_policy(
+        self, instance_id: str, realm_id: str = "default"
+    ) -> InstanceParticipationPolicy | None:
+        with self._conn() as conn:
+            row = conn.execute(
+                """
+                SELECT payload FROM instance_participation_policies
+                WHERE realm_id=? AND instance_id=?
+                """,
+                (realm_id, instance_id),
+            ).fetchone()
+        return (
+            InstanceParticipationPolicy.model_validate(json.loads(row["payload"]))
+            if row
+            else None
+        )
+
+    def list_instance_participation_policies(
+        self, realm_id: str = "default"
+    ) -> list[InstanceParticipationPolicy]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT payload FROM instance_participation_policies
+                WHERE realm_id=? ORDER BY instance_id
+                """,
+                (realm_id,),
+            ).fetchall()
+        return [
+            InstanceParticipationPolicy.model_validate(json.loads(row["payload"]))
+            for row in rows
+        ]
+
+    @serialized_mutation
+    def set_instance_participation_policy(
+        self,
+        policy: InstanceParticipationPolicy,
+        *,
+        principal_id: str = "user:local",
+        instance_id: str = "local",
+    ) -> InstanceParticipationPolicy:
+        current = self.get_instance_participation_policy(
+            policy.instance_id, policy.realm_id
+        )
+        now = datetime.now(UTC)
+        policy = policy.model_copy(deep=True)
+        policy.version = current.version + 1 if current else max(1, policy.version)
+        policy.created_at = current.created_at if current else now
+        policy.updated_at = now
+        policy.actor = principal_id
+        event = CardEvent(
+            type=EventType.INSTANCE_PARTICIPATION_POLICY_UPDATED,
+            realm_id=policy.realm_id,
+            author_principal=principal_id,
+            author_instance=instance_id,
+            payload=policy.model_dump(mode="json"),
+        )
+        self.commit_event(event) if self.event_log else self.apply_event(event)
+        return (
+            self.get_instance_participation_policy(
+                policy.instance_id, policy.realm_id
+            )
+            or policy
+        )
+
+    def list_placement_defaults(
+        self, realm_id: str = "default"
+    ) -> list[PlacementDefault]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT payload FROM placement_defaults
+                WHERE realm_id=? ORDER BY scope_key
+                """,
+                (realm_id,),
+            ).fetchall()
+        return [
+            PlacementDefault.model_validate(json.loads(row["payload"])) for row in rows
+        ]
+
+    @serialized_mutation
+    def set_placement_default(
+        self,
+        default: PlacementDefault,
+        *,
+        principal_id: str = "user:local",
+        instance_id: str = "local",
+    ) -> PlacementDefault:
+        current = next(
+            (
+                item
+                for item in self.list_placement_defaults(default.realm_id)
+                if item.scope_key == default.scope_key
+            ),
+            None,
+        )
+        now = datetime.now(UTC)
+        default = default.model_copy(deep=True)
+        default.version = current.version + 1 if current else max(1, default.version)
+        default.created_at = current.created_at if current else now
+        default.updated_at = now
+        default.actor = principal_id
+        payload = default.model_dump(mode="json")
+        payload["scope_key"] = default.scope_key
+        event = CardEvent(
+            type=EventType.PLACEMENT_DEFAULT_UPDATED,
+            realm_id=default.realm_id,
+            project_id=default.project_id,
+            author_principal=principal_id,
+            author_instance=instance_id,
+            payload=payload,
+        )
+        self.commit_event(event) if self.event_log else self.apply_event(event)
+        return next(
+            item
+            for item in self.list_placement_defaults(default.realm_id)
+            if item.scope_key == default.scope_key
+        )
+
+    @serialized_mutation
+    def delete_placement_default(
+        self,
+        *,
+        realm_id: str = "default",
+        project_id: str | None = None,
+        workload_profile: str | None = None,
+        principal_id: str = "user:local",
+        instance_id: str = "local",
+    ) -> bool:
+        scope_key = default_scope_key(project_id, workload_profile)
+        if not any(
+            item.scope_key == scope_key
+            for item in self.list_placement_defaults(realm_id)
+        ):
+            return False
+        event = CardEvent(
+            type=EventType.PLACEMENT_DEFAULT_DELETED,
+            realm_id=realm_id,
+            project_id=project_id,
+            author_principal=principal_id,
+            author_instance=instance_id,
+            payload={
+                "scope_key": scope_key,
+                "project_id": project_id,
+                "workload_profile": workload_profile,
+            },
+        )
+        self.commit_event(event) if self.event_log else self.apply_event(event)
+        return True
+
+    def list_fleet_policy_audit(
+        self,
+        realm_id: str = "default",
+        *,
+        entity_type: str | None = None,
+        entity_id: str | None = None,
+        limit: int = 200,
+    ) -> list[FleetPolicyAuditEvent]:
+        sql = "SELECT * FROM fleet_policy_audit_events WHERE realm_id=?"
+        params: list[str | int] = [realm_id]
+        if entity_type:
+            sql += " AND entity_type=?"
+            params.append(entity_type)
+        if entity_id:
+            sql += " AND entity_id=?"
+            params.append(entity_id)
+        sql += " ORDER BY created_at DESC, id DESC LIMIT ?"
+        params.append(limit)
+        with self._conn() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [
+            FleetPolicyAuditEvent(
+                id=row["id"],
+                realm_id=row["realm_id"],
+                entity_type=row["entity_type"],
+                entity_id=row["entity_id"],
+                action=row["action"],
+                actor=row["actor"],
+                payload=json.loads(row["payload"] or "{}"),
+                created_at=datetime.fromisoformat(row["created_at"]),
+            )
+            for row in rows
+        ]
+
     def list_projects(
         self,
         realm_id: str | None = None,
@@ -2173,6 +2705,18 @@ class CardProjection:
             )
             conn.execute("DELETE FROM repositories WHERE realm_id = ?", (realm_id,))
             conn.execute("DELETE FROM projects WHERE realm_id = ?", (realm_id,))
+            conn.execute("DELETE FROM instance_groups WHERE realm_id = ?", (realm_id,))
+            conn.execute(
+                "DELETE FROM instance_participation_policies WHERE realm_id = ?",
+                (realm_id,),
+            )
+            conn.execute(
+                "DELETE FROM placement_defaults WHERE realm_id = ?", (realm_id,)
+            )
+            conn.execute(
+                "DELETE FROM fleet_policy_audit_events WHERE realm_id = ?",
+                (realm_id,),
+            )
         self.event_log.apply_commit_chain(head, self.apply_event)
         self._record_projection_head(realm_id, head)
 

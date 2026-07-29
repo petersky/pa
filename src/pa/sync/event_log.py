@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import threading
@@ -10,15 +11,54 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Callable
 
-import fcntl
-
 from pa.core.io import atomic_write_json
 from pa.domain.models import CardEvent, EventType, SyncCommit, SyncRef
 from pa.sync.object_store import ObjectStore, object_hash
 
-
 _AUTOMATIC_METADATA_FIELDS = {("card", "updated_at")}
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+_FLEET_EVENT_ENTITY = {
+    EventType.INSTANCE_GROUP_CREATED: "instance_group",
+    EventType.INSTANCE_GROUP_UPDATED: "instance_group",
+    EventType.INSTANCE_GROUP_ARCHIVED: "instance_group",
+    EventType.INSTANCE_GROUP_DELETED: "instance_group",
+    EventType.INSTANCE_PARTICIPATION_POLICY_UPDATED: "instance_policy",
+    EventType.PLACEMENT_DEFAULT_UPDATED: "placement_default",
+    EventType.PLACEMENT_DEFAULT_DELETED: "placement_default",
+}
+_FLEET_ENTITY_UPDATE_EVENT = {
+    "instance_group": EventType.INSTANCE_GROUP_UPDATED,
+    "instance_policy": EventType.INSTANCE_PARTICIPATION_POLICY_UPDATED,
+    "placement_default": EventType.PLACEMENT_DEFAULT_UPDATED,
+}
+_FLEET_ENTITY_DELETE_EVENT = {
+    "instance_group": EventType.INSTANCE_GROUP_DELETED,
+    "placement_default": EventType.PLACEMENT_DEFAULT_DELETED,
+}
+
+
+def _event_entity(event: CardEvent) -> tuple[str | None, str | None]:
+    if event.card_id:
+        return "card", event.card_id
+    if event.project_id and event.type not in {
+        EventType.PLACEMENT_DEFAULT_UPDATED,
+        EventType.PLACEMENT_DEFAULT_DELETED,
+    }:
+        return "project", event.project_id
+    entity = _FLEET_EVENT_ENTITY.get(event.type)
+    if entity == "instance_group":
+        return entity, str(event.payload.get("id") or "") or None
+    if entity == "instance_policy":
+        return entity, str(event.payload.get("instance_id") or "") or None
+    if entity == "placement_default":
+        scope_key = event.payload.get("scope_key")
+        if not scope_key:
+            scope_key = (
+                f"project:{event.payload.get('project_id') or '*'}:"
+                f"profile:{event.payload.get('workload_profile') or '*'}"
+            )
+        return entity, str(scope_key)
+    return None, None
 
 
 def _canonical_value(value: Any) -> str:
@@ -212,25 +252,56 @@ class EventLog:
             entity = resolution.get("entity")
             entity_id = resolution.get("id")
             field = resolution.get("field")
-            if entity not in {"card", "project"} or not entity_id or not field:
+            if (
+                entity
+                not in {
+                    "card",
+                    "project",
+                    "instance_group",
+                    "instance_policy",
+                    "placement_default",
+                }
+                or not entity_id
+                or not field
+            ):
                 continue
             resolution_key = _canonical_value(
                 {"parents": parents, **resolution}
             ).encode()
+            if entity == "card":
+                event_type = EventType.CARD_UPDATED
+                payload = {field: resolution.get("value")}
+            elif entity == "project":
+                event_type = EventType.PROJECT_UPDATED
+                payload = {field: resolution.get("value")}
+            elif field == "__terminal__" and entity in _FLEET_ENTITY_DELETE_EVENT:
+                event_type = _FLEET_ENTITY_DELETE_EVENT[entity]
+                payload = (
+                    {"id": entity_id}
+                    if entity == "instance_group"
+                    else {"scope_key": entity_id}
+                )
+            else:
+                event_type = _FLEET_ENTITY_UPDATE_EVENT[entity]
+                identity_field = {
+                    "instance_group": "id",
+                    "instance_policy": "instance_id",
+                    "placement_default": "scope_key",
+                }[entity]
+                payload = {
+                    identity_field: entity_id,
+                    field: resolution.get("value"),
+                }
             resolution_events.append(
                 CardEvent(
                     id=f"auto-resolve-{object_hash(resolution_key)}",
-                    type=(
-                        EventType.CARD_UPDATED
-                        if entity == "card"
-                        else EventType.PROJECT_UPDATED
-                    ),
+                    type=event_type,
                     realm_id=realm_id,
                     card_id=entity_id if entity == "card" else None,
                     project_id=entity_id if entity == "project" else None,
                     author_principal="sync:auto",
                     author_instance="sync-merge",
-                    payload={field: resolution.get("value")},
+                    payload=payload,
                     timestamp=_EPOCH,
                 )
             )
@@ -351,19 +422,22 @@ class EventLog:
                     event = self.get_event(event_hash)
                     if not event or event.payload.get("merge"):
                         continue
-                    identity = event.card_id or event.project_id
+                    entity, identity = _event_entity(event)
                     if not identity:
                         continue
-                    entity = "card" if event.card_id else "project"
                     entity_changes = result.setdefault((entity, identity), {})
                     source = {
                         "instance_id": event.author_instance,
                         "principal": event.author_principal,
                         "event_id": event.id,
+                        "event_timestamp": event.timestamp.isoformat(),
+                        "version": event.payload.get("version"),
                     }
                     if event.type in {
                         EventType.CARD_DELETED,
                         EventType.PROJECT_ARCHIVED,
+                        EventType.INSTANCE_GROUP_DELETED,
+                        EventType.PLACEMENT_DEFAULT_DELETED,
                     }:
                         entity_changes["__terminal__"] = {
                             **source,
@@ -384,6 +458,25 @@ class EventLog:
             right_fields = right[entity_key]
             if "__terminal__" in left_fields or "__terminal__" in right_fields:
                 if left_fields != right_fields:
+                    if entity in _FLEET_ENTITY_UPDATE_EVENT:
+                        terminal = (
+                            left_fields.get("__terminal__")
+                            or right_fields.get("__terminal__")
+                        )
+                        automatic_resolutions.append(
+                            {
+                                "entity": entity,
+                                "id": entity_id,
+                                "field": "__terminal__",
+                                "value": terminal["value"],
+                                "strategy": "explicit_delete_wins",
+                                "local": left_fields.get("__terminal__")
+                                or {"value": "preserve"},
+                                "remote": right_fields.get("__terminal__")
+                                or {"value": "preserve"},
+                            }
+                        )
+                        continue
                     conflicts.append(
                         {
                             "entity": entity,
@@ -404,17 +497,41 @@ class EventLog:
                     continue
             for field in sorted(set(left_fields) & set(right_fields)):
                 if left_fields[field]["value"] != right_fields[field]["value"]:
-                    if (entity, field) in _AUTOMATIC_METADATA_FIELDS:
+                    if (
+                        (entity, field) in _AUTOMATIC_METADATA_FIELDS
+                        or entity in _FLEET_ENTITY_UPDATE_EVENT
+                    ):
+                        if entity in _FLEET_ENTITY_UPDATE_EVENT:
+                            choices = [
+                                left_fields[field],
+                                right_fields[field],
+                            ]
+                            winner = max(
+                                choices,
+                                key=lambda item: (
+                                    int(item.get("version") or 0),
+                                    str(item.get("event_timestamp") or ""),
+                                    str(item.get("event_id") or ""),
+                                    _canonical_value(item.get("value")),
+                                ),
+                            )
+                            value = winner["value"]
+                            strategy = (
+                                "highest_policy_version_then_event_identity"
+                            )
+                        else:
+                            value = _latest_timestamp_value(
+                                left_fields[field]["value"],
+                                right_fields[field]["value"],
+                            )
+                            strategy = "latest_timestamp"
                         automatic_resolutions.append(
                             {
                                 "entity": entity,
                                 "id": entity_id,
                                 "field": field,
-                                "value": _latest_timestamp_value(
-                                    left_fields[field]["value"],
-                                    right_fields[field]["value"],
-                                ),
-                                "strategy": "latest_timestamp",
+                                "value": value,
+                                "strategy": strategy,
                                 "local": left_fields[field],
                                 "remote": right_fields[field],
                             }
@@ -443,22 +560,34 @@ class EventLog:
 
         def apply(event: CardEvent) -> None:
             nonlocal state
-            matches = (
-                entity == "card" and event.card_id == entity_id
-            ) or (entity == "project" and event.project_id == entity_id)
+            event_entity, event_id = _event_entity(event)
+            matches = event_entity == entity and event_id == entity_id
             if not matches:
                 return
-            if event.type in {EventType.CARD_CREATED, EventType.PROJECT_CREATED}:
+            if event.type in {
+                EventType.CARD_CREATED,
+                EventType.PROJECT_CREATED,
+                EventType.INSTANCE_GROUP_CREATED,
+            }:
                 state = dict(event.payload)
             elif event.type in {
                 EventType.CARD_UPDATED,
                 EventType.PROJECT_UPDATED,
                 EventType.LEASE_GRANTED,
                 EventType.LEASE_RELEASED,
+                EventType.INSTANCE_GROUP_UPDATED,
+                EventType.INSTANCE_GROUP_ARCHIVED,
+                EventType.INSTANCE_PARTICIPATION_POLICY_UPDATED,
+                EventType.PLACEMENT_DEFAULT_UPDATED,
             }:
-                if state is not None:
-                    state.update(event.payload)
-            elif event.type == EventType.CARD_DELETED:
+                if state is None:
+                    state = {}
+                state.update(event.payload)
+            elif event.type in {
+                EventType.CARD_DELETED,
+                EventType.INSTANCE_GROUP_DELETED,
+                EventType.PLACEMENT_DEFAULT_DELETED,
+            }:
                 state = None
             elif event.type == EventType.PROJECT_ARCHIVED and state is not None:
                 state["status"] = "archived"

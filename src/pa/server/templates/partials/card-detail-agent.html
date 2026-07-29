@@ -23,7 +23,22 @@
         <option value="research">Research/artifact work — no Git required</option>
         <option value="operations">Operations/external tools — no source checkout</option>
       </select>
-            <label for="card-dispatch-target-{{ card.id }}">Dispatch target</label>
+      <label for="card-dispatch-group-{{ card.id }}">Worker group</label>
+      <select id="card-dispatch-group-{{ card.id }}" name="worker_group">
+        <option value="">Configured default — most specific project/profile rule</option>
+        {% for group in worker_groups %}
+        <option value="{{ group.id }}">{{ group.name }} — {{ group.summary }}</option>
+        {% endfor %}
+      </select>
+      <div class="card-dispatch-provider-grid">
+        <label for="card-dispatch-provider-{{ card.id }}">Provider
+          <input id="card-dispatch-provider-{{ card.id }}" name="provider" placeholder="Any authenticated provider">
+        </label>
+        <label for="card-dispatch-model-{{ card.id }}">Model
+          <input id="card-dispatch-model-{{ card.id }}" name="model_id" placeholder="Provider default">
+        </label>
+      </div>
+      <label for="card-dispatch-target-{{ card.id }}">Placement policy or named instance</label>
       <div class="card-dispatch-controls">
         <select id="card-dispatch-target-{{ card.id }}" name="dispatch_target" required>
           <optgroup label="Placement policies">
@@ -34,15 +49,17 @@
           </optgroup>
           <optgroup label="Concrete instances">
             {% set local_capacity = fleet_capacity.get(local_instance_id, {}) %}
+            {% set local_participation = participation_summaries.get(local_instance_id, {}) %}
             <option value="instance:{{ local_instance_id }}"
                     data-capacity-summary="{{ local_capacity.get('summary', 'Capacity will be checked before admission') }}"
-                    data-capacity-eligible="{{ 'true' if local_capacity.get('eligible') else 'false' }}">Local instance — {{ local_instance_name }} · {{ local_capacity.get('summary', 'capacity pending') }}</option>
+                    data-capacity-eligible="{{ 'true' if local_capacity.get('eligible') else 'false' }}">Local instance — {{ local_instance_name }} · {{ local_participation.get('summary', 'policy pending') }} · {{ local_capacity.get('summary', 'capacity pending') }}</option>
             {% for instance in fleet_instances %}
             {% if instance.instance_id != local_instance_id %}
             {% set capacity = fleet_capacity.get(instance.instance_id, {}) %}
+            {% set participation = participation_summaries.get(instance.instance_id, {}) %}
             <option value="instance:{{ instance.instance_id }}"
                     data-capacity-summary="{{ capacity.get('summary', 'Capacity will be checked before admission') }}"
-                    data-capacity-eligible="{{ 'true' if capacity.get('eligible') else 'false' }}">Named instance — {{ instance.name }} · {{ capacity.get('summary', 'capacity pending') }}</option>
+                    data-capacity-eligible="{{ 'true' if capacity.get('eligible') else 'false' }}">Named instance — {{ instance.name }} · {{ participation.get('summary', 'policy pending') }} · {{ capacity.get('summary', 'capacity pending') }}</option>
             {% endif %}
             {% endfor %}
           </optgroup>
@@ -51,6 +68,18 @@
       </div>
       <p class="muted card-dispatch-hint" data-card-dispatch-utilization>Policies probe fresh utilization on every candidate before admission.</p>
       <p class="muted card-dispatch-hint">Policies use fresh health, provider authentication, workload, repository/worktree, capacity, and authorization checks.</p>
+      <details class="panel-inset">
+        <summary>Privileged named-instance override</summary>
+        <p class="muted small">Administrators may explicitly override synchronized soft participation, workload, project, or repository rules for a named instance. Self-protective hard limits, health, authentication, workspace fencing, and capacity remain enforced and the reason is audited.</p>
+        <label><input type="checkbox" name="participation_override"> Request privileged participation override</label>
+        <label>Override reason <input name="participation_override_reason" maxlength="500" placeholder="Required when override is enabled"></label>
+      </details>
+      <div class="card-dispatch-preview"
+           data-card-dispatch-preview
+           role="status"
+           aria-live="polite">
+        <p class="muted">Choose a group, profile, policy, provider, or model to preview every eligible and rejected candidate.</p>
+      </div>
     </form>
 
     <div class="card-dispatch-status"

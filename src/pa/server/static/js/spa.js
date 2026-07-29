@@ -756,7 +756,9 @@
     if (dispatchStatus && dispatchStatus.dataset.dispatchId) {
       pollCardDispatch(detail, dispatchStatus.dataset.dispatchId, 0);
     }
-    updateCardDispatchUtilization(detail.querySelector("[data-card-dispatch-form]"));
+    var dispatchForm = detail.querySelector("[data-card-dispatch-form]");
+    updateCardDispatchUtilization(dispatchForm);
+    previewCardPlacement(dispatchForm);
   }
 
   function updateCardDispatchUtilization(form) {
@@ -774,6 +776,139 @@
     output.textContent = option.dataset.capacitySummary +
       (eligible ? " · currently eligible" : " · currently ineligible; dispatch will recheck fresh data");
     output.classList.toggle("danger", !eligible);
+  }
+
+  function cardDispatchPayload(form, detail) {
+    var target = form.elements.dispatch_target.value;
+    var profile = form.elements.execution_profile.value;
+    var payload = {
+      card_id: detail.dataset.cardId,
+      provider: form.elements.provider ? form.elements.provider.value.trim() || null : null,
+      model_id: form.elements.model_id ? form.elements.model_id.value.trim() || null : null,
+      execution_contract: {
+        version: 1,
+        profile: profile,
+        confirmed: profile !== "automatic",
+        requirements: {},
+      },
+    };
+    if (target.indexOf("policy:") === 0) {
+      payload.placement_policy = target.slice(7);
+      if (form.elements.worker_group && form.elements.worker_group.value) {
+        payload.group_id = form.elements.worker_group.value;
+      }
+    }
+    if (target.indexOf("instance:") === 0) {
+      payload.target_instance_id = target.slice(9);
+      if (form.elements.participation_override &&
+          form.elements.participation_override.checked) {
+        payload.participation_override = true;
+        payload.participation_override_reason =
+          form.elements.participation_override_reason.value.trim();
+      }
+    }
+    return payload;
+  }
+
+  function renderCardPlacementPreview(form, data) {
+    var region = form && form.querySelector("[data-card-dispatch-preview]");
+    if (!region || !data || !data.decision) return;
+    var decision = data.decision;
+    region.replaceChildren();
+    var heading = document.createElement("strong");
+    heading.textContent = (decision.resolved_group_name || "Named instance") +
+      " · " + (decision.workload_profile || "work") +
+      " · expected " + (decision.chosen_instance_name || decision.chosen_instance_id);
+    region.appendChild(heading);
+    var explanation = document.createElement("p");
+    explanation.className = "muted";
+    explanation.textContent = decision.tie_breaking_reason || "Placement preview resolved.";
+    region.appendChild(explanation);
+    var eligible = Array.isArray(decision.eligible_candidates) ? decision.eligible_candidates : [];
+    var rejected = Array.isArray(decision.rejected_candidates) ? decision.rejected_candidates : [];
+    var summary = document.createElement("p");
+    summary.textContent = eligible.length + " eligible · " + rejected.length +
+      " rejected · group version " + (decision.group_version || "system");
+    region.appendChild(summary);
+    if (eligible.length) {
+      var eligibleList = document.createElement("ul");
+      eligibleList.className = "card-dispatch-rejections";
+      eligible.forEach(function (candidate) {
+        var item = document.createElement("li");
+        item.textContent = (candidate.name || candidate.instance_id) +
+          " — eligible; " + candidate.consumed + "/" + candidate.capacity +
+          " slots used; " + (candidate.policy_summary || "policy passed");
+        eligibleList.appendChild(item);
+      });
+      region.appendChild(eligibleList);
+    }
+    if (rejected.length) {
+      var rejectedList = document.createElement("ul");
+      rejectedList.className = "card-dispatch-rejections";
+      rejected.forEach(function (candidate) {
+        var item = document.createElement("li");
+        var codes = Array.isArray(candidate.rejection_codes) ?
+          " [" + candidate.rejection_codes.join(", ") + "]" : "";
+        item.textContent = (candidate.name || candidate.instance_id) +
+          " — excluded" + codes + ": " +
+          (Array.isArray(candidate.reasons) ? candidate.reasons.join("; ") : "not eligible");
+        rejectedList.appendChild(item);
+      });
+      region.appendChild(rejectedList);
+    }
+  }
+
+  function previewCardPlacement(form) {
+    if (!form) return;
+    var detail = form.closest("[data-card-detail]");
+    var region = form.querySelector("[data-card-dispatch-preview]");
+    if (!detail || !region) return;
+    window.clearTimeout(form._placementPreviewTimer);
+    form._placementPreviewTimer = window.setTimeout(function () {
+      if (!document.contains(form)) return;
+      if (form._placementPreviewAbort) form._placementPreviewAbort.abort();
+      form._placementPreviewAbort = new AbortController();
+      region.textContent = "Refreshing placement preview…";
+      fetch("/api/fleet/placement/preview", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: Object.assign({"Content-Type": "application/json"}, csrfHeader()),
+        signal: form._placementPreviewAbort.signal,
+        body: JSON.stringify(cardDispatchPayload(form, detail)),
+      })
+        .then(function (response) {
+          return response.json().catch(function () { return {}; }).then(function (data) {
+            if (!response.ok) throw data;
+            return data;
+          });
+        })
+        .then(function (data) { renderCardPlacementPreview(form, data); })
+        .catch(function (payload) {
+          if (payload && payload.name === "AbortError") return;
+          var error = payload && payload.detail ? payload.detail : payload || {};
+          region.replaceChildren();
+          var heading = document.createElement("strong");
+          heading.textContent = error.code === "no_eligible_instance" ?
+            "No eligible candidate" : "Preview unavailable";
+          var message = document.createElement("p");
+          message.className = "danger";
+          message.textContent = error.message || "Placement preview could not be resolved.";
+          region.append(heading, message);
+          var rejected = Array.isArray(error.rejected_candidates) ?
+            error.rejected_candidates : [];
+          if (rejected.length) {
+            var list = document.createElement("ul");
+            list.className = "card-dispatch-rejections";
+            rejected.forEach(function (candidate) {
+              var item = document.createElement("li");
+              item.textContent = (candidate.name || candidate.instance_id) + ": " +
+                (candidate.reasons || []).join("; ");
+              list.appendChild(item);
+            });
+            region.appendChild(list);
+          }
+        });
+    }, 180);
   }
 
   function renderCardDialogError(cardId, realm, message) {
@@ -1457,22 +1592,10 @@
     if (!form) return;
     event.preventDefault();
     var detail = form.closest("[data-card-detail]");
-    var target = form.elements.dispatch_target.value;
     var key = form.dataset.idempotencyKey || dispatchOperationKey("card-dispatch:" + detail.dataset.cardId);
     form.dataset.idempotencyKey = key;
-    var payload = {
-      card_id: detail.dataset.cardId,
-      idempotency_key: key,
-    };
-    var profile = form.elements.execution_profile.value;
-    payload.execution_contract = {
-      version: 1,
-      profile: profile,
-      confirmed: profile !== "automatic",
-      requirements: {},
-    };
-    if (target.indexOf("policy:") === 0) payload.placement_policy = target.slice(7);
-    if (target.indexOf("instance:") === 0) payload.target_instance_id = target.slice(9);
+    var payload = cardDispatchPayload(form, detail);
+    payload.idempotency_key = key;
     var submit = form.querySelector('button[type="submit"]');
     submit.disabled = true;
     submit.textContent = "Checking fleet…";
@@ -1500,8 +1623,12 @@
   });
 
   document.body.addEventListener("change", function (event) {
-    if (event.target && event.target.name === "dispatch_target") {
-      updateCardDispatchUtilization(event.target.closest("[data-card-dispatch-form]"));
+    if (event.target && ["dispatch_target", "worker_group", "execution_profile",
+      "provider", "model_id", "participation_override",
+      "participation_override_reason"].indexOf(event.target.name) !== -1) {
+      var dispatchForm = event.target.closest("[data-card-dispatch-form]");
+      updateCardDispatchUtilization(dispatchForm);
+      previewCardPlacement(dispatchForm);
     }
   });
 

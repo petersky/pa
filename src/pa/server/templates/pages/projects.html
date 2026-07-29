@@ -263,6 +263,32 @@
 
     {% set pr_policy = (project.tool_config or {}).get('pr_policy', {}) %}
     <details class="panel-inset">
+      <summary>Worker group defaults</summary>
+      <p class="muted small">Card overrides win, followed by project + workload profile, project, realm + profile, and the realm automatic-worker group. Archived groups fail visibly and never revert to all instances.</p>
+      {% for profile in ['all', 'repository', 'research', 'operations'] %}
+      {% set current_default = project_placement_defaults.get(profile) %}
+      {% set active_group_ids = worker_groups | map(attribute='id') | list %}
+      {% if current_default and current_default.group_id not in active_group_ids %}
+      <p class="notice">The configured {{ profile }} group <code>{{ current_default.group_id }}</code> is missing or archived. Dispatch will fail until an administrator selects an active replacement.</p>
+      {% endif %}
+      <form class="stack"
+            hx-post="/projects/{{ project.id }}/worker-default?realm={{ active_realm }}&project={{ project.id }}"
+            hx-target="#app-view"
+            hx-swap="innerHTML">
+        <input type="hidden" name="csrf" value="{{ csrf_token }}">
+        <input type="hidden" name="workload_profile" value="{{ '' if profile == 'all' else profile }}">
+        <label>{{ 'All workload profiles' if profile == 'all' else profile | title }}
+          <select name="group_id" required>
+            {% for group in worker_groups %}
+            <option value="{{ group.id }}" {% if current_default and current_default.group_id == group.id %}selected{% endif %}>{{ group.name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <button type="submit" class="ghost small">Set {{ profile }} default</button>
+      </form>
+      {% endfor %}
+    </details>
+    <details class="panel-inset">
       <summary>Pull request policy</summary>
       <form class="stack"
             hx-post="/partials/projects/{{ project.id }}/pr-policy"

@@ -97,13 +97,17 @@ def _document_remote_dispatch(schema: dict[str, Any]) -> None:
         placement["description"] = (
             "Accepts exactly one concrete `target_instance_id` or a centralized "
             "`placement_policy` (`best_match`, `least_busy`, `round_robin`, or "
-            "`random_eligible`). PA considers only fresh, eligible instances, "
+            "`random_eligible`) plus an optional stable `group_id` and explicit "
+            "execution/workload profile. PA expands project/realm defaults and "
+            "considers only instances admitted by the shared group, participation, "
+            "workload, project, repository, readiness, workspace, and capacity pipeline; "
             "uses working turns plus queued prompts plus durable pre-start "
             "reservations against the typed global/provider capacity, persists "
             "the explainable resolved target and reservation before admission, "
             "and returns that same target for idempotent retries. Idle/deferred "
-            "sessions do not consume capacity. Administrator overrides require "
-            "both `capacity_override=true` and `capacity_override_reason`."
+            "sessions do not consume capacity. There is no authority/local fallback. "
+            "Administrator capacity and named participation overrides require "
+            "an explicit audited reason; self-protective hard limits remain enforced."
         )
         placement.setdefault("parameters", []).append(
             {

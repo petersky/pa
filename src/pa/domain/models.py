@@ -482,6 +482,15 @@ class EventType(StrEnum):
     LEASE_RELEASED = "lease_released"
     AGENT_PROGRESS = "agent_progress"
     REALM_GRANT = "realm_grant"
+    INSTANCE_GROUP_CREATED = "instance_group_created"
+    INSTANCE_GROUP_UPDATED = "instance_group_updated"
+    INSTANCE_GROUP_ARCHIVED = "instance_group_archived"
+    INSTANCE_GROUP_DELETED = "instance_group_deleted"
+    INSTANCE_PARTICIPATION_POLICY_UPDATED = (
+        "instance_participation_policy_updated"
+    )
+    PLACEMENT_DEFAULT_UPDATED = "placement_default_updated"
+    PLACEMENT_DEFAULT_DELETED = "placement_default_deleted"
 
 
 class CardEvent(BaseModel):
