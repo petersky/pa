@@ -126,7 +126,7 @@ class CardVersionSyncTests(unittest.TestCase):
                         target_instance_id=TARGET_ID,
                     ),
                 )
-            self.assertEqual(raised.exception.detail["code"], "stale_target_card")
+            self.assertEqual(raised.exception.detail["code"], "target_sync_conflict")
 
     def test_lease_events_preserve_updated_at_across_projections(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

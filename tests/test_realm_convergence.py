@@ -618,7 +618,16 @@ class RealmConvergenceTests(unittest.IsolatedAsyncioTestCase):
                 },
             ]
         )
-        materialize = AsyncMock(return_value={"resolvable": True})
+
+        async def acknowledge_materialization(_request, _target, payload):
+            return {
+                "resolvable": True,
+                "dispatch_id": payload["dispatch_id"],
+                "card_id": payload["card"]["id"],
+                "card_version": payload["card_version"],
+            }
+
+        materialize = AsyncMock(side_effect=acknowledge_materialization)
         with (
             patch("pa.modules.fleet.require_user", return_value=object()),
             patch("pa.modules.fleet.get_principal_id", return_value="user:local"),

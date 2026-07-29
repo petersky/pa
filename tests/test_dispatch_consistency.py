@@ -11,7 +11,7 @@ import httpx
 from fastapi import HTTPException
 
 from pa.config import Settings
-from pa.domain.models import Card, CardEvent, CardLane, EventType
+from pa.domain.models import Card, CardEvent, CardLane, EventType, FleetInstance
 from pa.execution.dispatch import (
     CompletionOutbox,
     DispatchRecord,
@@ -199,7 +199,7 @@ class MaterializationTests(unittest.TestCase):
                     ),
                 )
             self.assertEqual(raised.exception.status_code, 409)
-            self.assertEqual(raised.exception.detail["code"], "stale_target_card")
+            self.assertEqual(raised.exception.detail["code"], "target_sync_conflict")
 
     def test_versioned_materialization_binds_full_ids_to_authenticated_authority(
         self,
@@ -859,6 +859,81 @@ class RetryAndConflictTests(unittest.IsolatedAsyncioTestCase):
                 await _assert_dispatch_sync_health(request, "default")
         self.assertEqual(raised.exception.status_code, 409)
         self.assertEqual(raised.exception.detail["code"], "sync_unavailable")
+
+
+class ScopedDispatchHealthTests(unittest.IsolatedAsyncioTestCase):
+    def _request(self, *, projection_head="shared-head"):
+        settings = Settings(
+            instance_id=AUTHORITY_ID,
+            peers=["http://target:8080", "http://observer:8080"],
+            sync_token="secret",
+        )
+        store = MagicMock()
+        store.get_projection_head.return_value = projection_head
+        log = MagicMock()
+        log.get_head.return_value = "shared-head"
+        fleet = MagicMock()
+        fleet.list_instances.return_value = [
+            FleetInstance(
+                instance_id=TARGET_ID, name="target", url="http://target:8080"
+            )
+        ]
+        return request_for(settings, store, {"event_log": log, "fleet_registry": fleet})
+
+    async def test_unrelated_offline_peer_is_recorded_without_blocking_target(
+        self,
+    ) -> None:
+        request = self._request()
+        target = MagicMock()
+        target.json.return_value = [{"realm_id": "default", "head_hash": "shared-head"}]
+        with patch("pa.modules.fleet.httpx.AsyncClient") as client:
+            client.return_value.__aenter__.return_value.get = AsyncMock(
+                side_effect=[target, httpx.ConnectError("observer offline")]
+            )
+            evidence = await _assert_dispatch_sync_health(request, "default", TARGET_ID)
+        self.assertEqual(evidence["code"], "unrelated_peers_degraded")
+        self.assertTrue(evidence["safe_scoped_dispatch"])
+        self.assertEqual(evidence["target_head"], "shared-head")
+        self.assertEqual(evidence["degraded_peers"][0]["status"], "unavailable")
+
+    async def test_selected_target_offline_blocks_recoverably(self) -> None:
+        request = self._request()
+        observer = MagicMock()
+        observer.json.return_value = [
+            {"realm_id": "default", "head_hash": "shared-head"}
+        ]
+        with patch("pa.modules.fleet.httpx.AsyncClient") as client:
+            client.return_value.__aenter__.return_value.get = AsyncMock(
+                side_effect=[httpx.ConnectError("target offline"), observer]
+            )
+            with self.assertRaises(HTTPException) as raised:
+                await _assert_dispatch_sync_health(request, "default", TARGET_ID)
+        self.assertEqual(raised.exception.detail["code"], "target_unavailable")
+        self.assertTrue(raised.exception.detail["recoverable"])
+
+    async def test_stale_authority_projection_blocks_before_peer_probe(self) -> None:
+        request = self._request(projection_head="stale-head")
+        with patch("pa.modules.fleet.httpx.AsyncClient") as client:
+            with self.assertRaises(HTTPException) as raised:
+                await _assert_dispatch_sync_health(request, "default", TARGET_ID)
+        self.assertEqual(raised.exception.detail["code"], "authority_projection_stale")
+        client.assert_not_called()
+
+    async def test_divergent_selected_target_blocks_as_sync_conflict(self) -> None:
+        request = self._request()
+        target = MagicMock()
+        target.json.return_value = [{"realm_id": "default", "head_hash": "target-head"}]
+        observer = MagicMock()
+        observer.json.return_value = [
+            {"realm_id": "default", "head_hash": "shared-head"}
+        ]
+        with patch("pa.modules.fleet.httpx.AsyncClient") as client:
+            client.return_value.__aenter__.return_value.get = AsyncMock(
+                side_effect=[target, observer]
+            )
+            with self.assertRaises(HTTPException) as raised:
+                await _assert_dispatch_sync_health(request, "default", TARGET_ID)
+        self.assertEqual(raised.exception.detail["code"], "target_sync_conflict")
 
 
 class DurableDispatchJobTests(unittest.IsolatedAsyncioTestCase):
