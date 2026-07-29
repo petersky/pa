@@ -170,6 +170,13 @@ async def create_watch(request: Request, body: dict[str, Any]) -> dict[str, Any]
             authority_instance_id=body.get("authority_instance_id"),
             originating_session_id=session_id,
             originating_principal_id=body.get("originating_principal_id"),
+            creation_reason=str(
+                body.get("creation_reason") or "api_explicit_watch_operation"
+            ),
+            qualifying_evidence=str(
+                body.get("qualifying_evidence")
+                or f"POST /api/pr-supervisor/watches for {repository}#{body.get('pr_number')}"
+            ),
             policy=policy,
             required_capabilities=body.get("required_capabilities") or [],
         )
@@ -301,6 +308,11 @@ async def create_pull_request(request: Request, body: dict[str, Any]) -> dict[st
         pr_number=1,
         pr_url=f"https://github.com/{repository}/pull/pending",
         originating_session_id=session_id,
+        creation_reason="pull_request_created_for_integration",
+        qualifying_evidence=(
+            f"POST /api/pr-supervisor/pull-requests head={body.get('head')} "
+            f"base={body.get('base') or policy.integration_branch or 'main'}"
+        ),
         policy=policy,
     )
     if session_id:

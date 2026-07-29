@@ -598,9 +598,13 @@
       return;
     }
     list.innerHTML = dispatches.map(function (dispatch) {
-      var state = dispatch.state || "queued";
+      var recordedState = dispatch.state || "queued";
+      var state = dispatch.effective_state || recordedState;
       var terminal = state === "failed" || state === "completed" || state === "cancelled";
-      var badge = state === "failed" ? "blocked" : state === "completed" ? "active" : "open";
+      var evaluatedOutcome = dispatch.evaluated_outcome || "needs_evaluation";
+      var badge = evaluatedOutcome === "attempt_succeeded" ? "active" :
+        (evaluatedOutcome === "attempt_blocked" || evaluatedOutcome === "attempt_failed") ?
+          "blocked" : "open";
       var latest = dispatch.events && dispatch.events.length
         ? dispatch.events[dispatch.events.length - 1].message : "";
       var error = dispatch.last_error
@@ -621,6 +625,8 @@
       var transport = dispatch.dispatch_completion || {};
       var card = dispatch.card_completion || {};
       var reconciliation = dispatch.card_reconciliation || {};
+      var evaluation = dispatch.post_turn_evaluation || null;
+      var followupState = dispatch.followup_state || {};
       var progress = dispatch.progress || {};
       var checkpoint = progress.latest || null;
       var freshness = progress.freshness || {};
@@ -649,9 +655,22 @@
         progressText = '<p class="muted small">Lifecycle-only reporting from an older peer.</p>';
       }
       var lifecycle = '<p class="muted small">Agent turn: ' +
-        escapeHtml(turn.completed ? "completed" : "in progress") +
+        escapeHtml((turn.ended || turn.completed) ? "ended" : "in progress") +
         (turn.stop_reason ? " (" + escapeHtml(turn.stop_reason) + ")" : "") +
         ' · Dispatch: ' + escapeHtml(transport.completed ? "completed" : "in progress") + "</p>";
+      var evaluationText = evaluation
+        ? '<p class="dispatch-evaluated-outcome"><strong>' +
+          escapeHtml(evaluatedOutcome.replace(/_/g, " ")) + "</strong> · " +
+          escapeHtml(evaluation.operator_status_text || evaluation.decision || "") +
+          (followupState.scheduled ? " · follow-up scheduled" : "") + "</p>"
+        : (terminal
+          ? '<p class="status status-open small">needs evaluation · turn lifecycle alone does not prove card success</p>'
+          : "");
+      var diagnosticText = recordedState !== state
+        ? '<p class="status status-open small">Lifecycle inconsistency: recorded ' +
+          escapeHtml(recordedState) + " · effective " + escapeHtml(state) +
+          " because acknowledged completion wins</p>"
+        : "";
       var cardText = "";
       if (dispatch.card_id && card.status && card.status !== "not_requested") {
         cardText = '<p class="muted small">Card: ' +
@@ -664,12 +683,12 @@
           reconciliation.state !== "not_requested" &&
           reconciliation.state !== "not_required") {
         var reconciliationLabel = {
-          pending: "Completed; card update pending",
-          applied: "Completed; card update applied",
-          already_satisfied: "Completed; card already satisfied",
-          operator_state_preserved: "Completed; operator change preserved",
-          conflict_requires_resolution: "Completed; reconciliation needs attention",
-          not_applicable: "Completed; card update not applicable",
+          pending: "Turn ended; card update pending",
+          applied: "Turn ended; card update applied",
+          already_satisfied: "Turn ended; card already satisfied",
+          operator_state_preserved: "Turn ended; operator change preserved",
+          conflict_requires_resolution: "Turn ended; reconciliation needs attention",
+          not_applicable: "Turn ended; card update not applicable",
         }[reconciliation.state] || reconciliation.state.replace(/_/g, " ");
         reconciliationText = '<p class="muted small">' +
           escapeHtml(reconciliationLabel) +
@@ -690,7 +709,7 @@
         '<span class="status status-' + badge + '">' + escapeHtml(remoteDispatchStageLabel(state)) + "</span>" +
         '<p class="muted small"><code>' + escapeHtml(dispatch.dispatch_id) + "</code>" +
         (latest ? " · " + escapeHtml(latest) : "") + "</p></div>" + actions + "</div>" +
-        error + syncWarning + progressText + lifecycle + cardText + reconciliationText + outboxText +
+        error + syncWarning + diagnosticText + evaluationText + progressText + lifecycle + cardText + reconciliationText + outboxText +
         (terminal ? "" : '<progress></progress>') + "</li>";
     }).join("");
   }
@@ -736,6 +755,7 @@
     rows.sort(function (a, b) { return String(b.updated_at).localeCompare(String(a.updated_at)); });
     renderRemoteDispatches(rows);
     var active = rows.some(function (item) {
+      if (((item.dispatch_completion || {}).completed)) return false;
       return ["queued", "checking_sync", "materializing", "starting_session",
         "delivering_prompt", "running", "completion_pending"].indexOf(item.state) >= 0;
     });

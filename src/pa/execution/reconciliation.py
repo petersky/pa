@@ -157,6 +157,15 @@ class CompletionReconciler:
             session_id,
         )
         if (
+            record
+            and record.card_id
+            and record.acknowledged_at
+            and record.state in {"completed", "acknowledged"}
+        ):
+            # Ordinary follow-up turns have their own durable delivery and
+            # evaluation path. They never reopen or replay the dispatch envelope.
+            return await self._queue_delivery(session_id, payload)
+        if (
             not record
             or not record.card_id
             or record.state
@@ -180,7 +189,7 @@ class CompletionReconciler:
             record.reconciliation_reason = (
                 "The one reconciliation turn returned a valid disposition."
                 if is_followup
-                else "The completed turn supplied a valid disposition."
+                else "The ended turn supplied a valid disposition."
             )
             record.reconciliation_recoverable = False
             record.reconciliation_updated_at = datetime.now(UTC)

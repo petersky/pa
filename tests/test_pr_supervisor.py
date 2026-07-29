@@ -893,7 +893,7 @@ class PRSupervisorServiceTests(unittest.IsolatedAsyncioTestCase):
         card = SimpleNamespace(
             id="card-migration",
             lane=CardLane.ACTIVE,
-            body="Track https://github.com/owner/repo/pull/17",
+            body="Integration PR: https://github.com/owner/repo/pull/17",
             realm_id="default",
             project_id="project-1",
             created_by_instance="origin",
@@ -922,10 +922,39 @@ class PRSupervisorServiceTests(unittest.IsolatedAsyncioTestCase):
         migrated = self.store.find_watch("default", "owner/repo", 17)
         self.assertEqual(migrated.policy.integration_branch, "release")
         self.assertEqual(migrated.policy.required_checks, ["release-ci"])
-        self.assertIsNone(migrated.card_id)
-        self.assertIsNone(migrated.project_id)
+        self.assertEqual(migrated.card_id, card.id)
+        self.assertEqual(migrated.project_id, card.project_id)
         self.assertIsNone(migrated.originating_session_id)
-        self.assertEqual(migrated.provenance_version, 0)
+        self.assertEqual(migrated.provenance_version, 1)
+        self.assertEqual(
+            migrated.creation_reason, "legacy_explicit_integration_intent"
+        )
+        self.assertEqual(migrated.qualifying_evidence, card.body)
+
+    async def test_migration_ignores_upstream_pr_citations_without_intent(self) -> None:
+        card = SimpleNamespace(
+            id="card-research",
+            lane=CardLane.ACTIVE,
+            body=(
+                "Bubblewrap incident research:\n"
+                "- upstream: https://github.com/openai/codex/pull/12618\n"
+                "- acceptance reference https://github.com/owner/repo/pull/17"
+            ),
+            realm_id="default",
+            project_id="project-1",
+            created_by_instance="origin",
+        )
+        self.domain.list_cards.return_value = [card]
+        service = PRSupervisor(
+            self.settings,
+            self.domain,
+            supervisor_store=self.store,
+            github_client=_FakeGitHub([snapshot()]),
+            dispatcher=self.dispatcher,
+        )
+
+        self.assertEqual(await service.migrate_discoverable_associations(), 0)
+        self.assertEqual(self.store.list_watches(include_retired=True), [])
 
     async def test_check_run_webhook_schedules_matching_watch(self) -> None:
         service = await self.make_service([snapshot()])

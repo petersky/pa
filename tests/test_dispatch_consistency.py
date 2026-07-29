@@ -31,6 +31,7 @@ from pa.modules.fleet import (
     complete_dispatch,
     materialize_dispatch,
     prompt_dispatch_session,
+    repair_terminal_dispatch,
     retry_dispatch,
     start_remote_agent_work,
 )
@@ -137,6 +138,86 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(peer.await_count, 1)
             persisted = DispatchStore(Path(tmp)).get("dispatch-1")
             self.assertNotIn("continue", str(persisted.followup_operations))
+
+    async def test_followup_on_completed_dispatch_retains_terminal_state(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="monica")
+            ledger = DispatchStore(Path(tmp))
+            record = DispatchRecord(
+                dispatch_id="dispatch-1",
+                mutation_id="mutation-1",
+                authority_instance_id="monica",
+                authority_url="http://monica:8080",
+                target_instance_id="target",
+                session_id="session-1",
+                state="completed",
+                acknowledged_at=datetime.now(UTC),
+                completion_delivery_class="acknowledged",
+            )
+            ledger.put(record)
+            request = request_for(settings, MagicMock(), {"dispatch_store": ledger})
+            request.state.instance_authenticated = True
+            acknowledged = {
+                "accepted": True,
+                "session_id": "session-1",
+                "prompt_id": "prompt-2",
+                "duplicate": False,
+            }
+            with patch(
+                "pa.modules.fleet._peer_agent_json",
+                AsyncMock(return_value=acknowledged),
+            ):
+                result = await prompt_dispatch_session(
+                    request,
+                    "dispatch-1",
+                    DispatchFollowupBody(
+                        message="continue safely",
+                        idempotency_key="followup-terminal",
+                    ),
+                )
+
+            self.assertTrue(result["accepted"])
+            persisted = DispatchStore(Path(tmp)).get("dispatch-1")
+            self.assertEqual(persisted.state, "completed")
+            self.assertTrue(persisted.public_dict()["dispatch_completion"]["completed"])
+
+    def test_acknowledged_legacy_running_record_repairs_idempotently(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="target")
+            ledger = DispatchStore(Path(tmp))
+            ledger.put(
+                DispatchRecord(
+                    dispatch_id="dispatch-legacy",
+                    mutation_id="mutation-legacy",
+                    authority_instance_id="authority",
+                    authority_url="http://authority",
+                    target_instance_id="target",
+                    session_id="session-1",
+                    state="running",
+                    acknowledged_at=datetime.now(UTC),
+                    completion_delivery_class="acknowledged",
+                )
+            )
+            request = request_for(
+                settings, MagicMock(), {"dispatch_store": ledger}
+            )
+            request.headers = {"idempotency-key": "repair-1"}
+            body = DispatchControlBody(idempotency_key="repair-1")
+            with patch("pa.modules.fleet.require_user"):
+                first = repair_terminal_dispatch(
+                    request, "dispatch-legacy", body
+                )
+                second = repair_terminal_dispatch(
+                    request, "dispatch-legacy", body
+                )
+
+            self.assertEqual(first["state"], "completed")
+            self.assertEqual(second["state"], "completed")
+            repaired = ledger.get("dispatch-legacy")
+            self.assertEqual(
+                repaired.lifecycle_inconsistencies[-1]["kind"],
+                "legacy_terminal_record_repaired",
+            )
 
 
 class MaterializationTests(unittest.TestCase):
@@ -358,6 +439,10 @@ class CompletionTests(unittest.TestCase):
             self.assertEqual(report.merge_commit_sha, "c" * 40)
             self.assertEqual(report.ci_evidence, ["test: success"])
             self.assertEqual(report.review_evidence, ["src/pa/example.py: resolved"])
+            self.assertEqual(
+                ledger.get("dispatch-1").post_turn_evaluations[-1].decision.value,
+                "outcome_achieved",
+            )
 
     def test_duplicate_completion_updates_card_exactly_once(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -450,6 +535,25 @@ class CompletionTests(unittest.TestCase):
             self.assertEqual(result["card_disposition"]["status"], "absent")
             self.assertEqual(result["card_disposition"]["lane_after"], "active")
             store.update_card.assert_not_called()
+            persisted = ledger.get("dispatch-1")
+            self.assertEqual(len(persisted.turn_end_snapshots), 1)
+            self.assertEqual(
+                persisted.turn_end_snapshots[0].final_outcome_text,
+                "Agent turn ended.",
+            )
+            self.assertEqual(
+                persisted.post_turn_evaluations[0].decision.value,
+                "unable_to_determine",
+            )
+            reloaded = DispatchStore(settings.data_dir).get("dispatch-1")
+            self.assertEqual(
+                reloaded.turn_end_snapshots[0].contract,
+                "pa.turn-end-snapshot/v1",
+            )
+            self.assertEqual(
+                reloaded.post_turn_evaluations[0].contract,
+                "pa.post-turn-evaluation/v1",
+            )
 
     def test_unrelated_card_edit_does_not_block_completion_or_lane(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

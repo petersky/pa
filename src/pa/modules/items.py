@@ -373,7 +373,15 @@ def _latest_card_progress(request: Request, card_id: str) -> dict | None:
     active = [
         record
         for record in records
-        if record.state not in {"completed", "acknowledged", "failed", "cancelled"}
+        if record.state
+        in {
+            "queued",
+            "checking_sync",
+            "materializing",
+            "starting_session",
+            "delivering_prompt",
+            "running",
+        }
     ]
     record = max(active or records, key=lambda item: item.updated_at)
     public = record.public_dict()
@@ -386,6 +394,10 @@ def _latest_card_progress(request: Request, card_id: str) -> dict | None:
             "target_instance_id": record.target_instance_id,
             "target_instance_name": record.target_instance_name,
             "updated_at": record.updated_at.isoformat(),
+            "evaluated_outcome": public.get("evaluated_outcome"),
+            "post_turn_evaluation": public.get("post_turn_evaluation"),
+            "turn_end": public.get("turn_end"),
+            "followup_state": public.get("followup_state"),
         }
     )
     return progress
@@ -615,6 +627,74 @@ def _card_activity_context(request: Request, card) -> dict:
                         "instance_id": dispatch.target_instance_id,
                         "detail": event.state.replace("_", " "),
                         "timestamp": event.created_at,
+                    }
+                )
+            for snapshot in dispatch.turn_end_snapshots:
+                entries.append(
+                    {
+                        "id": f"turn-end-{snapshot.snapshot_id}",
+                        "kind": "progress",
+                        "label": "Agent turn ended",
+                        "actor": dispatch.target_instance_name
+                        or snapshot.originating_instance_id,
+                        "detail": (
+                            f"stop reason {snapshot.stop_reason or 'unknown'}; "
+                            f"dispatch {snapshot.dispatch_state}"
+                        ),
+                        "timestamp": snapshot.captured_at,
+                        "session_url": (
+                            f"/agent?session={snapshot.session_id}"
+                            f"&instance={snapshot.originating_instance_id}"
+                            if snapshot.session_id
+                            else None
+                        ),
+                        "details": [
+                            {
+                                "label": "Card lane",
+                                "value": (
+                                    f"{snapshot.card_lane_before or 'unknown'} → "
+                                    f"{snapshot.card_lane_after or 'unchanged'}"
+                                ),
+                            },
+                            {
+                                "label": "Completion delivery",
+                                "value": snapshot.completion_delivery.get(
+                                    "classification"
+                                ),
+                            },
+                            {
+                                "label": "Disposition",
+                                "value": snapshot.disposition_status,
+                            },
+                        ],
+                    }
+                )
+            for evaluation in dispatch.post_turn_evaluations:
+                entries.append(
+                    {
+                        "id": f"evaluation-{evaluation.evaluation_id}",
+                        "kind": "progress",
+                        "label": evaluation.operator_status_text,
+                        "actor": "PA post-turn evaluator",
+                        "detail": evaluation.decision.value.replace("_", " "),
+                        "timestamp": evaluation.created_at,
+                        "details": [
+                            {
+                                "label": "Rationale",
+                                "value": evaluation.rationale,
+                            },
+                            {
+                                "label": "Confidence",
+                                "value": f"{evaluation.confidence:.0%}",
+                            },
+                            *[
+                                {
+                                    "label": f"Action · {action.name.value}",
+                                    "value": action.status.value,
+                                }
+                                for action in evaluation.recommended_actions
+                            ],
+                        ],
                     }
                 )
             for progress in dispatch.progress_events:
