@@ -40,6 +40,18 @@ class FleetMcpTests(unittest.TestCase):
             "cancel_dispatch",
             "prompt_dispatch_session",
             "update_card_preferred_instance",
+            "create_instance_group",
+            "update_instance_group",
+            "archive_instance_group",
+            "delete_instance_group",
+            "preview_instance_group",
+            "get_instance_participation_policy",
+            "update_instance_participation_policy",
+            "set_placement_default_group",
+            "list_placement_default_groups",
+            "delete_placement_default_group",
+            "preview_fleet_placement",
+            "list_fleet_policy_audit",
         }
         self.assertTrue(expected.issubset(self.mcp.functions))
 

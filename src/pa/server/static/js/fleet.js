@@ -67,6 +67,12 @@
     return obj;
   }
 
+  function commaList(value) {
+    return String(value || "").split(",").map(function (item) {
+      return item.trim();
+    }).filter(Boolean);
+  }
+
   function clearSecrets(form) {
     ["password", "passphrase"].forEach(function (name) {
       var el = form.elements[name];
@@ -2774,6 +2780,52 @@
   }
 
   document.addEventListener("click", function (e) {
+    var copyButton = e.target.closest("[data-copy-value]");
+    if (copyButton) {
+      e.preventDefault();
+      navigator.clipboard.writeText(copyButton.getAttribute("data-copy-value") || "")
+        .then(function () { copyButton.textContent = "Copied"; })
+        .catch(function () { copyButton.textContent = "Copy failed"; });
+      return;
+    }
+    var migrateButton = e.target.closest("[data-participation-migrate]");
+    if (migrateButton) {
+      e.preventDefault();
+      var migrationStatus = $("[data-participation-migration-status]");
+      var applyMigration = migrateButton.getAttribute("data-apply") === "true";
+      migrateButton.disabled = true;
+      api("/api/fleet/participation-migration", {
+        method: "POST", body: { apply: applyMigration }
+      }).then(function (result) {
+        if (migrationStatus) {
+          migrationStatus.hidden = false;
+          migrationStatus.textContent = result.message ||
+            (result.changes.length + " migration changes");
+        }
+        if (applyMigration) return refreshFleetPage();
+        migrateButton.setAttribute("data-apply", "true");
+        migrateButton.textContent = "Apply migration";
+      }).catch(function (err) {
+        if (migrationStatus) {
+          migrationStatus.hidden = false;
+          migrationStatus.textContent = err.message;
+        }
+      }).finally(function () { migrateButton.disabled = false; });
+      return;
+    }
+    var archiveGroup = e.target.closest("[data-instance-group-archive]");
+    if (archiveGroup) {
+      e.preventDefault();
+      if (!confirm("Archive this worker group? Existing defaults will fail visibly until changed.")) return;
+      archiveGroup.disabled = true;
+      api("/api/fleet/instance-groups/" + encodeURIComponent(
+        archiveGroup.getAttribute("data-instance-group-archive")
+      ) + "/archive", { method: "POST", body: {} })
+        .then(refreshFleetPage)
+        .catch(function (err) { alert(err.message); })
+        .finally(function () { archiveGroup.disabled = false; });
+      return;
+    }
     var topologyNode = e.target.closest("[data-fleet-node]");
     if (topologyNode) {
       renderFleetDetail("node", topologyNode.getAttribute("data-fleet-node"));
@@ -3173,7 +3225,84 @@
     var form = e.target;
     if (!form) return;
     // Allow forms identified by id or data-fleet-fix (inline readiness fixes).
-    if (!form.id && !form.getAttribute("data-fleet-fix")) return;
+    if (!form.id && !form.getAttribute("data-fleet-fix") &&
+        !form.matches("[data-participation-policy-form], [data-instance-group-create], " +
+          "[data-instance-group-edit], [data-placement-default-form]")) return;
+
+    if (form.matches("[data-participation-policy-form]")) {
+      e.preventDefault();
+      var policyStatus = $("[data-participation-policy-status]", form);
+      var policyBody = formToObject(form);
+      policyBody.allowed_profiles = $all('[name="allowed_profiles"]:checked', form)
+        .map(function (item) { return item.value; });
+      policyBody.denied_profiles = $all('[name="denied_profiles"]:checked', form)
+        .map(function (item) { return item.value; });
+      [
+        "allowed_project_ids", "denied_project_ids",
+        "allowed_repository_ids", "denied_repository_ids",
+        "allowed_provider_ids", "allowed_model_families"
+      ].forEach(function (name) { policyBody[name] = commaList(policyBody[name]); });
+      policyBody.confirm_enable = !!form.elements.confirm_enable.checked;
+      if (!policyBody.confirmation_reason) delete policyBody.confirmation_reason;
+      api("/api/fleet/instances/" + encodeURIComponent(
+        form.getAttribute("data-instance-id")
+      ) + "/participation-policy", { method: "PUT", body: policyBody })
+        .then(function (result) {
+          if (policyStatus) policyStatus.textContent =
+            "Saved version " + result.version + " — " + result.summary;
+          return refreshFleetPage();
+        })
+        .catch(function (err) {
+          if (policyStatus) policyStatus.textContent = err.message;
+        });
+      return;
+    }
+
+    if (form.matches("[data-instance-group-create]")) {
+      e.preventDefault();
+      var createStatus = $("[data-instance-group-status]", form);
+      var createBody = formToObject(form);
+      createBody.included_instance_ids = commaList(createBody.included_instance_ids);
+      createBody.excluded_instance_ids = commaList(createBody.excluded_instance_ids);
+      api("/api/fleet/instance-groups", { method: "POST", body: createBody })
+        .then(refreshFleetPage)
+        .catch(function (err) {
+          if (createStatus) createStatus.textContent = err.message;
+        });
+      return;
+    }
+
+    if (form.matches("[data-instance-group-edit]")) {
+      e.preventDefault();
+      var editBody = formToObject(form);
+      editBody.included_instance_ids = commaList(editBody.included_instance_ids);
+      editBody.excluded_instance_ids = commaList(editBody.excluded_instance_ids);
+      editBody.expected_version = Number(form.getAttribute("data-group-version"));
+      api("/api/fleet/instance-groups/" + encodeURIComponent(
+        form.getAttribute("data-group-id")
+      ), { method: "PATCH", body: editBody })
+        .then(refreshFleetPage)
+        .catch(function (err) { alert(err.message); });
+      return;
+    }
+
+    if (form.matches("[data-placement-default-form]")) {
+      e.preventDefault();
+      var defaultStatus = $("[data-placement-default-status]");
+      var defaultBody = formToObject(form);
+      if (!defaultBody.project_id) delete defaultBody.project_id;
+      if (!defaultBody.workload_profile) delete defaultBody.workload_profile;
+      api("/api/fleet/placement-defaults", { method: "PUT", body: defaultBody })
+        .then(function (result) {
+          if (defaultStatus) defaultStatus.textContent =
+            "Saved default version " + result.version + ".";
+          return refreshFleetPage();
+        })
+        .catch(function (err) {
+          if (defaultStatus) defaultStatus.textContent = err.message;
+        });
+      return;
+    }
 
     if (form.id === "pa-fleet-update-form") {
       e.preventDefault();

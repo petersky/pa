@@ -477,6 +477,37 @@ def _card_agent_context(request: Request, card) -> dict:
     from pa.fleet.overview import build_overview
 
     overview = build_overview(ctx, instances, []) if instances else {"nodes": []}
+    policy_service = ctx.services.get("fleet_policy")
+    worker_groups = (
+        [
+            {
+                **group.model_dump(mode="json"),
+                "summary": (
+                    f"{len(instances)} canonical member"
+                    f"{'' if len(instances) == 1 else 's'} before policy filters"
+                    if group.system
+                    else (
+                        f"{len(set(group.included_instance_ids) - set(group.excluded_instance_ids))} "
+                        "explicit members before selectors and policy filters"
+                    )
+                ),
+            }
+            for group in policy_service.list_groups(card.realm_id)
+        ]
+        if policy_service
+        else []
+    )
+    participation_summaries = {}
+    if policy_service:
+        for instance in instances:
+            policy, explicit = policy_service.effective_policy(
+                card.realm_id, instance.instance_id
+            )
+            participation_summaries[instance.instance_id] = {
+                "summary": policy.summary(),
+                "reason": policy.reason,
+                "explicit": explicit,
+            }
     fleet_capacity: dict[str, dict] = {}
     for node in overview.get("nodes", []):
         activity = (node.get("dimensions") or {}).get("activity") or {}
@@ -513,6 +544,8 @@ def _card_agent_context(request: Request, card) -> dict:
         "local_instance_id": ctx.settings.instance_id,
         "local_instance_name": ctx.settings.instance_name,
         "agent_enabled": ctx.settings.agent_enabled,
+        "worker_groups": worker_groups,
+        "participation_summaries": participation_summaries,
     }
 
 

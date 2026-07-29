@@ -29,7 +29,9 @@ from pa.domain.models import (
 from pa.domain.projection import CardProjection
 from pa.domain.store import reset_store
 from pa.fleet.membership import MembershipStore
+from pa.fleet.policy import InstanceGroupCreate, InstanceGroupUpdate
 from pa.fleet.registry import FleetRegistry
+from pa.instance.agent_session import reset_instance_agent
 from pa.modules.fleet import (
     RemoteAgentStartBody,
     _assert_dispatch_sync_health,
@@ -39,9 +41,8 @@ from pa.modules.sync import get_sync_convergence, resolve_sync_conflicts
 from pa.network.peer_table import PeerTable
 from pa.sync.engine import SyncEngine
 from pa.sync.event_log import EventLog, StaleSyncHeadError
-from pa.sync.object_store import ObjectStore
 from pa.sync.infrastructure import reset_infrastructure
-from pa.instance.agent_session import reset_instance_agent
+from pa.sync.object_store import ObjectStore
 
 
 class _Node:
@@ -271,6 +272,80 @@ class RealmConvergenceTests(unittest.IsolatedAsyncioTestCase):
         )
         for old_head in original_heads:
             self.assertTrue(self.authority.log.is_ancestor(old_head, final_head))
+
+    async def test_instance_group_versions_converge_with_both_parents_and_audit(
+        self,
+    ) -> None:
+        authority_projection = CardProjection(
+            self.authority.settings.db_path, self.authority.log
+        )
+        group = authority_projection.create_instance_group(
+            InstanceGroupCreate(
+                name="Code workers",
+                included_instance_ids=["authority", "target"],
+            ),
+            principal_id="user:admin",
+            instance_id="authority",
+        )
+        base = self.authority.log.get_head("default")
+        assert base is not None
+        for node in (self.target, self.observer):
+            self._copy_objects(self.authority, node)
+            node.log.advance_ref("default", base, expected_head=None)
+
+        target_projection = CardProjection(
+            self.target.settings.db_path, self.target.log
+        )
+        authority_projection.rebuild_from_log("default")
+        target_projection.rebuild_from_log("default")
+        local = authority_projection.update_instance_group(
+            group.id,
+            InstanceGroupUpdate(
+                description="Authority description",
+                expected_version=1,
+            ),
+            principal_id="user:admin",
+            instance_id="authority",
+        )
+        await asyncio.sleep(0.001)
+        remote = target_projection.update_instance_group(
+            group.id,
+            InstanceGroupUpdate(
+                description="Newer target description",
+                expected_version=1,
+            ),
+            principal_id="user:admin",
+            instance_id="target",
+        )
+        assert local and remote
+        divergent_heads = {
+            self.authority.log.get_head("default"),
+            self.target.log.get_head("default"),
+        }
+
+        state = await self.authority.engine.converge_realm("default")
+
+        self.assertEqual(state["phase"], "converged")
+        self.assertEqual(
+            {node.log.get_head("default") for node in self.nodes}, {state["head"]}
+        )
+        for old_head in divergent_heads:
+            assert old_head is not None
+            self.assertTrue(self.authority.log.is_ancestor(old_head, state["head"]))
+        authority_projection.rebuild_from_log("default")
+        merged = authority_projection.get_instance_group(group.id, "default")
+        assert merged is not None
+        self.assertEqual(merged.description, "Newer target description")
+        self.assertTrue(
+            any(
+                resolution.get("entity") == "instance_group"
+                and resolution.get("field") == "description"
+                and resolution.get("strategy")
+                == "highest_policy_version_then_event_identity"
+                for entry in self.authority.log.merge_audit("default")
+                for resolution in entry["automatic_resolutions"]
+            )
+        )
 
     async def test_remote_lane_move_rebuilds_projection_and_notifies_browser(
         self,

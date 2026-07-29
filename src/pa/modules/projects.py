@@ -5,9 +5,9 @@ import json
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
-from pa.auth.middleware import get_principal_id
-from pa.core.contracts import Module
+from pa.auth.middleware import get_principal_id, require_user
 from pa.core.context import AppContext
+from pa.core.contracts import Module
 from pa.core.ui.pages import PageDefinition, PageRegistry
 from pa.domain.models import (
     CardLane,
@@ -20,8 +20,14 @@ from pa.domain.models import (
     RepositoryUpdate,
     RepositoryVisibility,
 )
-from pa.domain.store import get_store
 from pa.domain.session_selection import preferred_sessions_by_card
+from pa.domain.store import get_store
+from pa.fleet.policy import (
+    WORKLOAD_PROFILES,
+    FleetPolicyService,
+    GroupLifecycle,
+    PlacementDefault,
+)
 
 router = APIRouter()
 ui_router = APIRouter()
@@ -112,6 +118,19 @@ def _projects_context(request: Request) -> dict:
             if watch.project_id == project.id
             or watch.card_id in {card.id for card in cards}
         ]
+    policy_service = request.app.state.ctx.services.get("fleet_policy")
+    if not isinstance(policy_service, FleetPolicyService):
+        policy_service = FleetPolicyService(store)
+    worker_groups = [
+        group
+        for group in policy_service.list_groups(realm)
+        if group.lifecycle_state == GroupLifecycle.ACTIVE
+    ]
+    project_placement_defaults = {
+        (item.workload_profile or "all"): item
+        for item in store.list_placement_defaults(realm)
+        if project and item.project_id == project.id
+    }
     return {
         "projects": store.list_projects(realm_id=realm),
         "repositories": repositories,
@@ -138,6 +157,9 @@ def _projects_context(request: Request) -> dict:
         "lanes": list(CardLane),
         "active_realm": realm,
         "realms": request.app.state.ctx.settings.subscribed_realms,
+        "worker_groups": worker_groups,
+        "workload_profiles": WORKLOAD_PROFILES,
+        "project_placement_defaults": project_placement_defaults,
     }
 
 
@@ -410,6 +432,51 @@ def projects_page(request: Request):
     page = request.app.state.ctx.require_service("pages").get_by_path("/projects")
     if not page:
         raise HTTPException(status_code=404)
+    return render_page(request, page)
+
+
+@ui_router.post("/projects/{project_id}/worker-default")
+def set_project_worker_default_ui(
+    request: Request,
+    project_id: str,
+    group_id: str = Form(...),
+    workload_profile: str = Form(""),
+    realm: str | None = None,
+) -> HTMLResponse:
+    from pa.modules.ui_shell import render_page
+
+    user = require_user(request)
+    if getattr(user, "role", None) != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Administrator permission fleet.placement_defaults.edit is required.",
+        )
+    realm_id = realm or _active_realm(request)
+    ctx = request.app.state.ctx
+    if not ctx.store.get_project(project_id, realm_id):
+        raise HTTPException(status_code=404, detail="Project not found")
+    policy_service = ctx.services.get("fleet_policy")
+    if not isinstance(policy_service, FleetPolicyService):
+        policy_service = FleetPolicyService(ctx.store)
+    group = policy_service.get_group(realm_id, group_id)
+    if not group or group.lifecycle_state != GroupLifecycle.ACTIVE:
+        raise HTTPException(
+            status_code=409,
+            detail="A project default can reference only an active worker group.",
+        )
+    if workload_profile and workload_profile not in WORKLOAD_PROFILES:
+        raise HTTPException(status_code=422, detail="Unknown workload profile")
+    ctx.store.set_placement_default(
+        PlacementDefault(
+            realm_id=realm_id,
+            project_id=project_id,
+            workload_profile=workload_profile or None,
+            group_id=group_id,
+        ),
+        principal_id=get_principal_id(request),
+        instance_id=ctx.settings.instance_id,
+    )
+    page = ctx.require_service("pages").get_by_path("/projects")
     return render_page(request, page)
 
 

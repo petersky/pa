@@ -85,7 +85,6 @@ from pa.fleet.join import (
 )
 from pa.fleet.membership import MembershipStore
 from pa.fleet.overview import DIMENSIONS, build_overview, cache_for, probe_dimension
-from pa.fleet.workshop import build_workshop_snapshot
 from pa.fleet.placement import (
     PlacementCandidate,
     PlacementError,
@@ -93,6 +92,19 @@ from pa.fleet.placement import (
     PlacementRequest,
     PlacementService,
     RoundRobinCursorStore,
+)
+from pa.fleet.policy import (
+    BUILTIN_GROUPS,
+    WORKLOAD_PROFILES,
+    DispatchIntent,
+    FleetPolicyService,
+    GroupLifecycle,
+    InstanceGroupCreate,
+    InstanceGroupUpdate,
+    InstanceParticipationPolicy,
+    InstanceParticipationPolicyUpdate,
+    ParticipationMode,
+    PlacementDefault,
 )
 from pa.fleet.registry import FleetRegistry, reconcile_snapshots, semantic_snapshot
 from pa.fleet.remote_install import (
@@ -107,6 +119,7 @@ from pa.fleet.update import (
     prepare_update_job_recovery,
     start_update_job,
 )
+from pa.fleet.workshop import build_workshop_snapshot
 from pa.network.peer_table import PeerTable
 
 logger = logging.getLogger(__name__)
@@ -254,6 +267,8 @@ class RemoteAgentStartBody(BaseModel):
     allow_concurrent: bool = False
     capacity_override: bool = False
     capacity_override_reason: str | None = Field(default=None, max_length=500)
+    participation_override: bool = False
+    participation_override_reason: str | None = Field(default=None, max_length=500)
     execution_contract: dict[str, Any] | None = None
 
 
@@ -262,7 +277,20 @@ class FleetDispatchBody(RemoteAgentStartBody):
 
     target_instance_id: str | None = None
     placement_policy: PlacementPolicy | None = None
+    group_id: str | None = None
     required_capabilities: list[str] = Field(default_factory=list)
+
+
+class PlacementDefaultBody(BaseModel):
+    realm_id: str | None = None
+    project_id: str | None = None
+    workload_profile: str | None = None
+    group_id: str
+
+
+class PlacementMigrationBody(BaseModel):
+    realm_id: str | None = None
+    apply: bool = False
 
 
 class DispatchControlBody(BaseModel):
@@ -351,6 +379,525 @@ def _dispatch_store(request: Request) -> DispatchStore:
     service = DispatchStore(request.app.state.ctx.settings.data_dir)
     request.app.state.ctx.register_service("dispatch_store", service)
     return service
+
+
+def _policy_service(request: Request) -> FleetPolicyService:
+    service = request.app.state.ctx.services.get("fleet_policy")
+    if isinstance(service, FleetPolicyService):
+        return service
+    service = FleetPolicyService(request.app.state.ctx.store)
+    request.app.state.ctx.register_service("fleet_policy", service)
+    return service
+
+
+def _require_policy_admin(request: Request, permission: str):
+    user = require_user(request)
+    if getattr(user, "role", None) != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "fleet_policy_permission_denied",
+                "permission": permission,
+                "message": f"Administrator permission {permission!r} is required.",
+            },
+        )
+    return user
+
+
+def _group_public(
+    request: Request, group, *, include_membership: bool = False
+) -> dict[str, Any]:
+    payload = group.model_dump(mode="json")
+    if not include_membership:
+        return payload
+    fleet: FleetRegistry = request.app.state.ctx.require_service("fleet_registry")
+    instances = {item.instance_id: item for item in fleet.list_instances()}
+    payload["included_instances"] = [
+        {
+            "instance_id": instance_id,
+            "name": instances[instance_id].name if instance_id in instances else None,
+            "present": instance_id in instances,
+        }
+        for instance_id in group.included_instance_ids
+    ]
+    payload["excluded_instances"] = [
+        {
+            "instance_id": instance_id,
+            "name": instances[instance_id].name if instance_id in instances else None,
+            "present": instance_id in instances,
+        }
+        for instance_id in group.excluded_instance_ids
+    ]
+    return payload
+
+
+@router.get("/fleet/instance-groups")
+def list_instance_groups(
+    request: Request,
+    realm: str | None = None,
+    include_archived: bool = False,
+) -> list[dict[str, Any]]:
+    require_user(request)
+    realm_id = realm or request.app.state.ctx.settings.primary_realm
+    return [
+        _group_public(request, group, include_membership=True)
+        for group in _policy_service(request).list_groups(
+            realm_id, include_archived=include_archived
+        )
+    ]
+
+
+@router.post("/fleet/instance-groups", status_code=201)
+def create_instance_group(
+    request: Request, body: InstanceGroupCreate
+) -> dict[str, Any]:
+    _require_policy_admin(request, "fleet.groups.edit")
+    settings = request.app.state.ctx.settings
+    fleet: FleetRegistry = request.app.state.ctx.require_service("fleet_registry")
+    _policy_service(request).migrate(
+        realm_id=body.realm_id,
+        instances=list(fleet.list_instances()),
+        actor=get_principal_id(request),
+        author_instance=settings.instance_id,
+        apply=True,
+    )
+    try:
+        group = request.app.state.ctx.store.create_instance_group(
+            body,
+            principal_id=get_principal_id(request),
+            instance_id=settings.instance_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return _group_public(request, group, include_membership=True)
+
+
+def _custom_group_or_404(request: Request, group_id: str, realm_id: str):
+    if group_id in BUILTIN_GROUPS:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "system_group_immutable",
+                "message": "Built-in group semantics are immutable.",
+            },
+        )
+    group = request.app.state.ctx.store.get_instance_group(group_id, realm_id)
+    if not group:
+        raise HTTPException(status_code=404, detail="Instance group not found")
+    return group
+
+
+@router.get("/fleet/instance-groups/{group_id}")
+def get_instance_group(
+    request: Request, group_id: str, realm: str | None = None
+) -> dict[str, Any]:
+    require_user(request)
+    realm_id = realm or request.app.state.ctx.settings.primary_realm
+    group = _policy_service(request).get_group(realm_id, group_id)
+    if not group:
+        raise HTTPException(status_code=404, detail="Instance group not found")
+    return _group_public(request, group, include_membership=True)
+
+
+@router.patch("/fleet/instance-groups/{group_id}")
+def update_instance_group(
+    request: Request,
+    group_id: str,
+    body: InstanceGroupUpdate,
+    realm: str | None = None,
+) -> dict[str, Any]:
+    _require_policy_admin(request, "fleet.groups.edit")
+    settings = request.app.state.ctx.settings
+    realm_id = realm or settings.primary_realm
+    _custom_group_or_404(request, group_id, realm_id)
+    try:
+        group = request.app.state.ctx.store.update_instance_group(
+            group_id,
+            body,
+            realm_id=realm_id,
+            principal_id=get_principal_id(request),
+            instance_id=settings.instance_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return _group_public(request, group, include_membership=True)
+
+
+@router.post("/fleet/instance-groups/{group_id}/archive")
+def archive_instance_group(
+    request: Request, group_id: str, realm: str | None = None
+) -> dict[str, Any]:
+    return update_instance_group(
+        request,
+        group_id,
+        InstanceGroupUpdate(lifecycle_state=GroupLifecycle.ARCHIVED),
+        realm,
+    )
+
+
+@router.delete("/fleet/instance-groups/{group_id}", status_code=204)
+def delete_instance_group(
+    request: Request, group_id: str, realm: str | None = None
+) -> Response:
+    _require_policy_admin(request, "fleet.groups.delete")
+    settings = request.app.state.ctx.settings
+    realm_id = realm or settings.primary_realm
+    _custom_group_or_404(request, group_id, realm_id)
+    request.app.state.ctx.store.delete_instance_group(
+        group_id,
+        realm_id=realm_id,
+        principal_id=get_principal_id(request),
+        instance_id=settings.instance_id,
+    )
+    return Response(status_code=204)
+
+
+def _change_group_membership(
+    request: Request,
+    group_id: str,
+    instance_id: str,
+    *,
+    excluded: bool,
+    remove: bool,
+    realm_id: str,
+) -> dict[str, Any]:
+    _require_policy_admin(request, "fleet.groups.membership.edit")
+    group = _custom_group_or_404(request, group_id, realm_id)
+    included = set(group.included_instance_ids)
+    exclusions = set(group.excluded_instance_ids)
+    target = exclusions if excluded else included
+    target.discard(instance_id) if remove else target.add(instance_id)
+    body = InstanceGroupUpdate(
+        included_instance_ids=sorted(included),
+        excluded_instance_ids=sorted(exclusions),
+        expected_version=group.version,
+    )
+    updated = request.app.state.ctx.store.update_instance_group(
+        group_id,
+        body,
+        realm_id=realm_id,
+        principal_id=get_principal_id(request),
+        instance_id=request.app.state.ctx.settings.instance_id,
+    )
+    return _group_public(request, updated, include_membership=True)
+
+
+@router.put("/fleet/instance-groups/{group_id}/members/{instance_id}")
+def add_instance_group_member(
+    request: Request, group_id: str, instance_id: str, realm: str | None = None
+) -> dict[str, Any]:
+    return _change_group_membership(
+        request,
+        group_id,
+        instance_id,
+        excluded=False,
+        remove=False,
+        realm_id=realm or request.app.state.ctx.settings.primary_realm,
+    )
+
+
+@router.delete("/fleet/instance-groups/{group_id}/members/{instance_id}")
+def remove_instance_group_member(
+    request: Request, group_id: str, instance_id: str, realm: str | None = None
+) -> dict[str, Any]:
+    return _change_group_membership(
+        request,
+        group_id,
+        instance_id,
+        excluded=False,
+        remove=True,
+        realm_id=realm or request.app.state.ctx.settings.primary_realm,
+    )
+
+
+@router.put("/fleet/instance-groups/{group_id}/exclusions/{instance_id}")
+def add_instance_group_exclusion(
+    request: Request, group_id: str, instance_id: str, realm: str | None = None
+) -> dict[str, Any]:
+    return _change_group_membership(
+        request,
+        group_id,
+        instance_id,
+        excluded=True,
+        remove=False,
+        realm_id=realm or request.app.state.ctx.settings.primary_realm,
+    )
+
+
+@router.delete("/fleet/instance-groups/{group_id}/exclusions/{instance_id}")
+def remove_instance_group_exclusion(
+    request: Request, group_id: str, instance_id: str, realm: str | None = None
+) -> dict[str, Any]:
+    return _change_group_membership(
+        request,
+        group_id,
+        instance_id,
+        excluded=True,
+        remove=True,
+        realm_id=realm or request.app.state.ctx.settings.primary_realm,
+    )
+
+
+@router.get("/fleet/instances/{instance_id}/participation-policy")
+def get_instance_participation_policy(
+    request: Request, instance_id: str, realm: str | None = None
+) -> dict[str, Any]:
+    require_user(request)
+    realm_id = realm or request.app.state.ctx.settings.primary_realm
+    policy, explicit = _policy_service(request).effective_policy(
+        realm_id, instance_id
+    )
+    return {
+        **policy.model_dump(mode="json"),
+        "explicit": explicit,
+        "summary": policy.summary(),
+    }
+
+
+def _policy_change_enables(
+    old: InstanceParticipationPolicy, new: InstanceParticipationPolicy
+) -> bool:
+    profiles = set(WORKLOAD_PROFILES)
+    old_allowed = set(old.allowed_profiles) or profiles
+    new_allowed = set(new.allowed_profiles) or profiles
+    old_effective = old_allowed - set(old.denied_profiles) - set(
+        old.hard_denied_profiles
+    )
+    new_effective = new_allowed - set(new.denied_profiles) - set(
+        new.hard_denied_profiles
+    )
+    return bool(
+        (new_effective - old_effective)
+        or (not old.automatic_dispatch and new.automatic_dispatch)
+        or (not old.manual_dispatch and new.manual_dispatch)
+        or (old.maintenance and not new.maintenance)
+        or (old.quiescing and not new.quiescing)
+    )
+
+
+@router.put("/fleet/instances/{instance_id}/participation-policy")
+def update_instance_participation_policy(
+    request: Request,
+    instance_id: str,
+    body: InstanceParticipationPolicyUpdate,
+    realm: str | None = None,
+) -> dict[str, Any]:
+    _require_policy_admin(request, "fleet.instance_participation.edit")
+    ctx = request.app.state.ctx
+    realm_id = realm or ctx.settings.primary_realm
+    fleet: FleetRegistry = ctx.require_service("fleet_registry")
+    if not any(
+        item.instance_id == instance_id for item in fleet.list_instances()
+    ) and not ctx.store.get_instance_participation_policy(instance_id, realm_id):
+        raise HTTPException(status_code=404, detail="Fleet instance not found")
+    if not ctx.store.list_instance_participation_policies(realm_id):
+        _policy_service(request).migrate(
+            realm_id=realm_id,
+            instances=list(fleet.list_instances()),
+            actor=get_principal_id(request),
+            author_instance=ctx.settings.instance_id,
+            apply=True,
+        )
+    current, _explicit = _policy_service(request).effective_policy(
+        realm_id, instance_id
+    )
+    if body.expected_version is not None and body.expected_version != current.version:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "participation_policy_version_conflict",
+                "expected_version": body.expected_version,
+                "actual_version": current.version,
+            },
+        )
+    updates = body.model_dump(
+        mode="python",
+        exclude_unset=True,
+        exclude={
+            "expected_version",
+            "confirm_enable",
+            "confirmation_reason",
+        },
+    )
+    if body.participation_mode is not None:
+        if body.automatic_dispatch is None:
+            updates["automatic_dispatch"] = (
+                body.participation_mode == ParticipationMode.AUTOMATIC
+            )
+        if body.manual_dispatch is None:
+            updates["manual_dispatch"] = (
+                body.participation_mode != ParticipationMode.DISABLED
+            )
+    updated = current.model_copy(deep=True)
+    for key, value in updates.items():
+        if value is not None:
+            setattr(updated, key, value)
+    # A fleet authority can add a self-protective limit but cannot remove one
+    # already advertised and synchronized by the instance.
+    updated.hard_denied_profiles = sorted(
+        set(updated.hard_denied_profiles) | set(current.hard_denied_profiles)
+    )
+    updated.source = "operator"
+    for profile, limit in current.hard_max_concurrent_by_profile.items():
+        proposed = updated.hard_max_concurrent_by_profile.get(profile)
+        updated.hard_max_concurrent_by_profile[profile] = (
+            limit if proposed is None else min(limit, proposed)
+        )
+    updated = InstanceParticipationPolicy.model_validate(
+        updated.model_dump(mode="python")
+    )
+    enabling = _policy_change_enables(current, updated)
+    if enabling and (
+        not body.confirm_enable or not (body.confirmation_reason or "").strip()
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "participation_enable_confirmation_required",
+                "message": "Enabling previously denied work requires explicit confirmation and an audit reason.",
+            },
+        )
+    if enabling:
+        updated.enablement_confirmation_reason = body.confirmation_reason.strip()
+        updated.reason = (
+            updated.reason
+            or f"Enabled with confirmation: {body.confirmation_reason.strip()}"
+        )
+    saved = ctx.store.set_instance_participation_policy(
+        updated,
+        principal_id=get_principal_id(request),
+        instance_id=ctx.settings.instance_id,
+    )
+    return {
+        **saved.model_dump(mode="json"),
+        "explicit": True,
+        "summary": saved.summary(),
+    }
+
+
+@router.get("/fleet/placement-defaults")
+def list_placement_defaults(
+    request: Request, realm: str | None = None
+) -> list[dict[str, Any]]:
+    require_user(request)
+    realm_id = realm or request.app.state.ctx.settings.primary_realm
+    return [
+        item.model_dump(mode="json") | {"scope_key": item.scope_key}
+        for item in request.app.state.ctx.store.list_placement_defaults(realm_id)
+    ]
+
+
+@router.put("/fleet/placement-defaults")
+def set_placement_default(
+    request: Request, body: PlacementDefaultBody
+) -> dict[str, Any]:
+    _require_policy_admin(request, "fleet.placement_defaults.edit")
+    ctx = request.app.state.ctx
+    realm_id = body.realm_id or ctx.settings.primary_realm
+    group = _policy_service(request).get_group(realm_id, body.group_id)
+    if not group or group.lifecycle_state != GroupLifecycle.ACTIVE:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "configured_group_unavailable",
+                "message": "A default can reference only an active group.",
+            },
+        )
+    if body.project_id and not ctx.store.get_project(body.project_id, realm_id):
+        raise HTTPException(status_code=404, detail="Project not found")
+    fleet: FleetRegistry = ctx.require_service("fleet_registry")
+    _policy_service(request).migrate(
+        realm_id=realm_id,
+        instances=list(fleet.list_instances()),
+        actor=get_principal_id(request),
+        author_instance=ctx.settings.instance_id,
+        apply=True,
+    )
+    saved = ctx.store.set_placement_default(
+        PlacementDefault(
+            realm_id=realm_id,
+            project_id=body.project_id,
+            workload_profile=body.workload_profile,
+            group_id=body.group_id,
+        ),
+        principal_id=get_principal_id(request),
+        instance_id=ctx.settings.instance_id,
+    )
+    return saved.model_dump(mode="json") | {"scope_key": saved.scope_key}
+
+
+@router.delete("/fleet/placement-defaults", status_code=204)
+def delete_placement_default(
+    request: Request,
+    realm: str | None = None,
+    project_id: str | None = None,
+    workload_profile: str | None = None,
+) -> Response:
+    _require_policy_admin(request, "fleet.placement_defaults.edit")
+    ctx = request.app.state.ctx
+    ctx.store.delete_placement_default(
+        realm_id=realm or ctx.settings.primary_realm,
+        project_id=project_id,
+        workload_profile=workload_profile,
+        principal_id=get_principal_id(request),
+        instance_id=ctx.settings.instance_id,
+    )
+    return Response(status_code=204)
+
+
+@router.post("/fleet/participation-migration")
+def migrate_instance_participation(
+    request: Request, body: PlacementMigrationBody
+) -> dict[str, Any]:
+    _require_policy_admin(request, "fleet.instance_participation.migrate")
+    ctx = request.app.state.ctx
+    fleet: FleetRegistry = ctx.require_service("fleet_registry")
+    return _policy_service(request).migrate(
+        realm_id=body.realm_id or ctx.settings.primary_realm,
+        instances=list(fleet.list_instances()),
+        actor=get_principal_id(request),
+        author_instance=ctx.settings.instance_id,
+        apply=body.apply,
+    )
+
+
+@router.get("/fleet/policy-audit")
+def fleet_policy_audit(
+    request: Request,
+    realm: str | None = None,
+    entity_type: str | None = None,
+    entity_id: str | None = None,
+    limit: int = 200,
+) -> list[dict[str, Any]]:
+    require_user(request)
+    realm_id = realm or request.app.state.ctx.settings.primary_realm
+    events = [
+        item.model_dump(mode="json")
+        for item in request.app.state.ctx.store.list_fleet_policy_audit(
+            realm_id,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            limit=min(max(limit, 1), 1000),
+        )
+    ]
+    if entity_type in {None, "placement_decision"}:
+        events.extend(
+            {
+                "id": record.dispatch_id,
+                "realm_id": record.realm_id,
+                "entity_type": "placement_decision",
+                "entity_id": record.dispatch_id,
+                "action": "placement_resolved",
+                "actor": record.principal_id,
+                "payload": record.placement_decision or {},
+                "created_at": (
+                    record.placement_resolved_at or record.created_at
+                ).isoformat(),
+            }
+            for record in _dispatch_store(request).list(limit=limit)
+            if record.realm_id == realm_id
+        )
+    return sorted(events, key=lambda item: item["created_at"], reverse=True)[:limit]
 
 
 @router.post("/fleet/dispatch/materialize")
@@ -1033,6 +1580,22 @@ def _fleet_context(request: Request) -> dict:
         )
     )
     instances = list(fleet.list_instances())
+    try:
+        policy_service: FleetPolicyService = ctx.require_service("fleet_policy")
+    except (KeyError, RuntimeError):
+        # Keep direct context/unit-test construction compatible with modules
+        # that predate the registered policy service.
+        policy_service = FleetPolicyService(ctx.store)
+    participation = {}
+    for instance in instances:
+        policy, explicit = policy_service.effective_policy(
+            primary_realm, instance.instance_id
+        )
+        participation[instance.instance_id] = {
+            **policy.model_dump(mode="json"),
+            "explicit": explicit,
+            "summary": policy.summary(),
+        }
     canonical_ids = {
         item.instance_id for item in instances if item.lifecycle_state == "active"
     }
@@ -1064,6 +1627,14 @@ def _fleet_context(request: Request) -> dict:
         "primary_realm": primary_realm,
         "cards": ctx.store.list_cards(realm_id=primary_realm),
         "projects": ctx.store.list_projects(realm_id=primary_realm),
+        "instance_groups": policy_service.list_groups(
+            primary_realm, include_archived=True
+        ),
+        "participation_policies": participation,
+        "placement_defaults": ctx.store.list_placement_defaults(primary_realm),
+        "fleet_policy_audit": ctx.store.list_fleet_policy_audit(
+            primary_realm, limit=50
+        ),
     }
 
 
@@ -3583,6 +4154,7 @@ async def _placement_candidates(
             instance_id=inst.instance_id,
             name=inst.name,
             zone=inst.zone,
+            lifecycle_state=inst.lifecycle_state,
             local=inst.instance_id == ctx.settings.instance_id,
             capabilities=list(inst.capabilities),
             dispatch_capacity=inst.dispatch_capacity,
@@ -3595,6 +4167,291 @@ async def _placement_candidates(
         )
 
     return list(await asyncio.gather(*(inspect(inst) for inst in instances)))
+
+
+def _placement_materialization_plan(
+    request: Request,
+    body: FleetDispatchBody,
+    *,
+    card,
+    project,
+    project_id: str | None,
+    target_instance_id: str,
+):
+    store = request.app.state.ctx.store
+    project_repositories = (
+        list(
+            store.list_project_repositories(
+                project_id,
+                realm_id=(
+                    card.realm_id
+                    if card
+                    else request.app.state.ctx.settings.primary_realm
+                ),
+            )
+        )
+        if project_id
+        else []
+    )
+    requested_contract = (
+        ExecutionContract.model_validate(body.execution_contract)
+        if body.execution_contract
+        else None
+    )
+    explicit_ids = [
+        item.repository_id
+        for item in (
+            requested_contract.requirements.repositories if requested_contract else []
+        )
+    ]
+    explicit_repositories = []
+    realm_id = card.realm_id if card else request.app.state.ctx.settings.primary_realm
+    for repository_id in explicit_ids:
+        repository = store.get_repository(repository_id, realm_id)
+        if repository:
+            explicit_repositories.append(repository)
+    plan = resolve_materialization_plan(
+        requested=requested_contract,
+        card=card,
+        project=project,
+        project_repositories=project_repositories,
+        explicit_repositories=explicit_repositories,
+        target_instance_id=target_instance_id,
+    )
+    repository_ids = [item.repository_id for item in plan.requirements.repositories]
+    return plan, repository_ids
+
+
+async def _resolve_policy_placement(
+    request: Request,
+    body: FleetDispatchBody,
+    *,
+    card,
+    project,
+    project_id: str | None,
+) -> tuple[Any, Any]:
+    ctx = request.app.state.ctx
+    realm_id = card.realm_id if card else ctx.settings.primary_realm
+    plan, repository_ids = _placement_materialization_plan(
+        request,
+        body,
+        card=card,
+        project=project,
+        project_id=project_id,
+        target_instance_id=body.target_instance_id or "placement-preview",
+    )
+    fleet: FleetRegistry = ctx.require_service("fleet_registry")
+    instances = list(fleet.list_instances())
+    candidates = await _placement_candidates(request, instances)
+    policies = _policy_service(request)
+    requested_group_id = body.group_id
+    if body.target_instance_id and requested_group_id:
+        raise PlacementError(
+            "invalid_placement_group",
+            "A named/manual dispatch cannot also specify a worker group.",
+            recoverable=False,
+        )
+    try:
+        group = policies.resolve_group(
+            realm_id=realm_id,
+            project_id=project_id,
+            workload_profile=plan.profile.value,
+            requested_group_id=(
+                "all-active" if body.target_instance_id else requested_group_id
+            ),
+            candidates=candidates,
+            local_instance_id=ctx.settings.instance_id,
+        )
+    except ValueError as exc:
+        code, _separator, message = str(exc).partition(":")
+        _group, _separator, message = message.partition(":")
+        raise PlacementError(
+            code or "configured_group_unavailable",
+            message or str(exc),
+            recoverable=True,
+        ) from exc
+
+    explicit_policies = ctx.store.list_instance_participation_policies(realm_id)
+    policy_enforcement_active = bool(
+        explicit_policies
+        or ctx.store.list_instance_groups(realm_id, include_archived=True)
+        or ctx.store.list_placement_defaults(realm_id)
+    )
+    for candidate in candidates:
+        policy, explicit = policies.effective_policy(
+            realm_id, candidate.instance_id
+        )
+        candidate.participation_policy = policy
+        candidate.participation_policy_explicit = explicit
+        candidate.group_membership = group.membership.get(
+            candidate.instance_id, "not_in_requested_group"
+        )
+        candidate.group_id = group.resolved_group_id
+        activity = (
+            candidate.activity.get("value")
+            if isinstance(candidate.activity, dict)
+            else {}
+        ) or {}
+        schema_version = activity.get("participation_policy_schema_version")
+        try:
+            candidate.participation_policy_supported = (
+                schema_version is None or int(schema_version) >= 1
+            )
+        except (TypeError, ValueError):
+            candidate.participation_policy_supported = False
+        candidate.self_protection = dict(
+            activity.get("self_protective_participation") or {}
+        )
+
+    required_capabilities = sorted(
+        set(body.required_capabilities)
+        | set(card.preferred_capabilities if card else [])
+        | set(plan.requirements.required_capabilities)
+    )
+    placement: PlacementService = ctx.require_service("placement_service")
+    decision = await _offload_request(
+        request,
+        "fleet.placement_resolve",
+        placement.resolve,
+        PlacementRequest(
+            realm_id=realm_id,
+            fleet_id=ctx.settings.fleet_id,
+            policy=body.placement_policy,
+            instance_id=body.target_instance_id,
+            card_id=body.card_id,
+            provider=body.provider,
+            model_id=body.model_id,
+            required_capabilities=required_capabilities,
+            repository_ids=repository_ids,
+            workload_profile=plan.profile.value,
+            project_id=project_id,
+            dispatch_intent=(
+                DispatchIntent.PRIVILEGED_OVERRIDE
+                if body.participation_override
+                else (
+                    DispatchIntent.MANUAL
+                    if body.target_instance_id
+                    else DispatchIntent.AUTOMATIC
+                )
+            ),
+            requested_group_id=body.group_id,
+            resolved_group_id=group.resolved_group_id,
+            resolved_group_name=group.resolved_group_name,
+            group_version=group.group_version,
+            default_source=(
+                "privileged_named_override"
+                if body.participation_override
+                else (
+                    "named_manual_dispatch"
+                    if body.target_instance_id
+                    else group.default_source
+                )
+            ),
+            permitted_placement_policies=group.permitted_placement_policies,
+            principal_id=get_principal_id(request),
+            participation_override_reason=body.participation_override_reason,
+            policy_enforcement_active=policy_enforcement_active,
+            workspace_eligible=not (
+                plan.missing_dependencies or plan.stale_dependencies
+            ),
+            workspace_reason=plan.summary,
+            allow_concurrent=body.allow_concurrent,
+            capacity_override=body.capacity_override,
+        ),
+        candidates,
+    )
+    decision.eligible_candidates = [
+        {
+            **item,
+            "group_version": group.group_version,
+        }
+        for item in decision.eligible_candidates
+    ]
+    decision.rejected_candidates = [
+        {
+            **item,
+            "group_version": group.group_version,
+        }
+        for item in decision.rejected_candidates
+    ]
+    return decision, plan
+
+
+@router.post("/fleet/placement/preview")
+async def preview_fleet_placement(
+    request: Request, body: FleetDispatchBody
+) -> dict[str, Any]:
+    user = require_user(request)
+    _validate_participation_override(user, body)
+    ctx = request.app.state.ctx
+    realm_id = ctx.settings.primary_realm
+    card = (
+        await _offload_request(
+            request,
+            "sqlite.card_read",
+            ctx.store.get_card,
+            body.card_id,
+            realm_id=realm_id,
+        )
+        if body.card_id
+        else None
+    )
+    if body.card_id and not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+    project_id = body.project_id or (card.project_id if card else None)
+    project = (
+        await _offload_request(
+            request,
+            "sqlite.project_read",
+            ctx.store.get_project,
+            project_id,
+            realm_id=realm_id,
+        )
+        if project_id
+        else None
+    )
+    if project_id and not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    try:
+        decision, plan = await _resolve_policy_placement(
+            request,
+            body,
+            card=card,
+            project=project,
+            project_id=project_id,
+        )
+    except PlacementError as exc:
+        raise _placement_http_error(exc) from exc
+    return {
+        "schema_version": 1,
+        "previewed_at": datetime.now(UTC).isoformat(),
+        "decision": decision.model_dump(mode="json"),
+        "materialization_plan": plan.model_dump(mode="json"),
+        "selected_instance_id": decision.chosen_instance_id,
+        "selection_semantics": decision.tie_breaking_reason,
+    }
+
+
+@router.get("/fleet/instance-groups/{group_id}/preview")
+async def preview_instance_group(
+    request: Request,
+    group_id: str,
+    workload_profile: str = "research",
+    project_id: str | None = None,
+    policy: PlacementPolicy = PlacementPolicy.BEST_MATCH,
+) -> dict[str, Any]:
+    body = FleetDispatchBody(
+        placement_policy=policy,
+        group_id=group_id,
+        project_id=project_id,
+        execution_contract={
+            "version": 1,
+            "profile": workload_profile,
+            "confirmed": True,
+            "requirements": {},
+        },
+    )
+    return await preview_fleet_placement(request, body)
 
 
 def _capacity_admission_from_decision(
@@ -3648,10 +4505,43 @@ def _placement_http_error(exc: PlacementError) -> HTTPException:
     )
 
 
+def _validate_participation_override(user, body: RemoteAgentStartBody) -> None:
+    if not body.participation_override:
+        return
+    if getattr(user, "role", None) != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "participation_override_forbidden",
+                "message": "Only an administrator may perform a participation-policy override.",
+                "recoverable": False,
+            },
+        )
+    if not (body.participation_override_reason or "").strip():
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "participation_override_reason_required",
+                "message": "Record an operator reason for the privileged override.",
+                "recoverable": True,
+            },
+        )
+    if isinstance(body, FleetDispatchBody) and not body.target_instance_id:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "participation_override_requires_named_target",
+                "message": "A privileged participation override requires a concrete named instance.",
+                "recoverable": False,
+            },
+        )
+
+
 @router.post("/fleet/dispatch", status_code=202)
 async def dispatch_fleet_work(request: Request, body: FleetDispatchBody) -> dict:
     """Resolve a concrete or policy target, then durably admit exactly once."""
     user = require_user(request)
+    _validate_participation_override(user, body)
     ctx = request.app.state.ctx
     settings = ctx.settings
     if body.capacity_override:
@@ -3780,42 +4670,13 @@ async def dispatch_fleet_work(request: Request, body: FleetDispatchBody) -> dict
                 },
             )
 
-    repository_ids = (
-        [
-            repository.id
-            for repository, _link in store.list_project_repositories(
-                project_id, realm_id=realm_id
-            )
-        ]
-        if project_id
-        else []
-    )
-    required_capabilities = sorted(
-        set(body.required_capabilities)
-        | set(card.preferred_capabilities if card else [])
-    )
-    fleet: FleetRegistry = ctx.require_service("fleet_registry")
-    candidates = await _placement_candidates(request, list(fleet.list_instances()))
-    placement: PlacementService = ctx.require_service("placement_service")
     try:
-        decision = await _offload_request(
+        decision, _plan = await _resolve_policy_placement(
             request,
-            "fleet.placement_resolve",
-            placement.resolve,
-            PlacementRequest(
-                realm_id=realm_id,
-                fleet_id=settings.fleet_id,
-                policy=body.placement_policy,
-                instance_id=body.target_instance_id,
-                card_id=body.card_id,
-                provider=body.provider,
-                model_id=body.model_id,
-                required_capabilities=required_capabilities,
-                repository_ids=repository_ids,
-                allow_concurrent=body.allow_concurrent,
-                capacity_override=body.capacity_override,
-            ),
-            candidates,
+            body,
+            card=card,
+            project=project,
+            project_id=project_id,
         )
     except PlacementError as exc:
         logger.warning(
@@ -3830,6 +4691,7 @@ async def dispatch_fleet_work(request: Request, body: FleetDispatchBody) -> dict
         exclude={
             "target_instance_id",
             "placement_policy",
+            "group_id",
             "required_capabilities",
         },
     )
@@ -3853,6 +4715,7 @@ async def start_remote_agent_work(
 ) -> dict:
     """Apply named placement checks, then durably admit remote work."""
     user = require_user(request)
+    _validate_participation_override(user, body)
     if body.capacity_override:
         if getattr(user, "role", None) != "admin":
             raise HTTPException(
@@ -3882,25 +4745,43 @@ async def start_remote_agent_work(
         # preserves direct internal callers that intentionally construct a
         # minimal context; every booted HTTP/MCP surface registers placement.
         return await _admit_remote_agent_work(request, instance_id, body)
-    fleet: FleetRegistry = ctx.require_service("fleet_registry")
-    candidates = await _placement_candidates(request, list(fleet.list_instances()))
-    placement: PlacementService = ctx.require_service("placement_service")
-    try:
-        decision = await _offload_request(
+    realm_id = ctx.settings.primary_realm
+    card = (
+        await _offload_request(
             request,
-            "fleet.named_placement_resolve",
-            placement.resolve,
-            PlacementRequest(
-                realm_id=ctx.settings.primary_realm,
-                fleet_id=ctx.settings.fleet_id,
-                instance_id=instance_id,
-                card_id=body.card_id,
-                provider=body.provider,
-                model_id=body.model_id,
-                allow_concurrent=body.allow_concurrent,
-                capacity_override=body.capacity_override,
-            ),
-            candidates,
+            "sqlite.card_read",
+            ctx.store.get_card,
+            body.card_id,
+            realm_id=realm_id,
+        )
+        if body.card_id
+        else None
+    )
+    if body.card_id and not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+    project_id = body.project_id or (card.project_id if card else None)
+    project = (
+        await _offload_request(
+            request,
+            "sqlite.project_read",
+            ctx.store.get_project,
+            project_id,
+            realm_id=realm_id,
+        )
+        if project_id
+        else None
+    )
+    placement_body = FleetDispatchBody(
+        **body.model_dump(mode="python"),
+        target_instance_id=instance_id,
+    )
+    try:
+        decision, _plan = await _resolve_policy_placement(
+            request,
+            placement_body,
+            card=card,
+            project=project,
+            project_id=project_id,
         )
     except PlacementError as exc:
         logger.warning(
@@ -4395,6 +5276,30 @@ async def _retry_dispatch_api(
     candidates = await _placement_candidates(request, list(fleet.list_instances()))
     placement: PlacementService = ctx.require_service("placement_service")
     provider = record.capacity_provider or record.request_payload.get("provider")
+    original = dict(record.placement_decision or {})
+    policy_service = _policy_service(request)
+    explicit_policies = ctx.store.list_instance_participation_policies(record.realm_id)
+    policy_enforcement_active = bool(
+        explicit_policies
+        or ctx.store.list_instance_groups(
+            record.realm_id, include_archived=True
+        )
+        or ctx.store.list_placement_defaults(record.realm_id)
+    )
+    for candidate in candidates:
+        policy, explicit = policy_service.effective_policy(
+            record.realm_id, candidate.instance_id
+        )
+        candidate.participation_policy = policy
+        candidate.participation_policy_explicit = explicit
+        # This is a retry of an already resolved placement operation. Preserve
+        # its exact candidate scope and target instead of re-expanding a group.
+        candidate.group_membership = (
+            "included"
+            if candidate.instance_id == record.target_instance_id
+            else "not_in_requested_group"
+        )
+        candidate.group_id = original.get("resolved_group_id")
     try:
         decision = await _offload_request(
             request,
@@ -4407,6 +5312,35 @@ async def _retry_dispatch_api(
                 card_id=record.card_id,
                 provider=provider,
                 model_id=record.request_payload.get("model_id"),
+                repository_ids=[
+                    str(item.get("repository_id"))
+                    for item in (
+                        (record.materialization_plan or {})
+                        .get("requirements", {})
+                        .get("repositories", [])
+                    )
+                    if item.get("repository_id")
+                ],
+                workload_profile=str(
+                    original.get("workload_profile")
+                    or (record.materialization_plan or {}).get("profile")
+                    or "research"
+                ),
+                project_id=record.project_id,
+                dispatch_intent=DispatchIntent(
+                    original.get("dispatch_intent")
+                    or DispatchIntent.AUTOMATIC.value
+                ),
+                requested_group_id=original.get("requested_group_id"),
+                resolved_group_id=original.get("resolved_group_id"),
+                resolved_group_name=original.get("resolved_group_name"),
+                group_version=original.get("group_version"),
+                default_source="idempotent_retry_original_target",
+                principal_id=record.principal_id,
+                participation_override_reason=original.get(
+                    "participation_override_reason"
+                ),
+                policy_enforcement_active=policy_enforcement_active,
                 allow_concurrent=True,
             ),
             candidates,
@@ -4422,8 +5356,14 @@ async def _retry_dispatch_api(
                 "capacity_unavailable",
                 "The original target did not return fresh capacity data.",
             )
-        record.placement_decision = decision.model_dump(mode="json")
-        record.placement_resolved_at = datetime.now(UTC)
+        revalidation = decision.model_dump(mode="json")
+        revalidation["original_resolved_at"] = (
+            record.placement_resolved_at.isoformat()
+            if record.placement_resolved_at
+            else None
+        )
+        revalidation["retry_revalidated_at"] = datetime.now(UTC).isoformat()
+        record.placement_decision = revalidation
         record = await _offload_request(
             request,
             "dispatch.retry_capacity_admission",
@@ -5196,6 +6136,7 @@ class FleetModule(Module):
             "placement_service",
             PlacementService(RoundRobinCursorStore(settings.data_dir)),
         )
+        ctx.register_service("fleet_policy", FleetPolicyService(ctx.store))
 
         pages: PageRegistry = ctx.require_service("pages")
         pages.register(
@@ -5318,11 +6259,294 @@ class FleetModule(Module):
         from pa.mcp.local_api import request_local_pa
 
         @mcp.tool()
+        def list_instance_groups(
+            realm_id: str | None = None, include_archived: bool = False
+        ) -> list[dict]:
+            """List immutable built-in and operator-defined worker groups."""
+            return request_local_pa(
+                ctx.settings,
+                "GET",
+                "/api/fleet/instance-groups",
+                params={
+                    "realm": realm_id,
+                    "include_archived": include_archived,
+                },
+            )
+
+        @mcp.tool()
+        def get_instance_group(
+            group_id: str, realm_id: str | None = None
+        ) -> dict | None:
+            """Get one worker group with stable-ID membership and exclusions."""
+            return request_local_pa(
+                ctx.settings,
+                "GET",
+                f"/api/fleet/instance-groups/{group_id}",
+                params={"realm": realm_id},
+                allow_not_found=True,
+            )
+
+        @mcp.tool()
+        def create_instance_group(
+            name: str,
+            description: str = "",
+            realm_id: str = "default",
+            included_instance_ids: list[str] | None = None,
+            excluded_instance_ids: list[str] | None = None,
+            selector: dict[str, Any] | None = None,
+            permitted_placement_policies: list[str] | None = None,
+            visible_project_ids: list[str] | None = None,
+        ) -> dict:
+            """Create a synchronized reusable fleet selection scope."""
+            payload = {
+                "realm_id": realm_id,
+                "name": name,
+                "description": description,
+                "included_instance_ids": included_instance_ids or [],
+                "excluded_instance_ids": excluded_instance_ids or [],
+                "selector": selector or {},
+                "visible_project_ids": visible_project_ids or [],
+            }
+            if permitted_placement_policies is not None:
+                payload["permitted_placement_policies"] = (
+                    permitted_placement_policies
+                )
+            return request_local_pa(
+                ctx.settings,
+                "POST",
+                "/api/fleet/instance-groups",
+                json=payload,
+            )
+
+        @mcp.tool()
+        def update_instance_group(
+            group_id: str,
+            changes: dict[str, Any],
+            realm_id: str | None = None,
+        ) -> dict:
+            """Update group rules using the expected_version in changes when supplied."""
+            return request_local_pa(
+                ctx.settings,
+                "PATCH",
+                f"/api/fleet/instance-groups/{group_id}",
+                params={"realm": realm_id},
+                json=changes,
+            )
+
+        @mcp.tool()
+        def archive_instance_group(
+            group_id: str, realm_id: str | None = None
+        ) -> dict:
+            """Archive a custom group without allowing defaults to fall back."""
+            return request_local_pa(
+                ctx.settings,
+                "POST",
+                f"/api/fleet/instance-groups/{group_id}/archive",
+                params={"realm": realm_id},
+            )
+
+        @mcp.tool()
+        def delete_instance_group(
+            group_id: str, realm_id: str | None = None
+        ) -> dict | None:
+            """Delete a custom group; references remain visibly unavailable."""
+            return request_local_pa(
+                ctx.settings,
+                "DELETE",
+                f"/api/fleet/instance-groups/{group_id}",
+                params={"realm": realm_id},
+            )
+
+        @mcp.tool()
+        def set_instance_group_member(
+            group_id: str,
+            instance_id: str,
+            *,
+            included: bool = True,
+            excluded: bool = False,
+            realm_id: str | None = None,
+        ) -> dict:
+            """Add/remove a stable instance ID from explicit membership or exclusions."""
+            collection = "exclusions" if excluded else "members"
+            return request_local_pa(
+                ctx.settings,
+                "PUT" if included else "DELETE",
+                f"/api/fleet/instance-groups/{group_id}/{collection}/{instance_id}",
+                params={"realm": realm_id},
+            )
+
+        @mcp.tool()
+        def preview_instance_group(
+            group_id: str,
+            workload_profile: str = "research",
+            project_id: str | None = None,
+            policy: PlacementPolicy = PlacementPolicy.BEST_MATCH,
+        ) -> dict:
+            """Preview expanded membership plus policy/readiness rejection reasons."""
+            return request_local_pa(
+                ctx.settings,
+                "GET",
+                f"/api/fleet/instance-groups/{group_id}/preview",
+                params={
+                    "workload_profile": workload_profile,
+                    "project_id": project_id,
+                    "policy": policy.value,
+                },
+            )
+
+        @mcp.tool()
+        def get_instance_participation_policy(
+            instance_id: str, realm_id: str | None = None
+        ) -> dict:
+            """Get an instance's effective participation policy and summary."""
+            return request_local_pa(
+                ctx.settings,
+                "GET",
+                f"/api/fleet/instances/{instance_id}/participation-policy",
+                params={"realm": realm_id},
+            )
+
+        @mcp.tool()
+        def update_instance_participation_policy(
+            instance_id: str,
+            changes: dict[str, Any],
+            realm_id: str | None = None,
+        ) -> dict:
+            """Update a policy; enabling work requires confirmation fields."""
+            return request_local_pa(
+                ctx.settings,
+                "PUT",
+                f"/api/fleet/instances/{instance_id}/participation-policy",
+                params={"realm": realm_id},
+                json=changes,
+            )
+
+        @mcp.tool()
+        def set_placement_default_group(
+            group_id: str,
+            realm_id: str | None = None,
+            project_id: str | None = None,
+            workload_profile: str | None = None,
+        ) -> dict:
+            """Set a realm/project/profile default without all-instance fallback."""
+            return request_local_pa(
+                ctx.settings,
+                "PUT",
+                "/api/fleet/placement-defaults",
+                json={
+                    "group_id": group_id,
+                    "realm_id": realm_id,
+                    "project_id": project_id,
+                    "workload_profile": workload_profile,
+                },
+            )
+
+        @mcp.tool()
+        def list_placement_default_groups(
+            realm_id: str | None = None,
+        ) -> list[dict]:
+            """List synchronized realm/project/profile group defaults."""
+            return request_local_pa(
+                ctx.settings,
+                "GET",
+                "/api/fleet/placement-defaults",
+                params={"realm": realm_id},
+            )
+
+        @mcp.tool()
+        def delete_placement_default_group(
+            realm_id: str | None = None,
+            project_id: str | None = None,
+            workload_profile: str | None = None,
+        ) -> None:
+            """Delete one exact default scope without silently selecting all peers."""
+            request_local_pa(
+                ctx.settings,
+                "DELETE",
+                "/api/fleet/placement-defaults",
+                params={
+                    "realm": realm_id,
+                    "project_id": project_id,
+                    "workload_profile": workload_profile,
+                },
+            )
+
+        @mcp.tool()
+        def migrate_instance_participation_policies(
+            realm_id: str | None = None, apply: bool = False
+        ) -> dict:
+            """Preview or deliberately apply the compatibility policy migration."""
+            return request_local_pa(
+                ctx.settings,
+                "POST",
+                "/api/fleet/participation-migration",
+                json={"realm_id": realm_id, "apply": apply},
+            )
+
+        @mcp.tool()
+        def preview_fleet_placement(
+            policy: PlacementPolicy,
+            card_id: str | None = None,
+            group_id: str | None = None,
+            instance_id: str | None = None,
+            project_id: str | None = None,
+            workload_profile: str = "research",
+            provider: str | None = None,
+            model_id: str | None = None,
+            required_capabilities: list[str] | None = None,
+        ) -> dict:
+            """Resolve and explain candidates without admitting a dispatch."""
+            if instance_id and group_id:
+                raise ValueError("named preview cannot also specify group_id")
+            return request_local_pa(
+                ctx.settings,
+                "POST",
+                "/api/fleet/placement/preview",
+                json={
+                    "card_id": card_id,
+                    "project_id": project_id,
+                    "target_instance_id": instance_id,
+                    "placement_policy": None if instance_id else policy.value,
+                    "group_id": group_id,
+                    "provider": provider,
+                    "model_id": model_id,
+                    "required_capabilities": required_capabilities or [],
+                    "execution_contract": {
+                        "version": 1,
+                        "profile": workload_profile,
+                        "confirmed": True,
+                        "requirements": {},
+                    },
+                },
+            )
+
+        @mcp.tool()
+        def list_fleet_policy_audit(
+            realm_id: str | None = None,
+            entity_type: str | None = None,
+            entity_id: str | None = None,
+            limit: int = 200,
+        ) -> list[dict]:
+            """List policy/group/default mutations and resolved placement decisions."""
+            return request_local_pa(
+                ctx.settings,
+                "GET",
+                "/api/fleet/policy-audit",
+                params={
+                    "realm": realm_id,
+                    "entity_type": entity_type,
+                    "entity_id": entity_id,
+                    "limit": limit,
+                },
+            )
+
+        @mcp.tool()
         def dispatch_card(
             card_id: str,
             idempotency_key: str,
             instance_id: str | None = None,
             policy: PlacementPolicy | None = None,
+            group_id: str | None = None,
             message: str = "",
             authority_instance_id: str | None = None,
             provider: str | None = None,
@@ -5332,6 +6556,8 @@ class FleetModule(Module):
             allow_concurrent: bool = False,
             capacity_override: bool = False,
             capacity_override_reason: str | None = None,
+            participation_override: bool = False,
+            participation_override_reason: str | None = None,
             execution_contract: dict[str, Any] | None = None,
         ) -> dict:
             """Resolve a concrete target or policy and durably dispatch a card."""
@@ -5351,6 +6577,7 @@ class FleetModule(Module):
                     "placement_policy": (
                         policy.value if isinstance(policy, PlacementPolicy) else policy
                     ),
+                    "group_id": group_id,
                     "message": message,
                     "provider": provider,
                     "model_id": model_id,
@@ -5359,6 +6586,10 @@ class FleetModule(Module):
                     "allow_concurrent": allow_concurrent,
                     "capacity_override": capacity_override,
                     "capacity_override_reason": capacity_override_reason,
+                    "participation_override": participation_override,
+                    "participation_override_reason": (
+                        participation_override_reason
+                    ),
                     "execution_contract": execution_contract,
                     "idempotency_key": key,
                 },
@@ -5380,6 +6611,8 @@ class FleetModule(Module):
             allow_concurrent: bool = False,
             capacity_override: bool = False,
             capacity_override_reason: str | None = None,
+            participation_override: bool = False,
+            participation_override_reason: str | None = None,
             execution_contract: dict[str, Any] | None = None,
         ) -> dict:
             """Durably and idempotently dispatch an authoritative card to a fleet instance."""
@@ -5405,6 +6638,11 @@ class FleetModule(Module):
             if capacity_override:
                 payload["capacity_override"] = True
                 payload["capacity_override_reason"] = capacity_override_reason
+            if participation_override:
+                payload["participation_override"] = True
+                payload["participation_override_reason"] = (
+                    participation_override_reason
+                )
             return request_local_pa(
                 ctx.settings,
                 "POST",
