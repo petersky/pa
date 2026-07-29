@@ -21,6 +21,12 @@ from pa.auth.middleware import get_principal_id
 from pa.core.contracts import Module
 from pa.core.preferences import get_preferences_store
 from pa.domain.models import AgentSession, TranscriptEvent
+from pa.execution.observability import (
+    SESSION_OBSERVABILITY_CAPABILITY,
+    SESSION_OBSERVABILITY_VERSION,
+    build_session_observability,
+    diagnostic_timeline,
+)
 from pa.instance.agent_session import (
     RECOVERY_BLOCKED_STATUS,
     TRANSCRIPT_WINDOW_LIMIT,
@@ -102,6 +108,23 @@ def _session_reconciliation(request: Request, session_id: str) -> dict[str, Any]
             "recoverable": False,
         }
     return record.public_dict()["card_reconciliation"]
+
+
+def _observability(request: Request, session: AgentSession) -> dict[str, Any]:
+    mgr = _manager(request)
+    runtime = mgr.get(session.id)
+    if runtime and getattr(runtime, "_closed", False):
+        runtime = None
+    events = mgr.store.list_transcript_events_before(session.id, limit=5000)
+    settings = request.app.state.ctx.settings
+    return build_session_observability(
+        session,
+        runtime=runtime,
+        events=events,
+        instance_id=settings.instance_id,
+        instance_name=settings.instance_name,
+        reconciliation=_session_reconciliation(request, session.id),
+    )
 
 
 def _require_session_traffic_ready(request: Request):
@@ -802,6 +825,75 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
     return await _offload(mgr, "agent.session_snapshot", runtime.snapshot)
 
 
+@router.get("/observability/v1/capabilities")
+def session_observability_capabilities() -> dict[str, Any]:
+    return {
+        "schema_version": SESSION_OBSERVABILITY_VERSION,
+        "capabilities": [SESSION_OBSERVABILITY_CAPABILITY],
+        "legacy_unknown_fields": True,
+    }
+
+
+@router.get("/observability/v1/sessions")
+def list_session_observability(request: Request, limit: int = 100) -> dict[str, Any]:
+    mgr = _manager(request)
+    sessions = sorted(
+        mgr.store.list_sessions(), key=lambda item: item.updated_at, reverse=True
+    )
+    bounded = max(1, min(limit, 500))
+    return {
+        "schema_version": SESSION_OBSERVABILITY_VERSION,
+        "sessions": [
+            _observability(request, session) for session in sessions[:bounded]
+        ],
+    }
+
+
+@router.get("/observability/v1/sessions/{session_id}")
+def get_session_observability(request: Request, session_id: str) -> dict[str, Any]:
+    session = _manager(request).store.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return _observability(request, session)
+
+
+@router.get("/observability/v1/sessions/{session_id}/turns")
+def list_session_turns(request: Request, session_id: str) -> dict[str, Any]:
+    projection = get_session_observability(request, session_id)
+    return {
+        "schema_version": SESSION_OBSERVABILITY_VERSION,
+        "session_id": session_id,
+        "turns": projection["turns"],
+    }
+
+
+@router.post("/observability/v1/sessions/{session_id}/diagnostics")
+def request_session_diagnostics(
+    request: Request, session_id: str, limit: int = 50
+) -> dict[str, Any]:
+    mgr = _manager(request)
+    session = mgr.store.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    events = mgr.store.list_transcript_events_before(session_id, limit=5000)
+    observed = _observability(request, session)
+    return {
+        "schema_version": SESSION_OBSERVABILITY_VERSION,
+        "snapshot_id": str(uuid4()),
+        "session_id": session_id,
+        "created_at": datetime.now(UTC).isoformat(),
+        "timeline": diagnostic_timeline(events, limit=limit),
+        "runtime": {
+            "session_state": observed["session_state"],
+            "turn": observed["turn"],
+            "liveness": observed["liveness"],
+            "transport": observed["transport"],
+            "provider_process": observed["provider_process"],
+        },
+        "redaction": "allowlisted_metadata_only",
+    }
+
+
 @router.get("/sessions")
 def list_agent_sessions(request: Request) -> list[dict]:
     mgr = _require_session_traffic_ready(request)
@@ -855,6 +947,7 @@ def _session_list_item(
         "last_seq": runtime._seq if runtime else durable.get("last_event_cursor", 0),
         "updated_at": session.updated_at.isoformat(),
         "card_reconciliation": _session_reconciliation(request, session.id),
+        "observability": _observability(request, session),
     }
 
 
@@ -1090,8 +1183,10 @@ async def recover_session(
 
 @router.get("/sessions/{session_id}")
 def get_session_snapshot(request: Request, session_id: str) -> dict:
-    snapshot = _runtime_or_404(request, session_id).snapshot()
+    runtime = _runtime_or_404(request, session_id)
+    snapshot = runtime.snapshot()
     snapshot["card_reconciliation"] = _session_reconciliation(request, session_id)
+    snapshot["observability"] = _observability(request, runtime.session)
     return snapshot
 
 
@@ -2031,3 +2126,49 @@ class AgentChatModule(Module):
 
     def api_routers(self):
         return [("/api", router, ["agent"])]
+
+    def register_mcp(self, mcp, ctx) -> None:
+        from pa.mcp.local_api import request_local_pa
+
+        @mcp.tool()
+        def list_agent_session_liveness(limit: int = 100) -> dict:
+            """List normalized authoritative liveness for recent ACP sessions."""
+            return request_local_pa(
+                ctx.settings,
+                "GET",
+                "/api/agent/observability/v1/sessions",
+                params={"limit": limit},
+            )
+
+        @mcp.tool()
+        def get_agent_session_liveness(session_id: str) -> dict | None:
+            """Get one ACP session with turns, queue, progress, freshness, and recovery state."""
+            return request_local_pa(
+                ctx.settings,
+                "GET",
+                f"/api/agent/observability/v1/sessions/{session_id}",
+                allow_not_found=True,
+            )
+
+        @mcp.tool()
+        def list_agent_session_turns(session_id: str) -> dict | None:
+            """List independent prompt/turn lifecycles, including post-dispatch follow-ups."""
+            return request_local_pa(
+                ctx.settings,
+                "GET",
+                f"/api/agent/observability/v1/sessions/{session_id}/turns",
+                allow_not_found=True,
+            )
+
+        @mcp.tool()
+        def request_agent_session_diagnostics(
+            session_id: str, limit: int = 50
+        ) -> dict | None:
+            """Create a bounded privacy-safe diagnostic snapshot for an ACP session."""
+            return request_local_pa(
+                ctx.settings,
+                "POST",
+                f"/api/agent/observability/v1/sessions/{session_id}/diagnostics",
+                params={"limit": limit},
+                allow_not_found=True,
+            )
