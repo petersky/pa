@@ -151,6 +151,8 @@ class PRWatch(BaseModel):
     originating_agent: str | None = None
     executor_cwd: str | None = None
     provenance_version: int = Field(default=0, ge=0)
+    creation_reason: str | None = Field(default=None, max_length=500)
+    qualifying_evidence: str | None = Field(default=None, max_length=2_000)
     policy: PRPolicy = Field(default_factory=PRPolicy)
     required_capabilities: list[str] = Field(default_factory=list)
     status: PRWatchStatus = PRWatchStatus.ACTIVE

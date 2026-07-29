@@ -33,6 +33,7 @@ from pa.config import Settings
 from pa.core.preferences import get_preferences_store
 from pa.domain.models import AgentSession, TranscriptEvent
 from pa.domain.store import Store
+from pa.execution.progress import sanitize_text
 from pa.instance.quiesce import (
     ImageAttachment,
     QueuedPrompt,
@@ -1104,6 +1105,13 @@ class AgentSessionRuntime:
                             "usage": usage,
                             "queued_prompt_id": item.id,
                             "prompt_source": item.source,
+                            "provider_status": (
+                                "connected" if self.connected else "disconnected"
+                            ),
+                            "session_status": self.session.status,
+                            "final_outcome_text": sanitize_text(
+                                final_text, limit=8_000
+                            ),
                         }
                         if disposition:
                             payload["card_disposition"] = disposition
@@ -1133,7 +1141,7 @@ class AgentSessionRuntime:
                                 "summary": (
                                     disposition.get("outcome")
                                     if isinstance(disposition, dict)
-                                    else "Agent work completed."
+                                    else "Agent turn ended."
                                 ),
                                 "result": payload,
                             }

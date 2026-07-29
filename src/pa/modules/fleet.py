@@ -35,7 +35,9 @@ from pa.core.logging import redact_log_text
 from pa.core.ui.pages import PageDefinition, PageRegistry
 from pa.domain.models import (
     CardAttachment,
+    CardCreate,
     CardEvent,
+    CardKind,
     CardLane,
     CardUpdate,
     EventType,
@@ -58,6 +60,16 @@ from pa.execution.profiles import (
     ExecutionContract,
     MaterializationPlan,
     resolve_materialization_plan,
+)
+from pa.execution.post_turn import (
+    EvidenceReferenceV1,
+    FollowupActionName,
+    FollowupActionStatus,
+    PostTurnEvaluationV1,
+    PostTurnEvaluator,
+    TurnEndSnapshotV1,
+    action_catalog,
+    mark_record_only_actions,
 )
 from pa.execution.progress import (
     PROGRESS_SCHEMA_VERSION,
@@ -307,6 +319,14 @@ class DispatchFollowupBody(BaseModel):
     idempotency_key: str
 
 
+class FollowupActionExecutionBody(BaseModel):
+    evaluation_id: str
+    action_id: str
+    expected_authority_version: str | None = None
+    approve: bool = False
+    idempotency_key: str
+
+
 class DispatchMaterializeBody(BaseModel):
     dispatch_id: str
     mutation_id: str
@@ -342,6 +362,15 @@ class DispatchCompletionBody(BaseModel):
     session_id: str | None = None
     result: dict[str, Any] = Field(default_factory=dict)
     disposition: Any = None
+    final_report: CompletionReportV1 | None = None
+
+
+class DispatchTurnEndBody(BaseModel):
+    mutation_id: str
+    source_instance_id: str
+    session_id: str
+    turn_id: str
+    result: dict[str, Any] = Field(default_factory=dict)
     final_report: CompletionReportV1 | None = None
 
 
@@ -1229,6 +1258,227 @@ def finalize_dispatch_attachment(
     return {"verified": True, "sha256": sha256, "size": body.size}
 
 
+def _model_json(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {}
+    if hasattr(value, "model_dump"):
+        return value.model_dump(mode="json")
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _record_post_turn_evaluation(
+    request: Request,
+    ledger: DispatchStore,
+    record: DispatchRecord,
+    *,
+    card: Any,
+    watches: list[Any],
+    result_override: dict[str, Any] | None = None,
+    turn_id_override: str | None = None,
+) -> None:
+    """Persist the neutral snapshot before running the read-only evaluator."""
+    result = dict(
+        result_override if result_override is not None else record.completion_payload or {}
+    )
+    report = record.final_report
+    latest = record.latest_progress
+    turn_id = str(
+        turn_id_override
+        or result.get("queued_prompt_id")
+        or result.get("prompt_id")
+        or f"{record.dispatch_id}:turn:{len(record.turn_end_snapshots) + 1}"
+    )
+    if any(item.turn_id == turn_id for item in record.turn_end_snapshots):
+        return
+    evidence: list[EvidenceReferenceV1] = []
+    if report:
+        for kind, reference in (
+            ("branch", report.branch),
+            ("commit", report.commit_sha),
+            ("pull_request", report.pr_url),
+            ("merge_commit", report.merge_commit_sha),
+        ):
+            if reference:
+                evidence.append(
+                    EvidenceReferenceV1(
+                        kind=kind,
+                        reference=str(reference),
+                        observed_at=report.created_at,
+                        provenance="sanitized completion report",
+                    )
+                )
+        evidence.extend(
+            EvidenceReferenceV1(
+                kind="ci",
+                reference=item,
+                observed_at=report.created_at,
+                provenance="linked PR supervisor snapshot",
+            )
+            for item in report.ci_evidence
+        )
+        evidence.extend(
+            EvidenceReferenceV1(
+                kind="review",
+                reference=item,
+                observed_at=report.created_at,
+                provenance="linked PR supervisor snapshot",
+            )
+            for item in report.review_evidence
+        )
+    failures = []
+    if record.last_error:
+        failures.append(
+            {
+                "kind": record.error_code or "dispatch_error",
+                "message": record.last_error,
+                "recoverable": record.recoverable,
+            }
+        )
+    if record.reconciliation_last_dependency_error:
+        failures.append(
+            {
+                "kind": "reconciliation_dependency",
+                "message": record.reconciliation_last_dependency_error,
+                "recoverable": record.reconciliation_recoverable,
+            }
+        )
+    operator_requests = (
+        [latest.operator_input] if latest and latest.operator_input else []
+    )
+    current_card = _model_json(card)
+    current_lane = str(current_card.get("lane") or "") or None
+    authority_version = (
+        str(current_card.get("updated_at") or "") or record.card_version
+    )
+    deliverables = report.model_dump(mode="json") if report else {}
+    if report:
+        deliverables["changed_files"] = (
+            latest.changed_file_count if latest else None
+        )
+    snapshot = TurnEndSnapshotV1(
+        turn_id=turn_id,
+        turn_sequence=len(record.turn_end_snapshots) + 1,
+        dispatch_id=record.dispatch_id,
+        session_id=record.session_id,
+        card_id=record.card_id or "",
+        project_id=record.project_id,
+        authority_instance_id=record.authority_instance_id,
+        authority_version=authority_version,
+        originating_instance_id=record.target_instance_id,
+        stop_reason=result.get("stop_reason"),
+        provider_status=result.get("provider_status"),
+        session_status=result.get("session_status") or "idle",
+        card_lane_before=(
+            current_lane if result_override is not None else record.card_lane_before
+        ),
+        card_lane_after=(
+            current_lane if result_override is not None else record.card_lane_after
+        ),
+        dispatch_state=record.state,
+        completion_delivery={
+            "classification": record.completion_delivery_class,
+            "received_at": (
+                record.completion_received_at.isoformat()
+                if record.completion_received_at
+                else None
+            ),
+            "acknowledged_at": (
+                record.acknowledged_at.isoformat()
+                if record.acknowledged_at
+                else None
+            ),
+            "attempts": record.attempts,
+        },
+        disposition=record.card_disposition_payload,
+        disposition_status=record.card_disposition_status,
+        disposition_parse_error=result.get("card_disposition_error"),
+        final_outcome_text=(
+            str(result.get("final_outcome_text") or "")
+            or (report.outcome if report else "Agent turn ended.")
+        ),
+        deliverables=deliverables,
+        validations=[
+            item.model_dump(mode="json") for item in (report.validations if report else [])
+        ],
+        blockers=list(report.blockers if report else []),
+        failures=failures,
+        operator_input_requests=operator_requests,
+        queued_prompts=[
+            {
+                "idempotency_key": key,
+                "prompt_id": value.get("response", {}).get("prompt_id"),
+                "accepted": value.get("response", {}).get("accepted"),
+            }
+            for key, value in list(record.followup_operations.items())[-40:]
+        ],
+        followup_state={
+            "turns": record.followup_turns[-20:],
+            "automatic_turn_budget": (
+                request.app.state.ctx.settings.post_turn_max_automatic_followups
+            ),
+        },
+        evidence=evidence,
+        provenance={
+            "authority_instance_id": record.authority_instance_id,
+            "originating_instance_id": record.target_instance_id,
+            "dispatch_id": record.dispatch_id,
+            "session_id": record.session_id,
+            "provider": record.request_payload.get("provider"),
+            "model": record.request_payload.get("model_id"),
+            "mode": record.request_payload.get("mode_id"),
+            "captured_by": "pa.authority",
+        },
+    )
+    record.turn_end_snapshots.append(snapshot)
+    record.turn_end_snapshots = record.turn_end_snapshots[-20:]
+    # The snapshot is the durable evaluation boundary. Do not combine this write
+    # with the later recommendation write.
+    ledger.put(record)
+
+    evaluator = PostTurnEvaluator()
+    project = (
+        request.app.state.ctx.store.get_project(
+            record.project_id, realm_id=record.realm_id
+        )
+        if record.project_id
+        else None
+    )
+    card_context = current_card or {
+        "id": record.card_id,
+        "lane": record.card_lane_after or record.card_lane_before,
+        "updated_at": authority_version,
+    }
+    if record.card_lane_after:
+        card_context["lane"] = record.card_lane_after
+    context = evaluator.build_context(
+        snapshot,
+        card=card_context,
+        project=_model_json(project) or None,
+        execution_contract=record.request_payload.get("execution_contract"),
+        dispatch_history=[event.model_dump(mode="json") for event in record.events],
+        prior_evaluations=[
+            item.model_dump(mode="json") for item in record.post_turn_evaluations
+        ],
+        watches=[_model_json(watch) for watch in watches],
+        fleet_capabilities=list(request.app.state.ctx.settings.capabilities),
+    )
+    record.post_turn_context_digests[snapshot.snapshot_id] = context.digest
+    record.post_turn_context_digests = dict(
+        list(record.post_turn_context_digests.items())[-20:]
+    )
+    ledger.put(record)
+    evaluation = evaluator.evaluate(context)
+    evaluation = evaluator.validate_result(
+        evaluation,
+        expected_context_digest=context.digest,
+        expected_authority_version=authority_version,
+    )
+    mark_record_only_actions(evaluation)
+    record.post_turn_evaluations.append(evaluation)
+    record.post_turn_evaluations = record.post_turn_evaluations[-20:]
+    ledger.put(record)
+
+
 @router.post("/fleet/dispatch/{dispatch_id}/complete")
 def complete_dispatch(
     request: Request, dispatch_id: str, body: DispatchCompletionBody
@@ -1281,6 +1531,7 @@ def complete_dispatch(
     record.completion_envelope = envelope
     record.completion_received_at = datetime.now(UTC)
     record.acknowledged_at = record.completion_received_at
+    record.completion_delivery_class = "acknowledged"
     record.card_disposition_payload = (
         body.disposition if isinstance(body.disposition, dict) else None
     )
@@ -1290,9 +1541,9 @@ def complete_dispatch(
     ledger.transition(
         record,
         "completed",
-        "Agent-turn completion durably acknowledged; card disposition is separate.",
+        "Agent turn ended and was durably acknowledged; card outcome is separate.",
         detail={
-            "agent_turn_completed": True,
+            "agent_turn_ended": True,
             "reconciliation": record.reconciliation_state,
         },
     )
@@ -1311,7 +1562,13 @@ def complete_dispatch(
         record.reconciliation_condition = "card_missing"
         record.reconciliation_recoverable = False
         record.reconciliation_updated_at = datetime.now(UTC)
+        record.final_report = body.final_report or ledger.build_final_report(
+            dispatch_id, body.result
+        )
         ledger.put(record)
+        _record_post_turn_evaluation(
+            request, ledger, record, card=None, watches=[]
+        )
         return _completion_ack(record, duplicate=False)
 
     watches = []
@@ -1391,7 +1648,7 @@ def complete_dispatch(
     record.reconciliation_recoverable = outcome == "conflict_requires_resolution"
     record.reconciliation_updated_at = datetime.now(UTC)
 
-    report = body.final_report
+    report = body.final_report or ledger.build_final_report(dispatch_id, body.result)
     if report:
         linked_watch = next(
             (
@@ -1442,7 +1699,118 @@ def complete_dispatch(
         )
     record.final_report = sanitize_completion_report(report) if report else None
     ledger.put(record)
+    _record_post_turn_evaluation(
+        request, ledger, record, card=card, watches=watches
+    )
     return _completion_ack(record, duplicate=False)
+
+
+@router.post("/fleet/dispatch/{dispatch_id}/turn-end")
+def complete_followup_turn(
+    request: Request, dispatch_id: str, body: DispatchTurnEndBody
+) -> dict[str, Any]:
+    """Capture a later turn without reopening or replaying dispatch completion."""
+    _require_instance(request)
+    ledger = _dispatch_store(request)
+    record = ledger.get(dispatch_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Dispatch not found")
+    expected_key = f"{record.mutation_id}:turn:{body.turn_id}"
+    if (
+        body.mutation_id != record.mutation_id
+        or body.source_instance_id != record.target_instance_id
+        or body.session_id != record.session_id
+        or request.headers.get("idempotency-key") != expected_key
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "followup_turn_provenance_mismatch"},
+        )
+    existing = next(
+        (item for item in record.turn_end_snapshots if item.turn_id == body.turn_id),
+        None,
+    )
+    if existing:
+        return {
+            "acknowledged": True,
+            "duplicate": True,
+            "snapshot_id": existing.snapshot_id,
+            "dispatch_state": record.state,
+        }
+    if not record.acknowledged_at:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "dispatch_completion_not_acknowledged"},
+        )
+    card = (
+        request.app.state.ctx.store.get_card(
+            record.card_id, realm_id=record.realm_id
+        )
+        if record.card_id
+        else None
+    )
+    watches = []
+    supervisor_store = request.app.state.ctx.services.get("pr_supervisor_store")
+    if card and supervisor_store:
+        watches = supervisor_store.list_watches(
+            realm_id=record.realm_id, card_id=card.id, include_retired=True
+        )
+    if body.final_report:
+        record.final_report = sanitize_completion_report(body.final_report)
+    linked = next(
+        (
+            item
+            for item in reversed(record.followup_turns)
+            if str(item.get("prompt_id") or item.get("idempotency_key"))
+            == body.turn_id
+        ),
+        None,
+    )
+    if linked:
+        linked.update(
+            {
+                "state": "ended",
+                "stop_reason": body.result.get("stop_reason"),
+                "ended_at": datetime.now(UTC).isoformat(),
+                "delivery_state": "acknowledged",
+            }
+        )
+    else:
+        record.followup_turns.append(
+            {
+                "prompt_id": body.turn_id,
+                "state": "ended",
+                "stop_reason": body.result.get("stop_reason"),
+                "ended_at": datetime.now(UTC).isoformat(),
+                "delivery_state": "acknowledged",
+                "session_id": body.session_id,
+            }
+        )
+    ledger.transition(
+        record,
+        record.state,
+        "Follow-up agent turn ended; immutable dispatch completion retained.",
+        detail={
+            "turn_id": body.turn_id,
+            "dispatch_state_retained": record.state,
+        },
+    )
+    _record_post_turn_evaluation(
+        request,
+        ledger,
+        record,
+        card=card,
+        watches=watches,
+        result_override=body.result,
+        turn_id_override=body.turn_id,
+    )
+    return {
+        "acknowledged": True,
+        "duplicate": False,
+        "snapshot_id": record.turn_end_snapshots[-1].snapshot_id,
+        "evaluation": record.post_turn_evaluations[-1].model_dump(mode="json"),
+        "dispatch_state": record.state,
+    }
 
 
 def _completion_ack(record: DispatchRecord, *, duplicate: bool) -> dict[str, Any]:
@@ -1453,7 +1821,12 @@ def _completion_ack(record: DispatchRecord, *, duplicate: bool) -> dict[str, Any
         "acknowledged_at": record.acknowledged_at.isoformat()
         if record.acknowledged_at
         else None,
-        "agent_turn": {"completed": True},
+        "agent_turn": {"ended": True, "completed": True},
+        "evaluation": (
+            record.post_turn_evaluations[-1].model_dump(mode="json")
+            if record.post_turn_evaluations
+            else None
+        ),
         "card_disposition": {
             "status": record.card_disposition_status,
             "lane_before": record.card_lane_before,
@@ -5097,6 +5470,351 @@ def get_dispatch(request: Request, dispatch_id: str) -> dict[str, Any]:
     return record.public_dict()
 
 
+@router.get("/fleet/post-turn/action-catalog")
+def get_post_turn_action_catalog(request: Request) -> dict[str, Any]:
+    require_user(request)
+    catalog = action_catalog()
+    settings = request.app.state.ctx.settings
+    catalog["budgets"] = {
+        "maximum_evaluator_attempts": settings.post_turn_evaluator_max_attempts,
+        "maximum_automatic_followup_turns": (
+            settings.post_turn_max_automatic_followups
+        ),
+        "evaluation_timeout_seconds": (
+            settings.post_turn_evaluation_timeout_seconds
+        ),
+        "retry_seconds": settings.post_turn_retry_seconds,
+        "escalation_threshold": settings.post_turn_escalation_threshold,
+    }
+    return catalog
+
+
+@router.get("/fleet/dispatch-jobs/{dispatch_id}/turn-end")
+def get_dispatch_turn_end(request: Request, dispatch_id: str) -> dict[str, Any]:
+    require_user(request)
+    record = _dispatch_store(request).get(dispatch_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Dispatch not found")
+    settings = request.app.state.ctx.settings
+    return {
+        "dispatch_id": dispatch_id,
+        "snapshots": [
+            item.model_dump(mode="json") for item in record.turn_end_snapshots
+        ],
+        "evaluations": [
+            item.model_dump(mode="json") for item in record.post_turn_evaluations
+        ],
+        "lifecycle_diagnostics": record.public_dict()["lifecycle_diagnostics"],
+        "budgets": {
+            "maximum_evaluator_attempts": settings.post_turn_evaluator_max_attempts,
+            "maximum_automatic_followup_turns": (
+                settings.post_turn_max_automatic_followups
+            ),
+            "evaluation_timeout_seconds": (
+                settings.post_turn_evaluation_timeout_seconds
+            ),
+            "retry_seconds": settings.post_turn_retry_seconds,
+            "escalation_threshold": settings.post_turn_escalation_threshold,
+        },
+    }
+
+
+@router.post("/fleet/dispatch-jobs/{dispatch_id}/evaluations")
+def submit_post_turn_evaluation(
+    request: Request,
+    dispatch_id: str,
+    body: PostTurnEvaluationV1,
+) -> dict[str, Any]:
+    """Validate and record a read-only evaluator result without executing writes."""
+    _require_instance(request)
+    ledger = _dispatch_store(request)
+    record = ledger.get(dispatch_id)
+    if not record or not record.turn_end_snapshots:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "turn_end_snapshot_required", "recoverable": True},
+        )
+    snapshot = record.turn_end_snapshots[-1]
+    expected_digest = record.post_turn_context_digests.get(snapshot.snapshot_id)
+    if not expected_digest:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "evaluation_context_missing", "recoverable": True},
+        )
+    try:
+        validated = PostTurnEvaluator.validate_result(
+            body,
+            expected_context_digest=expected_digest,
+            expected_authority_version=snapshot.authority_version,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "stale_evaluation", "message": str(exc)},
+        ) from exc
+    if any(
+        item.evaluation_id == validated.evaluation_id
+        for item in record.post_turn_evaluations
+    ):
+        return {"accepted": True, "duplicate": True}
+    mark_record_only_actions(validated)
+    record.post_turn_evaluations.append(validated)
+    ledger.put(record)
+    return {"accepted": True, "duplicate": False}
+
+
+@router.post(
+    "/fleet/dispatch-jobs/{dispatch_id}/actions/{action_id}", status_code=202
+)
+async def execute_post_turn_action(
+    request: Request,
+    dispatch_id: str,
+    action_id: str,
+    body: FollowupActionExecutionBody,
+) -> dict[str, Any]:
+    """Validate, authorize, and execute one catalog action idempotently."""
+    require_user(request)
+    ledger = _dispatch_store(request)
+    record = ledger.get(dispatch_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Dispatch not found")
+    evaluation = next(
+        (
+            item
+            for item in record.post_turn_evaluations
+            if item.evaluation_id == body.evaluation_id
+        ),
+        None,
+    )
+    if not evaluation:
+        raise HTTPException(status_code=404, detail="Evaluation not found")
+    action = next(
+        (item for item in evaluation.recommended_actions if item.action_id == action_id),
+        None,
+    )
+    if not action:
+        raise HTTPException(status_code=404, detail="Follow-up action not found")
+    if body.expected_authority_version != evaluation.observed_authority_version:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "stale_authority_version", "recoverable": True},
+        )
+    prior = next(
+        (
+            item
+            for item in action.audit
+            if item.get("idempotency_key") == body.idempotency_key
+        ),
+        None,
+    )
+    if prior:
+        return {
+            "accepted": True,
+            "duplicate": True,
+            "status": action.status.value,
+            "result": prior.get("result"),
+        }
+    if action.status in {
+        FollowupActionStatus.REJECTED,
+        FollowupActionStatus.SUPERSEDED,
+    }:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "action_not_executable", "status": action.status.value},
+        )
+    if action.human_approval_required and not body.approve:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "operator_approval_required",
+                "action": action.name.value,
+            },
+        )
+    action.status = (
+        FollowupActionStatus.APPROVED
+        if action.human_approval_required
+        else action.status
+    )
+    result: Any = None
+    try:
+        if action.name in {
+            FollowupActionName.NO_ACTION,
+            FollowupActionName.RECORD_TURN_OUTCOME,
+        }:
+            result = {"recorded": True}
+        elif action.name == FollowupActionName.MOVE_CARD:
+            card = request.app.state.ctx.store.get_card(
+                record.card_id, realm_id=record.realm_id
+            )
+            expected = action.parameters["expected_card_version"]
+            if not card or card.updated_at.isoformat() != expected:
+                raise ValueError("card authority version changed before move_card")
+            updated = request.app.state.ctx.store.update_card(
+                card.id,
+                CardUpdate(lane=CardLane(action.parameters["lane"])),
+                realm_id=record.realm_id,
+                principal_id=get_principal_id(request),
+                instance_id=request.app.state.ctx.settings.instance_id,
+            )
+            result = {"card": _model_json(updated)}
+        elif action.name == FollowupActionName.PROMPT_SAME_SESSION:
+            result = await prompt_dispatch_session(
+                request,
+                dispatch_id,
+                DispatchFollowupBody(
+                    message=action.parameters["prompt"],
+                    idempotency_key=body.idempotency_key,
+                ),
+            )
+        elif action.name == FollowupActionName.RETRY_DISPATCH:
+            result = await _retry_dispatch_api(
+                request,
+                dispatch_id,
+                DispatchControlBody(idempotency_key=body.idempotency_key),
+            )
+        elif action.name == FollowupActionName.REDISPATCH_CARD:
+            provider = action.parameters.get("provider")
+            result = await start_remote_agent_work(
+                request,
+                action.parameters["instance_id"],
+                RemoteAgentStartBody(
+                    authority_instance_id=record.authority_instance_id,
+                    card_id=record.card_id,
+                    project_id=record.project_id,
+                    provider=None if provider == "default" else provider,
+                    mode_id=action.parameters.get("mode"),
+                    message=action.parameters["reason"],
+                    idempotency_key=body.idempotency_key,
+                ),
+            )
+        elif action.name in {
+            FollowupActionName.CREATE_FOLLOWUP_CARD,
+            FollowupActionName.RECORD_BUG_OR_FAILURE,
+        }:
+            dedupe_tag = f"pa-followup:{action.parameters['deduplication_key']}"
+            existing = next(
+                (
+                    card
+                    for card in request.app.state.ctx.store.list_cards(
+                        realm_id=record.realm_id
+                    )
+                    if dedupe_tag in card.tags
+                ),
+                None,
+            )
+            created = existing or request.app.state.ctx.store.create_card(
+                CardCreate(
+                    realm_id=record.realm_id,
+                    kind=(
+                        CardKind.CONCERN
+                        if action.name == FollowupActionName.RECORD_BUG_OR_FAILURE
+                        else CardKind.TASK
+                    ),
+                    title=action.parameters["title"],
+                    body=action.parameters["body"],
+                    lane=CardLane.INBOX,
+                    parent_id=action.parameters["parent_card_id"],
+                    project_id=action.parameters["project_id"],
+                    tags=[dedupe_tag],
+                ),
+                principal_id=get_principal_id(request),
+                instance_id=request.app.state.ctx.settings.instance_id,
+            )
+            result = {"card": _model_json(created), "duplicate": existing is not None}
+        else:
+            # Wait, input, refresh, and escalation are intentional record-only
+            # state. A separate condition scheduler may later supersede them.
+            result = {"recorded": True, "condition": action.parameters}
+        action.status = FollowupActionStatus.EXECUTED
+        action.executed_at = datetime.now(UTC)
+        action.status_reason = "Validated and deterministically executed by PA."
+    except Exception as exc:
+        action.status = FollowupActionStatus.FAILED
+        action.status_reason = sanitize_text(exc, limit=1_000)
+        action.audit.append(
+            {
+                "event": "failed",
+                "at": datetime.now(UTC).isoformat(),
+                "idempotency_key": body.idempotency_key,
+                "error": action.status_reason,
+            }
+        )
+        ledger.put(record)
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "followup_action_failed",
+                "message": action.status_reason,
+            },
+        ) from exc
+    action.audit.append(
+        {
+            "event": "executed",
+            "at": action.executed_at.isoformat() if action.executed_at else None,
+            "executor": "pa.post-turn",
+            "idempotency_key": body.idempotency_key,
+            "result": result,
+        }
+    )
+    ledger.put(record)
+    return {
+        "accepted": True,
+        "duplicate": False,
+        "status": action.status.value,
+        "result": result,
+    }
+
+
+@router.post("/fleet/dispatch-jobs/{dispatch_id}/repair-terminal")
+def repair_terminal_dispatch(
+    request: Request,
+    dispatch_id: str,
+    body: DispatchControlBody | None = None,
+) -> dict[str, Any]:
+    """Audited normalization for acknowledged legacy target records."""
+    require_user(request)
+    ledger = _dispatch_store(request)
+    record = ledger.get(dispatch_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Dispatch not found")
+    key = _dispatch_control_key(request, body)
+    if _repeat_dispatch_control(record, "repair_terminal", key):
+        return record.public_dict()
+    acknowledged = bool(
+        record.acknowledged_at
+        or record.completion_delivery_class == "acknowledged"
+    )
+    if not acknowledged:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "completion_not_acknowledged",
+                "message": "Terminal repair requires durable completion acknowledgement.",
+            },
+        )
+    previous = record.state
+    record.control_operations[key] = "repair_terminal"
+    record.completion_delivery_class = "acknowledged"
+    record.completion_next_retry_at = None
+    record.last_error = None
+    record.lifecycle_inconsistencies.append(
+        {
+            "kind": "legacy_terminal_record_repaired",
+            "previous_state": previous,
+            "normalized_state": "completed",
+            "observed_at": datetime.now(UTC).isoformat(),
+            "idempotency_key": key,
+        }
+    )
+    ledger.transition(
+        record,
+        "completed",
+        "Acknowledged legacy completion normalized to terminal state.",
+        detail={"previous_state": previous, "repair": True},
+    )
+    return record.public_dict()
+
+
 def _require_dispatch_access(request: Request, record: DispatchRecord) -> None:
     if getattr(request.state, "instance_authenticated", False) is True:
         return
@@ -6680,6 +7398,7 @@ class FleetModule(Module):
                 "merging",
                 "blocked",
                 "retrying",
+                "turn_ended",
                 "completed",
             ],
             summary: str,
@@ -6785,4 +7504,36 @@ class FleetModule(Module):
                     "action": action,
                     "idempotency_key": key,
                 },
+            )
+
+        @mcp.tool()
+        def get_post_turn_action_catalog() -> dict:
+            """List versioned follow-up actions, schemas, policy, and loop budgets."""
+            return request_local_pa(
+                ctx.settings, "GET", "/api/fleet/post-turn/action-catalog"
+            )
+
+        @mcp.tool()
+        def get_dispatch_turn_end(dispatch_id: str) -> dict | None:
+            """Read neutral turn-end snapshots, evaluations, actions, and diagnostics."""
+            return request_local_pa(
+                ctx.settings,
+                "GET",
+                f"/api/fleet/dispatch-jobs/{dispatch_id}/turn-end",
+                allow_not_found=True,
+            )
+
+        @mcp.tool()
+        def repair_terminal_dispatch(
+            dispatch_id: str, idempotency_key: str
+        ) -> dict:
+            """Audit and normalize an acknowledged legacy target record to terminal."""
+            key = idempotency_key.strip()
+            if not key:
+                raise ValueError("idempotency_key cannot be empty")
+            return request_local_pa(
+                ctx.settings,
+                "POST",
+                f"/api/fleet/dispatch-jobs/{dispatch_id}/repair-terminal",
+                json={"idempotency_key": key},
             )

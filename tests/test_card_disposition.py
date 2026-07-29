@@ -225,7 +225,7 @@ class CardDispositionContractTests(unittest.TestCase):
 
         self.assertEqual(
             diagnostic["agent_turn"],
-            {"completed": True, "stop_reason": "end_turn"},
+            {"ended": True, "completed": True, "stop_reason": "end_turn"},
         )
         self.assertTrue(diagnostic["dispatch_completion"]["completed"])
         self.assertEqual(diagnostic["card_completion"]["lane_after"], "waiting")

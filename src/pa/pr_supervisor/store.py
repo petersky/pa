@@ -78,6 +78,8 @@ class PRSupervisorStore:
                     originating_agent TEXT,
                     executor_cwd TEXT,
                     provenance_version INTEGER NOT NULL DEFAULT 0,
+                    creation_reason TEXT,
+                    qualifying_evidence TEXT,
                     policy_json TEXT NOT NULL DEFAULT '{}',
                     required_capabilities_json TEXT NOT NULL DEFAULT '[]',
                     status TEXT NOT NULL DEFAULT 'active',
@@ -150,6 +152,8 @@ class PRSupervisorStore:
                 ("authority_instance_id", "TEXT"),
                 ("originating_principal_id", "TEXT"),
                 ("provenance_version", "INTEGER NOT NULL DEFAULT 0"),
+                ("creation_reason", "TEXT"),
+                ("qualifying_evidence", "TEXT"),
             ):
                 if column not in columns:
                     conn.execute(
@@ -235,6 +239,7 @@ class PRSupervisorStore:
                     pr_url, base_branch, head_sha, originating_instance_id, authority_instance_id,
                     originating_session_id, originating_principal_id,
                     originating_agent, executor_cwd, provenance_version,
+                    creation_reason, qualifying_evidence,
                     policy_json, required_capabilities_json, status,
                     owner_instance_id, fence_token, lease_expires_at, state_json,
                     condition_fingerprint, condition_version, stable_head_since,
@@ -244,7 +249,7 @@ class PRSupervisorStore:
                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?
                 )
                 """,
                 self._watch_values(watch),
@@ -271,6 +276,8 @@ class PRSupervisorStore:
             watch.originating_agent,
             watch.executor_cwd,
             watch.provenance_version,
+            watch.creation_reason,
+            watch.qualifying_evidence,
             watch.policy.model_dump_json(),
             json.dumps(watch.required_capabilities),
             watch.status.value,
@@ -811,6 +818,8 @@ class PRSupervisorStore:
             originating_agent=row["originating_agent"],
             executor_cwd=row["executor_cwd"],
             provenance_version=row["provenance_version"],
+            creation_reason=row["creation_reason"],
+            qualifying_evidence=row["qualifying_evidence"],
             policy=json.loads(row["policy_json"] or "{}"),
             required_capabilities=json.loads(row["required_capabilities_json"] or "[]"),
             status=row["status"],

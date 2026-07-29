@@ -1677,21 +1677,33 @@ async def session_prompt(request: Request, session_id: str, body: PromptBody) ->
             dispatch_record.prompt_acknowledged_at = accepted_event.created_at
             dispatch_record.prompt_ack = ack
             message_text = "Prompt durably accepted by linked remote session."
-        await _runtime_offload(
-            runtime,
-            "dispatch.prompt_ack",
-            dispatch_store.transition,
-            dispatch_record,
-            "running",
-            message_text,
-            detail={
-                "session_id": session_id,
-                "event_id": accepted_event.id,
-                "event_seq": accepted_event.seq,
-                "event_type": accepted_event.event_type,
-                "followup": bool(body.idempotency_key),
-            },
-        )
+        if body.idempotency_key:
+            await _runtime_offload(
+                runtime,
+                "dispatch.followup_ack",
+                dispatch_store.record_followup_started,
+                dispatch_record,
+                idempotency_key=body.idempotency_key,
+                prompt_id=accepted_event.payload.get("id"),
+                event_id=accepted_event.id,
+                event_seq=accepted_event.seq,
+            )
+        else:
+            await _runtime_offload(
+                runtime,
+                "dispatch.prompt_ack",
+                dispatch_store.transition,
+                dispatch_record,
+                "running",
+                message_text,
+                detail={
+                    "session_id": session_id,
+                    "event_id": accepted_event.id,
+                    "event_seq": accepted_event.seq,
+                    "event_type": accepted_event.event_type,
+                    "followup": False,
+                },
+            )
     return response
 
 

@@ -36,6 +36,7 @@ from pa.execution.progress import (
     sanitize_progress_event,
     sanitize_text,
 )
+from pa.execution.post_turn import PostTurnEvaluationV1, TurnEndSnapshotV1
 
 logger = logging.getLogger(__name__)
 
@@ -164,6 +165,11 @@ class DispatchRecord(BaseModel):
     progress_conflicts: int = 0
     progress_authority_history: list[dict[str, Any]] = Field(default_factory=list)
     final_report: CompletionReportV1 | None = None
+    turn_end_snapshots: list[TurnEndSnapshotV1] = Field(default_factory=list)
+    post_turn_context_digests: dict[str, str] = Field(default_factory=dict)
+    post_turn_evaluations: list[PostTurnEvaluationV1] = Field(default_factory=list)
+    followup_turns: list[dict[str, Any]] = Field(default_factory=list)
+    lifecycle_inconsistencies: list[dict[str, Any]] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
@@ -206,6 +212,9 @@ class DispatchRecord(BaseModel):
             ),
         }
         data["agent_turn"] = {
+            "ended": self.completion_payload is not None,
+            # Mixed-version compatibility: this legacy field means lifecycle
+            # termination only and never implies that the card outcome succeeded.
             "completed": self.completion_payload is not None,
             "stop_reason": (self.completion_payload or {}).get("stop_reason"),
         }
@@ -221,6 +230,12 @@ class DispatchRecord(BaseModel):
             if self.acknowledged_at
             else None,
         }
+        data["effective_state"] = (
+            "completed"
+            if data["dispatch_completion"]["completed"]
+            and self.state not in {"failed", "cancelled"}
+            else self.state
+        )
         data["card_completion"] = {
             "status": self.card_disposition_status or "not_requested",
             "lane_before": self.card_lane_before,
@@ -248,6 +263,39 @@ class DispatchRecord(BaseModel):
                 else None
             ),
             "current_card": self.reconciliation_current_card,
+        }
+        latest_evaluation = (
+            self.post_turn_evaluations[-1] if self.post_turn_evaluations else None
+        )
+        data["turn_end"] = (
+            self.turn_end_snapshots[-1].model_dump(mode="json")
+            if self.turn_end_snapshots
+            else None
+        )
+        data["post_turn_evaluation"] = (
+            latest_evaluation.model_dump(mode="json") if latest_evaluation else None
+        )
+        data["evaluated_outcome"] = (
+            _evaluated_outcome(latest_evaluation)
+            if latest_evaluation
+            else "needs_evaluation"
+        )
+        data["followup_state"] = {
+            "turns": list(self.followup_turns[-20:]),
+            "scheduled": bool(
+                latest_evaluation
+                and any(
+                    action.status.value in {"approved", "executed"}
+                    and action.name.value
+                    not in {"no_action", "record_turn_outcome"}
+                    for action in latest_evaluation.recommended_actions
+                )
+            ),
+        }
+        data["lifecycle_diagnostics"] = {
+            "consistent": not self.lifecycle_inconsistencies,
+            "issues": list(self.lifecycle_inconsistencies[-20:]),
+            "acknowledged_completion_wins": self.acknowledged_at is not None,
         }
         latest = self.latest_progress
         heartbeat = self.progress_heartbeat
@@ -284,7 +332,7 @@ class DispatchRecord(BaseModel):
             "heartbeat": heartbeat.model_dump(mode="json") if heartbeat else None,
             "freshness": progress_freshness(
                 last_activity_at=last_activity,
-                dispatch_state=self.state,
+                dispatch_state=data["effective_state"],
                 last_error=self.last_error or progress_delivery_error,
                 protocol_version=self.progress_protocol_version,
             ),
@@ -299,6 +347,22 @@ class DispatchRecord(BaseModel):
             ),
         }
         return data
+
+
+def _evaluated_outcome(evaluation: PostTurnEvaluationV1) -> str:
+    decision = evaluation.decision.value
+    if decision == "outcome_achieved":
+        return "attempt_succeeded"
+    if decision in {
+        "further_agent_work_needed",
+        "waiting_on_external_condition",
+        "operator_input_required",
+        "followup_record_required",
+    }:
+        return "attempt_blocked"
+    if decision in {"retryable_runtime_failure", "nonretryable_failure"}:
+        return "attempt_failed"
+    return "needs_evaluation"
 
 
 class CapacityAdmission(BaseModel):
@@ -991,7 +1055,7 @@ class DispatchStore:
             outcome = sanitize_text(
                 (disposition.get("outcome") if isinstance(disposition, dict) else None)
                 or (latest.summary if latest else None)
-                or "Agent work completed.",
+                or "Agent turn ended.",
                 limit=2000,
             )
             return CompletionReportV1(
@@ -1033,6 +1097,29 @@ class DispatchStore:
         if state not in DISPATCH_STAGES:
             raise ValueError(f"unknown dispatch state: {state}")
         previous_state = record.state
+        requested_state = state
+        if (
+            record.acknowledged_at is not None
+            and previous_state in {"completed", "acknowledged"}
+            and state not in {"completed", "acknowledged"}
+        ):
+            record.lifecycle_inconsistencies.append(
+                {
+                    "kind": "terminal_dispatch_regression_prevented",
+                    "previous_state": previous_state,
+                    "requested_state": state,
+                    "observed_at": datetime.now(UTC).isoformat(),
+                    "acknowledged_at": record.acknowledged_at.isoformat(),
+                }
+            )
+            record.lifecycle_inconsistencies = record.lifecycle_inconsistencies[-50:]
+            state = previous_state
+            detail = {
+                **(detail or {}),
+                "requested_state": requested_state,
+                "retained_state": previous_state,
+                "acknowledged_completion_wins": True,
+            }
         record.state = state
         if (
             previous_state in CAPACITY_RESERVATION_STATES
@@ -1051,6 +1138,45 @@ class DispatchStore:
             )
         )
         return self.put(record)
+
+    def record_followup_started(
+        self,
+        record: DispatchRecord,
+        *,
+        idempotency_key: str,
+        prompt_id: str | None,
+        event_id: str | None,
+        event_seq: int | None,
+    ) -> DispatchRecord:
+        """Record follow-up activity without mutating dispatch completion."""
+        if any(
+            item.get("idempotency_key") == idempotency_key
+            for item in record.followup_turns
+        ):
+            return record
+        now = datetime.now(UTC)
+        record.followup_turns.append(
+            {
+                "idempotency_key": idempotency_key,
+                "prompt_id": prompt_id,
+                "event_id": event_id,
+                "event_seq": event_seq,
+                "state": "accepted",
+                "accepted_at": now.isoformat(),
+                "session_id": record.session_id,
+            }
+        )
+        record.followup_turns = record.followup_turns[-100:]
+        return self.transition(
+            record,
+            record.state,
+            "Follow-up turn durably accepted; dispatch completion remains terminal.",
+            detail={
+                "followup": True,
+                "prompt_id": prompt_id,
+                "dispatch_state_retained": record.state,
+            },
+        )
 
     def fail(
         self,
@@ -1121,6 +1247,19 @@ class DispatchStore:
             for record in self.list(limit=1000)
             if record.state == "completion_pending"
         ]
+
+    def pending_followup_turns(self) -> list[tuple[DispatchRecord, dict[str, Any]]]:
+        pending: list[tuple[DispatchRecord, dict[str, Any]]] = []
+        now = datetime.now(UTC)
+        for record in self.list(limit=1000):
+            for turn in record.followup_turns:
+                if turn.get("delivery_state") != "pending":
+                    continue
+                retry_at = turn.get("next_retry_at")
+                if retry_at and datetime.fromisoformat(str(retry_at)) > now:
+                    continue
+                pending.append((record, turn))
+        return pending
 
     def reconcile_interrupted(self) -> list[DispatchRecord]:
         """Make pre-restart work retryable without losing its identity or session."""
@@ -1495,6 +1634,40 @@ class CompletionOutbox:
 
     def queue(self, session_id: str, payload: dict[str, Any]) -> bool:
         record = self.store.by_session(session_id)
+        if (
+            record
+            and record.acknowledged_at
+            and record.state in {"completed", "acknowledged"}
+        ):
+            followup = next(
+                (
+                    item
+                    for item in reversed(record.followup_turns)
+                    if item.get("state") == "accepted"
+                ),
+                None,
+            )
+            if not followup:
+                return False
+            followup.update(
+                {
+                    "state": "ended",
+                    "ended_at": datetime.now(UTC).isoformat(),
+                    "stop_reason": payload.get("stop_reason"),
+                    "result": payload,
+                    "final_report": (
+                        record.final_report.model_dump(mode="json")
+                        if record.final_report
+                        else None
+                    ),
+                    "delivery_state": "pending",
+                    "delivery_attempts": 0,
+                    "next_retry_at": None,
+                }
+            )
+            self.store.put(record)
+            self._wake.set()
+            return True
         if not record or record.state not in {"running", "completion_pending"}:
             return False
         record.completion_payload = payload
@@ -1504,7 +1677,7 @@ class CompletionOutbox:
         self.store.transition(
             record,
             "completion_pending",
-            "Agent turn completed; dispatch completion queued for delivery to the authority.",
+            "Agent turn ended; dispatch completion queued for delivery to the authority.",
         )
         self._wake.set()
         return True
@@ -1514,10 +1687,20 @@ class CompletionOutbox:
         record = self.store.get(dispatch_id)
         if not record or record.completion_payload is None:
             raise ValueError("dispatch has no preserved completion evidence")
-        if (
-            record.acknowledged_at
-            and record.completion_delivery_class != "semantic_conflict"
-        ):
+        if record.acknowledged_at:
+            record.lifecycle_inconsistencies.append(
+                {
+                    "kind": "completion_replay_prevented",
+                    "observed_at": datetime.now(UTC).isoformat(),
+                    "classification": record.completion_delivery_class,
+                    "reason": (
+                        "Acknowledged immutable completion cannot be replayed; "
+                        "card reconciliation is a separate state machine."
+                    ),
+                }
+            )
+            record.lifecycle_inconsistencies = record.lifecycle_inconsistencies[-50:]
+            self.store.put(record)
             return record
         record.completion_delivery_class = "operator_retry"
         record.completion_next_retry_at = None
@@ -1533,8 +1716,14 @@ class CompletionOutbox:
 
     async def drain(self, timeout: float = 5.0) -> None:
         async def wait_empty() -> None:
-            while await self._offload(
-                "dispatch.completion_pending_read", self.store.pending
+            while (
+                await self._offload(
+                    "dispatch.completion_pending_read", self.store.pending
+                )
+                or await self._offload(
+                    "dispatch.followup_pending_read",
+                    self.store.pending_followup_turns,
+                )
             ):
                 self._wake.set()
                 await asyncio.sleep(0.05)
@@ -1562,7 +1751,10 @@ class CompletionOutbox:
             pending = await self._offload(
                 "dispatch.completion_pending_read", self.store.pending
             )
-            if not pending:
+            followups = await self._offload(
+                "dispatch.followup_pending_read", self.store.pending_followup_turns
+            )
+            if not pending and not followups:
                 self._wake.clear()
                 try:
                     await asyncio.wait_for(self._wake.wait(), self.retry_seconds)
@@ -1582,7 +1774,63 @@ class CompletionOutbox:
                 ):
                     continue
                 await self._send(record)
+            for record, turn in followups:
+                await self._send_followup(record, turn)
             await asyncio.sleep(min(self.retry_seconds, 1.0))
+
+    async def _send_followup(
+        self, record: DispatchRecord, turn: dict[str, Any]
+    ) -> None:
+        turn["delivery_attempts"] = int(turn.get("delivery_attempts") or 0) + 1
+        self.store.put(record)
+        key = (
+            f"{record.mutation_id}:turn:"
+            f"{turn.get('prompt_id') or turn.get('idempotency_key')}"
+        )
+        headers = {"Idempotency-Key": key}
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+        try:
+            response = await self._http_client().post(
+                f"{record.authority_url.rstrip('/')}/api/fleet/dispatch/"
+                f"{record.dispatch_id}/turn-end",
+                headers=headers,
+                json={
+                    "mutation_id": record.mutation_id,
+                    "source_instance_id": record.target_instance_id,
+                    "session_id": record.session_id,
+                    "turn_id": str(
+                        turn.get("prompt_id") or turn.get("idempotency_key")
+                    ),
+                    "result": turn.get("result") or {},
+                    "final_report": turn.get("final_report"),
+                },
+            )
+            if response.status_code >= 400:
+                raise httpx.HTTPStatusError(
+                    f"HTTP {response.status_code}",
+                    request=response.request,
+                    response=response,
+                )
+            turn["delivery_state"] = "acknowledged"
+            turn["delivered_at"] = datetime.now(UTC).isoformat()
+            turn["delivery_error"] = None
+            turn["next_retry_at"] = None
+        except (httpx.HTTPError, ValueError) as exc:
+            turn["delivery_error"] = sanitize_text(exc, limit=500)
+            if int(turn["delivery_attempts"]) >= self.max_attempts:
+                turn["delivery_state"] = "failed"
+                turn["next_retry_at"] = None
+            else:
+                delay = min(
+                    self.retry_max_seconds,
+                    self.retry_seconds
+                    * (2 ** max(0, int(turn["delivery_attempts"]) - 1)),
+                )
+                turn["next_retry_at"] = (
+                    datetime.now(UTC) + timedelta(seconds=delay)
+                ).isoformat()
+        self.store.put(record)
 
     def _schedule_retry(self, record: DispatchRecord, error: str) -> None:
         record.last_error = sanitize_text(error, limit=500)
@@ -1714,7 +1962,7 @@ class CompletionOutbox:
                         self.store.transition,
                         record,
                         "completed",
-                        "Agent turn completed; legacy authority reconciliation needs attention.",
+                        "Agent turn ended; legacy authority reconciliation needs attention.",
                     )
                 elif response.status_code == 409 or response.status_code in {
                     401,

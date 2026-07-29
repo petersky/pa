@@ -46,8 +46,13 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_PR_URL = re.compile(
-    r"https://github\.com/(?P<repository>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/pull/(?P<number>\d+)"
+_EXPLICIT_PR_INTENT = re.compile(
+    r"(?im)^\s*(?:[-*]\s*)?"
+    r"(?P<label>integration\s+pr|pull\s+request|pr\s+watch|"
+    r"supervise(?:d)?\s+pr|watched\s+pr)\s*:\s*"
+    r"(?P<url>https://github\.com/"
+    r"(?P<repository>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/pull/(?P<number>\d+))"
+    r"\s*$"
 )
 
 
@@ -625,6 +630,8 @@ class PRSupervisor:
                 "originating_session_id": stored.originating_session_id,
                 "originating_principal_id": stored.originating_principal_id,
                 "provenance_version": stored.provenance_version,
+                "creation_reason": stored.creation_reason,
+                "qualifying_evidence": stored.qualifying_evidence,
                 "originating_agent": stored.originating_agent,
                 "policy": stored.policy.model_dump(mode="json"),
             },
@@ -1898,12 +1905,13 @@ class PRSupervisor:
         return await self._offload("pr_supervisor.response_json", response.json)
 
     async def migrate_discoverable_associations(self) -> int:
+        """Migrate only explicit integration declarations, never prose URLs."""
         migrated = 0
         cards = await self._offload("sqlite.card_read", self.domain_store.list_cards)
         for card in cards:
             if card.lane == CardLane.DONE:
                 continue
-            for match in _PR_URL.finditer(card.body or ""):
+            for match in _EXPLICIT_PR_INTENT.finditer(card.body or ""):
                 repository = match.group("repository")
                 number = int(match.group("number"))
                 if await self._offload(
@@ -1935,12 +1943,21 @@ class PRSupervisor:
                 await self.register_watch(
                     PRWatch(
                         realm_id=card.realm_id,
+                        project_id=card.project_id,
+                        card_id=card.id,
                         repository=repository,
                         pr_number=number,
-                        pr_url=match.group(0),
+                        pr_url=match.group("url"),
+                        originating_instance_id=(
+                            card.created_by_instance or self.settings.instance_id
+                        ),
+                        authority_instance_id=self.settings.instance_id,
+                        provenance_version=1,
+                        creation_reason="legacy_explicit_integration_intent",
+                        qualifying_evidence=match.group(0).strip(),
                         policy=PRPolicy.model_validate(policy_data),
                     ),
-                    source="legacy_discovery_unlinked",
+                    source="legacy_explicit_integration_discovery",
                 )
                 migrated += 1
         if migrated:

@@ -239,10 +239,10 @@ command, push, review, or merge completed unless the current systems confirm it.
 
 _register(
     key="card.reconciliation.disposition",
-    purpose="Recover a missing card disposition without repeating completed implementation.",
+    purpose="Recover a missing card disposition without repeating the prior turn.",
     scope="card-reconciliation",
     version=1,
-    template="""Your preceding card-linked turn completed without a valid
+    template="""Your preceding card-linked turn ended without a valid
 `pa.card-disposition/v1` payload. Do not repeat implementation unless current
 verification finds a problem.
 
