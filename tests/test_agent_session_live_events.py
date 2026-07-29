@@ -593,6 +593,120 @@ class AgentSessionLiveEventTests(unittest.TestCase):
             self.assertEqual(recovered.project_id, "project-1")
             self.assertEqual(recovered.in_flight.id, "queued-1")
 
+    def test_startup_defers_fifty_idle_sessions_and_recovers_only_active_turns(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            sessions = [
+                AgentSession(
+                    id=f"idle-{index}",
+                    agent_name="codex",
+                    status="idle",
+                    config_json={
+                        "durable_runtime": {
+                            "version": 1,
+                            "lifecycle": "ready",
+                            "queued_prompts": [],
+                            "in_flight": None,
+                        }
+                    },
+                )
+                for index in range(50)
+            ]
+            sessions.extend(
+                AgentSession(
+                    id=f"active-{index}",
+                    agent_name="codex",
+                    status="prompting",
+                    config_json={
+                        "durable_runtime": {
+                            "version": 1,
+                            "lifecycle": "prompting",
+                            "queued_prompts": [],
+                            "in_flight": QueuedPrompt(
+                                message=f"turn {index}"
+                            ).model_dump(mode="json"),
+                        }
+                    },
+                )
+                for index in range(3)
+            )
+            store = MagicMock()
+            store.list_sessions.return_value = sessions
+            manager = AgentSessionManager(Settings(data_dir=Path(tmp)), store)
+            manager.workspace_manager.reconcile_terminal_state = MagicMock(
+                return_value={}
+            )
+            manager.workspace_manager.collect_garbage = MagicMock(return_value={})
+            manager._resume_from_snapshot = AsyncMock()
+
+            asyncio.run(manager.start(resume=True))
+
+            recovered = {
+                call.args[0].session_id
+                for call in manager._resume_from_snapshot.await_args_list
+            }
+            self.assertEqual(recovered, {"active-0", "active-1", "active-2"})
+            self.assertEqual(
+                manager.startup_state(),
+                {
+                    "phase": "ready",
+                    "complete": True,
+                    "error": None,
+                    "total": 3,
+                    "eager": 3,
+                    "deferred": 50,
+                    "blocked": 0,
+                    "recovered": 3,
+                    "failed": 0,
+                    "session_id": None,
+                },
+            )
+
+    def test_startup_recovery_concurrency_is_bounded(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            sessions = [
+                AgentSession(
+                    id=f"queued-{index}",
+                    agent_name="codex",
+                    status="idle",
+                    config_json={
+                        "durable_runtime": {
+                            "lifecycle": "queued",
+                            "queued_prompts": [
+                                QueuedPrompt(message="continue").model_dump(mode="json")
+                            ],
+                        }
+                    },
+                )
+                for index in range(8)
+            ]
+            store = MagicMock()
+            store.list_sessions.return_value = sessions
+            manager = AgentSessionManager(
+                Settings(data_dir=Path(tmp), agent_recovery_concurrency=2), store
+            )
+            manager.workspace_manager.reconcile_terminal_state = MagicMock(
+                return_value={}
+            )
+            manager.workspace_manager.collect_garbage = MagicMock(return_value={})
+            active = 0
+            maximum = 0
+
+            async def recover(_snapshot, _full):
+                nonlocal active, maximum
+                active += 1
+                maximum = max(maximum, active)
+                await asyncio.sleep(0.01)
+                active -= 1
+
+            manager._resume_from_snapshot = AsyncMock(side_effect=recover)
+
+            asyncio.run(manager.start(resume=True))
+
+            self.assertEqual(manager._resume_from_snapshot.await_count, 8)
+            self.assertEqual(maximum, 2)
+
     def test_unavailable_project_is_attempted_once_across_restarts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             session = AgentSession(
@@ -799,18 +913,20 @@ class AgentSessionLiveEventTests(unittest.TestCase):
                     id="session-a",
                     agent_name="cursor",
                     external_session_id="ext-a",
-                    status="disconnected",
+                    status="prompting",
                 ),
                 AgentSession(
                     id="session-b",
                     agent_name="cursor",
                     external_session_id="ext-b",
-                    status="disconnected",
+                    status="prompting",
                 ),
             ]
             store = MagicMock()
             store.list_sessions.return_value = sessions
-            manager = AgentSessionManager(Settings(data_dir=Path(tmp)), store)
+            manager = AgentSessionManager(
+                Settings(data_dir=Path(tmp), agent_recovery_concurrency=1), store
+            )
             manager.workspace_manager.reconcile_terminal_state = MagicMock(
                 return_value={}
             )
@@ -836,11 +952,11 @@ class AgentSessionLiveEventTests(unittest.TestCase):
 
             asyncio.run(run())
 
-            self.assertEqual(resumed, ["session-b"])
+            self.assertEqual(resumed, ["session-a"])
             manager.attach_default.assert_not_awaited()
             manager._mark_recovery_interrupted.assert_not_awaited()
 
-    def test_wake_reconciliation_marks_resume_failure_recoverable(self) -> None:
+    def test_wake_reconciliation_defers_passive_connected_session(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             session = AgentSession(
                 id="session-sleep",
@@ -865,18 +981,61 @@ class AgentSessionLiveEventTests(unittest.TestCase):
                 return_value={}
             )
             manager.workspace_manager.collect_garbage = MagicMock(return_value={})
-            manager._resume_from_snapshot = AsyncMock(
-                side_effect=RuntimeError("provider resume unavailable")
-            )
-            manager.attach_default = AsyncMock()
+            manager._resume_from_snapshot = AsyncMock()
 
             asyncio.run(manager.start(resume=True))
 
-            self.assertEqual(session.status, "recoverable_interrupted")
-            durable = session.config_json["durable_runtime"]
-            self.assertEqual(durable["lifecycle"], "recoverable_interrupted")
-            self.assertIn("provider resume unavailable", durable["recovery_error"])
-            store.save_session.assert_called_with(session)
+            self.assertEqual(session.status, "connected")
+            manager._resume_from_snapshot.assert_not_awaited()
+            self.assertEqual(manager.startup_state()["deferred"], 1)
+
+    def test_concurrent_lazy_recovery_of_idle_session_creates_one_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            session = AgentSession(
+                id="session-idle",
+                agent_name="codex",
+                external_session_id="provider-idle",
+                status="idle",
+            )
+            store = MagicMock()
+            store.get_session.return_value = session
+            manager = AgentSessionManager(Settings(data_dir=Path(tmp)), store)
+            runtime = MagicMock()
+            runtime._closed = False
+
+            async def create(**_kwargs):
+                await asyncio.sleep(0.01)
+                manager._runtimes[session.id] = runtime
+                return runtime
+
+            manager.create_session = AsyncMock(side_effect=create)
+
+            async def recover_both():
+                return await asyncio.gather(
+                    manager.recover_session(session.id),
+                    manager.recover_session(session.id),
+                )
+
+            first, second = asyncio.run(recover_both())
+
+            self.assertIs(first, runtime)
+            self.assertIs(second, runtime)
+            self.assertEqual(manager.create_session.await_count, 1)
+
+    def test_prompt_lazily_recovers_deferred_idle_session(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            manager = AgentSessionManager(Settings(data_dir=Path(tmp)), MagicMock())
+            runtime = MagicMock()
+            runtime.prompt = AsyncMock(return_value="started")
+            manager.recover_session = AsyncMock(return_value=runtime)
+
+            result = asyncio.run(
+                manager.prompt("follow up", session_id="session-idle", wait=False)
+            )
+
+            self.assertEqual(result, "started")
+            manager.recover_session.assert_awaited_once_with("session-idle")
+            runtime.prompt.assert_awaited_once()
 
     def test_missing_provider_rollout_recovers_one_stable_pa_session(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

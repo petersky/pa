@@ -68,17 +68,30 @@ AUTO_RECOVERY_SESSION_STATUSES = frozenset(
         "connecting",
         "configuring",
         "configuration_failed",
-        "connected",
-        "idle",
         "prompting",
-        "disconnected",
-        "quiesced",
         "recoverable_interrupted",
     }
 )
-RECOVERY_RETAINED_SESSION_STATUSES = AUTO_RECOVERY_SESSION_STATUSES | {
-    RECOVERY_BLOCKED_STATUS
-}
+RECOVERY_RETAINED_SESSION_STATUSES = AUTO_RECOVERY_SESSION_STATUSES | frozenset(
+    {
+        "connected",
+        "idle",
+        "disconnected",
+        "quiesced",
+        RECOVERY_BLOCKED_STATUS,
+    }
+)
+_EAGER_DURABLE_LIFECYCLES = frozenset(
+    {
+        "admitted",
+        "prompting",
+        "queued",
+        "permission_pending",
+        "completion_pending",
+        "reconciliation_pending",
+        "recoverable_interrupted",
+    }
+)
 
 
 def _project_recovery_block(exc: BaseException) -> bool:
@@ -193,6 +206,7 @@ class AgentSessionRuntime:
                 self._in_flight.model_dump(mode="json") if self._in_flight else None
             ),
             "last_event_cursor": self._seq,
+            "pending_permissions": list(self._permission_requests.values()),
             "updated_at": datetime.now(UTC).isoformat(),
         }
         self.session.config_json = config
@@ -450,11 +464,15 @@ class AgentSessionRuntime:
         self._pending_permissions[request_id] = future
         self._permission_requests[request_id] = request
         self._append_transcript("permission_request", request)
+        await self._checkpoint_runtime_async(lifecycle="permission_pending")
         try:
             return await future
         finally:
             self._pending_permissions.pop(request_id, None)
             self._permission_requests.pop(request_id, None)
+            await self._checkpoint_runtime_async(
+                lifecycle="prompting" if self._in_flight else "ready"
+            )
 
     async def start(
         self,
@@ -1442,6 +1460,9 @@ class AgentSessionManager:
         self._startup_phase = "ready"
         self._startup_error: str | None = None
         self._startup_total = 0
+        self._startup_eager = 0
+        self._startup_deferred = 0
+        self._startup_blocked = 0
         self._startup_recovered = 0
         self._startup_failed = 0
         self._startup_session_id: str | None = None
@@ -1508,6 +1529,9 @@ class AgentSessionManager:
         self._startup_phase = "recovering"
         self._startup_error = None
         self._startup_total = 0
+        self._startup_eager = 0
+        self._startup_deferred = 0
+        self._startup_blocked = 0
         self._startup_recovered = 0
         self._startup_failed = 0
         self._startup_session_id = None
@@ -1528,6 +1552,9 @@ class AgentSessionManager:
             "complete": self._startup_complete,
             "error": self._startup_error,
             "total": self._startup_total,
+            "eager": self._startup_eager,
+            "deferred": self._startup_deferred,
+            "blocked": self._startup_blocked,
             "recovered": self._startup_recovered,
             "failed": self._startup_failed,
             "session_id": self._startup_session_id,
@@ -1992,6 +2019,14 @@ class AgentSessionManager:
     ) -> str | None:
         if session.status in AUTO_RECOVERY_SESSION_STATUSES:
             return "status"
+        durable = dict((session.config_json or {}).get(_DURABLE_RUNTIME_KEY) or {})
+        if (
+            durable.get("in_flight")
+            or durable.get("queued_prompts")
+            or durable.get("pending_permissions")
+            or durable.get("lifecycle") in _EAGER_DURABLE_LIFECYCLES
+        ):
+            return "durable_obligation"
         if session.status != RECOVERY_BLOCKED_STATUS:
             return None
         if await self._project_recovery_available(session):
@@ -2083,15 +2118,18 @@ class AgentSessionManager:
                             session.id,
                         )
                 elif session.status == RECOVERY_BLOCKED_STATUS:
+                    self._startup_blocked += 1
                     logger.info(
                         "ACP recovery remains blocked for session %s: %s",
                         session.id,
                         self._recovery_action(session),
                     )
                 elif session.status != "closed":
+                    if session.status in RECOVERY_RETAINED_SESSION_STATUSES:
+                        self._startup_deferred += 1
                     logger.info(
-                        "Skipping automatic ACP recovery for session %s with "
-                        "ineligible status %s",
+                        "Deferring ACP recovery for session %s with passive "
+                        "status %s",
                         session.id,
                         session.status,
                     )
@@ -2119,45 +2157,72 @@ class AgentSessionManager:
                 if session.id not in recovery_eligibility or session.id in recovery:
                     continue
                 recovery[session.id] = self._snapshot_from_persisted(session)
-            self._startup_total = len(recovery)
-            try:
-                for sess in recovery.values():
+            recovery_items = list(recovery.values())
+            recovery_items.sort(
+                key=lambda item: (
+                    0
+                    if item.in_flight
+                    else 1
+                    if item.queued_prompts
+                    else 2,
+                    item.session_id or "",
+                )
+            )
+            self._startup_total = len(recovery_items)
+            self._startup_eager = len(recovery_items)
+
+            async def recover_one(sess: SessionSnapshot) -> None:
+                if self._should_abort_recovery():
+                    return
+                self._startup_session_id = sess.session_id
+                try:
+                    await self._resume_from_snapshot(
+                        sess, snapshot or QuiesceSnapshot(reason="recovery")
+                    )
+                    self._startup_recovered += 1
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
                     if self._should_abort_recovery():
-                        logger.info(
-                            "Aborting remaining ACP resumes because shutdown began"
+                        return
+                    self._startup_failed += 1
+                    self._last_error = str(exc)
+                    recovery_state = await self._mark_recovery_interrupted(sess, exc)
+                    if recovery_state == RECOVERY_BLOCKED_STATUS:
+                        session = persisted_by_id.get(sess.session_id or "")
+                        logger.warning(
+                            "ACP recovery blocked for session %s: %s",
+                            sess.session_id,
+                            self._recovery_action(session) if session else str(exc),
                         )
-                        break
-                    self._startup_session_id = sess.session_id
-                    try:
-                        await self._resume_from_snapshot(
-                            sess, snapshot or QuiesceSnapshot(reason="recovery")
+                    else:
+                        logger.exception(
+                            "Failed to resume session %s", sess.session_id
                         )
-                        self._startup_recovered += 1
-                    except asyncio.CancelledError:
-                        raise
-                    except Exception as exc:
-                        if self._should_abort_recovery():
-                            logger.info(
-                                "ACP resume for %s aborted during shutdown",
-                                sess.session_id,
+
+            try:
+                iterator = iter(recovery_items)
+
+                async def worker() -> None:
+                    while not self._should_abort_recovery():
+                        try:
+                            sess = next(iterator)
+                        except StopIteration:
+                            return
+                        await recover_one(sess)
+
+                await asyncio.gather(
+                    *(
+                        worker()
+                        for _ in range(
+                            min(
+                                self.settings.agent_recovery_concurrency,
+                                len(recovery_items),
                             )
-                            break
-                        self._startup_failed += 1
-                        self._last_error = str(exc)
-                        recovery_state = await self._mark_recovery_interrupted(
-                            sess, exc
                         )
-                        if recovery_state == RECOVERY_BLOCKED_STATUS:
-                            session = persisted_by_id.get(sess.session_id or "")
-                            logger.warning(
-                                "ACP recovery blocked for session %s: %s",
-                                sess.session_id,
-                                self._recovery_action(session) if session else str(exc),
-                            )
-                        else:
-                            logger.exception(
-                                "Failed to resume session %s", sess.session_id
-                            )
+                    )
+                )
+                self._startup_session_id = None
                 # Legacy top-level queue → default session
                 if (
                     not self._should_abort_recovery()
@@ -2187,13 +2252,9 @@ class AgentSessionManager:
 
         # A no-resume boot is intentionally inert until an explicit admission.
         # Durable nonterminal sessions remain recoverable on a later normal boot.
-        if self._resume_on_start and not self._should_abort_recovery():
-            try:
-                await self.attach_default(_startup_recovery=True)
-                self._last_error = None
-            except Exception as exc:
-                self._last_error = str(exc)
-                logger.exception("Failed to start default agent session")
+        # The default provider is admitted lazily by attach_default() when an
+        # operator actually opens or prompts it. Startup must remain runtime-free
+        # when every retained session is passive.
 
     @staticmethod
     def _snapshot_from_persisted(session: AgentSession) -> SessionSnapshot:
@@ -2841,7 +2902,7 @@ class AgentSessionManager:
         if session_id:
             runtime = self._runtimes.get(session_id)
             if not runtime:
-                raise RuntimeError(f"Unknown session: {session_id}")
+                runtime = await self.recover_session(session_id)
         else:
             if surface == SURFACE_EXECUTION:
                 scope_key = (
