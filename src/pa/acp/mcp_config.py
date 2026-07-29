@@ -90,7 +90,7 @@ def probe_owner_channel(settings: Settings, *, timeout: float = 4.0) -> dict[str
                 "Verify that PA is listening on its configured bind address.",
             ) from exc
         actual = response.headers.get("X-PA-Instance-ID", "").strip()
-        if actual != settings.instance_id:
+        if actual and actual != settings.instance_id:
             raise OwnerChannelError(
                 "instance_mismatch",
                 endpoint.kind,
@@ -118,11 +118,23 @@ def probe_owner_channel(settings: Settings, *, timeout: float = 4.0) -> dict[str
                 endpoint.kind,
                 "Wait for PA startup to finish, then reconnect the session.",
             )
+        if response.status_code >= 500:
+            raise OwnerChannelError(
+                "api_error",
+                endpoint.kind,
+                "Inspect the owning PA server logs for the readiness failure.",
+            )
         if response.status_code != 200:
             raise OwnerChannelError(
                 "api_incompatible",
                 endpoint.kind,
                 "Inspect PA logs and verify the owner API version.",
+            )
+        if not actual:
+            raise OwnerChannelError(
+                "identity_missing",
+                endpoint.kind,
+                "Inspect the listener and verify that the PA identity middleware is active.",
             )
         return {"state": "connected", "endpoint_type": endpoint.kind}
 

@@ -97,7 +97,10 @@ async def ready(request: Request) -> dict:
             status_code=503,
             detail={"status": "starting", "missing_services": missing},
         )
-    paths = {route.path for route in request.app.routes}
+    # FastAPI's public OpenAPI view is stable across router implementations.
+    # Newer FastAPI releases may keep included routers in ``app.routes`` as
+    # internal objects without a ``path`` attribute.
+    paths = set(request.app.openapi().get("paths", {}))
     required_paths = {
         "/api/cards",
         "/api/items",
