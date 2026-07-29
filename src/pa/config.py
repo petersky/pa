@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     # resolved relative to data_dir so isolated/test instances remain isolated.
     workspace_root: Path | None = None
     host: str = "127.0.0.1"
+    # Explicit web binds; empty preserves the legacy single host bind.
+    # Entries are HOST or HOST:PORT; bracket IPv6 when specifying a port.
+    web_listeners: Annotated[list[str], NoDecode] = Field(default_factory=list)
     port: int = 8080
     peers: Annotated[list[str], NoDecode] = Field(default_factory=list)
 
@@ -76,6 +79,10 @@ class Settings(BaseSettings):
     # Provider processes are comparatively expensive. Keep restart recovery
     # bounded even when many sessions have durable unfinished work.
     agent_recovery_concurrency: int = Field(default=2, ge=1, le=16)
+    # Idle sessions remain follow-up capable for one day unless a durable
+    # terminal workflow proves that they can close sooner.
+    agent_session_idle_retention_hours: float = Field(default=24.0, ge=0.01, le=8760)
+    agent_session_sweep_seconds: float = Field(default=30.0, ge=1.0, le=3600)
     # Optional ACP final-fact candidates. Disabled by default; when enabled,
     # only policy-marked candidates enter pending review.
     memory_auto_capture_enabled: bool = False
@@ -104,7 +111,12 @@ class Settings(BaseSettings):
     install_method: str = "uv-tool"
 
     @field_validator(
-        "peers", "subscribed_realms", "capabilities", "agent_args", mode="before"
+        "peers",
+        "subscribed_realms",
+        "capabilities",
+        "agent_args",
+        "web_listeners",
+        mode="before",
     )
     @classmethod
     def _parse_env_list(cls, value: object) -> object:

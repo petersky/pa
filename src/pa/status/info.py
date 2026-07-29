@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 
 from pa import __version__
@@ -27,6 +28,14 @@ def build_status_snapshot(ctx: AppContext, *, module_count: int = 0) -> dict:
     if svc_status.installed or svc.service_supported():
         service_state = "running" if svc_status.running else "stopped"
 
+    try:
+        web_listeners = json.loads(os.environ.get("PA_LISTENER_HEALTH", "[]"))
+    except ValueError:
+        web_listeners = []
+    owner_kind = (
+        "explicit_private_http" if os.environ.get("PA_OWNER_API_URL") else "unix"
+    )
+
     return {
         "version": __version__,
         "asset_version": asset_version,
@@ -38,6 +47,13 @@ def build_status_snapshot(ctx: AppContext, *, module_count: int = 0) -> dict:
         "server_url": f"http://{settings.host}:{settings.port}",
         "host": settings.host,
         "port": settings.port,
+        "web_listeners": web_listeners,
+        "owner_channel": {
+            "endpoint_type": owner_kind,
+            "state": "bound",
+            "failure_classification": None,
+            "retry_state": "none",
+        },
         "binary": str(pa_bin) if pa_bin else None,
         "service_binary": str(service_bin) if service_bin else None,
         "installed_version": install_meta.version if install_meta else None,
