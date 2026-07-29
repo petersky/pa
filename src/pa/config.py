@@ -87,6 +87,16 @@ class Settings(BaseSettings):
     # only policy-marked candidates enter pending review.
     memory_auto_capture_enabled: bool = False
 
+    # Bounded post-turn evaluation and automatic follow-up policy. Evaluators
+    # remain read-only; PA validates and executes eligible catalog actions.
+    post_turn_evaluator_max_attempts: int = Field(default=2, ge=1, le=5)
+    post_turn_max_automatic_followups: int = Field(default=2, ge=0, le=10)
+    post_turn_evaluation_timeout_seconds: float = Field(
+        default=60.0, gt=0, le=600
+    )
+    post_turn_retry_seconds: float = Field(default=15.0, gt=0, le=3600)
+    post_turn_escalation_threshold: int = Field(default=2, ge=1, le=10)
+
     # Developer / debug
     debug: bool = False
     dev_tools: bool = False

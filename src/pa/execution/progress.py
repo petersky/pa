@@ -61,6 +61,8 @@ class ProgressPhase(StrEnum):
     MERGING = "merging"
     BLOCKED = "blocked"
     RETRYING = "retrying"
+    TURN_ENDED = "turn_ended"
+    # Legacy wire value accepted from older peers.
     COMPLETED = "completed"
 
 
@@ -460,7 +462,7 @@ def phase_for_update(update: dict[str, Any]) -> ProgressPhase:
     status = str(update.get("status") or "").lower()
     combined = f"{event_type} {title} {status}"
     if event_type == "turn_completed":
-        return ProgressPhase.COMPLETED
+        return ProgressPhase.TURN_ENDED
     if "review" in combined or "comment" in combined:
         return ProgressPhase.ADDRESSING_REVIEW
     if "merge" in combined:
@@ -573,9 +575,9 @@ def derived_checkpoint(
         summary = sanitize_text(
             disposition.get("outcome")
             or update.get("summary")
-            or "Agent work completed."
+            or "Agent turn ended."
         )
-        return ProgressPhase.COMPLETED, summary, [], []
+        return ProgressPhase.TURN_ENDED, summary, [], []
     if event_type == "connection_lost":
         return (
             ProgressPhase.RETRYING,
@@ -765,7 +767,8 @@ class ProgressService:
             retry_reason=checkpoint.retry_reason,
             operator_input=checkpoint.operator_input,
             explicit_key=checkpoint.idempotency_key,
-            final=checkpoint.phase == ProgressPhase.COMPLETED,
+            final=checkpoint.phase
+            in {ProgressPhase.TURN_ENDED, ProgressPhase.COMPLETED},
         )
 
     async def _checkpoint(

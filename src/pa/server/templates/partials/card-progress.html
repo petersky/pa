@@ -5,9 +5,20 @@
      hx-trigger="every 15s"
      hx-swap="outerHTML">
   {% if current_progress %}
-    {% if current_progress.latest %}
+    {% if current_progress.post_turn_evaluation %}
     <div>
-      <span class="status status-{{ 'blocked' if current_progress.latest.phase == 'blocked' else 'active' }}">{{ current_progress.latest.phase | replace('_', ' ') }}</span>
+      <span class="status status-{{ 'active' if current_progress.evaluated_outcome == 'attempt_succeeded' else ('blocked' if current_progress.evaluated_outcome in ['attempt_blocked', 'attempt_failed'] else 'open') }}">{{ current_progress.evaluated_outcome | replace('_', ' ') }}</span>
+      <strong>{{ current_progress.post_turn_evaluation.operator_status_text }}</strong>
+    </div>
+    <div class="muted small">
+      Decision: {{ current_progress.post_turn_evaluation.decision | replace('_', ' ') }}
+      · confidence {{ (current_progress.post_turn_evaluation.confidence * 100) | round | int }}%
+      {% if current_progress.followup_state.scheduled %} · follow-up scheduled{% endif %}
+      {% if current_progress.session_id %} · <a href="/agent?session={{ current_progress.session_id }}&instance={{ current_progress.target_instance_id }}">Open exact session</a>{% endif %}
+    </div>
+    {% elif current_progress.latest %}
+    <div>
+      <span class="status status-{{ 'blocked' if current_progress.latest.phase == 'blocked' else 'open' }}">{{ current_progress.latest.phase | replace('_', ' ') }}</span>
       <strong>{{ current_progress.latest.summary }}</strong>
     </div>
     <div class="muted small">

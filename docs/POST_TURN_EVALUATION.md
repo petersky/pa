@@ -1,0 +1,62 @@
+# Post-turn evaluation
+
+PA treats four facts as separate:
+
+1. an ACP turn ended;
+2. its result was durably delivered;
+3. the requested card outcome was achieved;
+4. PA selected and executed a follow-up action.
+
+`pa.turn-end-snapshot/v1` is the immutable neutral boundary. It records the
+stop reason, provider/session and dispatch state, card lanes, disposition and
+parse errors, sanitized deliverables and validations, blockers, follow-up
+state, freshness, and provenance. `end_turn` and a terminal progress checkpoint
+never imply card success.
+
+After persisting a snapshot, PA builds a bounded
+`pa.post-turn-context/v1` with a SHA-256 digest and runs the read-only
+evaluator. Its instructions prohibit all writes, prompts, dispatches, card
+moves, PR operations, service operations, and deletion. The evaluator returns
+only `pa.post-turn-evaluation/v1`. PA rejects malformed results, unknown or
+inadmissible actions, executable command payloads, stale context digests, and
+stale authority versions.
+
+The versioned action catalog is available from:
+
+```text
+GET /api/fleet/post-turn/action-catalog
+```
+
+Turn evidence and evaluations are available from:
+
+```text
+GET /api/fleet/dispatch-jobs/{dispatch_id}/turn-end
+```
+
+PA is the sole action executor. Record-only actions are idempotently recorded;
+mutating actions require explicit approval and are fenced by authority version
+and action-specific preconditions. Each action carries idempotency inputs,
+target scope, safety classification, status, and audit history. Evaluator and
+automatic-follow-up budgets are configurable through `PA_POST_TURN_*`
+settings.
+
+Acknowledged dispatch completion is immutable. Follow-up turns use separate
+turn records and delivery, and cannot transition the dispatch back to
+`running`. For legacy inconsistent records, the audited repair operation is:
+
+```text
+POST /api/fleet/dispatch-jobs/{dispatch_id}/repair-terminal
+```
+
+Fleet activity uses acknowledged completion as the effective terminal state
+while retaining any conflicting stored state as a lifecycle diagnostic.
+
+Legacy PR discovery accepts only an explicit line such as:
+
+```text
+Integration PR: https://github.com/owner/repository/pull/123
+```
+
+Ordinary prose, research citations, upstream references, and acceptance-criteria
+links do not create watches. Every migrated watch stores its creation reason and
+the exact qualifying line.

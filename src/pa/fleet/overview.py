@@ -530,10 +530,20 @@ def _local_activity(ctx: Any) -> dict[str, Any]:
     elif sessions:
         state = "active"
     current_dispatch = None
+    active_dispatch_states = {
+        "queued",
+        "checking_sync",
+        "materializing",
+        "starting_session",
+        "delivering_prompt",
+        "running",
+    }
     structured = [
         item
         for item in dispatches
         if (item.get("progress") or {}).get("latest")
+        and item.get("state") in active_dispatch_states
+        and not (item.get("dispatch_completion") or {}).get("completed")
     ]
     if structured:
         current_dispatch = max(
