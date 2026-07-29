@@ -113,11 +113,13 @@ class PaMcpServersTests(unittest.TestCase):
             cases = (
                 (
                     401,
-                    {"X-PA-Instance-ID": "owner-instance"},
+                    {},
                     "authentication_rejected",
                 ),
-                (404, {"X-PA-Instance-ID": "owner-instance"}, "api_incompatible"),
-                (503, {"X-PA-Instance-ID": "owner-instance"}, "api_not_ready"),
+                (404, {}, "api_incompatible"),
+                (503, {}, "api_not_ready"),
+                (500, {}, "api_error"),
+                (200, {}, "identity_missing"),
                 (200, {"X-PA-Instance-ID": "other-instance"}, "instance_mismatch"),
             )
             for status, headers, classification in cases:
