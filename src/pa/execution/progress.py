@@ -12,7 +12,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Literal
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 if TYPE_CHECKING:
     from pa.core.async_runtime import AsyncRuntime
@@ -527,13 +527,20 @@ def derived_checkpoint(
         return None
     phase = phase_for_update(update)
     if event_type == "plan":
-        entries = update.get("entries") or []
+        entries = update.get("entries")
+        entries = entries if isinstance(entries, list) else []
         return phase, f"Plan updated ({len(entries)} steps).", [], []
     if event_type in {"tool_call", "tool_call_update"}:
-        title = sanitize_text(update.get("title") or "Tool activity")
+        title = sanitize_text(
+            update.get("title") or "Tool activity",
+            limit=MAX_PROGRESS_DETAIL,
+        )
         status = sanitize_text(update.get("status") or "", limit=80) or None
         kind = sanitize_text(update.get("kind") or "", limit=80) or None
-        summary = title if not status else f"{title} · {status}"
+        summary = sanitize_text(
+            title if not status else f"{title} · {status}",
+            limit=MAX_PROGRESS_SUMMARY,
+        )
         normalized_status = str(status or "").lower().replace("-", "_")
         validation_status = {
             "pending": "queued",
@@ -552,9 +559,9 @@ def derived_checkpoint(
         validations = (
             [
                 ProgressValidationV1(
-                    command=title,
+                    command=sanitize_text(title, limit=240),
                     status=validation_status,
-                    summary=summary,
+                    summary=sanitize_text(summary, limit=MAX_PROGRESS_DETAIL),
                 )
             ]
             if phase == ProgressPhase.TESTING
@@ -570,12 +577,12 @@ def derived_checkpoint(
         text = sanitize_text(update.get("text") or "")
         return (phase, text, [], []) if text else None
     if event_type == "turn_completed":
-        result = dict(update.get("result") or {})
-        disposition = result.get("card_disposition") or {}
+        result_value = update.get("result")
+        result = result_value if isinstance(result_value, dict) else {}
+        disposition_value = result.get("card_disposition")
+        disposition = disposition_value if isinstance(disposition_value, dict) else {}
         summary = sanitize_text(
-            disposition.get("outcome")
-            or update.get("summary")
-            or "Agent turn ended."
+            disposition.get("outcome") or update.get("summary") or "Agent turn ended."
         )
         return ProgressPhase.TURN_ENDED, summary, [], []
     if event_type == "connection_lost":
@@ -623,6 +630,7 @@ class ProgressService:
         self._observations: dict[str, int] = {}
         self._observe_waiters = 0
         self._observe_max_waiters = 0
+        self._malformed_sessions_warned: set[str] = set()
 
     async def _offload(self, operation: str, call, *args, **kwargs):
         if self.async_runtime:
@@ -672,7 +680,17 @@ class ProgressService:
                 )
                 while len(self._observations) > 256:
                     self._observations.pop(next(iter(self._observations)))
-                await self._observe(session_id, update)
+                try:
+                    await self._observe(session_id, update)
+                except (ValidationError, TypeError, ValueError) as exc:
+                    if session_id not in self._malformed_sessions_warned:
+                        if len(self._malformed_sessions_warned) < 256:
+                            logger.warning(
+                                "Ignoring malformed progress update session=%s error=%s",
+                                sanitize_text(session_id, limit=80),
+                                sanitize_text(exc, limit=160),
+                            )
+                            self._malformed_sessions_warned.add(session_id)
         finally:
             self._observe_waiters -= 1
             if len(self._session_locks) > 256:
@@ -739,7 +757,11 @@ class ProgressService:
                     tool_details=tool_details,
                     validations=validations,
                     final=event_type == "turn_completed",
-                    result=dict(update.get("result") or {}),
+                    result=(
+                        update.get("result")
+                        if isinstance(update.get("result"), dict)
+                        else {}
+                    ),
                 )
                 self._last_checkpoint_at[session_id] = now
                 return
@@ -809,30 +831,66 @@ class ProgressService:
                 separators=(",", ":"),
             ).encode()
         ).hexdigest()[:24]
-        event = sanitize_progress_event(
-            DispatchProgressEventV1(
-                kind=ProgressKind.FINAL if final else ProgressKind.CHECKPOINT,
-                card_id=record.card_id,
-                dispatch_id=record.dispatch_id,
-                acp_session_id=record.session_id or "",
-                originating_instance_id=self.instance_id,
-                authority_instance_id=record.authority_instance_id,
-                authority_version=record.card_version,
-                sequence=sequence,
-                idempotency_key=explicit_key or f"progress:{sequence}:{digest}",
-                phase=phase,
-                summary=summary,
-                branch=branch,
-                commit_sha=commit_sha,
-                pr_url=pr_url,
-                pr_number=pr_number,
-                changed_file_count=changed_file_count,
-                validations=list(validations or []),
-                blockers=list(blockers or []),
-                retry_reason=retry_reason,
-                operator_input=operator_input,
-                tool_details=list(tool_details or []),
+        normalized_validations = [
+            ProgressValidationV1(
+                command=sanitize_text(item.command, limit=240),
+                status=item.status,
+                summary=(
+                    sanitize_text(item.summary, limit=MAX_PROGRESS_DETAIL)
+                    if item.summary
+                    else None
+                ),
+                duration_ms=item.duration_ms,
             )
+            for item in list(validations or [])[:MAX_PROGRESS_VALIDATIONS]
+        ]
+        normalized_tools = [
+            ProgressToolDetailV1(
+                title=sanitize_text(item.title, limit=MAX_PROGRESS_DETAIL),
+                kind=sanitize_text(item.kind, limit=80) if item.kind else None,
+                status=sanitize_text(item.status, limit=80) if item.status else None,
+                result=(
+                    sanitize_text(item.result, limit=MAX_PROGRESS_DETAIL)
+                    if item.result
+                    else None
+                ),
+            )
+            for item in list(tool_details or [])[:MAX_PROGRESS_TOOL_DETAILS]
+        ]
+        event = DispatchProgressEventV1(
+            kind=ProgressKind.FINAL if final else ProgressKind.CHECKPOINT,
+            card_id=record.card_id,
+            dispatch_id=record.dispatch_id,
+            acp_session_id=record.session_id or "",
+            originating_instance_id=self.instance_id,
+            authority_instance_id=record.authority_instance_id,
+            authority_version=record.card_version,
+            sequence=sequence,
+            idempotency_key=explicit_key or f"progress:{sequence}:{digest}",
+            phase=phase,
+            summary=sanitize_text(summary, limit=MAX_PROGRESS_SUMMARY),
+            branch=sanitize_text(branch, limit=240) if branch else None,
+            commit_sha=(sanitize_text(commit_sha, limit=80) if commit_sha else None),
+            pr_url=sanitize_text(pr_url, limit=500) if pr_url else None,
+            pr_number=pr_number,
+            changed_file_count=changed_file_count,
+            validations=normalized_validations,
+            blockers=[
+                sanitize_text(item, limit=MAX_PROGRESS_DETAIL)
+                for item in list(blockers or [])[:20]
+                if sanitize_text(item, limit=MAX_PROGRESS_DETAIL)
+            ],
+            retry_reason=(
+                sanitize_text(retry_reason, limit=MAX_PROGRESS_DETAIL)
+                if retry_reason
+                else None
+            ),
+            operator_input=(
+                sanitize_text(operator_input, limit=MAX_PROGRESS_DETAIL)
+                if operator_input
+                else None
+            ),
+            tool_details=normalized_tools,
         )
         ingest = await self._offload(
             "progress.checkpoint_write",

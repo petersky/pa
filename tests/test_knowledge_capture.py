@@ -89,6 +89,18 @@ class CanonicalAssemblerTests(unittest.TestCase):
         self.assertEqual(normalized["content_mode"], "replacement")
         self.assertTrue(normalized["final"])
 
+    def test_normalization_canonicalizes_final_answer_phase(self) -> None:
+        normalized = normalize_session_update(
+            {
+                "sessionUpdate": "agent_message_chunk",
+                "messageId": "final-message",
+                "content": {"type": "text", "text": "{}"},
+                "_meta": {"codex": {"phase": "final_answer"}},
+            }
+        )
+
+        self.assertEqual(normalized["phase"], "final")
+
     def test_every_two_chunk_boundary_preserves_exact_canonical_text(self) -> None:
         for boundary in range(len(CANONICAL) + 1):
             with self.subTest(boundary=boundary):

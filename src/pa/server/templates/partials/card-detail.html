@@ -228,6 +228,9 @@
       <li>
         <span class="status status-{{ 'blocked' if reconciliation.recoverable else 'active' }}">{{ reconciliation.state }}</span>
         {{ reconciliation.reason or 'No reconciliation detail recorded.' }}
+        {% if reconciliation.disposition_error and reconciliation.disposition_error not in (reconciliation.reason or '') %}
+        <span class="danger">{{ reconciliation.disposition_error }}</span>
+        {% endif %}
         {% if reconciliation.session_id %}<a href="/agent?session={{ reconciliation.session_id }}">Session</a>{% endif %}
       </li>
       {% endfor %}
