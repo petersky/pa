@@ -282,4 +282,5 @@
   document.addEventListener("DOMContentLoaded", init);
   document.addEventListener("htmx:afterSwap", init);
   document.addEventListener("htmx:beforeSwap", stop);
+  document.addEventListener("pa:historyWillReload", stop);
 })();

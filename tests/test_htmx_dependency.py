@@ -47,6 +47,8 @@ class HtmxDependencyContractTests(unittest.TestCase):
             "hx-confirm",
             "hx-delete",
             "hx-get",
+            "hx-history",
+            "hx-history-elt",
             "hx-post",
             "hx-preserve",
             "hx-push-url",

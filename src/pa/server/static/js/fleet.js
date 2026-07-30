@@ -2734,6 +2734,11 @@
     abortFleetPageRefresh();
     teardownFleetOverview();
   });
+  document.addEventListener("pa:historyWillReload", function () {
+    abortFleetPageRefresh();
+    teardownFleetOverview();
+    closeFleetUpdateWatcher();
+  });
 
   document.addEventListener("close", function (event) {
     if (event.target && event.target.id === "pa-fleet-update-dialog") {

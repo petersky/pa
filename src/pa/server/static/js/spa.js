@@ -317,6 +317,12 @@
     });
   }
 
+  document.addEventListener("pa:historyWillReload", function () {
+    if (boardEventSource) boardEventSource.close();
+    boardEventSource = null;
+    boardEventRealm = null;
+  });
+
   var cardDialogOpener = null;
   var cardDialogHistoryDepth = 0;
   var cardDialogHasBaseEntry = false;
@@ -1560,6 +1566,9 @@
   });
 
   window.addEventListener("popstate", function (event) {
+    // HTMX owns entries carrying its state marker. Handling them here as well
+    // starts a second restoration request and can duplicate live controllers.
+    if (event.state && event.state.htmx) return;
     var url = new URL(window.location.href);
     var cardId = url.searchParams.get("card");
     if (cardId) {
