@@ -555,6 +555,63 @@ class CompletionTests(unittest.TestCase):
                 "pa.post-turn-evaluation/v1",
             )
 
+    def test_disposition_extraction_error_survives_authority_audit_and_public_ui(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="authority")
+            card = Card(id="card-1", title="remote")
+            store = MagicMock()
+            store.get_card.return_value = card
+            ledger = DispatchStore(settings.data_dir)
+            ledger.put(
+                DispatchRecord(
+                    dispatch_id="dispatch-1",
+                    mutation_id="mutation-1",
+                    card_id=card.id,
+                    realm_id="default",
+                    card_version=card.updated_at.isoformat(),
+                    authority_instance_id="authority",
+                    authority_url="http://authority",
+                    target_instance_id="target",
+                    session_id="session-1",
+                    state="running",
+                )
+            )
+            request = request_for(settings, store, {"dispatch_store": ledger})
+            request.headers = {"idempotency-key": "mutation-1"}
+            exact_error = (
+                "The final response was not exactly one JSON object: "
+                "Expecting value: line 1 column 1 (char 0)"
+            )
+
+            complete_dispatch(
+                request,
+                "dispatch-1",
+                DispatchCompletionBody(
+                    mutation_id="mutation-1",
+                    card_id=card.id,
+                    realm_id="default",
+                    card_version=card.updated_at.isoformat(),
+                    source_instance_id="target",
+                    session_id="session-1",
+                    result={"card_disposition_error": exact_error},
+                ),
+            )
+
+            persisted = ledger.get("dispatch-1")
+            self.assertEqual(persisted.card_disposition_error, exact_error)
+            self.assertEqual(
+                persisted.turn_end_snapshots[0].disposition_parse_error,
+                exact_error,
+            )
+            self.assertEqual(
+                persisted.public_dict()["card_reconciliation"][
+                    "disposition_error"
+                ],
+                exact_error,
+            )
+
     def test_unrelated_card_edit_does_not_block_completion_or_lane(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), instance_id="authority")

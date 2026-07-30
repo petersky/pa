@@ -139,6 +139,7 @@ class DispatchRecord(BaseModel):
     card_disposition_payload: dict[str, Any] | None = None
     card_disposition_status: str | None = None
     card_disposition_reason: str | None = None
+    card_disposition_error: str | None = None
     card_lane_before: str | None = None
     card_lane_after: str | None = None
     reconciliation_state: str = "not_requested"
@@ -241,10 +242,12 @@ class DispatchRecord(BaseModel):
             "lane_before": self.card_lane_before,
             "lane_after": self.card_lane_after,
             "reason": self.card_disposition_reason,
+            "extraction_error": self.card_disposition_error,
         }
         data["card_reconciliation"] = {
             "state": self.reconciliation_state,
             "reason": self.reconciliation_reason,
+            "disposition_error": self.card_disposition_error,
             "condition": self.reconciliation_condition,
             "last_dependency_error": self.reconciliation_last_dependency_error,
             "recovery_action": self.reconciliation_recovery_action,

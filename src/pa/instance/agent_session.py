@@ -19,6 +19,10 @@ from pa.acp.client import (
     permission_selected,
 )
 from pa.acp.configuration import SessionConfigurationRequest
+from pa.acp.final_message import (
+    assemble_final_assistant_message,
+    is_agent_message_type,
+)
 from pa.acp.providers.registry import DEFAULT_PROVIDER_ID, known_provider_ids
 from pa.acp.providers.resolve import resolve_agent_provider, resolve_provider_id
 from pa.acp.surfaces import (
@@ -165,8 +169,7 @@ class AgentSessionRuntime:
         self._transcript_writer_task: asyncio.Task[None] | None = None
         self._closed = False
         self._turn_started_at: datetime | None = None
-        self._turn_agent_text: list[str] = []
-        self._turn_final_text: list[str] = []
+        self._turn_agent_events: list[dict[str, Any]] = []
         self._runtime_observed_at: datetime = datetime.now(UTC)
         self._connection_generation = 0
 
@@ -378,12 +381,8 @@ class AgentSessionRuntime:
     async def _on_acp_update(self, _external_session_id: str, update: Any) -> None:
         normalized = normalize_session_update(update)
         event_type = str(normalized.get("type") or "session_update")
-        if event_type == "agent_message_chunk" and self._in_flight:
-            text = str(normalized.get("text") or "")
-            if text:
-                self._turn_agent_text.append(text)
-                if normalized.get("phase") == "final":
-                    self._turn_final_text.append(text)
+        if is_agent_message_type(event_type) and self._in_flight:
+            self._turn_agent_events.append(dict(normalized))
         if event_type == "usage_update" and normalized.get("usage"):
             metrics = dict(self.session.metrics_json or {})
             metrics["usage"] = normalized["usage"]
@@ -925,8 +924,7 @@ class AgentSessionRuntime:
         async with self._prompt_lock:
             self._in_flight = item
             self._turn_started_at = datetime.now(UTC)
-            self._turn_agent_text = []
-            self._turn_final_text = []
+            self._turn_agent_events = []
             await self._checkpoint_runtime_async(lifecycle="prompting")
             try:
                 composition = await self._offload(
@@ -1095,9 +1093,9 @@ class AgentSessionRuntime:
                             extract_card_disposition,
                         )
 
-                        final_text = "".join(self._turn_final_text).strip()
-                        if not final_text:
-                            final_text = "".join(self._turn_agent_text).strip()
+                        final_text = assemble_final_assistant_message(
+                            self._turn_agent_events
+                        )
                         disposition, disposition_error = extract_card_disposition(
                             final_text
                         )
