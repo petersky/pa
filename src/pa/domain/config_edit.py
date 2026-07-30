@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 
 from pydantic import ValidationError
 
+from pa.configuration.registry import SETTINGS, SettingDefinition, get_setting
 from pa.domain.instance_config import (
     InstanceConfig,
     load_instance_config,
@@ -21,11 +22,15 @@ from pa.update.registry import normalize_track
 
 FieldKind = Literal[
     "str",
+    "optional_str",
+    "path",
+    "optional_path",
     "int",
+    "optional_int",
+    "float",
     "bool",
     "dict_int",
     "list_str",
-    "optional_str",
     "optional_list_str",
 ]
 
@@ -45,223 +50,34 @@ class MutateOp(StrEnum):
     UNSET = "unset"
 
 
-@dataclass(frozen=True)
-class FieldSpec:
-    name: str
-    kind: FieldKind
-    description: str
-    editable: bool = True
-    sensitive: bool = False
-    list_ops: bool = False  # supports add/remove
-    category: str = "General"
-    allowed: tuple[str, ...] = ()
-    example: str = ""
-    dangerous: bool = False
+FieldSpec = SettingDefinition
 
-
-# Keys that affect the host service unit environment.
+# Apply behavior is registry-owned.  "reload" means service definition/runtime
+# refresh without restarting PA; "restart" means the running process remains on
+# the old effective value until an explicit safe restart.
 SERVICE_KEYS = frozenset(
-    {
-        "host",
-        "web_listeners",
-        "instance_name",
-        "release_track",
-        "fleet_id",
-        "zone",
-        "agent_provider",
-        "agent_command",
-        "agent_args",
-        "subscribed_realms",
-        "peers",
-        "capabilities",
-        "dispatch_capacity",
-        "dispatch_provider_capacities",
-        "sync_token",
-        "instance_url",
-        "fleet_owner_url",
-        "pr_supervisor_authority_url",
-        "relay_enabled",
-    }
+    key for key, spec in SETTINGS.items() if spec.apply in {"reload", "restart"}
 )
-
-# Changing bind host requires a process restart to take effect.
-RESTART_KEYS = frozenset({"host", "web_listeners"})
-
-FIELD_SPECS: dict[str, FieldSpec] = {
-    "instance_id": FieldSpec(
-        "instance_id",
-        "str",
-        "Stable instance UUID (immutable)",
-        editable=False,
-    ),
-    "instance_name": FieldSpec(
-        "instance_name",
-        "str",
-        "Display name for this instance",
-    ),
-    "data_dir": FieldSpec(
-        "data_dir",
-        "str",
-        "Data directory path (managed by PA)",
-        editable=False,
-    ),
-    "fleet_id": FieldSpec(
-        "fleet_id",
-        "str",
-        "Fleet UUID this instance belongs to",
-    ),
-    "fleet_owner": FieldSpec(
-        "fleet_owner",
-        "str",
-        "Fleet owner instance id or 'local'",
-    ),
-    "fleet_owner_url": FieldSpec(
-        "fleet_owner_url",
-        "optional_str",
-        "Owner base URL (set when joining a fleet)",
-        category="Fleet",
-        example="https://owner.example:8080",
-        dangerous=True,
-    ),
-    "pr_supervisor_authority_url": FieldSpec(
-        "pr_supervisor_authority_url",
-        "optional_str",
-        "Single fenced PR-supervisor lease authority URL (empty follows fleet owner)",
-        category="Fleet",
-        example="https://owner.example:8080",
-    ),
-    "instance_url": FieldSpec(
-        "instance_url",
-        "optional_str",
-        "Advertised URL (Tailscale/LAN hostname, not localhost)",
-        category="Network",
-        example="https://pa.example:8080",
-    ),
-    "host": FieldSpec(
-        "host",
-        "optional_str",
-        "Server bind address (e.g. 127.0.0.1 or 0.0.0.0)",
-        category="Network",
-        example="127.0.0.1",
-        dangerous=True,
-    ),
-    "web_listeners": FieldSpec(
-        "web_listeners",
-        "list_str",
-        "Explicit web binds (HOST or HOST:PORT; bracket IPv6 with a port)",
-        list_ops=True,
-        category="Network",
-        example="127.0.0.1:8080",
-        dangerous=True,
-    ),
-    "subscribed_realms": FieldSpec(
-        "subscribed_realms",
-        "list_str",
-        "Realm ids this instance syncs",
-        list_ops=True,
-        category="Fleet",
-    ),
-    "zone": FieldSpec(
-        "zone",
-        "str",
-        "Network zone label",
-        category="Fleet",
-    ),
-    "capabilities": FieldSpec(
-        "capabilities",
-        "list_str",
-        "Advertised capability tags",
-        list_ops=True,
-        category="Fleet",
-    ),
-    "dispatch_capacity": FieldSpec(
-        "dispatch_capacity",
-        "int",
-        "Global fleet dispatch/execution slots (1–256)",
-        category="Execution",
-        example="4",
-    ),
-    "dispatch_provider_capacities": FieldSpec(
-        "dispatch_provider_capacities",
-        "dict_int",
-        'Optional provider slot limits as JSON, e.g. {"codex": 2}',
-        category="Execution",
-        example='{"codex": 2}',
-    ),
-    "relay_enabled": FieldSpec(
-        "relay_enabled",
-        "bool",
-        "Whether this instance relays for peers",
-        category="Fleet",
-        dangerous=True,
-    ),
-    "peers": FieldSpec(
-        "peers",
-        "list_str",
-        "Peer instance base URLs",
-        list_ops=True,
-        category="Network",
-        example="https://peer.example:8080",
-    ),
-    "release_track": FieldSpec(
-        "release_track",
-        "str",
-        "Update track: release, beta, alpha, dev, or pypi",
-        category="Updates",
-        allowed=("release", "beta", "alpha", "dev", "pypi"),
-    ),
-    "sync_token": FieldSpec(
-        "sync_token",
-        "optional_str",
-        "Shared secret for inter-instance sync APIs",
-        sensitive=True,
-        category="Secrets",
-        dangerous=True,
-    ),
-    "session_secret": FieldSpec(
-        "session_secret",
-        "optional_str",
-        "Cookie/session signing secret",
-        sensitive=True,
-        category="Secrets",
-        dangerous=True,
-    ),
-    "agent_provider": FieldSpec(
-        "agent_provider",
-        "str",
-        "Default ACP provider (cursor, codex, openinterpreter, …)",
-        category="Agent",
-        allowed=("cursor", "codex", "openinterpreter"),
-    ),
-    "agent_command": FieldSpec(
-        "agent_command",
-        "optional_str",
-        "Optional ACP spawn command override",
-        category="Agent",
-        example="/path/to/acp-agent",
-    ),
-    "agent_args": FieldSpec(
-        "agent_args",
-        "optional_list_str",
-        "Optional ACP spawn args override",
-        list_ops=True,
-        category="Agent",
-    ),
-}
+RESTART_KEYS = frozenset(
+    key for key, spec in SETTINGS.items() if spec.apply == "restart"
+)
+FIELD_SPECS: dict[str, FieldSpec] = SETTINGS
 
 
 def list_field_specs(*, editable_only: bool = False) -> list[FieldSpec]:
-    specs = list(FIELD_SPECS.values())
+    specs = sorted(
+        FIELD_SPECS.values(), key=lambda spec: (spec.category, spec.order, spec.name)
+    )
     if editable_only:
         return [s for s in specs if s.editable]
     return specs
 
 
 def get_field_spec(key: str) -> FieldSpec:
-    if key not in FIELD_SPECS:
-        known = ", ".join(sorted(FIELD_SPECS))
-        raise ConfigError(f"Unknown config key '{key}'. Known keys: {known}")
-    return FIELD_SPECS[key]
+    try:
+        return get_setting(key)
+    except KeyError as exc:
+        raise ConfigError(str(exc)) from exc
 
 
 def require_config(data_dir: Path) -> InstanceConfig:
@@ -282,6 +98,8 @@ def format_value(value: Any, *, reveal: bool = False, sensitive: bool = False) -
         return "<redacted>"
     if isinstance(value, list):
         return json.dumps(value)
+    if isinstance(value, dict):
+        return json.dumps(value, sort_keys=True)
     if isinstance(value, bool):
         return "true" if value else "false"
     return str(value)
@@ -294,7 +112,9 @@ def config_as_dict(config: InstanceConfig) -> dict[str, Any]:
 def config_revision(config: InstanceConfig) -> str:
     """Stable opaque revision used for optimistic concurrency."""
     payload = json.dumps(
-        config.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+        config.model_dump(mode="json", exclude_unset=True),
+        sort_keys=True,
+        separators=(",", ":"),
     ).encode()
     return hashlib.sha256(payload).hexdigest()
 
@@ -304,13 +124,13 @@ def validate_config_changes(
 ) -> InstanceConfig:
     """Validate a complete staged change set without writing it."""
     data = base.model_dump()
-    for key, value in changes.items():
-        spec = get_field_spec(key)
+    for requested_key, value in changes.items():
+        spec = get_field_spec(requested_key)
         if not spec.editable:
-            raise ConfigError(f"{key} is read-only")
-        data[key] = validate_field_value(key, value)
+            raise ConfigError(f"{spec.name} is read-only")
+        data[spec.name] = validate_field_value(spec.name, value)
     try:
-        return InstanceConfig.model_validate(data)
+        candidate = InstanceConfig.model_validate(data)
     except ValidationError as exc:
         errors = "; ".join(
             f"{'.'.join(str(part) for part in item.get('loc', ()))}: "
@@ -318,6 +138,65 @@ def validate_config_changes(
             for item in exc.errors()
         )
         raise ConfigError(f"Invalid configuration: {errors}") from exc
+    candidate.__pydantic_fields_set__ = base.model_fields_set | {
+        get_field_spec(key).name for key in changes
+    }
+    if candidate.workspace_root:
+        data_dir = Path(candidate.data_dir).expanduser().resolve()
+        workspace = Path(candidate.workspace_root).expanduser().resolve()
+        if (
+            workspace == data_dir
+            or data_dir in workspace.parents
+            or workspace in data_dir.parents
+        ):
+            raise ConfigError("workspace_root must be outside data_dir")
+    if bool(candidate.oidc_client_id) != bool(candidate.oidc_issuer):
+        raise ConfigError("oidc_issuer and oidc_client_id must be configured together")
+    if (
+        candidate.telemetry_persistence_interval_seconds
+        < candidate.telemetry_live_interval_seconds
+    ):
+        raise ConfigError(
+            "telemetry_persistence_interval_seconds must be greater than or equal "
+            "to telemetry_live_interval_seconds"
+        )
+    if (
+        candidate.telemetry_rollup_retention_hours
+        < candidate.telemetry_raw_retention_hours
+    ):
+        raise ConfigError(
+            "telemetry_rollup_retention_hours must be greater than or equal to "
+            "telemetry_raw_retention_hours"
+        )
+    if candidate.telemetry_default_report_range not in {
+        "15m",
+        "1h",
+        "6h",
+        "24h",
+        "7d",
+        "30d",
+    }:
+        raise ConfigError("telemetry_default_report_range is not supported")
+    if candidate.telemetry_database_path:
+        data_dir = Path(candidate.data_dir).expanduser().resolve()
+        database_path = Path(candidate.telemetry_database_path).expanduser().resolve()
+        protected_files = {
+            data_dir / "pa.db",
+            data_dir / "pa.db-wal",
+            data_dir / "pa.db-shm",
+            data_dir / "sync_refs.json",
+            data_dir / "sync_refs.lock",
+        }
+        objects_dir = data_dir / "objects"
+        if (
+            database_path in protected_files
+            or database_path == objects_dir
+            or objects_dir in database_path.parents
+        ):
+            raise ConfigError(
+                "telemetry_database_path must be outside PA metadata and sync authority"
+            )
+    return candidate
 
 
 def apply_config_changes(
@@ -325,6 +204,7 @@ def apply_config_changes(
     changes: dict[str, Any],
     *,
     expected_revision: str,
+    unset_keys: frozenset[str] = frozenset(),
 ) -> tuple[InstanceConfig, frozenset[str], frozenset[str]]:
     """Validate and atomically apply staged changes unless the snapshot is stale."""
     current = require_config(data_dir)
@@ -333,8 +213,14 @@ def apply_config_changes(
             "Configuration changed externally; refresh and review the merged values."
         )
     candidate = validate_config_changes(current, changes)
+    candidate.__pydantic_fields_set__ -= {
+        get_field_spec(key).name for key in unset_keys
+    }
     changed = frozenset(
-        key for key in changes if getattr(current, key) != getattr(candidate, key)
+        get_field_spec(key).name
+        for key in changes
+        if getattr(current, get_field_spec(key).name)
+        != getattr(candidate, get_field_spec(key).name)
     )
     if changed:
         save_instance_config(data_dir, candidate)
@@ -377,11 +263,18 @@ def parse_value(spec: FieldSpec, raw: str) -> Any:
     """Parse a CLI string into a typed config value."""
     if spec.kind == "bool":
         return _parse_bool(raw)
-    if spec.kind == "int":
+    if spec.kind in ("int", "optional_int"):
+        if spec.kind == "optional_int" and _is_nullish(raw):
+            return None
         try:
             return int(raw.strip())
         except ValueError as exc:
             raise ConfigError(f"Invalid integer '{raw}'") from exc
+    if spec.kind == "float":
+        try:
+            return float(raw.strip())
+        except ValueError as exc:
+            raise ConfigError(f"Invalid number '{raw}'") from exc
     if spec.kind == "dict_int":
         try:
             parsed = json.loads(raw)
@@ -400,6 +293,12 @@ def parse_value(spec: FieldSpec, raw: str) -> Any:
         if _is_nullish(raw):
             return ""
         return raw.strip()
+    if spec.kind in ("path", "optional_path"):
+        if spec.kind == "optional_path" and _is_nullish(raw):
+            return None
+        if not raw.strip():
+            raise ConfigError(f"{spec.name} cannot be empty")
+        return str(Path(raw.strip()).expanduser())
     # str
     if not raw.strip():
         raise ConfigError(f"{spec.name} cannot be empty")
@@ -462,7 +361,23 @@ def validate_field_value(key: str, value: Any) -> Any:
     """Domain validation beyond pydantic types. Returns normalized value."""
     spec = get_field_spec(key)
 
+    if spec.kind == "float":
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ConfigError(f"{key} must be a number")
+        value = float(value)
+    if spec.kind in ("int", "optional_int") and value is not None:
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ConfigError(f"{key} must be an integer")
+    if spec.kind == "bool" and not isinstance(value, bool):
+        raise ConfigError(f"{key} must be a boolean")
+    if spec.kind in ("path", "optional_path") and value is not None:
+        if not isinstance(value, (str, Path)):
+            raise ConfigError(f"{key} must be a path")
+        value = str(Path(value).expanduser())
+
     if key == "dispatch_capacity":
+        if value is None:
+            return None
         if isinstance(value, bool) or not isinstance(value, int):
             raise ConfigError("dispatch_capacity must be an integer from 1 to 256")
         if not 1 <= value <= 256:
@@ -502,6 +417,27 @@ def validate_field_value(key: str, value: Any) -> Any:
             raise ConfigError("host must be a string")
         return _validate_host(value)
 
+    if key == "port":
+        if not 1 <= value <= 65535:
+            raise ConfigError("port must be between 1 and 65535")
+        return value
+
+    if key == "web_listeners":
+        assert isinstance(value, list)
+        from pa.server.listeners import parse_listener
+
+        normalized_listeners: list[str] = []
+        for listener in value:
+            text = listener.strip()
+            if not text:
+                continue
+            try:
+                parse_listener(text, 8080)
+            except ValueError as exc:
+                raise ConfigError(f"Invalid web listener {listener!r}: {exc}") from exc
+            normalized_listeners.append(text)
+        return normalized_listeners
+
     if key == "instance_url":
         if value is None:
             return ""
@@ -523,6 +459,13 @@ def validate_field_value(key: str, value: Any) -> Any:
             raise ConfigError("pr_supervisor_authority_url must be a string")
         return _validate_http_url(value, field="pr_supervisor_authority_url")
 
+    if key in ("oidc_issuer",):
+        if value is None:
+            return ""
+        if not isinstance(value, str):
+            raise ConfigError(f"{key} must be a string")
+        return _validate_http_url(value, field=key)
+
     if key == "peers":
         assert isinstance(value, list)
         return [
@@ -542,6 +485,34 @@ def validate_field_value(key: str, value: Any) -> Any:
             raise ConfigError("agent_provider must be a string")
         return _validate_agent_provider(value)
 
+    if key == "log_level":
+        if not isinstance(value, str):
+            raise ConfigError("log_level must be a string")
+        value = value.strip().upper()
+        if value not in spec.allowed:
+            raise ConfigError(f"log_level must be one of: {', '.join(spec.allowed)}")
+        return value
+
+    if key == "update_repo":
+        if not isinstance(value, str):
+            raise ConfigError("update_repo must be a string")
+        parts = value.strip().split("/")
+        if len(parts) != 2 or not all(parts):
+            raise ConfigError("update_repo must be a GitHub owner/repository name")
+        return value.strip()
+
+    if key == "default_theme_id":
+        if not isinstance(value, str) or not value.strip():
+            raise ConfigError("default_theme_id cannot be empty")
+        from pa.modules.theme import get_theme_catalog
+
+        known = {item.id for item in get_theme_catalog()}
+        if value.strip() not in known:
+            raise ConfigError(
+                f"Unknown default_theme_id {value!r}. Choose from: {', '.join(sorted(known))}"
+            )
+        return value.strip()
+
     if key == "subscribed_realms":
         assert isinstance(value, list)
         if not value:
@@ -554,6 +525,13 @@ def validate_field_value(key: str, value: Any) -> Any:
         if not value.strip():
             raise ConfigError(f"{key} cannot be empty")
         return value.strip()
+
+    if spec.allowed and isinstance(value, str):
+        normalized = value.strip().lower()
+        allowed = {item.lower(): item for item in spec.allowed}
+        if normalized not in allowed:
+            raise ConfigError(f"{key} must be one of: {', '.join(spec.allowed)}")
+        return allowed[normalized]
 
     return value
 
@@ -591,6 +569,7 @@ def _apply_validated(
     data_dir: Path, key: str, value: Any, *, op: MutateOp
 ) -> MutateResult:
     spec = get_field_spec(key)
+    key = spec.name
     if not spec.editable:
         raise ConfigError(f"{key} is read-only")
 
@@ -605,6 +584,9 @@ def _apply_validated(
         candidate = InstanceConfig.model_validate(data)
     except ValidationError as exc:
         raise ConfigError(f"Invalid {key}: {exc.errors()[0].get('msg', exc)}") from exc
+    candidate.__pydantic_fields_set__ = config.model_fields_set | {key}
+    if op == MutateOp.UNSET:
+        candidate.__pydantic_fields_set__.discard(key)
 
     save_instance_config(data_dir, candidate)
     after = getattr(candidate, key)
@@ -629,6 +611,7 @@ def set_config_value(data_dir: Path, key: str, raw: str) -> MutateResult:
 
 def add_config_value(data_dir: Path, key: str, raw: str) -> MutateResult:
     spec = get_field_spec(key)
+    key = spec.name
     if not spec.list_ops:
         raise ConfigError(f"{key} does not support add (not a list field)")
     item = raw.strip()
@@ -652,6 +635,7 @@ def add_config_value(data_dir: Path, key: str, raw: str) -> MutateResult:
 
 def remove_config_value(data_dir: Path, key: str, raw: str) -> MutateResult:
     spec = get_field_spec(key)
+    key = spec.name
     if not spec.list_ops:
         raise ConfigError(f"{key} does not support remove (not a list field)")
     item = raw.strip()
@@ -683,29 +667,12 @@ def refresh_after_mutate(data_dir: Path, result: MutateResult) -> bool:
     if not result.service_keys_changed:
         return False
     try:
-        from pa.config import Settings, reset_settings
+        from pa.config import Settings
         from pa.fleet.join import refresh_service_env
 
-        reset_settings()
-        settings = Settings(data_dir=data_dir)
-        cfg = result.config
-        settings.host = cfg.host or "127.0.0.1"
-        settings.web_listeners = list(cfg.web_listeners)
-        settings.instance_url = cfg.instance_url
-        settings.instance_name = cfg.instance_name
-        settings.release_track = cfg.release_track
-        settings.fleet_id = cfg.fleet_id
-        settings.zone = cfg.zone
-        settings.agent_provider = cfg.agent_provider
-        settings.agent_command = cfg.agent_command
-        settings.agent_args = cfg.agent_args
-        settings.subscribed_realms = list(cfg.subscribed_realms)
-        settings.peers = list(cfg.peers)
-        settings.capabilities = list(cfg.capabilities)
-        settings.sync_token = cfg.sync_token
-        settings.fleet_owner_url = cfg.fleet_owner_url
-        settings.pr_supervisor_authority_url = cfg.pr_supervisor_authority_url
-        settings.relay_enabled = cfg.relay_enabled
+        values = result.config.model_dump(exclude_unset=True)
+        values["data_dir"] = data_dir
+        settings = Settings(**values)
         return refresh_service_env(settings)
     except Exception:
         return False

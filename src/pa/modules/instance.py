@@ -1,14 +1,23 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
 
 from pa.auth.middleware import get_principal_id, require_user
+from pa.configuration.service import (
+    apply_update,
+    audit_events,
+    configuration_snapshot,
+    diff_update,
+    schema_document,
+    validate_update,
+)
 from pa.core.context import AppContext
 from pa.core.contracts import Module
+from pa.domain.config_edit import ConfigConflictError, ConfigError
 from pa.domain.instance_config import update_instance_config
 from pa.fleet.capacity import (
     DEFAULT_DISPATCH_CAPACITY,
@@ -64,6 +73,42 @@ class CapacityConfigUpdate(BaseModel):
                 )
             normalized[key] = limit
         return normalized
+
+
+class ConfigurationPatch(BaseModel):
+    changes: dict[str, Any] = Field(default_factory=dict)
+    clear: list[str] = Field(default_factory=list)
+    expected_revision: str | None = None
+    idempotency_key: str | None = None
+    interface: Literal["api", "web", "cli", "mcp", "interactive_cli"] = "api"
+    target: str = "local"
+
+
+def _configuration_error(exc: Exception, *, conflict: bool = False) -> HTTPException:
+    return HTTPException(
+        status_code=409 if conflict else 422,
+        detail={
+            "code": "configuration_conflict" if conflict else "configuration_invalid",
+            "message": str(exc),
+        },
+    )
+
+
+def _require_local_configuration_target(request: Request, target: str) -> None:
+    settings = request.app.state.ctx.settings
+    if target in {"", "local", settings.instance_id, settings.instance_name}:
+        return
+    raise HTTPException(
+        status_code=409,
+        detail={
+            "code": "remote_configuration_unsupported",
+            "message": (
+                f"Instance {target!r} does not advertise schema-driven configuration "
+                "proxying. Run the command against that instance's owner channel."
+            ),
+            "target": target,
+        },
+    )
 
 
 def _unreachable_repository_instances(ctx: AppContext) -> set[str]:
@@ -499,6 +544,135 @@ def get_config(request: Request) -> dict:
     }
 
 
+@router.get("/configuration/schema")
+def get_configuration_schema(request: Request, target: str = "local") -> dict:
+    """Return the stable machine-readable registry shared by every surface."""
+    _require_local_configuration_target(request, target)
+    return schema_document()
+
+
+@router.get("/configuration")
+def get_configuration(request: Request, target: str = "local") -> dict:
+    """Return configured/effective values, source, precedence, and unknown keys."""
+    _require_local_configuration_target(request, target)
+    return configuration_snapshot(request.app.state.ctx.settings)
+
+
+@router.post("/configuration/validate")
+def validate_configuration(request: Request, body: ConfigurationPatch) -> dict:
+    """Validate a complete staged patch without writing it."""
+    require_user(request)
+    _require_local_configuration_target(request, body.target)
+    try:
+        _, normalized = validate_update(
+            request.app.state.ctx.settings.data_dir, body.changes, body.clear
+        )
+        diff = diff_update(request.app.state.ctx.settings.data_dir, normalized, ())
+    except ConfigError as exc:
+        raise _configuration_error(exc) from exc
+    return {"valid": True, **diff}
+
+
+@router.post("/configuration/diff")
+def diff_configuration(request: Request, body: ConfigurationPatch) -> dict:
+    """Return a secret-safe diff for a complete staged patch."""
+    require_user(request)
+    _require_local_configuration_target(request, body.target)
+    try:
+        return diff_update(
+            request.app.state.ctx.settings.data_dir, body.changes, body.clear
+        )
+    except ConfigError as exc:
+        raise _configuration_error(exc) from exc
+
+
+@router.patch("/configuration")
+def update_configuration(request: Request, body: ConfigurationPatch) -> dict:
+    """Atomically apply an idempotent, audited configuration patch."""
+    require_user(request)
+    _require_local_configuration_target(request, body.target)
+    if not body.expected_revision:
+        raise HTTPException(
+            status_code=428,
+            detail={
+                "code": "configuration_revision_required",
+                "message": "expected_revision is required; refresh and review the diff.",
+            },
+        )
+    if not body.idempotency_key:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "configuration_idempotency_required",
+                "message": "idempotency_key is required.",
+            },
+        )
+    try:
+        result = apply_update(
+            request.app.state.ctx.settings,
+            body.changes,
+            body.clear,
+            expected_revision=body.expected_revision,
+            idempotency_key=body.idempotency_key,
+            principal_id=get_principal_id(request),
+            interface=body.interface,
+        )
+    except ConfigConflictError as exc:
+        raise _configuration_error(exc, conflict=True) from exc
+    except ConfigError as exc:
+        raise _configuration_error(exc) from exc
+    if result.changed & {"dispatch_capacity", "dispatch_provider_capacities"}:
+        ctx = request.app.state.ctx
+        fleet = ctx.services.get("fleet_registry")
+        if fleet:
+            from pa.fleet.join import owner_public_url
+
+            fleet.register_self(
+                ctx.settings.instance_id,
+                ctx.settings.instance_name,
+                owner_public_url(ctx.settings),
+                zone=ctx.settings.zone,
+                capabilities=list(ctx.settings.capabilities),
+                dispatch_capacity=ctx.settings.dispatch_capacity,
+                dispatch_provider_capacities=dict(
+                    ctx.settings.dispatch_provider_capacities
+                ),
+                relay_enabled=ctx.settings.relay_enabled,
+                actor=get_principal_id(request),
+            )
+        from pa.fleet.overview import cache_for
+
+        cache_for(ctx.settings.data_dir).invalidate(
+            ctx.settings.instance_id, "activity"
+        )
+    snapshot = configuration_snapshot(request.app.state.ctx.settings)
+    return {
+        "ok": True,
+        "duplicate": result.duplicate,
+        "changed": sorted(result.changed),
+        "reload_required": sorted(result.reload - result.restart),
+        "restart_required": sorted(result.restart),
+        "revision": snapshot["revision"],
+        "settings": snapshot["settings"],
+        "unknown": snapshot["unknown"],
+        "deprecated": snapshot["deprecated"],
+    }
+
+
+@router.get("/configuration/audit")
+def get_configuration_audit(
+    request: Request,
+    target: str = "local",
+    limit: int = Query(default=100, ge=1, le=1000),
+) -> dict:
+    """List secret-safe configuration audit events."""
+    require_user(request)
+    _require_local_configuration_target(request, target)
+    return {
+        "events": audit_events(request.app.state.ctx.settings.data_dir, limit=limit)
+    }
+
+
 @router.patch("/config/capacity")
 def update_capacity_config(request: Request, body: CapacityConfigUpdate) -> dict:
     """Validate, persist, and immediately advertise execution capacity."""
@@ -601,6 +775,87 @@ class InstanceModule(Module):
                     "dispatch_capacity": dispatch_capacity,
                     "dispatch_provider_capacities": provider_capacities or {},
                 },
+            )
+
+        @mcp.tool()
+        def configuration_schema(target: str = "local") -> dict:
+            """List every supported setting and its shared surface metadata."""
+            return request_local_pa(
+                settings,
+                "GET",
+                "/api/configuration/schema",
+                params={"target": target},
+            )
+
+        @mcp.tool()
+        def configuration_list(target: str = "local") -> dict:
+            """Read configured/effective values, precedence, and applicability."""
+            return request_local_pa(
+                settings,
+                "GET",
+                "/api/configuration",
+                params={"target": target},
+            )
+
+        @mcp.tool()
+        def configuration_validate(
+            changes: dict[str, Any],
+            clear: list[str] | None = None,
+            target: str = "local",
+        ) -> dict:
+            """Validate a multi-setting patch without writing it."""
+            return request_local_pa(
+                settings,
+                "POST",
+                "/api/configuration/validate",
+                json={"changes": changes, "clear": clear or [], "target": target},
+            )
+
+        @mcp.tool()
+        def configuration_diff(
+            changes: dict[str, Any],
+            clear: list[str] | None = None,
+            target: str = "local",
+        ) -> dict:
+            """Return a secret-safe diff for a staged configuration patch."""
+            return request_local_pa(
+                settings,
+                "POST",
+                "/api/configuration/diff",
+                json={"changes": changes, "clear": clear or [], "target": target},
+            )
+
+        @mcp.tool()
+        def configuration_update(
+            changes: dict[str, Any],
+            expected_revision: str,
+            idempotency_key: str,
+            clear: list[str] | None = None,
+            target: str = "local",
+        ) -> dict:
+            """Atomically apply an idempotent, audited configuration patch."""
+            return request_local_pa(
+                settings,
+                "PATCH",
+                "/api/configuration",
+                json={
+                    "changes": changes,
+                    "clear": clear or [],
+                    "expected_revision": expected_revision,
+                    "idempotency_key": idempotency_key,
+                    "interface": "mcp",
+                    "target": target,
+                },
+            )
+
+        @mcp.tool()
+        def configuration_audit(target: str = "local", limit: int = 100) -> dict:
+            """List secret-safe configuration change audit events."""
+            return request_local_pa(
+                settings,
+                "GET",
+                "/api/configuration/audit",
+                params={"target": target, "limit": limit},
             )
 
         @mcp.tool()

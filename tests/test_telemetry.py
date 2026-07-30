@@ -15,6 +15,8 @@ from fastapi.testclient import TestClient
 from pa.auth.users import UserDirectory
 from pa.config import Settings
 from pa.core.kernel import Kernel
+from pa.domain.config_edit import ConfigError, validate_config_changes
+from pa.domain.instance_config import InstanceConfig
 from pa.telemetry.collector import (
     LinuxCollector,
     MacOSCollector,
@@ -94,6 +96,23 @@ class TelemetryConfigTests(unittest.TestCase):
                 Settings(
                     data_dir=Path(tmp),
                     telemetry_database_path=Path(tmp) / "objects" / "telemetry.db",
+                )
+
+    def test_schema_driven_configuration_enforces_telemetry_invariants(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = InstanceConfig(data_dir=tmp)
+            with self.assertRaisesRegex(ConfigError, "persistence_interval"):
+                validate_config_changes(
+                    base,
+                    {
+                        "telemetry_live_interval_seconds": 30.0,
+                        "telemetry_persistence_interval_seconds": 10.0,
+                    },
+                )
+            with self.assertRaisesRegex(ConfigError, "metadata and sync authority"):
+                validate_config_changes(
+                    base,
+                    {"telemetry_database_path": str(Path(tmp) / "sync_refs.json")},
                 )
 
 
