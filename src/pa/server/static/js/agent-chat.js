@@ -229,6 +229,7 @@
     this.esSessionId = "";
     this.esApiBase = "";
     this.sseReconnectCount = 0;
+    this.externalEventTransport = false;
     this.destroyed = false;
     this.subscriptionGeneration = 0;
     this.lastSeq = 0;
@@ -1277,6 +1278,10 @@
   AgentChatWidget.prototype.connectSSE = function () {
     const self = this;
     if (this.destroyed || !this.sessionId) return;
+    if (this.externalEventTransport) {
+      this.closeSSE("external-multiplex");
+      return;
+    }
     if (
       this.es &&
       this.esSessionId === this.sessionId &&
@@ -1377,6 +1382,12 @@
         );
       }
     };
+  };
+
+  AgentChatWidget.prototype.useExternalEventTransport = function (enabled) {
+    this.externalEventTransport = !!enabled;
+    if (this.externalEventTransport) this.closeSSE("external-multiplex");
+    else if (this.sessionId) this.connectSSE();
   };
 
   AgentChatWidget.prototype.closeSSE = function (reason) {

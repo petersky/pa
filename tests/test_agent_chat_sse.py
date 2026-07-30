@@ -28,6 +28,8 @@ from pa.modules.agent_chat import (
     get_provider_options,
     list_agent_session_history,
     list_agent_sessions,
+    multiplexed_session_event_capabilities,
+    multiplexed_session_events,
     session_close,
     session_close_all,
     session_events,
@@ -81,6 +83,103 @@ class _FakeRuntime:
 
 
 class AgentChatSseTests(unittest.TestCase):
+    def test_multiplex_capability_declares_one_dynamic_transport(self) -> None:
+        capability = multiplexed_session_event_capabilities()
+        self.assertEqual(capability["scope"], "all_live_sessions")
+        self.assertEqual(capability["max_browser_connections_per_instance"], 1)
+        self.assertTrue(capability["dynamic_membership"])
+
+    def test_multiplex_stream_replays_only_subscribed_live_runtime(self) -> None:
+        async def exercise() -> tuple[str, str, int]:
+            runtime = _FakeRuntime()
+            runtime.session_id = "live-session"
+            runtime.store = _FakeStore(
+                [
+                    TranscriptEvent(
+                        session_id="live-session",
+                        seq=8,
+                        event_type="turn_completed",
+                        payload={"stop_reason": "end_turn"},
+                    )
+                ]
+            )
+            manager = MagicMock()
+            manager.list_runtimes.return_value = [runtime]
+            request = MagicMock()
+            request.query_params.get.side_effect = lambda name: {
+                "after": json.dumps(
+                    {"live-session": 7, "closed-history-session": 10471}
+                ),
+                "client_id": "tab-1",
+            }.get(name)
+            request.headers.get.return_value = None
+            request.is_disconnected = AsyncMock(return_value=False)
+            with patch(
+                "pa.modules.agent_chat._require_session_traffic_ready",
+                return_value=manager,
+            ):
+                response = await multiplexed_session_events(request)
+                iterator = response.body_iterator
+                ready = await anext(iterator)
+                event = await anext(iterator)
+                await iterator.aclose()
+            return ready, event, len(runtime._subscribers)
+
+        ready, event, subscriber_count = asyncio.run(exercise())
+        self.assertIn("event: ready", ready)
+        self.assertIn("id: live-session:8", event)
+        self.assertIn('"session_id": "live-session"', event)
+        self.assertNotIn("closed-history-session", event)
+        self.assertEqual(subscriber_count, 0)
+
+    def test_multiplex_stream_carries_twenty_five_live_sessions_once(self) -> None:
+        async def exercise() -> tuple[list[str], list[int]]:
+            runtimes = []
+            cursors = {}
+            for index in range(25):
+                session_id = f"live-{index}"
+                runtime = _FakeRuntime()
+                runtime.session_id = session_id
+                runtime.store = _FakeStore(
+                    [
+                        TranscriptEvent(
+                            session_id=session_id,
+                            seq=2,
+                            event_type="permission_request",
+                            payload={"title": f"Permission {index}"},
+                        )
+                    ]
+                )
+                runtimes.append(runtime)
+                cursors[session_id] = 1
+            manager = MagicMock()
+            manager.list_runtimes.return_value = runtimes
+            request = MagicMock()
+            request.query_params.get.side_effect = lambda name: {
+                "after": json.dumps(cursors),
+                "client_id": "tab-many",
+            }.get(name)
+            request.headers.get.return_value = None
+            request.is_disconnected = AsyncMock(return_value=False)
+            with patch(
+                "pa.modules.agent_chat._require_session_traffic_ready",
+                return_value=manager,
+            ):
+                response = await multiplexed_session_events(request)
+                iterator = response.body_iterator
+                await anext(iterator)
+                events = [await anext(iterator) for _index in range(25)]
+                await iterator.aclose()
+            return events, [len(runtime._subscribers) for runtime in runtimes]
+
+        events, subscriber_counts = asyncio.run(exercise())
+        self.assertEqual(len(events), 25)
+        self.assertEqual(
+            {event.split("id: ", 1)[1].split(":", 1)[0] for event in events},
+            {f"live-{index}" for index in range(25)},
+        )
+        self.assertEqual(subscriber_counts, [0] * 25)
+
     def test_restart_ui_race_is_gated_then_distinguishes_durable_loss(self) -> None:
         manager = MagicMock()
         manager.startup_state.return_value = {

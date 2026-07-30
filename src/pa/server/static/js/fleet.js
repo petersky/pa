@@ -42,6 +42,7 @@
       var detail = (data && data.detail) || resp.statusText || "Request failed";
       var error = new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
       error.detail = detail;
+      error.status = resp.status;
       throw error;
     }
     return data;
@@ -212,7 +213,52 @@
   }
 
   var remoteInstanceId = "";
-  var remoteWatchers = {};
+  var remoteOperationsSectionActive = false;
+  var remoteActivitySource = null;
+  var remoteActivityInstanceId = "";
+  var remoteActivityStartingInstanceId = "";
+  var remoteActivityGeneration = 0;
+  var remoteActivitySessions = {};
+  var remoteActivityCursors = {};
+  var remoteActivityReconnects = 0;
+  var remoteActivityReconnectTimer = null;
+  var remoteActivityPollTimer = null;
+  var remoteActivityLeaseTimer = null;
+  var remoteActivityCompatibility = {};
+  var remoteActivityEventTypes = [
+    "user_message", "agent_message_chunk", "agent_thought_chunk",
+    "tool_call", "tool_call_update", "plan", "permission_request",
+    "permission_resolved", "turn_completed", "queue_enqueued",
+    "queue_dequeued", "queue_removed", "queue_reordered", "queue_paused",
+    "queue_resumed", "cancelled", "session_started", "session_closed",
+    "session_recovered", "browser_attachment_changed", "connection_lost",
+    "usage_update", "model_changed", "mode_changed", "config_changed",
+    "config_option_update", "current_mode_update", "card_disposition",
+    "error", "message"
+  ];
+  var remoteNotificationEventTypes = [
+    "turn_completed", "permission_request", "error", "connection_lost"
+  ];
+  var remoteTabId = (function () {
+    var value = "";
+    try {
+      value = sessionStorage.getItem("pa-fleet-tab-id") || "";
+      if (!value) {
+        value = (crypto.randomUUID ? crypto.randomUUID() :
+          Date.now().toString(36) + Math.random().toString(36).slice(2));
+        sessionStorage.setItem("pa-fleet-tab-id", value);
+      }
+    } catch (e) {
+      value = Date.now().toString(36) + Math.random().toString(36).slice(2);
+    }
+    return value;
+  })();
+  var remoteActivityChannel = null;
+  try {
+    if (!window.PA_TEST && typeof BroadcastChannel !== "undefined") {
+      remoteActivityChannel = new BroadcastChannel("pa-fleet-activity-v1");
+    }
+  } catch (e) {}
   var remoteLoadGeneration = 0;
   var remoteAuditGeneration = 0;
   var remoteAuditSessionId = "";
@@ -440,6 +486,7 @@
     if (permission !== "granted") throw new Error("Notification permission was not granted.");
     try { localStorage.setItem("pa-remote-notifications", "1"); } catch (e) {}
     updateRemoteNotificationButton();
+    remoteActivityTick();
   }
 
   function notifyRemoteSession(session, type, payload) {
@@ -461,22 +508,92 @@
     } catch (e) {}
   }
 
+  function remoteActivityLeaseKey(instanceId) {
+    return "pa-fleet-activity-owner-v1:" + instanceId;
+  }
+
+  function readRemoteActivityLease(instanceId) {
+    try {
+      return JSON.parse(localStorage.getItem(remoteActivityLeaseKey(instanceId)) || "null");
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function ownsRemoteActivityLease(instanceId) {
+    var lease = readRemoteActivityLease(instanceId);
+    return !!lease && lease.tab_id === remoteTabId && Number(lease.expires_at || 0) > Date.now();
+  }
+
+  function acquireRemoteActivityLease(instanceId) {
+    if (!instanceId) return false;
+    var current = readRemoteActivityLease(instanceId);
+    if (current && current.tab_id !== remoteTabId &&
+        Number(current.expires_at || 0) > Date.now()) return false;
+    try {
+      localStorage.setItem(remoteActivityLeaseKey(instanceId), JSON.stringify({
+        tab_id: remoteTabId, expires_at: Date.now() + 5000
+      }));
+    } catch (e) {
+      // Storage-disabled contexts are already isolated; remain bounded to one
+      // transport in this tab.
+      return true;
+    }
+    return ownsRemoteActivityLease(instanceId);
+  }
+
+  function releaseRemoteActivityLease(instanceId) {
+    if (!instanceId || !ownsRemoteActivityLease(instanceId)) return;
+    try { localStorage.removeItem(remoteActivityLeaseKey(instanceId)); } catch (e) {}
+    if (remoteActivityChannel) {
+      remoteActivityChannel.postMessage({
+        kind: "owner-released", instance_id: instanceId, tab_id: remoteTabId
+      });
+    }
+  }
+
+  function stopRemoteActivity(reason, releaseLease) {
+    remoteActivityGeneration += 1;
+    clearTimeout(remoteActivityReconnectTimer);
+    clearTimeout(remoteActivityPollTimer);
+    remoteActivityReconnectTimer = null;
+    remoteActivityPollTimer = null;
+    if (remoteActivitySource) {
+      try { remoteActivitySource.close(); } catch (e) {}
+    }
+    remoteActivitySource = null;
+    var priorInstance = remoteActivityInstanceId || remoteActivityStartingInstanceId ||
+      remoteInstanceId;
+    remoteActivityInstanceId = "";
+    remoteActivityStartingInstanceId = "";
+    remoteActivityReconnects = 0;
+    if (releaseLease) releaseRemoteActivityLease(priorInstance);
+    if (reason && window.console && console.debug) {
+      console.debug("Fleet activity transport closed", {
+        reason: reason, instance_id: priorInstance, tab_id: remoteTabId
+      });
+    }
+  }
+
   function clearRemoteWatchers() {
-    Object.keys(remoteWatchers).forEach(function (key) {
-      try { remoteWatchers[key].close(); } catch (e) {}
-      delete remoteWatchers[key];
-    });
+    // Compatibility name retained for extensions; the implementation owns one
+    // multiplexed transport instead of one watcher per session.
+    stopRemoteActivity("reconcile", true);
     clearTimeout(remoteDispatchTimer);
     remoteDispatchTimer = null;
+  }
+
+  function remoteActivityWanted() {
+    return !!remoteInstanceId &&
+      (remoteOperationsSectionActive || remoteNotificationsActive()) &&
+      document.visibilityState !== "hidden";
   }
 
   function handleRemoteOperationsHidden() {
     remoteLoadGeneration += 1;
     remoteAuditGeneration += 1;
-    // Opted-in notifications intentionally outlive the Fleet view. Without
-    // that explicit permission, navigation owns and closes every watcher.
     if (remoteNotificationsActive()) {
-      if (remoteInstanceId) refreshRemoteWatchers(remoteInstanceId);
+      if (remoteInstanceId) remoteActivityTick();
       return;
     }
     remoteInstanceId = "";
@@ -486,7 +603,7 @@
   function scheduleRemoteSessionRefresh(instanceId) {
     setTimeout(function () {
       if (instanceId !== remoteInstanceId) return;
-      if ($("#pa-remote-instance")) {
+      if (remoteOperationsSectionActive) {
         loadRemoteOperations();
       } else if (remoteNotificationsActive()) {
         refreshRemoteWatchers(instanceId);
@@ -505,7 +622,7 @@
         generation !== remoteLoadGeneration ||
         instanceId !== remoteInstanceId ||
         !remoteNotificationsActive() ||
-        $("#pa-remote-instance")
+        remoteOperationsSectionActive
       ) return;
       watchRemoteSessions(instanceId, sessions || []);
     } catch (err) {
@@ -517,31 +634,194 @@
   function watchRemoteSessions(instanceId, sessions) {
     var desired = {};
     (sessions || []).forEach(function (session) {
-      if (!session || !session.id) return;
-      // Sequence cursors prevent historical completion/error events from being
-      // replayed as fresh notifications when opening a peer running older PA.
+      // A durable record is not a runtime. Only normalized, authoritative live
+      // records may contribute cursors or notification state.
+      if (!session || !session.id || session.live !== true || session.orphan === true) return;
       if (typeof session.last_seq !== "number") return;
-      var key = instanceId + ":" + session.id;
-      desired[key] = true;
-      if (remoteWatchers[key]) return;
-      var url = remoteApiBase(instanceId) + "/sessions/" + encodeURIComponent(session.id) +
-        "/events?after=" + encodeURIComponent(session.last_seq || 0);
+      desired[session.id] = session;
+      remoteActivityCursors[session.id] = Math.max(
+        Number(remoteActivityCursors[session.id] || 0),
+        Number(session.last_seq || 0)
+      );
+    });
+    remoteActivitySessions = desired;
+    remoteActivityTick();
+  }
+
+  function handleRemoteActivityEvent(instanceId, type, data, rebroadcast) {
+    if (!data || !data.session_id) return;
+    var sessionId = String(data.session_id);
+    var seq = Number(data.seq || 0);
+    if (seq && seq <= Number(remoteActivityCursors[sessionId] || 0)) return;
+    if (seq) remoteActivityCursors[sessionId] = seq;
+    var session = remoteActivitySessions[sessionId] || {
+      id: sessionId, title: sessionId
+    };
+    var widgetRoot = $("#pa-remote-chat [data-agent-chat]");
+    var widget = widgetRoot && widgetRoot._acw;
+    if (widget && widget.sessionId === sessionId &&
+        widget.apiBase === remoteApiBase(instanceId)) {
+      widget.handleEvent(data, false);
+    }
+    if (remoteNotificationEventTypes.indexOf(type) >= 0) {
+      notifyRemoteSession(session, type, data.payload || {});
+    }
+    if (rebroadcast && remoteActivityChannel) {
+      remoteActivityChannel.postMessage({
+        kind: "activity",
+        instance_id: instanceId,
+        event_type: type,
+        data: data,
+        owner_tab_id: remoteTabId
+      });
+    }
+    if (["turn_completed", "session_closed", "session_recovered",
+         "connection_lost", "error"].indexOf(type) >= 0) {
+      scheduleRemoteSessionRefresh(instanceId);
+    }
+  }
+
+  function scheduleRemoteActivityTick(delay) {
+    clearTimeout(remoteActivityLeaseTimer);
+    remoteActivityLeaseTimer = setTimeout(remoteActivityTick, delay || 1500);
+  }
+
+  function scheduleLegacyRemotePoll(instanceId, immediate) {
+    clearTimeout(remoteActivityPollTimer);
+    remoteActivityPollTimer = setTimeout(function () {
+      if (!remoteActivityWanted() || instanceId !== remoteInstanceId ||
+          !ownsRemoteActivityLease(instanceId)) return;
+      var previous = remoteActivitySessions;
+      api(remoteApiBase(instanceId) + "/sessions").then(function (sessions) {
+        (sessions || []).forEach(function (session) {
+          if (!session || !session.id || session.live !== true || session.orphan === true) return;
+          var prior = previous[session.id];
+          if (prior && prior.prompting && !session.prompting) {
+            notifyRemoteSession(session, "turn_completed", {});
+          }
+        });
+        watchRemoteSessions(instanceId, sessions || []);
+        if (remoteOperationsSectionActive) {
+          renderRemoteSessions(sessions || []);
+        }
+      }).catch(function () {}).finally(function () {
+        if (remoteActivityCompatibility[instanceId] === "polling") {
+          scheduleLegacyRemotePoll(instanceId, false);
+        }
+      });
+    }, immediate ? 0 : 15000);
+  }
+
+  function scheduleRemoteActivityReconnect(instanceId) {
+    clearTimeout(remoteActivityReconnectTimer);
+    remoteActivityReconnects += 1;
+    var base = Math.min(30000, 1000 * Math.pow(2, Math.min(5, remoteActivityReconnects)));
+    var jitter = Math.floor(Math.random() * Math.max(250, base * 0.25));
+    remoteActivityReconnectTimer = setTimeout(function () {
+      if (instanceId === remoteInstanceId && ownsRemoteActivityLease(instanceId)) {
+        startRemoteActivity(instanceId);
+      }
+    }, base + jitter);
+  }
+
+  function startRemoteActivity(instanceId) {
+    if (!remoteActivityWanted() || instanceId !== remoteInstanceId ||
+        !ownsRemoteActivityLease(instanceId)) return;
+    if (remoteActivitySource && remoteActivityInstanceId === instanceId) return;
+    if (remoteActivityStartingInstanceId === instanceId) return;
+    if (remoteActivityCompatibility[instanceId] === "polling") {
+      scheduleLegacyRemotePoll(instanceId, true);
+      return;
+    }
+    var generation = ++remoteActivityGeneration;
+    remoteActivityStartingInstanceId = instanceId;
+    api(remoteApiBase(instanceId) + "/session-events/capabilities").then(function (capability) {
+      if (generation !== remoteActivityGeneration || !remoteActivityWanted() ||
+          instanceId !== remoteInstanceId || !ownsRemoteActivityLease(instanceId)) return;
+      remoteActivityStartingInstanceId = "";
+      if (!capability || capability.transport !== "sse") {
+        remoteActivityCompatibility[instanceId] = "polling";
+        scheduleLegacyRemotePoll(instanceId, true);
+        return;
+      }
+      var cursors = {};
+      Object.keys(remoteActivitySessions).forEach(function (sessionId) {
+        cursors[sessionId] = Number(remoteActivityCursors[sessionId] || 0);
+      });
+      var url = remoteApiBase(instanceId) + "/session-events?client_id=" +
+        encodeURIComponent(remoteTabId) + "&after=" +
+        encodeURIComponent(JSON.stringify(cursors)) + "&reconnect_attempt=" +
+        encodeURIComponent(remoteActivityReconnects);
       var source = new EventSource(url);
-      ["turn_completed", "permission_request", "error", "connection_lost"].forEach(function (type) {
+      remoteActivitySource = source;
+      remoteActivityInstanceId = instanceId;
+      source.addEventListener("open", function () { remoteActivityReconnects = 0; });
+      remoteActivityEventTypes.forEach(function (type) {
         source.addEventListener(type, function (event) {
           var data = {};
-          try { data = JSON.parse(event.data || "{}"); } catch (e) {}
-          notifyRemoteSession(session, type, data.payload || {});
-          if (type !== "permission_request") scheduleRemoteSessionRefresh(instanceId);
+          try { data = JSON.parse(event.data || "{}"); } catch (e) { return; }
+          handleRemoteActivityEvent(instanceId, type, data, true);
         });
       });
-      remoteWatchers[key] = source;
+      source.onerror = function () {
+        if (remoteActivitySource === source) remoteActivitySource = null;
+        try { source.close(); } catch (e) {}
+        if (!remoteActivityWanted() || !ownsRemoteActivityLease(instanceId)) return;
+        api(remoteApiBase(instanceId) + "/session-events/capabilities").then(function () {
+          scheduleRemoteActivityReconnect(instanceId);
+        }).catch(function (error) {
+          if (error.status === 404 || error.status === 410) {
+            // Terminal for this transport version. Older peers use bounded
+            // reconciliation polling and never fall back to per-session SSE.
+            remoteActivityCompatibility[instanceId] = "polling";
+            scheduleLegacyRemotePoll(instanceId, true);
+          } else {
+            scheduleRemoteActivityReconnect(instanceId);
+          }
+        });
+      };
+    }).catch(function (error) {
+      if (generation !== remoteActivityGeneration) return;
+      remoteActivityStartingInstanceId = "";
+      if (error.status === 404 || error.status === 410) {
+        remoteActivityCompatibility[instanceId] = "polling";
+        scheduleLegacyRemotePoll(instanceId, true);
+      } else {
+        scheduleRemoteActivityReconnect(instanceId);
+      }
     });
-    Object.keys(remoteWatchers).forEach(function (key) {
-      if (desired[key]) return;
-      try { remoteWatchers[key].close(); } catch (e) {}
-      delete remoteWatchers[key];
-    });
+  }
+
+  function remoteActivityTick() {
+    if (!remoteActivityWanted()) {
+      stopRemoteActivity("not-wanted", true);
+      return;
+    }
+    var instanceId = remoteInstanceId;
+    if (remoteActivityInstanceId && remoteActivityInstanceId !== instanceId) {
+      stopRemoteActivity("instance-changed", true);
+    }
+    if (acquireRemoteActivityLease(instanceId)) {
+      startRemoteActivity(instanceId);
+    } else if (remoteActivitySource || remoteActivityInstanceId ||
+               remoteActivityStartingInstanceId) {
+      stopRemoteActivity("follower-tab", false);
+    }
+    scheduleRemoteActivityTick(1500);
+  }
+
+  if (remoteActivityChannel) {
+    remoteActivityChannel.onmessage = function (event) {
+      var message = event.data || {};
+      if (message.instance_id !== remoteInstanceId) return;
+      if (message.kind === "activity") {
+        handleRemoteActivityEvent(
+          message.instance_id, message.event_type, message.data || {}, false
+        );
+      } else if (message.kind === "owner-released") {
+        scheduleRemoteActivityTick(0);
+      }
+    };
   }
 
   function renderRemoteSessions(sessions) {
@@ -561,6 +841,32 @@
         encodeURIComponent(session.id) + '&instance=' + encodeURIComponent(remoteInstanceId) +
         '">Open in Agent</a></li>';
     }).join("");
+  }
+
+  function loadRemoteStreamDiagnostics() {
+    var summary = $("[data-fleet-stream-summary]");
+    var details = $("[data-fleet-stream-details]");
+    if (!summary || !details || !remoteOperationsSectionActive) return;
+    api("/api/runtime").then(function (runtime) {
+      var streams = runtime && runtime.sse_connections || {};
+      var paired = streams.paired || {};
+      summary.textContent = String(streams.active || 0) +
+        " active SSE transport leg" + (streams.active === 1 ? "" : "s") +
+        " on this controller; " + String(streams.over_age || 0) + " over age.";
+      details.innerHTML =
+        "<dt>Opened / closed</dt><dd>" + escapeHtml(streams.opened || 0) +
+        " / " + escapeHtml(streams.closed || 0) + "</dd>" +
+        "<dt>Cancelled / errored</dt><dd>" + escapeHtml(streams.cancelled || 0) +
+        " / " + escapeHtml(streams.errored || 0) + "</dd>" +
+        "<dt>Reconnects / leaked</dt><dd>" + escapeHtml(streams.reconnecting || 0) +
+        " / " + escapeHtml(streams.leaked || 0) + "</dd>" +
+        "<dt>Proxy pair</dt><dd>" + escapeHtml(paired.downstream || 0) +
+        " downstream · " + escapeHtml(paired.upstream || 0) + " upstream · " +
+        (paired.balanced === false ? "unbalanced" : "balanced") + "</dd>" +
+        "<dt>Browser budget</dt><dd>1 stream per selected instance across tabs</dd>";
+    }).catch(function (error) {
+      summary.textContent = "Transport diagnostics unavailable: " + error.message;
+    });
   }
 
   function renderRemoteHistory(history, liveSessions) {
@@ -817,6 +1123,7 @@
     if (!instanceId) {
       if (status) status.textContent = "Choose an instance to load its sessions.";
       clearRemoteWatchers();
+      loadRemoteStreamDiagnostics();
       return;
     }
     if (status) status.textContent = "Loading remote sessions…";
@@ -844,6 +1151,7 @@
       renderRemoteSessions(sessions);
       renderRemoteHistory(results[1] || [], sessions);
       watchRemoteSessions(instanceId, sessions);
+      loadRemoteStreamDiagnostics();
       if (status) {
         status.textContent = sessions.length + " live session" + (sessions.length === 1 ? "" : "s") +
           " on the selected instance." + (warnings.length ? " " + warnings.join(" ") : "");
@@ -869,6 +1177,7 @@
     window.PAAgentChat.mount(chat);
     if (!widgetRoot._acw) return;
     widgetRoot._acw.setApiBase(remoteApiBase(remoteInstanceId), remoteInstanceId);
+    widgetRoot._acw.useExternalEventTransport(true);
     if (audit) audit.hidden = true;
     chat.hidden = false;
     widgetRoot._acw.switchSession(sessionId, true, remoteInstanceId);
@@ -986,7 +1295,7 @@
 
   function maybeLoadRemoteOperations() {
     var select = $("#pa-remote-instance");
-    if (!select) {
+    if (!select || !remoteOperationsSectionActive) {
       handleRemoteOperationsHidden();
       return;
     }
@@ -1002,6 +1311,8 @@
     if (nextInstanceId !== remoteInstanceId) {
       remoteAuditGeneration += 1;
       clearRemoteWatchers();
+      remoteActivitySessions = {};
+      remoteActivityCursors = {};
     }
     remoteInstanceId = nextInstanceId;
     if (remoteInstanceId) loadRemoteOperations();
@@ -2654,6 +2965,10 @@
   }
 
   function initializeFleetPage() {
+    var root = $("#pa-fleet-root");
+    var layout = root && root.closest ? root.closest(".page-layout") : null;
+    remoteOperationsSectionActive = !!layout &&
+      layout.dataset.activeSection === "operations";
     maybeLoadLiveStatus();
     maybeLoadRemoteOperations();
     maybeLoadSyncStatus();
@@ -2710,20 +3025,59 @@
         target.id === "pa-fleet-root" ||
         (fleetOverviewRoot && target.contains && target.contains(fleetOverviewRoot)))
     ) {
+      remoteOperationsSectionActive = false;
+      if (!remoteNotificationsActive()) clearRemoteWatchers();
+      else remoteActivityTick();
       teardownFleetOverview();
       closeFleetUpdateWatcher();
     }
   }
 
+  document.addEventListener("pa:section-will-change", function (event) {
+    var detail = event.detail || {};
+    if (detail.from !== "operations") return;
+    var root = $("#pa-fleet-root");
+    if (!root || !detail.layout || !detail.layout.contains(root)) return;
+    remoteOperationsSectionActive = false;
+    if (!remoteNotificationsActive()) clearRemoteWatchers();
+    else remoteActivityTick();
+  });
+  document.addEventListener("pa:section-changed", function (event) {
+    var detail = event.detail || {};
+    var root = $("#pa-fleet-root");
+    if (!root || !detail.layout || !detail.layout.contains(root)) return;
+    remoteOperationsSectionActive = detail.to === "operations";
+    if (remoteOperationsSectionActive) maybeLoadRemoteOperations();
+  });
+  document.body.addEventListener("htmx:beforeRequest", function (event) {
+    var detail = event.detail || {};
+    var target = detail.target || (detail.requestConfig && detail.requestConfig.target);
+    var element = detail.elt || event.target;
+    var leavesFleet = target && (
+      target.id === "app-view" || target === "#app-view"
+    );
+    if (!leavesFleet && element && element.closest) {
+      var link = element.closest('a[hx-get], a[data-spa-link]');
+      leavesFleet = !!link;
+    }
+    if (!leavesFleet) return;
+    remoteOperationsSectionActive = false;
+    if (!remoteNotificationsActive()) clearRemoteWatchers();
+    else remoteActivityTick();
+  });
   document.body.addEventListener("htmx:afterSwap", afterFleetSwap);
   document.body.addEventListener("htmx:beforeSwap", beforeFleetSwap);
   document.addEventListener("htmx:historyRestore", function () {
+    remoteOperationsSectionActive = false;
+    if (!remoteNotificationsActive()) clearRemoteWatchers();
     setTimeout(initializeFleetPage, 0);
   });
   window.addEventListener("pageshow", function () {
     setTimeout(initializeFleetPage, 0);
   });
   window.addEventListener("popstate", function () {
+    remoteOperationsSectionActive = false;
+    if (!remoteNotificationsActive()) clearRemoteWatchers();
     setTimeout(initializeFleetPage, 0);
   });
   window.addEventListener("online", function () {
@@ -2731,10 +3085,19 @@
     if ($("#pa-fleet-root") && !liveStatusRequest) loadLiveStatus(false);
   });
   window.addEventListener("pagehide", function () {
+    stopRemoteActivity("pagehide", true);
     abortFleetPageRefresh();
     teardownFleetOverview();
   });
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "hidden") {
+      stopRemoteActivity("page-suspended", true);
+      return;
+    }
+    if (remoteActivityWanted()) remoteActivityTick();
+  });
   document.addEventListener("pa:historyWillReload", function () {
+    stopRemoteActivity("history-reload", true);
     abortFleetPageRefresh();
     teardownFleetOverview();
     closeFleetUpdateWatcher();
@@ -2776,6 +3139,8 @@
     remoteAuditGeneration += 1;
     try { localStorage.setItem("pa-remote-instance", remoteInstanceId); } catch (err) {}
     clearRemoteWatchers();
+    remoteActivitySessions = {};
+    remoteActivityCursors = {};
     var chat = $("#pa-remote-chat");
     var audit = $("#pa-remote-audit");
     if (chat) chat.hidden = true;
