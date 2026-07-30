@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -84,6 +85,26 @@ class InstanceConfig(BaseModel):
     default_theme_id: str = "pa"
     update_repo: str = "petersky/pa"
     install_method: str = "uv-tool"
+    backup_enabled: bool = True
+    backup_interval_seconds: int = Field(
+        default=6 * 60 * 60, ge=60, le=31 * 24 * 60 * 60
+    )
+    backup_retention_count: int = Field(default=8, ge=1, le=10_000)
+    backup_retention_max_age_seconds: int | None = Field(
+        default=None, ge=60, le=10 * 365 * 24 * 60 * 60
+    )
+    backup_retention_max_total_bytes: int | None = Field(default=None, ge=1024)
+    backup_destination_dir: str | None = None
+    backup_run_on_startup: bool = False
+    backup_startup_min_age_seconds: int = Field(
+        default=60 * 60, ge=0, le=31 * 24 * 60 * 60
+    )
+    backup_verification_level: Literal["quick", "full"] = "full"
+    backup_compression: bool = True
+    backup_io_limit_mib_per_second: float | None = Field(default=None, gt=0, le=10_000)
+    backup_concurrency: Literal[1] = 1
+    backup_alert_after_failures: int = Field(default=3, ge=1, le=1000)
+    backup_jitter_seconds: int = Field(default=300, ge=0, le=60 * 60)
 
 
 def config_path(data_dir: Path) -> Path:

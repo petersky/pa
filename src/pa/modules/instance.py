@@ -645,6 +645,13 @@ def update_configuration(request: Request, body: ConfigurationPatch) -> dict:
         cache_for(ctx.settings.data_dir).invalidate(
             ctx.settings.instance_id, "activity"
         )
+    if any(key.startswith("backup_") for key in result.changed):
+        ctx = request.app.state.ctx
+        backup_service = ctx.services.get("backup_service")
+        if backup_service:
+            from pa.backup.service import config_from_settings
+
+            backup_service.apply_config(config_from_settings(ctx.settings))
     snapshot = configuration_snapshot(request.app.state.ctx.settings)
     return {
         "ok": True,

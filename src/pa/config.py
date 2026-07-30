@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import uuid4
 
 from pydantic import AliasChoices, Field, field_validator, model_validator
@@ -91,9 +91,7 @@ class Settings(BaseSettings):
     # remain read-only; PA validates and executes eligible catalog actions.
     post_turn_evaluator_max_attempts: int = Field(default=2, ge=1, le=5)
     post_turn_max_automatic_followups: int = Field(default=2, ge=0, le=10)
-    post_turn_evaluation_timeout_seconds: float = Field(
-        default=60.0, gt=0, le=600
-    )
+    post_turn_evaluation_timeout_seconds: float = Field(default=60.0, gt=0, le=600)
     post_turn_retry_seconds: float = Field(default=15.0, gt=0, le=3600)
     post_turn_escalation_threshold: int = Field(default=2, ge=1, le=10)
 
@@ -123,6 +121,29 @@ class Settings(BaseSettings):
     telemetry_per_session_enabled: bool = True
     telemetry_ui_refresh_seconds: float = Field(default=5.0, ge=2.0, le=300)
     telemetry_default_report_range: str = "1h"
+
+    # Verified authoritative metadata backups. A blank destination resolves to
+    # a private sibling of data_dir, never beneath the live data directory.
+    backup_enabled: bool = True
+    backup_interval_seconds: int = Field(
+        default=6 * 60 * 60, ge=60, le=31 * 24 * 60 * 60
+    )
+    backup_retention_count: int = Field(default=8, ge=1, le=10_000)
+    backup_retention_max_age_seconds: int | None = Field(
+        default=None, ge=60, le=10 * 365 * 24 * 60 * 60
+    )
+    backup_retention_max_total_bytes: int | None = Field(default=None, ge=1024)
+    backup_destination_dir: Path | None = None
+    backup_run_on_startup: bool = False
+    backup_startup_min_age_seconds: int = Field(
+        default=60 * 60, ge=0, le=31 * 24 * 60 * 60
+    )
+    backup_verification_level: Literal["quick", "full"] = "full"
+    backup_compression: bool = True
+    backup_io_limit_mib_per_second: float | None = Field(default=None, gt=0, le=10_000)
+    backup_concurrency: Literal[1] = 1
+    backup_alert_after_failures: int = Field(default=3, ge=1, le=1000)
+    backup_jitter_seconds: int = Field(default=300, ge=0, le=60 * 60)
 
     # UI defaults (user preferences file overrides appearance at runtime)
     default_theme_id: str = "pa"
@@ -181,6 +202,10 @@ class Settings(BaseSettings):
         ):
             raise ValueError("workspace_root must be outside data_dir")
         self.workspace_root = workspace_root
+        if self.backup_destination_dir is not None:
+            self.backup_destination_dir = (
+                self.backup_destination_dir.expanduser().resolve()
+            )
         normalized_provider_limits: dict[str, int] = {}
         for provider, limit in self.dispatch_provider_capacities.items():
             key = str(provider).strip().lower()

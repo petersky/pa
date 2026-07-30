@@ -186,6 +186,17 @@ a stored snapshot.
 
 See [MULTI_MACHINE.md](MULTI_MACHINE.md) for Tailscale fleet onboarding.
 
+## Metadata backup and restore
+
+Each instance independently snapshots its authoritative metadata recovery set
+with SQLite's online backup API, immutable event-log objects, and exact durable
+sync refs. Archives are verified and atomically published outside
+`PA_DATA_DIR`; they are not replicated through realm sync. Restore is an
+explicit offline maintenance workflow fenced by the data-directory writer lock
+and never changes a sync ref to choose a history. See
+[BACKUPS.md](BACKUPS.md) for the recovery-set contract, retention, interfaces,
+and guarded restore procedure.
+
 ## Projects
 
 A **Project** is a realm-scoped container for cards with its own metadata:

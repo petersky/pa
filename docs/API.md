@@ -113,6 +113,35 @@ Structured live progress is described in
 `report_dispatch_progress`; ordinary ACP commentary and sanitized tool lifecycle
 updates are also derived automatically after version negotiation.
 
+## Metadata backups
+
+The authenticated backup surface is instance-local:
+
+- `GET /api/backups/status` — schedule, effective/configured values and sources,
+  destination health, storage, metrics, and recent attempts;
+- `GET /api/backups?verify=true` — retained archives;
+- `GET|PATCH /api/backups/config` — validated policy;
+- `POST /api/backups` — immediate backup; send `Idempotency-Key` or
+  `{"idempotency_key":"..."}`;
+- `GET /api/backups/{backup_id}` and
+  `POST /api/backups/{backup_id}/verify` — manifest and integrity;
+- `DELETE /api/backups/{backup_id}` — explicit deletion with last-good
+  protection;
+- `GET /api/backups/{backup_id}/export-info` — verified export metadata,
+  checksum, and authorized download URL;
+- `GET /api/backups/{backup_id}/download` — authorized archive export;
+- `POST /api/backups/restores` and
+  `GET /api/backups/restores/{restore_id}` — guarded offline restore request
+  and monitoring.
+
+Mutations and downloads require an administrator. Restore initiation verifies
+the archive and returns maintenance instructions; it never overwrites the
+running writer. The corresponding MCP tools are named `backup_status`,
+`backup_list`, `backup_run`, `backup_inspect`, `backup_verify`,
+`backup_delete`, `backup_export`, `backup_update_config`,
+`backup_restore_initiate`, and `backup_restore_status`. See
+[`BACKUPS.md`](BACKUPS.md).
+
 ## Security boundaries
 
 - Browser UI requests retain session-cookie plus signed double-submit CSRF and
