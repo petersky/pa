@@ -9,6 +9,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
+from pa.acp.final_message import assemble_final_assistant_message
 from pa.execution.dispatch import CompletionOutbox, DispatchRecord, DispatchStore
 from pa.execution.disposition import extract_card_disposition, parse_card_disposition
 from pa.prompts import PROMPTS
@@ -97,9 +98,29 @@ class CompletionReconciler:
             disposition, _error = parse_card_disposition(value)
             if disposition or record.reconciliation_state != "not_requested":
                 continue
+            recovered = await self._recover_transcript_completion(
+                record,
+                prompt_id=(record.completion_payload or {}).get("queued_prompt_id"),
+                source=(record.completion_payload or {}).get("prompt_source"),
+            )
+            if recovered:
+                payload = {**(record.completion_payload or {}), **recovered}
+                record.completion_payload = payload
+                record.card_disposition_error = payload.get("card_disposition_error")
+                await self._save(record)
+                recovered_disposition, _recovered_error = parse_card_disposition(
+                    payload.get("card_disposition")
+                )
+                if recovered_disposition:
+                    await self._handle_completion(str(record.session_id), payload)
+                    continue
             record.reconciliation_state = "pending"
-            record.reconciliation_reason = (
-                "Recovered a completed card turn without a valid disposition."
+            error = record.card_disposition_error or (
+                record.completion_payload or {}
+            ).get("card_disposition_error")
+            record.reconciliation_reason = self._missing_disposition_reason(
+                "Recovered a completed card turn without a valid disposition",
+                error,
             )
             record.reconciliation_recoverable = True
             record.reconciliation_updated_at = datetime.now(UTC)
@@ -176,7 +197,11 @@ class CompletionReconciler:
         ):
             return False
 
-        disposition, error = parse_card_disposition(payload.get("card_disposition"))
+        disposition, parse_error = parse_card_disposition(
+            payload.get("card_disposition")
+        )
+        payload_error = str(payload.get("card_disposition_error") or "")[:1000] or None
+        error = payload_error or parse_error
         is_followup = payload.get(
             "prompt_source"
         ) == f"{RECONCILIATION_SOURCE_PREFIX}{record.dispatch_id}" or (
@@ -185,6 +210,8 @@ class CompletionReconciler:
         )
         if disposition:
             payload["card_disposition"] = disposition.model_dump(mode="json")
+            payload.pop("card_disposition_error", None)
+            record.card_disposition_error = None
             record.reconciliation_state = "resolved" if is_followup else "not_required"
             record.reconciliation_reason = (
                 "The one reconciliation turn returned a valid disposition."
@@ -216,6 +243,7 @@ class CompletionReconciler:
             if not is_followup:
                 return False
             record.completion_payload = payload
+            record.card_disposition_error = error
             record.reconciliation_state = "failed"
             record.reconciliation_reason = (
                 "The single reconciliation prompt completed without a valid "
@@ -227,9 +255,11 @@ class CompletionReconciler:
             return await self._queue_delivery(session_id, payload)
 
         record.completion_payload = payload
+        record.card_disposition_error = error
         record.reconciliation_state = "pending"
-        record.reconciliation_reason = (
-            "The completed card turn omitted a valid pa.card-disposition/v1 payload."
+        record.reconciliation_reason = self._missing_disposition_reason(
+            "The completed card turn omitted a valid pa.card-disposition/v1 payload",
+            error,
         )
         record.reconciliation_recoverable = True
         record.reconciliation_updated_at = datetime.now(UTC)
@@ -298,64 +328,13 @@ class CompletionReconciler:
         runtime = self.agent.get(current.session_id) if current.session_id else None
         if runtime and self._existing_prompt(runtime, current.dispatch_id):
             return
-        events = await self._offload(
-            "reconciliation.transcript_read",
-            self.agent.store.list_transcript_events_before,
-            current.session_id,
-            limit=5000,
-        )
         prompt_id = current.reconciliation_prompt_id
-        start_seq = next(
-            (
-                event.seq
-                for event in reversed(events)
-                if event.event_type == "user_message"
-                and (
-                    event.payload.get("id") == prompt_id
-                    or event.payload.get("source")
-                    == f"{RECONCILIATION_SOURCE_PREFIX}{current.dispatch_id}"
-                )
-            ),
-            None,
+        payload = await self._recover_transcript_completion(
+            current,
+            prompt_id=prompt_id,
+            source=f"{RECONCILIATION_SOURCE_PREFIX}{current.dispatch_id}",
         )
-        completed = next(
-            (
-                event
-                for event in events
-                if start_seq is not None
-                and event.seq > start_seq
-                and event.event_type == "turn_completed"
-                and event.payload.get("queued_prompt_id") == prompt_id
-            ),
-            None,
-        )
-        if completed:
-            chunks = [
-                event.payload
-                for event in events
-                if start_seq < event.seq < completed.seq
-                and event.event_type == "agent_message_chunk"
-            ]
-            final_text = "".join(
-                str(chunk.get("text") or "")
-                for chunk in chunks
-                if chunk.get("phase") == "final"
-            ).strip()
-            if not final_text:
-                final_text = "".join(
-                    str(chunk.get("text") or "") for chunk in chunks
-                ).strip()
-            disposition, error = extract_card_disposition(final_text)
-            payload = {
-                **completed.payload,
-                "prompt_source": (
-                    f"{RECONCILIATION_SOURCE_PREFIX}{current.dispatch_id}"
-                ),
-            }
-            if disposition:
-                payload["card_disposition"] = disposition
-            elif error:
-                payload["card_disposition_error"] = error[:1000]
+        if payload:
             await self._handle_completion(str(current.session_id), payload)
             return
 
@@ -380,6 +359,85 @@ class CompletionReconciler:
                 "failed",
                 "The durable reconciliation prompt was no longer queued and no completed turn could be recovered.",
             )
+
+    async def _recover_transcript_completion(
+        self,
+        record: DispatchRecord,
+        *,
+        prompt_id: str | None,
+        source: str | None,
+    ) -> dict[str, Any] | None:
+        """Recover one exact completed turn and its final assistant message."""
+        transcript_reader = getattr(
+            self.agent.store, "list_transcript_events_before", None
+        )
+        if not transcript_reader or not record.session_id or not prompt_id:
+            return None
+        events = await self._offload(
+            "reconciliation.transcript_read",
+            transcript_reader,
+            record.session_id,
+            limit=5000,
+        )
+        ordered = sorted(events, key=lambda event: event.seq)
+        start_seq = next(
+            (
+                event.seq
+                for event in reversed(ordered)
+                if event.event_type == "user_message"
+                and event.payload.get("id") == prompt_id
+            ),
+            None,
+        )
+        if start_seq is None and source:
+            start_seq = next(
+                (
+                    event.seq
+                    for event in reversed(ordered)
+                    if event.event_type == "user_message"
+                    and event.payload.get("source") == source
+                ),
+                None,
+            )
+        if start_seq is None:
+            return None
+        completed = next(
+            (
+                event
+                for event in ordered
+                if event.seq > start_seq
+                and event.event_type == "turn_completed"
+                and event.payload.get("queued_prompt_id") == prompt_id
+            ),
+            None,
+        )
+        if not completed:
+            return None
+        message_events = [
+            event
+            for event in ordered
+            if start_seq < event.seq < completed.seq
+        ]
+        final_text = assemble_final_assistant_message(message_events)
+        disposition, error = extract_card_disposition(final_text)
+        payload = {
+            **completed.payload,
+            "final_outcome_text": final_text[:8000],
+        }
+        if source:
+            payload["prompt_source"] = source
+        if disposition:
+            payload["card_disposition"] = disposition
+        elif error:
+            payload["card_disposition_error"] = error[:1000]
+        return payload
+
+    @staticmethod
+    def _missing_disposition_reason(prefix: str, error: Any) -> str:
+        detail = str(error or "").strip()
+        if detail:
+            return f"{prefix}: {detail}"[:1000]
+        return f"{prefix}: missing payload"[:1000]
 
     async def _advance(self, record: DispatchRecord) -> None:
         current = await self._offload(
