@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from pa.acp.final_message import normalize_provider_phase
 from pa.domain.models import (
     KnowledgeAuditEvent,
     KnowledgeEntry,
@@ -193,13 +194,13 @@ def assemble_canonical_transcript(events: Iterable[Any]) -> CanonicalTranscript:
         event
         for event in selected_turn
         if event["type"] in _AGENT_MESSAGE_TYPES
-        and str(event["payload"].get("phase") or "").lower()
+        and normalize_provider_phase(event["payload"].get("phase"))
         not in {"commentary", "analysis", "reasoning", "thought"}
     ]
     final_events = [
         event
         for event in message_events
-        if str(event["payload"].get("phase") or "").lower() == "final"
+        if normalize_provider_phase(event["payload"].get("phase")) == "final"
         or event["type"] in _FINAL_MESSAGE_TYPES
         or bool(event["payload"].get("final"))
         or bool(event["payload"].get("is_final"))

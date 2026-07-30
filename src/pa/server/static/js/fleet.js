@@ -699,6 +699,10 @@
         reconciliationText = '<p class="muted small">' +
           escapeHtml(reconciliationLabel) +
           (reconciliation.reason ? " · " + escapeHtml(reconciliation.reason) : "") +
+          (reconciliation.disposition_error &&
+           (!reconciliation.reason ||
+            reconciliation.reason.indexOf(reconciliation.disposition_error) < 0)
+            ? " · " + escapeHtml(reconciliation.disposition_error) : "") +
           "</p>";
       }
       var actions = '<span class="form-actions">';

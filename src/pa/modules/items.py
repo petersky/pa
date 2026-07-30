@@ -699,6 +699,16 @@ def _card_activity_context(request: Request, card) -> dict:
                                 "label": "Disposition",
                                 "value": snapshot.disposition_status,
                             },
+                            *(
+                                [
+                                    {
+                                        "label": "Disposition extraction error",
+                                        "value": snapshot.disposition_parse_error,
+                                    }
+                                ]
+                                if snapshot.disposition_parse_error
+                                else []
+                            ),
                         ],
                     }
                 )

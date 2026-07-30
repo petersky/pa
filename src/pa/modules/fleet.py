@@ -1535,6 +1535,11 @@ def complete_dispatch(
     record.card_disposition_payload = (
         body.disposition if isinstance(body.disposition, dict) else None
     )
+    record.card_disposition_error = (
+        None
+        if record.card_disposition_payload
+        else str(body.result.get("card_disposition_error") or "")[:1000] or None
+    )
     record.reconciliation_state = "pending" if body.card_id else "not_applicable"
     record.reconciliation_reason = "Immutable agent-turn completion acknowledged."
     record.reconciliation_updated_at = record.completion_received_at
