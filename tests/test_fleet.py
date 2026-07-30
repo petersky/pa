@@ -1982,6 +1982,82 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn(b"event: ready", body)
             self.assertIsNone(client_factory.call_args.kwargs["timeout"].read)
 
+    async def test_agent_proxy_closes_idle_upstream_after_downstream_disconnect(
+        self,
+    ) -> None:
+        from pa.core.sse_observability import sse_connections
+        from pa.modules.fleet import fleet_agent_proxy
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), sync_token="fleet-secret")
+            fleet = FleetRegistry(settings.data_dir, settings.fleet_id)
+            fleet.upsert_instance(
+                FleetInstance(
+                    instance_id="mini-1",
+                    name="macmini",
+                    url="http://mini:8080",
+                )
+            )
+            ctx = MagicMock(settings=settings)
+            ctx.require_service.return_value = fleet
+            request = MagicMock()
+            request.app.state.ctx = ctx
+            request.method = "GET"
+            request.query_params.multi_items.return_value = []
+            request.query_params.get.side_effect = lambda name: {
+                "client_id": "tab-1"
+            }.get(name)
+            request.headers.get.side_effect = lambda name: {
+                "accept": "text/event-stream"
+            }.get(name)
+            request.body = AsyncMock(return_value=b"")
+            request.is_disconnected = AsyncMock(return_value=True)
+
+            class IdleEventStream(httpx.AsyncByteStream):
+                def __init__(self) -> None:
+                    self.closed = False
+
+                async def __aiter__(self):
+                    await asyncio.Event().wait()
+                    yield b"unreachable"
+
+                async def aclose(self) -> None:
+                    self.closed = True
+
+            stream = IdleEventStream()
+
+            async def upstream_handler(_request: httpx.Request) -> httpx.Response:
+                return httpx.Response(
+                    200,
+                    stream=stream,
+                    headers={"content-type": "text/event-stream"},
+                )
+
+            upstream_client = httpx.AsyncClient(
+                transport=httpx.MockTransport(upstream_handler)
+            )
+            sse_connections.reset_for_tests()
+            with (
+                patch("pa.modules.fleet.require_user", return_value=object()),
+                patch(
+                    "pa.modules.fleet.httpx.AsyncClient",
+                    return_value=upstream_client,
+                ),
+            ):
+                response = await fleet_agent_proxy(
+                    request,
+                    "mini-1",
+                    "session-events",
+                )
+                body = b"".join([chunk async for chunk in response.body_iterator])
+
+            self.assertEqual(body, b"")
+            self.assertTrue(stream.closed)
+            snapshot = sse_connections.snapshot()
+            self.assertEqual(snapshot["active"], 0)
+            self.assertEqual(snapshot["cancelled"], 2)
+            self.assertTrue(snapshot["paired"]["balanced"])
+
     async def test_agent_proxy_treats_peer_restart_as_event_stream_eof(self) -> None:
         from pa.modules.fleet import fleet_agent_proxy
 

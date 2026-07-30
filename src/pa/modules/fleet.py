@@ -6353,10 +6353,14 @@ async def fleet_agent_proxy(
         value = request.headers.get(name)
         if value:
             headers[name] = value
-    # Session event streams are intentionally unbounded; every other proxied
+    # Agent event streams are intentionally unbounded; every other proxied
     # response must retain a finite read timeout so a stalled peer cannot pin a
     # request forever while the controller buffers its body.
-    read_timeout = None if proxied_path.endswith("/events") else 120.0
+    read_timeout = (
+        None
+        if proxied_path.endswith("/events") or proxied_path == "session-events"
+        else 120.0
+    )
     client = httpx.AsyncClient(timeout=httpx.Timeout(120.0, read=read_timeout))
     try:
         upstream_request = client.build_request(
@@ -6378,34 +6382,111 @@ async def fleet_agent_proxy(
     }
     content_type = upstream.headers.get("content-type", "")
     if content_type.startswith("text/event-stream"):
-        from pa.server.shutdown import wait_for_shutdown_or
+        from pa.core.sse_observability import sse_connections
+        from pa.server.shutdown import is_shutting_down
 
         async def relay() -> AsyncIterator[bytes]:
+            pair_id = str(uuid4())
+            client_id = request.query_params.get("client_id")
+            scope = (
+                "all_live" if proxied_path == "session-events" else "single_session"
+            )
+            downstream_id = sse_connections.open(
+                endpoint="/api/fleet/instances/{instance_id}/agent/session-events",
+                direction="downstream",
+                client_id=client_id,
+                peer_id=instance_id,
+                session_scope=scope,
+                paired_id=pair_id,
+            )
+            upstream_id = sse_connections.open(
+                endpoint="/api/agent/" + proxied_path,
+                direction="upstream",
+                client_id=client_id,
+                peer_id=instance_id,
+                session_scope=scope,
+                paired_id=pair_id,
+            )
+            outcome = "closed"
+            next_chunk: asyncio.Task[bytes] | None = None
             try:
+                reconnect_attempt = int(
+                    request.query_params.get("reconnect_attempt") or 0
+                )
+            except (TypeError, ValueError):
+                reconnect_attempt = 0
+            if reconnect_attempt > 0:
+                sse_connections.increment("reconnecting")
+            try:
+                iterator = upstream.aiter_raw().__aiter__()
                 try:
-                    iterator = upstream.aiter_raw().__aiter__()
                     while True:
+                        if next_chunk is None:
+                            next_chunk = asyncio.create_task(anext(iterator))
+                        done, _waiting = await asyncio.wait(
+                            {next_chunk},
+                            timeout=0.5,
+                            return_when=asyncio.FIRST_COMPLETED,
+                        )
+                        if not done:
+                            if is_shutting_down() or await request.is_disconnected():
+                                outcome = "cancelled"
+                                break
+                            continue
+                        task = next_chunk
+                        next_chunk = None
                         try:
-                            stopping, chunk = await wait_for_shutdown_or(
-                                anext(iterator)
-                            )
+                            chunk = task.result()
                         except StopAsyncIteration:
                             break
-                        if stopping:
-                            break
-                        assert chunk is not None
                         yield chunk
-                except httpx.RemoteProtocolError:
-                    # A peer restart can end an unbounded SSE response without a
-                    # terminating HTTP chunk. At this point response headers have
-                    # already been sent, so the only correct behavior is EOF.
+                except (
+                    httpx.RemoteProtocolError,
+                    httpx.ReadError,
+                    httpx.ConnectError,
+                ):
+                    outcome = "errored"
+                    # Headers were already sent. A peer restart or half-close is
+                    # represented as EOF while the finally block closes both legs.
                     logger.info(
                         "Peer %s closed agent event stream during restart",
                         instance_id,
                     )
+                except asyncio.CancelledError:
+                    outcome = "cancelled"
+                    raise
+                except Exception:
+                    outcome = "errored"
+                    logger.exception(
+                        "Fleet agent event relay failed",
+                        extra={
+                            "peer_id": instance_id,
+                            "agent_path": proxied_path,
+                            "client_id": client_id,
+                        },
+                    )
+                    raise
             finally:
-                await upstream.aclose()
-                await client.aclose()
+                if next_chunk is not None:
+                    next_chunk.cancel()
+                    await asyncio.gather(next_chunk, return_exceptions=True)
+                try:
+                    await upstream.aclose()
+                finally:
+                    try:
+                        await client.aclose()
+                    finally:
+                        sse_connections.close(upstream_id, outcome)
+                        sse_connections.close(downstream_id, outcome)
+                        logger.info(
+                            "Fleet agent event relay closed",
+                            extra={
+                                "peer_id": instance_id,
+                                "agent_path": proxied_path,
+                                "client_id": client_id,
+                                "outcome": outcome,
+                            },
+                        )
 
         return StreamingResponse(
             relay(),

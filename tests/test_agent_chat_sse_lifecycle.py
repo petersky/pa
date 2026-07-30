@@ -96,6 +96,10 @@ class AgentChatSseLifecycleTests(unittest.TestCase):
             }}
             widget.closeSSE("test-teardown");
             if (active !== 0) throw new Error("stream survived teardown");
+            widget.sessionId = "remote-session";
+            widget.useExternalEventTransport(true);
+            widget.connectSSE();
+            if (active !== 0) throw new Error("external multiplex opened a session stream");
             """
         )
         completed = subprocess.run(

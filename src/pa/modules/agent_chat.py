@@ -911,6 +911,231 @@ def list_agent_sessions(request: Request) -> list[dict]:
     return result
 
 
+@router.get("/session-events/capabilities")
+def multiplexed_session_event_capabilities() -> dict[str, Any]:
+    """Advertise the bounded fleet activity transport to rolling-upgrade peers."""
+    return {
+        "schema_version": 1,
+        "transport": "sse",
+        "scope": "all_live_sessions",
+        "max_browser_connections_per_instance": 1,
+        "resume": "per_session_sequence",
+        "dynamic_membership": True,
+    }
+
+
+def _multiplex_after_cursors(request: Request) -> dict[str, int]:
+    cursors: dict[str, int] = {}
+    raw = request.query_params.get("after")
+    if raw:
+        try:
+            value = json.loads(raw)
+        except (TypeError, ValueError):
+            value = {}
+        if isinstance(value, dict):
+            for session_id, seq in value.items():
+                try:
+                    cursors[str(session_id)] = max(0, int(seq))
+                except (TypeError, ValueError):
+                    continue
+    last_event_id = request.headers.get("Last-Event-ID") or ""
+    if ":" in last_event_id:
+        session_id, raw_seq = last_event_id.rsplit(":", 1)
+        try:
+            cursors[session_id] = max(cursors.get(session_id, 0), int(raw_seq))
+        except ValueError:
+            pass
+    return cursors
+
+
+@router.get("/session-events")
+async def multiplexed_session_events(request: Request) -> StreamingResponse:
+    """Fan every live ACP runtime into one resumable SSE connection.
+
+    Membership is reconciled continuously, so starting or closing a session does
+    not replace the browser transport. Durable transcript sequences remain the
+    per-session ordering and replay boundary.
+    """
+    from pa.core.sse_observability import sse_connections
+    from pa.server.shutdown import is_shutting_down
+
+    manager = _require_session_traffic_ready(request)
+    initial_cursors = _multiplex_after_cursors(request)
+    client_id = request.query_params.get("client_id")
+
+    async def event_stream():
+        subscriptions: dict[
+            str, tuple[AgentSessionRuntime, asyncio.Queue[dict[str, Any]]]
+        ] = {}
+        cursors = dict(initial_cursors)
+        outcome = "closed"
+        connection_id = sse_connections.open(
+            endpoint="/api/agent/session-events",
+            direction="downstream",
+            client_id=client_id,
+            session_scope="all_live",
+        )
+        try:
+            reconnect_attempt = int(
+                request.query_params.get("reconnect_attempt") or 0
+            )
+        except (TypeError, ValueError):
+            reconnect_attempt = 0
+        if reconnect_attempt > 0:
+            sse_connections.increment("reconnecting")
+
+        async def durable_events(
+            runtime: AgentSessionRuntime, after_seq: int
+        ) -> list[dict[str, Any]]:
+            runtime._flush_transcript()
+            await _drain_runtime_transcripts(runtime)
+            events: list[dict[str, Any]] = []
+            cursor = after_seq
+            while True:
+                page = await _runtime_offload(
+                    runtime,
+                    "sqlite.transcript_read",
+                    runtime.store.list_transcript_events,
+                    runtime.session_id,
+                    after_seq=cursor,
+                    limit=TRANSCRIPT_WINDOW_LIMIT,
+                )
+                if not page:
+                    break
+                for item in page:
+                    if item.seq <= cursor:
+                        continue
+                    events.append(
+                        {
+                            "id": item.id,
+                            "seq": item.seq,
+                            "type": item.event_type,
+                            "session_id": item.session_id,
+                            "payload": item.payload,
+                            "created_at": item.created_at.isoformat(),
+                        }
+                    )
+                    cursor = item.seq
+                if len(page) < TRANSCRIPT_WINDOW_LIMIT:
+                    break
+            return events
+
+        try:
+            yield "retry: 5000\nevent: ready\ndata: " + json.dumps(
+                {
+                    "schema_version": 1,
+                    "scope": "all_live_sessions",
+                    "session_count": 0,
+                    "timestamp": datetime.now(UTC).isoformat(),
+                }
+            ) + "\n\n"
+            while not is_shutting_down():
+                if await request.is_disconnected():
+                    outcome = "cancelled"
+                    break
+
+                live = {
+                    runtime.session_id: runtime
+                    for runtime in manager.list_runtimes()
+                    if not getattr(runtime, "_closed", False)
+                }
+                for session_id in list(subscriptions):
+                    runtime, queue = subscriptions[session_id]
+                    if live.get(session_id) is runtime:
+                        continue
+                    runtime.unsubscribe(queue)
+                    del subscriptions[session_id]
+                for session_id, runtime in live.items():
+                    if session_id in subscriptions:
+                        continue
+                    queue = runtime.subscribe()
+                    subscriptions[session_id] = (runtime, queue)
+                    if session_id not in cursors:
+                        # A runtime added after this browser transport opened has
+                        # no client replay contract yet. Begin at its current
+                        # authoritative cursor; the queued subscription preserves
+                        # anything emitted after this point.
+                        cursors[session_id] = int(getattr(runtime, "_seq", 0) or 0)
+                    for event in await durable_events(
+                        runtime, cursors.get(session_id, 0)
+                    ):
+                        seq = int(event.get("seq") or 0)
+                        cursors[session_id] = max(cursors.get(session_id, 0), seq)
+                        yield _multiplex_sse(event)
+
+                pending = {
+                    asyncio.create_task(queue.get()): (session_id, runtime)
+                    for session_id, (runtime, queue) in subscriptions.items()
+                }
+                if not pending:
+                    await asyncio.sleep(1.0)
+                    continue
+                done, waiting = await asyncio.wait(
+                    pending, timeout=1.0, return_when=asyncio.FIRST_COMPLETED
+                )
+                for task in waiting:
+                    task.cancel()
+                if waiting:
+                    await asyncio.gather(*waiting, return_exceptions=True)
+                if not done:
+                    continue
+                ready: list[tuple[str, AgentSessionRuntime, dict[str, Any]]] = []
+                for task in done:
+                    session_id, runtime = pending[task]
+                    ready.append((session_id, runtime, task.result()))
+                ready.sort(
+                    key=lambda item: (
+                        str(item[2].get("created_at") or ""),
+                        item[0],
+                        int(item[2].get("seq") or 0),
+                    )
+                )
+                for session_id, runtime, event in ready:
+                    seq = int(event.get("seq") or 0)
+                    cursor = cursors.get(session_id, 0)
+                    if seq and seq <= cursor:
+                        continue
+                    if seq and seq > cursor + 1:
+                        for retained in await durable_events(runtime, cursor):
+                            retained_seq = int(retained.get("seq") or 0)
+                            if retained_seq >= seq:
+                                break
+                            cursors[session_id] = retained_seq
+                            yield _multiplex_sse(retained)
+                    cursors[session_id] = max(cursors.get(session_id, 0), seq)
+                    yield _multiplex_sse(event)
+        except asyncio.CancelledError:
+            outcome = "cancelled"
+            raise
+        except Exception:
+            outcome = "errored"
+            logger.exception("Multiplexed agent activity stream failed")
+            raise
+        finally:
+            for runtime, queue in subscriptions.values():
+                runtime.unsubscribe(queue)
+            sse_connections.close(connection_id, outcome)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+def _multiplex_sse(data: dict[str, Any]) -> str:
+    session_id = str(data.get("session_id") or "")
+    seq = int(data.get("seq") or 0)
+    lines = [f"id: {session_id}:{seq}"]
+    lines.append(f"event: {data.get('type') or 'message'}")
+    lines.append(f"data: {json.dumps(data, default=str)}")
+    return "\n".join(lines) + "\n\n"
+
+
 def _session_list_item(
     request: Request,
     session: AgentSession,
