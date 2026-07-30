@@ -76,7 +76,7 @@ uv run pa serve
 | `pa channel list` | Show release tracks and latest versions |
 | `pa release patch\|minor\|major\|beta\|alpha` | Bump version and create git tag (maintainers) |
 | `pa init` | Initialize data directory and instance config |
-| `pa config` | View/edit `config.json` (`set`/`add`/`remove`/`unset`, or `-i` interactive) |
+| `pa config` | Schema-driven configuration (`list`/`get`/`set`/`unset`/`validate`/`diff`/`apply`, or `-i` interactive) |
 | `pa serve` | Start the FastAPI + HTMX server (foreground) |
 | `pa status` | Show instance status |
 | `pa mcp` | Run PA's MCP server (stdio, for agent sessions) |
@@ -89,11 +89,19 @@ Persistent instance settings live in `~/.pa/config.json`. Manage them with:
 
 ```bash
 pa config show
+pa config list --json
+pa config schema --json
 pa config set host 0.0.0.0
 pa config add peers http://macbook:8080
 pa config remove peers http://macbook:8080
+pa config apply patch.json --dry-run
 pa config edit          # interactive TUI
 ```
+
+Settings → Configuration and every CLI/API/MCP configuration operation use the
+same registry, including configured/effective values, source precedence,
+validation, redaction, and restart/reload metadata. See
+[docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
 To run a fully isolated development or secondary instance, set `PA_DATA_DIR`.
 PA loads and updates `config.json`, the database, identity, peer and agent settings,
