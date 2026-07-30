@@ -196,6 +196,17 @@ def validate_config_changes(
             raise ConfigError(
                 "telemetry_database_path must be outside PA metadata and sync authority"
             )
+
+    if candidate.backup_destination_dir:
+        from pa.backup.models import validate_backup_destination_path
+
+        try:
+            validate_backup_destination_path(
+                Path(candidate.data_dir),
+                Path(candidate.backup_destination_dir),
+            )
+        except ValueError as exc:
+            raise ConfigError(str(exc)) from exc
     return candidate
 
 

@@ -87,6 +87,13 @@ def _settings_context(request: Request) -> dict:
     from pa.status.info import build_status_snapshot
 
     status = build_status_snapshot(ctx, module_count=len(kernel.registry.modules))
+    backup_service = ctx.services.get("backup_service")
+    backup_status = backup_service.status() if backup_service else None
+    backup_records = (
+        [item.public_dict() for item in backup_service.list_backups()]
+        if backup_service
+        else []
+    )
     return {
         "prefs": prefs,
         "global_prefs": global_prefs,
@@ -107,6 +114,8 @@ def _settings_context(request: Request) -> dict:
             else {"state": "starting"}
         ),
         "configuration": configuration_snapshot(settings),
+        "backup_status": backup_status,
+        "backup_records": backup_records,
     }
 
 

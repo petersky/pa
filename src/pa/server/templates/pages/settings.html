@@ -10,6 +10,7 @@
     ('prompts', 'Prompts'),
     ('telemetry', 'Telemetry'),
     ('configuration', 'Configuration'),
+    ('backups', 'Backups'),
     ('instance', 'Instance'),
   ], active='agent') }}
 </div>
@@ -432,6 +433,153 @@
   <script type="application/json" id="pa-configuration-state">{{ {'revision': configuration.revision, 'csrf_token': csrf_token} | tojson }}</script>
 </section>
 
+<section class="hidden stack" data-section="backups" hidden>
+  <div class="panel">
+    <div class="panel-header">
+      <div>
+        <h2>Metadata backups</h2>
+        <p class="muted small">Verified local recovery points for this PA instance. Archives are not replicated through realm sync.</p>
+      </div>
+      <button type="button" class="primary" id="pa-backup-run">Back up now</button>
+    </div>
+    {% if backup_status %}
+    <dl class="settings-dl">
+      <dt>Instance</dt><dd><code>{{ backup_status.instance_id }}</code></dd>
+      <dt>Next scheduled run</dt><dd>{{ backup_status.next_scheduled_run or 'Not scheduled' }}</dd>
+      <dt>Last attempt</dt><dd>{{ backup_status.last_attempt or 'Never' }}</dd>
+      <dt>Last success</dt><dd>{{ backup_status.last_success or 'Never' }}</dd>
+      <dt>Destination health</dt>
+      <dd>
+        <span class="status status-{{ 'ready' if backup_status.destination_health.writable else 'error' }}">
+          {{ 'writable' if backup_status.destination_health.writable else 'unhealthy' }}
+        </span>
+        {% if backup_status.destination_health.error %}{{ backup_status.destination_health.error }}{% endif %}
+      </dd>
+      <dt>Storage</dt><dd>{{ backup_status.backup_count }} archives · {{ backup_status.storage_used_bytes }} bytes</dd>
+      <dt>Failures</dt>
+      <dd>{{ backup_status.consecutive_failures }} consecutive{% if backup_status.alerting.active %} · alert threshold reached{% endif %}</dd>
+    </dl>
+    {% endif %}
+    <p class="muted small" id="pa-backup-action-status" role="status" hidden></p>
+  </div>
+
+  {% if backup_status %}
+  <div class="panel">
+    <div class="panel-header"><h3>Schedule, verification, and retention</h3></div>
+    <form class="stack" id="pa-backup-config-form">
+      <label class="checkbox-row">
+        <input type="checkbox" name="enabled" {% if backup_status.effective.enabled %}checked{% endif %}>
+        <span>Enable scheduled backups</span>
+      </label>
+      <label><span>Interval (seconds)</span>
+        <input type="number" name="interval_seconds" min="60" value="{{ backup_status.effective.interval_seconds }}" required>
+      </label>
+      <label><span>Destination directory</span>
+        <input type="text" name="destination_dir" value="{{ backup_status.effective.destination_dir }}" required>
+      </label>
+      <label><span>Retained copies</span>
+        <input type="number" name="retention_count" min="1" value="{{ backup_status.effective.retention_count }}" required>
+      </label>
+      <label><span>Maximum age in seconds (optional)</span>
+        <input type="number" name="retention_max_age_seconds" min="60" value="{{ backup_status.effective.retention_max_age_seconds or '' }}">
+      </label>
+      <label><span>Maximum total bytes (optional)</span>
+        <input type="number" name="retention_max_total_bytes" min="1024" value="{{ backup_status.effective.retention_max_total_bytes or '' }}">
+      </label>
+      <label><span>Verification</span>
+        <select name="verification_level">
+          <option value="full" {% if backup_status.effective.verification_level == 'full' %}selected{% endif %}>Full integrity check</option>
+          <option value="quick" {% if backup_status.effective.verification_level == 'quick' %}selected{% endif %}>Quick integrity check</option>
+        </select>
+      </label>
+      <label class="checkbox-row">
+        <input type="checkbox" name="compression" {% if backup_status.effective.compression %}checked{% endif %}>
+        <span>Compress backup archives</span>
+      </label>
+      <label class="checkbox-row">
+        <input type="checkbox" name="run_on_startup" {% if backup_status.effective.run_on_startup %}checked{% endif %}>
+        <span>Back up on startup when the last success is old enough</span>
+      </label>
+      <label><span>Startup minimum age (seconds)</span>
+        <input type="number" name="startup_min_age_seconds" min="0" value="{{ backup_status.effective.startup_min_age_seconds }}" required>
+      </label>
+      <label><span>Backup I/O limit (MiB/s, optional)</span>
+        <input type="number" name="io_limit_mib_per_second" min="0.01" step="0.01" value="{{ backup_status.effective.io_limit_mib_per_second or '' }}">
+      </label>
+      <label><span>Concurrency (single-flight)</span>
+        <input type="number" name="concurrency" min="1" max="1" value="{{ backup_status.effective.concurrency }}" required>
+      </label>
+      <label><span>Maximum schedule jitter (seconds)</span>
+        <input type="number" name="jitter_seconds" min="0" value="{{ backup_status.effective.jitter_seconds }}" required>
+      </label>
+      <label><span>Alert after consecutive failures</span>
+        <input type="number" name="alert_after_failures" min="1" value="{{ backup_status.effective.alert_after_failures }}" required>
+      </label>
+      <button type="submit" class="primary">Save backup policy</button>
+    </form>
+    <details>
+      <summary>Configured value sources</summary>
+      <dl class="settings-dl">
+        {% for key, source in backup_status.sources.items() %}
+        <dt>{{ key }}</dt><dd>{{ source }}</dd>
+        {% endfor %}
+      </dl>
+    </details>
+  </div>
+  {% endif %}
+
+  <div class="panel">
+    <div class="panel-header"><h3>Recovery points</h3></div>
+    {% if backup_records %}
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Created</th><th>Backup ID</th><th>Size</th><th>Verification</th><th>Actions</th></tr></thead>
+        <tbody>
+        {% for backup in backup_records %}
+          <tr>
+            <td>{{ backup.created_at }}</td>
+            <td><code>{{ backup.backup_id }}</code></td>
+            <td>{{ backup.size_bytes }}</td>
+            <td><span class="status status-{{ 'ready' if backup.verified else 'error' }}">{{ 'verified' if backup.verified else 'failed' }}</span></td>
+            <td>
+              <a class="button secondary small" href="/api/backups/{{ backup.backup_id }}/download">Export</a>
+              <button type="button" class="secondary small" data-backup-verify="{{ backup.backup_id }}">Verify</button>
+              <button type="button" class="danger small" data-backup-delete="{{ backup.backup_id }}">Delete</button>
+              <button type="button" class="danger small" data-backup-restore="{{ backup.backup_id }}">Prepare restore</button>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="muted">No recovery points yet.</p>
+    {% endif %}
+    <div class="notice danger">
+      <strong>Restore requires maintenance.</strong>
+      PA will verify compatibility and create a restore request, but it will not overwrite a running writer.
+      Stop the service and run the displayed <code>pa backup restore</code> command. A pre-restore backup is required before state changes.
+      Divergent sync heads must use PA reconciliation or conflict resolution; never force a ref.
+    </div>
+  </div>
+
+  {% if backup_status and backup_status.runs %}
+  <div class="panel">
+    <div class="panel-header"><h3>Recent runs</h3></div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Started</th><th>Trigger</th><th>Status</th><th>Duration</th><th>Size</th><th>Failure</th></tr></thead>
+        <tbody>
+        {% for run in backup_status.runs | reverse %}
+          <tr><td>{{ run.started_at }}</td><td>{{ run.trigger }}</td><td>{{ run.status }}</td><td>{{ run.duration_seconds or '—' }}</td><td>{{ run.size_bytes or '—' }}</td><td>{{ run.failure_reason or '' }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+</section>
+
 <section class="hidden" data-section="instance" hidden>
   <div class="panel">
     <div class="panel-header"><h2>Instance</h2></div>
@@ -730,6 +878,120 @@
       status.classList.add("danger");
       status.textContent = typeof detail === "string" ? detail : "Telemetry settings were not saved.";
     }
+  });
+})();
+</script>
+<script>
+(function () {
+  var form = document.getElementById("pa-backup-config-form");
+  var run = document.getElementById("pa-backup-run");
+  var status = document.getElementById("pa-backup-action-status");
+  if (!form && !run) return;
+  function headers() {
+    var value = {"Content-Type": "application/json", Accept: "application/json"};
+    var csrf = document.querySelector('meta[name="csrf-token"]');
+    if (csrf && csrf.content) value["X-CSRF-Token"] = csrf.content;
+    return value;
+  }
+  async function api(path, options) {
+    var response = await fetch(path, Object.assign({
+      credentials: "same-origin", headers: headers()
+    }, options || {}));
+    var data = await response.json().catch(function () { return {}; });
+    if (!response.ok) throw data;
+    return data;
+  }
+  function report(message, danger) {
+    if (!status) return;
+    status.hidden = false;
+    status.classList.toggle("danger", !!danger);
+    status.textContent = message;
+  }
+  if (form) form.addEventListener("submit", async function (event) {
+    event.preventDefault();
+    function optionalNumber(name) {
+      return form[name].value ? Number(form[name].value) : null;
+    }
+    report("Validating backup policy…");
+    try {
+      await api("/api/backups/config", {
+        method: "PATCH",
+        body: JSON.stringify({
+          enabled: form.enabled.checked,
+          interval_seconds: Number(form.interval_seconds.value),
+          destination_dir: form.destination_dir.value,
+          retention_count: Number(form.retention_count.value),
+          retention_max_age_seconds: optionalNumber("retention_max_age_seconds"),
+          retention_max_total_bytes: optionalNumber("retention_max_total_bytes"),
+          verification_level: form.verification_level.value,
+          compression: form.compression.checked,
+          run_on_startup: form.run_on_startup.checked,
+          startup_min_age_seconds: Number(form.startup_min_age_seconds.value),
+          io_limit_mib_per_second: optionalNumber("io_limit_mib_per_second"),
+          concurrency: Number(form.concurrency.value),
+          jitter_seconds: Number(form.jitter_seconds.value),
+          alert_after_failures: Number(form.alert_after_failures.value)
+        })
+      });
+      report("Backup policy saved. Reload to see effective values and sources.");
+    } catch (error) {
+      report((error.detail && error.detail.message) || "Backup policy was not saved.", true);
+    }
+  });
+  if (run) run.addEventListener("click", async function () {
+    run.disabled = true;
+    report("Creating and verifying an online backup…");
+    try {
+      var result = await api("/api/backups", {
+        method: "POST",
+        body: JSON.stringify({idempotency_key: "ui:" + Date.now()})
+      });
+      report("Backup " + result.backup_id + " verified. Reload to view it.");
+    } catch (error) {
+      report((error.detail && error.detail.message) || "Backup failed.", true);
+    } finally {
+      run.disabled = false;
+    }
+  });
+  document.querySelectorAll("[data-backup-verify]").forEach(function (button) {
+    button.addEventListener("click", async function () {
+      report("Verifying " + button.dataset.backupVerify + "…");
+      try {
+        await api("/api/backups/" + encodeURIComponent(button.dataset.backupVerify) + "/verify", {method: "POST"});
+        report("Backup verified.");
+      } catch (error) {
+        report((error.detail && error.detail.message) || "Verification failed.", true);
+      }
+    });
+  });
+  document.querySelectorAll("[data-backup-delete]").forEach(function (button) {
+    button.addEventListener("click", async function () {
+      var id = button.dataset.backupDelete;
+      if (!window.confirm("Delete verified backup " + id + "? The last known-good backup is protected.")) return;
+      report("Deleting " + id + "…");
+      try {
+        await api("/api/backups/" + encodeURIComponent(id), {method: "DELETE"});
+        button.closest("tr").remove();
+        report("Backup deleted.");
+      } catch (error) {
+        report((error.detail && error.detail.message) || "Backup was not deleted.", true);
+      }
+    });
+  });
+  document.querySelectorAll("[data-backup-restore]").forEach(function (button) {
+    button.addEventListener("click", async function () {
+      var id = button.dataset.backupRestore;
+      if (!window.confirm("Prepare guarded restore of " + id + "? PA will not overwrite the running writer.")) return;
+      try {
+        var result = await api("/api/backups/restores", {
+          method: "POST",
+          body: JSON.stringify({backup_id: id, confirm_instance_id: "{{ backup_status.instance_id if backup_status else '' }}"})
+        });
+        report(result.instructions.join(" "));
+      } catch (error) {
+        report((error.detail && error.detail.message) || "Restore request failed.", true);
+      }
+    });
   });
 })();
 </script>
