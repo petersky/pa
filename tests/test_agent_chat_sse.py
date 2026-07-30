@@ -500,7 +500,10 @@ class AgentChatSseTests(unittest.TestCase):
                 dispatch_id="dispatch-1",
                 mutation_id="mutation-1",
                 card_id="card-1",
-                request_payload={"message": "work"},
+                request_payload={
+                    "message": "work",
+                    "mode_id": "agent-full-access",
+                },
                 authority_instance_id="authority",
                 authority_url="http://authority",
                 target_instance_id="target",
@@ -540,6 +543,7 @@ class AgentChatSseTests(unittest.TestCase):
                 label="card:card-1:dispatch:dispatch-1",
                 card_id="card-1",
                 dispatch_id="dispatch-1",
+                mode_id="agent-full-access",
             )
 
             async def first() -> dict:
@@ -566,6 +570,10 @@ class AgentChatSseTests(unittest.TestCase):
             self.assertEqual(call["realm_id"], "default")
             self.assertEqual(
                 call["execution_context_seed"]["dispatch_id"], "dispatch-1"
+            )
+            self.assertEqual(
+                call["initial_configuration"].mode_id,
+                "agent-full-access",
             )
             self.assertEqual(record.session_id, "session-new")
 

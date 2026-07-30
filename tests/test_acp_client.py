@@ -29,6 +29,35 @@ from pa.instance.agent_session import AgentSessionRuntime
 
 
 class PAClientFileSystemTests(unittest.TestCase):
+    def test_provider_reported_pa_mcp_startup_failure_is_observable(self) -> None:
+        client = PAClient(MagicMock())
+
+        async def run() -> str | None:
+            await client.session_update(
+                "agent-session",
+                {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "mcp_startup.pa",
+                    "title": "mcp__pa__startup",
+                    "status": "failed",
+                    "content": [
+                        {
+                            "type": "content",
+                            "content": {
+                                "type": "text",
+                                "text": "owner socket permission denied",
+                            },
+                        }
+                    ],
+                },
+            )
+            return await client.wait_for_pa_mcp_startup_failure(
+                "agent-session", timeout=0.01
+            )
+
+        failure = asyncio.run(run())
+        self.assertIn("owner socket permission denied", failure or "")
+
     def test_read_and_write_text_file_requests_are_supported(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "notes.txt"
@@ -397,6 +426,72 @@ class AgentConfigurationAdmissionTests(unittest.IsolatedAsyncioTestCase):
 
 
 class AgentSessionRestoreTests(unittest.TestCase):
+    def test_provider_spawn_environment_excludes_private_owner_controls(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = MagicMock()
+            acp = MagicMock()
+            acp.initialize = AsyncMock(return_value={"agentCapabilities": {}})
+            acp.new_session = AsyncMock(
+                return_value=SimpleNamespace(session_id="agent-session")
+            )
+            context = MagicMock()
+            context.__aenter__ = AsyncMock(return_value=(acp, MagicMock()))
+            context.__aexit__ = AsyncMock()
+            connection = AgentConnection(
+                Settings(data_dir=Path(tmp)),
+                store,
+                provider_spec=AgentProviderSpec(
+                    id="generic",
+                    display_name="Generic",
+                    command="agent",
+                    env={
+                        "PA_LOCAL_API_TOKEN": "provider-hostile-token",
+                        "SAFE_PROVIDER_VALUE": "yes",
+                    },
+                ),
+                extra_env={
+                    "PA_OWNER_SOCKET": "/production/owner.sock",
+                    "PA_OWNER_API_URL": "http://production-owner",
+                    "PA_SYNC_TOKEN": "sync-secret",
+                    "SAFE_SESSION_VALUE": "yes",
+                },
+            )
+
+            async def run() -> None:
+                with (
+                    patch.dict(
+                        "os.environ",
+                        {
+                            "PATH": "/bin",
+                            "PA_DATA_DIR": "/service/data",
+                            "PA_INSTANCE_ID": "service-instance",
+                            "PA_OWNER_SOCKET": "/service/owner.sock",
+                            "PA_LOCAL_API_TOKEN": "service-token",
+                            "PA_GITHUB_TOKEN": "github-secret",
+                        },
+                        clear=True,
+                    ),
+                    patch("pa.acp.client.spawn_agent", return_value=context) as spawn,
+                    patch("pa.acp.client.pa_mcp_servers", return_value=[]),
+                ):
+                    await connection.connect()
+                environment = spawn.call_args.kwargs["env"]
+                self.assertEqual(environment["SAFE_PROVIDER_VALUE"], "yes")
+                self.assertEqual(environment["SAFE_SESSION_VALUE"], "yes")
+                self.assertEqual(environment["PATH"], "/bin")
+                for private_name in (
+                    "PA_OWNER_SOCKET",
+                    "PA_OWNER_API_URL",
+                    "PA_LOCAL_API_TOKEN",
+                    "PA_SYNC_TOKEN",
+                    "PA_GITHUB_TOKEN",
+                    "PA_DATA_DIR",
+                    "PA_INSTANCE_ID",
+                ):
+                    self.assertNotIn(private_name, environment)
+
+            asyncio.run(run())
+
     def test_load_capability_is_detected_in_dict_and_object_responses(self) -> None:
         self.assertTrue(
             _agent_supports_load({"agentCapabilities": {"loadSession": True}})

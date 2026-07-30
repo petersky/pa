@@ -12,6 +12,7 @@ from pa.acp.mcp_config import (
     owner_endpoint,
     pa_mcp_servers,
     probe_owner_channel,
+    probe_pa_mcp_stdio,
 )
 from pa.auth.users import UserDirectory
 from pa.config import Settings
@@ -148,3 +149,20 @@ class PaMcpServersTests(unittest.TestCase):
             ):
                 result = probe_owner_channel(settings, timeout=0)
             self.assertEqual(result, {"state": "connected", "endpoint_type": "unix"})
+
+    def test_stdio_mcp_smoke_initializes_lists_tools_and_shuts_down(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = self._settings(tmp)
+            with patch.dict(
+                os.environ,
+                {
+                    "PA_OWNER_API_URL": "",
+                    "PA_OWNER_SOCKET": str(Path(tmp) / "owner.sock"),
+                },
+                clear=False,
+            ):
+                result = probe_pa_mcp_stdio(settings, timeout=20)
+
+            self.assertEqual(result["state"], "connected")
+            self.assertEqual(result["classification"], "ok")
+            self.assertGreater(result["tool_count"], 0)

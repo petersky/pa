@@ -33,6 +33,27 @@ class WorkspaceProvisioningError(RuntimeError):
     """A visible, retryable failure while preparing an execution workspace."""
 
 
+def provider_execution_policy(provider_id: str, mode_id: str | None) -> dict[str, str]:
+    """Translate a durable provider mode into its process sandbox contract."""
+    if provider_id != "codex":
+        return {}
+    policies = {
+        "read-only": {
+            "sandbox": "read-only",
+            "approval_policy": "on-request",
+        },
+        "agent": {
+            "sandbox": "workspace-write",
+            "approval_policy": "on-request",
+        },
+        "agent-full-access": {
+            "sandbox": "danger-full-access",
+            "approval_policy": "never",
+        },
+    }
+    return dict(policies.get(str(mode_id or ""), {}))
+
+
 class RepositoryPolicy(BaseModel):
     partial_clone: bool = True
     submodules: Literal["none", "checkout"] = "none"

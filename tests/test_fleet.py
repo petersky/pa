@@ -1588,7 +1588,21 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
             request.headers = {"idempotency-key": "prompt-failure"}
             peer = AsyncMock(
                 side_effect=[
-                    {"session": {"id": "remote-session", "title": "Remote smoke"}},
+                    {
+                        "session": {
+                            "id": "remote-session",
+                            "title": "Remote smoke",
+                        },
+                        "configuration": {
+                            "state": "ready",
+                            "effective": {
+                                "model_id": None,
+                                "mode_id": "agent-full-access",
+                                "reasoning": None,
+                                "config": {},
+                            },
+                        },
+                    },
                     HTTPException(status_code=503, detail="provider unavailable"),
                 ]
             )
@@ -1601,7 +1615,11 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
                 result = await start_remote_agent_work(
                     request,
                     "mini-1",
-                    RemoteAgentStartBody(title="Remote smoke", message="Start work"),
+                    RemoteAgentStartBody(
+                        title="Remote smoke",
+                        message="Start work",
+                        mode_id="agent-full-access",
+                    ),
                 )
 
             record = ctx.services["dispatch_store"].get(result["dispatch_id"])
@@ -1626,6 +1644,11 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(record.session_id, "remote-session")
             self.assertEqual(record.state, "failed")
             self.assertIn("provider unavailable", record.last_error)
+            self.assertEqual(record.request_payload["mode_id"], "agent-full-access")
+            self.assertEqual(
+                peer.await_args_list[0].kwargs["body"]["mode_id"],
+                "agent-full-access",
+            )
             store.add_knowledge.assert_not_called()
 
     async def test_card_dispatch_does_not_reuse_another_hosts_repo_path(self) -> None:
