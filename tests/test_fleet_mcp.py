@@ -52,6 +52,12 @@ class FleetMcpTests(unittest.TestCase):
             "delete_placement_default_group",
             "preview_fleet_placement",
             "list_fleet_policy_audit",
+            "discover_fleet_bootstrap_target",
+            "create_fleet_bootstrap_job",
+            "list_fleet_bootstrap_jobs",
+            "get_fleet_bootstrap_job",
+            "control_fleet_bootstrap_job",
+            "submit_fleet_bootstrap_input",
         }
         self.assertTrue(expected.issubset(self.mcp.functions))
 
@@ -63,6 +69,14 @@ class FleetMcpTests(unittest.TestCase):
         )
         self.assertIn("authority_instance_id", dispatch.parameters)
         self.assertIn("config", dispatch.parameters)
+
+        bootstrap = inspect.signature(
+            self.mcp.functions["create_fleet_bootstrap_job"]
+        )
+        self.assertEqual(
+            list(bootstrap.parameters)[:4],
+            ["target", "instance_name", "instance_url", "idempotency_key"],
+        )
 
         for name in ("retry_dispatch", "cancel_dispatch"):
             signature = inspect.signature(self.mcp.functions[name])

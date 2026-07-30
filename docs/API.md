@@ -11,6 +11,30 @@ Missing or invalid authentication returns `401`; an absent or mismatched CSRF
 token returns `403`. CLI user bearer tokens are CSRF-exempt. Fleet-internal and
 sync operations use the instance bearer token documented on those operations.
 
+## Durable fleet onboarding
+
+`POST /api/fleet/bootstrap/discover` resolves an OpenSSH target and returns its
+configuration and untrusted live host-key fingerprint without mutating the
+target. `POST /api/fleet/bootstrap-jobs` requires an `idempotency_key` and
+creates a versioned 13-phase plan. Set `start=true` only after reviewing the
+plan and confirming an unknown key's exact fingerprint.
+
+Read and control jobs through:
+
+- `GET /api/fleet/bootstrap-jobs` and `/incomplete`
+- `GET /api/fleet/bootstrap-jobs/{job_id}`
+- `POST .../{job_id}/start|resume|retry|cancel`
+- `POST .../{job_id}/input` for exact host-key confirmation, a short-lived
+  password/passphrase, or explicit provider/GitHub/smoke completion evidence
+
+Secret input is held only in process memory and replaced with a sanitized audit
+event. Restarted active jobs become retryable from their durable checkpoint.
+New instances receive a disabled quarantine policy before optional setup, a
+manual-only policy after capability checks, and automatic placement only after
+every requested probe and smoke dispatch passes. MCP exposes the same lifecycle
+through the `*_fleet_bootstrap_*` tools; CLI callers use
+`pa fleet setup-machine` and `pa fleet bootstrap-job`.
+
 ## Supported HTTP automation client
 
 Use `pa.http_client.PAClient` for cookie-authenticated HTTP automation. It owns

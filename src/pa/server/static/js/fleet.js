@@ -74,7 +74,7 @@
   }
 
   function clearSecrets(form) {
-    ["password", "passphrase"].forEach(function (name) {
+    ["password", "passphrase", "sudo_password"].forEach(function (name) {
       var el = form.elements[name];
       if (el) el.value = "";
     });
@@ -2803,7 +2803,88 @@
     }
   }
 
+  function renderBootstrapInput(job) {
+    var panel = $("#pa-bootstrap-required-input");
+    if (!panel) return;
+    var required = job && job.required_input;
+    panel.hidden = !required;
+    if (!required) {
+      panel.textContent = "";
+      return;
+    }
+    panel.innerHTML = "<strong>Action required: " +
+      escapeHtml(required.kind.replace(/_/g, " ")) + "</strong><p>" +
+      escapeHtml(required.prompt) + "</p><pre>" +
+      escapeHtml(JSON.stringify(required.details || {}, null, 2)) + "</pre>" +
+      "<p class=\"muted small\">Complete this supported action, then resume the durable job. Secret values are submitted through the protected input endpoint and are never persisted.</p>";
+  }
+
+  async function pollBootstrapJob(jobId, logEl, statusEl) {
+    while (true) {
+      var job = await api("/api/fleet/bootstrap-jobs/" + encodeURIComponent(jobId));
+      if (logEl) {
+        logEl.hidden = false;
+        logEl.textContent = job.log || "";
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+      if (statusEl) {
+        statusEl.textContent = "Phase: " + String(job.current_phase || "pending").replace(/_/g, " ") +
+          " · state: " + String(job.state || "pending").replace(/_/g, " ") +
+          " · readiness: " + String(job.readiness || "pending").replace(/_/g, " ");
+      }
+      renderBootstrapInput(job);
+      if (job.terminal || job.state === "waiting_input" || job.state === "retryable") {
+        if (job.state === "ready") setTimeout(refreshFleetPage, 800);
+        return job;
+      }
+      await new Promise(function (resolve) { setTimeout(resolve, 1000); });
+    }
+  }
+
   document.addEventListener("click", function (e) {
+    var discoverButton = e.target.closest("[data-bootstrap-discover]");
+    if (discoverButton) {
+      e.preventDefault();
+      var discoverForm = discoverButton.closest("form");
+      var targetInput = discoverForm && discoverForm.elements.target;
+      var discoverStatus = $("#pa-fleet-ssh-status");
+      if (!targetInput || !targetInput.value.trim()) {
+        if (discoverStatus) discoverStatus.textContent = "Enter an OpenSSH target first.";
+        return;
+      }
+      discoverButton.disabled = true;
+      if (discoverStatus) discoverStatus.textContent = "Resolving SSH configuration and host key…";
+      api("/api/fleet/bootstrap/discover", {
+        method: "POST", body: { target: targetInput.value.trim() }
+      }).then(function (result) {
+        var discovery = result.discovery || {};
+        var panel = $("#pa-bootstrap-discovery");
+        var details = $("#pa-bootstrap-discovery-details");
+        var confirmation = $("#pa-bootstrap-host-key-confirm");
+        var fingerprint = discoverForm.elements.host_key_fingerprint;
+        if (panel) panel.hidden = false;
+        if (details) {
+          details.textContent = [
+            "Host: " + (discovery.host || ""),
+            "User: " + (discovery.user || ""),
+            "Port: " + (discovery.port || ""),
+            "Host key: " + (discovery.host_key_algorithm || "unavailable"),
+            "Fingerprint: " + (discovery.host_key_fingerprint || "unavailable"),
+            "Trust state: " + (discovery.host_key_state || "unavailable")
+          ].join("\n");
+        }
+        if (fingerprint) fingerprint.value = discovery.host_key_fingerprint || "";
+        if (confirmation) confirmation.hidden = !result.requires_host_key_confirmation;
+        if (discoverStatus) {
+          discoverStatus.textContent = result.requires_host_key_confirmation
+            ? "Verify the exact fingerprint before creating the job."
+            : "Target is present in known_hosts. Review the plan and continue.";
+        }
+      }).catch(function (err) {
+        if (discoverStatus) discoverStatus.textContent = err.message;
+      }).finally(function () { discoverButton.disabled = false; });
+      return;
+    }
     var copyButton = e.target.closest("[data-copy-value]");
     if (copyButton) {
       e.preventDefault();
@@ -3497,12 +3578,59 @@
       var logEl = $("#pa-fleet-ssh-log");
       var statusEl = $("#pa-fleet-ssh-status");
       var body = formToObject(form);
-      body.port = parseInt(body.port || "22", 10);
+      var providers = Array.prototype.map.call(
+        form.querySelectorAll('input[name="providers"]:checked'),
+        function (input) { return input.value; }
+      );
+      var repositories = String(body.repositories || "").split(/\r?\n/)
+        .map(function (value) { return value.trim(); }).filter(Boolean);
+      var requiresConfirmation = !$("#pa-bootstrap-host-key-confirm").hidden;
+      if (requiresConfirmation && !form.elements.confirm_host_key.checked) {
+        if (statusEl) statusEl.textContent = "Confirm the exact discovered host-key fingerprint first.";
+        return;
+      }
+      var bootstrapRequest = {
+        target: body.target,
+        identity_file: body.identity_file || "",
+        instance_name: body.instance_name,
+        instance_url: body.instance_url,
+        channel: body.channel,
+        realm: body.realm,
+        existing_install_action: body.existing_install_action,
+        worker_profile: body.worker_profile,
+        dispatch_capacity: parseInt(body.dispatch_capacity || "1", 10),
+        automatic_placement: !!form.elements.automatic_placement.checked,
+        providers: providers,
+        repositories: repositories,
+        browser: !!form.elements.browser.checked,
+        repository_cache: !!form.elements.repository_cache.checked,
+        github_transport: body.github_transport,
+        smoke_dispatch: !!body.smoke_card_id,
+        smoke_card_id: body.smoke_card_id || "",
+        sudo_policy: body.sudo_policy,
+        password: body.password || "",
+        passphrase: body.passphrase || ""
+      };
+      if (requiresConfirmation) {
+        bootstrapRequest.host_key_policy = "pinned";
+        bootstrapRequest.host_key_fingerprint = body.host_key_fingerprint;
+      }
       clearSecrets(form);
-      if (statusEl) statusEl.textContent = "Starting…";
-      api("/api/fleet/install-remote", { method: "POST", body: body })
+      if (statusEl) statusEl.textContent = "Creating durable plan…";
+      api("/api/fleet/bootstrap-jobs", {
+        method: "POST",
+        body: {
+          idempotency_key: "fleet-ui-" + (
+            window.crypto && crypto.randomUUID
+              ? crypto.randomUUID()
+              : String(Date.now()) + "-" + Math.random().toString(16).slice(2)
+          ),
+          start: true,
+          request: bootstrapRequest
+        }
+      })
         .then(function (job) {
-          return pollJob(job.job_id, logEl, statusEl);
+          return pollBootstrapJob(job.job_id, logEl, statusEl);
         })
         .catch(function (err) {
           if (statusEl) statusEl.textContent = err.message;

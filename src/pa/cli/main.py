@@ -1087,6 +1087,122 @@ def fleet_install_remote(
     typer.echo(f"OK — {name} at {url}")
 
 
+@fleet_app.command("setup-machine")
+def fleet_setup_machine(
+    target: Annotated[str, typer.Argument(help="OpenSSH alias or user@host")],
+    name: Annotated[str, typer.Option(help="Remote instance name")],
+    url: Annotated[str, typer.Option(help="Remote advertised PA URL")],
+    idempotency_key: Annotated[
+        str, typer.Option(help="Stable retry-safe operation key")
+    ],
+    realm: Annotated[str, typer.Option(help="Realm to join")] = "default",
+    profile: Annotated[
+        str,
+        typer.Option(
+            help="Worker profile: sync_ui, manual, research, code, or operations"
+        ),
+    ] = "manual",
+    providers: Annotated[
+        str, typer.Option(help="Comma-separated required providers")
+    ] = "",
+    repositories: Annotated[
+        str, typer.Option(help="Comma-separated repository URLs")
+    ] = "",
+    github_transport: Annotated[
+        str, typer.Option(help="none, https, or ssh")
+    ] = "none",
+    channel: Annotated[str, typer.Option(help="Release channel")] = "release",
+    release_ref: Annotated[
+        str, typer.Option(help="Optional immutable tag or commit")
+    ] = "",
+    automatic: Annotated[
+        bool,
+        typer.Option(
+            "--automatic-placement",
+            help="Enable automatic placement only after all checks pass",
+        ),
+    ] = False,
+    capacity: Annotated[int, typer.Option(help="Dispatch capacity")] = 1,
+    smoke_card: Annotated[
+        str, typer.Option(help="Optional bounded smoke-dispatch card ID")
+    ] = "",
+    start: Annotated[
+        bool, typer.Option(help="Start immediately after creating the plan")
+    ] = False,
+) -> None:
+    """Plan or start the durable “set up this machine” workflow."""
+    import json
+
+    settings = get_settings()
+    try:
+        result = _local_api_request(
+            settings,
+            "POST",
+            "/api/fleet/bootstrap-jobs",
+            body={
+                "idempotency_key": idempotency_key,
+                "start": start,
+                "request": {
+                    "target": target,
+                    "instance_name": name,
+                    "instance_url": url,
+                    "realm": realm,
+                    "worker_profile": profile,
+                    "providers": [
+                        value.strip()
+                        for value in providers.split(",")
+                        if value.strip()
+                    ],
+                    "repositories": [
+                        value.strip()
+                        for value in repositories.split(",")
+                        if value.strip()
+                    ],
+                    "github_transport": github_transport,
+                    "channel": channel,
+                    "release_ref": release_ref,
+                    "automatic_placement": automatic,
+                    "dispatch_capacity": capacity,
+                    "smoke_dispatch": bool(smoke_card),
+                    "smoke_card_id": smoke_card,
+                },
+            },
+        )
+    except RuntimeError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1) from exc
+    typer.echo(json.dumps(result, indent=2))
+
+
+@fleet_app.command("bootstrap-job")
+def fleet_bootstrap_job(
+    job_id: Annotated[str, typer.Argument(help="Durable bootstrap job ID")],
+    action: Annotated[
+        str,
+        typer.Option(help="get, start, resume, retry, or cancel"),
+    ] = "get",
+) -> None:
+    """Read or control a durable machine-onboarding job."""
+    import json
+
+    if action not in {"get", "start", "resume", "retry", "cancel"}:
+        typer.echo("Unsupported action", err=True)
+        raise typer.Exit(2)
+    settings = get_settings()
+    method = "GET" if action == "get" else "POST"
+    suffix = "" if action == "get" else f"/{action}"
+    try:
+        result = _local_api_request(
+            settings,
+            method,
+            f"/api/fleet/bootstrap-jobs/{job_id}{suffix}",
+        )
+    except RuntimeError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1) from exc
+    typer.echo(json.dumps(result, indent=2))
+
+
 @realm_app.command("list")
 def realm_list() -> None:
     """List subscribed realms and memberships."""
