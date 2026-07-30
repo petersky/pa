@@ -3139,4 +3139,7 @@
     if (typeof target === "string") target = document.querySelector(target);
     destroyAll(target || document, "spa-swap");
   });
+  document.addEventListener("pa:historyWillReload", function () {
+    destroyAll(document, "history-reload");
+  });
 })();

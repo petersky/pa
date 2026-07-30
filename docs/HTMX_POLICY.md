@@ -34,9 +34,52 @@ fragments. `htmx.ajax()` drives SPA/popstate and Fleet refreshes;
 
 PA uses the HTMX 2 event names `htmx:configRequest`, `htmx:beforeSwap`,
 `htmx:afterSwap`, `htmx:responseError`, `htmx:historyRestore`,
-`htmx:pushedIntoHistory`, and `htmx:replacedInHistory`. Do not add HTMX 4 aliases
+`htmx:pushedIntoHistory`, `htmx:replacedInHistory`,
+`htmx:historyItemCreated`, `htmx:historyCacheError`,
+`htmx:historyCacheHit`, and `htmx:historyCacheMiss`. Do not add HTMX 4 aliases
 alongside them: a compatibility pair can execute idempotent-looking handlers
 twice. The contract test rejects known HTMX 4 event names.
+
+## History storage and restoration
+
+PA deliberately does not use HTMX's default whole-body, ten-entry history
+cache. `#app-view` is the only `hx-history-elt`, the cache holds at most three
+entries, each serialized entry is limited to 128 KiB, and the complete cache is
+limited to 256 KiB. The entry limit is also set in `htmx-config`; the byte limits
+are enforced by `history-policy.js` before HTMX writes.
+
+Agent, Fleet, and Workshop are live-heavy surfaces and carry
+`hx-history="false"`. Agent also carries an explicit private marker. Their
+transcripts, raw tool output, drafts, permission controls, EventSource-owned
+state, and other live DOM therefore never enter `htmx-history-cache`. Agent
+drafts remain governed solely by the separately scoped `localStorage` mechanism
+documented in `AGENT_CHAT_DRAFTS.md`.
+
+Before each permitted snapshot write, PA measures UTF-8 snapshot and cache size,
+trims old entries to both budgets, and preflights the exact bounded payload.
+An unexpectedly oversized or private snapshot is replaced by a small reload
+marker rather than persisted. Startup also purges legacy cached Agent,
+Workshop, Fleet, or oversized entries left by an older PA build. Restoration
+sees a reload marker before swapping and performs a normal server navigation.
+
+Quota and storage-denied failures disable the cache for the current document
+lifecycle, empty the shared pending entry list so HTMX cannot enter its
+one-error-per-eviction loop, and restore through a normal server request.
+On `htmx:historyCacheMiss`, PA cancels HTMX's fragment request and performs a
+full document reload, so live-page back/forward navigation is server-restored.
+Before a fallback, PA emits `pa:historyWillReload`;
+Agent, Fleet, Workshop, and board controllers close view-owned EventSources,
+pollers, and in-flight refreshes. Normal page initialization then creates one
+replacement controller.
+
+`window.PAHistoryPolicy.snapshot()` exposes the policy, last measured byte
+counts, and tab-lifetime counters. `pa:historyDiagnostic` carries the structured
+`pa.history-diagnostic/v1` signal. It contains only failure class, phase,
+surface class, byte counts, and entry count—never a URL, transcript, tool
+output, draft, secret, permission state, or serialized page content. Expected
+quota, denial, unavailable-storage, oversize, private, and cache-miss conditions
+are quiet. Unexpected parsing, serialization, or storage errors emit one
+content-free console diagnostic.
 
 Every HTMX mutation receives PA's `X-CSRF-Token` in `htmx:configRequest`.
 Server routing continues to use the stable `HX-Request` request header. Status
