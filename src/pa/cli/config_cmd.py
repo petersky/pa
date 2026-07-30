@@ -12,6 +12,7 @@ from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
+from pa.cli.config_tui import ExitCode, run_config_editor
 from pa.config import get_settings
 from pa.domain.config_edit import (
     ConfigError,
@@ -96,6 +97,13 @@ def config_callback(
             help="Open interactive config TUI",
         ),
     ] = False,
+    line_mode: Annotated[
+        bool,
+        typer.Option(
+            "--line",
+            help="Use the accessible line-oriented editor",
+        ),
+    ] = False,
 ) -> None:
     """Manage instance configuration (config.json).
 
@@ -105,11 +113,11 @@ def config_callback(
         return
     if interactive or ctx.invoked_subcommand is None:
         try:
-            run_interactive(reveal=False)
+            code = run_interactive(reveal=False, force_line=line_mode)
         except ConfigError as exc:
             typer.echo(str(exc), err=True)
             raise typer.Exit(1) from exc
-        raise typer.Exit(0)
+        raise typer.Exit(int(code))
 
 
 @config_app.command("show")
@@ -240,17 +248,30 @@ def edit_cmd(
         bool,
         typer.Option("--reveal", help="Show sensitive values in full"),
     ] = False,
+    line_mode: Annotated[
+        bool,
+        typer.Option("--line", help="Use the accessible line-oriented editor"),
+    ] = False,
 ) -> None:
     """Interactive terminal UI for managing config.json."""
     try:
-        run_interactive(reveal=reveal)
+        code = run_interactive(reveal=reveal, force_line=line_mode)
     except ConfigError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(1) from exc
+    raise typer.Exit(int(code))
 
 
-def run_interactive(*, reveal: bool = False) -> None:
-    """Rich-based interactive config manager."""
+def run_interactive(
+    *, reveal: bool = False, force_line: bool = False
+) -> ExitCode:
+    """Compatibility entry point for the staged terminal editor."""
+    del reveal  # secrets are never revealable in the staged editor
+    return run_config_editor(_data_dir(), force_line=force_line)
+
+
+def _run_legacy_interactive(*, reveal: bool = False) -> None:
+    """Legacy prompt implementation retained temporarily for API compatibility."""
     data_dir = _data_dir()
     require_config(data_dir)  # fail fast if missing
 

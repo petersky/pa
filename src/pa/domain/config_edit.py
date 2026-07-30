@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass
 from enum import StrEnum
@@ -33,6 +34,10 @@ class ConfigError(ValueError):
     """Invalid config key, value, or operation."""
 
 
+class ConfigConflictError(ConfigError):
+    """The persisted configuration changed after the editing snapshot."""
+
+
 class MutateOp(StrEnum):
     SET = "set"
     ADD = "add"
@@ -48,6 +53,10 @@ class FieldSpec:
     editable: bool = True
     sensitive: bool = False
     list_ops: bool = False  # supports add/remove
+    category: str = "General"
+    allowed: tuple[str, ...] = ()
+    example: str = ""
+    dangerous: bool = False
 
 
 # Keys that affect the host service unit environment.
@@ -110,98 +119,133 @@ FIELD_SPECS: dict[str, FieldSpec] = {
         "fleet_owner_url",
         "optional_str",
         "Owner base URL (set when joining a fleet)",
+        category="Fleet",
+        example="https://owner.example:8080",
+        dangerous=True,
     ),
     "pr_supervisor_authority_url": FieldSpec(
         "pr_supervisor_authority_url",
         "optional_str",
         "Single fenced PR-supervisor lease authority URL (empty follows fleet owner)",
+        category="Fleet",
+        example="https://owner.example:8080",
     ),
     "instance_url": FieldSpec(
         "instance_url",
         "optional_str",
         "Advertised URL (Tailscale/LAN hostname, not localhost)",
+        category="Network",
+        example="https://pa.example:8080",
     ),
     "host": FieldSpec(
         "host",
         "optional_str",
         "Server bind address (e.g. 127.0.0.1 or 0.0.0.0)",
+        category="Network",
+        example="127.0.0.1",
+        dangerous=True,
     ),
     "web_listeners": FieldSpec(
         "web_listeners",
         "list_str",
         "Explicit web binds (HOST or HOST:PORT; bracket IPv6 with a port)",
         list_ops=True,
+        category="Network",
+        example="127.0.0.1:8080",
+        dangerous=True,
     ),
     "subscribed_realms": FieldSpec(
         "subscribed_realms",
         "list_str",
         "Realm ids this instance syncs",
         list_ops=True,
+        category="Fleet",
     ),
     "zone": FieldSpec(
         "zone",
         "str",
         "Network zone label",
+        category="Fleet",
     ),
     "capabilities": FieldSpec(
         "capabilities",
         "list_str",
         "Advertised capability tags",
         list_ops=True,
+        category="Fleet",
     ),
     "dispatch_capacity": FieldSpec(
         "dispatch_capacity",
         "int",
         "Global fleet dispatch/execution slots (1–256)",
+        category="Execution",
+        example="4",
     ),
     "dispatch_provider_capacities": FieldSpec(
         "dispatch_provider_capacities",
         "dict_int",
         'Optional provider slot limits as JSON, e.g. {"codex": 2}',
+        category="Execution",
+        example='{"codex": 2}',
     ),
     "relay_enabled": FieldSpec(
         "relay_enabled",
         "bool",
         "Whether this instance relays for peers",
+        category="Fleet",
+        dangerous=True,
     ),
     "peers": FieldSpec(
         "peers",
         "list_str",
         "Peer instance base URLs",
         list_ops=True,
+        category="Network",
+        example="https://peer.example:8080",
     ),
     "release_track": FieldSpec(
         "release_track",
         "str",
         "Update track: release, beta, alpha, dev, or pypi",
+        category="Updates",
+        allowed=("release", "beta", "alpha", "dev", "pypi"),
     ),
     "sync_token": FieldSpec(
         "sync_token",
         "optional_str",
         "Shared secret for inter-instance sync APIs",
         sensitive=True,
+        category="Secrets",
+        dangerous=True,
     ),
     "session_secret": FieldSpec(
         "session_secret",
         "optional_str",
         "Cookie/session signing secret",
         sensitive=True,
+        category="Secrets",
+        dangerous=True,
     ),
     "agent_provider": FieldSpec(
         "agent_provider",
         "str",
         "Default ACP provider (cursor, codex, openinterpreter, …)",
+        category="Agent",
+        allowed=("cursor", "codex", "openinterpreter"),
     ),
     "agent_command": FieldSpec(
         "agent_command",
         "optional_str",
         "Optional ACP spawn command override",
+        category="Agent",
+        example="/path/to/acp-agent",
     ),
     "agent_args": FieldSpec(
         "agent_args",
         "optional_list_str",
         "Optional ACP spawn args override",
         list_ops=True,
+        category="Agent",
     ),
 }
 
@@ -233,12 +277,9 @@ def format_value(value: Any, *, reveal: bool = False, sensitive: bool = False) -
     if value is None:
         return "(null)"
     if sensitive and not reveal:
-        text = str(value)
-        if not text:
+        if not str(value):
             return "(empty)"
-        if len(text) <= 4:
-            return "****"
-        return text[:2] + "…" + text[-2:]
+        return "<redacted>"
     if isinstance(value, list):
         return json.dumps(value)
     if isinstance(value, bool):
@@ -248,6 +289,60 @@ def format_value(value: Any, *, reveal: bool = False, sensitive: bool = False) -
 
 def config_as_dict(config: InstanceConfig) -> dict[str, Any]:
     return config.model_dump()
+
+
+def config_revision(config: InstanceConfig) -> str:
+    """Stable opaque revision used for optimistic concurrency."""
+    payload = json.dumps(
+        config.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+    ).encode()
+    return hashlib.sha256(payload).hexdigest()
+
+
+def validate_config_changes(
+    base: InstanceConfig, changes: dict[str, Any]
+) -> InstanceConfig:
+    """Validate a complete staged change set without writing it."""
+    data = base.model_dump()
+    for key, value in changes.items():
+        spec = get_field_spec(key)
+        if not spec.editable:
+            raise ConfigError(f"{key} is read-only")
+        data[key] = validate_field_value(key, value)
+    try:
+        return InstanceConfig.model_validate(data)
+    except ValidationError as exc:
+        errors = "; ".join(
+            f"{'.'.join(str(part) for part in item.get('loc', ()))}: "
+            f"{item.get('msg', 'invalid value')}"
+            for item in exc.errors()
+        )
+        raise ConfigError(f"Invalid configuration: {errors}") from exc
+
+
+def apply_config_changes(
+    data_dir: Path,
+    changes: dict[str, Any],
+    *,
+    expected_revision: str,
+) -> tuple[InstanceConfig, frozenset[str], frozenset[str]]:
+    """Validate and atomically apply staged changes unless the snapshot is stale."""
+    current = require_config(data_dir)
+    if config_revision(current) != expected_revision:
+        raise ConfigConflictError(
+            "Configuration changed externally; refresh and review the merged values."
+        )
+    candidate = validate_config_changes(current, changes)
+    changed = frozenset(
+        key for key in changes if getattr(current, key) != getattr(candidate, key)
+    )
+    if changed:
+        save_instance_config(data_dir, candidate)
+    return (
+        candidate,
+        changed & SERVICE_KEYS,
+        changed & RESTART_KEYS,
+    )
 
 
 def _parse_bool(raw: str) -> bool:
