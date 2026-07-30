@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from pa.pr_supervisor.models import (
+    GITHUB_TERMINAL_PR_WATCH_STATUSES,
     GitHubCapability,
     LeaseGrant,
     PRWatch,
@@ -200,9 +201,13 @@ class PRSupervisorStore:
                     replica_fence = watch.fence_token
                     replica_expiry = watch.lease_expires_at
                     watch = existing.model_copy(deep=True)
-                    watch.owner_instance_id = replica_owner
                     watch.fence_token = replica_fence
-                    watch.lease_expires_at = replica_expiry
+                    if watch.terminal:
+                        watch.owner_instance_id = None
+                        watch.lease_expires_at = None
+                    else:
+                        watch.owner_instance_id = replica_owner
+                        watch.lease_expires_at = replica_expiry
                 watch.id = existing.id
                 watch.created_at = existing.created_at
                 if preserve_lease:
@@ -230,6 +235,9 @@ class PRSupervisorStore:
                     watch.stable_head_observations,
                     existing.stable_head_observations,
                 )
+            if watch.terminal or watch.retired_at is not None:
+                watch.owner_instance_id = None
+                watch.lease_expires_at = None
             watch.updated_at = utcnow()
             conn.execute(
                 """
@@ -347,7 +355,7 @@ class PRSupervisorStore:
             query += " AND card_id = ?"
             params.append(card_id)
         if not include_retired:
-            query += " AND status != 'retired'"
+            query += " AND retired_at IS NULL AND status IN ('active', 'blocked')"
         query += " ORDER BY updated_at DESC"
         with self._conn() as conn:
             rows = conn.execute(query, params).fetchall()
@@ -597,6 +605,8 @@ class PRSupervisorStore:
         state: dict[str, Any] | None = None,
         owner_instance_id: str | None = None,
         fence_token: int | None = None,
+        retirement_reason: str | None = None,
+        retired_at: datetime | None = None,
     ) -> PRWatch | None:
         now = utcnow()
         with self._conn(immediate=True) as conn:
@@ -613,7 +623,39 @@ class PRSupervisorStore:
                 or watch.lease_expires_at <= now
             ):
                 raise StaleFenceError(f"stale fence for watch {watch_id}")
-            merged_state = state if state is not None else watch.state
+            effective_status = status
+            if (
+                status == PRWatchStatus.RETIRED
+                and watch.status in GITHUB_TERMINAL_PR_WATCH_STATUSES
+            ) or (
+                status == PRWatchStatus.CLOSED and watch.status == PRWatchStatus.MERGED
+            ):
+                # Generic retirement and a late closed observation must never
+                # erase a stronger terminal GitHub outcome.
+                effective_status = watch.status
+            merged_state = dict(state if state is not None else watch.state)
+            retirement_at = watch.retired_at or retired_at or now
+            existing_retirement = watch.state.get("retirement")
+            if isinstance(existing_retirement, dict):
+                merged_state["retirement"] = dict(existing_retirement)
+                if effective_status != watch.status:
+                    merged_state["retirement"]["terminal_status"] = (
+                        effective_status.value
+                    )
+            else:
+                merged_state["retirement"] = {
+                    "reason": retirement_reason or "terminal_status",
+                    "retired_at": retirement_at.isoformat(),
+                    "terminal_status": effective_status.value,
+                }
+            if (
+                effective_status == watch.status
+                and merged_state == watch.state
+                and watch.retired_at == retirement_at
+                and watch.owner_instance_id is None
+                and watch.lease_expires_at is None
+            ):
+                return watch
             conn.execute(
                 """
                 UPDATE pr_watches
@@ -622,9 +664,9 @@ class PRSupervisorStore:
                 WHERE id = ?
                 """,
                 (
-                    status.value,
+                    effective_status.value,
                     json.dumps(merged_state),
-                    now.isoformat() if status == PRWatchStatus.RETIRED else None,
+                    retirement_at.isoformat(),
                     now.isoformat(),
                     watch_id,
                 ),
@@ -788,11 +830,20 @@ class PRSupervisorStore:
                 "SELECT name, value FROM pr_supervisor_metrics"
             ).fetchall()
         values = {row["name"]: row["value"] for row in rows}
-        values["active_watches"] = len(
+        watches = self.list_watches(include_retired=True)
+        values["active_watches"] = len([watch for watch in watches if watch.actionable])
+        values["historical_watches"] = len(
+            [watch for watch in watches if not watch.actionable]
+        )
+        values["archived_watches"] = len(
+            [watch for watch in watches if watch.retired_at is not None]
+        )
+        values["terminal_retirement_backlog"] = len(
             [
                 watch
-                for watch in self.list_watches()
-                if watch.status in {PRWatchStatus.ACTIVE, PRWatchStatus.BLOCKED}
+                for watch in watches
+                if watch.status in GITHUB_TERMINAL_PR_WATCH_STATUSES
+                and watch.retired_at is None
             ]
         )
         return values

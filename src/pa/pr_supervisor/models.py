@@ -63,6 +63,15 @@ class PRWatchStatus(StrEnum):
     RETIRED = "retired"
 
 
+ACTIONABLE_PR_WATCH_STATUSES = frozenset({PRWatchStatus.ACTIVE, PRWatchStatus.BLOCKED})
+TERMINAL_PR_WATCH_STATUSES = frozenset(
+    {PRWatchStatus.MERGED, PRWatchStatus.CLOSED, PRWatchStatus.RETIRED}
+)
+GITHUB_TERMINAL_PR_WATCH_STATUSES = frozenset(
+    {PRWatchStatus.MERGED, PRWatchStatus.CLOSED}
+)
+
+
 class PRCheck(BaseModel):
     name: str
     status: str = "queued"
@@ -175,6 +184,15 @@ class PRWatch(BaseModel):
     @classmethod
     def normalize_repository(cls, value: str) -> str:
         return _normalized_repository_name(value)
+
+    @property
+    def actionable(self) -> bool:
+        """Whether this watch belongs in the default live control-plane view."""
+        return self.status in ACTIONABLE_PR_WATCH_STATUSES and self.retired_at is None
+
+    @property
+    def terminal(self) -> bool:
+        return self.status in TERMINAL_PR_WATCH_STATUSES
 
 
 class PRWatchEvent(BaseModel):

@@ -366,6 +366,7 @@ Inventory rows: **511**.
 | `src/pa/modules/pr_supervisor.py:156 get_watch` | sync HTTP endpoint | serialization | Framework worker thread; no event-loop execution |
 | `src/pa/modules/pr_supervisor.py:170 refresh_watch` | async HTTP endpoint | none | In-memory/async orchestration; transitive callees reviewed |
 | `src/pa/modules/pr_supervisor.py:178 retire_watch` | async HTTP endpoint | serialization | In-memory/async orchestration; transitive callees reviewed |
+| `src/pa/modules/pr_supervisor.py:262 backfill_terminal_retirements` | async HTTP endpoint | async HTTP, serialization | Native async GitHub revalidation plus offloaded projection writes; bounded concurrency and per-request deadlines |
 | `src/pa/modules/pr_supervisor.py:186 create_pull_request` | async HTTP endpoint | serialization | In-memory/async orchestration; transitive callees reviewed |
 | `src/pa/modules/pr_supervisor.py:248 capabilities` | sync HTTP endpoint | serialization | Framework worker thread; no event-loop execution |
 | `src/pa/modules/pr_supervisor.py:262 metrics` | sync HTTP endpoint | none | Framework worker thread; no event-loop execution |
@@ -386,6 +387,7 @@ Inventory rows: **511**.
 | `src/pa/modules/pr_supervisor.py:580 PRSupervisorModule.register_mcp.create_pr_watch` | async MCP handler | serialization | In-memory/async orchestration; transitive callees reviewed |
 | `src/pa/modules/pr_supervisor.py:618 PRSupervisorModule.register_mcp.refresh_pr_watch` | async MCP handler | none | In-memory/async orchestration; transitive callees reviewed |
 | `src/pa/modules/pr_supervisor.py:627 PRSupervisorModule.register_mcp.retire_pr_watch` | async MCP handler | serialization | In-memory/async orchestration; transitive callees reviewed |
+| `src/pa/modules/pr_supervisor.py:794 PRSupervisorModule.register_mcp.backfill_terminal_pr_watches` | async MCP handler | async HTTP, serialization | In-memory/async orchestration through the local control-plane API |
 | `src/pa/modules/pr_supervisor.py:634 PRSupervisorModule.register_mcp.create_supervised_pull_request` | async MCP handler | serialization | In-memory/async orchestration; transitive callees reviewed |
 | `src/pa/modules/pr_supervisor.py:693 PRSupervisorModule.register_mcp.set_project_pr_policy` | sync MCP handler | serialization | Framework worker thread; no event-loop execution |
 | `src/pa/modules/pr_supervisor.py:756 PRSupervisorModule.register_mcp.github_integration_capability` | sync MCP handler | serialization | Framework worker thread; no event-loop execution |
@@ -484,6 +486,7 @@ Inventory rows: **511**.
 | `src/pa/pr_supervisor/service.py:509 PRSupervisor.register_watch` | async helper | serialization | In-memory/async orchestration; transitive callees reviewed |
 | `src/pa/pr_supervisor/service.py:542 PRSupervisor.refresh_watch` | async helper | none | In-memory/async orchestration; transitive callees reviewed |
 | `src/pa/pr_supervisor/service.py:555 PRSupervisor.retire_watch` | async helper | none | In-memory/async orchestration; transitive callees reviewed |
+| `src/pa/pr_supervisor/service.py:1252 PRSupervisor.backfill_terminal_retirements` | async helper | async HTTP, serialization | Native async GitHub revalidation is bounded to eight concurrent requests; SQLite and response serialization are offloaded |
 | `src/pa/pr_supervisor/service.py:578 PRSupervisor._process_watch` | async helper | none | In-memory/async orchestration; transitive callees reviewed |
 | `src/pa/pr_supervisor/service.py:736 PRSupervisor._notify` | async helper | none | In-memory/async orchestration; transitive callees reviewed |
 | `src/pa/pr_supervisor/service.py:785 PRSupervisor._handle_merged` | async helper | none | In-memory/async orchestration; transitive callees reviewed |

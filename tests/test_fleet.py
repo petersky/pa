@@ -1142,6 +1142,88 @@ class FleetOverviewTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(edge["details"]["items"], refreshed_edge["details"]["items"])
 
+    def test_topology_ignores_85_legacy_merged_watches_with_stale_errors(
+        self,
+    ) -> None:
+        from pa.fleet.overview import build_overview
+        from pa.pr_supervisor.models import PRWatch, PRWatchStatus
+        from pa.pr_supervisor.store import PRSupervisorStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                data_dir=Path(tmp),
+                instance_id="local",
+                instance_name="owner",
+                instance_url="http://owner:8080",
+            )
+            ctx = MagicMock(settings=settings)
+            ctx.store.list_sessions.return_value = []
+            ctx.store.list_repositories.return_value = []
+            ctx.store.get_projection_head.return_value = "head"
+            supervisor_store = PRSupervisorStore(Path(tmp) / "supervisor.db")
+            ctx.services = {"pr_supervisor_store": supervisor_store}
+            supervisor_store.upsert_watch(
+                PRWatch(
+                    id="active-healthy",
+                    repository="petersky/pa",
+                    pr_number=200,
+                    pr_url="https://github.com/petersky/pa/pull/200",
+                    owner_instance_id="local",
+                    originating_instance_id="local",
+                ),
+                preserve_lease=False,
+            )
+            for index in range(85):
+                supervisor_store.upsert_watch(
+                    PRWatch(
+                        id=f"legacy-merged-{index}",
+                        repository="petersky/pa",
+                        pr_number=index + 1,
+                        pr_url=(
+                            "https://github.com/petersky/pa/pull/"
+                            f"{index + 1}"
+                        ),
+                        status=PRWatchStatus.MERGED,
+                        state={"supervisor_state": "retired_after_merge"},
+                        last_error=(
+                            f"historical error {index}" if index < 10 else None
+                        ),
+                        retired_at=None,
+                    ),
+                    preserve_lease=False,
+                )
+
+            overview = build_overview(
+                ctx,
+                [
+                    FleetInstance(
+                        instance_id="local",
+                        name="owner",
+                        url="http://owner:8080",
+                    )
+                ],
+                [],
+            )
+
+            self.assertEqual(
+                len(supervisor_store.list_watches(include_retired=True)), 86
+            )
+            self.assertEqual(
+                [watch.id for watch in supervisor_store.list_watches()],
+                ["active-healthy"],
+            )
+            supervisor_edges = [
+                edge for edge in overview["edges"] if edge["kind"] == "supervisor"
+            ]
+            self.assertEqual(len(supervisor_edges), 1)
+            self.assertEqual(supervisor_edges[0]["count"], 1)
+            self.assertEqual(supervisor_edges[0]["distinct_count"], 1)
+            self.assertEqual(supervisor_edges[0]["status"], "healthy")
+            self.assertEqual(
+                supervisor_edges[0]["details"]["items"][0]["id"],
+                "watch-active-healthy",
+            )
+
     def test_local_activity_reports_multiple_sessions_cards_and_queue(self) -> None:
         from pa.domain.models import AgentSession
         from pa.fleet.overview import local_dimension
