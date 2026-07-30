@@ -655,6 +655,7 @@ def _local_supervisor(ctx: Any) -> dict[str, Any]:
         [
             item.model_dump(mode="json")
             for item in store.list_watches(include_retired=False)
+            if item.actionable
         ]
         if store
         else []
@@ -1066,6 +1067,8 @@ def build_overview(
     supervisor_store = ctx.services.get("pr_supervisor_store")
     if supervisor_store:
         for watch in supervisor_store.list_watches(include_retired=False):
+            if not watch.actionable:
+                continue
             owner = watch.owner_instance_id or local_id
             target = watch.originating_instance_id or owner
             watch_status = getattr(watch.status, "value", watch.status)

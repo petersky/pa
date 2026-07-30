@@ -19,6 +19,7 @@ from pa.pr_supervisor.github import (
     verify_webhook_signature,
 )
 from pa.pr_supervisor.models import (
+    GITHUB_TERMINAL_PR_WATCH_STATUSES,
     GitHubCapability,
     PRPolicy,
     PRWatch,
@@ -257,6 +258,17 @@ async def retire_watch(request: Request, watch_id: str) -> dict[str, Any]:
     return watch.model_dump(mode="json")
 
 
+@router.post("/pr-supervisor/migrations/terminal-retirements")
+async def backfill_terminal_retirements(
+    request: Request, body: dict[str, Any]
+) -> dict[str, Any]:
+    realm_id = str(body.get("realm_id") or request.app.state.ctx.settings.primary_realm)
+    return await _service(request).backfill_terminal_retirements(
+        realm_id=realm_id,
+        dry_run=bool(body.get("dry_run", False)),
+    )
+
+
 @router.post("/pr-supervisor/pull-requests", status_code=201)
 async def create_pull_request(request: Request, body: dict[str, Any]) -> dict[str, Any]:
     service = _service(request)
@@ -435,20 +447,48 @@ async def ingest_retirement(request: Request, body: dict[str, Any]) -> dict[str,
         incoming.realm_id, incoming.repository, incoming.pr_number
     )
     if existing:
-        if existing.status in {PRWatchStatus.MERGED, PRWatchStatus.CLOSED}:
-            retired = existing
-            event_type = "retirement_ignored_stronger_terminal"
-        else:
-            retired = store.set_terminal(
-                existing.id,
-                PRWatchStatus.RETIRED,
-                state=existing.state,
-            )
-            event_type = "watch_retired"
+        desired_status = (
+            incoming.status
+            if incoming.status in GITHUB_TERMINAL_PR_WATCH_STATUSES
+            else PRWatchStatus.RETIRED
+        )
+        state = (
+            existing.state
+            if existing.status in GITHUB_TERMINAL_PR_WATCH_STATUSES
+            else incoming.state or existing.state
+        )
+        retirement = incoming.state.get("retirement")
+        reason = (
+            str(retirement.get("reason"))
+            if isinstance(retirement, dict) and retirement.get("reason")
+            else "fleet_retirement_transition"
+        )
+        retired = store.set_terminal(
+            existing.id,
+            desired_status,
+            state=state,
+            retirement_reason=reason,
+            retired_at=incoming.retired_at,
+        )
     else:
-        incoming.status = PRWatchStatus.RETIRED
-        retired = store.upsert_watch(incoming, preserve_lease=False)
-        event_type = "watch_retired"
+        desired_status = (
+            incoming.status
+            if incoming.status in GITHUB_TERMINAL_PR_WATCH_STATUSES
+            else PRWatchStatus.RETIRED
+        )
+        stored = store.upsert_watch(incoming, preserve_lease=False)
+        retired = store.set_terminal(
+            stored.id,
+            desired_status,
+            state=stored.state,
+            retirement_reason="fleet_retirement_transition",
+            retired_at=incoming.retired_at,
+        )
+    event_type = (
+        "watch_archived"
+        if retired.status in GITHUB_TERMINAL_PR_WATCH_STATUSES
+        else "watch_retired"
+    )
     event_key = str(body.get("event_key") or f"{retired.id}:retired")
     store.append_event(
         PRWatchEvent(
@@ -749,6 +789,21 @@ class PRSupervisorModule(Module):
                 "DELETE",
                 f"/api/pr-supervisor/watches/{watch_id}",
                 allow_not_found=True,
+            )
+
+        @mcp.tool()
+        async def backfill_terminal_pr_watches(
+            realm: str = "default",
+            dry_run: bool = False,
+        ) -> dict[str, Any]:
+            """Revalidate and archive legacy merged/closed watches idempotently."""
+            return await async_runtime.run_blocking(
+                "mcp.pr_watch_terminal_backfill_http",
+                request_local_pa,
+                ctx.settings,
+                "POST",
+                "/api/pr-supervisor/migrations/terminal-retirements",
+                json={"realm_id": realm, "dry_run": dry_run},
             )
 
         @mcp.tool()

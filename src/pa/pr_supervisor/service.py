@@ -7,6 +7,7 @@ import json
 import logging
 import random
 import re
+from collections import Counter
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
@@ -26,6 +27,7 @@ from pa.pr_supervisor.gating import (
 )
 from pa.pr_supervisor.github import GitHubClient, GitHubCredentials
 from pa.pr_supervisor.models import (
+    GITHUB_TERMINAL_PR_WATCH_STATUSES,
     GateResult,
     GitHubCapability,
     LeaseGrant,
@@ -1209,22 +1211,181 @@ class PRSupervisor:
         )
         if not current:
             return None
-        if current.status in {PRWatchStatus.MERGED, PRWatchStatus.CLOSED}:
+        if (
+            current.retired_at is not None
+            and current.owner_instance_id is None
+            and current.lease_expires_at is None
+        ):
             return current
+        status = (
+            current.status
+            if current.status in GITHUB_TERMINAL_PR_WATCH_STATUSES
+            else PRWatchStatus.RETIRED
+        )
+        reason = (
+            "operator_archived_terminal_watch"
+            if status in GITHUB_TERMINAL_PR_WATCH_STATUSES
+            else "operator_retired_watch"
+        )
         watch = await self._offload(
             "sqlite.pr_supervisor_watch_write",
             self.store.set_terminal,
             watch_id,
-            PRWatchStatus.RETIRED,
+            status,
+            retirement_reason=reason,
         )
         await self._audit(
             watch,
             "watch_retired",
-            f"{watch.id}:retired:{watch.updated_at.isoformat()}",
+            f"{watch.id}:retired:{watch.retired_at.isoformat()}",
+            source="operator",
+            payload={
+                "reason": reason,
+                "retired_at": watch.retired_at.isoformat(),
+                "terminal_status": watch.status.value,
+            },
         )
         await self._replicate(watch)
         await self._broadcast_retirement(watch)
         return watch
+
+    async def backfill_terminal_retirements(
+        self,
+        *,
+        realm_id: str,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Archive legacy terminal watches only after GitHub revalidation."""
+        watches = await self._offload(
+            "sqlite.pr_supervisor_watch_read",
+            self.store.list_watches,
+            realm_id=realm_id,
+            include_retired=True,
+        )
+        candidates = [
+            watch
+            for watch in watches
+            if watch.status in GITHUB_TERMINAL_PR_WATCH_STATUSES
+            and watch.retired_at is None
+        ]
+        semaphore = asyncio.Semaphore(8)
+
+        async def migrate(watch: PRWatch) -> dict[str, Any]:
+            async with semaphore:
+                try:
+                    snapshot = await self._observe(
+                        "http.github_terminal_revalidation",
+                        self.github.snapshot(
+                            watch.repository,
+                            watch.pr_number,
+                            policy=watch.policy,
+                        ),
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    # A single inaccessible historical PR must not abort the
+                    # operator's bounded bulk migration report.
+                    return {
+                        "watch_id": watch.id,
+                        "status": "error",
+                        "expected_terminal_status": watch.status.value,
+                        "error": type(exc).__name__,
+                    }
+            observed_status = (
+                PRWatchStatus.MERGED
+                if snapshot.merged
+                else PRWatchStatus.CLOSED
+                if snapshot.closed
+                else None
+            )
+            if observed_status != watch.status:
+                if not dry_run:
+                    await self._audit(
+                        watch,
+                        "terminal_retirement_backfill_skipped",
+                        f"{watch.id}:terminal-retirement-backfill:v1:skipped",
+                        source="migration:terminal-retirement-v1",
+                        payload={
+                            "expected_terminal_status": watch.status.value,
+                            "observed_github_state": snapshot.state,
+                            "observed_terminal_status": (
+                                observed_status.value if observed_status else None
+                            ),
+                        },
+                    )
+                return {
+                    "watch_id": watch.id,
+                    "status": "skipped",
+                    "expected_terminal_status": watch.status.value,
+                    "observed_github_state": snapshot.state,
+                }
+            if dry_run:
+                return {
+                    "watch_id": watch.id,
+                    "status": "would_archive",
+                    "terminal_status": watch.status.value,
+                }
+            current = await self._offload(
+                "sqlite.pr_supervisor_watch_read",
+                self.store.get_watch,
+                watch.id,
+            )
+            if (
+                not current
+                or current.status != watch.status
+                or current.retired_at is not None
+            ):
+                return {
+                    "watch_id": watch.id,
+                    "status": "already_converged",
+                }
+            archived = await self._offload(
+                "sqlite.pr_supervisor_watch_write",
+                self.store.set_terminal,
+                current.id,
+                current.status,
+                state=current.state,
+                retirement_reason="terminal_retirement_backfill_revalidated",
+            )
+            await self._audit(
+                archived,
+                "watch_archived",
+                f"{archived.id}:terminal-retirement-backfill:v1",
+                source="migration:terminal-retirement-v1",
+                payload={
+                    "reason": "terminal_retirement_backfill_revalidated",
+                    "retired_at": archived.retired_at.isoformat(),
+                    "terminal_status": archived.status.value,
+                    "observed_github_state": snapshot.state,
+                    "merge_commit_sha": snapshot.merge_commit_sha,
+                },
+            )
+            await self._replicate(archived)
+            await self._broadcast_retirement(archived)
+            return {
+                "watch_id": archived.id,
+                "status": "archived",
+                "terminal_status": archived.status.value,
+                "retired_at": archived.retired_at.isoformat(),
+            }
+
+        results = await asyncio.gather(*(migrate(watch) for watch in candidates))
+        counts = dict(Counter(item["status"] for item in results))
+        archived_count = counts.get("archived", 0)
+        if archived_count:
+            await self._offload(
+                "sqlite.pr_supervisor_metric",
+                self.store.increment_metric,
+                "terminal_retirement_backfilled",
+                archived_count,
+            )
+        return {
+            "realm_id": realm_id,
+            "dry_run": dry_run,
+            "scanned": len(watches),
+            "candidates": len(candidates),
+            "counts": counts,
+            "results": results,
+        }
 
     async def _process_watch(self, watch: PRWatch, grant: LeaseGrant) -> None:
         now = utcnow()
@@ -1273,6 +1434,7 @@ class PRSupervisor:
                 return
             if snapshot.closed:
                 state = self._safe_snapshot(snapshot)
+                state["supervisor_state"] = "retired_after_close"
                 await self._audit(
                     watch,
                     "pull_request_closed",
@@ -1288,8 +1450,20 @@ class PRSupervisor:
                     state=state,
                     owner_instance_id=self.settings.instance_id,
                     fence_token=grant.fence_token,
+                    retirement_reason="github_close_observed",
+                )
+                await self._audit(
+                    terminal,
+                    "watch_archived",
+                    f"{terminal.id}:closed:archived",
+                    payload={
+                        "reason": "github_close_observed",
+                        "retired_at": terminal.retired_at.isoformat(),
+                        "terminal_status": terminal.status.value,
+                    },
                 )
                 await self._replicate(terminal)
+                await self._broadcast_retirement(terminal)
                 return
 
             stable = self._predict_stable(watch, snapshot, now)
@@ -1478,6 +1652,18 @@ class PRSupervisor:
             state=state,
             owner_instance_id=self.settings.instance_id,
             fence_token=grant.fence_token,
+            retirement_reason="github_merge_observed",
+        )
+        await self._audit(
+            terminal,
+            "watch_archived",
+            f"{terminal.id}:merged:archived",
+            payload={
+                "reason": "github_merge_observed",
+                "retired_at": terminal.retired_at.isoformat(),
+                "terminal_status": terminal.status.value,
+                "merge_commit_sha": snapshot.merge_commit_sha,
+            },
         )
         await self._offload(
             "sqlite.pr_supervisor_metric",
@@ -1485,6 +1671,7 @@ class PRSupervisor:
             "merged_watches",
         )
         await self._replicate(terminal)
+        await self._broadcast_retirement(terminal)
         await self._complete_merged_card(terminal)
         prompt = build_executor_prompt_rendered(
             watch,
@@ -1800,7 +1987,8 @@ class PRSupervisor:
         urls = self._fleet_urls()
         if not urls:
             return
-        event_key = f"{watch.id}:retired:{watch.updated_at.isoformat()}"
+        retired_at = watch.retired_at or watch.updated_at
+        event_key = f"{watch.id}:retired:{retired_at.isoformat()}"
         results = await asyncio.gather(
             *(
                 self._post_json(
@@ -1853,8 +2041,16 @@ class PRSupervisor:
             or ""
         ).rstrip("/")
         remote = self._authority_url()
-        watches = self.store.list_watches(include_retired=False)
+        all_watches = self.store.list_watches(include_retired=True)
+        watches = [watch for watch in all_watches if watch.actionable]
         owned = [w for w in watches if w.owner_instance_id == self.settings.instance_id]
+        archived = [watch for watch in all_watches if watch.retired_at is not None]
+        backlog = [
+            watch
+            for watch in all_watches
+            if watch.status in GITHUB_TERMINAL_PR_WATCH_STATUSES
+            and watch.retired_at is None
+        ]
         if remote and self._authority_last_error:
             state = "authority_unreachable"
         elif remote and not self._authority_last_success_at:
@@ -1874,6 +2070,9 @@ class PRSupervisor:
             ),
             "last_authority_error": self._authority_last_error,
             "active_watches": len(watches),
+            "historical_watches": len(all_watches) - len(watches),
+            "archived_watches": len(archived),
+            "terminal_retirement_backlog": len(backlog),
             "locally_owned_watches": len(owned),
             "max_fence_token": max((w.fence_token for w in watches), default=0),
         }

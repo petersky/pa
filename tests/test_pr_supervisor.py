@@ -353,6 +353,62 @@ class PRSupervisorStoreTests(unittest.TestCase):
         result = self.store.upsert_watch(stale, preserve_lease=True)
         self.assertEqual(result.status, PRWatchStatus.MERGED)
 
+    def test_terminalization_archives_filters_and_releases_lease(self) -> None:
+        current = self.store.get_watch("watch-1")
+        current.last_error = "historical poll failure"
+        current.owner_instance_id = "instance-a"
+        current.fence_token = 7
+        current.lease_expires_at = utcnow() + timedelta(seconds=60)
+        self.store.upsert_watch(current, preserve_lease=False)
+
+        terminal = self.store.set_terminal(
+            "watch-1",
+            PRWatchStatus.MERGED,
+            owner_instance_id="instance-a",
+            fence_token=7,
+            retirement_reason="github_merge_observed",
+        )
+
+        self.assertEqual(terminal.status, PRWatchStatus.MERGED)
+        self.assertIsNotNone(terminal.retired_at)
+        self.assertIsNone(terminal.owner_instance_id)
+        self.assertIsNone(terminal.lease_expires_at)
+        self.assertEqual(terminal.last_error, "historical poll failure")
+        self.assertEqual(
+            terminal.state["retirement"]["reason"], "github_merge_observed"
+        )
+        self.assertEqual(self.store.list_watches(include_retired=False), [])
+        self.assertEqual(
+            [item.id for item in self.store.list_watches(include_retired=True)],
+            ["watch-1"],
+        )
+
+        repeated = self.store.set_terminal(
+            "watch-1",
+            PRWatchStatus.MERGED,
+            retirement_reason="different_late_reason",
+        )
+        self.assertEqual(repeated.retired_at, terminal.retired_at)
+        self.assertEqual(repeated.updated_at, terminal.updated_at)
+        self.assertEqual(
+            repeated.state["retirement"]["reason"], "github_merge_observed"
+        )
+
+    def test_terminal_replica_cannot_reattach_owner_or_lease(self) -> None:
+        terminal = self.store.set_terminal("watch-1", PRWatchStatus.CLOSED)
+        stale = watch()
+        stale.updated_at = terminal.updated_at - timedelta(seconds=1)
+        stale.fence_token = terminal.fence_token + 10
+        stale.owner_instance_id = "stale-worker"
+        stale.lease_expires_at = utcnow() + timedelta(minutes=5)
+
+        result = self.store.upsert_watch(stale, preserve_lease=True)
+
+        self.assertEqual(result.status, PRWatchStatus.CLOSED)
+        self.assertEqual(result.fence_token, stale.fence_token)
+        self.assertIsNone(result.owner_instance_id)
+        self.assertIsNone(result.lease_expires_at)
+
     def test_stale_terminal_replica_cannot_stop_newer_active_watch(self) -> None:
         active = self.store.get_watch("watch-1")
         retired = watch()
@@ -634,6 +690,19 @@ class _FakeGitHub:
         return self.snapshots[index]
 
 
+class _TerminalRevalidationGitHub:
+    def __init__(self, snapshots: dict[int, PRSnapshot]) -> None:
+        self.credentials = GitHubCredentials(token="fixture-token")
+        self.snapshots = snapshots
+        self.calls: list[int] = []
+
+    async def snapshot(
+        self, repository: str, number: int, *, policy=None
+    ) -> PRSnapshot:
+        self.calls.append(number)
+        return self.snapshots[number]
+
+
 class _DedupeDispatcher:
     def __init__(self) -> None:
         self.keys: set[str] = set()
@@ -821,7 +890,26 @@ class PRSupervisorServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(current.state["merge_commit_sha"], "c" * 40)
         self.assertEqual(current.state["card_lane"], "waiting")
         self.assertEqual(current.state["card_disposition"]["status"], "downgraded")
+        self.assertIsNotNone(current.retired_at)
+        self.assertIsNone(current.owner_instance_id)
+        self.assertIsNone(current.lease_expires_at)
+        self.assertEqual(current.state["retirement"]["reason"], "github_merge_observed")
         self.assertEqual(len(self.dispatcher.calls), 1)
+
+    async def test_closed_pr_is_archived_and_releases_lease(self) -> None:
+        service = await self.make_service([snapshot(state="closed")])
+        service._broadcast_retirement = AsyncMock()
+
+        await service.run_once()
+
+        current = self.store.get_watch("watch-1")
+        self.assertEqual(current.status, PRWatchStatus.CLOSED)
+        self.assertIsNotNone(current.retired_at)
+        self.assertIsNone(current.owner_instance_id)
+        self.assertIsNone(current.lease_expires_at)
+        self.assertEqual(current.state["supervisor_state"], "retired_after_close")
+        self.assertEqual(current.state["retirement"]["reason"], "github_close_observed")
+        service._broadcast_retirement.assert_awaited_once_with(current)
 
     async def test_stable_green_exact_head_and_merge_commit_complete_card(self) -> None:
         open_green = snapshot()
@@ -888,6 +976,89 @@ class PRSupervisorServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(retired.status, PRWatchStatus.RETIRED)
         self.assertEqual(service._replicate.await_count, 2)
         service._broadcast_retirement.assert_awaited_once_with(retired)
+
+    async def test_retire_archives_existing_github_terminal_outcomes(self) -> None:
+        service = await self.make_service([snapshot()])
+        service._replicate = AsyncMock()
+        service._broadcast_retirement = AsyncMock()
+
+        for status in (PRWatchStatus.MERGED, PRWatchStatus.CLOSED):
+            with self.subTest(status=status):
+                legacy = watch(policy=self.policy())
+                legacy.status = status
+                legacy.last_error = "historical error"
+                self.store.upsert_watch(legacy, preserve_lease=False)
+
+                archived = await service.retire_watch("watch-1")
+
+                self.assertEqual(archived.status, status)
+                self.assertIsNotNone(archived.retired_at)
+                self.assertEqual(archived.last_error, "historical error")
+                self.assertEqual(
+                    archived.state["retirement"]["reason"],
+                    "operator_archived_terminal_watch",
+                )
+                repeated = await service.retire_watch("watch-1")
+                self.assertEqual(repeated.updated_at, archived.updated_at)
+
+        self.assertEqual(service._replicate.await_count, 2)
+        self.assertEqual(service._broadcast_retirement.await_count, 2)
+
+    async def test_terminal_retirement_backfill_is_revalidated_and_idempotent(
+        self,
+    ) -> None:
+        service = await self.make_service([snapshot()])
+        merged = watch(policy=self.policy())
+        merged.status = PRWatchStatus.MERGED
+        merged.last_error = "old merge poll error"
+        self.store.upsert_watch(merged, preserve_lease=False)
+        closed = watch(policy=self.policy()).model_copy(
+            update={
+                "id": "watch-closed",
+                "pr_number": 18,
+                "pr_url": "https://github.com/owner/repo/pull/18",
+                "status": PRWatchStatus.CLOSED,
+                "last_error": "old close poll error",
+            }
+        )
+        self.store.upsert_watch(closed, preserve_lease=False)
+        service.github = _TerminalRevalidationGitHub(
+            {
+                17: snapshot(state="merged", merge_commit_sha="c" * 40),
+                18: snapshot(state="closed").model_copy(update={"number": 18}),
+            }
+        )
+        service._replicate = AsyncMock()
+        service._broadcast_retirement = AsyncMock()
+
+        preview = await service.backfill_terminal_retirements(
+            realm_id="default", dry_run=True
+        )
+        first = await service.backfill_terminal_retirements(realm_id="default")
+        second = await service.backfill_terminal_retirements(realm_id="default")
+
+        self.assertEqual(preview["counts"], {"would_archive": 2})
+        self.assertEqual(first["candidates"], 2)
+        self.assertEqual(first["counts"], {"archived": 2})
+        self.assertEqual(second["candidates"], 0)
+        self.assertEqual(second["counts"], {})
+        self.assertCountEqual(service.github.calls, [17, 18, 17, 18])
+        self.assertEqual(service._replicate.await_count, 2)
+        self.assertEqual(service._broadcast_retirement.await_count, 2)
+        for watch_id, prior_error in (
+            ("watch-1", "old merge poll error"),
+            ("watch-closed", "old close poll error"),
+        ):
+            archived = self.store.get_watch(watch_id)
+            self.assertIsNotNone(archived.retired_at)
+            self.assertEqual(archived.last_error, prior_error)
+            events = self.store.list_events(watch_id)
+            self.assertEqual(
+                len(
+                    [event for event in events if event.event_type == "watch_archived"]
+                ),
+                1,
+            )
 
     async def test_migration_applies_repository_policy_override(self) -> None:
         card = SimpleNamespace(
@@ -1348,14 +1519,27 @@ class PRSupervisorApiAndMcpTests(unittest.TestCase):
             self.assertEqual(canonical.status, PRWatchStatus.RETIRED)
 
             supervisor_store = app.state.ctx.require_service("pr_supervisor_store")
-            supervisor_store.set_terminal(
-                watch_id,
-                PRWatchStatus.MERGED,
-                state={
-                    "merge_commit_sha": "d" * 40,
-                    "card_lane": "pending",
+            legacy_merged = canonical.model_copy(
+                update={
+                    "status": PRWatchStatus.MERGED,
+                    "retired_at": None,
+                    "state": {
+                        "merge_commit_sha": "d" * 40,
+                        "card_lane": "pending",
+                    },
                 },
             )
+            supervisor_store.upsert_watch(legacy_merged, preserve_lease=False)
+            live = client.get(
+                "/api/pr-supervisor/watches",
+                headers=headers,
+                params={"include_retired": False},
+            )
+            self.assertEqual(live.status_code, 200, live.text)
+            self.assertEqual(live.json(), [])
+            health = client.get("/api/pr-supervisor/health", headers=headers)
+            self.assertEqual(health.json()["terminal_retirement_backlog"], 1)
+
             repeated = client.post(
                 "/api/pr-supervisor/retirements",
                 headers=headers,
@@ -1366,8 +1550,16 @@ class PRSupervisorApiAndMcpTests(unittest.TestCase):
             )
             self.assertEqual(repeated.status_code, 200, repeated.text)
             self.assertEqual(repeated.json()["status"], "merged")
+            self.assertIsNotNone(repeated.json()["retired_at"])
             self.assertEqual(repeated.json()["state"]["merge_commit_sha"], "d" * 40)
             self.assertEqual(repeated.json()["state"]["card_lane"], "pending")
+            canonical = supervisor_store.get_watch(watch_id)
+            self.assertIsNone(canonical.owner_instance_id)
+            self.assertIsNone(canonical.lease_expires_at)
+            self.assertEqual(canonical.last_error, legacy_merged.last_error)
+            health = client.get("/api/pr-supervisor/health", headers=headers)
+            self.assertEqual(health.json()["terminal_retirement_backlog"], 0)
+            self.assertEqual(health.json()["archived_watches"], 1)
 
             unsigned = client.post(
                 "/api/pr-supervisor/webhook/github",
@@ -1643,6 +1835,7 @@ class PRSupervisorApiAndMcpTests(unittest.TestCase):
             "create_pr_watch",
             "refresh_pr_watch",
             "retire_pr_watch",
+            "backfill_terminal_pr_watches",
             "create_supervised_pull_request",
             "set_project_pr_policy",
             "diagnose_pr_watch_provenance",

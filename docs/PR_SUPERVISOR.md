@@ -13,6 +13,15 @@ required capabilities, lease owner/fence, current GitHub snapshot, polling state
 and append-only audit history. State lives in
 `<PA_DATA_DIR>/pr_supervisor.db` and is recovered on restart.
 
+The canonical live/actionable view contains only `active` or `blocked` watches
+whose `retired_at` is null. `merged` and `closed` preserve the terminal GitHub
+outcome, but terminalization also sets `retired_at` atomically and releases the
+owner and lease. Generic operator retirement uses `retired`. All three terminal
+outcomes remain available through `include_retired=true`, the Pull requests
+audit UI, linked cards/sessions, and watch event history. Historical
+`last_error`, snapshots, provenance, and evidence are retained; they do not
+contribute Fleet topology edges or health.
+
 At startup PA may discover an exact
 `https://github.com/OWNER/REPO/pull/NUMBER` URL in an open card. Discovery can
 create an **unlinked** legacy watch, but it never turns the surrounding card,
@@ -84,7 +93,8 @@ Ordinary replicas never let an older terminal snapshot overwrite newer active
 state. Operator retirement is propagated as a separate idempotent fleet
 transition, so it does not depend on snapshot timestamps to take effect. The
 transition preserves each peer's richer observation data and never downgrades
-an already merged or closed watch.
+an already merged or closed watch. Terminal replicas and retirement transitions
+cannot reattach an owner or lease.
 
 An explicit connection failure may fail over to a replacement executor. An
 ambiguous response failure never falls back to a second instance because the
@@ -98,9 +108,10 @@ does not silently drop supervision.
 
 `GET /api/pr-supervisor/health` exposes the authority URL and role, explicit vs
 legacy selection, authority reachability, last successful contact, active/local
-watch counts, lease TTL, and the largest observed fence token. It never returns
-tokens. `authority_unreachable` is actionable; `authority_unverified` is normal
-only before the first heartbeat or lease request after startup.
+watch counts, historical/archive counts, the terminal-retirement backlog, lease
+TTL, and the largest observed fence token. It never returns tokens.
+`authority_unreachable` is actionable; `authority_unverified` is normal only
+before the first heartbeat or lease request after startup.
 
 Credentials remain instance-local. Tokens and webhook secrets are never copied
 into watches, audit events, prompts, fleet heartbeats, or sync objects.
@@ -144,6 +155,36 @@ fail-closed maintenance window so no split brain is possible:
 
 Rollback uses the same stop-all, TTL-drain barrier. Never point a subset back to
 the old authority while any worker can still reach the new one.
+
+### Backfill legacy terminal watches
+
+After every fleet instance is running this version, invoke the migration on the
+configured PR-supervisor lease authority. It re-reads each legacy `merged` or
+`closed` PR from GitHub and archives only when the observed terminal outcome
+matches the stored outcome. The first request is a read-only preview:
+
+```http
+POST /api/pr-supervisor/migrations/terminal-retirements
+{"realm_id": "default", "dry_run": true}
+```
+
+Review `counts`, `results`, and
+`GET /api/pr-supervisor/health`. For the reported legacy realm, the preview
+should report 85 `would_archive` candidates and the health backlog should be
+85. Apply the same operation with `"dry_run": false`; the resulting
+`watch_archived` events record the migration reason, revalidated GitHub state,
+terminal outcome, and retirement time. The authority replicates each archived
+watch and broadcasts a separate idempotent retirement transition so peers
+preserve richer local evidence while converging on the same archive time.
+
+Rerunning the apply is safe: archived watches are no longer candidates and
+stable audit event keys prevent duplicates. Verify the backlog is zero, the
+default watch list contains only actionable watches, and
+`include_retired=true` still returns all history. This migration writes only
+the PR-supervisor projection through its service/control-plane API; it does not
+write realm EventLog/Store data and therefore does not create competing realm
+sync heads. MCP exposes the same preview/apply operation as
+`backfill_terminal_pr_watches`.
 
 ## GitHub authentication
 
@@ -265,17 +306,19 @@ possible only when a caller explicitly passes `draft: true`.
 
 REST controls are under `/api/pr-supervisor` for watch CRUD/refresh, history,
 policy, ready PR creation, capabilities, metrics, fleet replica/lease/dispatch,
-and webhook receipt. Linked watch state is also included in durable agent-session
-history responses. The Pull requests UI exposes status and audit history on the
-PR page, linked card, and linked agent-session list. MCP provides:
+webhook receipt, and terminal-retirement migration. Linked watch state is also
+included in durable agent-session history responses. The Pull requests UI
+exposes status and audit history on the PR page, linked card, and linked
+agent-session list. MCP provides:
 
 - `list_pr_watches`, `get_pr_watch`, `create_pr_watch`;
-- `refresh_pr_watch`, `retire_pr_watch`;
+- `refresh_pr_watch`, `retire_pr_watch`, `backfill_terminal_pr_watches`;
 - `create_supervised_pull_request`;
 - `set_project_pr_policy`;
 - `diagnose_pr_watch_provenance`, `repair_pr_watch_provenance`;
 - `github_integration_capability`.
 
 Operational counters include active watches, polls, leases, webhooks, audit
-events, executor prompts, merged watches, stale fences, and poll/dispatch/
+events, executor prompts, merged and backfilled watches, historical/archive
+counts, the terminal-retirement backlog, stale fences, and poll/dispatch/
 replication/loop failures.
