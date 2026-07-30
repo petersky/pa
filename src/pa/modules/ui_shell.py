@@ -52,6 +52,9 @@ def _shell_context(request: Request) -> dict:
         "asset_version": assets.version,
         "static_url": assets.url,
         "csrf_token": token_for_request(request),
+        "telemetry_enabled": settings.telemetry_enabled,
+        "telemetry_ui_refresh_seconds": settings.telemetry_ui_refresh_seconds,
+        "telemetry_session_header": prefs.telemetry_session_header,
         "pa_version": __import__("pa").__version__,
         "build_id": f"{__import__('pa').__version__}+{assets.version}",
     }
@@ -98,6 +101,11 @@ def _settings_context(request: Request) -> dict:
         "prompt_adapters": [
             item.model_dump(mode="json") for item in PROMPTS.adapters()
         ],
+        "telemetry_health": (
+            ctx.services["telemetry"].health()
+            if "telemetry" in ctx.services
+            else {"state": "starting"}
+        ),
         "configuration": configuration_snapshot(settings),
     }
 

@@ -134,10 +134,16 @@ Environment variables (prefix `PA_`):
 | `PA_LOG_LEVEL` | `INFO` | Log level (`DEBUG`, `INFO`, …) |
 | `PA_GITHUB_TOKEN` | — | Instance-local GitHub token used by the PR supervisor |
 | `PA_GITHUB_WEBHOOK_SECRET` | — | Instance-local secret for HMAC-SHA256 webhook verification |
+| `PA_TELEMETRY_ENABLED` | `true` | Collect bounded instance resource telemetry |
+| `PA_TELEMETRY_PER_SESSION_ENABLED` | `true` | Attribute metrics to PA-owned agent process trees when supported |
+| `PA_TELEMETRY_DATABASE_PATH` | `<PA_DATA_DIR>/telemetry.db` | Independent, local-only telemetry database |
 | `PA_RELEASE_TRACK` | `release` | Update track: `release`, `beta`, `alpha`, `dev`, or `pypi` |
 | `PA_UPDATE_CHANNEL` | *(alias)* | Legacy alias for `PA_RELEASE_TRACK` |
 | `PA_UPDATE_REPO` | `petersky/pa` | GitHub repo for release checks |
 | `PA_UV_BIN` | *(auto-detected)* | Absolute `uv` path override for install/update in sparse service or SSH environments |
+
+See [Telemetry](docs/TELEMETRY.md) for collection quality, retention, privacy,
+platform limitations, and the API/CLI surface.
 
 ## Theming
 

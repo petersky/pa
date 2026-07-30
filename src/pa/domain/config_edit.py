@@ -152,6 +152,50 @@ def validate_config_changes(
             raise ConfigError("workspace_root must be outside data_dir")
     if bool(candidate.oidc_client_id) != bool(candidate.oidc_issuer):
         raise ConfigError("oidc_issuer and oidc_client_id must be configured together")
+    if (
+        candidate.telemetry_persistence_interval_seconds
+        < candidate.telemetry_live_interval_seconds
+    ):
+        raise ConfigError(
+            "telemetry_persistence_interval_seconds must be greater than or equal "
+            "to telemetry_live_interval_seconds"
+        )
+    if (
+        candidate.telemetry_rollup_retention_hours
+        < candidate.telemetry_raw_retention_hours
+    ):
+        raise ConfigError(
+            "telemetry_rollup_retention_hours must be greater than or equal to "
+            "telemetry_raw_retention_hours"
+        )
+    if candidate.telemetry_default_report_range not in {
+        "15m",
+        "1h",
+        "6h",
+        "24h",
+        "7d",
+        "30d",
+    }:
+        raise ConfigError("telemetry_default_report_range is not supported")
+    if candidate.telemetry_database_path:
+        data_dir = Path(candidate.data_dir).expanduser().resolve()
+        database_path = Path(candidate.telemetry_database_path).expanduser().resolve()
+        protected_files = {
+            data_dir / "pa.db",
+            data_dir / "pa.db-wal",
+            data_dir / "pa.db-shm",
+            data_dir / "sync_refs.json",
+            data_dir / "sync_refs.lock",
+        }
+        objects_dir = data_dir / "objects"
+        if (
+            database_path in protected_files
+            or database_path == objects_dir
+            or objects_dir in database_path.parents
+        ):
+            raise ConfigError(
+                "telemetry_database_path must be outside PA metadata and sync authority"
+            )
     return candidate
 
 

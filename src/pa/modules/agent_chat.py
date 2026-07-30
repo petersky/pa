@@ -364,6 +364,7 @@ class PreferencesBody(BaseModel):
     agent_auto_approve_permissions: bool | None = None
     agent_provider: str | None = None
     agent_surfaces: dict[str, Any] | None = None
+    telemetry_session_header: Literal["hidden", "compact", "expanded"] | None = None
     scope: Literal["user", "global"] = "user"
 
 
@@ -2312,6 +2313,7 @@ def get_agent_preferences(request: Request) -> dict:
                 k: v.model_dump() if hasattr(v, "model_dump") else v
                 for k, v in (prefs.agent_surfaces or {}).items()
             },
+            "telemetry_session_header": prefs.telemetry_session_header,
         }
 
     effective_provider = settings.agent_provider
@@ -2360,6 +2362,8 @@ def put_agent_preferences(request: Request, body: PreferencesBody) -> dict:
                 .agent_surfaces
             )
         updates["agent_surfaces"] = {**(existing or {}), **surfaces}
+    if body.telemetry_session_header is not None:
+        updates["telemetry_session_header"] = body.telemetry_session_header
     if not updates:
         return get_agent_preferences(request)
     if body.scope == "global":

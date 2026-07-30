@@ -1,6 +1,24 @@
 {% from "macros/icons.html" import icon %}
 
 <div class="chrome-actions">
+  {% if telemetry_enabled %}
+  <div class="telemetry-header"
+       data-telemetry-header
+       data-refresh-seconds="{{ telemetry_ui_refresh_seconds }}"
+       aria-label="Live instance resources">
+    {% for metric, label in [('cpu.utilization', 'CPU'), ('memory.utilization', 'Memory'), ('disk.write_throughput', 'Disk'), ('network.ingress', 'Network')] %}
+    <a href="/reports?metric={{ metric }}"
+       class="telemetry-mini"
+       data-telemetry-mini="{{ metric }}"
+       title="{{ label }} telemetry — open Reports"
+       aria-label="{{ label }} telemetry; open Reports">
+      <span>{{ label }}</span><svg viewBox="0 0 48 16" aria-hidden="true"><path data-sparkline></path></svg>
+      <output data-telemetry-value>—</output>
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   <button type="button" class="new-card-button" data-new-card-open
           title="Create a new card" aria-label="Create a new card">
     <span aria-hidden="true">+</span> New

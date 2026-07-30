@@ -67,6 +67,20 @@ class InstanceConfig(BaseModel):
     blocking_default_timeout: float = Field(default=30.0, gt=0, le=3600)
     blocking_slow_call_seconds: float = Field(default=0.5, gt=0, le=60)
     event_loop_probe_interval: float = Field(default=0.1, gt=0, le=10)
+    telemetry_enabled: bool = True
+    telemetry_live_interval_seconds: float = Field(default=5.0, ge=1.0, le=300)
+    telemetry_persistence_interval_seconds: float = Field(default=30.0, ge=5.0, le=3600)
+    telemetry_raw_retention_hours: float = Field(default=168.0, ge=1.0, le=8760)
+    telemetry_rollup_retention_hours: float = Field(default=2160.0, ge=1.0, le=43800)
+    telemetry_max_database_bytes: int = Field(
+        default=512 * 1024 * 1024,
+        ge=16 * 1024 * 1024,
+        le=64 * 1024 * 1024 * 1024,
+    )
+    telemetry_database_path: str | None = None
+    telemetry_per_session_enabled: bool = True
+    telemetry_ui_refresh_seconds: float = Field(default=5.0, ge=2.0, le=300)
+    telemetry_default_report_range: str = "1h"
     default_theme_id: str = "pa"
     update_repo: str = "petersky/pa"
     install_method: str = "uv-tool"
@@ -130,7 +144,16 @@ def merge_config_into_settings(data_dir: Path, settings_dict: dict) -> dict:
         # empty lists, and empty dictionaries remain valid explicit values.
         if value is None:
             continue
-        if key in {"host", "instance_url", "fleet_owner_url"} and value == "":
+        if (
+            key
+            in {
+                "host",
+                "instance_url",
+                "fleet_owner_url",
+                "telemetry_database_path",
+            }
+            and value == ""
+        ):
             continue
         if key not in settings_dict:
             settings_dict[key] = value
