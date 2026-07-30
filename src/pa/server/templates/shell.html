@@ -10,7 +10,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   {% if csrf_token %}<meta name="csrf-token" content="{{ csrf_token }}">{% endif %}
-  <meta name="htmx-config" content='{"responseHandling":[{"code":"204","swap":false},{"code":"304","swap":false},{"code":"[23]..","swap":true},{"code":"[45]..","swap":false,"error":true},{"code":"...","swap":false,"error":true}]}'>
+  <meta name="htmx-config" content='{"historyCacheSize":3,"refreshOnHistoryMiss":false,"responseHandling":[{"code":"204","swap":false},{"code":"304","swap":false},{"code":"[23]..","swap":true},{"code":"[45]..","swap":false,"error":true},{"code":"...","swap":false,"error":true}]}'>
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <title>{{ page.label | default('PA') }} — {{ serving_identity.display_name }}</title>
@@ -33,6 +33,7 @@
   <script src="{{ static_url('js/theme.js') }}" defer></script>
   <script type="application/json" id="pa-instance-identities">{{ instance_identity_directory() | tojson }}</script>
   <script src="{{ static_url('js/instance-identity.js') }}" defer></script>
+  <script src="{{ static_url('js/history-policy.js') }}" defer></script>
   <script src="{{ static_url('js/spa.js') }}" defer></script>
   <script src="{{ static_url('js/layout.js') }}" defer></script>
   <script src="{{ static_url('js/agent-chat-drafts.js') }}" defer></script>
@@ -68,7 +69,7 @@
     </div>
     {% include "partials/chrome-actions.html" %}
   </header>
-  <main id="app-view" class="app-view">
+  <main id="app-view" class="app-view" hx-history-elt="true">
     {% include include_template %}
   </main>
   <dialog id="card-detail-dialog" class="card-detail-dialog" aria-label="Card details">

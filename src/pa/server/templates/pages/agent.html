@@ -162,4 +162,6 @@
 </div>
 {% endset %}
 
-{{ page_layout(left=left, main=main, class='page-agent is-sidebar-collapsed') }}
+<div hx-history="false" data-pa-history-private>
+  {{ page_layout(left=left, main=main, class='page-agent is-sidebar-collapsed') }}
+</div>

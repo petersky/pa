@@ -19,6 +19,10 @@ from pa.acp.client import (
     permission_selected,
 )
 from pa.acp.configuration import SessionConfigurationRequest
+from pa.acp.final_message import (
+    assemble_final_assistant_message,
+    is_agent_message_type,
+)
 from pa.acp.providers.registry import DEFAULT_PROVIDER_ID, known_provider_ids
 from pa.acp.providers.resolve import resolve_agent_provider, resolve_provider_id
 from pa.acp.surfaces import (
@@ -165,8 +169,7 @@ class AgentSessionRuntime:
         self._transcript_writer_task: asyncio.Task[None] | None = None
         self._closed = False
         self._turn_started_at: datetime | None = None
-        self._turn_agent_text: list[str] = []
-        self._turn_final_text: list[str] = []
+        self._turn_agent_events: list[dict[str, Any]] = []
         self._runtime_observed_at: datetime = datetime.now(UTC)
         self._connection_generation = 0
 
@@ -378,12 +381,8 @@ class AgentSessionRuntime:
     async def _on_acp_update(self, _external_session_id: str, update: Any) -> None:
         normalized = normalize_session_update(update)
         event_type = str(normalized.get("type") or "session_update")
-        if event_type == "agent_message_chunk" and self._in_flight:
-            text = str(normalized.get("text") or "")
-            if text:
-                self._turn_agent_text.append(text)
-                if normalized.get("phase") == "final":
-                    self._turn_final_text.append(text)
+        if is_agent_message_type(event_type) and self._in_flight:
+            self._turn_agent_events.append(dict(normalized))
         if event_type == "usage_update" and normalized.get("usage"):
             metrics = dict(self.session.metrics_json or {})
             metrics["usage"] = normalized["usage"]
@@ -925,8 +924,7 @@ class AgentSessionRuntime:
         async with self._prompt_lock:
             self._in_flight = item
             self._turn_started_at = datetime.now(UTC)
-            self._turn_agent_text = []
-            self._turn_final_text = []
+            self._turn_agent_events = []
             await self._checkpoint_runtime_async(lifecycle="prompting")
             try:
                 composition = await self._offload(
@@ -1095,9 +1093,9 @@ class AgentSessionRuntime:
                             extract_card_disposition,
                         )
 
-                        final_text = "".join(self._turn_final_text).strip()
-                        if not final_text:
-                            final_text = "".join(self._turn_agent_text).strip()
+                        final_text = assemble_final_assistant_message(
+                            self._turn_agent_events
+                        )
                         disposition, disposition_error = extract_card_disposition(
                             final_text
                         )
@@ -1346,19 +1344,27 @@ class AgentSessionRuntime:
         self._flush_transcript()
         await self._drain_transcripts()
 
-    def snapshot(self) -> dict[str, Any]:
-        self._flush_transcript()
-        events = self.store.list_transcript_events_before(
-            self.session_id,
-            limit=TRANSCRIPT_WINDOW_LIMIT + 1,
-        )
-        has_older = len(events) > TRANSCRIPT_WINDOW_LIMIT
-        events = events[-TRANSCRIPT_WINDOW_LIMIT:]
+    def snapshot(self, *, include_transcript: bool = True) -> dict[str, Any]:
+        """Return runtime state, optionally including the bounded durable transcript.
+
+        Request paths that only need live metadata must leave transcript persistence
+        to its background writer and use the paginated history API separately.
+        """
+        events: list[TranscriptEvent] = []
+        has_older = False
+        if include_transcript:
+            self._flush_transcript()
+            events = self.store.list_transcript_events_before(
+                self.session_id,
+                limit=TRANSCRIPT_WINDOW_LIMIT + 1,
+            )
+            has_older = len(events) > TRANSCRIPT_WINDOW_LIMIT
+            events = events[-TRANSCRIPT_WINDOW_LIMIT:]
         conn = self.connection
         configuration = dict(
             ((self.session.config_json or {}).get("configuration") or {})
         )
-        return {
+        snapshot = {
             "session": self.session.model_dump(mode="json"),
             "connected": self.connected,
             "prompting": self.prompting,
@@ -1376,20 +1382,22 @@ class AgentSessionRuntime:
             "turn_started_at": self._turn_started_at.isoformat()
             if self._turn_started_at
             else None,
-            "transcript": [e.model_dump(mode="json") for e in events],
-            "transcript_page": {
-                "oldest_seq": events[0].seq if events else None,
-                "newest_seq": events[-1].seq if events else None,
-                "has_older": has_older,
-                "next_before_seq": events[0].seq if has_older and events else None,
-                "limit": TRANSCRIPT_WINDOW_LIMIT,
-            },
             "pending_permissions": [
                 self._permission_requests[rid]
                 for rid in self._pending_permissions
                 if rid in self._permission_requests
             ],
         }
+        if include_transcript:
+            snapshot["transcript"] = [e.model_dump(mode="json") for e in events]
+            snapshot["transcript_page"] = {
+                "oldest_seq": events[0].seq if events else None,
+                "newest_seq": events[-1].seq if events else None,
+                "has_older": has_older,
+                "next_before_seq": events[0].seq if has_older and events else None,
+                "limit": TRANSCRIPT_WINDOW_LIMIT,
+            }
+        return snapshot
 
     def to_session_snapshot(self) -> SessionSnapshot:
         return SessionSnapshot(
