@@ -110,12 +110,18 @@ def _session_reconciliation(request: Request, session_id: str) -> dict[str, Any]
     return record.public_dict()["card_reconciliation"]
 
 
-def _observability(request: Request, session: AgentSession) -> dict[str, Any]:
+def _observability(
+    request: Request,
+    session: AgentSession,
+    *,
+    events: list[TranscriptEvent] | None = None,
+) -> dict[str, Any]:
     mgr = _manager(request)
     runtime = mgr.get(session.id)
     if runtime and getattr(runtime, "_closed", False):
         runtime = None
-    events = mgr.store.list_transcript_events_before(session.id, limit=5000)
+    if events is None:
+        events = mgr.store.list_transcript_events_before(session.id, limit=5000)
     settings = request.app.state.ctx.settings
     return build_session_observability(
         session,
@@ -1037,7 +1043,7 @@ def list_agent_session_history(
 
 
 @router.get("/history/{session_id}")
-def get_agent_session_history(
+async def get_agent_session_history(
     request: Request,
     session_id: str,
     after_seq: int | None = None,
@@ -1051,18 +1057,26 @@ def get_agent_session_history(
             detail="Use either after_seq or before_seq, not both",
         )
     mgr = _manager(request)
-    session = mgr.store.get_session(session_id)
+    session = await _offload(
+        mgr,
+        "sqlite.agent_session_read",
+        mgr.store.get_session,
+        session_id,
+        timeout=3.0,
+    )
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     runtime = mgr.get(session_id)
-    if runtime and not getattr(runtime, "_closed", False):
-        runtime._flush_transcript()
     page_limit = max(1, min(limit, 5000))
     if after_seq is not None:
-        events = mgr.store.list_transcript_events(
+        events = await _offload(
+            mgr,
+            "sqlite.transcript_read",
+            mgr.store.list_transcript_events,
             session_id,
             after_seq=max(0, after_seq),
             limit=page_limit + 1,
+            timeout=3.0,
         )
         has_more = len(events) > page_limit
         events = events[:page_limit]
@@ -1076,10 +1090,14 @@ def get_agent_session_history(
         }
     else:
         cursor = max(1, before_seq) if before_seq is not None else None
-        events = mgr.store.list_transcript_events_before(
+        events = await _offload(
+            mgr,
+            "sqlite.transcript_read",
+            mgr.store.list_transcript_events_before,
             session_id,
             before_seq=cursor,
             limit=page_limit + 1,
+            timeout=3.0,
         )
         has_older = len(events) > page_limit
         events = events[-page_limit:]
@@ -1182,11 +1200,15 @@ async def recover_session(
 
 
 @router.get("/sessions/{session_id}")
-def get_session_snapshot(request: Request, session_id: str) -> dict:
+async def get_session_snapshot(request: Request, session_id: str) -> dict:
     runtime = _runtime_or_404(request, session_id)
-    snapshot = runtime.snapshot()
+    snapshot = runtime.snapshot(include_transcript=False)
     snapshot["card_reconciliation"] = _session_reconciliation(request, session_id)
-    snapshot["observability"] = _observability(request, runtime.session)
+    snapshot["observability"] = _observability(
+        request,
+        runtime.session,
+        events=[],
+    )
     return snapshot
 
 

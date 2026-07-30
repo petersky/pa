@@ -10,6 +10,82 @@ from pathlib import Path
 
 
 class AgentChatSseLifecycleTests(unittest.TestCase):
+    def test_slow_live_snapshot_preserves_history_and_schedules_retry(self) -> None:
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node is required for the browser-side lifecycle harness")
+
+        script_path = (
+            Path(__file__).parents[1]
+            / "src"
+            / "pa"
+            / "server"
+            / "static"
+            / "js"
+            / "agent-chat.js"
+        )
+        harness = textwrap.dedent(
+            f"""
+            const fs = require("fs");
+            const vm = require("vm");
+            const noop = () => {{}};
+            const document = {{
+              body: {{ addEventListener: noop }},
+              addEventListener: noop,
+              querySelector: () => null,
+              querySelectorAll: () => [],
+            }};
+            const window = {{
+              addEventListener: noop,
+              location: {{ href: "http://127.0.0.1:8080/agent" }},
+            }};
+            const context = {{
+              window, document, console: {{ debug: noop }}, URL,
+              setTimeout, clearTimeout, AbortController,
+            }};
+            vm.runInNewContext(
+              fs.readFileSync({str(script_path)!r}, "utf8"),
+              context
+            );
+            const Widget = window.PAAgentChat.AgentChatWidget;
+            const widget = Object.create(Widget.prototype);
+            let message = "";
+            let retry = false;
+            Object.assign(widget, {{
+              destroyed: false,
+              subscriptionGeneration: 7,
+              transcriptEvents: [{{ seq: 41, type: "agent_message_chunk" }}],
+              sessionRoute: {{ state: "live" }},
+              apiWithTimeout: () => Promise.reject(new Error("slow")),
+              setStatus: noop,
+              setComposerEnabled: noop,
+              setPlaceholder: (value) => {{ message = value; }},
+              _setRecoveryControl: noop,
+              _scheduleLiveStateRetry: () => {{ retry = true; }},
+              applySnapshot: () => {{ throw new Error("slow snapshot should not replace history"); }},
+            }});
+            widget._loadLiveSnapshot("session-1", 7).then(() => {{
+              if (!message.includes("Durable history is shown")) {{
+                throw new Error("missing actionable degraded-state message");
+              }}
+              if (!retry) throw new Error("live-state retry was not scheduled");
+              if (widget.transcriptEvents.length !== 1 || widget.transcriptEvents[0].seq !== 41) {{
+                throw new Error("durable history was discarded");
+              }}
+            }}).catch((error) => {{
+              process.stderr.write(error.stack || String(error));
+              process.exitCode = 1;
+            }});
+            """
+        )
+        completed = subprocess.run(
+            [node, "-e", harness],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
     def test_switching_more_than_six_sessions_keeps_one_stream(self) -> None:
         node = shutil.which("node")
         if not node:
@@ -114,6 +190,6 @@ class AgentChatSseLifecycleTests(unittest.TestCase):
         self.assertIn('destroyAll(target || document, "spa-swap")', agent_chat)
         self.assertIn('destroyAll(document, "pagehide")', agent_chat)
         self.assertIn('closeAll(document, "pagehide-persisted")', agent_chat)
-        self.assertIn('root._acw.connectSSE()', agent_chat)
+        self.assertIn("root._acw.connectSSE()", agent_chat)
         self.assertIn('window.PAAgentChat.destroy(content, "card-closed")', spa)
         self.assertIn('window.PAAgentChat.destroy(content, "card-replaced")', spa)

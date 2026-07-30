@@ -3,7 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 from fastapi import HTTPException
 
@@ -118,8 +118,11 @@ class RemoteOwnerReconnectTests(unittest.IsolatedAsyncioTestCase):
         ctx.store.get_session.return_value = None
         ctx.settings.instance_id = "local-id"
         ctx.settings.instance_name = "local"
-        ctx.services = {"dispatch_store": dispatch_store}
-        ctx.require_service.return_value = fleet
+        ctx.services = {
+            "dispatch_store": dispatch_store,
+            "fleet_registry": fleet,
+        }
+        ctx.require_service.side_effect = ctx.services.__getitem__
         request = MagicMock()
         request.app.state.ctx = ctx
         history = {
@@ -150,3 +153,137 @@ class RemoteOwnerReconnectTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(reconnected["owner"]["instance_id"], "monica-id")
         self.assertEqual(reconnected["provider"]["session_id"], "provider-remote")
         self.assertIn("/instances/monica-id/agent", reconnected["api_base"])
+        self.assertEqual(
+            reconnected["history_url"],
+            "/api/fleet/instances/monica-id/agent/history/remote-session",
+        )
+        self.assertEqual(
+            ctx.require_service.call_args_list,
+            [call("fleet_registry"), call("fleet_registry")],
+        )
+        peer.assert_awaited_with(
+            request,
+            "monica-id",
+            "GET",
+            "history/remote-session",
+            params={"limit": 1},
+            timeout=3.0,
+        )
+
+    async def test_slow_remote_owner_returns_normalized_degraded_route(self) -> None:
+        fleet = MagicMock()
+        fleet.get_instance.return_value = FleetInstance(
+            instance_id="monica-id",
+            name="monica",
+            url="http://monica:8080",
+        )
+        ctx = MagicMock()
+        ctx.store.get_session.return_value = None
+        ctx.settings.instance_id = "local-id"
+        ctx.settings.instance_name = "local"
+        ctx.services = {"fleet_registry": fleet}
+        ctx.require_service.side_effect = ctx.services.__getitem__
+        request = MagicMock()
+        request.app.state.ctx = ctx
+
+        async def slow_peer(*args, **kwargs):
+            await __import__("asyncio").sleep(1)
+
+        with (
+            patch("pa.modules.fleet.require_user", return_value=object()),
+            patch("pa.modules.fleet.SESSION_ROUTE_TIMEOUT", 0.01),
+            patch("pa.modules.fleet._peer_agent_json", side_effect=slow_peer),
+        ):
+            route = await resolve_session_route(
+                request,
+                "remote-session",
+                owner_instance_id="monica-id",
+            )
+
+        self.assertEqual(route["state"], "owner_unreachable")
+        self.assertTrue(route["recoverable"])
+        self.assertIn("responding slowly", route["message"])
+        self.assertEqual(route["owner"]["instance_id"], "monica-id")
+
+    async def test_remote_owner_normalizes_recoverable_and_expired_states(self) -> None:
+        fleet = MagicMock()
+        fleet.get_instance.return_value = FleetInstance(
+            instance_id="monica-id",
+            name="monica",
+            url="http://monica:8080",
+        )
+        ctx = MagicMock()
+        ctx.store.get_session.return_value = None
+        ctx.settings.instance_id = "local-id"
+        ctx.settings.instance_name = "local"
+        ctx.services = {"fleet_registry": fleet}
+        ctx.require_service.side_effect = ctx.services.__getitem__
+        request = MagicMock()
+        request.app.state.ctx = ctx
+
+        for status, expected_state, recoverable in (
+            ("idle", "recoverable", True),
+            ("closed", "expired", False),
+        ):
+            with (
+                self.subTest(status=status),
+                patch("pa.modules.fleet.require_user", return_value=object()),
+                patch(
+                    "pa.modules.fleet._peer_agent_json",
+                    AsyncMock(
+                        return_value={
+                            "session": {
+                                "id": "remote-session",
+                                "agent_name": "codex",
+                                "status": status,
+                            },
+                            "live": False,
+                        }
+                    ),
+                ),
+            ):
+                route = await resolve_session_route(
+                    request,
+                    "remote-session",
+                    owner_instance_id="monica-id",
+                )
+            self.assertEqual(route["state"], expected_state)
+            self.assertEqual(route["recoverable"], recoverable)
+
+    async def test_remote_owner_missing_session_is_normalized(self) -> None:
+        fleet = MagicMock()
+        fleet.get_instance.return_value = FleetInstance(
+            instance_id="monica-id",
+            name="monica",
+            url="http://monica:8080",
+        )
+        ctx = MagicMock()
+        ctx.store.get_session.return_value = None
+        ctx.settings.instance_id = "local-id"
+        ctx.settings.instance_name = "local"
+        ctx.services = {"fleet_registry": fleet}
+        ctx.require_service.side_effect = ctx.services.__getitem__
+        request = MagicMock()
+        request.app.state.ctx = ctx
+
+        with (
+            patch("pa.modules.fleet.require_user", return_value=object()),
+            patch(
+                "pa.modules.fleet._peer_agent_json",
+                AsyncMock(
+                    side_effect=HTTPException(
+                        status_code=404,
+                        detail="Session not found",
+                    )
+                ),
+            ),
+        ):
+            route = await resolve_session_route(
+                request,
+                "remote-session",
+                owner_instance_id="monica-id",
+            )
+
+        self.assertEqual(route["state"], "missing")
+        self.assertFalse(route["recoverable"])
+        self.assertEqual(route["owner"]["instance_name"], "monica")

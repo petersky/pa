@@ -730,7 +730,7 @@ class AgentChatSseTests(unittest.TestCase):
 
         with patch("pa.modules.agent_chat._manager", return_value=manager):
             rows = list_agent_session_history(request, card_id="card-1")
-            audit = get_agent_session_history(request, session.id)
+            audit = asyncio.run(get_agent_session_history(request, session.id))
 
         self.assertEqual(rows[0]["id"], session.id)
         self.assertFalse(rows[0]["live"])
@@ -765,11 +765,13 @@ class AgentChatSseTests(unittest.TestCase):
                 request.app.state.ctx.settings.instance_name = "macmini"
 
                 with patch("pa.modules.agent_chat._manager", return_value=manager):
-                    newest = get_agent_session_history(request, session.id)
-                    older = get_agent_session_history(
-                        request,
-                        session.id,
-                        before_seq=5002,
+                    newest = asyncio.run(get_agent_session_history(request, session.id))
+                    older = asyncio.run(
+                        get_agent_session_history(
+                            request,
+                            session.id,
+                            before_seq=5002,
+                        )
                     )
 
                 self.assertEqual(
@@ -784,6 +786,8 @@ class AgentChatSseTests(unittest.TestCase):
                 self.assertTrue(older["page"]["has_older"])
                 self.assertEqual(older["page"]["next_before_seq"], 4002)
                 self.assertEqual(newest["live"], live)
+                if runtime:
+                    self.assertFalse(runtime._flushed)
 
     def test_history_reports_exhausted_reverse_page(self) -> None:
         session = AgentSession(id="sess-short", agent_name="codex")
@@ -807,7 +811,9 @@ class AgentChatSseTests(unittest.TestCase):
         request.app.state.ctx.settings.instance_name = "macmini"
 
         with patch("pa.modules.agent_chat._manager", return_value=manager):
-            page = get_agent_session_history(request, session.id, before_seq=3, limit=2)
+            page = asyncio.run(
+                get_agent_session_history(request, session.id, before_seq=3, limit=2)
+            )
 
         self.assertEqual([event["seq"] for event in page["events"]], [1, 2])
         self.assertFalse(page["page"]["has_older"])

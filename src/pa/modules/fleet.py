@@ -139,6 +139,7 @@ logger = logging.getLogger(__name__)
 FLEET_HEALTH_TIMEOUT = 3.0
 FLEET_DETAIL_TIMEOUT = 5.0
 FLEET_AGGREGATE_TIMEOUT = 9.0
+SESSION_ROUTE_TIMEOUT = 3.0
 
 router = APIRouter()
 ui_router = APIRouter()
@@ -3604,6 +3605,7 @@ async def _peer_agent_json(
     path: str,
     *,
     body: dict[str, Any] | None = None,
+    params: dict[str, Any] | None = None,
     timeout: float = 120.0,
 ) -> dict | list:
     inst = _fleet_instance_or_404(request, instance_id)
@@ -3611,6 +3613,13 @@ async def _peer_agent_json(
     client = request.app.state.ctx.services.get("fleet_http_client")
     owns_client = client is None
     client = client or httpx.AsyncClient(timeout=timeout)
+    request_kwargs: dict[str, Any] = {
+        "headers": _peer_headers(request),
+        "json": body,
+        "timeout": timeout,
+    }
+    if params is not None:
+        request_kwargs["params"] = params
     try:
         resp = await _fleet_http(
             request,
@@ -3618,9 +3627,7 @@ async def _peer_agent_json(
             client.request(
                 method,
                 url,
-                headers=_peer_headers(request),
-                json=body,
-                timeout=timeout,
+                **request_kwargs,
             ),
             timeout=timeout,
         )
@@ -6505,7 +6512,7 @@ async def resolve_session_route(
             "message": "This agent session was deleted or has expired.",
         }
 
-    fleet: FleetRegistry = ctx.require_service("fleet")
+    fleet: FleetRegistry = ctx.require_service("fleet_registry")
     owner = fleet.get_instance(owner_id)
     api_base = f"/api/fleet/instances/{quote(owner_id, safe='-._~')}/agent"
     if not owner:
@@ -6522,13 +6529,30 @@ async def resolve_session_route(
             "message": "The session owner is not currently registered. Retry after it reconnects.",
         }
     try:
-        history = await _peer_agent_json(
-            request,
-            owner_id,
-            "GET",
-            f"history/{session_id}",
-            timeout=10.0,
+        history = await asyncio.wait_for(
+            _peer_agent_json(
+                request,
+                owner_id,
+                "GET",
+                f"history/{session_id}",
+                params={"limit": 1},
+                timeout=SESSION_ROUTE_TIMEOUT,
+            ),
+            timeout=SESSION_ROUTE_TIMEOUT,
         )
+    except TimeoutError:
+        return {
+            "session_id": session_id,
+            "state": "owner_unreachable",
+            "live": False,
+            "recoverable": True,
+            "api_base": api_base,
+            "owner": {
+                "instance_id": owner_id,
+                "instance_name": owner.name,
+            },
+            "message": "The session owner is responding slowly. Durable history may still be available; PA will retry.",
+        }
     except HTTPException as exc:
         if exc.status_code in {502, 503, 504}:
             return {
@@ -6560,11 +6584,42 @@ async def resolve_session_route(
                     else "This session has ended; its retained history is unavailable."
                 ),
             }
-        raise
-    if not isinstance(history, dict) or not isinstance(history.get("session"), dict):
-        raise HTTPException(
-            status_code=502, detail="Session owner returned invalid history"
+        logger.warning(
+            "Remote session route failed owner=%s session=%s status=%s",
+            owner_id,
+            session_id,
+            exc.status_code,
         )
+        return {
+            "session_id": session_id,
+            "state": "owner_unreachable",
+            "live": False,
+            "recoverable": True,
+            "api_base": api_base,
+            "owner": {
+                "instance_id": owner_id,
+                "instance_name": owner.name,
+            },
+            "message": "The session owner could not provide live state. Durable history may still be available; PA will retry.",
+        }
+    if not isinstance(history, dict) or not isinstance(history.get("session"), dict):
+        logger.warning(
+            "Remote session route received invalid history owner=%s session=%s",
+            owner_id,
+            session_id,
+        )
+        return {
+            "session_id": session_id,
+            "state": "owner_unreachable",
+            "live": False,
+            "recoverable": True,
+            "api_base": api_base,
+            "owner": {
+                "instance_id": owner_id,
+                "instance_name": owner.name,
+            },
+            "message": "The session owner returned incomplete live state. Durable history may still be available; PA will retry.",
+        }
     session = history["session"]
     live = bool(history.get("live"))
     ended = session.get("status") in {"closed", "quiesced"}
