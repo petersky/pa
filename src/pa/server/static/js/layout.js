@@ -102,6 +102,13 @@
 
   function showSection(root, sectionId) {
     if (!root || !sectionId) return;
+    var previous = root.dataset.activeSection || "";
+    if (previous !== sectionId) {
+      root.dispatchEvent(new CustomEvent("pa:section-will-change", {
+        bubbles: true,
+        detail: { layout: root, from: previous, to: sectionId }
+      }));
+    }
     root.querySelectorAll("[data-section]").forEach(function (el) {
       var show = el.getAttribute("data-section") === sectionId;
       el.hidden = !show;
@@ -115,6 +122,11 @@
       url.searchParams.set("section", sectionId);
       history.replaceState(null, "", url.toString());
     } catch (e) {}
+    root.dataset.activeSection = sectionId;
+    root.dispatchEvent(new CustomEvent("pa:section-changed", {
+      bubbles: true,
+      detail: { layout: root, from: previous, to: sectionId }
+    }));
   }
 
   function initSections(root) {

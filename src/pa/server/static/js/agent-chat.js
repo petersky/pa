@@ -9,6 +9,8 @@
   const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
   const MAX_TOTAL_IMAGE_BYTES = 20 * 1024 * 1024;
   const TRANSCRIPT_PAGE_LIMIT = 1000;
+  const LIVE_SNAPSHOT_TIMEOUT_MS = 3000;
+  const LIVE_STATE_RETRY_MS = 3000;
 
   let libsPromise = null;
 
@@ -227,6 +229,7 @@
     this.esSessionId = "";
     this.esApiBase = "";
     this.sseReconnectCount = 0;
+    this.externalEventTransport = false;
     this.destroyed = false;
     this.subscriptionGeneration = 0;
     this.lastSeq = 0;
@@ -260,6 +263,7 @@
     this.browserRefreshId = null;
 
     this.startupRetryId = null;
+    this.liveStateRetryId = null;
     this._bind();
     this.drafts = window.PAAgentDrafts && window.PAAgentDrafts.installWidget
       ? window.PAAgentDrafts.installWidget(this) : null;
@@ -435,6 +439,19 @@
       return res.json();
     });
   };
+
+  AgentChatWidget.prototype.apiWithTimeout = function (path, timeoutMs) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(function () { controller.abort(); }, timeoutMs);
+    return this.api(path, { signal: controller.signal })
+      .catch(function (error) {
+        if (error && error.name === "AbortError") {
+          throw new Error("Live state request exceeded its latency budget.");
+        }
+        throw error;
+      })
+      .finally(function () { clearTimeout(timeoutId); });
+  };
   AgentChatWidget.prototype.retryAfterStartupRecovery = function (error) {
     const code = apiErrorCode(error);
     if (code !== "agent_recovery_in_progress") return false;
@@ -609,6 +626,57 @@
     };
   };
 
+  AgentChatWidget.prototype._applyDurableHistory = function (sessionId, history, generation) {
+    if (this.destroyed || generation !== this.subscriptionGeneration) return null;
+    this.applySnapshot(this._historySnapshot(history));
+    this.sessionId = sessionId;
+    this.root.dataset.sessionId = sessionId;
+    this.setComposerEnabled(false);
+    return history;
+  };
+
+  AgentChatWidget.prototype._scheduleLiveStateRetry = function (sessionId, generation, reroute) {
+    if (this.liveStateRetryId) clearTimeout(this.liveStateRetryId);
+    const self = this;
+    this.liveStateRetryId = setTimeout(function () {
+      self.liveStateRetryId = null;
+      if (self.destroyed || generation !== self.subscriptionGeneration) return;
+      if (reroute) {
+        self.openSession(sessionId, self.ownerInstanceId, { replace: true }).catch(function () {});
+      } else {
+        self._loadLiveSnapshot(sessionId, generation);
+      }
+    }, LIVE_STATE_RETRY_MS);
+  };
+
+  AgentChatWidget.prototype._loadLiveSnapshot = function (sessionId, generation) {
+    const self = this;
+    return this.apiWithTimeout(
+      "/sessions/" + encodeURIComponent(sessionId),
+      LIVE_SNAPSHOT_TIMEOUT_MS
+    ).then(function (snap) {
+      if (self.destroyed || generation !== self.subscriptionGeneration) return null;
+      if (self.liveStateRetryId) clearTimeout(self.liveStateRetryId);
+      self.liveStateRetryId = null;
+      self.showRecoveryActions({});
+      self.applySnapshot(snap);
+      self.connectSSE();
+      self.refreshBrowserState();
+      return snap;
+    }).catch(function () {
+      if (self.destroyed || generation !== self.subscriptionGeneration) return null;
+      self.sessionRoute = Object.assign({}, self.sessionRoute || {}, { state: "live_degraded" });
+      self.setStatus("offline");
+      self.setComposerEnabled(false);
+      self.setPlaceholder(
+        "Live controls are temporarily unavailable. Durable history is shown; PA will retry automatically."
+      );
+      self._setRecoveryControl(true, "Retry live state");
+      self._scheduleLiveStateRetry(sessionId, generation, false);
+      return null;
+    });
+  };
+
   AgentChatWidget.prototype._setRecoveryControl = function (visible, label) {
     const button = this.root.querySelector("[data-acw-recover]");
     if (!button) return;
@@ -642,6 +710,17 @@
     this._setRecoveryControl(false);
     this.showRecoveryActions({});
     this.setPlaceholder("Locating session owner…");
+    let durableHistory = null;
+    if (this.ownerInstanceId) {
+      this.apiBase = "/api/fleet/instances/" +
+        encodeURIComponent(this.ownerInstanceId) + "/agent";
+      this.root.dataset.apiBase = this.apiBase;
+      durableHistory = this.api("/history/" + encodeURIComponent(sessionId))
+        .then(function (history) {
+          return self._applyDurableHistory(sessionId, history, generation);
+        })
+        .catch(function () { return null; });
+    }
     return this.resolveSessionRoute(sessionId, this.ownerInstanceId)
       .then(function (route) {
         if (self.destroyed || generation !== self.subscriptionGeneration) return null;
@@ -652,14 +731,29 @@
           self.drafts.setInstance(self.ownerInstanceId);
           self.drafts.switchSession(sessionId);
         }
-        if (route.api_base) self.apiBase = String(route.api_base).replace(/\/$/, "");
+        if (route.api_base) {
+          self.apiBase = String(route.api_base).replace(/\/$/, "");
+          self.root.dataset.apiBase = self.apiBase;
+        }
         self._writeSessionUrl(!!options.replace);
+        if (!durableHistory && route.history_url) {
+          durableHistory = self.api("/history/" + encodeURIComponent(sessionId))
+            .then(function (history) {
+              return self._applyDurableHistory(sessionId, history, generation);
+            });
+        }
         if (route.state === "owner_unreachable") {
-          self.setStatus("offline");
-          self.setComposerEnabled(false);
-          self.setPlaceholder(route.message || "The session owner is temporarily unreachable.");
-          self._setRecoveryControl(true, "Retry connection");
-          return null;
+          return Promise.resolve(durableHistory).catch(function () { return null; }).then(function () {
+            self.setStatus("offline");
+            self.setComposerEnabled(false);
+            self.setPlaceholder(
+              route.message ||
+              "The session owner is temporarily unreachable. Durable history is shown when available."
+            );
+            self._setRecoveryControl(true, "Retry connection");
+            self._scheduleLiveStateRetry(sessionId, generation, true);
+            return null;
+          });
         }
         if (route.state === "missing") {
           self.clearSelectedSession();
@@ -670,19 +764,15 @@
           return null;
         }
         if (route.live) {
-          return self.api("/sessions/" + encodeURIComponent(sessionId)).then(function (snap) {
-            if (self.destroyed || generation !== self.subscriptionGeneration) return null;
+          return Promise.resolve(durableHistory).catch(function () {
+            return null;
+          }).then(function () {
             if (self.startupRetryId) clearTimeout(self.startupRetryId);
             self.startupRetryId = null;
-            self.showRecoveryActions({});
-            self.applySnapshot(snap);
-            self.connectSSE();
-            self.refreshBrowserState();
-            return snap;
+            return self._loadLiveSnapshot(sessionId, generation);
           });
         }
-        return self.api("/history/" + encodeURIComponent(sessionId)).then(function (history) {
-          self.applySnapshot(self._historySnapshot(history));
+        return Promise.resolve(durableHistory).then(function (history) {
           self.setComposerEnabled(false);
           self.showRecoveryActions({
             recoverable: route.recoverable,
@@ -704,12 +794,17 @@
         if (code === "session_not_live" || code === "session_deleted") {
           return self.resolveSessionNotLive(err, sessionId);
         }
-        self.sessionRoute = { state: "owner_unreachable" };
-        self.setPlaceholder("Failed to load session: " + err.message);
-        self.setStatus("error");
-        self.setComposerEnabled(false);
-        self._setRecoveryControl(true, "Retry connection");
-        throw err;
+        return Promise.resolve(durableHistory).catch(function () { return null; }).then(function () {
+          self.sessionRoute = { state: "owner_unreachable" };
+          self.setPlaceholder(
+            "Live state is temporarily unavailable. Durable history is shown when available; PA will retry automatically."
+          );
+          self.setStatus("offline");
+          self.setComposerEnabled(false);
+          self._setRecoveryControl(true, "Retry connection");
+          self._scheduleLiveStateRetry(sessionId, generation, true);
+          return null;
+        });
       });
   };
 
@@ -718,7 +813,11 @@
     const targetSessionId = sessionId || this.sessionId;
     if (!targetSessionId) return Promise.reject(new Error("No session selected"));
     this._setRecoveryControl(false);
-    if (this.sessionRoute && this.sessionRoute.state === "owner_unreachable") {
+    if (
+      this.sessionRoute &&
+      (this.sessionRoute.state === "owner_unreachable" ||
+       this.sessionRoute.state === "live_degraded")
+    ) {
       return this.openSession(targetSessionId, this.ownerInstanceId, { replace: true });
     }
     this.setPlaceholder("Recovering provider thread…");
@@ -1006,7 +1105,7 @@
 
   AgentChatWidget.prototype.applySnapshot = function (snap) {
     const self = this;
-    this.lastSnapshot = snap;
+    this.lastSnapshot = Object.assign({}, this.lastSnapshot || {}, snap);
     const session = snap.session || {};
     const provisioning = session.config_json && session.config_json.provisioning || {};
     const recoveryBlocked = session.status === "recovery_blocked" || provisioning.state === "blocked";
@@ -1028,12 +1127,14 @@
       this.els.title.textContent = session.title || session.label || "Agent";
     }
     this.queuePaused = !!snap.queue_paused;
-    this.hasOlder = !!(snap.transcript_page && snap.transcript_page.has_older);
-    this.olderCursor = snap.transcript_page && (
-      snap.transcript_page.next_before_seq || snap.transcript_page.oldest_seq
-    );
-    this.olderError = "";
-    this.renderTranscript(snap.transcript || [], { scrollBottom: true });
+    if (Object.prototype.hasOwnProperty.call(snap, "transcript")) {
+      this.hasOlder = !!(snap.transcript_page && snap.transcript_page.has_older);
+      this.olderCursor = snap.transcript_page && (
+        snap.transcript_page.next_before_seq || snap.transcript_page.oldest_seq
+      );
+      this.olderError = "";
+      this.renderTranscript(snap.transcript || [], { scrollBottom: true });
+    }
     // Transcript replay includes historical turn-completed events. Apply the live
     // snapshot state afterward so replay cannot reset an active turn's timer.
     this.setTurnActive(!!snap.prompting, snap.turn_started_at);
@@ -1177,6 +1278,10 @@
   AgentChatWidget.prototype.connectSSE = function () {
     const self = this;
     if (this.destroyed || !this.sessionId) return;
+    if (this.externalEventTransport) {
+      this.closeSSE("external-multiplex");
+      return;
+    }
     if (
       this.es &&
       this.esSessionId === this.sessionId &&
@@ -1279,6 +1384,12 @@
     };
   };
 
+  AgentChatWidget.prototype.useExternalEventTransport = function (enabled) {
+    this.externalEventTransport = !!enabled;
+    if (this.externalEventTransport) this.closeSSE("external-multiplex");
+    else if (this.sessionId) this.connectSSE();
+  };
+
   AgentChatWidget.prototype.closeSSE = function (reason) {
     this.subscriptionGeneration += 1;
     const es = this.es;
@@ -1304,6 +1415,8 @@
     this.setTurnActive(false);
     if (this.startupRetryId) clearTimeout(this.startupRetryId);
     this.startupRetryId = null;
+    if (this.liveStateRetryId) clearTimeout(this.liveStateRetryId);
+    this.liveStateRetryId = null;
     Object.keys(this.toolTimers).forEach(function (key) {
       clearTimeout(this.toolTimers[key]);
     }, this);
@@ -3036,5 +3149,8 @@
     let target = (e.detail && e.detail.target) || e.target;
     if (typeof target === "string") target = document.querySelector(target);
     destroyAll(target || document, "spa-swap");
+  });
+  document.addEventListener("pa:historyWillReload", function () {
+    destroyAll(document, "history-reload");
   });
 })();

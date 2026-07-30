@@ -212,6 +212,9 @@ async def async_runtime_status(request: Request) -> dict:
     provider_gate = request.app.state.ctx.services.get("provider_action_gate")
     if provider_gate:
         snapshot["queues"]["provider_actions"] = provider_gate.snapshot()
+    from pa.core.sse_observability import sse_connections
+
+    snapshot["sse_connections"] = sse_connections.snapshot()
     return snapshot
 
 

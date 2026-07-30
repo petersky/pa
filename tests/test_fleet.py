@@ -523,6 +523,94 @@ class FleetPageLazyLoadTests(unittest.TestCase):
                 self.assertEqual(dimension.json()["generation"], 17)
                 self.assertIn("fleet-reachability", dimension.headers["server-timing"])
                 self.assertEqual(dimension.headers["x-fleet-generation"], "17")
+                self.assertIn("OpenSSH target", page.text)
+                self.assertIn("Create plan &amp; start", page.text)
+                self.assertIn("pa-bootstrap-required-input", page.text)
+        finally:
+            reset_instance_agent()
+            reset_store()
+
+    def test_bootstrap_api_creates_idempotent_secret_free_plan(self) -> None:
+        from fastapi.testclient import TestClient
+
+        from pa.core.kernel import Kernel
+        from pa.domain.store import reset_store
+        from pa.fleet.bootstrap import TargetDiscovery
+        from pa.auth.users import UserDirectory
+        from pa.instance.agent_session import reset_instance_agent
+
+        reset_store()
+        reset_instance_agent()
+        settings = Settings(
+            data_dir=self.data_dir,
+            instance_id="local-1",
+            instance_name="owner",
+            instance_url="http://owner:8080",
+            agent_enabled=False,
+            peers=[],
+        )
+        discovery = TargetDiscovery(
+            target="peter@mini",
+            host="mini",
+            user="peter",
+            port=22,
+            host_key_fingerprint="SHA256:trusted",
+            host_key_algorithm="ssh-ed25519",
+            host_key_state="unknown",
+        )
+        body = {
+            "idempotency_key": "setup-mini-api-1",
+            "request": {
+                "target": "peter@mini",
+                "instance_name": "mini",
+                "instance_url": "http://mini:8080",
+                "host_key_policy": "pinned",
+                "host_key_fingerprint": "SHA256:trusted",
+                "password": "never-persist-this-password",
+            },
+        }
+        headers = {
+            "Authorization": (
+                f"Bearer "
+                f"{UserDirectory(self.data_dir).ensure_default_user().cli_token}"
+            )
+        }
+        try:
+            app = Kernel.boot(settings=settings).build_app()
+            with (
+                patch(
+                    "pa.modules.fleet.discover_target",
+                    AsyncMock(return_value=discovery),
+                ),
+                TestClient(app) as client,
+            ):
+                created = client.post(
+                    "/api/fleet/bootstrap-jobs", json=body, headers=headers
+                )
+                self.assertEqual(created.status_code, 201, created.text)
+                payload = created.json()
+                self.assertFalse(payload["duplicate"])
+                self.assertEqual(payload["state"], "planned")
+                self.assertEqual(len(payload["phases"]), 13)
+                self.assertNotIn(
+                    "never-persist-this-password", json.dumps(payload)
+                )
+
+                duplicate = client.post(
+                    "/api/fleet/bootstrap-jobs", json=body, headers=headers
+                )
+                self.assertEqual(duplicate.status_code, 201, duplicate.text)
+                self.assertTrue(duplicate.json()["duplicate"])
+                self.assertEqual(
+                    duplicate.json()["job_id"], payload["job_id"]
+                )
+
+                listed = client.get("/api/fleet/bootstrap-jobs/incomplete")
+                self.assertEqual(listed.status_code, 200, listed.text)
+                self.assertEqual(
+                    [item["job_id"] for item in listed.json()],
+                    [payload["job_id"]],
+                )
         finally:
             reset_instance_agent()
             reset_store()
@@ -1981,6 +2069,82 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
 
             self.assertIn(b"event: ready", body)
             self.assertIsNone(client_factory.call_args.kwargs["timeout"].read)
+
+    async def test_agent_proxy_closes_idle_upstream_after_downstream_disconnect(
+        self,
+    ) -> None:
+        from pa.core.sse_observability import sse_connections
+        from pa.modules.fleet import fleet_agent_proxy
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), sync_token="fleet-secret")
+            fleet = FleetRegistry(settings.data_dir, settings.fleet_id)
+            fleet.upsert_instance(
+                FleetInstance(
+                    instance_id="mini-1",
+                    name="macmini",
+                    url="http://mini:8080",
+                )
+            )
+            ctx = MagicMock(settings=settings)
+            ctx.require_service.return_value = fleet
+            request = MagicMock()
+            request.app.state.ctx = ctx
+            request.method = "GET"
+            request.query_params.multi_items.return_value = []
+            request.query_params.get.side_effect = lambda name: {
+                "client_id": "tab-1"
+            }.get(name)
+            request.headers.get.side_effect = lambda name: {
+                "accept": "text/event-stream"
+            }.get(name)
+            request.body = AsyncMock(return_value=b"")
+            request.is_disconnected = AsyncMock(return_value=True)
+
+            class IdleEventStream(httpx.AsyncByteStream):
+                def __init__(self) -> None:
+                    self.closed = False
+
+                async def __aiter__(self):
+                    await asyncio.Event().wait()
+                    yield b"unreachable"
+
+                async def aclose(self) -> None:
+                    self.closed = True
+
+            stream = IdleEventStream()
+
+            async def upstream_handler(_request: httpx.Request) -> httpx.Response:
+                return httpx.Response(
+                    200,
+                    stream=stream,
+                    headers={"content-type": "text/event-stream"},
+                )
+
+            upstream_client = httpx.AsyncClient(
+                transport=httpx.MockTransport(upstream_handler)
+            )
+            sse_connections.reset_for_tests()
+            with (
+                patch("pa.modules.fleet.require_user", return_value=object()),
+                patch(
+                    "pa.modules.fleet.httpx.AsyncClient",
+                    return_value=upstream_client,
+                ),
+            ):
+                response = await fleet_agent_proxy(
+                    request,
+                    "mini-1",
+                    "session-events",
+                )
+                body = b"".join([chunk async for chunk in response.body_iterator])
+
+            self.assertEqual(body, b"")
+            self.assertTrue(stream.closed)
+            snapshot = sse_connections.snapshot()
+            self.assertEqual(snapshot["active"], 0)
+            self.assertEqual(snapshot["cancelled"], 2)
+            self.assertTrue(snapshot["paired"]["balanced"])
 
     async def test_agent_proxy_treats_peer_restart_as_event_stream_eof(self) -> None:
         from pa.modules.fleet import fleet_agent_proxy

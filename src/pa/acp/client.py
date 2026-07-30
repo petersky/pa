@@ -35,6 +35,7 @@ from pa.acp.configuration import (
     validate_option_value,
 )
 from pa.acp.environment import sanitize_provider_environment
+from pa.acp.final_message import normalize_provider_phase
 from pa.acp.mcp_config import (
     McpHandshakeError,
     OwnerChannelError,
@@ -148,7 +149,7 @@ def normalize_session_update(update: Any) -> dict[str, Any]:
             payload["message_id"] = plain.get("messageId") or plain.get("message_id")
             meta = plain.get("_meta") or {}
             codex_meta = meta.get("codex") or {} if isinstance(meta, dict) else {}
-            payload["phase"] = (
+            payload["phase"] = normalize_provider_phase(
                 codex_meta.get("phase") if isinstance(codex_meta, dict) else None
             )
             payload["content_mode"] = (

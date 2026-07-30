@@ -35,17 +35,44 @@ See also: [DEPLOYMENT.md](DEPLOYMENT.md) for host vs dev separation.
 On the owner instance open **Fleet** in the web UI (`/fleet`):
 
 1. **Readiness** — fix any warnings (instance URL, bind host). Generate a sync token if prompted.
-2. **Install via SSH** — enter `user@host`, advertised URL (`http://mini:8080`), optional one-shot password/passphrase (never stored), and start the job. Watch the live log until health checks pass.
-3. **Add existing** — mint a join token and run `pa fleet join` on the remote, or use “Join over SSH” when PA is already installed.
-4. Confirm the new instance shows **up** and peer routes appear for your realm.
+2. **Install via SSH** — enter an OpenSSH target or alias and discover it first.
+   Review the resolved hostname, user, port, jump host, and exact host-key
+   fingerprint before creating the plan. Select the worker profile, providers,
+   GitHub/repositories, capacity, and optional smoke card.
+3. **Create plan & start** — PA records a durable 13-phase job, quarantines the
+   new member from placement, and pauses explicitly for short-lived SSH,
+   provider, or GitHub input. The job resumes from checkpoints after a restart.
+4. **Add existing** — mint a join token and run `pa fleet join` on the remote, or use “Join over SSH” when PA is already installed.
+5. Confirm the new instance shows **up** and peer routes appear for your realm.
 
-SSH passwords and key passphrases are used for that install only and are not persisted in config, job files, or logs.
+SSH passwords, key passphrases, and sudo input are memory-only and are not
+persisted in config, job files, API responses, or logs. Strict `known_hosts`
+verification is the default. An unknown key requires exact fingerprint
+confirmation; a changed known key blocks onboarding.
 
 ---
 
 ## Preferred: CLI push-install from the owner
 
 On the owner (MacBook):
+
+```bash
+pa fleet setup-machine peter@mini \
+  --name mini \
+  --url http://mini:8080 \
+  --idempotency-key setup-mini-2026-07 \
+  --profile code \
+  --providers codex \
+  --github-transport ssh
+```
+
+This creates a reviewable plan by default. Add `--start` to begin immediately,
+or control it later with `pa fleet bootstrap-job JOB_ID --action start|resume|retry|cancel`.
+Use an immutable `--release-ref` when the target cannot receive the local
+installer. The final readiness report separates ready, partial, blocked, and
+awaiting-input states with recovery actions.
+
+The older compatibility command remains available:
 
 ```bash
 # Ensure owner is reachable to peers

@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 from pydantic import ValidationError
@@ -258,6 +258,61 @@ class ProgressStoreTests(unittest.TestCase):
 
 
 class ProgressDerivationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_repeated_malformed_updates_log_once_and_do_not_escape(self) -> None:
+        service = ProgressService(MagicMock(), instance_id=TARGET, token="")
+        with (
+            patch.object(
+                service,
+                "_observe",
+                AsyncMock(side_effect=ValueError("oversized progress")),
+            ),
+            patch("pa.execution.progress.logger.warning") as warning,
+        ):
+            await service.observe(SESSION, {"type": "tool_call"})
+            await service.observe(SESSION, {"type": "tool_call_update"})
+
+        warning.assert_called_once()
+
+    async def test_oversized_tool_fields_are_truncated_before_validation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = DispatchStore(Path(tmp))
+            store.put(record())
+            service = ProgressService(store, instance_id=TARGET, token="")
+            long_command = "pytest " + ("very-long-argument " * 40)
+
+            await service.observe(
+                SESSION,
+                {
+                    "type": "tool_call",
+                    "title": long_command,
+                    "kind": "execute",
+                    "status": "running",
+                },
+            )
+            await service.observe(
+                SESSION,
+                {
+                    "type": "agent_message_chunk",
+                    "message_id": "after-oversized-tool",
+                    "text": "Unrelated progress is still reported after the long command.",
+                    "phase": "commentary",
+                    "final": True,
+                },
+            )
+
+            persisted = store.get(DISPATCH)
+            assert persisted is not None
+            self.assertEqual(len(persisted.progress_events), 2)
+            tool_event = persisted.progress_events[0]
+            self.assertLessEqual(len(tool_event.summary), 500)
+            self.assertLessEqual(len(tool_event.tool_details[0].title), 240)
+            self.assertLessEqual(len(tool_event.validations[0].command), 240)
+            self.assertLessEqual(len(tool_event.validations[0].summary or ""), 240)
+            self.assertIn(
+                "Unrelated progress",
+                persisted.progress_events[1].summary,
+            )
+
     async def test_visible_commentary_and_allowlisted_tool_metadata_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = DispatchStore(Path(tmp))

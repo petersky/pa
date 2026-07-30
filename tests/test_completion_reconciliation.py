@@ -8,6 +8,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+from pa.acp.client import normalize_session_update
+from pa.acp.final_message import assemble_final_assistant_message
 from pa.domain.models import AgentSession, TranscriptEvent
 from pa.execution.dispatch import DispatchRecord, DispatchStore
 from pa.execution.disposition import extract_card_disposition
@@ -136,6 +138,104 @@ class CompletionReconciliationTests(unittest.TestCase):
         self.assertIsNone(error)
         self.assertIsNone(prose)
         self.assertIn("exactly one JSON object", prose_error)
+
+    def test_live_final_answer_excludes_commentary_and_other_messages(self) -> None:
+        final_json = json.dumps(disposition("waiting"))
+        updates = [
+            normalize_session_update(
+                {
+                    "sessionUpdate": "agent_message_chunk",
+                    "messageId": "commentary-1",
+                    "content": {"type": "text", "text": "I am checking the PR."},
+                    "_meta": {"codex": {"phase": "commentary"}},
+                }
+            ),
+            normalize_session_update(
+                {
+                    "sessionUpdate": "agent_message_chunk",
+                    "messageId": "stale-final",
+                    "content": {"type": "text", "text": "{}"},
+                    "_meta": {"codex": {"phase": "final"}},
+                }
+            ),
+            normalize_session_update(
+                {
+                    "sessionUpdate": "agent_message_chunk",
+                    "messageId": "disposition-final",
+                    "content": {"type": "text", "text": final_json},
+                    "_meta": {"codex": {"phase": "final_answer"}},
+                }
+            ),
+        ]
+
+        final_text = assemble_final_assistant_message(updates)
+        value, error = extract_card_disposition(final_text)
+
+        self.assertEqual(final_text, final_json)
+        self.assertEqual(value["lane"], "waiting")
+        self.assertIsNone(error)
+        self.assertEqual(updates[-1]["phase"], "final")
+
+    def test_retained_final_phase_aliases_share_selection_rules(self) -> None:
+        for phase in ("final", "final_answer"):
+            with self.subTest(phase=phase):
+                final_json = json.dumps(disposition())
+                final_text = assemble_final_assistant_message(
+                    [
+                        {
+                            "type": "agent_message_chunk",
+                            "text": "commentary",
+                            "phase": "commentary",
+                            "message_id": "commentary",
+                        },
+                        {
+                            "type": "agent_message_chunk",
+                            "text": final_json,
+                            "phase": phase,
+                            "message_id": "final",
+                        },
+                    ]
+                )
+                self.assertEqual(final_text, final_json)
+
+        final_json = json.dumps(disposition())
+        midpoint = len(final_json) // 2
+        self.assertEqual(
+            assemble_final_assistant_message(
+                [
+                    {
+                        "type": "agent_message_chunk",
+                        "text": final_json[:midpoint],
+                        "phase": "final",
+                        "message_id": "same-final",
+                    },
+                    {
+                        "type": "agent_message_chunk",
+                        "text": final_json[midpoint:],
+                        "phase": "final_answer",
+                        "message_id": "same-final",
+                    },
+                ]
+            ),
+            final_json,
+        )
+
+    def test_waiting_disposition_allows_null_pr_watch_evidence(self) -> None:
+        requested = disposition("waiting")
+        requested["evidence"].update(
+            {
+                "integration_required": True,
+                "pr_watch_id": None,
+                "watched_head_sha": None,
+                "merge_commit_sha": None,
+            }
+        )
+
+        value, error = extract_card_disposition(json.dumps(requested))
+
+        self.assertEqual(value["lane"], "waiting")
+        self.assertIsNone(value["evidence"]["pr_watch_id"])
+        self.assertIsNone(error)
 
     def test_successful_followup_resolves_and_delivers(self) -> None:
         async def run() -> None:
@@ -330,13 +430,24 @@ class CompletionReconciliationTests(unittest.TestCase):
                         seq=2,
                         event_type="agent_message_chunk",
                         payload={
-                            "text": json.dumps(disposition("waiting")),
-                            "phase": "final",
+                            "text": "Rechecking the durable card state.",
+                            "phase": "commentary",
+                            "message_id": "commentary",
                         },
                     ),
                     TranscriptEvent(
                         session_id="session-1",
                         seq=3,
+                        event_type="agent_message_chunk",
+                        payload={
+                            "text": json.dumps(disposition("waiting")),
+                            "phase": "final_answer",
+                            "message_id": "disposition",
+                        },
+                    ),
+                    TranscriptEvent(
+                        session_id="session-1",
+                        seq=4,
                         event_type="turn_completed",
                         payload={
                             "queued_prompt_id": prompt_id,
@@ -357,6 +468,133 @@ class CompletionReconciliationTests(unittest.TestCase):
                     outbox.payloads[-1][1]["card_disposition"]["lane"], "waiting"
                 )
                 self.assertEqual(runtime.enqueued, 1)
+
+        asyncio.run(run())
+
+    def test_restart_recovers_valid_initial_turn_before_marking_absent(self) -> None:
+        async def run() -> None:
+            with tempfile.TemporaryDirectory() as tmp:
+                ledger, _runtime, _supervisor, outbox, reconciler = self.make_fixture(
+                    Path(tmp)
+                )
+                record = ledger.get("dispatch-1")
+                record.completion_payload = {
+                    "queued_prompt_id": "initial-prompt",
+                    "prompt_source": "dispatch",
+                }
+                ledger.put(record)
+                events = [
+                    TranscriptEvent(
+                        session_id="session-1",
+                        seq=1,
+                        event_type="user_message",
+                        payload={"id": "old-prompt", "source": "dispatch"},
+                    ),
+                    TranscriptEvent(
+                        session_id="session-1",
+                        seq=2,
+                        event_type="agent_message_chunk",
+                        payload={
+                            "text": json.dumps(disposition("active")),
+                            "phase": "final",
+                            "message_id": "old-final",
+                        },
+                    ),
+                    TranscriptEvent(
+                        session_id="session-1",
+                        seq=3,
+                        event_type="turn_completed",
+                        payload={"queued_prompt_id": "old-prompt"},
+                    ),
+                    TranscriptEvent(
+                        session_id="session-1",
+                        seq=4,
+                        event_type="user_message",
+                        payload={"id": "initial-prompt", "source": "dispatch"},
+                    ),
+                    TranscriptEvent(
+                        session_id="session-1",
+                        seq=5,
+                        event_type="agent_message_chunk",
+                        payload={
+                            "text": "The PR is still open.",
+                            "phase": "commentary",
+                            "message_id": "current-commentary",
+                        },
+                    ),
+                    TranscriptEvent(
+                        session_id="session-1",
+                        seq=6,
+                        event_type="agent_message_chunk",
+                        payload={
+                            "text": json.dumps(disposition("waiting")),
+                            "phase": "final_answer",
+                            "message_id": "current-final",
+                        },
+                    ),
+                    TranscriptEvent(
+                        session_id="session-1",
+                        seq=7,
+                        event_type="turn_completed",
+                        payload={
+                            "queued_prompt_id": "initial-prompt",
+                            "stop_reason": "end_turn",
+                        },
+                    ),
+                ]
+                reconciler.agent.store.list_transcript_events_before = (
+                    lambda _session_id, limit: events
+                )
+
+                await reconciler.recover()
+
+                recovered = ledger.get("dispatch-1")
+                self.assertEqual(recovered.reconciliation_state, "not_required")
+                self.assertIsNone(recovered.card_disposition_error)
+                self.assertEqual(
+                    outbox.payloads[-1][1]["card_disposition"]["lane"], "waiting"
+                )
+
+        asyncio.run(run())
+
+    def test_reconciliation_preserves_exact_extraction_error_in_public_state(
+        self,
+    ) -> None:
+        async def run() -> None:
+            with tempfile.TemporaryDirectory() as tmp:
+                ledger, _runtime, _supervisor, outbox, reconciler = self.make_fixture(
+                    Path(tmp)
+                )
+                await reconciler.handle_completion("session-1", {})
+                prompted = ledger.get("dispatch-1")
+                exact_error = (
+                    "The final response was not exactly one JSON object: "
+                    "Expecting value: line 1 column 1 (char 0)"
+                )
+
+                await reconciler.handle_completion(
+                    "session-1",
+                    {
+                        "queued_prompt_id": prompted.reconciliation_prompt_id,
+                        "prompt_source": (
+                            f"{RECONCILIATION_SOURCE_PREFIX}dispatch-1"
+                        ),
+                        "card_disposition_error": exact_error,
+                    },
+                )
+
+                failed = ledger.get("dispatch-1")
+                self.assertEqual(failed.card_disposition_error, exact_error)
+                self.assertIn(exact_error, failed.reconciliation_reason)
+                self.assertEqual(
+                    failed.public_dict()["card_reconciliation"][
+                        "disposition_error"
+                    ],
+                    exact_error,
+                )
+                self.assertEqual(
+                    outbox.payloads[-1][1]["card_disposition_error"], exact_error
+                )
 
         asyncio.run(run())
 

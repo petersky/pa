@@ -85,6 +85,16 @@ from pa.execution.progress import (
 )
 from pa.execution.reconciliation import CompletionReconciler
 from pa.fleet.control_plane import build_control_plane_status
+from pa.fleet.bootstrap import (
+    BootstrapJob,
+    BootstrapJobStore,
+    BootstrapRequest,
+    BootstrapState,
+    PhaseState,
+    accept_bootstrap_input,
+    discover_target,
+    run_bootstrap_job,
+)
 from pa.fleet.join import (
     apply_reachability_settings,
     ensure_sync_token,
@@ -139,11 +149,13 @@ logger = logging.getLogger(__name__)
 FLEET_HEALTH_TIMEOUT = 3.0
 FLEET_DETAIL_TIMEOUT = 5.0
 FLEET_AGGREGATE_TIMEOUT = 9.0
+SESSION_ROUTE_TIMEOUT = 3.0
 
 router = APIRouter()
 ui_router = APIRouter()
 _peer_update_task: asyncio.Task[Any] | None = None
 _peer_update_task_operation_id: str | None = None
+_bootstrap_tasks: dict[str, asyncio.Task[Any]] = {}
 
 
 @router.get("/fleet/control-plane/status")
@@ -1535,6 +1547,11 @@ def complete_dispatch(
     record.card_disposition_payload = (
         body.disposition if isinstance(body.disposition, dict) else None
     )
+    record.card_disposition_error = (
+        None
+        if record.card_disposition_payload
+        else str(body.result.get("card_disposition_error") or "")[:1000] or None
+    )
     record.reconciliation_state = "pending" if body.card_id else "not_applicable"
     record.reconciliation_reason = "Immutable agent-turn completion acknowledged."
     record.reconciliation_updated_at = record.completion_received_at
@@ -2860,6 +2877,285 @@ async def fleet_health(request: Request, instance_id: str | None = None) -> list
     return list(results)
 
 
+def _bootstrap_store(request: Request) -> BootstrapJobStore:
+    return request.app.state.ctx.require_service("fleet_bootstrap_job_store")
+
+
+def _bootstrap_public(job: BootstrapJob) -> dict[str, Any]:
+    data = job.model_dump(mode="json")
+    data["terminal"] = job.state.value in {
+        "ready",
+        "partially_ready",
+        "blocked",
+        "cancelled",
+    }
+    data["resume_supported"] = job.state in {
+        BootstrapState.PLANNED,
+        BootstrapState.RETRYABLE,
+        BootstrapState.WAITING_INPUT,
+    }
+    data["log"] = "\n".join(event.message for event in job.log_events[-200:])
+    return data
+
+
+def _schedule_bootstrap(request: Request, job: BootstrapJob) -> BootstrapJob:
+    existing = _bootstrap_tasks.get(job.job_id)
+    if existing and not existing.done():
+        return job
+    ctx = request.app.state.ctx
+    store = _bootstrap_store(request)
+    fleet: FleetRegistry = ctx.require_service("fleet_registry")
+    job.cancel_requested = False
+    if job.state == BootstrapState.WAITING_INPUT and job.required_input:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "bootstrap_input_required",
+                "required_input": job.required_input.model_dump(mode="json"),
+            },
+        )
+    if job.state.value in {"ready", "partially_ready", "blocked", "cancelled"}:
+        raise HTTPException(status_code=409, detail="Bootstrap job is terminal")
+
+    async def runner() -> None:
+        try:
+            await run_bootstrap_job(
+                ctx.settings,
+                fleet,
+                store,
+                job,
+                domain_store=ctx.store,
+                author_instance_id=ctx.settings.instance_id,
+                async_runtime=ctx.require_service("async_runtime"),
+                http_client=ctx.services.get("fleet_http_client"),
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            record = job.phase_record(job.current_phase)
+            record.state = PhaseState.FAILED
+            record.completed_at = datetime.now(UTC)
+            record.summary = redact_log_text(exc)
+            record.recovery_action = (
+                "Retry from the durable phase checkpoint; report the sanitized "
+                "internal error if it repeats."
+            )
+            job.state = BootstrapState.RETRYABLE
+            job.readiness_reason = record.summary
+            store.secrets.clear(job.job_id)
+            store.append(
+                job,
+                category="unexpected_failure",
+                message=record.summary,
+                phase=job.current_phase,
+                level="error",
+            )
+            store.save(job)
+        finally:
+            _bootstrap_tasks.pop(job.job_id, None)
+
+    _bootstrap_tasks[job.job_id] = asyncio.create_task(
+        runner(), name=f"pa-fleet-bootstrap-{job.job_id}"
+    )
+    return job
+
+
+@router.post("/fleet/bootstrap/discover")
+async def bootstrap_discover(request: Request, body: dict[str, Any]) -> dict[str, Any]:
+    require_user(request)
+    target = str(body.get("target") or "").strip()
+    if not target:
+        raise HTTPException(status_code=400, detail="target is required")
+    try:
+        discovery = await discover_target(target)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "target_discovery_failed", "message": str(exc)},
+        ) from exc
+    return {
+        "schema_version": 1,
+        "discovery": discovery.model_dump(mode="json"),
+        "requires_host_key_confirmation": discovery.host_key_state != "known",
+        "mutated": False,
+    }
+
+
+@router.get("/fleet/bootstrap-jobs")
+def list_bootstrap_jobs(
+    request: Request, include_terminal: bool = True
+) -> list[dict[str, Any]]:
+    require_user(request)
+    return [
+        _bootstrap_public(job)
+        for job in _bootstrap_store(request).list(
+            include_terminal=include_terminal
+        )
+    ]
+
+
+@router.get("/fleet/bootstrap-jobs/incomplete")
+def list_incomplete_bootstrap_jobs(request: Request) -> list[dict[str, Any]]:
+    require_user(request)
+    return [
+        _bootstrap_public(job)
+        for job in _bootstrap_store(request).list(include_terminal=False)
+    ]
+
+
+@router.post("/fleet/bootstrap-jobs", status_code=201)
+async def create_bootstrap_job(
+    request: Request, body: dict[str, Any]
+) -> dict[str, Any]:
+    require_user(request)
+    raw = dict(body.get("request") or body)
+    idempotency_key = str(
+        body.get("idempotency_key") or raw.pop("idempotency_key", "")
+    ).strip()
+    if not idempotency_key:
+        raise HTTPException(status_code=400, detail="idempotency_key is required")
+    target = str(raw.get("target") or "").strip()
+    if not target:
+        host = str(raw.get("host") or "").strip()
+        user = str(raw.get("user") or "").strip()
+        target = f"{user}@{host}" if user and host else host
+        raw["target"] = target
+    secrets = {
+        "password": str(raw.pop("password", "") or ""),
+        "passphrase": str(raw.pop("passphrase", "") or ""),
+        "sudo_password": str(raw.pop("sudo_password", "") or ""),
+    }
+    auto_start = bool(body.get("start", False))
+    try:
+        discovery = await discover_target(target)
+        raw.setdefault("host", discovery.host)
+        raw.setdefault("user", discovery.user)
+        raw.setdefault("port", discovery.port)
+        if discovery.identity_files:
+            raw.setdefault("identity_file", discovery.identity_files[0])
+        raw.setdefault("proxy_jump", discovery.proxy_jump)
+        bootstrap_request = BootstrapRequest.model_validate(raw)
+        job, duplicate = _bootstrap_store(request).create(
+            bootstrap_request,
+            idempotency_key=idempotency_key,
+            actor=get_principal_id(request),
+            authority_instance_id=request.app.state.ctx.settings.instance_id,
+            authority_url=(
+                request.app.state.ctx.settings.instance_url
+                or f"http://127.0.0.1:{request.app.state.ctx.settings.port}"
+            ),
+            discovery=discovery,
+            secrets=secrets,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if auto_start:
+        _schedule_bootstrap(request, job)
+    response = _bootstrap_public(job)
+    response["duplicate"] = duplicate
+    return response
+
+
+@router.get("/fleet/bootstrap-jobs/{job_id}")
+def get_bootstrap_job(request: Request, job_id: str) -> dict[str, Any]:
+    require_user(request)
+    job = _bootstrap_store(request).get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Bootstrap job not found")
+    return _bootstrap_public(job)
+
+
+@router.post("/fleet/bootstrap-jobs/{job_id}/start", status_code=202)
+def start_bootstrap(request: Request, job_id: str) -> dict[str, Any]:
+    require_user(request)
+    job = _bootstrap_store(request).get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Bootstrap job not found")
+    _schedule_bootstrap(request, job)
+    return _bootstrap_public(job)
+
+
+@router.post("/fleet/bootstrap-jobs/{job_id}/resume", status_code=202)
+def resume_bootstrap(request: Request, job_id: str) -> dict[str, Any]:
+    return start_bootstrap(request, job_id)
+
+
+@router.post("/fleet/bootstrap-jobs/{job_id}/retry", status_code=202)
+def retry_bootstrap(request: Request, job_id: str) -> dict[str, Any]:
+    require_user(request)
+    store = _bootstrap_store(request)
+    job = store.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Bootstrap job not found")
+    if job.state not in {BootstrapState.RETRYABLE, BootstrapState.BLOCKED}:
+        raise HTTPException(
+            status_code=409, detail="Only failed or blocked bootstrap jobs can retry"
+        )
+    current = job.phase_record(job.current_phase)
+    current.state = PhaseState.PENDING
+    current.completed_at = None
+    job.state = BootstrapState.RETRYABLE
+    job.readiness_reason = "Retry requested from the failed phase."
+    store.save(job)
+    _schedule_bootstrap(request, job)
+    return _bootstrap_public(job)
+
+
+@router.post("/fleet/bootstrap-jobs/{job_id}/cancel", status_code=202)
+def cancel_bootstrap(request: Request, job_id: str) -> dict[str, Any]:
+    require_user(request)
+    store = _bootstrap_store(request)
+    job = store.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Bootstrap job not found")
+    if job.state.value in {"ready", "partially_ready", "blocked", "cancelled"}:
+        return _bootstrap_public(job)
+    job.cancel_requested = True
+    job.state = BootstrapState.CANCELLING
+    job.readiness_reason = (
+        "Cancellation requested; the job will stop at the next safe phase boundary."
+    )
+    store.append(
+        job,
+        category="cancellation_requested",
+        message=job.readiness_reason,
+        phase=job.current_phase,
+        level="audit",
+    )
+    if not (_bootstrap_tasks.get(job.job_id) and not _bootstrap_tasks[job.job_id].done()):
+        job.state = BootstrapState.CANCELLED
+        job.completed_at = datetime.now(UTC)
+        store.secrets.clear(job.job_id)
+        store.save(job)
+    return _bootstrap_public(job)
+
+
+@router.post("/fleet/bootstrap-jobs/{job_id}/input")
+def submit_bootstrap_input(
+    request: Request, job_id: str, body: dict[str, Any]
+) -> dict[str, Any]:
+    require_user(request)
+    store = _bootstrap_store(request)
+    job = store.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Bootstrap job not found")
+    kind = str(body.get("kind") or "")
+    value = str(body.get("value") or "")
+    try:
+        job = accept_bootstrap_input(
+            store,
+            job,
+            kind=kind,
+            value=value,
+            confirmed=bool(body.get("confirmed")),
+            details=body.get("details") if isinstance(body.get("details"), dict) else {},
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    body.pop("value", None)
+    return _bootstrap_public(job)
+
+
 @router.post("/fleet/install-remote")
 async def install_remote(request: Request, body: dict) -> dict:
     require_user(request)
@@ -3604,6 +3900,7 @@ async def _peer_agent_json(
     path: str,
     *,
     body: dict[str, Any] | None = None,
+    params: dict[str, Any] | None = None,
     timeout: float = 120.0,
 ) -> dict | list:
     inst = _fleet_instance_or_404(request, instance_id)
@@ -3611,6 +3908,13 @@ async def _peer_agent_json(
     client = request.app.state.ctx.services.get("fleet_http_client")
     owns_client = client is None
     client = client or httpx.AsyncClient(timeout=timeout)
+    request_kwargs: dict[str, Any] = {
+        "headers": _peer_headers(request),
+        "json": body,
+        "timeout": timeout,
+    }
+    if params is not None:
+        request_kwargs["params"] = params
     try:
         resp = await _fleet_http(
             request,
@@ -3618,9 +3922,7 @@ async def _peer_agent_json(
             client.request(
                 method,
                 url,
-                headers=_peer_headers(request),
-                json=body,
-                timeout=timeout,
+                **request_kwargs,
             ),
             timeout=timeout,
         )
@@ -6353,10 +6655,14 @@ async def fleet_agent_proxy(
         value = request.headers.get(name)
         if value:
             headers[name] = value
-    # Session event streams are intentionally unbounded; every other proxied
+    # Agent event streams are intentionally unbounded; every other proxied
     # response must retain a finite read timeout so a stalled peer cannot pin a
     # request forever while the controller buffers its body.
-    read_timeout = None if proxied_path.endswith("/events") else 120.0
+    read_timeout = (
+        None
+        if proxied_path.endswith("/events") or proxied_path == "session-events"
+        else 120.0
+    )
     client = httpx.AsyncClient(timeout=httpx.Timeout(120.0, read=read_timeout))
     try:
         upstream_request = client.build_request(
@@ -6378,34 +6684,111 @@ async def fleet_agent_proxy(
     }
     content_type = upstream.headers.get("content-type", "")
     if content_type.startswith("text/event-stream"):
-        from pa.server.shutdown import wait_for_shutdown_or
+        from pa.core.sse_observability import sse_connections
+        from pa.server.shutdown import is_shutting_down
 
         async def relay() -> AsyncIterator[bytes]:
+            pair_id = str(uuid4())
+            client_id = request.query_params.get("client_id")
+            scope = (
+                "all_live" if proxied_path == "session-events" else "single_session"
+            )
+            downstream_id = sse_connections.open(
+                endpoint="/api/fleet/instances/{instance_id}/agent/session-events",
+                direction="downstream",
+                client_id=client_id,
+                peer_id=instance_id,
+                session_scope=scope,
+                paired_id=pair_id,
+            )
+            upstream_id = sse_connections.open(
+                endpoint="/api/agent/" + proxied_path,
+                direction="upstream",
+                client_id=client_id,
+                peer_id=instance_id,
+                session_scope=scope,
+                paired_id=pair_id,
+            )
+            outcome = "closed"
+            next_chunk: asyncio.Task[bytes] | None = None
             try:
+                reconnect_attempt = int(
+                    request.query_params.get("reconnect_attempt") or 0
+                )
+            except (TypeError, ValueError):
+                reconnect_attempt = 0
+            if reconnect_attempt > 0:
+                sse_connections.increment("reconnecting")
+            try:
+                iterator = upstream.aiter_raw().__aiter__()
                 try:
-                    iterator = upstream.aiter_raw().__aiter__()
                     while True:
+                        if next_chunk is None:
+                            next_chunk = asyncio.create_task(anext(iterator))
+                        done, _waiting = await asyncio.wait(
+                            {next_chunk},
+                            timeout=0.5,
+                            return_when=asyncio.FIRST_COMPLETED,
+                        )
+                        if not done:
+                            if is_shutting_down() or await request.is_disconnected():
+                                outcome = "cancelled"
+                                break
+                            continue
+                        task = next_chunk
+                        next_chunk = None
                         try:
-                            stopping, chunk = await wait_for_shutdown_or(
-                                anext(iterator)
-                            )
+                            chunk = task.result()
                         except StopAsyncIteration:
                             break
-                        if stopping:
-                            break
-                        assert chunk is not None
                         yield chunk
-                except httpx.RemoteProtocolError:
-                    # A peer restart can end an unbounded SSE response without a
-                    # terminating HTTP chunk. At this point response headers have
-                    # already been sent, so the only correct behavior is EOF.
+                except (
+                    httpx.RemoteProtocolError,
+                    httpx.ReadError,
+                    httpx.ConnectError,
+                ):
+                    outcome = "errored"
+                    # Headers were already sent. A peer restart or half-close is
+                    # represented as EOF while the finally block closes both legs.
                     logger.info(
                         "Peer %s closed agent event stream during restart",
                         instance_id,
                     )
+                except asyncio.CancelledError:
+                    outcome = "cancelled"
+                    raise
+                except Exception:
+                    outcome = "errored"
+                    logger.exception(
+                        "Fleet agent event relay failed",
+                        extra={
+                            "peer_id": instance_id,
+                            "agent_path": proxied_path,
+                            "client_id": client_id,
+                        },
+                    )
+                    raise
             finally:
-                await upstream.aclose()
-                await client.aclose()
+                if next_chunk is not None:
+                    next_chunk.cancel()
+                    await asyncio.gather(next_chunk, return_exceptions=True)
+                try:
+                    await upstream.aclose()
+                finally:
+                    try:
+                        await client.aclose()
+                    finally:
+                        sse_connections.close(upstream_id, outcome)
+                        sse_connections.close(downstream_id, outcome)
+                        logger.info(
+                            "Fleet agent event relay closed",
+                            extra={
+                                "peer_id": instance_id,
+                                "agent_path": proxied_path,
+                                "client_id": client_id,
+                                "outcome": outcome,
+                            },
+                        )
 
         return StreamingResponse(
             relay(),
@@ -6505,7 +6888,7 @@ async def resolve_session_route(
             "message": "This agent session was deleted or has expired.",
         }
 
-    fleet: FleetRegistry = ctx.require_service("fleet")
+    fleet: FleetRegistry = ctx.require_service("fleet_registry")
     owner = fleet.get_instance(owner_id)
     api_base = f"/api/fleet/instances/{quote(owner_id, safe='-._~')}/agent"
     if not owner:
@@ -6522,13 +6905,30 @@ async def resolve_session_route(
             "message": "The session owner is not currently registered. Retry after it reconnects.",
         }
     try:
-        history = await _peer_agent_json(
-            request,
-            owner_id,
-            "GET",
-            f"history/{session_id}",
-            timeout=10.0,
+        history = await asyncio.wait_for(
+            _peer_agent_json(
+                request,
+                owner_id,
+                "GET",
+                f"history/{session_id}",
+                params={"limit": 1},
+                timeout=SESSION_ROUTE_TIMEOUT,
+            ),
+            timeout=SESSION_ROUTE_TIMEOUT,
         )
+    except TimeoutError:
+        return {
+            "session_id": session_id,
+            "state": "owner_unreachable",
+            "live": False,
+            "recoverable": True,
+            "api_base": api_base,
+            "owner": {
+                "instance_id": owner_id,
+                "instance_name": owner.name,
+            },
+            "message": "The session owner is responding slowly. Durable history may still be available; PA will retry.",
+        }
     except HTTPException as exc:
         if exc.status_code in {502, 503, 504}:
             return {
@@ -6560,11 +6960,42 @@ async def resolve_session_route(
                     else "This session has ended; its retained history is unavailable."
                 ),
             }
-        raise
-    if not isinstance(history, dict) or not isinstance(history.get("session"), dict):
-        raise HTTPException(
-            status_code=502, detail="Session owner returned invalid history"
+        logger.warning(
+            "Remote session route failed owner=%s session=%s status=%s",
+            owner_id,
+            session_id,
+            exc.status_code,
         )
+        return {
+            "session_id": session_id,
+            "state": "owner_unreachable",
+            "live": False,
+            "recoverable": True,
+            "api_base": api_base,
+            "owner": {
+                "instance_id": owner_id,
+                "instance_name": owner.name,
+            },
+            "message": "The session owner could not provide live state. Durable history may still be available; PA will retry.",
+        }
+    if not isinstance(history, dict) or not isinstance(history.get("session"), dict):
+        logger.warning(
+            "Remote session route received invalid history owner=%s session=%s",
+            owner_id,
+            session_id,
+        )
+        return {
+            "session_id": session_id,
+            "state": "owner_unreachable",
+            "live": False,
+            "recoverable": True,
+            "api_base": api_base,
+            "owner": {
+                "instance_id": owner_id,
+                "instance_name": owner.name,
+            },
+            "message": "The session owner returned incomplete live state. Durable history may still be available; PA will retry.",
+        }
     session = history["session"]
     live = bool(history.get("live"))
     ended = session.get("status") in {"closed", "quiesced"}
@@ -6847,6 +7278,9 @@ class FleetModule(Module):
         ctx.register_service("peer_table", peer_table)
         ctx.register_service("fleet_job_store", get_job_store(settings))
         ctx.register_service(
+            "fleet_bootstrap_job_store", BootstrapJobStore(settings.data_dir)
+        )
+        ctx.register_service(
             "fleet_update_job_store", FleetUpdateJobStore(settings.data_dir)
         )
         ctx.register_service("dispatch_store", DispatchStore(settings.data_dir))
@@ -6948,6 +7382,25 @@ class FleetModule(Module):
         outbox.start()
 
     async def on_shutdown(self, app, ctx: AppContext) -> None:
+        bootstrap_store: BootstrapJobStore | None = ctx.services.get(
+            "fleet_bootstrap_job_store"
+        )
+        if bootstrap_store:
+            for job_id, task in list(_bootstrap_tasks.items()):
+                job = bootstrap_store.get(job_id)
+                if job and not task.done():
+                    job.cancel_requested = True
+                    job.state = BootstrapState.RETRYABLE
+                    job.readiness_reason = (
+                        "PA shut down during onboarding; resume from the durable checkpoint."
+                    )
+                    bootstrap_store.save(job)
+                task.cancel()
+            if _bootstrap_tasks:
+                await asyncio.gather(
+                    *_bootstrap_tasks.values(), return_exceptions=True
+                )
+                _bootstrap_tasks.clear()
         lifecycle = ctx.services.get("session_lifecycle")
         if lifecycle:
             await lifecycle.close()
@@ -6975,6 +7428,127 @@ class FleetModule(Module):
 
     def register_mcp(self, mcp, ctx: AppContext) -> None:
         from pa.mcp.local_api import request_local_pa
+
+        @mcp.tool()
+        def discover_fleet_bootstrap_target(target: str) -> dict[str, Any]:
+            """Resolve an SSH target and fingerprint without mutating the host."""
+            return request_local_pa(
+                ctx.settings,
+                "POST",
+                "/api/fleet/bootstrap/discover",
+                json={"target": target},
+            )
+
+        @mcp.tool()
+        def create_fleet_bootstrap_job(
+            target: str,
+            instance_name: str,
+            instance_url: str,
+            idempotency_key: str,
+            realm: str = "default",
+            worker_profile: str = "manual",
+            providers: list[str] | None = None,
+            repositories: list[str] | None = None,
+            github_transport: str = "none",
+            automatic_placement: bool = False,
+            dispatch_capacity: int = 1,
+            channel: str = "release",
+            release_ref: str = "",
+            existing_install_action: str = "install",
+            smoke_dispatch: bool = False,
+            smoke_card_id: str = "",
+            start: bool = False,
+        ) -> dict[str, Any]:
+            """Create a durable, observable machine-onboarding plan."""
+            return request_local_pa(
+                ctx.settings,
+                "POST",
+                "/api/fleet/bootstrap-jobs",
+                json={
+                    "idempotency_key": idempotency_key,
+                    "start": start,
+                    "request": {
+                        "target": target,
+                        "instance_name": instance_name,
+                        "instance_url": instance_url,
+                        "realm": realm,
+                        "worker_profile": worker_profile,
+                        "providers": providers or [],
+                        "repositories": repositories or [],
+                        "github_transport": github_transport,
+                        "automatic_placement": automatic_placement,
+                        "dispatch_capacity": dispatch_capacity,
+                        "channel": channel,
+                        "release_ref": release_ref,
+                        "existing_install_action": existing_install_action,
+                        "smoke_dispatch": smoke_dispatch,
+                        "smoke_card_id": smoke_card_id,
+                    },
+                },
+            )
+
+        @mcp.tool()
+        def list_fleet_bootstrap_jobs(
+            include_terminal: bool = True,
+        ) -> list[dict[str, Any]]:
+            """List durable onboarding jobs and incomplete machines."""
+            return request_local_pa(
+                ctx.settings,
+                "GET",
+                "/api/fleet/bootstrap-jobs",
+                params={"include_terminal": include_terminal},
+            )
+
+        @mcp.tool()
+        def get_fleet_bootstrap_job(job_id: str) -> dict[str, Any] | None:
+            """Read phase, logs, required input, evidence, and readiness."""
+            return request_local_pa(
+                ctx.settings,
+                "GET",
+                f"/api/fleet/bootstrap-jobs/{job_id}",
+                allow_not_found=True,
+            )
+
+        @mcp.tool()
+        def control_fleet_bootstrap_job(
+            job_id: str,
+            action: Literal["start", "resume", "retry", "cancel"],
+        ) -> dict[str, Any]:
+            """Start, safely cancel, resume, or retry a durable onboarding job."""
+            return request_local_pa(
+                ctx.settings,
+                "POST",
+                f"/api/fleet/bootstrap-jobs/{job_id}/{action}",
+            )
+
+        @mcp.tool()
+        def submit_fleet_bootstrap_input(
+            job_id: str,
+            kind: Literal[
+                "host_key",
+                "ssh_password",
+                "key_passphrase",
+                "sudo_password",
+                "provider_login",
+                "github_login",
+                "operator_confirmation",
+            ],
+            value: str = "",
+            confirmed: bool = False,
+            details: dict[str, Any] | None = None,
+        ) -> dict[str, Any]:
+            """Submit short-lived protected input or explicit phase evidence."""
+            return request_local_pa(
+                ctx.settings,
+                "POST",
+                f"/api/fleet/bootstrap-jobs/{job_id}/input",
+                json={
+                    "kind": kind,
+                    "value": value,
+                    "confirmed": confirmed,
+                    "details": details or {},
+                },
+            )
 
         @mcp.tool()
         def list_instance_groups(
