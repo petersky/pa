@@ -1344,19 +1344,27 @@ class AgentSessionRuntime:
         self._flush_transcript()
         await self._drain_transcripts()
 
-    def snapshot(self) -> dict[str, Any]:
-        self._flush_transcript()
-        events = self.store.list_transcript_events_before(
-            self.session_id,
-            limit=TRANSCRIPT_WINDOW_LIMIT + 1,
-        )
-        has_older = len(events) > TRANSCRIPT_WINDOW_LIMIT
-        events = events[-TRANSCRIPT_WINDOW_LIMIT:]
+    def snapshot(self, *, include_transcript: bool = True) -> dict[str, Any]:
+        """Return runtime state, optionally including the bounded durable transcript.
+
+        Request paths that only need live metadata must leave transcript persistence
+        to its background writer and use the paginated history API separately.
+        """
+        events: list[TranscriptEvent] = []
+        has_older = False
+        if include_transcript:
+            self._flush_transcript()
+            events = self.store.list_transcript_events_before(
+                self.session_id,
+                limit=TRANSCRIPT_WINDOW_LIMIT + 1,
+            )
+            has_older = len(events) > TRANSCRIPT_WINDOW_LIMIT
+            events = events[-TRANSCRIPT_WINDOW_LIMIT:]
         conn = self.connection
         configuration = dict(
             ((self.session.config_json or {}).get("configuration") or {})
         )
-        return {
+        snapshot = {
             "session": self.session.model_dump(mode="json"),
             "connected": self.connected,
             "prompting": self.prompting,
@@ -1374,20 +1382,22 @@ class AgentSessionRuntime:
             "turn_started_at": self._turn_started_at.isoformat()
             if self._turn_started_at
             else None,
-            "transcript": [e.model_dump(mode="json") for e in events],
-            "transcript_page": {
-                "oldest_seq": events[0].seq if events else None,
-                "newest_seq": events[-1].seq if events else None,
-                "has_older": has_older,
-                "next_before_seq": events[0].seq if has_older and events else None,
-                "limit": TRANSCRIPT_WINDOW_LIMIT,
-            },
             "pending_permissions": [
                 self._permission_requests[rid]
                 for rid in self._pending_permissions
                 if rid in self._permission_requests
             ],
         }
+        if include_transcript:
+            snapshot["transcript"] = [e.model_dump(mode="json") for e in events]
+            snapshot["transcript_page"] = {
+                "oldest_seq": events[0].seq if events else None,
+                "newest_seq": events[-1].seq if events else None,
+                "has_older": has_older,
+                "next_before_seq": events[0].seq if has_older and events else None,
+                "limit": TRANSCRIPT_WINDOW_LIMIT,
+            }
+        return snapshot
 
     def to_session_snapshot(self) -> SessionSnapshot:
         return SessionSnapshot(
