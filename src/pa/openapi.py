@@ -38,7 +38,8 @@ def _is_instance_api(path: str) -> bool:
 
 def _is_hybrid_instance_api(path: str) -> bool:
     return bool(
-        re.fullmatch(
+        path.startswith("/api/telemetry/")
+        or re.fullmatch(
             r"/api/fleet/(?:instances/\{[^}]+\}/)?dispatch-jobs/\{[^}]+\}"
             r"(?:/(?:retry|cancel|prompt))?",
             path,

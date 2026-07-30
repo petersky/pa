@@ -83,6 +83,20 @@
     </div>
   </div>
 
+  {% if telemetry_enabled and telemetry_session_header != 'hidden' %}
+  <details class="acw-resource-header"
+           data-session-telemetry
+           data-refresh-seconds="{{ telemetry_ui_refresh_seconds }}"
+           {% if telemetry_session_header == 'expanded' %}open{% endif %}>
+    <summary>
+      <span>Resources</span>
+      <span class="muted" data-session-telemetry-summary>Attribution warming up…</span>
+    </summary>
+    <div class="acw-resource-grid" data-session-telemetry-values
+         role="status" aria-live="polite"></div>
+  </details>
+  {% endif %}
+
   {% if show_metrics %}
   <div class="acw-metrics muted" data-acw-metrics hidden></div>
   {% endif %}

@@ -32,6 +32,11 @@ class UserPreferences(BaseModel):
     # ACP provider selection (null = inherit from next cascade level)
     agent_provider: str | None = None
     agent_surfaces: dict[str, SurfaceAgentPrefs] = Field(default_factory=dict)
+    # hidden | compact | expanded. Compact is intentionally the default so
+    # session telemetry never crowds the chat toolbar.
+    telemetry_session_header: str = Field(
+        default="compact", pattern="^(hidden|compact|expanded)$"
+    )
 
 
 class PreferencesStore:

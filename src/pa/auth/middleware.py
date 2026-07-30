@@ -70,6 +70,11 @@ def _is_sync_path(path: str) -> bool:
 
 
 def _is_fleet_instance_route(request: Request) -> bool:
+    if request.url.path.startswith("/api/telemetry/") and request.method in {
+        "GET",
+        "POST",
+    }:
+        return True
     if (request.method, request.url.path) in FLEET_INSTANCE_ROUTES:
         return True
     if request.url.path.startswith("/api/pr-supervisor/") and request.url.path != (

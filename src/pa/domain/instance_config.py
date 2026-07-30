@@ -38,6 +38,16 @@ class InstanceConfig(BaseModel):
     agent_provider: str = "cursor"
     agent_command: str | None = None
     agent_args: list[str] | None = None
+    telemetry_enabled: bool = True
+    telemetry_live_interval_seconds: float = 5.0
+    telemetry_persistence_interval_seconds: float = 30.0
+    telemetry_raw_retention_hours: float = 168.0
+    telemetry_rollup_retention_hours: float = 2160.0
+    telemetry_max_database_bytes: int = 512 * 1024 * 1024
+    telemetry_database_path: str = ""
+    telemetry_per_session_enabled: bool = True
+    telemetry_ui_refresh_seconds: float = 5.0
+    telemetry_default_report_range: str = "1h"
 
 
 def config_path(data_dir: Path) -> Path:
@@ -100,6 +110,23 @@ def merge_config_into_settings(data_dir: Path, settings_dict: dict) -> dict:
         "agent_command": loaded.agent_command,
         "agent_args": loaded.agent_args,
     }
+    for field in (
+        "telemetry_enabled",
+        "telemetry_live_interval_seconds",
+        "telemetry_persistence_interval_seconds",
+        "telemetry_raw_retention_hours",
+        "telemetry_rollup_retention_hours",
+        "telemetry_max_database_bytes",
+        "telemetry_database_path",
+        "telemetry_per_session_enabled",
+        "telemetry_ui_refresh_seconds",
+        "telemetry_default_report_range",
+    ):
+        if field in loaded.model_fields_set:
+            value = getattr(loaded, field)
+            mapping[field] = (
+                value or None if field == "telemetry_database_path" else value
+            )
     if loaded.dispatch_capacity is not None:
         mapping["dispatch_capacity"] = loaded.dispatch_capacity
     if loaded.host:

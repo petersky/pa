@@ -75,6 +75,7 @@ class ModuleRegistry:
         from pa.modules.pr_supervisor import PRSupervisorModule
         from pa.modules.sync import SyncModule
         from pa.modules.theme import ThemeModule
+        from pa.modules.telemetry import TelemetryModule
         from pa.modules.trust import TrustModule
         from pa.modules.ui_shell import UiShellModule
 
@@ -90,6 +91,7 @@ class ModuleRegistry:
             OrchestrationModule(),
             InstanceModule(),
             AgentChatModule(),
+            TelemetryModule(),
             BrowserModule(),
             AgentProvidersModule(),
             ThemeModule(),

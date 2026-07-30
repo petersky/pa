@@ -109,6 +109,21 @@ class Settings(BaseSettings):
     blocking_slow_call_seconds: float = Field(default=0.5, gt=0, le=60)
     event_loop_probe_interval: float = Field(default=0.1, gt=0, le=10)
 
+    # Resource telemetry. Samples are deliberately isolated from pa.db and realm
+    # sync; an empty database path resolves to <data_dir>/telemetry.db.
+    telemetry_enabled: bool = True
+    telemetry_live_interval_seconds: float = Field(default=5.0, ge=1.0, le=300)
+    telemetry_persistence_interval_seconds: float = Field(default=30.0, ge=5.0, le=3600)
+    telemetry_raw_retention_hours: float = Field(default=168.0, ge=1.0, le=8760)
+    telemetry_rollup_retention_hours: float = Field(default=2160.0, ge=1.0, le=43800)
+    telemetry_max_database_bytes: int = Field(
+        default=512 * 1024 * 1024, ge=16 * 1024 * 1024, le=64 * 1024 * 1024 * 1024
+    )
+    telemetry_database_path: Path | None = None
+    telemetry_per_session_enabled: bool = True
+    telemetry_ui_refresh_seconds: float = Field(default=5.0, ge=2.0, le=300)
+    telemetry_default_report_range: str = "1h"
+
     # UI defaults (user preferences file overrides appearance at runtime)
     default_theme_id: str = "pa"
 
@@ -180,6 +195,54 @@ class Settings(BaseSettings):
                 )
             normalized_provider_limits[key] = int(limit)
         self.dispatch_provider_capacities = normalized_provider_limits
+        if (
+            self.telemetry_persistence_interval_seconds
+            < self.telemetry_live_interval_seconds
+        ):
+            raise ValueError(
+                "telemetry_persistence_interval_seconds must be greater than or "
+                "equal to telemetry_live_interval_seconds"
+            )
+        if self.telemetry_rollup_retention_hours < self.telemetry_raw_retention_hours:
+            raise ValueError(
+                "telemetry_rollup_retention_hours must be greater than or equal "
+                "to telemetry_raw_retention_hours"
+            )
+        if self.telemetry_default_report_range not in {
+            "15m",
+            "1h",
+            "6h",
+            "24h",
+            "7d",
+            "30d",
+        }:
+            raise ValueError("telemetry_default_report_range is not supported")
+        if self.telemetry_database_path is None:
+            self.telemetry_database_path = data_dir / "telemetry.db"
+        else:
+            self.telemetry_database_path = (
+                self.telemetry_database_path.expanduser().resolve()
+            )
+        protected_files = {
+            data_dir / "pa.db",
+            data_dir / "pa.db-wal",
+            data_dir / "pa.db-shm",
+            data_dir / "sync_refs.json",
+            data_dir / "sync_refs.lock",
+        }
+        objects_dir = data_dir / "objects"
+        if (
+            self.telemetry_database_path in protected_files
+            or self.telemetry_database_path == objects_dir
+            or objects_dir in self.telemetry_database_path.parents
+        ):
+            raise ValueError(
+                "telemetry_database_path must be outside PA metadata and sync authority"
+            )
+        if self.telemetry_database_path.exists() and not (
+            self.telemetry_database_path.is_file()
+        ):
+            raise ValueError("telemetry_database_path must name a file")
         return self
 
     @property

@@ -8,6 +8,7 @@
     ('appearance', 'Appearance'),
     ('agent', 'Agent defaults'),
     ('prompts', 'Prompts'),
+    ('telemetry', 'Telemetry'),
     ('instance', 'Instance'),
   ], active='agent') }}
 </div>
@@ -52,6 +53,14 @@
         <input type="checkbox" name="user_auto_approve"
                {% if prefs.agent_auto_approve_permissions %}checked{% endif %}>
         <span>Auto-approve permissions for my account</span>
+      </label>
+      <label>
+        <span>Session resource header</span>
+        <select name="telemetry_session_header">
+          {% for value, label in [('hidden', 'Hidden'), ('compact', 'Compact (default)'), ('expanded', 'Expanded')] %}
+          <option value="{{ value }}" {% if prefs.telemetry_session_header == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
       </label>
       <label class="checkbox-row">
         <input type="checkbox" name="global_auto_approve"
@@ -134,6 +143,39 @@
       <button type="submit" class="primary">Save agent preferences</button>
       <p class="muted small" id="pa-agent-prefs-status" hidden></p>
     </form>
+  </div>
+</section>
+
+<section class="hidden stack" data-section="telemetry" hidden>
+  <div class="panel">
+    <div class="panel-header"><h2>Resource telemetry</h2></div>
+    <p class="muted">Telemetry is stored in its own bounded database and is never part of PA realm sync. Per-session metrics use PA-owned process-tree evidence and explicitly mark unsupported attribution.</p>
+    <form class="stack" id="pa-telemetry-settings-form">
+      <label class="checkbox-row"><input type="checkbox" name="enabled" {% if settings.telemetry_enabled %}checked{% endif %}><span>Enable collection</span></label>
+      <label class="checkbox-row"><input type="checkbox" name="per_session_enabled" {% if settings.telemetry_per_session_enabled %}checked{% endif %}><span>Collect PA-owned session process trees</span></label>
+      <label><span>Live interval (seconds)</span><input type="number" min="1" max="300" step="1" name="live_interval_seconds" value="{{ settings.telemetry_live_interval_seconds }}"></label>
+      <label><span>Persistence interval (seconds)</span><input type="number" min="5" max="3600" step="1" name="persistence_interval_seconds" value="{{ settings.telemetry_persistence_interval_seconds }}"></label>
+      <label><span>Raw retention (hours)</span><input type="number" min="1" max="8760" step="1" name="raw_retention_hours" value="{{ settings.telemetry_raw_retention_hours }}"></label>
+      <label><span>Rollup retention (hours)</span><input type="number" min="1" max="43800" step="1" name="rollup_retention_hours" value="{{ settings.telemetry_rollup_retention_hours }}"></label>
+      <label><span>Maximum database size (MiB)</span><input type="number" min="16" max="65536" step="1" name="max_database_mib" value="{{ (settings.telemetry_max_database_bytes / 1048576) | int }}"></label>
+      <label><span>Database path</span><input type="text" name="database_path" value="{{ settings.telemetry_database_path }}"></label>
+      <label><span>UI refresh (seconds)</span><input type="number" min="2" max="300" step="1" name="ui_refresh_seconds" value="{{ settings.telemetry_ui_refresh_seconds }}"></label>
+      <label><span>Default report range</span><select name="default_report_range">{% for value in ['15m','1h','6h','24h','7d','30d'] %}<option value="{{ value }}" {% if settings.telemetry_default_report_range == value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+      <button type="submit" class="primary">Save telemetry settings</button>
+      <p class="muted small" id="pa-telemetry-settings-status" role="status" hidden></p>
+    </form>
+  </div>
+  <div class="panel">
+    <div class="panel-header"><h3>Collection health</h3></div>
+    <dl class="settings-dl">
+      <dt>State</dt><dd>{{ telemetry_health.state }}</dd>
+      <dt>Database</dt><dd><code>{{ telemetry_health.storage.database_path if telemetry_health.storage is defined else settings.telemetry_database_path }}</code></dd>
+      <dt>Size</dt><dd>{{ telemetry_health.storage.database_bytes if telemetry_health.storage is defined else 0 }} bytes</dd>
+      <dt>Retained interval</dt><dd>{{ telemetry_health.storage.oldest_sample if telemetry_health.storage is defined else '—' }} — {{ telemetry_health.storage.newest_sample if telemetry_health.storage is defined else '—' }}</dd>
+      <dt>Dropped samples</dt><dd>{{ telemetry_health.dropped_samples | default(0) }}</dd>
+      <dt>Last pruning</dt><dd>{{ telemetry_health.storage.last_prune if telemetry_health.storage is defined else '—' }}</dd>
+      <dt>Sync</dt><dd>Excluded from PA realm sync</dd>
+    </dl>
   </div>
 </section>
 
@@ -447,6 +489,7 @@
           agent_auto_approve_permissions: userVal,
           agent_provider: userProvider,
           agent_surfaces: surfaces,
+          telemetry_session_header: form.telemetry_session_header.value,
           scope: "user",
         }),
       });
@@ -470,6 +513,49 @@
         status.hidden = false;
         status.textContent = "Failed to save preferences.";
       }
+    }
+  });
+})();
+</script>
+<script>
+(function () {
+  var form = document.getElementById("pa-telemetry-settings-form");
+  if (!form) return;
+  var status = document.getElementById("pa-telemetry-settings-status");
+  form.addEventListener("submit", async function (event) {
+    event.preventDefault();
+    status.hidden = false;
+    status.classList.remove("danger");
+    status.textContent = "Validating telemetry settings…";
+    var headers = {"Content-Type": "application/json", Accept: "application/json"};
+    var csrf = document.querySelector('meta[name="csrf-token"]');
+    if (csrf && csrf.content) headers["X-CSRF-Token"] = csrf.content;
+    var body = {
+      enabled: form.enabled.checked,
+      per_session_enabled: form.per_session_enabled.checked,
+      live_interval_seconds: Number(form.live_interval_seconds.value),
+      persistence_interval_seconds: Number(form.persistence_interval_seconds.value),
+      raw_retention_hours: Number(form.raw_retention_hours.value),
+      rollup_retention_hours: Number(form.rollup_retention_hours.value),
+      max_database_bytes: Number(form.max_database_mib.value) * 1048576,
+      database_path: form.database_path.value,
+      ui_refresh_seconds: Number(form.ui_refresh_seconds.value),
+      default_report_range: form.default_report_range.value
+    };
+    try {
+      var response = await fetch("/api/telemetry/config", {
+        method: "PATCH", credentials: "same-origin", headers: headers,
+        body: JSON.stringify(body)
+      });
+      var data = await response.json().catch(function () { return {}; });
+      if (!response.ok) throw data;
+      status.textContent = data.restart_required
+        ? "Saved. Restart PA to use the new telemetry database path."
+        : "Saved and applied.";
+    } catch (error) {
+      var detail = error && error.detail ? error.detail : error;
+      status.classList.add("danger");
+      status.textContent = typeof detail === "string" ? detail : "Telemetry settings were not saved.";
     }
   });
 })();

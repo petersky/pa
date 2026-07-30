@@ -1,0 +1,60 @@
+{% from "macros/layout.html" import page_layout %}
+
+{% set left %}
+<div class="panel telemetry-filters">
+  <div class="panel-header"><h2>Telemetry</h2></div>
+  <form data-telemetry-filters>
+    <label><span>View</span><select name="view"><option value="fleet">Fleet instances</option><option value="local">Local instance and sessions</option></select></label>
+    <label><span>Instance</span><select name="instance_id" multiple size="3" aria-describedby="telemetry-filter-help"><option value="">All instances</option>{% for id, name in telemetry_dimensions.instances %}<option value="{{ id }}">{{ name }}</option>{% endfor %}</select></label>
+    <label><span>Provider</span><select name="provider_id"><option value="">All providers</option>{% for value in telemetry_dimensions.providers %}<option>{{ value }}</option>{% endfor %}</select></label>
+    <label><span>Card</span><select name="card_id"><option value="">All cards</option>{% for value in telemetry_dimensions.cards %}<option>{{ value }}</option>{% endfor %}</select></label>
+    <label><span>Agent session</span><select name="scope_id"><option value="">All sessions</option>{% for value in telemetry_dimensions.sessions %}<option>{{ value }}</option>{% endfor %}</select></label>
+    <label><span>Range</span><select name="range" data-report-range>{% for value in ['15m','1h','6h','24h','7d','30d','custom'] %}<option value="{{ value }}" {% if telemetry_default_range == value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+    <div class="telemetry-custom-range" data-custom-range hidden>
+      <label><span>Start</span><input type="datetime-local" name="start"></label>
+      <label><span>End</span><input type="datetime-local" name="end"></label>
+    </div>
+    <button type="submit" class="primary">Apply</button>
+    <p id="telemetry-filter-help" class="muted small">Custom ranges are bounded to 31 days. Fleet view compares instance telemetry; local view can compare authorized sessions.</p>
+  </form>
+  <div class="telemetry-report-health" data-report-health role="status" aria-live="polite">Loading collection health…</div>
+  <a class="text-btn" href="/api/telemetry/export?range=15m">Export redacted 15m diagnostic slice</a>
+</div>
+{% endset %}
+
+{% set main %}
+<div class="telemetry-report"
+     data-telemetry-report
+     data-refresh-seconds="{{ telemetry_ui_refresh_seconds }}"
+     data-default-range="{{ telemetry_default_range }}">
+  <header class="panel telemetry-report-heading">
+    <div><h1>Resource reports</h1><p class="muted">Synchronized, server-aggregated host and PA-owned session metrics.</p></div>
+    <div class="telemetry-legend" data-telemetry-legend aria-label="Series legend"></div>
+  </header>
+  <div class="telemetry-gap-banner" data-telemetry-gaps role="status" hidden></div>
+  <div class="telemetry-chart-grid">
+    {% for group, title, metrics in [
+      ('cpu', 'CPU and concurrency', 'cpu.utilization,pa.cpu,session.cpu,agents.concurrent'),
+      ('memory', 'Physical and virtual memory', 'memory.utilization,pa.memory_rss,session.memory_rss,swap.utilization'),
+      ('disk', 'Disk throughput, IOPS, and latency', 'disk.read_throughput,disk.write_throughput,disk.read_iops,disk.write_iops,disk.latency,session.disk_read,session.disk_write'),
+      ('network', 'Network activity and indicators', 'network.ingress,network.egress,network.connections,network.errors,session.network_ingress,session.network_egress'),
+      ('process', 'Processes and tasks', 'session.processes,session.tasks,pa.threads')
+    ] %}
+    <section class="panel telemetry-chart" data-chart-group="{{ group }}" data-metrics="{{ metrics }}">
+      <header><h2>{{ title }}</h2><span class="muted small" data-chart-unit></span></header>
+      <div class="telemetry-chart-stage" tabindex="0" role="img"
+           aria-label="{{ title }} time series. Use left and right arrow keys to inspect synchronized points.">
+        <svg viewBox="0 0 800 220" preserveAspectRatio="none" aria-hidden="true">
+          <g data-chart-grid></g><g data-chart-lines></g><line data-chart-cursor x1="0" x2="0" y1="12" y2="196" hidden></line>
+        </svg>
+        <div class="telemetry-tooltip" data-chart-tooltip hidden></div>
+        <p class="telemetry-chart-empty muted" data-chart-empty>Loading…</p>
+      </div>
+      <div class="telemetry-dimension-status" data-chart-status></div>
+    </section>
+    {% endfor %}
+  </div>
+</div>
+{% endset %}
+
+{{ page_layout(left=left, main=main, class='page-telemetry') }}
