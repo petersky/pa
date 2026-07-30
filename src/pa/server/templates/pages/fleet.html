@@ -569,14 +569,24 @@
     </div>
 
     <div class="stack" data-fleet-panel="ssh">
-      <p class="muted">Push-install PA on a remote host and join this fleet. Passwords are used once and never stored.</p>
+      <p class="muted">Discover, verify, and commission a machine through a durable resumable job. Secret input is memory-only and host identity is verified before authentication.</p>
       <form class="stack" id="pa-fleet-ssh-form">
-        <label>SSH host <input name="host" required placeholder="mini.tailnet.ts.net"></label>
-        <label>SSH user <input name="user" required placeholder="{{ settings.instance_name }}"></label>
-        <label>SSH port <input name="port" type="number" value="22"></label>
+        <fieldset>
+          <legend>1. Target and trust</legend>
+        <label>OpenSSH target <input name="target" required placeholder="mini or user@mini.tailnet.ts.net"></label>
         <label>Identity file (optional) <input name="identity_file" placeholder="~/.ssh/id_ed25519"></label>
-        <label>SSH password (optional, one-shot) <input name="password" type="password" autocomplete="off"></label>
-        <label>Key passphrase (optional, one-shot) <input name="passphrase" type="password" autocomplete="off"></label>
+        <button type="button" class="ghost" data-bootstrap-discover>Discover and verify host</button>
+        <div class="panel-inset stack" id="pa-bootstrap-discovery" hidden>
+          <strong>Discovered identity</strong>
+          <pre id="pa-bootstrap-discovery-details"></pre>
+          <label id="pa-bootstrap-host-key-confirm" hidden><input type="checkbox" name="confirm_host_key">
+            I verified this exact fingerprint through a trusted channel.
+          </label>
+          <input type="hidden" name="host_key_fingerprint">
+        </div>
+        </fieldset>
+        <fieldset>
+          <legend>2. PA identity and profile</legend>
         <label>Instance name <input name="instance_name" required placeholder="mini"></label>
         <label>Advertised URL <input name="instance_url" required placeholder="http://mini:8080"></label>
         <label>Channel
@@ -587,12 +597,58 @@
           </select>
         </label>
         <label>Realm <input name="realm" value="{{ primary_realm }}"></label>
+        <label>Existing installation
+          <select name="existing_install_action">
+            <option value="install">Clean install</option>
+            <option value="join_only">Join existing PA</option>
+            <option value="repair">Repair safely</option>
+            <option value="upgrade">Upgrade</option>
+            <option value="abort">Inspect only / abort</option>
+          </select>
+        </label>
+        <label>Worker profile
+          <select name="worker_profile">
+            <option value="manual">Manual dispatch only</option>
+            <option value="research">Research worker</option>
+            <option value="code">Code worker</option>
+            <option value="operations">Operations worker</option>
+            <option value="sync_ui">PA sync/UI only</option>
+          </select>
+        </label>
+        <label>Dispatch capacity <input name="dispatch_capacity" type="number" min="1" max="256" value="1"></label>
+        <label><input name="automatic_placement" type="checkbox"> Enable automatic placement only after every requested check passes</label>
+        </fieldset>
+        <fieldset>
+          <legend>3. Capabilities</legend>
+          <label><input name="providers" type="checkbox" value="codex"> Codex</label>
+          <label><input name="providers" type="checkbox" value="cursor"> Cursor</label>
+          <label><input name="browser" type="checkbox"> Browser</label>
+          <label><input name="repository_cache" type="checkbox"> Repository cache</label>
+          <label>GitHub transport
+            <select name="github_transport">
+              <option value="none">Not required</option>
+              <option value="https">HTTPS / gh credentials</option>
+              <option value="ssh">SSH</option>
+            </select>
+          </label>
+          <label>Repository URLs (one per line) <textarea name="repositories" rows="3"></textarea></label>
+          <label>Optional smoke card ID <input name="smoke_card_id"></label>
+        </fieldset>
+        <fieldset>
+          <legend>4. Short-lived authentication</legend>
+          <label>SSH password (optional) <input name="password" type="password" autocomplete="off"></label>
+          <label>Key passphrase (optional) <input name="passphrase" type="password" autocomplete="off"></label>
+          <label>Sudo policy
+            <select name="sudo_policy"><option value="never">Never use sudo</option><option value="prompt">Pause and ask if required</option></select>
+          </label>
+        </fieldset>
         <div class="form-actions">
-          <button type="submit" class="primary">Install &amp; join</button>
+          <button type="submit" class="primary">Create plan &amp; start</button>
         </div>
       </form>
       <pre class="panel-inset" id="pa-fleet-ssh-log" hidden></pre>
       <p class="muted small" id="pa-fleet-ssh-status"></p>
+      <div class="panel-inset stack" id="pa-bootstrap-required-input" hidden aria-live="polite"></div>
     </div>
 
     <div class="stack hidden" data-fleet-panel="existing" hidden>

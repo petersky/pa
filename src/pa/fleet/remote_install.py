@@ -15,11 +15,14 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import quote
 from uuid import uuid4
 
 import httpx
 
 from pa.config import Settings
+from pa.core.io import atomic_write_json
+from pa.core.logging import redact_log_text
 from pa.fleet.join import ensure_sync_token, owner_public_url
 from pa.fleet.registry import FleetRegistry
 
@@ -54,6 +57,10 @@ class RemoteInstallRequest:
     channel: str = "release"
     realm: str = ""
     join_only: bool = False
+    host_key_policy: str = "strict"
+    host_key_fingerprint: str = ""
+    release_ref: str = ""
+    proxy_jump: str = ""
 
 
 @dataclass
@@ -70,9 +77,13 @@ class InstallJob:
     error: str = ""
     log_lines: list[str] = field(default_factory=list)
     join_token: str = ""  # not persisted to disk
+    secret_values: list[str] = field(default_factory=list, repr=False)
 
     def append(self, line: str) -> None:
-        text = line.rstrip("\n")
+        text = redact_log_text(line.rstrip("\n"))
+        for secret in self.secret_values:
+            if secret:
+                text = text.replace(secret, "[redacted]")
         if text:
             self.log_lines.append(text)
             if len(self.log_lines) > 2000:
@@ -97,12 +108,48 @@ class InstallJob:
 
 
 class InstallJobStore:
-    """In-memory jobs with non-secret status snapshots on disk."""
+    """Compatibility job store with durable non-secret restart recovery."""
 
     def __init__(self, data_dir: Path) -> None:
         self.dir = data_dir / "fleet_jobs"
         self.dir.mkdir(parents=True, exist_ok=True)
         self._jobs: dict[str, InstallJob] = {}
+        self._load()
+
+    def _load(self) -> None:
+        for path in self.dir.glob("*.json"):
+            try:
+                payload = json.loads(path.read_text())
+                status = InstallJobStatus(str(payload.get("status") or "failed"))
+                if status not in {
+                    InstallJobStatus.SUCCEEDED,
+                    InstallJobStatus.FAILED,
+                }:
+                    status = InstallJobStatus.FAILED
+                    payload["error"] = (
+                        "Authority restarted during the legacy install. Use the "
+                        "durable bootstrap resume API."
+                    )
+                job = InstallJob(
+                    job_id=str(payload["job_id"]),
+                    status=status,
+                    host=str(payload.get("host") or ""),
+                    user=str(payload.get("user") or ""),
+                    instance_name=str(payload.get("instance_name") or ""),
+                    instance_url=str(payload.get("instance_url") or ""),
+                    channel=str(payload.get("channel") or "release"),
+                    created_at=str(payload.get("created_at") or ""),
+                    updated_at=str(payload.get("updated_at") or ""),
+                    error=str(payload.get("error") or ""),
+                    log_lines=[
+                        redact_log_text(line)
+                        for line in payload.get("log_lines", [])
+                        if isinstance(line, str)
+                    ],
+                )
+            except OSError, ValueError, KeyError, TypeError:
+                continue
+            self._jobs[job.job_id] = job
 
     def create(self, req: RemoteInstallRequest) -> InstallJob:
         now = datetime.now(UTC).isoformat()
@@ -115,6 +162,7 @@ class InstallJobStore:
             channel=req.channel,
             created_at=now,
             updated_at=now,
+            secret_values=[req.password, req.passphrase],
         )
         self._jobs[job.job_id] = job
         self._persist(job)
@@ -127,7 +175,7 @@ class InstallJobStore:
         # Never write passwords; join_token also omitted from disk.
         path = self.dir / f"{job.job_id}.json"
         payload = job.to_public_dict()
-        path.write_text(json.dumps(payload, indent=2) + "\n")
+        atomic_write_json(path, payload, mode=0o600)
 
 
 _job_store: InstallJobStore | None = None
@@ -161,7 +209,9 @@ def build_remote_env(
 ) -> dict[str, str]:
     owner_url = owner_public_url(settings)
     sync_token = ensure_sync_token(settings)
-    realm = req.realm or (settings.subscribed_realms[0] if settings.subscribed_realms else "personal")
+    realm = req.realm or (
+        settings.subscribed_realms[0] if settings.subscribed_realms else "personal"
+    )
     env = {
         "PA_SYNC_TOKEN": sync_token,
         "PA_INSTANCE_NAME": req.instance_name,
@@ -173,6 +223,8 @@ def build_remote_env(
         "PA_HOST": "0.0.0.0",
         "PA_CHANNEL": req.channel or settings.release_track or "release",
     }
+    if req.release_ref:
+        env["PA_GIT_REF"] = req.release_ref
     return env
 
 
@@ -203,9 +255,15 @@ def build_remote_command(
     if local_script:
         # Script body is uploaded separately; remote runs bash on stdin.
         return f"{exports} && bash -s"
+    return f"{exports} && curl -fsSL {shlex.quote(_install_script_url(req))} | bash"
+
+
+def _install_script_url(req: RemoteInstallRequest) -> str:
+    if not req.release_ref:
+        return INSTALL_SCRIPT_URL
+    ref = quote(req.release_ref, safe="")
     return (
-        f"{exports} && "
-        f"curl -fsSL {shlex.quote(INSTALL_SCRIPT_URL)} | bash"
+        f"https://raw.githubusercontent.com/petersky/pa/{ref}/scripts/install-remote.sh"
     )
 
 
@@ -216,10 +274,26 @@ async def _connect_ssh(req: RemoteInstallRequest):
         "host": req.host,
         "port": req.port,
         "username": req.user,
-        "known_hosts": None,
     }
+    if req.host_key_policy == "pinned":
+        if not req.host_key_fingerprint:
+            raise ValueError("Pinned SSH host-key policy requires a fingerprint")
+        key = await asyncssh.get_server_host_key(req.host, req.port)
+        actual = str(key.get_fingerprint("sha256"))
+        if actual != req.host_key_fingerprint:
+            raise ValueError(
+                f"SSH host-key fingerprint mismatch: expected "
+                f"{req.host_key_fingerprint}, received {actual}"
+            )
+        # A successful exact fingerprint comparison is the trust boundary for
+        # hosts not yet present in known_hosts.
+        kwargs["known_hosts"] = None
+    elif req.host_key_policy != "strict":
+        raise ValueError(f"Unsupported SSH host-key policy: {req.host_key_policy}")
     if req.identity_file:
-        kwargs["client_keys"] = [req.identity_file]
+        kwargs["client_keys"] = [str(Path(req.identity_file).expanduser())]
+    if req.proxy_jump:
+        kwargs["tunnel"] = req.proxy_jump
     if req.password:
         kwargs["password"] = req.password
     if req.passphrase:
@@ -249,7 +323,11 @@ async def _run_remote_install(
             line = await stream.readline()
             if not line:
                 break
-            text = line if isinstance(line, str) else line.decode("utf-8", errors="replace")
+            text = (
+                line
+                if isinstance(line, str)
+                else line.decode("utf-8", errors="replace")
+            )
             job.append(f"{prefix}{text.rstrip()}")
 
     await asyncio.gather(_pump(process.stdout), _pump(process.stderr, prefix="[err] "))
@@ -301,9 +379,7 @@ async def run_install_job(
 ) -> InstallJob:
     async def offload(operation: str, call, *args, **kwargs):
         if async_runtime:
-            return await async_runtime.run_blocking(
-                operation, call, *args, **kwargs
-            )
+            return await async_runtime.run_blocking(operation, call, *args, **kwargs)
         return await asyncio.to_thread(call, *args, **kwargs)
 
     async def persist() -> None:
@@ -355,9 +431,16 @@ async def run_install_job(
                 async with asyncio.timeout(30.0):
                     conn = await connect
         except Exception as exc:
-            msg = str(exc)
+            msg = redact_log_text(exc)
             if "Permission denied" in msg or "auth" in msg.lower():
-                job.error = "SSH authentication failed — check keys, agent, or password."
+                job.error = (
+                    "SSH authentication failed — check keys, agent, or password."
+                )
+            elif "host key" in msg.lower() or "known host" in msg.lower():
+                job.error = (
+                    "SSH host-key verification failed — confirm the exact "
+                    "fingerprint or repair known_hosts."
+                )
             else:
                 job.error = f"SSH connection failed: {exc}"
             job.status = InstallJobStatus.FAILED
@@ -366,7 +449,11 @@ async def run_install_job(
             return job
 
         async with conn:
-            job.status = InstallJobStatus.INSTALLING if not req.join_only else InstallJobStatus.JOINING
+            job.status = (
+                InstallJobStatus.INSTALLING
+                if not req.join_only
+                else InstallJobStatus.JOINING
+            )
             job.append("Connected. Running remote install…")
             await persist()
             install = _run_remote_install(
@@ -396,7 +483,9 @@ async def run_install_job(
         )
         if not ok:
             job.status = InstallJobStatus.FAILED
-            job.error = "Remote install finished but /api/health did not become ready in time."
+            job.error = (
+                "Remote install finished but /api/health did not become ready in time."
+            )
             job.append(job.error)
             await persist()
             return job
@@ -407,7 +496,7 @@ async def run_install_job(
         return job
     except Exception as exc:
         job.status = InstallJobStatus.FAILED
-        job.error = str(exc)
+        job.error = redact_log_text(exc)
         job.append(f"Failed: {exc}")
         await persist()
         return job
