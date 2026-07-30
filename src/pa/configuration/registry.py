@@ -1,0 +1,1186 @@
+"""Authoritative, machine-readable registry for PA runtime configuration.
+
+This module deliberately contains data, not surface-specific rendering.  The web
+page, HTTP/MCP API, noninteractive CLI, and terminal editor all consume the same
+definitions so coverage and validation cannot silently diverge.
+"""
+
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass, field
+from typing import Any, Literal
+
+SettingKind = Literal[
+    "str",
+    "optional_str",
+    "path",
+    "optional_path",
+    "int",
+    "optional_int",
+    "float",
+    "bool",
+    "list_str",
+    "optional_list_str",
+    "dict_int",
+]
+ApplyMode = Literal["live", "reload", "restart"]
+Exposure = Literal["editable", "read_only", "hidden"]
+Scope = Literal["instance", "realm", "fleet", "user", "secret"]
+
+CONFIGURATION_PRECEDENCE = (
+    "runtime_override",
+    "cli_override",
+    "config_file",
+    "environment",
+    "default",
+)
+
+
+@dataclass(frozen=True)
+class SurfaceAccess:
+    read: bool = True
+    write: bool = False
+
+
+@dataclass(frozen=True)
+class SettingDefinition:
+    key: str
+    kind: SettingKind
+    default: Any
+    description: str
+    category: str
+    order: int
+    impact: str
+    apply: ApplyMode = "restart"
+    scope: Scope = "instance"
+    exposure: Exposure = "editable"
+    rationale: str = ""
+    aliases: tuple[str, ...] = ()
+    environment: tuple[str, ...] = ()
+    allowed: tuple[str, ...] = ()
+    example: str = ""
+    secret: bool = False
+    list_ops: bool = False
+    platforms: tuple[str, ...] = ("all",)
+    providers: tuple[str, ...] = ("all",)
+    sources: tuple[str, ...] = (
+        "default",
+        "config_file",
+        "environment",
+        "cli_override",
+        "runtime_override",
+    )
+    deprecated: bool = False
+    replacement: str | None = None
+    migration: str | None = None
+    normalizer: str | None = None
+    validator: str | None = None
+    surfaces: dict[str, SurfaceAccess] = field(default_factory=dict)
+
+    @property
+    def editable(self) -> bool:
+        return self.exposure == "editable"
+
+    # Compatibility names used by the existing terminal editor.
+    @property
+    def name(self) -> str:
+        return self.key
+
+    @property
+    def sensitive(self) -> bool:
+        return self.secret
+
+    @property
+    def dangerous(self) -> bool:
+        return self.secret or self.apply == "restart" or "expos" in self.impact.lower()
+
+    def metadata(self) -> dict[str, Any]:
+        value = asdict(self)
+        value["editable"] = self.editable
+        value["restart_required"] = self.apply == "restart"
+        value["reload_required"] = self.apply == "reload"
+        value["precedence"] = list(CONFIGURATION_PRECEDENCE)
+        return value
+
+
+def _surface_access(exposure: Exposure) -> dict[str, SurfaceAccess]:
+    writable = exposure == "editable"
+    readable = exposure != "hidden"
+    return {
+        "web": SurfaceAccess(read=readable, write=writable),
+        "cli": SurfaceAccess(read=readable, write=writable),
+        "api": SurfaceAccess(read=readable, write=writable),
+        "mcp": SurfaceAccess(read=readable, write=writable),
+        "environment": SurfaceAccess(read=True, write=False),
+        "config_file": SurfaceAccess(read=True, write=writable),
+    }
+
+
+def _s(
+    key: str,
+    kind: SettingKind,
+    default: Any,
+    description: str,
+    category: str,
+    order: int,
+    impact: str,
+    *,
+    apply: ApplyMode = "restart",
+    scope: Scope = "instance",
+    exposure: Exposure = "editable",
+    rationale: str = "",
+    aliases: tuple[str, ...] = (),
+    environment: tuple[str, ...] = (),
+    allowed: tuple[str, ...] = (),
+    example: str = "",
+    secret: bool = False,
+    list_ops: bool = False,
+    platforms: tuple[str, ...] = ("all",),
+    providers: tuple[str, ...] = ("all",),
+    sources: tuple[str, ...] = (
+        "default",
+        "config_file",
+        "environment",
+        "cli_override",
+        "runtime_override",
+    ),
+    deprecated: bool = False,
+    replacement: str | None = None,
+    migration: str | None = None,
+    normalizer: str | None = None,
+    validator: str | None = None,
+) -> SettingDefinition:
+    return SettingDefinition(
+        key=key,
+        kind=kind,
+        default=default,
+        description=description,
+        category=category,
+        order=order,
+        impact=impact,
+        apply=apply,
+        scope=scope,
+        exposure=exposure,
+        rationale=rationale,
+        aliases=aliases,
+        environment=environment or (f"PA_{key.upper()}",),
+        allowed=allowed,
+        example=example,
+        secret=secret,
+        list_ops=list_ops,
+        platforms=platforms,
+        providers=providers,
+        sources=sources,
+        deprecated=deprecated,
+        replacement=replacement,
+        migration=migration,
+        normalizer=normalizer,
+        validator=validator,
+        surfaces=_surface_access(exposure),
+    )
+
+
+_DEFINITIONS = (
+    _s(
+        "instance_id",
+        "str",
+        "<generated>",
+        "Stable instance UUID.",
+        "Identity",
+        10,
+        "Changing identity would orphan durable fleet and sync records.",
+        exposure="read_only",
+        rationale="Created once by `pa init`; identity changes use migration tooling.",
+        sources=("config_file",),
+        validator="uuid",
+    ),
+    _s(
+        "instance_name",
+        "str",
+        "local",
+        "Human-readable instance name.",
+        "Identity",
+        20,
+        "Changes labels advertised to the fleet and shown in the UI.",
+        apply="reload",
+        validator="non_empty",
+    ),
+    _s(
+        "data_dir",
+        "path",
+        "~/.pa",
+        "PA state and database directory.",
+        "Storage",
+        10,
+        "Selects all durable local state and the single-writer boundary.",
+        exposure="read_only",
+        rationale="Bootstrap-only; select it with PA_DATA_DIR before PA starts.",
+        sources=("default", "environment", "cli_override"),
+        validator="path",
+    ),
+    _s(
+        "workspace_root",
+        "optional_path",
+        None,
+        "Root for leased repository worktrees.",
+        "Storage",
+        20,
+        "Moves mutable source workspaces; it must remain outside data_dir.",
+        validator="workspace_outside_data_dir",
+        example="/srv/pa-workspaces",
+    ),
+    _s(
+        "host",
+        "optional_str",
+        "127.0.0.1",
+        "Legacy web bind address.",
+        "Network",
+        10,
+        "A public bind can expose PA to the network.",
+        apply="restart",
+        example="127.0.0.1",
+        validator="bind_host",
+    ),
+    _s(
+        "web_listeners",
+        "list_str",
+        [],
+        "Explicit HOST or HOST:PORT web bind listeners.",
+        "Network",
+        20,
+        "Controls every HTTP listener; public listeners increase exposure.",
+        apply="restart",
+        list_ops=True,
+        example="127.0.0.1:8080",
+        validator="web_listeners",
+    ),
+    _s(
+        "port",
+        "int",
+        8080,
+        "Default HTTP port.",
+        "Network",
+        30,
+        "Changes local and advertised HTTP endpoints.",
+        apply="restart",
+        example="8080",
+        validator="tcp_port",
+    ),
+    _s(
+        "instance_url",
+        "optional_str",
+        "",
+        "Advertised reachable instance URL.",
+        "Network",
+        40,
+        "Fleet peers use this URL to reach the instance.",
+        apply="reload",
+        example="https://pa.example:8080",
+        validator="non_loopback_http_url",
+    ),
+    _s(
+        "peers",
+        "list_str",
+        [],
+        "Peer instance base URLs.",
+        "Network",
+        50,
+        "Adds outbound sync/discovery destinations.",
+        apply="reload",
+        list_ops=True,
+        example="https://peer.example:8080",
+        validator="http_url_list",
+    ),
+    _s(
+        "fleet_id",
+        "str",
+        "<generated>",
+        "Canonical fleet UUID.",
+        "Fleet",
+        10,
+        "Partitions membership and dispatch authority.",
+        scope="fleet",
+        exposure="read_only",
+        rationale="Managed atomically by fleet create/join workflows.",
+        sources=("config_file",),
+        validator="uuid",
+    ),
+    _s(
+        "fleet_owner",
+        "str",
+        "local",
+        "Canonical fleet-owner instance ID.",
+        "Fleet",
+        20,
+        "Defines fleet policy authority.",
+        scope="fleet",
+        exposure="read_only",
+        rationale="Managed by authenticated fleet join and ownership workflows.",
+        sources=("config_file",),
+        validator="non_empty",
+    ),
+    _s(
+        "fleet_owner_url",
+        "optional_str",
+        "",
+        "Fleet-owner base URL.",
+        "Fleet",
+        30,
+        "Routes owner-authoritative fleet operations.",
+        apply="reload",
+        scope="fleet",
+        example="https://owner.example:8080",
+        validator="http_url",
+    ),
+    _s(
+        "pr_supervisor_authority_url",
+        "optional_str",
+        "",
+        "Fenced PR-supervisor authority URL.",
+        "Fleet",
+        40,
+        "Routes merge supervision and merge-on-green decisions.",
+        apply="reload",
+        scope="fleet",
+        example="https://owner.example:8080",
+        validator="http_url",
+    ),
+    _s(
+        "subscribed_realms",
+        "list_str",
+        ["default"],
+        "Realm IDs synchronized by this instance.",
+        "Fleet",
+        50,
+        "Changes replicated data boundaries.",
+        apply="reload",
+        scope="realm",
+        list_ops=True,
+        validator="non_empty_list",
+    ),
+    _s(
+        "zone",
+        "str",
+        "default",
+        "Placement/network zone label.",
+        "Fleet",
+        60,
+        "Influences placement and locality decisions.",
+        apply="reload",
+        scope="fleet",
+        validator="non_empty",
+    ),
+    _s(
+        "capabilities",
+        "list_str",
+        [],
+        "Advertised fleet capability tags.",
+        "Fleet",
+        70,
+        "Changes placement eligibility.",
+        apply="reload",
+        scope="fleet",
+        list_ops=True,
+    ),
+    _s(
+        "dispatch_capacity",
+        "optional_int",
+        None,
+        "Global concurrent execution slots.",
+        "Execution",
+        10,
+        "Caps new fleet placement admissions.",
+        apply="live",
+        scope="fleet",
+        example="4",
+        validator="dispatch_capacity",
+    ),
+    _s(
+        "dispatch_provider_capacities",
+        "dict_int",
+        {},
+        "Per-provider execution slot ceilings.",
+        "Execution",
+        20,
+        "Caps new admissions for individual providers.",
+        apply="live",
+        scope="fleet",
+        example='{"codex": 2}',
+        validator="provider_capacities",
+        normalizer="lowercase_keys",
+    ),
+    _s(
+        "relay_enabled",
+        "bool",
+        False,
+        "Allow this instance to relay fleet traffic.",
+        "Fleet",
+        80,
+        "May forward traffic between peers.",
+        apply="reload",
+        scope="fleet",
+    ),
+    _s(
+        "sync_token",
+        "optional_str",
+        "",
+        "Shared credential for peer synchronization.",
+        "Secrets",
+        10,
+        "Replacing it invalidates peer authentication until all peers match.",
+        apply="reload",
+        scope="secret",
+        secret=True,
+        validator="secret",
+    ),
+    _s(
+        "auth_required",
+        "bool",
+        False,
+        "Require user authentication for UI/API access.",
+        "Authentication",
+        10,
+        "Enables the user authentication boundary.",
+        apply="restart",
+    ),
+    _s(
+        "secure_cookies",
+        "bool",
+        False,
+        "Require HTTPS-only browser cookies.",
+        "Authentication",
+        20,
+        "Prevents cookies over plaintext HTTP; requires HTTPS access.",
+        apply="restart",
+    ),
+    _s(
+        "session_secret",
+        "optional_str",
+        "<generated>",
+        "Cookie and session signing secret.",
+        "Secrets",
+        20,
+        "Replacing it invalidates browser sessions and CSRF tokens.",
+        apply="restart",
+        scope="secret",
+        secret=True,
+        validator="secret",
+    ),
+    _s(
+        "oidc_issuer",
+        "optional_str",
+        "",
+        "OIDC issuer URL.",
+        "Authentication",
+        30,
+        "Selects the external identity authority.",
+        apply="restart",
+        validator="http_url",
+    ),
+    _s(
+        "oidc_client_id",
+        "optional_str",
+        "",
+        "OIDC client identifier.",
+        "Authentication",
+        40,
+        "Identifies PA to the OIDC provider.",
+        apply="restart",
+    ),
+    _s(
+        "oidc_client_secret",
+        "optional_str",
+        "",
+        "OIDC client secret.",
+        "Secrets",
+        30,
+        "Authenticates PA to the OIDC provider.",
+        apply="restart",
+        scope="secret",
+        secret=True,
+        validator="secret",
+    ),
+    _s(
+        "agent_provider",
+        "str",
+        "cursor",
+        "Default ACP agent provider.",
+        "Agent",
+        10,
+        "Changes the provider used for new sessions.",
+        apply="reload",
+        allowed=("cursor", "codex", "openinterpreter"),
+        validator="agent_provider",
+        normalizer="lowercase",
+    ),
+    _s(
+        "agent_command",
+        "optional_str",
+        None,
+        "ACP provider command override.",
+        "Agent",
+        20,
+        "Runs the configured local executable for new provider processes.",
+        apply="reload",
+        example="/usr/local/bin/agent",
+    ),
+    _s(
+        "agent_args",
+        "optional_list_str",
+        None,
+        "ACP provider argument override.",
+        "Agent",
+        30,
+        "Changes arguments passed to new provider processes.",
+        apply="reload",
+        list_ops=True,
+    ),
+    _s(
+        "agent_enabled",
+        "bool",
+        True,
+        "Enable ACP agent connectivity.",
+        "Agent",
+        40,
+        "Disabling prevents new local agent sessions.",
+        apply="restart",
+    ),
+    _s(
+        "agent_recovery_concurrency",
+        "int",
+        2,
+        "Concurrent provider recoveries at startup.",
+        "Agent",
+        50,
+        "Higher values recover faster but increase provider load.",
+        apply="restart",
+        validator="range:1:16",
+    ),
+    _s(
+        "agent_session_idle_retention_hours",
+        "float",
+        24.0,
+        "Idle session retention in hours.",
+        "Retention",
+        10,
+        "Controls how long follow-up-capable idle sessions remain.",
+        apply="live",
+        validator="range:0.01:8760",
+    ),
+    _s(
+        "agent_session_sweep_seconds",
+        "float",
+        30.0,
+        "Idle-session sweep interval.",
+        "Retention",
+        20,
+        "Short intervals find expired sessions sooner at higher overhead.",
+        apply="live",
+        validator="range:1:3600",
+    ),
+    _s(
+        "memory_auto_capture_enabled",
+        "bool",
+        False,
+        "Queue policy-approved memory candidates.",
+        "Agent",
+        60,
+        "May persist reviewed final facts from agent turns.",
+        apply="live",
+    ),
+    _s(
+        "post_turn_evaluator_max_attempts",
+        "int",
+        2,
+        "Maximum post-turn evaluator attempts.",
+        "Post-turn",
+        10,
+        "Bounds evaluator retries and provider cost.",
+        apply="live",
+        validator="range:1:5",
+    ),
+    _s(
+        "post_turn_max_automatic_followups",
+        "int",
+        2,
+        "Maximum automatic follow-ups per turn.",
+        "Post-turn",
+        20,
+        "Bounds autonomous continuation.",
+        apply="live",
+        validator="range:0:10",
+    ),
+    _s(
+        "post_turn_evaluation_timeout_seconds",
+        "float",
+        60.0,
+        "Post-turn evaluator timeout.",
+        "Post-turn",
+        30,
+        "Bounds time spent evaluating a completed turn.",
+        apply="live",
+        validator="range_exclusive_min:0:600",
+    ),
+    _s(
+        "post_turn_retry_seconds",
+        "float",
+        15.0,
+        "Post-turn retry delay.",
+        "Post-turn",
+        40,
+        "Controls retry backoff after recoverable evaluation failures.",
+        apply="live",
+        validator="range_exclusive_min:0:3600",
+    ),
+    _s(
+        "post_turn_escalation_threshold",
+        "int",
+        2,
+        "Failures before operator escalation.",
+        "Post-turn",
+        50,
+        "Controls how quickly repeated automation failures surface.",
+        apply="live",
+        validator="range:1:10",
+    ),
+    _s(
+        "debug",
+        "bool",
+        False,
+        "Enable debug logging and hook history.",
+        "Diagnostics",
+        10,
+        "May retain more diagnostic metadata and increase log volume.",
+        apply="restart",
+    ),
+    _s(
+        "dev_tools",
+        "bool",
+        False,
+        "Expose in-browser developer tools.",
+        "Diagnostics",
+        20,
+        "Shows internal diagnostic panels to authenticated users.",
+        apply="restart",
+    ),
+    _s(
+        "log_level",
+        "str",
+        "INFO",
+        "Application log severity threshold.",
+        "Diagnostics",
+        30,
+        "Lower thresholds can record more operational metadata.",
+        apply="restart",
+        allowed=("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"),
+        normalizer="uppercase",
+    ),
+    _s(
+        "blocking_workers",
+        "int",
+        8,
+        "Blocking compatibility worker count.",
+        "Performance",
+        10,
+        "Controls concurrency for blocking compatibility work.",
+        apply="restart",
+        validator="range:1:64",
+    ),
+    _s(
+        "blocking_queue_limit",
+        "int",
+        64,
+        "Blocking compatibility queue limit.",
+        "Performance",
+        20,
+        "Controls backpressure before blocking work is rejected.",
+        apply="restart",
+        validator="range:0:4096",
+    ),
+    _s(
+        "blocking_default_timeout",
+        "float",
+        30.0,
+        "Default blocking-operation timeout.",
+        "Performance",
+        30,
+        "Bounds slow compatibility operations.",
+        apply="restart",
+        validator="range_exclusive_min:0:3600",
+    ),
+    _s(
+        "blocking_slow_call_seconds",
+        "float",
+        0.5,
+        "Slow blocking-call telemetry threshold.",
+        "Telemetry",
+        10,
+        "Changes diagnostic classification only.",
+        apply="live",
+        validator="range_exclusive_min:0:60",
+    ),
+    _s(
+        "event_loop_probe_interval",
+        "float",
+        0.1,
+        "Event-loop responsiveness probe interval.",
+        "Telemetry",
+        20,
+        "Short intervals improve resolution at modest overhead.",
+        apply="restart",
+        validator="range_exclusive_min:0:10",
+    ),
+    _s(
+        "default_theme_id",
+        "str",
+        "pa",
+        "Instance fallback theme ID.",
+        "Appearance",
+        10,
+        "Changes appearance for users without a preference.",
+        apply="live",
+        scope="user",
+        validator="theme_id",
+    ),
+    _s(
+        "release_track",
+        "str",
+        "release",
+        "Install/update release track.",
+        "Updates",
+        10,
+        "Changes which releases update checks and installs select.",
+        apply="reload",
+        aliases=("update_channel",),
+        environment=("PA_RELEASE_TRACK", "PA_UPDATE_CHANNEL"),
+        allowed=("release", "beta", "alpha", "dev", "pypi"),
+        normalizer="release_track",
+        migration="github/stable → release; main → dev",
+    ),
+    _s(
+        "update_repo",
+        "str",
+        "petersky/pa",
+        "GitHub repository used for update checks.",
+        "Updates",
+        20,
+        "Changes the trusted source of executable updates.",
+        apply="reload",
+        validator="github_repository",
+        example="petersky/pa",
+    ),
+    _s(
+        "install_method",
+        "str",
+        "uv-tool",
+        "Detected installation mechanism.",
+        "Updates",
+        30,
+        "Used to select safe update behavior.",
+        exposure="read_only",
+        rationale="Detected and managed by installer/update workflows.",
+        sources=("default", "environment"),
+        allowed=("uv-tool", "source", "container"),
+    ),
+)
+
+SETTINGS: dict[str, SettingDefinition] = {item.key: item for item in _DEFINITIONS}
+ALIASES: dict[str, str] = {
+    alias: item.key for item in _DEFINITIONS for alias in item.aliases
+}
+
+if len(SETTINGS) != len(_DEFINITIONS):  # pragma: no cover - import-time invariant
+    raise RuntimeError("Duplicate canonical configuration key")
+
+
+def _env_only(
+    key: str,
+    environment: str,
+    description: str,
+    category: str,
+    order: int,
+    *,
+    secret: bool = False,
+    deprecated: bool = False,
+    replacement: str | None = None,
+    migration: str | None = None,
+    rationale: str,
+) -> SettingDefinition:
+    exposure: Exposure = (
+        "hidden" if secret or category == "Internal runtime" else "read_only"
+    )
+    return _s(
+        key,
+        "optional_str",
+        None,
+        description,
+        category,
+        order,
+        rationale,
+        exposure=exposure,
+        rationale=rationale,
+        environment=(environment,),
+        sources=("environment",),
+        secret=secret,
+        deprecated=deprecated,
+        replacement=replacement,
+        migration=migration,
+    )
+
+
+# Environment-only controls are part of the same registry but are not persisted
+# InstanceConfig fields.  They are deliberately read-only/hidden in general
+# configuration surfaces, with a rationale and the dedicated workflow that owns
+# them.  Presence may be audited; values are never returned.
+_ENVIRONMENT_ONLY_DEFINITIONS = (
+    _env_only(
+        "github_token",
+        "PA_GITHUB_TOKEN",
+        "PR-supervisor GitHub credential.",
+        "Integration credentials",
+        10,
+        secret=True,
+        rationale="Use the GitHub integration credential workflow; general configuration must not reveal or copy provider tokens.",
+    ),
+    _env_only(
+        "github_webhook_secret",
+        "PA_GITHUB_WEBHOOK_SECRET",
+        "GitHub webhook verification secret.",
+        "Integration credentials",
+        20,
+        secret=True,
+        rationale="Use the GitHub integration credential workflow so rotation and webhook validation remain coordinated.",
+    ),
+    _env_only(
+        "uv_bin",
+        "PA_UV_BIN",
+        "Absolute uv executable override.",
+        "Bootstrap",
+        10,
+        rationale="Bootstrap-only path used before instance configuration is available; manage it in the service environment.",
+    ),
+    _env_only(
+        "owner_api_url",
+        "PA_OWNER_API_URL",
+        "Private owner-channel HTTP endpoint.",
+        "Internal runtime",
+        10,
+        secret=False,
+        rationale="Bootstrap transport fencing is generated by PA and must not be changed through the served configuration API.",
+    ),
+    _env_only(
+        "owner_socket",
+        "PA_OWNER_SOCKET",
+        "Private owner-channel Unix socket.",
+        "Internal runtime",
+        20,
+        secret=False,
+        rationale="Bootstrap transport fencing is generated by PA and must not be changed through the served configuration API.",
+    ),
+    _env_only(
+        "runtime_dir",
+        "PA_RUNTIME_DIR",
+        "Private runtime socket directory.",
+        "Bootstrap",
+        20,
+        rationale="Selected before the owner channel starts; configure it in the service manager.",
+    ),
+    _env_only(
+        "local_api_url",
+        "PA_LOCAL_API_URL",
+        "Per-process authenticated owner API URL.",
+        "Internal runtime",
+        30,
+        secret=False,
+        rationale="Injected into PA-launched MCP processes and fenced to the owning instance.",
+    ),
+    _env_only(
+        "local_api_socket",
+        "PA_LOCAL_API_SOCKET",
+        "Per-process owner API socket.",
+        "Internal runtime",
+        40,
+        secret=False,
+        rationale="Injected into PA-launched MCP processes and fenced to the owning instance.",
+    ),
+    _env_only(
+        "local_api_token",
+        "PA_LOCAL_API_TOKEN",
+        "Per-process owner API bearer.",
+        "Internal runtime",
+        50,
+        secret=True,
+        rationale="Ephemeral child-process credential generated and rotated by PA.",
+    ),
+    _env_only(
+        "local_api_endpoint_type",
+        "PA_LOCAL_API_ENDPOINT_TYPE",
+        "Owner endpoint diagnostic classification.",
+        "Internal runtime",
+        60,
+        secret=False,
+        rationale="Generated telemetry, not operator configuration.",
+    ),
+    _env_only(
+        "cli_token",
+        "PA_CLI_TOKEN",
+        "User CLI bearer token.",
+        "Internal runtime",
+        70,
+        secret=True,
+        rationale="Managed by `pa login` and the user credential store.",
+    ),
+    _env_only(
+        "pr_supervisor_token",
+        "PA_PR_SUPERVISOR_TOKEN",
+        "PR-supervisor replica credential.",
+        "Internal runtime",
+        80,
+        secret=True,
+        rationale="Issued and rotated by fenced PR-supervisor replication.",
+    ),
+    _env_only(
+        "fleet_token",
+        "PA_FLEET_TOKEN",
+        "One-time fleet join token.",
+        "Internal runtime",
+        90,
+        secret=True,
+        rationale="Short-lived input to the authenticated fleet join workflow; never persist it as general configuration.",
+    ),
+    _env_only(
+        "execution_context",
+        "PA_EXECUTION_CONTEXT",
+        "Signed agent execution provenance.",
+        "Internal runtime",
+        100,
+        secret=True,
+        rationale="Generated per dispatch and fenced to a leased card/session workspace.",
+    ),
+    _env_only(
+        "writable_roots",
+        "PA_WRITABLE_ROOTS",
+        "Per-session filesystem write boundary.",
+        "Internal runtime",
+        110,
+        secret=False,
+        rationale="Generated from the durable workspace lease and sandbox policy.",
+    ),
+    _env_only(
+        "dependency_cache",
+        "PA_DEPENDENCY_CACHE",
+        "Per-session dependency cache path.",
+        "Internal runtime",
+        120,
+        secret=False,
+        rationale="Generated from the leased execution workspace.",
+    ),
+    _env_only(
+        "listener_health",
+        "PA_LISTENER_HEALTH",
+        "Bound listener health snapshot.",
+        "Internal runtime",
+        130,
+        secret=False,
+        rationale="Generated runtime telemetry, not operator configuration.",
+    ),
+    _env_only(
+        "browser_cdp_url",
+        "PA_BROWSER_CDP_URL",
+        "Attached browser CDP endpoint.",
+        "Internal runtime",
+        140,
+        secret=True,
+        rationale="Generated per isolated browser attachment and scoped to one agent session.",
+    ),
+    _env_only(
+        "browser_target_id",
+        "PA_BROWSER_TARGET_ID",
+        "Attached browser target ID.",
+        "Internal runtime",
+        150,
+        secret=True,
+        rationale="Generated per isolated browser attachment and scoped to one agent session.",
+    ),
+    _env_only(
+        "browser_attachment_id",
+        "PA_BROWSER_ATTACHMENT_ID",
+        "Browser attachment ID.",
+        "Internal runtime",
+        160,
+        secret=True,
+        rationale="Generated by the browser manager.",
+    ),
+    _env_only(
+        "browser_session_id",
+        "PA_BROWSER_SESSION_ID",
+        "Browser owner session ID.",
+        "Internal runtime",
+        170,
+        secret=True,
+        rationale="Generated by the browser manager.",
+    ),
+    _env_only(
+        "browser_executable",
+        "PA_BROWSER_EXECUTABLE",
+        "Chromium executable override.",
+        "Bootstrap",
+        30,
+        rationale="Host/platform discovery override; manage it in the service environment until a browser-provider setting is available.",
+    ),
+    _env_only(
+        "browser_width",
+        "PA_BROWSER_WIDTH",
+        "Default isolated browser width.",
+        "Bootstrap",
+        40,
+        rationale="Process-level browser default; per-session resize remains available through browser controls.",
+    ),
+    _env_only(
+        "browser_height",
+        "PA_BROWSER_HEIGHT",
+        "Default isolated browser height.",
+        "Bootstrap",
+        50,
+        rationale="Process-level browser default; per-session resize remains available through browser controls.",
+    ),
+    _env_only(
+        "acp_quiesce",
+        "PA_ACP_QUIESCE",
+        "Shutdown ACP quiesce guard.",
+        "Internal runtime",
+        180,
+        secret=False,
+        rationale="One-shot lifecycle fence managed by PA restart/update orchestration.",
+    ),
+    _env_only(
+        "acp_resume",
+        "PA_ACP_RESUME",
+        "Startup ACP resume guard.",
+        "Internal runtime",
+        190,
+        secret=False,
+        rationale="One-shot lifecycle fence managed by PA restart/update orchestration.",
+    ),
+    _env_only(
+        "provider_result",
+        "PA_PROVIDER_RESULT",
+        "Provider action result marker.",
+        "Internal runtime",
+        200,
+        secret=True,
+        rationale="Child-process protocol value parsed only by the provider action runner.",
+    ),
+    _env_only(
+        "config_color",
+        "PA_CONFIG_COLOR",
+        "Terminal configuration color policy.",
+        "User interface",
+        10,
+        rationale="Per-shell presentation preference; use NO_COLOR or the process environment.",
+    ),
+    _env_only(
+        "release_agent",
+        "PA_RELEASE_AGENT",
+        "Maintainer release-notes agent command.",
+        "Maintainer tooling",
+        10,
+        rationale="Release-command-only override with a corresponding CLI flag.",
+    ),
+    _env_only(
+        "release_agent_args",
+        "PA_RELEASE_AGENT_ARGS",
+        "Maintainer release-notes agent arguments.",
+        "Maintainer tooling",
+        20,
+        rationale="Release-command-only override with a corresponding CLI flag.",
+    ),
+    _env_only(
+        "release_agent_timeout",
+        "PA_RELEASE_AGENT_TIMEOUT",
+        "Maintainer release-notes timeout.",
+        "Maintainer tooling",
+        30,
+        rationale="Release-command-only override with a corresponding CLI flag.",
+    ),
+    _env_only(
+        "release_agent_use_stdin",
+        "PA_RELEASE_AGENT_USE_STDIN",
+        "Pass release prompt over stdin.",
+        "Maintainer tooling",
+        40,
+        rationale="Release-command-only compatibility switch.",
+    ),
+    _env_only(
+        "legacy_realm",
+        "PA_REALM",
+        "Legacy primary-realm selector.",
+        "Compatibility",
+        10,
+        deprecated=True,
+        replacement="subscribed_realms",
+        migration="A single PA_REALM value migrates to subscribed_realms[0].",
+        rationale="Accepted only by install/join compatibility paths; use subscribed_realms.",
+    ),
+    _env_only(
+        "install_channel",
+        "PA_CHANNEL",
+        "Remote installer release track.",
+        "Bootstrap",
+        60,
+        rationale="Installer-only alias used before config.json exists; use release_track after initialization.",
+    ),
+    _env_only(
+        "git_ref",
+        "PA_GIT_REF",
+        "Remote installer Git revision override.",
+        "Bootstrap",
+        70,
+        rationale="Installer-only source pin used before PA starts.",
+    ),
+    _env_only(
+        "skip_service",
+        "PA_SKIP_SERVICE",
+        "Skip host service installation.",
+        "Bootstrap",
+        80,
+        rationale="Installer-only control used before PA starts.",
+    ),
+    _env_only(
+        "installer_github_repository",
+        "PA_GITHUB_REPO",
+        "Remote installer GitHub repository.",
+        "Bootstrap",
+        90,
+        rationale="Installer-only source selector used before PA starts; use update_repo for runtime update checks.",
+    ),
+)
+ENVIRONMENT_ONLY: dict[str, SettingDefinition] = {
+    item.key: item for item in _ENVIRONMENT_ONLY_DEFINITIONS
+}
+REGISTRY: dict[str, SettingDefinition] = {**SETTINGS, **ENVIRONMENT_ONLY}
+
+
+def get_setting(key: str) -> SettingDefinition:
+    canonical = ALIASES.get(key, key)
+    try:
+        return SETTINGS[canonical]
+    except KeyError as exc:
+        known = ", ".join(sorted((*SETTINGS, *ALIASES)))
+        raise KeyError(
+            f"Unknown configuration key {key!r}. Known keys: {known}"
+        ) from exc
+
+
+def registry_metadata() -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "precedence": list(CONFIGURATION_PRECEDENCE),
+        "settings": [
+            item.metadata()
+            for item in sorted(
+                (*_DEFINITIONS, *_ENVIRONMENT_ONLY_DEFINITIONS),
+                key=lambda value: (value.category, value.order),
+            )
+        ],
+    }

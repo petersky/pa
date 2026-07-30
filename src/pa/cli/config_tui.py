@@ -10,14 +10,14 @@ from dataclasses import dataclass, field
 from enum import IntEnum
 from pathlib import Path
 from typing import Any, TextIO
+from uuid import uuid4
 
 from pa.domain.config_edit import (
+    RESTART_KEYS,
+    SERVICE_KEYS,
     ConfigConflictError,
     ConfigError,
     FieldSpec,
-    RESTART_KEYS,
-    SERVICE_KEYS,
-    apply_config_changes,
     config_revision,
     default_for_unset,
     format_value,
@@ -37,6 +37,8 @@ class ExitCode(IntEnum):
     VALIDATION_FAILED = 3
     CONNECTION_FAILED = 4
     STAGED_NO_WRITE = 5
+    CONFLICT = 6
+    AUTHORIZATION_FAILED = 7
 
 
 @dataclass(frozen=True)
@@ -64,7 +66,7 @@ def detect_terminal(
     curses_ok = interactive and term.lower() not in {"", "dumb", "unknown"}
     try:
         import curses  # noqa: F401
-    except (ImportError, ModuleNotFoundError):
+    except ImportError, ModuleNotFoundError:
         curses_ok = False
         reason = "Python curses is unavailable"
     if not interactive:
@@ -105,6 +107,7 @@ class EditorState:
     instance_name: str
     target_scope: str = "instance-local"
     staged: dict[str, Any] = field(default_factory=dict)
+    cleared: set[str] = field(default_factory=set)
     errors: dict[str, str] = field(default_factory=dict)
     query: str = ""
     section: str = "All"
@@ -170,6 +173,7 @@ class EditorState:
             self.errors[key] = str(exc)
             raise
         self.errors.pop(key, None)
+        self.cleared.discard(key)
         if parsed == getattr(self.base, key):
             self.staged.pop(key, None)
         else:
@@ -186,20 +190,20 @@ class EditorState:
         spec = get_field_spec(key)
         value = default_for_unset(spec)
         validate_config_changes(self.base, {**self.staged, key: value})
-        if value == getattr(self.base, key):
-            self.staged.pop(key, None)
-        else:
-            self.staged[key] = value
+        self.staged[key] = value
+        self.cleared.add(key)
         self.errors.pop(key, None)
         self.status = f"Staged reset for {key}"
 
     def revert(self, key: str) -> None:
         self.staged.pop(key, None)
+        self.cleared.discard(key)
         self.errors.pop(key, None)
         self.status = f"Reverted {key}"
 
     def discard_all(self) -> None:
         self.staged.clear()
+        self.cleared.clear()
         self.errors.clear()
         self.status = "Discarded all staged changes"
 
@@ -213,7 +217,7 @@ class EditorState:
         }
         self.base = latest
         for key in list(self.staged):
-            if self.staged[key] == getattr(latest, key):
+            if key not in self.cleared and self.staged[key] == getattr(latest, key):
                 self.staged.pop(key)
         for key in conflicts:
             self.errors[key] = "external change conflicts with staged value"
@@ -235,8 +239,10 @@ class EditorState:
             after = format_value(
                 self.staged[key], reveal=False, sensitive=spec.sensitive
             )
-            impact = "restart" if key in RESTART_KEYS else (
-                "reload" if key in SERVICE_KEYS else "live"
+            impact = (
+                "restart"
+                if key in RESTART_KEYS
+                else ("reload" if key in SERVICE_KEYS else "live")
             )
             rows.append((key, before, after, impact))
         return rows
@@ -252,15 +258,71 @@ class EditorState:
             for key in self.staged
             if getattr(self.base, key) != getattr(candidate, key)
         )
-        saved, reload_keys, restart_keys = apply_config_changes(
-            self.data_dir, self.staged, expected_revision=self.revision
+        from pa.config import Settings, get_settings
+        from pa.configuration.service import apply_update
+
+        owner_settings = get_settings()
+        if self.data_dir.resolve() == owner_settings.data_dir.resolve():
+            from pa.mcp.local_api import (
+                LocalPAServerUnavailable,
+                request_local_pa,
+            )
+
+            try:
+                response = request_local_pa(
+                    owner_settings,
+                    "PATCH",
+                    "/api/configuration",
+                    json={
+                        "changes": {
+                            key: value
+                            for key, value in self.staged.items()
+                            if key not in self.cleared
+                        },
+                        "clear": sorted(self.cleared),
+                        "expected_revision": self.revision,
+                        "idempotency_key": f"interactive-cli:{uuid4()}",
+                        "interface": "interactive_cli",
+                        "target": "local",
+                    },
+                )
+            except LocalPAServerUnavailable as exc:
+                raise ConfigError(str(exc)) from exc
+            saved = require_config(self.data_dir)
+            self.base = saved
+            self.staged.clear()
+            self.cleared.clear()
+            self.errors.clear()
+            self.status = f"Applied {len(changed)} change(s) atomically"
+            restart = frozenset(response.get("restart_required") or ())
+            reload = frozenset(response.get("reload_required") or ())
+            return ApplySummary(changed, changed - reload - restart, reload, restart)
+
+        values = self.base.model_dump(exclude_unset=True)
+        values["data_dir"] = self.data_dir
+        settings = Settings(**values)
+        result = apply_update(
+            settings,
+            {
+                key: value
+                for key, value in self.staged.items()
+                if key not in self.cleared
+            },
+            sorted(self.cleared),
+            expected_revision=self.revision,
+            idempotency_key=f"interactive-cli:{uuid4()}",
+            principal_id="user:cli",
+            interface="interactive_cli",
         )
-        live = changed - reload_keys - restart_keys
-        self.base = saved
+        live = changed - result.reload - result.restart
+        self.base = result.config
         self.staged.clear()
+        self.cleared.clear()
         self.errors.clear()
         self.status = f"Applied {len(changed)} change(s) atomically"
-        return ApplySummary(changed, live, reload_keys - restart_keys, restart_keys)
+        return ApplySummary(
+            changed, live, result.reload - result.restart, result.restart
+        )
 
 
 def state_marker(state: EditorState, spec: FieldSpec) -> str:
@@ -282,7 +344,10 @@ def render_text(state: EditorState, width: int = 80, height: int = 24) -> list[s
     height = max(8, height)
     compact = width < 72 or height < 18
     title = f"PA config > {state.instance_name} [{state.target_scope}]"
-    lines = [title[:width], f"Section: {state.section}  Search: {state.query or '(none)'}"[:width]]
+    lines = [
+        title[:width],
+        f"Section: {state.section}  Search: {state.query or '(none)'}"[:width],
+    ]
     specs = state.visible_specs
     available = max(1, height - (7 if compact else 11))
     start = max(0, min(state.cursor - available // 2, max(0, len(specs) - available)))
@@ -311,8 +376,10 @@ def render_text(state: EditorState, width: int = 80, height: int = 24) -> list[s
             if selected_spec.editable
             else "(managed)"
         )
-        impact = "restart" if selected_spec.name in RESTART_KEYS else (
-            "reload" if selected_spec.name in SERVICE_KEYS else "live"
+        impact = (
+            "restart"
+            if selected_spec.name in RESTART_KEYS
+            else ("reload" if selected_spec.name in SERVICE_KEYS else "live")
         )
         lines.append(
             (
@@ -336,7 +403,9 @@ def render_text(state: EditorState, width: int = 80, height: int = 24) -> list[s
             ]
         )
     lines.append(
-        f"{len(state.staged)} staged  {len(state.errors)} invalid | {state.status}"[:width]
+        f"{len(state.staged)} staged  {len(state.errors)} invalid | {state.status}"[
+            :width
+        ]
     )
     lines.append(
         "j/k arrows move  Tab focus  Enter/Space edit  / search  s review  u revert  r refresh  ? help  q quit"[
@@ -443,7 +512,9 @@ class CursesEditor:
             if spec:
                 self.state.revert(spec.name)
         elif key == "U":
-            if self.state.staged and self._confirm(screen, "Discard ALL staged changes?"):
+            if self.state.staged and self._confirm(
+                screen, "Discard ALL staged changes?"
+            ):
                 self.state.discard_all()
         elif key == "r":
             self.state.refresh()
@@ -473,7 +544,7 @@ class CursesEditor:
                     screen, f"{spec.name}: type replace, clear, or cancel", "cancel"
                 ).lower()
                 if action == "clear":
-                    self.state.stage_raw(spec.name, "")
+                    self.state.unset(spec.name)
                 elif action == "replace":
                     self.state.stage_raw(
                         spec.name,
@@ -692,7 +763,10 @@ def run_config_editor(
     capabilities = detect_terminal(stdin=stdin, stdout=stdout, env=env)
     if force_line or not capabilities.curses:
         if capabilities.reason:
-            print(f"Using line-oriented config editor: {capabilities.reason}.", file=stdout)
+            print(
+                f"Using line-oriented config editor: {capabilities.reason}.",
+                file=stdout,
+            )
         return run_line_editor(state, stdin=stdin, stdout=stdout)
     try:
         return CursesEditor(state, color=capabilities.color).run()

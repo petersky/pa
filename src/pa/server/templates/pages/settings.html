@@ -8,6 +8,7 @@
     ('appearance', 'Appearance'),
     ('agent', 'Agent defaults'),
     ('prompts', 'Prompts'),
+    ('configuration', 'Configuration'),
     ('instance', 'Instance'),
   ], active='agent') }}
 </div>
@@ -215,6 +216,178 @@
     </dl>
   </div>
   <p id="pa-prompt-copy-status" class="visually-hidden" aria-live="polite"></p>
+</section>
+
+<section class="hidden stack configuration-page" data-section="configuration" hidden>
+  <div class="panel">
+    <div class="panel-header">
+      <div>
+        <h2>Configuration</h2>
+        <p class="muted small">Configured values are persisted intent; effective values also reflect runtime/operator overrides and lower-precedence environment defaults.</p>
+      </div>
+      <a class="secondary small" href="/api/configuration/schema">Schema JSON</a>
+    </div>
+    <div class="configuration-toolbar" role="search" aria-label="Filter configuration">
+      <label>
+        <span>Search settings</span>
+        <input type="search" id="pa-configuration-search" placeholder="Key, description, or impact" autocomplete="off">
+      </label>
+      <label>
+        <span>Section</span>
+        <select id="pa-configuration-category">
+          <option value="">All sections</option>
+          {% for category in configuration.settings | map(attribute='category') | unique | sort %}
+          <option value="{{ category }}">{{ category }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        <span>Applicability</span>
+        <select id="pa-configuration-applicability">
+          <option value="">All</option>
+          <option value="supported">Supported here</option>
+          <option value="unsupported">Unsupported here</option>
+          <option value="deprecated">Deprecated</option>
+          <option value="readonly">Read-only</option>
+        </select>
+      </label>
+    </div>
+    <p class="muted small" id="pa-configuration-count" aria-live="polite">{{ configuration.settings | length }} settings</p>
+    <div class="configuration-precedence" aria-label="Configuration precedence">
+      <strong>Precedence</strong>
+      {% for source in configuration.precedence %}
+      <span>{{ source | replace('_', ' ') }}</span>{% if not loop.last %}<b aria-hidden="true">›</b>{% endif %}
+      {% endfor %}
+    </div>
+  </div>
+
+  {% if configuration.deprecated or configuration.unknown %}
+  <div class="panel configuration-persisted-warnings" role="status">
+    <div class="panel-header"><h3>Persisted compatibility keys</h3></div>
+    {% if configuration.deprecated %}
+    <h4>Deprecated</h4>
+    <ul>
+      {% for item in configuration.deprecated %}
+      <li><code>{{ item.key }}</code> → <code>{{ item.canonical_key }}</code>{% if item.migration %}: {{ item.migration }}{% endif %}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    {% if configuration.unknown %}
+    <h4>Unknown</h4>
+    <ul>
+      {% for item in configuration.unknown %}
+      <li><code>{{ item.key }}</code> = <code>{{ item.value | tojson }}</code> <span class="muted">preserved, not applied</span></li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <form id="pa-configuration-form" class="configuration-catalog">
+    {% for row in configuration.settings %}
+    <article class="panel configuration-setting"
+             id="configuration-{{ row.key }}"
+             data-configuration-row
+             data-key="{{ row.key }}"
+             data-kind="{{ row.kind }}"
+             data-category="{{ row.category }}"
+             data-search="{{ (row.key ~ ' ' ~ row.description ~ ' ' ~ row.impact ~ ' ' ~ row.category) | lower }}"
+             data-supported="{{ 'true' if row.supported else 'false' }}"
+             data-deprecated="{{ 'true' if row.deprecated else 'false' }}"
+             data-readonly="{{ 'false' if row.editable else 'true' }}">
+      <div class="configuration-setting-main">
+        <div class="configuration-setting-heading">
+          <div>
+            <h3><a href="?section=configuration#configuration-{{ row.key }}"><code>{{ row.key }}</code></a></h3>
+            <p>{{ row.description }}</p>
+          </div>
+          <div class="configuration-badges" aria-label="Setting status">
+            <span class="status">{{ row.category }}</span>
+            <span class="status">{{ row.scope | replace('_', ' ') }}</span>
+            <span class="status status-{{ 'ok' if row.supported else 'error' }}">{{ 'supported' if row.supported else 'unsupported' }}</span>
+            {% if row.apply != 'live' %}<span class="status status-warning">{{ row.apply }}</span>{% endif %}
+            {% if not row.editable %}<span class="status">read-only</span>{% endif %}
+            {% if row.secret %}<span class="status">secret</span>{% endif %}
+          </div>
+        </div>
+        <p class="muted small">{{ row.impact }}</p>
+
+        {% if row.editable and row.supported %}
+        <div class="configuration-control">
+          {% if row.secret %}
+          <label>
+            <span>Replacement value</span>
+            <input type="password" autocomplete="new-password" data-configuration-secret placeholder="Enter a replacement; existing value is never shown">
+          </label>
+          <button type="button" class="secondary small" data-configuration-secret-replace>Stage replacement</button>
+          <button type="button" class="secondary small danger" data-configuration-clear>Stage clear</button>
+          {% elif row.kind == 'bool' %}
+          <label class="checkbox-row">
+            <input type="checkbox" data-configuration-input {% if (row.configured_value if row.configured else row.effective_value) %}checked{% endif %}>
+            <span>Enabled</span>
+          </label>
+          {% elif row.allowed %}
+          <label>
+            <span>Configured value</span>
+            <select data-configuration-input>
+              {% for option in row.allowed %}
+              <option value="{{ option }}" {% if option == (row.configured_value if row.configured else row.effective_value) %}selected{% endif %}>{{ option }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          {% elif row.kind in ('list_str', 'optional_list_str', 'dict_int') %}
+          <label>
+            <span>Configured JSON value</span>
+            <textarea rows="3" spellcheck="false" data-configuration-input>{{ (row.configured_value if row.configured else row.effective_value) | tojson }}</textarea>
+          </label>
+          {% elif row.kind in ('int', 'optional_int', 'float') %}
+          <label>
+            <span>Configured value</span>
+            <input type="number" step="{{ 'any' if row.kind == 'float' else '1' }}" data-configuration-input value="{{ row.configured_value if row.configured else row.effective_value if row.effective_value is not none else '' }}">
+          </label>
+          {% else %}
+          <label>
+            <span>Configured value</span>
+            <input type="text" data-configuration-input value="{{ row.configured_value if row.configured else row.effective_value if row.effective_value is not none else '' }}" placeholder="{{ row.example }}">
+          </label>
+          {% endif %}
+          {% if not row.secret %}
+          <button type="button" class="secondary small" data-configuration-clear>Reset to default/inherited</button>
+          {% endif %}
+        </div>
+        {% elif row.rationale %}
+        <p class="muted small"><strong>Why it is not editable here:</strong> {{ row.rationale }}</p>
+        {% endif %}
+      </div>
+      <dl class="settings-dl configuration-values">
+        <dt>Configured</dt><dd>{{ row.configured_value | tojson if row.configured else 'unset / inherited' }}</dd>
+        <dt>Effective</dt><dd>{{ row.effective_value | tojson }}</dd>
+        <dt>Default</dt><dd>{{ row.default_value | tojson }}</dd>
+        <dt>Source</dt><dd>{{ row.source }} <span class="muted">({{ row.source_detail }})</span>{% if row.overridden %} · configured value is overridden{% endif %}</dd>
+        <dt>Type</dt><dd>{{ row.kind }}{% if row.allowed %} · {{ row.allowed | join(', ') }}{% endif %}</dd>
+        <dt>Applicability</dt><dd>{{ row.platforms | join(', ') }} / {{ row.providers | join(', ') }}</dd>
+      </dl>
+      <p class="configuration-field-error" data-configuration-error role="alert" hidden></p>
+    </article>
+    {% endfor %}
+  </form>
+
+  <div class="panel configuration-review" id="pa-configuration-review" hidden>
+    <div class="panel-header"><h3>Review staged changes</h3></div>
+    <div id="pa-configuration-diff"></div>
+    <p class="muted small">Secrets remain redacted. PA will not restart itself; persisted restart-required values become effective only after an explicit safe restart.</p>
+    <div class="configuration-review-actions">
+      <button type="button" class="secondary" id="pa-configuration-cancel">Cancel review</button>
+      <button type="button" class="primary" id="pa-configuration-apply">Apply atomically</button>
+    </div>
+  </div>
+  <div class="configuration-sticky-actions" aria-label="Staged configuration actions">
+    <span id="pa-configuration-staged" aria-live="polite">No staged changes</span>
+    <button type="button" class="secondary" id="pa-configuration-discard" disabled>Discard</button>
+    <button type="button" class="primary" id="pa-configuration-review-button" disabled>Review and validate</button>
+  </div>
+  <p id="pa-configuration-status" class="muted small" role="status"></p>
+  <script type="application/json" id="pa-configuration-state">{{ {'revision': configuration.revision, 'csrf_token': csrf_token} | tojson }}</script>
 </section>
 
 <section class="hidden" data-section="instance" hidden>

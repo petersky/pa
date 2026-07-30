@@ -7,8 +7,8 @@ from fastapi.responses import HTMLResponse
 
 from pa.auth.csrf import token_for_request
 from pa.auth.middleware import get_principal_id
-from pa.core.contracts import Module
 from pa.core.context import AppContext
+from pa.core.contracts import Module
 from pa.core.preferences import get_preferences_store
 from pa.core.ui.pages import PageDefinition, PageRegistry
 from pa.modules.theme import get_theme_catalog
@@ -79,8 +79,9 @@ def _settings_context(request: Request) -> dict:
     prefs = get_preferences_store(settings.data_dir, user_id=user_id).load()
     global_prefs = get_preferences_store(settings.data_dir).load()
     kernel = request.app.state.kernel
-    from pa.status.info import build_status_snapshot
     from pa.acp.providers.registry import list_providers
+    from pa.configuration.service import configuration_snapshot
+    from pa.status.info import build_status_snapshot
 
     status = build_status_snapshot(ctx, module_count=len(kernel.registry.modules))
     return {
@@ -97,6 +98,7 @@ def _settings_context(request: Request) -> dict:
         "prompt_adapters": [
             item.model_dump(mode="json") for item in PROMPTS.adapters()
         ],
+        "configuration": configuration_snapshot(settings),
     }
 
 
