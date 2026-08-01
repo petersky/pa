@@ -977,6 +977,16 @@ a:hover { color: var(--pa-accent-hover); }
   flex-direction: column;
 }
 
+/* Pages that wrap page_layout in an extra div (history boundaries) need the
+   wrapper to join the flex chain, or .page-layout collapses to content height
+   and gets clipped by .app-view instead of scrolling. */
+.page-boundary {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
 .page-layout {
   display: flex;
   gap: 0;
