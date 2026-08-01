@@ -389,6 +389,36 @@ class LocalMcpApiTests(unittest.TestCase):
                 self.assertNotIn("instance mismatch", str(raised.exception))
                 self.assertNotIn("internal or auth detail", str(raised.exception))
 
+    def test_structured_remote_error_survives_mcp_boundary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), agent_enabled=False)
+            detail = {
+                "code": "target_projection_not_ready",
+                "message": "Target projection is catching up.",
+                "recoverable": True,
+                "retry_after": 1,
+                "dispatch_id": "dispatch-1",
+                "target_instance_id": "target-1",
+                "target_correlation_id": "target-correlation",
+            }
+            response = httpx.Response(
+                503,
+                json={"detail": detail},
+                headers={"X-Request-ID": "authority-correlation"},
+                request=httpx.Request("POST", "http://127.0.0.1/api/fleet/dispatch"),
+            )
+            with (
+                patch("httpx.request", return_value=response),
+                self.assertRaises(LocalPARequestError) as raised,
+            ):
+                request_local_pa(settings, "POST", "/api/fleet/dispatch", json={})
+            error = raised.exception
+            self.assertEqual(error.detail, detail)
+            self.assertEqual(error.code, "target_projection_not_ready")
+            self.assertTrue(error.recoverable)
+            self.assertEqual(error.retry_after, 1)
+            self.assertEqual(error.correlation_id, "authority-correlation")
+
     def test_server_identity_and_correlation_headers_are_exposed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(

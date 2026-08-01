@@ -44,6 +44,7 @@ class LocalPARequestError(LocalPAServerUnavailable):
         status: int,
         correlation_id: str,
         validation: list[dict[str, Any]] | None = None,
+        detail: dict[str, Any] | list[dict[str, Any]] | str | None = None,
     ) -> None:
         super().__init__(message)
         self.operation = operation
@@ -51,6 +52,17 @@ class LocalPARequestError(LocalPAServerUnavailable):
         self.status = status
         self.correlation_id = correlation_id
         self.validation = validation
+        # Keep the machine-readable API failure intact for MCP hosts and UIs.
+        # The human-readable exception remains bounded, but callers must not
+        # have to scrape it to recover retry guidance or entity provenance.
+        self.detail = detail
+        self.code = detail.get("code") if isinstance(detail, dict) else None
+        self.recoverable = (
+            detail.get("recoverable") if isinstance(detail, dict) else None
+        )
+        self.retry_after = (
+            detail.get("retry_after") if isinstance(detail, dict) else None
+        )
 
 
 def _normalized_query_params(params: dict | None) -> dict | None:
@@ -112,6 +124,13 @@ def _http_error(
         f"operation={method.upper()} endpoint={path} status={status} "
         f"correlation_id={response_correlation_id}"
     )
+    structured_detail: dict[str, Any] | list[dict[str, Any]] | str | None = None
+    try:
+        response_body = response.json()
+        if isinstance(response_body, dict):
+            structured_detail = response_body.get("detail")
+    except ValueError:
+        structured_detail = response.text[:1000] or None
     if (
         expected_instance_id
         and actual_instance_id
@@ -127,7 +146,7 @@ def _http_error(
         code = None
         detail_message = None
         try:
-            detail = response.json().get("detail")
+            detail = structured_detail
             if isinstance(detail, dict):
                 code = str(detail.get("code") or "")[:100]
                 detail_message = str(detail.get("message") or "")[:1000]
@@ -146,6 +165,7 @@ def _http_error(
         status=status,
         correlation_id=response_correlation_id,
         validation=validation,
+        detail=structured_detail,
     )
 
 

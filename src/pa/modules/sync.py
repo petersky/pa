@@ -188,7 +188,15 @@ def sync_refs(request: Request, realm: str | None = None) -> list[dict]:
     refs = log.list_refs()
     if realm:
         refs = [r for r in refs if r.realm_id == realm]
-    return [r.model_dump() for r in refs]
+    store = request.app.state.ctx.store
+    result = []
+    for ref in refs:
+        item = ref.model_dump()
+        projection_head = store.get_projection_head(ref.realm_id)
+        item["projection_head"] = projection_head
+        item["consistent"] = projection_head == ref.head_hash
+        result.append(item)
+    return result
 
 
 @router.post("/sync/have")
