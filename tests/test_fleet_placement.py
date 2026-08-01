@@ -542,6 +542,54 @@ def test_policy_dispatch_endpoint_retries_without_rerunning_placement() -> None:
         assert candidates.call_count == 1
 
 
+def test_named_dispatch_retry_returns_before_repeating_placement() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        settings = Settings(
+            data_dir=Path(tmp),
+            instance_id="local",
+            instance_name="Local",
+            instance_url="http://pa.test:8080",
+            agent_enabled=False,
+            subscribed_realms=["default"],
+            peers=[],
+        )
+        app = Kernel.boot(settings=settings).build_app()
+        candidate = _candidate("local", local=True)
+        with (
+            patch(
+                "pa.modules.fleet._placement_candidates",
+                autospec=True,
+                return_value=[candidate],
+            ) as candidates,
+            TestClient(app) as client,
+        ):
+            card = app.state.ctx.store.create_card(CardCreate(title="Dispatch me"))
+            assert client.get("/").status_code == 200
+            headers = {"X-CSRF-Token": client.cookies.get("pa_csrf")}
+            body = {
+                "card_id": card.id,
+                "provider": "codex",
+                "idempotency_key": "stable-named-request",
+                "execution_contract": {
+                    "version": 1,
+                    "profile": "research",
+                    "confirmed": True,
+                },
+            }
+            first = client.post(
+                "/api/fleet/instances/local/agent/start", headers=headers, json=body
+            )
+            second = client.post(
+                "/api/fleet/instances/local/agent/start", headers=headers, json=body
+            )
+
+        assert first.status_code == 202, first.text
+        assert second.status_code == 202, second.text
+        assert second.json()["duplicate"] is True
+        assert second.json()["dispatch_id"] == first.json()["dispatch_id"]
+        assert candidates.call_count == 1
+
+
 def test_capacity_config_api_updates_live_fleet_advertisement() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         settings = Settings(

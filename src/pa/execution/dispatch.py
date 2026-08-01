@@ -44,6 +44,7 @@ DISPATCH_STAGES = {
     "queued",
     "checking_sync",
     "materializing",
+    "provisioning",
     "starting_session",
     "delivering_prompt",
     "running",
@@ -57,6 +58,7 @@ CAPACITY_RESERVATION_STATES = {
     "queued",
     "checking_sync",
     "materializing",
+    "provisioning",
     "starting_session",
     "delivering_prompt",
 }
@@ -64,6 +66,7 @@ CAPACITY_RESERVATION_TTL = timedelta(hours=1)
 RECOVERABLE_DISPATCH_STATES = {
     "checking_sync",
     "materializing",
+    "provisioning",
     "starting_session",
     "delivering_prompt",
     # Legacy records written by the synchronous implementation.
@@ -197,6 +200,7 @@ class DispatchRecord(BaseModel):
             "queued",
             "checking_sync",
             "materializing",
+            "provisioning",
             "starting_session",
         }
         data["completion_outbox"] = {

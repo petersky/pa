@@ -4635,8 +4635,8 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
         "dispatch.record_write",
         ledger.transition,
         record,
-        "starting_session",
-        "Allocating the remote execution session.",
+        "provisioning",
+        "Provisioning the target workspace and execution environment.",
     )
     session_body: dict[str, Any] = {
         # Every fresh dispatch gets an identity that cannot collide with an old
@@ -4679,6 +4679,15 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
     session_id = session.get("id") if isinstance(session, dict) else None
     if not session_id:
         raise HTTPException(status_code=502, detail="Peer did not return a session id")
+    await _offload_ctx(
+        ctx,
+        "dispatch.record_write",
+        ledger.transition,
+        record,
+        "starting_session",
+        "Provider session allocated; validating configuration and linkage.",
+        detail={"session_id": session_id},
+    )
     requested_configuration = SessionConfigurationRequest.from_values(
         model_id=payload.get("model_id"),
         mode_id=payload.get("mode_id"),
@@ -5513,6 +5522,11 @@ async def start_remote_agent_work(
         if project_id
         else None
     )
+    if project_id and not project:
+        raise _dispatch_lookup_error("project", project_id)
+    existing = await _existing_named_dispatch(request, instance_id, body, project_id)
+    if existing is not None:
+        return existing
     placement_body = FleetDispatchBody(
         **body.model_dump(mode="python"),
         target_instance_id=instance_id,
@@ -5539,6 +5553,78 @@ async def start_remote_agent_work(
         body,
         placement_decision=decision.model_dump(mode="json"),
     )
+
+
+def _named_dispatch_identity(
+    request: Request,
+    instance_id: str,
+    body: RemoteAgentStartBody,
+    project_id: str | None,
+    *,
+    placement_request_fingerprint: str | None = None,
+) -> tuple[dict[str, Any], str, str]:
+    payload = body.model_dump(
+        mode="json",
+        exclude={
+            "authority_instance_id",
+            "idempotency_key",
+            "resume_session_id",
+            "allow_concurrent",
+        },
+    )
+    payload["project_id"] = project_id
+    fingerprint = placement_request_fingerprint or hashlib.sha256(
+        json.dumps(
+            {"target_instance_id": instance_id, "payload": payload},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    header_key = request.headers.get("idempotency-key")
+    if not isinstance(header_key, str):
+        header_key = None
+    idempotency_key = (header_key or body.idempotency_key or str(uuid4())).strip()
+    if not idempotency_key:
+        raise HTTPException(status_code=400, detail="Idempotency-Key cannot be empty")
+    return payload, fingerprint, idempotency_key
+
+
+async def _existing_named_dispatch(
+    request: Request,
+    instance_id: str,
+    body: RemoteAgentStartBody,
+    project_id: str | None,
+) -> dict[str, Any] | None:
+    """Deduplicate before placement/provisioning reads can block a replay."""
+    _payload, fingerprint, idempotency_key = _named_dispatch_identity(
+        request, instance_id, body, project_id
+    )
+    ledger = _dispatch_store(request)
+    existing = await _offload_request(
+        request,
+        "dispatch.idempotency_read",
+        ledger.by_idempotency,
+        instance_id,
+        idempotency_key,
+    )
+    if not existing:
+        return None
+    if existing.request_fingerprint != fingerprint:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "idempotency_conflict",
+                "message": "This idempotency key was already used for different remote work.",
+                "dispatch_id": existing.dispatch_id,
+            },
+        )
+    return {
+        "accepted": True,
+        "duplicate": True,
+        "dispatch_id": existing.dispatch_id,
+        "job_id": existing.dispatch_id,
+        "dispatch": existing.public_dict(),
+    }
 
 
 async def _admit_remote_agent_work(
@@ -5615,30 +5701,13 @@ async def _admit_remote_agent_work(
                 "recoverable": True,
             },
         )
-    payload = body.model_dump(
-        mode="json",
-        exclude={
-            "authority_instance_id",
-            "idempotency_key",
-            "resume_session_id",
-            "allow_concurrent",
-        },
+    payload, fingerprint, idempotency_key = _named_dispatch_identity(
+        request,
+        instance_id,
+        body,
+        project_id,
+        placement_request_fingerprint=placement_request_fingerprint,
     )
-    payload["project_id"] = project_id
-    fingerprint = (
-        placement_request_fingerprint
-        or hashlib.sha256(
-            json.dumps(
-                {"target_instance_id": instance_id, "payload": payload},
-                sort_keys=True,
-                separators=(",", ":"),
-            ).encode()
-        ).hexdigest()
-    )
-    header_key = request.headers.get("idempotency-key")
-    if not isinstance(header_key, str):
-        header_key = None
-    idempotency_key = (header_key or body.idempotency_key or str(uuid4())).strip()
     if not idempotency_key:
         raise HTTPException(status_code=400, detail="Idempotency-Key cannot be empty")
     ledger = _dispatch_store(request)
@@ -5804,7 +5873,10 @@ async def _admit_remote_agent_work(
         }
     worker = ctx.services.get("dispatch_worker")
     if worker:
-        worker.wake()
+        # Let the ASGI handler serialize and send the durable 202 admission
+        # before provisioning can consume the event loop or bounded I/O lane.
+        # The polling worker remains restart-safe if this callback is lost.
+        asyncio.get_running_loop().call_later(0.01, worker.wake)
     return {
         "accepted": True,
         "duplicate": False,
@@ -6593,6 +6665,7 @@ def cancel_dispatch(
     if record.state not in {
         "checking_sync",
         "materializing",
+        "provisioning",
         "starting_session",
     }:
         raise HTTPException(

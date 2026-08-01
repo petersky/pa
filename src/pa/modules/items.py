@@ -378,6 +378,7 @@ def _latest_card_progress(request: Request, card_id: str) -> dict | None:
             "queued",
             "checking_sync",
             "materializing",
+            "provisioning",
             "starting_session",
             "delivering_prompt",
             "running",
