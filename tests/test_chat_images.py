@@ -674,8 +674,24 @@ setImmediate(function () {
         self.assertIn("viewport-fit=cover", shell)
         self.assertIn("height: 100dvh", style)
         self.assertIn("padding-bottom: env(safe-area-inset-bottom, 0)", style)
+        self.assertIn(".page-agent .page-main", style)
         self.assertIn(".page-agent-main .acw-chat-stage", style)
+        self.assertIn("grid-template-rows: minmax(0, 1fr)", style)
         self.assertIn("max-height: min(10rem, 25dvh)", style)
+        # Composer stays pinned: the flex/grid chain must shrink so only
+        # .acw-messages scrolls, not the whole page-main region.
+        def css_block(selector: str) -> str:
+            needle = "\n" + selector + " {"
+            self.assertIn(needle, style)
+            return style.split(needle, 1)[1].split("}", 1)[0]
+
+        self.assertIn("overflow: hidden", css_block(".page-agent .page-main"))
+        self.assertIn("min-height: 0", css_block(".page-agent-main"))
+        widget = css_block(".agent-chat-widget")
+        self.assertIn("min-height: 0", widget)
+        self.assertIn("overflow: hidden", widget)
+        self.assertIn("min-height: 0", css_block(".acw-chat-stage"))
+        self.assertIn("min-height: 0", css_block(".acw-messages"))
 
     def test_settings_page_exposes_durable_new_chat_defaults(self) -> None:
         root = Path(__file__).parents[1] / "src" / "pa" / "server"
