@@ -1692,10 +1692,15 @@ code {
   --pa-chat-radius: 8px;
 }
 
+.page-agent .page-main {
+  overflow: hidden;
+}
+
 .page-agent-main {
   display: flex;
   flex-direction: column;
-  min-height: 100%;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -1711,8 +1716,9 @@ code {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  min-height: 100%;
+  min-height: 0;
   flex: 1;
+  overflow: hidden;
 }
 
 .agent-chat-widget.is-compact .acw-toolbar-right { display: none; }
@@ -1857,9 +1863,10 @@ code {
 .acw-chat-stage {
   position: relative;
   flex: 1;
-  min-height: 12rem;
+  min-height: 0;
   display: grid;
   grid-template-columns: 2.5rem minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
 }
 
@@ -1984,7 +1991,7 @@ code {
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
-  min-height: 12rem;
+  min-height: 0;
   padding: 0.25rem 1rem;
 }
 
