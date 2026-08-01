@@ -13,6 +13,7 @@ STARTING_DISPATCH_STATES = {
     "queued",
     "checking_sync",
     "materializing",
+    "provisioning",
     "starting_session",
     "delivering_prompt",
 }

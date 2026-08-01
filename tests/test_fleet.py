@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import asyncio
 import tempfile
+import threading
+import time
 import unittest
 import warnings
 from pathlib import Path
@@ -1539,7 +1541,16 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
             ctx = MagicMock()
             ctx.settings = settings
             ctx.store = store
-            ctx.services = {"fleet_registry": fleet}
+            wake_started = threading.Event()
+            wake_release = threading.Event()
+            worker = MagicMock()
+
+            def slow_wake() -> None:
+                wake_started.set()
+                wake_release.wait(1.0)
+
+            worker.wake.side_effect = slow_wake
+            ctx.services = {"fleet_registry": fleet, "dispatch_worker": worker}
             ctx.require_service.side_effect = lambda name: ctx.services[name]
             ctx.register_service.side_effect = lambda name, value: (
                 ctx.services.__setitem__(name, value)
@@ -1563,6 +1574,7 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
                     AsyncMock(return_value={"resolvable": True}),
                 ) as materialize,
             ):
+                started = time.perf_counter()
                 result = await start_remote_agent_work(
                     request,
                     "mini-1",
@@ -1573,6 +1585,12 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
                     "mini-1",
                     RemoteAgentStartBody(card_id=card.id, provider="codex"),
                 )
+                admission_elapsed = time.perf_counter() - started
+
+            self.assertLess(admission_elapsed, 0.2)
+            wake_release.set()
+            await asyncio.sleep(0.02)
+            self.assertTrue(wake_started.is_set())
 
             self.assertTrue(result["accepted"])
             self.assertFalse(result["duplicate"])

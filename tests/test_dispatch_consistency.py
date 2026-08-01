@@ -1197,6 +1197,7 @@ class DurableDispatchJobTests(unittest.IsolatedAsyncioTestCase):
                     "queued",
                     "checking_sync",
                     "materializing",
+                    "provisioning",
                     "starting_session",
                     "delivering_prompt",
                     "running",

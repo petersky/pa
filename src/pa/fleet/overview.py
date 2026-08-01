@@ -443,6 +443,7 @@ def _local_activity(ctx: Any) -> dict[str, Any]:
         "queued",
         "checking_sync",
         "materializing",
+        "provisioning",
         "starting_session",
         "delivering_prompt",
     }
@@ -534,6 +535,7 @@ def _local_activity(ctx: Any) -> dict[str, Any]:
         "queued",
         "checking_sync",
         "materializing",
+        "provisioning",
         "starting_session",
         "delivering_prompt",
         "running",
