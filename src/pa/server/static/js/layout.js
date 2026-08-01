@@ -184,6 +184,42 @@
     showSection(layout, link.getAttribute("data-section-link"));
   });
 
+  // The app shell keeps the document itself at overflow:hidden and scrolls
+  // .page-main instead, so scroll keys pressed with body focus would
+  // otherwise do nothing. Route them to the page's scroll region.
+  function findScrollRegion() {
+    var main = document.querySelector(".page-main");
+    if (!main) return null;
+    if (main.scrollHeight > main.clientHeight + 1) return main;
+    var candidates = main.querySelectorAll("*");
+    for (var i = 0; i < candidates.length; i++) {
+      var el = candidates[i];
+      if (el.scrollHeight <= el.clientHeight + 1) continue;
+      var overflowY = getComputedStyle(el).overflowY;
+      if (overflowY === "auto" || overflowY === "scroll") return el;
+    }
+    return null;
+  }
+
+  document.addEventListener("keydown", function (e) {
+    if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (e.target !== document.body && e.target !== document.documentElement) return;
+    var region = findScrollRegion();
+    if (!region) return;
+    var page = Math.max(40, region.clientHeight - 40);
+    var delta = null;
+    if (e.key === "ArrowDown") delta = 60;
+    else if (e.key === "ArrowUp") delta = -60;
+    else if (e.key === "PageDown") delta = page;
+    else if (e.key === "PageUp") delta = -page;
+    else if (e.key === " ") delta = e.shiftKey ? -page : page;
+    else if (e.key === "Home" && !e.shiftKey) delta = -region.scrollTop;
+    else if (e.key === "End" && !e.shiftKey) delta = region.scrollHeight;
+    if (delta === null) return;
+    e.preventDefault();
+    region.scrollBy({ top: delta, behavior: "auto" });
+  });
+
   function boot(root) {
     initResize(root);
     initSections(root);

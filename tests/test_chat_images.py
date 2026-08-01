@@ -693,6 +693,18 @@ setImmediate(function () {
         self.assertIn("min-height: 0", css_block(".acw-chat-stage"))
         self.assertIn("min-height: 0", css_block(".acw-messages"))
 
+        # Pages that wrap page_layout in a history-boundary div must keep the
+        # wrapper in the flex chain, or the layout collapses to content height
+        # and the composer scrolls off-screen behind .app-view's clipping.
+        boundary = css_block(".page-boundary")
+        self.assertIn("display: flex", boundary)
+        self.assertIn("flex: 1", boundary)
+        self.assertIn("min-height: 0", boundary)
+        self.assertIn('class="page-boundary"', page)
+        for name in ("workshop.html", "fleet.html"):
+            wrapped = (root / "templates" / "pages" / name).read_text()
+            self.assertIn('class="page-boundary"', wrapped)
+
     def test_settings_page_exposes_durable_new_chat_defaults(self) -> None:
         root = Path(__file__).parents[1] / "src" / "pa" / "server"
         source = (root / "templates" / "pages" / "settings.html").read_text()
