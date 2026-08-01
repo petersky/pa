@@ -83,7 +83,10 @@ class MacMiniAutonomySmokeTest(unittest.TestCase):
                 update={"lane": CardLane.ACTIVE, "preferred_instance": "target"}
             )
             target_store = MagicMock()
-            target_store.get_card.return_value = None
+            # Dispatch begins only after the target projection contains the
+            # authoritative card version; materialization binds, it does not
+            # side-load a parallel card event.
+            target_store.get_card.return_value = card
             target_log = MagicMock()
             target = _request(
                 Settings(data_dir=target_data, instance_id=TARGET_ID),
@@ -105,8 +108,7 @@ class MacMiniAutonomySmokeTest(unittest.TestCase):
                 ),
             )
             self.assertTrue(materialized["resolvable"])
-            exact = target_store.apply_event.call_args.args[0].payload
-            self.assertEqual(exact, card.model_dump(mode="json"))
+            target_store.apply_event.assert_not_called()
 
             session = {"id": "session-smoke", "card_id": card.id, "cwd": str(worktree)}
             self.assertEqual(session["card_id"], card.id)

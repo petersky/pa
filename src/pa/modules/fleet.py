@@ -36,11 +36,9 @@ from pa.core.ui.pages import PageDefinition, PageRegistry
 from pa.domain.models import (
     CardAttachment,
     CardCreate,
-    CardEvent,
     CardKind,
     CardLane,
     CardUpdate,
-    EventType,
     FleetInstance,
     KnowledgeEntry,
     RealmRole,
@@ -1128,17 +1126,11 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
             },
         )
     if incoming and not existing:
-        event = CardEvent(
-            type=EventType.CARD_CREATED,
-            realm_id=body.realm_id,
-            card_id=card_id,
-            author_principal="fleet:dispatch",
-            author_instance=body.authority_instance_id,
-            payload=incoming,
-        )
-        log = request.app.state.ctx.require_service("event_log")
-        log.append_event(event)
-        store.apply_event(event)
+        raise _dispatch_lookup_error("card", card_id or "", target=True)
+    if body.project_id and not store.get_project(
+        body.project_id, realm_id=body.realm_id
+    ):
+        raise _dispatch_lookup_error("project", body.project_id, target=True)
     record = DispatchRecord(
         dispatch_id=body.dispatch_id,
         mutation_id=body.mutation_id,
@@ -3319,7 +3311,33 @@ def _fleet_instance_or_404(request: Request, instance_id: str):
     for inst in fleet.list_instances():
         if inst.instance_id == instance_id:
             return inst
-    raise HTTPException(status_code=404, detail="Fleet instance not found")
+    raise HTTPException(
+        status_code=404,
+        detail={
+            "code": "fleet_instance_not_found",
+            "message": "The requested fleet instance is not in the authoritative membership.",
+            "instance_id": instance_id,
+            "recoverable": False,
+        },
+    )
+
+
+def _dispatch_lookup_error(
+    entity: str, entity_id: str, *, target: bool = False
+) -> HTTPException:
+    """Keep entity misses distinct from route/version 404s."""
+    return HTTPException(
+        status_code=409 if target else 404,
+        detail={
+            "code": f"{'target_' if target else ''}{entity}_not_found",
+            "message": f"The required {entity} is not available in this realm projection.",
+            f"{entity}_id": entity_id,
+            "recoverable": target,
+            "retry_after": 1 if target else None,
+            "retry_after_convergence": target,
+        },
+        headers={"Retry-After": "1"} if target else None,
+    )
 
 
 def _peer_headers(request: Request) -> dict[str, str]:
@@ -3983,6 +4001,21 @@ async def _peer_dispatch_json(
             detail = decoded.get("detail")
         except ValueError, AttributeError:
             detail = resp.text[:500]
+        if resp.status_code == 404 and not isinstance(detail, dict):
+            detail = {
+                "code": "target_route_not_found",
+                "message": "The target does not expose the dispatch materialization route.",
+                "target_instance_id": instance_id,
+                "target_status": resp.status_code,
+                "recoverable": False,
+                "upgrade_required": True,
+            }
+        elif isinstance(detail, dict):
+            detail = {
+                **detail,
+                "target_instance_id": detail.get("target_instance_id") or instance_id,
+                "target_correlation_id": resp.headers.get("X-Request-ID"),
+            }
         raise HTTPException(status_code=resp.status_code, detail=detail)
     return await _response_json(request, resp)
 
@@ -4192,10 +4225,19 @@ async def _assert_dispatch_sync_health(
                     ),
                     None,
                 )
+                projection_head = next(
+                    (
+                        item.get("projection_head")
+                        for item in refs
+                        if item.get("realm_id") == realm_id
+                    ),
+                    None,
+                )
                 return {
                     "url": peer_url,
                     "status": "reachable" if head else "missing_head",
                     "head": head,
+                    "projection_head": projection_head,
                 }
             except (httpx.HTTPError, TimeoutError) as exc:
                 return {
@@ -4233,17 +4275,41 @@ async def _assert_dispatch_sync_health(
             )
         if target_observation["head"] != durable_head:
             raise HTTPException(
-                status_code=409,
+                status_code=503,
                 detail={
-                    "code": "target_sync_conflict",
-                    "message": "The selected target does not share the authority realm head.",
+                    "code": "target_projection_not_ready",
+                    "message": "The selected target has not converged to the authoritative realm head.",
                     "realm_id": realm_id,
                     "authority_head": durable_head,
                     "target_head": target_observation["head"],
                     "target_instance_id": target_instance_id,
                     "recoverable": True,
+                    "retry_after": 1,
+                    "retry_after_convergence": True,
                     "recovery_url": f"/fleet?section=sync&realm={quote(realm_id)}",
                 },
+                headers={"Retry-After": "1"},
+            )
+        target_projection_head = target_observation.get("projection_head")
+        if (
+            target_projection_head is not None
+            and target_projection_head != durable_head
+        ):
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "target_projection_not_ready",
+                    "message": "The target durable head is current but its projection is still catching up.",
+                    "realm_id": realm_id,
+                    "authority_head": durable_head,
+                    "target_head": target_observation["head"],
+                    "target_projection_head": target_projection_head,
+                    "target_instance_id": target_instance_id,
+                    "recoverable": True,
+                    "retry_after": 1,
+                    "retry_after_convergence": True,
+                },
+                headers={"Retry-After": "1"},
             )
         degraded = [
             item
@@ -4258,6 +4324,7 @@ async def _assert_dispatch_sync_health(
             "projection_head": projection_head,
             "target_instance_id": target_instance_id,
             "target_head": target_observation["head"],
+            "target_projection_head": target_projection_head,
             "degraded_peers": degraded,
             "safe_scoped_dispatch": True,
             "checked_at": datetime.now(UTC).isoformat(),
@@ -5072,7 +5139,7 @@ async def preview_fleet_placement(
         else None
     )
     if body.card_id and not card:
-        raise HTTPException(status_code=404, detail="Card not found")
+        raise _dispatch_lookup_error("card", body.card_id)
     project_id = body.project_id or (card.project_id if card else None)
     project = (
         await _offload_request(
@@ -5086,7 +5153,7 @@ async def preview_fleet_placement(
         else None
     )
     if project_id and not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+        raise _dispatch_lookup_error("project", project_id)
     try:
         decision, plan = await _resolve_policy_placement(
             request,
@@ -5314,7 +5381,7 @@ async def dispatch_fleet_work(request: Request, body: FleetDispatchBody) -> dict
         else None
     )
     if body.card_id and not card:
-        raise HTTPException(status_code=404, detail="Card not found")
+        raise _dispatch_lookup_error("card", body.card_id)
     project_id = body.project_id or (card.project_id if card else None)
     project = (
         await _offload_request(
@@ -5328,7 +5395,7 @@ async def dispatch_fleet_work(request: Request, body: FleetDispatchBody) -> dict
         else None
     )
     if project_id and not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+        raise _dispatch_lookup_error("project", project_id)
     principal_id = get_principal_id(request)
     if project and project.memberships:
         authorized = any(
@@ -5433,7 +5500,7 @@ async def start_remote_agent_work(
         else None
     )
     if body.card_id and not card:
-        raise HTTPException(status_code=404, detail="Card not found")
+        raise _dispatch_lookup_error("card", body.card_id)
     project_id = body.project_id or (card.project_id if card else None)
     project = (
         await _offload_request(
@@ -5519,7 +5586,7 @@ async def _admit_remote_agent_work(
         else None
     )
     if body.card_id and not card:
-        raise HTTPException(status_code=404, detail="Card not found")
+        raise _dispatch_lookup_error("card", body.card_id)
     project_id = body.project_id or (card.project_id if card else None)
     project = (
         await _offload_request(
@@ -5533,7 +5600,7 @@ async def _admit_remote_agent_work(
         else None
     )
     if project_id and not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+        raise _dispatch_lookup_error("project", project_id)
     inst = _fleet_instance_or_404(request, instance_id)
     authority_url = settings.instance_url
     if instance_id != settings.instance_id and (

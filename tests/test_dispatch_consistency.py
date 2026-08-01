@@ -221,7 +221,7 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
 
 
 class MaterializationTests(unittest.TestCase):
-    def test_missing_target_card_is_durably_materialized_at_exact_version(self) -> None:
+    def test_missing_target_card_waits_for_projection_instead_of_side_loading(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), instance_id=TARGET_ID)
             card = Card(id=CARD_ONE, title="Fleet convergence")
@@ -243,15 +243,15 @@ class MaterializationTests(unittest.TestCase):
                 progress_versions=[99, 1],
             )
 
-            result = materialize_dispatch(request, body)
+            with self.assertRaises(HTTPException) as raised:
+                materialize_dispatch(request, body)
 
-            self.assertTrue(result["resolvable"])
-            self.assertEqual(result["progress_protocol_version"], 1)
-            log.append_event.assert_called_once()
-            store.apply_event.assert_called_once()
-            durable = DispatchStore(settings.data_dir).get(DISPATCH_ONE)
-            self.assertEqual(durable.card_id, CARD_ONE)
-            self.assertEqual(durable.progress_protocol_version, 1)
+            self.assertEqual(raised.exception.status_code, 409)
+            self.assertEqual(raised.exception.detail["code"], "target_card_not_found")
+            self.assertTrue(raised.exception.detail["retry_after_convergence"])
+            log.append_event.assert_not_called()
+            store.apply_event.assert_not_called()
+            self.assertIsNone(DispatchStore(settings.data_dir).get(DISPATCH_ONE))
 
     def test_stale_target_returns_actionable_409(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -295,7 +295,8 @@ class MaterializationTests(unittest.TestCase):
             settings = Settings(data_dir=Path(tmp), instance_id=target_id)
             card = Card(id=card_id, title="Canonical", project_id=project_id)
             store = MagicMock()
-            store.get_card.return_value = None
+            store.get_card.return_value = card
+            store.get_project.return_value = MagicMock()
             request = request_for(settings, store, {"event_log": MagicMock()})
             request.state.instance_authenticated = True
 
@@ -1094,7 +1095,36 @@ class ScopedDispatchHealthTests(unittest.IsolatedAsyncioTestCase):
             )
             with self.assertRaises(HTTPException) as raised:
                 await _assert_dispatch_sync_health(request, "default", TARGET_ID)
-        self.assertEqual(raised.exception.detail["code"], "target_sync_conflict")
+        self.assertEqual(
+            raised.exception.detail["code"], "target_projection_not_ready"
+        )
+        self.assertEqual(raised.exception.status_code, 503)
+
+    async def test_current_durable_head_with_stale_projection_is_not_ready(self) -> None:
+        request = self._request()
+        target = MagicMock()
+        target.json.return_value = [
+            {
+                "realm_id": "default",
+                "head_hash": "shared-head",
+                "projection_head": "previous-head",
+            }
+        ]
+        observer = MagicMock()
+        observer.json.return_value = [
+            {"realm_id": "default", "head_hash": "shared-head"}
+        ]
+        with patch("pa.modules.fleet.httpx.AsyncClient") as client:
+            client.return_value.__aenter__.return_value.get = AsyncMock(
+                side_effect=[target, observer]
+            )
+            with self.assertRaises(HTTPException) as raised:
+                await _assert_dispatch_sync_health(request, "default", TARGET_ID)
+        self.assertEqual(raised.exception.status_code, 503)
+        self.assertEqual(
+            raised.exception.detail["code"], "target_projection_not_ready"
+        )
+        self.assertEqual(raised.exception.headers["Retry-After"], "1")
 
 
 class DurableDispatchJobTests(unittest.IsolatedAsyncioTestCase):
