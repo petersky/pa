@@ -71,7 +71,7 @@ uv run pa serve
 |---------|-------------|
 | `pa install` | Install on host (uv tool + launchd) |
 | `pa start` / `pa stop` / `pa restart` | Manage launchd service (macOS) |
-| `pa logs` | Tail server logs (`-f` to follow) |
+| `pa logs` | Merged timestamped access/application logs (`-f` to follow; `--stdout` preserves the legacy access-only view) |
 | `pa update` | Check/install updates (`--check`, `--channel`, `--restart`) |
 | `pa channel list` | Show release tracks and latest versions |
 | `pa release patch\|minor\|major\|beta\|alpha` | Bump version and create git tag (maintainers) |

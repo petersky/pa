@@ -275,7 +275,15 @@ def _service_findings(
             )
         )
     expected = service_environment(settings)
-    for name, wanted in expected.items():
+    semantic_expected = dict(expected)
+    if settings.subscribed_realms:
+        semantic_expected["PA_SUBSCRIBED_REALMS"] = json.dumps(
+            settings.subscribed_realms
+        )
+    if settings.peers:
+        semantic_expected["PA_PEERS"] = json.dumps(settings.peers)
+    process_environment = loaded.process_environment or {}
+    for name, wanted in semantic_expected.items():
         if not name.startswith("PA_"):
             continue
         actual = loaded.environment.get(name)
@@ -283,7 +291,7 @@ def _service_findings(
             _canonical(name, wanted),
             _canonical(name, actual),
         )
-        process = (loaded.process_environment or {}).get(name)
+        process = process_environment.get(name)
         evidence = {
             "name": name,
             "expected": _safe(name, wanted),
@@ -294,14 +302,30 @@ def _service_findings(
             "supplying_files": _environment_sources(loaded, name),
             "process": _safe(name, process),
         }
+        if actual is None and process is not None:
+            explanatory.add("stale_process_environment")
+            findings.append(
+                Finding(
+                    "PA-DOC-SERVICE-PROCESS-ENV-STALE",
+                    "error",
+                    f"The running process retains obsolete {name} even though the loaded unit no longer supplies it.",
+                    "Runtime behavior may override config.json until PA restarts.",
+                    evidence,
+                    [Command("pa restart", True, True, active_sessions > 0)],
+                    root_cause="stale_process_environment",
+                )
+            )
+            continue
+        if actual is None and name not in expected:
+            continue
         if canonical_expected == canonical_loaded:
-            if wanted != actual:
+            if wanted != actual or name not in expected:
                 findings.append(
                     Finding(
                         "PA-DOC-SERVICE-ENV-NORMALIZATION",
                         "info",
-                        f"{name} is textually different but semantically equal.",
-                        "No service repair is required; this was previously a false-positive drift report.",
+                        f"{name} is semantically equal to config.json despite redundant or different serialization.",
+                        "No service repair is required; regeneration may remove the redundant service value.",
                         evidence,
                     )
                 )
@@ -607,7 +631,13 @@ def run_doctor(*, verbose: bool = False, json_output: bool = False) -> int:
         settings, status, service_bin, active_sessions
     )
     findings.extend(service_findings)
-    environment = loaded.environment if loaded else os.environ
+    environment = dict(loaded.environment if loaded else os.environ)
+    # Prefer the running server's authoritative ephemeral socket over a CLI-side
+    # fallback derived from a potentially different runtime directory.
+    reported_owner = dict((public_status or {}).get("owner_channel") or {})
+    discovered_socket = str(reported_owner.get("socket_path") or "").strip()
+    if reported_owner.get("endpoint_type") == "unix" and discovered_socket:
+        environment["PA_OWNER_SOCKET"] = discovered_socket
     provider_environment = dict(
         (public_status or {}).get("provider_execution_environment") or {}
     )
