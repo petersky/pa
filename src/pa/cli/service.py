@@ -51,6 +51,9 @@ class LoadedServiceDefinition:
     backend: str
     command: str | None
     environment: dict[str, str]
+    unit_path: str | None = None
+    drop_in_paths: tuple[str, ...] = ()
+    process_environment: dict[str, str] | None = None
 
 
 @dataclass(frozen=True)
@@ -384,13 +387,24 @@ def loaded_service_definition() -> LoadedServiceDefinition | None:
         result = _run_launchctl("print", _domain_target())
         if result.returncode != 0 or "Could not find service" in result.stdout:
             return None
-        return _launchd_definition(result.stdout)
+        loaded = _launchd_definition(result.stdout)
+        return LoadedServiceDefinition(
+            loaded.backend,
+            loaded.command,
+            loaded.environment,
+            unit_path=str(_plist_path()),
+        )
     if _is_linux():
         environment = _run_systemctl(
             "show", SYSTEMD_UNIT, "--property=Environment", "--value"
         )
         command = _run_systemctl(
             "show", SYSTEMD_UNIT, "--property=ExecStart", "--value"
+        )
+        provenance = _run_systemctl(
+            "show",
+            SYSTEMD_UNIT,
+            "--property=FragmentPath,DropInPaths,MainPID",
         )
         if environment.returncode != 0 or command.returncode != 0:
             return None
@@ -402,10 +416,35 @@ def loaded_service_definition() -> LoadedServiceDefinition | None:
                 executable = shlex.split(command_text)[0]
             except ValueError:
                 executable = None
+        properties: dict[str, str] = {}
+        if provenance.returncode == 0:
+            for line in provenance.stdout.splitlines():
+                key, separator, value = line.partition("=")
+                if separator:
+                    properties[key] = value
+        process_environment: dict[str, str] | None = None
+        pid_text = properties.get("MainPID", "")
+        if pid_text.isdigit() and pid_text != "0":
+            try:
+                raw = Path(f"/proc/{pid_text}/environ").read_bytes()
+                process_environment = {}
+                for entry in raw.split(b"\0"):
+                    key, separator, value = entry.partition(b"=")
+                    if separator and key:
+                        process_environment[key.decode(errors="replace")] = (
+                            value.decode(errors="replace")
+                        )
+            except OSError:
+                pass
         return LoadedServiceDefinition(
             "systemd",
             executable,
             _systemd_environment(environment.stdout),
+            unit_path=properties.get("FragmentPath") or str(_systemd_unit_path()),
+            drop_in_paths=tuple(
+                item for item in shlex.split(properties.get("DropInPaths", "")) if item
+            ),
+            process_environment=process_environment,
         )
     return None
 

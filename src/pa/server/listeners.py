@@ -296,7 +296,23 @@ def bind_owner_socket(settings: Settings) -> tuple[socket.socket, Path]:
         os.chmod(path, 0o600)
         sock.listen(socket.SOMAXCONN)
         sock.setblocking(False)
-    except BaseException:
+    except BaseException as exc:
+        classification = (
+            "permission_denied" if isinstance(exc, PermissionError) else "bind_failed"
+        )
+        _set_owner_health(
+            endpoint_type="unix",
+            state="disconnected",
+            last_failure=_now(),
+            failure_classification=classification,
+            retry_state="restart_required",
+        )
+        log.error(
+            "Owner channel bind failed (classification=%s, path=%s, error=%s)",
+            classification,
+            path,
+            type(exc).__name__,
+        )
         sock.close()
         if registration and _same_socket(
             path, device=registration.device, inode=registration.inode
