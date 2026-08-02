@@ -10,19 +10,21 @@ import shutil
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Callable
 from xml.sax.saxutils import escape
 
 from pa.config import Settings
+from pa.core.io import atomic_write_text
 from pa.core.logging import redact_log_text
 from pa.packaging.service_env import service_environment
 
 LABEL = "com.pa.server"
 PLIST_NAME = f"{LABEL}.plist"
 SYSTEMD_UNIT = "pa-server.service"
+SYNC_CREDENTIAL_NAME = "pa_sync_token"
 
 ServiceProgress = Callable[[str], None]
 
@@ -110,6 +112,20 @@ def _plist_path() -> Path:
 
 def _systemd_unit_path() -> Path:
     return Path.home() / ".config" / "systemd" / "user" / SYSTEMD_UNIT
+
+
+def sync_credential_path(settings: Settings) -> Path:
+    return settings.data_dir / "credentials" / "fleet-sync-token"
+
+
+def install_sync_credential(settings: Settings) -> Path | None:
+    """Materialize the fleet credential privately, never in a service definition."""
+    path = sync_credential_path(settings)
+    if not isinstance(settings.sync_token, str) or not settings.sync_token:
+        return None
+    atomic_write_text(path, settings.sync_token + "\n", mode=0o600)
+    path.chmod(0o600)
+    return path
 
 
 def _launchd_template_path() -> Path:
@@ -217,6 +233,8 @@ def render_plist(settings: Settings, pa_bin: Path) -> bytes:
     log_dir = settings.data_dir / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     env = service_environment(settings)
+    if settings.sync_token:
+        env["PA_SYNC_TOKEN_FILE"] = str(sync_credential_path(settings))
     content = (
         template.replace("{{PA_BIN}}", str(pa_bin))
         .replace("{{PA_LOG_DIR}}", str(log_dir))
@@ -230,11 +248,18 @@ def render_systemd_unit(settings: Settings, pa_bin: Path) -> str:
     log_dir = settings.data_dir / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     env = service_environment(settings)
+    credential = ""
+    if settings.sync_token:
+        credential = (
+            f"LoadCredential={SYNC_CREDENTIAL_NAME}:{sync_credential_path(settings)}\n"
+            f"Environment=PA_SYNC_TOKEN_FILE=%d/{SYNC_CREDENTIAL_NAME}"
+        )
     return (
         template.replace("{{PA_BIN}}", str(pa_bin))
         .replace("{{PA_INSTANCE_NAME}}", settings.instance_name)
         .replace("{{PA_LOG_DIR}}", str(log_dir))
         .replace("{{ENV_LINES}}", _format_systemd_env(env))
+        .replace("{{CREDENTIAL_LINES}}", credential)
     )
 
 
@@ -246,6 +271,7 @@ def install_plist(settings: Settings, pa_bin: Path | None = None) -> Path:
     if not bin_path:
         raise RuntimeError("pa binary not found in PATH")
 
+    install_sync_credential(settings)
     agents_dir = _launch_agents_dir()
     agents_dir.mkdir(parents=True, exist_ok=True)
     dest = _plist_path()
@@ -263,6 +289,7 @@ def install_systemd_unit(settings: Settings, pa_bin: Path | None = None) -> Path
     if not bin_path:
         raise RuntimeError("pa binary not found in PATH")
 
+    install_sync_credential(settings)
     unit_dir = _systemd_unit_path().parent
     unit_dir.mkdir(parents=True, exist_ok=True)
     dest = _systemd_unit_path()
@@ -420,6 +447,31 @@ def loaded_service_definition() -> LoadedServiceDefinition | None:
             process_environment=process_environment,
         )
     return None
+
+
+def legacy_plaintext_sync_credential() -> bool:
+    """Detect obsolete host definitions without ever returning the credential."""
+    paths = [_plist_path(), _systemd_unit_path()]
+    for path in paths:
+        try:
+            text = path.read_text()
+        except OSError:
+            continue
+        if "PA_SYNC_TOKEN" in text and "PA_SYNC_TOKEN_FILE" not in text:
+            return True
+    loaded = loaded_service_definition()
+    return bool(loaded and loaded.environment.get("PA_SYNC_TOKEN"))
+
+
+def sync_credential_permissions(settings: Settings) -> str:
+    path = sync_credential_path(settings)
+    if not settings.sync_token:
+        return "not_configured"
+    try:
+        stat = path.stat()
+    except OSError:
+        return "missing"
+    return "protected" if stat.st_mode & 0o077 == 0 else "unsafe_permissions"
 
 
 def _restart_diagnostic(

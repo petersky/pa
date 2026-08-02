@@ -83,6 +83,7 @@ from pa.execution.progress import (
     sanitize_text,
 )
 from pa.execution.reconciliation import CompletionReconciler
+from pa.fleet.credentials import CredentialRotationStore, router as credential_router
 from pa.fleet.bootstrap import (
     BootstrapJob,
     BootstrapJobStore,
@@ -151,6 +152,7 @@ FLEET_AGGREGATE_TIMEOUT = 9.0
 SESSION_ROUTE_TIMEOUT = 3.0
 
 router = APIRouter()
+router.include_router(credential_router)
 ui_router = APIRouter()
 _peer_update_task: asyncio.Task[Any] | None = None
 _peer_update_task_operation_id: str | None = None
@@ -1997,6 +1999,9 @@ def _fleet_context(request: Request) -> dict:
         "readiness_warnings": warnings,
         "readiness_issues": issues,
         "has_sync_token": bool(settings.sync_token),
+        "credential_rotation": CredentialRotationStore.public(
+            CredentialRotationStore(settings.data_dir).load()
+        ) or {"status": "idle", "peers": {}},
         "primary_realm": primary_realm,
         "cards": ctx.store.list_cards(realm_id=primary_realm),
         "projects": ctx.store.list_projects(realm_id=primary_realm),

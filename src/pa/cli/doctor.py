@@ -610,6 +610,40 @@ def run_doctor(*, verbose: bool = False, json_output: bool = False) -> int:
                 next_commands=[Command("pa install --record-only", True)],
             )
         )
+    if svc.legacy_plaintext_sync_credential():
+        findings.append(
+            Finding(
+                "PA-DOC-FLEET-CREDENTIAL-LEGACY-PLAINTEXT",
+                "warning",
+                "The host service definition contains a legacy plaintext fleet credential.",
+                "Routine service-manager inspection may disclose a usable fleet credential.",
+                {"credential_value": "<redacted>"},
+                [
+                    Command("pa install --service-only", True),
+                    Command("pa restart", True, True, True),
+                    Command(
+                        "pa fleet rotate-credential --idempotency-key legacy-exposure-<date>",
+                        True,
+                    ),
+                ],
+                "pa service-inspect",
+                root_cause="legacy_plaintext_credential",
+            )
+        )
+    credential_state = svc.sync_credential_permissions(settings)
+    if credential_state in {"missing", "unsafe_permissions"}:
+        findings.append(
+            Finding(
+                "PA-DOC-FLEET-CREDENTIAL-STORAGE",
+                "error",
+                "The managed fleet credential file is missing or not mode 0600.",
+                "The host service cannot load the credential through protected storage.",
+                {"state": credential_state, "credential_value": "<redacted>"},
+                [Command("pa install --service-only", True)],
+                "pa service-inspect",
+                root_cause="credential_storage",
+            )
+        )
     instance_url = settings.instance_url or f"http://{settings.host}:{settings.port}"
     public_ok = asyncio.run(_check_health(instance_url, settings.sync_token))
     public_status = asyncio.run(_fetch_status(instance_url, settings.sync_token))

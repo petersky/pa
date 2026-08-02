@@ -11,6 +11,7 @@ RestartSec=5
 TimeoutStopSec=300
 LimitNOFILE=8192
 MemoryMax=4G
+{{CREDENTIAL_LINES}}
 # config.json is authoritative for these mutable/secret values.  This also
 # clears legacy values inherited from manager state or stale drop-ins.
 UnsetEnvironment=PA_PEERS PA_SUBSCRIBED_REALMS PA_SYNC_TOKEN

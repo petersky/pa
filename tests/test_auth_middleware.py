@@ -105,6 +105,22 @@ class SyncTokenAuthSeparationTests(unittest.TestCase):
         )
         self.assertEqual(resp_ok.status_code, 200)
 
+    def test_sync_push_accepts_previous_token_only_during_rotation_overlap(self) -> None:
+        self.settings.sync_token_previous = ["previous-shared-secret"]
+        overlap = self.client.post(
+            "/api/sync/push",
+            json={},
+            headers={"Authorization": "Bearer previous-shared-secret"},
+        )
+        self.assertEqual(overlap.status_code, 200)
+        self.settings.sync_token_previous = []
+        revoked = self.client.post(
+            "/api/sync/push",
+            json={},
+            headers={"Authorization": "Bearer previous-shared-secret"},
+        )
+        self.assertEqual(revoked.status_code, 401)
+
     def test_explicit_auth_required_blocks_join_token(self) -> None:
         self.settings.auth_required = True
         self.client.get("/api/health")
