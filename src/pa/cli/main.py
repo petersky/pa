@@ -556,11 +556,19 @@ def plugins_list() -> None:
 
 
 @app.command()
-def doctor() -> None:
+def doctor(
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", "-v", help="Show redaction-safe diagnostic evidence"),
+    ] = False,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Emit structured support/automation output")
+    ] = False,
+) -> None:
     """Run post-install health checks."""
     from pa.cli.doctor import run_doctor
 
-    raise typer.Exit(run_doctor())
+    raise typer.Exit(run_doctor(verbose=verbose, json_output=json_output))
 
 
 @app.command()

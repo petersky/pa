@@ -95,6 +95,47 @@ class InstallPlistTests(unittest.TestCase):
             "/private/tmp/pa-runtime",
         )
 
+    def test_loaded_systemd_definition_reports_unit_drop_ins_and_process_env(
+        self,
+    ) -> None:
+        responses = [
+            MagicMock(returncode=0, stdout='PA_PEERS="[\\"a\\", \\"b\\"]"'),
+            MagicMock(
+                returncode=0, stdout="{ path=/usr/bin/pa ; argv[]=/usr/bin/pa serve ; }"
+            ),
+            MagicMock(
+                returncode=0,
+                stdout=(
+                    "FragmentPath=/home/test/.config/systemd/user/pa-server.service\n"
+                    "DropInPaths=/home/test/.config/systemd/user/pa-server.service.d/override.conf\n"
+                    "MainPID=42\n"
+                ),
+            ),
+        ]
+        with (
+            patch.object(service, "_is_darwin", return_value=False),
+            patch.object(service, "_is_linux", return_value=True),
+            patch.object(service, "_run_systemctl", side_effect=responses),
+            patch.object(
+                Path,
+                "read_bytes",
+                return_value=b'PA_PEERS=["a","b"]\0PA_INSTANCE_NAME=test\0',
+            ),
+        ):
+            definition = service.loaded_service_definition()
+
+        self.assertIsNotNone(definition)
+        assert definition is not None
+        self.assertEqual(
+            definition.unit_path,
+            "/home/test/.config/systemd/user/pa-server.service",
+        )
+        self.assertEqual(
+            definition.drop_in_paths,
+            ("/home/test/.config/systemd/user/pa-server.service.d/override.conf",),
+        )
+        self.assertEqual(definition.process_environment["PA_INSTANCE_NAME"], "test")
+
     def test_in_service_systemd_restart_uses_detached_transient_unit(self) -> None:
         accepted = MagicMock(returncode=0, stderr="", stdout="queued")
         progress = MagicMock()
