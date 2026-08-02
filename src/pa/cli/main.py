@@ -33,6 +33,31 @@ app.add_typer(realm_app, name="realm")
 sync_app = typer.Typer(help="Sync status and control")
 app.add_typer(sync_app, name="sync")
 
+
+@app.command("service-inspect")
+def service_inspect() -> None:
+    """Safely inspect the loaded host service with secret values redacted."""
+    from pa.cli import service as svc
+
+    definition = svc.loaded_service_definition()
+    if definition is None:
+        typer.echo("PA host service is not loaded")
+        return
+    typer.echo(f"Backend: {definition.backend}")
+    typer.echo(f"Command: {definition.command or 'unknown'}")
+    typer.echo("Environment:")
+    for key, value in sorted(definition.environment.items()):
+        secret = any(
+            part in key.upper()
+            for part in ("TOKEN", "SECRET", "PASSWORD", "CREDENTIAL")
+        )
+        typer.echo(f"  {key}={'<redacted>' if secret else value}")
+    legacy = svc.legacy_plaintext_sync_credential()
+    typer.echo(
+        "Legacy plaintext credential: "
+        + ("detected; migrate and rotate" if legacy else "no")
+    )
+
 project_app = typer.Typer(help="Project management")
 app.add_typer(project_app, name="project")
 
@@ -787,6 +812,75 @@ def fleet_list() -> None:
         fleet.upsert_instance(inst)
         status = "up" if healthy else "down"
         typer.echo(f"  {inst.name:<16} {inst.url:<30} zone={inst.zone} [{status}]")
+
+
+def _print_credential_rotation(data: dict | list) -> None:
+    if not isinstance(data, dict):
+        raise typer.Exit(1)
+    typer.echo(f"Credential rotation: {data.get('status', 'unknown')}")
+    if data.get("operation_id"):
+        typer.echo(f"  operation: {data['operation_id']}")
+    for peer, progress in data.get("peers", {}).items():
+        typer.echo(
+            f"  {peer}: {progress.get('state', 'unknown')} "
+            f"(attempts={progress.get('attempts', 0)})"
+        )
+
+
+@fleet_app.command("credential-status")
+def fleet_credential_status() -> None:
+    """Show redacted per-peer fleet credential rotation progress."""
+    _print_credential_rotation(
+        _local_api_request(get_settings(), "GET", "/api/fleet/credentials/rotation")
+    )
+
+
+@fleet_app.command("rotate-credential")
+def fleet_rotate_credential(
+    idempotency_key: Annotated[str, typer.Option("--idempotency-key")],
+) -> None:
+    """Begin or safely resume an overlapping fleet sync-credential rotation."""
+    _print_credential_rotation(
+        _local_api_request(
+            get_settings(), "POST", "/api/fleet/credentials/rotate",
+            body={"idempotency_key": idempotency_key},
+        )
+    )
+
+
+@fleet_app.command("retry-credential-rotation")
+def fleet_retry_credential_rotation() -> None:
+    """Retry offline peers in the active credential rotation."""
+    _print_credential_rotation(
+        _local_api_request(
+            get_settings(), "POST", "/api/fleet/credentials/rotation/retry"
+        )
+    )
+
+
+@fleet_app.command("revoke-old-credential")
+def fleet_revoke_old_credential(
+    force: Annotated[
+        bool, typer.Option("--force", help="Revoke despite offline peers")
+    ] = False,
+) -> None:
+    """Revoke the old credential after convergence or an explicit decision."""
+    suffix = "?force=true" if force else ""
+    _print_credential_rotation(
+        _local_api_request(
+            get_settings(), "POST", f"/api/fleet/credentials/rotation/revoke{suffix}"
+        )
+    )
+
+
+@fleet_app.command("rollback-credential-rotation")
+def fleet_rollback_credential_rotation() -> None:
+    """Recover updated peers by restoring the old overlapping credential."""
+    _print_credential_rotation(
+        _local_api_request(
+            get_settings(), "POST", "/api/fleet/credentials/rotation/rollback"
+        )
+    )
 
 
 @fleet_app.command("join-token")

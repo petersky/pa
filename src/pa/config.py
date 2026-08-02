@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 from typing import Annotated, Literal
 from uuid import uuid4
@@ -61,6 +62,7 @@ class Settings(BaseSettings):
 
     # Auth (T1)
     sync_token: str = ""
+    sync_token_previous: Annotated[list[str], NoDecode] = Field(default_factory=list)
     auth_required: bool = False
     secure_cookies: bool = False
     session_secret: str = Field(default_factory=lambda: str(uuid4()))
@@ -321,6 +323,16 @@ def get_settings() -> Settings:
         merge_config_into_settings(data_dir, kwargs)
         if config_path(data_dir).exists():
             kwargs["session_secret"] = ensure_session_secret(data_dir)
+        credential_file = os.environ.get("PA_SYNC_TOKEN_FILE", "").strip()
+        if not kwargs.get("sync_token") and credential_file:
+            try:
+                path = Path(credential_file)
+                if path.is_file() and path.stat().st_mode & 0o077 == 0:
+                    kwargs["sync_token"] = path.read_text().strip()
+            except OSError:
+                # Doctor reports an unreadable or unsafe managed credential with
+                # path-only evidence; settings resolution must never echo it.
+                pass
         _settings = Settings(**kwargs)
         _settings.ensure_dirs()
         # sync_token protects /api/sync/* peer traffic; it must not force UI login.

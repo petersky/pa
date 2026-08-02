@@ -41,6 +41,7 @@ class InstanceConfig(BaseModel):
     peers: list[str] = Field(default_factory=list)
     release_track: str = "release"
     sync_token: str = ""
+    sync_token_previous: list[str] = Field(default_factory=list)
     auth_required: bool = False
     secure_cookies: bool = False
     session_secret: str = ""

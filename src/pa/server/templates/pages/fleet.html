@@ -8,6 +8,7 @@
     ('overview', 'Overview'),
     ('participation', 'Groups & participation'),
     ('operations', 'Operations'),
+    ('credentials', 'Credentials'),
     ('sync', 'Realm sync'),
     ('readiness', 'Readiness'),
     ('add', 'Add machine'),
@@ -197,6 +198,23 @@
     {% else %}
     <p class="empty">No fleet instances registered.</p>
     {% endif %}
+  </section>
+
+  <section data-section="credentials" hidden>
+    <div class="panel-header"><div><h2>Fleet sync credential</h2><p class="muted small">Credential values are never displayed. Rotation progress and audit state are safe to share.</p></div></div>
+    <div class="notice">
+      <strong>Status: {{ credential_rotation.status | replace('_', ' ') }}</strong>
+      {% if credential_rotation.operation_id %}<span class="muted small">Operation {{ credential_rotation.operation_id }}</span>{% endif %}
+    </div>
+    {% if credential_rotation.peers %}
+    <table class="data-table"><thead><tr><th>Peer</th><th>State</th><th>Attempts</th><th>Last attempt</th></tr></thead><tbody>
+      {% for peer, progress in credential_rotation.peers.items() %}
+      <tr><td>{{ peer }}</td><td>{{ progress.state | replace('_', ' ') }}</td><td>{{ progress.attempts }}</td><td>{{ progress.last_attempt_at or 'Not attempted' }}</td></tr>
+      {% endfor %}
+    </tbody></table>
+    {% endif %}
+    <p class="muted small">Use <code>pa fleet rotate-credential --idempotency-key &lt;operator-key&gt;</code>, then <code>pa fleet credential-status</code>. Retry offline peers or roll back safely; revoke the old credential only after convergence or with an explicit <code>--force</code> decision.</p>
+    <p class="muted small">For service diagnostics, share <code>pa service-inspect</code>. Raw service-manager environment output from legacy installs may expose credentials.</p>
   </section>
 
   <section class="stack hidden" data-section="participation" hidden>

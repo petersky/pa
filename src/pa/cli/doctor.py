@@ -299,6 +299,23 @@ def run_doctor() -> int:
     loaded_service = _check_loaded_service(
         settings, svc_status, service_bin, failures, warnings
     )
+    if svc.legacy_plaintext_sync_credential():
+        warnings.append(
+            "legacy service definition contains a plaintext fleet credential — "
+            "run `pa install --service-only`, restart PA, then `pa fleet rotate-credential "
+            "--idempotency-key legacy-exposure-<date>`"
+        )
+    credential_state = svc.sync_credential_permissions(settings)
+    if credential_state == "protected":
+        typer.echo("  [ok]   Fleet credential storage: protected")
+    elif credential_state in {"missing", "unsafe_permissions"}:
+        failures.append(
+            "fleet credential file is missing or not mode 0600 — run pa install --service-only"
+        )
+    typer.echo(
+        "  [info] Share `pa service-inspect`; raw systemctl/launchctl environment output "
+        "from legacy installs may contain secrets"
+    )
 
     installed_version = install_meta.version if install_meta else None
     binary_version = _binary_version(pa_bin)

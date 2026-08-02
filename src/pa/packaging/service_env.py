@@ -40,8 +40,6 @@ def service_environment(settings: Settings) -> dict[str, str]:
         env["PA_PEERS"] = _env_list(settings.peers)
     if settings.capabilities:
         env["PA_CAPABILITIES"] = _env_list(settings.capabilities)
-    if settings.sync_token:
-        env["PA_SYNC_TOKEN"] = settings.sync_token
     if settings.instance_url:
         env["PA_INSTANCE_URL"] = settings.instance_url
     if settings.fleet_owner_url:

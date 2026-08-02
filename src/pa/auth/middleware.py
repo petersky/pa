@@ -47,6 +47,8 @@ FLEET_INSTANCE_ROUTES = {
     ("POST", "/api/repositories/reconcile"),
     ("GET", "/api/fleet/membership"),
     ("POST", "/api/fleet/membership/apply"),
+    ("POST", "/api/fleet/credentials/apply"),
+    ("POST", "/api/fleet/credentials/revoke"),
 }
 
 CSRF_EXEMPT_PATHS = {
@@ -179,9 +181,15 @@ class AuthMiddleware(BaseHTTPMiddleware):
         bearer_valid = False
         if auth_header.startswith("Bearer "):
             token = auth_header[7:]
-            if self.settings.sync_token and hmac.compare_digest(
-                token, self.settings.sync_token
-            ):
+            accepted = [
+                candidate
+                for candidate in [
+                    self.settings.sync_token,
+                    *self.settings.sync_token_previous,
+                ]
+                if candidate
+            ]
+            if any(hmac.compare_digest(token, candidate) for candidate in accepted):
                 request.state.instance_authenticated = True
                 bearer_valid = True
             else:
