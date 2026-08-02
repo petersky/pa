@@ -633,10 +633,11 @@ def serve(
     """Start the PA backend server."""
     from datetime import datetime
 
-    def service_echo(message: str) -> None:
+    def service_echo(message: str, *, err: bool = False) -> None:
         """Timestamp messages captured by the service manager's stdout sink."""
         typer.echo(
-            f"{datetime.now().astimezone().isoformat(timespec='milliseconds')} INFO {message}"
+            f"{datetime.now().astimezone().isoformat(timespec='milliseconds')} INFO {message}",
+            err=err,
         )
 
     reset_kernel()
@@ -663,6 +664,7 @@ def serve(
         bind_owner_socket,
         bind_web_sockets,
         close_sockets,
+        record_owner_bind_failure,
     )
 
     if reload:
@@ -679,10 +681,25 @@ def serve(
         os.environ.pop("PA_OWNER_SOCKET", None)
         service_echo("Starting PA with explicit private HTTP owner-channel fallback")
     else:
-        owner_socket, owner_path = bind_owner_socket(settings)
-        all_sockets = [owner_socket, *web_sockets]
-        os.environ["PA_OWNER_SOCKET"] = str(owner_path)
-        service_echo(f"Starting PA owner channel on unix://{owner_path} (mode 0600)")
+        try:
+            owner_socket, owner_path = bind_owner_socket(settings)
+        except (OSError, RuntimeError) as exc:
+            owner_socket = None
+            owner_path = None
+            all_sockets = list(web_sockets)
+            os.environ.pop("PA_OWNER_SOCKET", None)
+            record_owner_bind_failure(settings, exc)
+            service_echo(
+                "PA owner channel degraded: bind failed "
+                f"({type(exc).__name__}); inspect server logs and restart PA",
+                err=True,
+            )
+        else:
+            all_sockets = [owner_socket, *web_sockets]
+            os.environ["PA_OWNER_SOCKET"] = str(owner_path)
+            service_echo(
+                f"Starting PA owner channel on unix://{owner_path} (mode 0600)"
+            )
     os.environ["PA_LISTENER_HEALTH"] = json.dumps(web_health)
     for item in web_health:
         service_echo(

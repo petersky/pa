@@ -190,7 +190,22 @@ def _format_plist_env(env: dict[str, str]) -> str:
 
 
 def _format_systemd_env(env: dict[str, str]) -> str:
-    lines = [f"Environment={key}={value}" for key, value in sorted(env.items())]
+    def quote(value: str) -> str:
+        # systemd.syntax accepts C-style escapes inside a quoted item.  Quote
+        # the complete NAME=value assignment so JSON whitespace and quotes are
+        # never tokenized as separate assignments.
+        escaped = (
+            value.replace("\\", "\\\\")
+            .replace('"', '\\"')
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+            .replace("\t", "\\t")
+        )
+        return f'"{escaped}"'
+
+    lines = [
+        f"Environment={quote(f'{key}={value}')}" for key, value in sorted(env.items())
+    ]
     return "\n".join(lines)
 
 
@@ -248,7 +263,9 @@ def install_systemd_unit(settings: Settings, pa_bin: Path | None = None) -> Path
     unit_dir = _systemd_unit_path().parent
     unit_dir.mkdir(parents=True, exist_ok=True)
     dest = _systemd_unit_path()
-    dest.write_text(render_systemd_unit(settings, bin_path))
+    content = render_systemd_unit(settings, bin_path)
+    if not dest.exists() or dest.read_text() != content:
+        dest.write_text(content)
     return dest
 
 

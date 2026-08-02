@@ -49,6 +49,42 @@ class InstallPlistTests(unittest.TestCase):
         self.assertEqual(result, self.plist)
         self.assertEqual(self.plist.stat().st_mtime_ns, original_mtime)
 
+    def test_systemd_quotes_complete_assignments_and_omits_config_state(self) -> None:
+        settings = Settings(
+            data_dir=Path(self._tmp.name),
+            peers=["http://peer-a", "http://peer-b"],
+            subscribed_realms=["home", "work"],
+            sync_token="must-not-leak",
+            web_listeners=["127.0.0.1", "host name"],
+        )
+
+        rendered = service.render_systemd_unit(settings, self.pa_bin)
+
+        self.assertIn(
+            'Environment="PA_WEB_LISTENERS=[\\"127.0.0.1\\", '
+            '\\"host name\\"]"',
+            rendered,
+        )
+        self.assertIn(
+            "UnsetEnvironment=PA_PEERS PA_SUBSCRIBED_REALMS PA_SYNC_TOKEN",
+            rendered,
+        )
+        self.assertNotIn("must-not-leak", rendered)
+        self.assertNotIn("\nEnvironment=PA_PEERS=", rendered)
+        self.assertNotIn("\nEnvironment=PA_SUBSCRIBED_REALMS=", rendered)
+
+    def test_systemd_install_is_idempotent(self) -> None:
+        unit = Path(self._tmp.name) / service.SYSTEMD_UNIT
+        settings = Settings(data_dir=Path(self._tmp.name))
+        with (
+            patch.object(service, "_is_linux", return_value=True),
+            patch.object(service, "_systemd_unit_path", return_value=unit),
+        ):
+            service.install_systemd_unit(settings, self.pa_bin)
+            original_mtime = unit.stat().st_mtime_ns
+            service.install_systemd_unit(settings, self.pa_bin)
+        self.assertEqual(unit.stat().st_mtime_ns, original_mtime)
+
     def test_writes_changed_plist(self) -> None:
         self.plist.write_bytes(b"old launch agent")
 
