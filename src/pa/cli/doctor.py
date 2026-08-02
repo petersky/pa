@@ -29,6 +29,7 @@ from pa.acp.mcp_config import (
     probe_owner_channel,
     probe_pa_mcp_stdio,
 )
+from pa.cli import presentation as ui
 from pa.cli import service as svc
 from pa.config import get_settings
 from pa.core.logging import redact_log_text
@@ -537,12 +538,18 @@ def _dedupe_plan(findings: list[Finding]) -> list[Command]:
 
 def _render_human(findings: list[Finding], plan: list[Command], verbose: bool) -> None:
     for finding in findings:
-        typer.echo(
-            f"  [{finding.severity}] {finding.code}: {finding.cause}",
+        label = {"error": "FAIL", "warning": "WARN", "info": "INFO"}.get(
+            finding.severity, "INFO"
+        )
+        ui.status(
+            label,
+            f"{finding.code}: {finding.cause}",
             err=finding.severity == "error",
         )
-        typer.echo(
-            f"         Impact: {finding.impact}", err=finding.severity == "error"
+        ui.echo(
+            f"         Impact: {finding.impact}",
+            style="muted",
+            err=finding.severity == "error",
         )
         if verbose and finding.evidence:
             typer.echo(
@@ -555,7 +562,7 @@ def _render_human(findings: list[Finding], plan: list[Command], verbose: bool) -
             )
         typer.echo(f"         Verify: {finding.verification_command}")
     if plan:
-        typer.echo(
+        ui.heading(
             "\nOrdered repair plan (review before running; doctor made no changes):"
         )
         for index, command in enumerate(plan, 1):
@@ -748,12 +755,14 @@ def run_doctor(*, verbose: bool = False, json_output: bool = False) -> int:
     if json_output:
         typer.echo(json.dumps(payload, indent=2, sort_keys=True))
     else:
-        typer.echo(f"PA doctor — {settings.instance_name}\n")
+        ui.heading(f"PA doctor — {settings.instance_name}\n")
         _render_human(findings, plan, verbose)
-        typer.echo(
-            "\nDoctor checks passed."
-            if not any(item.severity == "error" for item in findings)
-            else "\nDoctor found blocking failures.",
-            err=any(item.severity == "error" for item in findings),
+        failed = any(item.severity == "error" for item in findings)
+        ui.echo(
+            "\nDoctor found blocking failures."
+            if failed
+            else "\nDoctor checks passed.",
+            style="failure" if failed else "success",
+            err=failed,
         )
     return 1 if any(item.severity == "error" for item in findings) else 0

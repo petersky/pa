@@ -9,11 +9,11 @@ from typing import Annotated
 from uuid import uuid4
 
 import typer
-from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
+from pa.cli import presentation as ui
 from pa.cli.config_tui import ExitCode, run_config_editor
 from pa.config import get_settings
 from pa.configuration.service import (
@@ -52,7 +52,7 @@ config_app = typer.Typer(
     invoke_without_command=True,
 )
 
-console = Console(stderr=False)
+console = ui.console()
 
 
 def _data_dir() -> Path:
@@ -836,7 +836,7 @@ def _run_legacy_interactive(*, reveal: bool = False) -> None:
                     f"{format_value(value, reveal=reveal, sensitive=spec.sensitive)}"
                 )
             except ConfigError as exc:
-                console.print(f"[red]{exc}[/red]")
+                console.print(str(exc), style="failure")
             continue
 
         if choice == "set":
@@ -844,10 +844,10 @@ def _run_legacy_interactive(*, reveal: bool = False) -> None:
             try:
                 spec = get_field_spec(key)
             except ConfigError as exc:
-                console.print(f"[red]{exc}[/red]")
+                console.print(str(exc), style="failure")
                 continue
             if not spec.editable:
-                console.print(f"[red]{key} is read-only[/red]")
+                console.print(f"{key} is read-only", style="failure")
                 continue
             hint = (
                 "true/false"
@@ -864,7 +864,7 @@ def _run_legacy_interactive(*, reveal: bool = False) -> None:
                 _print_mutate(result, reveal=reveal)
                 _print_table(reveal=reveal)
             except ConfigError as exc:
-                console.print(f"[red]{exc}[/red]")
+                console.print(str(exc), style="failure")
             continue
 
         if choice == "add":
@@ -875,7 +875,7 @@ def _run_legacy_interactive(*, reveal: bool = False) -> None:
                 _print_mutate(result, reveal=reveal)
                 _print_table(reveal=reveal)
             except ConfigError as exc:
-                console.print(f"[red]{exc}[/red]")
+                console.print(str(exc), style="failure")
             continue
 
         if choice == "remove":
@@ -886,7 +886,7 @@ def _run_legacy_interactive(*, reveal: bool = False) -> None:
                 _print_mutate(result, reveal=reveal)
                 _print_table(reveal=reveal)
             except ConfigError as exc:
-                console.print(f"[red]{exc}[/red]")
+                console.print(str(exc), style="failure")
             continue
 
         if choice == "unset":
@@ -901,7 +901,7 @@ def _run_legacy_interactive(*, reveal: bool = False) -> None:
                 _print_mutate(result, reveal=reveal)
                 _print_table(reveal=reveal)
             except ConfigError as exc:
-                console.print(f"[red]{exc}[/red]")
+                console.print(str(exc), style="failure")
             continue
 
         console.print(
@@ -913,9 +913,11 @@ def _print_mutate(result: MutateResult, *, reveal: bool) -> None:
     spec = get_field_spec(result.key)
     before = format_value(result.before, reveal=reveal, sensitive=spec.sensitive)
     after = format_value(result.after, reveal=reveal, sensitive=spec.sensitive)
-    console.print(f"[green]{result.op.value}[/green] {result.key}: {before} → {after}")
+    line = ui.styled(result.op.value, "success")
+    line.append(f" {result.key}: {before} → {after}")
+    console.print(line)
     refreshed = refresh_after_mutate(_data_dir(), result)
     if refreshed:
-        console.print("[dim]Service unit environment refreshed.[/dim]")
+        console.print("Service unit environment refreshed.", style="muted")
     if result.restart_required:
-        console.print("[yellow]Restart required — run: pa restart[/yellow]")
+        console.print("Restart required — run: pa restart", style="warning")
