@@ -11,7 +11,7 @@ from pa.cli.doctor import run_doctor
 from pa.config import Settings
 
 
-def _status(settings: Settings) -> dict:
+def _status(settings: Settings, socket_path: str | None = None) -> dict:
     return {
         "version": __version__,
         "instance_id": settings.instance_id,
@@ -19,6 +19,7 @@ def _status(settings: Settings) -> dict:
             "endpoint_type": "unix",
             "state": "bound",
             "failure_classification": None,
+            **({"socket_path": socket_path} if socket_path else {}),
         },
         "provider_execution_environment": {
             "sanitized": True,
@@ -32,6 +33,7 @@ def _run(
     *,
     owner_error: OwnerChannelError | None = None,
     mcp_error: McpHandshakeError | None = None,
+    live_socket: str | None = None,
 ) -> int:
     settings = Settings(
         data_dir=tmp_path / "data",
@@ -57,11 +59,14 @@ def _run(
     event_log.get_head.return_value = "head"
     object_store = MagicMock()
     object_store.list_hashes.return_value = []
-    owner_probe = (
-        MagicMock(side_effect=owner_error)
-        if owner_error
-        else MagicMock(return_value={"state": "connected", "endpoint_type": "unix"})
-    )
+    def owner_probe_result(*_args, **kwargs):
+        if live_socket:
+            assert kwargs["environment"]["PA_OWNER_SOCKET"] == live_socket
+        if owner_error:
+            raise owner_error
+        return {"state": "connected", "endpoint_type": "unix"}
+
+    owner_probe = MagicMock(side_effect=owner_probe_result)
     mcp_probe = (
         MagicMock(side_effect=mcp_error)
         if mcp_error
@@ -87,7 +92,7 @@ def _run(
         patch("pa.cli.doctor._check_health", new=AsyncMock(return_value=True)),
         patch(
             "pa.cli.doctor._fetch_status",
-            new=AsyncMock(return_value=_status(settings)),
+            new=AsyncMock(return_value=_status(settings, live_socket)),
         ),
         patch("pa.cli.doctor.probe_owner_channel", owner_probe),
         patch("pa.cli.doctor.probe_pa_mcp_stdio", mcp_probe),
@@ -130,3 +135,10 @@ def test_doctor_fails_when_owner_is_healthy_but_mcp_handshake_fails(
 
 def test_doctor_accepts_end_to_end_owner_and_mcp_health(tmp_path: Path) -> None:
     assert _run(tmp_path) == 0
+
+
+def test_doctor_uses_live_owner_socket_instead_of_fabricated_local_path(
+    tmp_path: Path,
+) -> None:
+    live_socket = "/run/user/1000/pa/instance/owner.sock"
+    assert _run(tmp_path, live_socket=live_socket) == 0

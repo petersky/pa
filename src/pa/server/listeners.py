@@ -10,6 +10,7 @@ import socket
 import stat
 import tempfile
 import threading
+import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -130,6 +131,7 @@ def owner_channel_health(settings: Settings) -> dict[str, str | None]:
 
     health["endpoint_type"] = "unix"
     path = owner_socket_path(settings)
+    health["socket_path"] = str(path)
     if registration is None or registration.path != path:
         health.update(
             state="unverified",
@@ -213,11 +215,25 @@ def owner_socket_path(
         runtime = environment.get("PA_RUNTIME_DIR", "").strip()
         if not runtime:
             xdg = environment.get("XDG_RUNTIME_DIR", "").strip()
-            runtime = (
-                str(Path(xdg) / "pa")
-                if xdg
-                else str(Path(tempfile.gettempdir()) / f"pa-{os.getuid()}")
-            )
+            if xdg:
+                runtime = str(Path(xdg) / "pa")
+            else:
+                linux_runtime = Path("/run/user") / str(os.getuid())
+                try:
+                    info = linux_runtime.stat()
+                    safe_linux_runtime = (
+                        sys.platform.startswith("linux")
+                        and linux_runtime.is_dir()
+                        and info.st_uid == os.getuid()
+                        and stat.S_IMODE(info.st_mode) & 0o022 == 0
+                    )
+                except OSError:
+                    safe_linux_runtime = False
+                runtime = str(
+                    linux_runtime / "pa"
+                    if safe_linux_runtime
+                    else Path(tempfile.gettempdir()) / f"pa-{os.getuid()}"
+                )
         identity = hashlib.sha256(
             f"{settings.data_dir.resolve()}:{settings.instance_id}".encode()
         ).hexdigest()[:16]
@@ -236,6 +252,7 @@ def bind_owner_socket(settings: Settings) -> tuple[socket.socket, Path]:
             "explicitly to a private shared-namespace HTTP endpoint."
         )
     path = owner_socket_path(settings)
+    log.info("Owner channel bind attempt endpoint_type=unix path=%s", path)
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(path.parent, 0o700)
     if path.exists() or path.is_symlink():
@@ -296,7 +313,25 @@ def bind_owner_socket(settings: Settings) -> tuple[socket.socket, Path]:
             failure_classification=None,
             retry_state="none",
         )
+    log.info("Owner channel bind succeeded endpoint_type=unix path=%s mode=0600", path)
     return sock, path
+
+
+def record_owner_bind_failure(settings: Settings, exc: BaseException) -> None:
+    """Expose a redacted degraded state when the private listener cannot bind."""
+    classification = type(exc).__name__
+    _set_owner_health(
+        endpoint_type="unix",
+        state="degraded",
+        last_failure=_now(),
+        failure_classification=classification,
+        retry_state="restart_required",
+    )
+    log.error(
+        "Owner channel bind failed endpoint_type=unix path=%s classification=%s",
+        owner_socket_path(settings),
+        classification,
+    )
 
 
 def bind_web_sockets(settings: Settings) -> tuple[list[socket.socket], list[dict]]:
