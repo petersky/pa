@@ -124,6 +124,21 @@ def test_owner_path_is_shortened_and_does_not_expose_data_path():
         assert str(value.data_dir) not in str(path)
 
 
+def test_linux_runtime_is_discovered_without_xdg_environment():
+    with tempfile.TemporaryDirectory() as tmp:
+        value = settings(tmp, instance_id="owner")
+        runtime = Path("/run/user") / str(os.getuid())
+        fake_stat = type("Stat", (), {"st_uid": os.getuid(), "st_mode": 0o40700})()
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch("pa.server.listeners.sys.platform", "linux"),
+            patch.object(Path, "stat", return_value=fake_stat),
+            patch.object(Path, "is_dir", return_value=True),
+        ):
+            path = owner_socket_path(value)
+        assert str(path).startswith(str(runtime / "pa"))
+
+
 def test_multiple_web_listeners_remain_healthy_after_partial_failure():
     with tempfile.TemporaryDirectory() as tmp:
         value = settings(

@@ -30,7 +30,7 @@ from pa.cli import service as svc
 from pa.config import get_settings
 from pa.domain.instance_config import load_instance_config
 from pa.install.metadata import load_install_metadata
-from pa.packaging.service_env import service_environment
+from pa.packaging.service_env import service_environment, service_values_equal
 
 
 async def _check_health(url: str, sync_token: str) -> bool:
@@ -146,9 +146,12 @@ def _check_loaded_service(
     for name, expected in expected_environment.items():
         if not name.startswith("PA_"):
             continue
-        if loaded.environment.get(name) != expected:
+        actual = loaded.environment.get(name)
+        if not service_values_equal(name, expected, actual):
             failures.append(
-                f"loaded service environment mismatch for {name} — reinstall/reload the service"
+                f"loaded service environment mismatch for {name} "
+                f"(expected from config/install: {expected!r}; "
+                f"actual from {loaded.backend}: {actual!r}) — reinstall/reload the service"
             )
     return loaded
 
@@ -344,9 +347,21 @@ def run_doctor() -> int:
     else:
         failures.append("public status endpoint unavailable or invalid")
 
-    owner_environment = (
+    owner_environment = dict(
         loaded_service.environment if loaded_service is not None else os.environ
     )
+    # The running process is authoritative for its private ephemeral endpoint.
+    # A CLI must not fabricate a fallback path from its own environment.
+    reported_owner = dict((public_status or {}).get("owner_channel") or {})
+    discovered_socket = str(reported_owner.get("socket_path") or "").strip()
+    if reported_owner.get("endpoint_type") == "unix" and discovered_socket:
+        derived_socket = owner_endpoint(settings, owner_environment).uds
+        owner_environment["PA_OWNER_SOCKET"] = discovered_socket
+        if derived_socket and derived_socket != discovered_socket:
+            typer.echo(
+                "  [info] Owner endpoint discovered from live status "
+                f"({discovered_socket}; local derivation was {derived_socket})"
+            )
     _check_owner_and_mcp(
         settings,
         owner_environment,
