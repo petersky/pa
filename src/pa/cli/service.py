@@ -206,7 +206,22 @@ def _format_plist_env(env: dict[str, str]) -> str:
 
 
 def _format_systemd_env(env: dict[str, str]) -> str:
-    lines = [f"Environment={key}={value}" for key, value in sorted(env.items())]
+    def quote(value: str) -> str:
+        # systemd.syntax accepts C-style escapes inside a quoted item.  Quote
+        # the complete NAME=value assignment so JSON whitespace and quotes are
+        # never tokenized as separate assignments.
+        escaped = (
+            value.replace("\\", "\\\\")
+            .replace('"', '\\"')
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+            .replace("\t", "\\t")
+        )
+        return f'"{escaped}"'
+
+    lines = [
+        f"Environment={quote(f'{key}={value}')}" for key, value in sorted(env.items())
+    ]
     return "\n".join(lines)
 
 
@@ -275,7 +290,9 @@ def install_systemd_unit(settings: Settings, pa_bin: Path | None = None) -> Path
     unit_dir = _systemd_unit_path().parent
     unit_dir.mkdir(parents=True, exist_ok=True)
     dest = _systemd_unit_path()
-    dest.write_text(render_systemd_unit(settings, bin_path))
+    content = render_systemd_unit(settings, bin_path)
+    if not dest.exists() or dest.read_text() != content:
+        dest.write_text(content)
     return dest
 
 
@@ -947,16 +964,29 @@ def get_status(settings: Settings | None = None) -> ServiceStatus:
     )
 
 
-def tail_logs(lines: int = 50, follow: bool = False) -> None:
-    settings = Settings()
-    log_path = settings.data_dir / "logs" / "server.log"
-    if not log_path.exists():
-        raise RuntimeError(f"Log file not found: {log_path}")
-    args = ["tail"]
-    if follow:
-        args.append("-f")
-    args.extend(["-n", str(lines), str(log_path)])
-    subprocess.run(args, check=False)
+def tail_logs(
+    lines: int = 50,
+    follow: bool = False,
+    *,
+    sources: list[str] | None = None,
+    since: str | None = None,
+    severity: str | None = None,
+    component: str | None = None,
+    json_output: bool = False,
+) -> None:
+    """Display service logs; retained as the compatibility API for callers."""
+    from pa.cli.logs import show_logs
+
+    show_logs(
+        settings=Settings(),
+        sources=sources or ["stdout", "stderr", "structured"],
+        lines=lines,
+        follow=follow,
+        since=since,
+        severity=severity,
+        component=component,
+        json_output=json_output,
+    )
 
 
 def service_supported() -> bool:

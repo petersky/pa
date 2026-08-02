@@ -79,6 +79,12 @@ For a **multi-machine Tailscale setup** (MacBook + Mac mini + Linux dev/staging)
 - macOS plist: `~/Library/LaunchAgents/com.pa.server.plist`
 - Linux unit: `~/.config/systemd/user/pa-server.service`
 - Logs: `~/.pa/logs/server.log`, `~/.pa/logs/server.err.log`
+- `pa logs` merges stdout, stderr, and structured file records chronologically and
+  de-duplicates equivalent records. Use `--stdout` for the legacy access-only
+  view, `--stderr`, or repeatable `--source`. On systemd, `--source journal`
+  explicitly selects journald; files remain the default on Linux and launchd so
+  the same record is not emitted once from each sink. `--json` emits redacted
+  NDJSON, and `--since`, `--severity`, and `--component` provide filters.
 - Rotating structured logs: `~/.pa/logs/pa.jsonl` (plus five backups)
 - Install metadata: `~/.pa/install.json`
 

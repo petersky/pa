@@ -356,13 +356,68 @@ def logs(
         bool, typer.Option("-f", "--follow", help="Follow log output")
     ] = False,
     lines: Annotated[int, typer.Option("-n", help="Number of lines")] = 50,
+    stdout: Annotated[
+        bool, typer.Option("--stdout", help="Show the access/stdout log only")
+    ] = False,
+    stderr: Annotated[
+        bool, typer.Option("--stderr", help="Show the application/stderr log only")
+    ] = False,
+    all_sources: Annotated[
+        bool, typer.Option("--all", help="Show all file log sources")
+    ] = False,
+    source: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--source",
+            help="Source: stdout, stderr, structured, or journal (repeatable)",
+        ),
+    ] = None,
+    since: Annotated[
+        str | None,
+        typer.Option("--since", help="ISO-8601 time or duration such as 30m"),
+    ] = None,
+    severity: Annotated[
+        str | None,
+        typer.Option("--severity", help="Minimum severity (DEBUG through CRITICAL)"),
+    ] = None,
+    component: Annotated[
+        str | None,
+        typer.Option("--component", "--logger", help="Filter logger/component name"),
+    ] = None,
+    json_output: Annotated[
+        bool, typer.Option("--json", "--ndjson", help="Emit redacted NDJSON records")
+    ] = False,
 ) -> None:
-    """Tail PA server logs."""
+    """Show timestamped PA access and application logs."""
     from pa.cli import service as svc
 
     try:
-        svc.tail_logs(lines=lines, follow=follow)
-    except RuntimeError as exc:
+        if sum((stdout, stderr, all_sources, bool(source))) > 1:
+            raise ValueError(
+                "choose only one of --stdout, --stderr, --all, or --source"
+            )
+        sources = source or (
+            ["stdout"]
+            if stdout
+            else ["stderr"]
+            if stderr
+            else ["stdout", "stderr", "structured"]
+        )
+        if all_sources:
+            sources = ["stdout", "stderr", "structured"]
+        invalid = set(sources) - {"stdout", "stderr", "structured", "journal"}
+        if invalid:
+            raise ValueError(f"unknown log source: {', '.join(sorted(invalid))}")
+        svc.tail_logs(
+            lines=lines,
+            follow=follow,
+            sources=sources,
+            since=since,
+            severity=severity,
+            component=component,
+            json_output=json_output,
+        )
+    except (RuntimeError, ValueError) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(1) from exc
 
@@ -601,6 +656,15 @@ def serve(
     ] = False,
 ) -> None:
     """Start the PA backend server."""
+    from datetime import datetime
+
+    def service_echo(message: str, *, err: bool = False) -> None:
+        """Timestamp messages captured by the service manager's stdout sink."""
+        typer.echo(
+            f"{datetime.now().astimezone().isoformat(timespec='milliseconds')} INFO {message}",
+            err=err,
+        )
+
     reset_kernel()
     if debug:
         reset_settings()
@@ -625,6 +689,7 @@ def serve(
         bind_owner_socket,
         bind_web_sockets,
         close_sockets,
+        record_owner_bind_failure,
     )
 
     if reload:
@@ -639,15 +704,30 @@ def serve(
         owner_path = None
         all_sockets = list(web_sockets)
         os.environ.pop("PA_OWNER_SOCKET", None)
-        typer.echo("Starting PA with explicit private HTTP owner-channel fallback")
+        service_echo("Starting PA with explicit private HTTP owner-channel fallback")
     else:
-        owner_socket, owner_path = bind_owner_socket(settings)
-        all_sockets = [owner_socket, *web_sockets]
-        os.environ["PA_OWNER_SOCKET"] = str(owner_path)
-        typer.echo(f"Starting PA owner channel on unix://{owner_path} (mode 0600)")
+        try:
+            owner_socket, owner_path = bind_owner_socket(settings)
+        except (OSError, RuntimeError) as exc:
+            owner_socket = None
+            owner_path = None
+            all_sockets = list(web_sockets)
+            os.environ.pop("PA_OWNER_SOCKET", None)
+            record_owner_bind_failure(settings, exc)
+            service_echo(
+                "PA owner channel degraded: bind failed "
+                f"({type(exc).__name__}); inspect server logs and restart PA",
+                err=True,
+            )
+        else:
+            all_sockets = [owner_socket, *web_sockets]
+            os.environ["PA_OWNER_SOCKET"] = str(owner_path)
+            service_echo(
+                f"Starting PA owner channel on unix://{owner_path} (mode 0600)"
+            )
     os.environ["PA_LISTENER_HEALTH"] = json.dumps(web_health)
     for item in web_health:
-        typer.echo(
+        service_echo(
             f"  Web {item['listener']}: {item['bind_state']}"
             + (
                 f" ({item['failure_classification']})"
@@ -656,9 +736,9 @@ def serve(
             )
         )
     if not web_sockets:
-        typer.echo("  No web listeners bound; private owner API remains available")
+        service_echo("  No web listeners bound; private owner API remains available")
     if settings.debug:
-        typer.echo("  Debug mode enabled")
+        service_echo("  Debug mode enabled")
     server_options = {
         "factory": True,
         "host": bind_host,
@@ -666,6 +746,10 @@ def serve(
         "log_level": "debug" if settings.debug else "info",
         "timeout_graceful_shutdown": 10,
     }
+
+    from pa.core.logging import uvicorn_log_config
+
+    server_options["log_config"] = uvicorn_log_config()
 
     from pa.server.shutdown import ShutdownAwareServer, reset_shutdown_event
 
