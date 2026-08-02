@@ -8,6 +8,7 @@ import httpx
 import typer
 
 from pa import __version__
+from pa.cli import presentation as ui
 from pa.cli import service as svc
 from pa.config import Settings
 
@@ -43,11 +44,14 @@ def print_service_ready(settings: Settings, *, action: str = "started") -> None:
     healthy = wait_for_health(local)
     status = svc.get_status(settings)
 
-    typer.echo(f"PA service {action}.")
+    ui.echo(f"PA service {action}.", style="success")
     typer.echo(f"  Web UI:      {local}")
     if advertised and advertised.rstrip("/") != local.rstrip("/"):
         typer.echo(f"  Advertised:  {advertised}")
-    typer.echo(f"  Health:      {'ok' if healthy else 'not ready yet — try pa logs -f'}")
+    if healthy:
+        ui.status("OK", "Health:      ok")
+    else:
+        ui.status("WARN", "Health:      not ready yet — try pa logs -f")
     typer.echo(f"  Instance:    {settings.instance_name} ({settings.instance_id})")
     typer.echo(f"  Version:     {__version__}")
     typer.echo(f"  Data:        {settings.data_dir}")

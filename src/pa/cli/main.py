@@ -5,14 +5,19 @@ import typer
 import uvicorn
 
 from pa import __version__
+from pa.cli import presentation as ui
 from pa.config import Settings, get_settings, reset_settings
 from pa.core.kernel import Kernel, reset_kernel
 from pa.core.registry import ENTRYPOINT_GROUP
+
+ui.configure_typer_help()
 
 app = typer.Typer(
     name="pa",
     help="PA — human–agent orchestration",
     no_args_is_help=True,
+    rich_markup_mode="rich",
+    pretty_exceptions_enable=False,
 )
 
 plugins_app = typer.Typer(help="Discover and inspect plugins")
@@ -58,6 +63,7 @@ def service_inspect() -> None:
         + ("detected; migrate and rotate" if legacy else "no")
     )
 
+
 project_app = typer.Typer(help="Project management")
 app.add_typer(project_app, name="project")
 
@@ -82,7 +88,7 @@ app.add_typer(telemetry_app, name="telemetry")
 @app.command()
 def version() -> None:
     """Show PA version."""
-    typer.echo(f"pa {__version__}")
+    ui.echo(f"pa {__version__}", style="information")
 
 
 @app.command()
@@ -130,7 +136,7 @@ def init(
         session_secret=settings.session_secret,
     )
     save_instance_config(settings.data_dir, config)
-    typer.echo(f"Initialized PA instance '{settings.instance_name}'")
+    ui.echo(f"Initialized PA instance '{settings.instance_name}'", style="success")
     typer.echo(f"  ID:    {settings.instance_id}")
     typer.echo(f"  Fleet: {config.fleet_id}")
     typer.echo(f"  Realm: {', '.join(config.subscribed_realms)}")
@@ -148,7 +154,7 @@ def status() -> None:
     kernel = Kernel.boot(load_modules=True)
     snap = build_status_snapshot(kernel.ctx, module_count=len(kernel.registry.modules))
 
-    typer.echo(f"PA {snap['version']} — {snap['instance_name']}")
+    ui.heading(f"PA {snap['version']} — {snap['instance_name']}")
     typer.echo(f"  Instance ID: {snap['instance_id']}")
     typer.echo(f"  Data dir:    {snap['data_dir']}")
     typer.echo(f"  Server:      {snap['server_url']}")
@@ -162,8 +168,9 @@ def status() -> None:
         if snap.get("install_channel"):
             typer.echo(f"  Track:       {snap['install_channel']}")
         if snap["installed_version"] != snap["version"]:
-            typer.echo(
-                f"  Note:       running {snap['version']}; restart service to apply {snap['installed_version']}"
+            ui.echo(
+                f"  Note:       running {snap['version']}; restart service to apply {snap['installed_version']}",
+                style="warning",
             )
     typer.echo(f"  Update:      {snap['release_track']} track")
     from pa.cli import service as svc
@@ -213,28 +220,33 @@ def install(
 
     if record_only:
         record_install(channel=channel, pa_bin=svc.find_pa_binary())
-        typer.echo(f"Recorded install metadata (track: {channel}).")
+        ui.echo(f"Recorded install metadata (track: {channel}).", style="success")
         return
 
     if service_only:
         if not svc.service_supported():
-            typer.echo(
-                "Service management is not supported on this platform.", err=True
+            ui.echo(
+                "Service management is not supported on this platform.",
+                style="failure",
+                err=True,
             )
             raise typer.Exit(1)
         settings = get_settings()
         pa_bin = svc.find_service_binary()
         if not pa_bin:
-            typer.echo("pa binary not found in PATH.", err=True)
+            ui.echo("pa binary not found in PATH.", style="failure", err=True)
             raise typer.Exit(1)
         path = svc.install_service(settings, pa_bin)
         if not no_start:
             svc.bootstrap()
         record_install(channel=channel, pa_bin=pa_bin)
-        typer.echo(f"Registered {svc.get_status(settings).backend} service: {path}")
+        ui.echo(
+            f"Registered {svc.get_status(settings).backend} service: {path}",
+            style="success",
+        )
         typer.echo(f"Service binary: {pa_bin}")
         if no_start:
-            typer.echo("Service left stopped (--no-start).")
+            ui.echo("Service left stopped (--no-start).", style="skipped")
         return
 
     try:
@@ -242,11 +254,11 @@ def install(
             from_source, name=name, channel=channel, start_service=not no_start
         )
     except RuntimeError as exc:
-        typer.echo(str(exc), err=True)
+        ui.echo(str(exc), style="failure", err=True)
         raise typer.Exit(1) from exc
 
     settings = get_settings()
-    typer.echo("PA installed successfully.")
+    ui.echo("PA installed successfully.", style="success")
     typer.echo(f"  Server: http://{settings.host}:{settings.port}")
     typer.echo("  Commands: pa status | pa restart | pa update")
 
@@ -300,10 +312,10 @@ def stop(
     else:
         request_skip_quiesce(settings.data_dir)
     try:
-        svc.stop(progress=lambda message: typer.echo(f"  Service:     {message}"))
-        typer.echo("PA service stopped.")
+        svc.stop(progress=lambda message: ui.progress(f"Service:     {message}"))
+        ui.echo("PA service stopped.", style="success")
     except RuntimeError as exc:
-        typer.echo(str(exc), err=True)
+        ui.echo(str(exc), style="failure", err=True)
         raise typer.Exit(1) from exc
 
 
@@ -340,13 +352,13 @@ def restart_cmd(
     try:
         svc.restart(
             settings,
-            progress=lambda message: typer.echo(f"  Service:     {message}"),
+            progress=lambda message: ui.progress(f"Service:     {message}"),
         )
         print_service_ready(settings, action="restarted")
         if no_acp_resume:
             typer.echo("  ACP:         resume disabled for this restart")
     except RuntimeError as exc:
-        typer.echo(str(exc), err=True)
+        ui.echo(str(exc), style="failure", err=True)
         raise typer.Exit(1) from exc
 
 
@@ -418,7 +430,7 @@ def logs(
             json_output=json_output,
         )
     except (RuntimeError, ValueError) as exc:
-        typer.echo(str(exc), err=True)
+        ui.echo(str(exc), style="failure", err=True)
         raise typer.Exit(1) from exc
 
 
@@ -453,10 +465,10 @@ def update(
     typer.echo(f"Latest:    {result.latest or 'unknown'}")
 
     if not result.upgrade_available:
-        typer.echo("Up to date.")
+        ui.echo("Up to date.", style="success")
         return
 
-    typer.echo("Update available.")
+    ui.echo("Update available.", style="information")
     typer.echo("")
     typer.echo(format_release_notes(result.release))
     typer.echo("")
@@ -465,7 +477,7 @@ def update(
         raise typer.Exit(1)
 
     if not yes and not typer.confirm(f"Apply update to {result.latest}?", default=True):
-        typer.echo("Update cancelled.")
+        ui.echo("Update cancelled.", style="skipped")
         raise typer.Exit(0)
 
     try:
@@ -476,11 +488,11 @@ def update(
             release=result.release,
         )
     except RuntimeError as exc:
-        typer.echo(str(exc), err=True)
+        ui.echo(str(exc), style="failure", err=True)
         raise typer.Exit(1) from exc
 
     previous = result.previous or result.current
-    typer.echo(f"Updated PA {previous} → {result.current}")
+    ui.echo(f"Updated PA {previous} → {result.current}", style="success")
 
     status = svc.get_status(settings)
     if not status.installed:
@@ -509,12 +521,12 @@ def update(
     try:
         svc.restart(
             settings,
-            progress=lambda message: typer.echo(f"  Service:     {message}"),
+            progress=lambda message: ui.progress(f"Service:     {message}"),
         )
     except RuntimeError as exc:
-        typer.echo(str(exc), err=True)
+        ui.echo(str(exc), style="failure", err=True)
         raise typer.Exit(1) from exc
-    typer.echo("Service restarted.")
+    ui.echo("Service restarted.", style="success")
 
 
 def _release_command(bump: str):
@@ -934,7 +946,9 @@ def fleet_rotate_credential(
     """Begin or safely resume an overlapping fleet sync-credential rotation."""
     _print_credential_rotation(
         _local_api_request(
-            get_settings(), "POST", "/api/fleet/credentials/rotate",
+            get_settings(),
+            "POST",
+            "/api/fleet/credentials/rotate",
             body={"idempotency_key": idempotency_key},
         )
     )
@@ -1298,9 +1312,7 @@ def fleet_setup_machine(
     repositories: Annotated[
         str, typer.Option(help="Comma-separated repository URLs")
     ] = "",
-    github_transport: Annotated[
-        str, typer.Option(help="none, https, or ssh")
-    ] = "none",
+    github_transport: Annotated[str, typer.Option(help="none, https, or ssh")] = "none",
     channel: Annotated[str, typer.Option(help="Release channel")] = "release",
     release_ref: Annotated[
         str, typer.Option(help="Optional immutable tag or commit")
@@ -1339,9 +1351,7 @@ def fleet_setup_machine(
                     "realm": realm,
                     "worker_profile": profile,
                     "providers": [
-                        value.strip()
-                        for value in providers.split(",")
-                        if value.strip()
+                        value.strip() for value in providers.split(",") if value.strip()
                     ],
                     "repositories": [
                         value.strip()
