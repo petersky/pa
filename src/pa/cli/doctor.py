@@ -413,6 +413,11 @@ def run_doctor() -> int:
     if failures:
         typer.echo("")
         typer.echo("Doctor found failures.", err=True)
+        typer.echo(
+            "Diagnostic logs: pa logs --since 30m --severity WARNING "
+            "(use --source journal on systemd if file logs are unavailable)",
+            err=True,
+        )
         return 1
     typer.echo("Doctor checks passed." + (" (with warnings)" if warnings else ""))
     return 0
