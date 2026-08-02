@@ -8,9 +8,10 @@ import hmac
 import json
 import logging
 import re
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from typing import Any, AsyncIterator, Literal
+from typing import Any, Literal
 from urllib.parse import quote
 from uuid import UUID, uuid4
 
@@ -54,11 +55,6 @@ from pa.execution.dispatch import (
     DispatchWorker,
 )
 from pa.execution.disposition import decide_card_disposition
-from pa.execution.profiles import (
-    ExecutionContract,
-    MaterializationPlan,
-    resolve_materialization_plan,
-)
 from pa.execution.post_turn import (
     EvidenceReferenceV1,
     FollowupActionName,
@@ -68,6 +64,11 @@ from pa.execution.post_turn import (
     TurnEndSnapshotV1,
     action_catalog,
     mark_record_only_actions,
+)
+from pa.execution.profiles import (
+    ExecutionContract,
+    MaterializationPlan,
+    resolve_materialization_plan,
 )
 from pa.execution.progress import (
     PROGRESS_SCHEMA_VERSION,
@@ -82,7 +83,6 @@ from pa.execution.progress import (
     sanitize_text,
 )
 from pa.execution.reconciliation import CompletionReconciler
-from pa.fleet.control_plane import build_control_plane_status
 from pa.fleet.bootstrap import (
     BootstrapJob,
     BootstrapJobStore,
@@ -93,6 +93,7 @@ from pa.fleet.bootstrap import (
     discover_target,
     run_bootstrap_job,
 )
+from pa.fleet.control_plane import build_control_plane_status
 from pa.fleet.join import (
     apply_reachability_settings,
     ensure_sync_token,
@@ -301,6 +302,8 @@ class FleetDispatchBody(RemoteAgentStartBody):
     placement_policy: PlacementPolicy | None = None
     group_id: str | None = None
     required_capabilities: list[str] = Field(default_factory=list)
+    required_mcp_servers: list[str] = Field(default_factory=list)
+    optional_mcp_servers: list[str] = Field(default_factory=list)
 
 
 class PlacementDefaultBody(BaseModel):
@@ -683,9 +686,7 @@ def get_instance_participation_policy(
 ) -> dict[str, Any]:
     require_user(request)
     realm_id = realm or request.app.state.ctx.settings.primary_realm
-    policy, explicit = _policy_service(request).effective_policy(
-        realm_id, instance_id
-    )
+    policy, explicit = _policy_service(request).effective_policy(realm_id, instance_id)
     return {
         **policy.model_dump(mode="json"),
         "explicit": explicit,
@@ -699,11 +700,11 @@ def _policy_change_enables(
     profiles = set(WORKLOAD_PROFILES)
     old_allowed = set(old.allowed_profiles) or profiles
     new_allowed = set(new.allowed_profiles) or profiles
-    old_effective = old_allowed - set(old.denied_profiles) - set(
-        old.hard_denied_profiles
+    old_effective = (
+        old_allowed - set(old.denied_profiles) - set(old.hard_denied_profiles)
     )
-    new_effective = new_allowed - set(new.denied_profiles) - set(
-        new.hard_denied_profiles
+    new_effective = (
+        new_allowed - set(new.denied_profiles) - set(new.hard_denied_profiles)
     )
     return bool(
         (new_effective - old_effective)
@@ -1282,7 +1283,9 @@ def _record_post_turn_evaluation(
 ) -> None:
     """Persist the neutral snapshot before running the read-only evaluator."""
     result = dict(
-        result_override if result_override is not None else record.completion_payload or {}
+        result_override
+        if result_override is not None
+        else record.completion_payload or {}
     )
     report = record.final_report
     latest = record.latest_progress
@@ -1351,14 +1354,10 @@ def _record_post_turn_evaluation(
     )
     current_card = _model_json(card)
     current_lane = str(current_card.get("lane") or "") or None
-    authority_version = (
-        str(current_card.get("updated_at") or "") or record.card_version
-    )
+    authority_version = str(current_card.get("updated_at") or "") or record.card_version
     deliverables = report.model_dump(mode="json") if report else {}
     if report:
-        deliverables["changed_files"] = (
-            latest.changed_file_count if latest else None
-        )
+        deliverables["changed_files"] = latest.changed_file_count if latest else None
     snapshot = TurnEndSnapshotV1(
         turn_id=turn_id,
         turn_sequence=len(record.turn_end_snapshots) + 1,
@@ -1387,9 +1386,7 @@ def _record_post_turn_evaluation(
                 else None
             ),
             "acknowledged_at": (
-                record.acknowledged_at.isoformat()
-                if record.acknowledged_at
-                else None
+                record.acknowledged_at.isoformat() if record.acknowledged_at else None
             ),
             "attempts": record.attempts,
         },
@@ -1402,7 +1399,8 @@ def _record_post_turn_evaluation(
         ),
         deliverables=deliverables,
         validations=[
-            item.model_dump(mode="json") for item in (report.validations if report else [])
+            item.model_dump(mode="json")
+            for item in (report.validations if report else [])
         ],
         blockers=list(report.blockers if report else []),
         failures=failures,
@@ -1575,9 +1573,7 @@ def complete_dispatch(
             dispatch_id, body.result
         )
         ledger.put(record)
-        _record_post_turn_evaluation(
-            request, ledger, record, card=None, watches=[]
-        )
+        _record_post_turn_evaluation(request, ledger, record, card=None, watches=[])
         return _completion_ack(record, duplicate=False)
 
     watches = []
@@ -1708,9 +1704,7 @@ def complete_dispatch(
         )
     record.final_report = sanitize_completion_report(report) if report else None
     ledger.put(record)
-    _record_post_turn_evaluation(
-        request, ledger, record, card=card, watches=watches
-    )
+    _record_post_turn_evaluation(request, ledger, record, card=card, watches=watches)
     return _completion_ack(record, duplicate=False)
 
 
@@ -1752,9 +1746,7 @@ def complete_followup_turn(
             detail={"code": "dispatch_completion_not_acknowledged"},
         )
     card = (
-        request.app.state.ctx.store.get_card(
-            record.card_id, realm_id=record.realm_id
-        )
+        request.app.state.ctx.store.get_card(record.card_id, realm_id=record.realm_id)
         if record.card_id
         else None
     )
@@ -1770,8 +1762,7 @@ def complete_followup_turn(
         (
             item
             for item in reversed(record.followup_turns)
-            if str(item.get("prompt_id") or item.get("idempotency_key"))
-            == body.turn_id
+            if str(item.get("prompt_id") or item.get("idempotency_key")) == body.turn_id
         ),
         None,
     )
@@ -1964,7 +1955,7 @@ def _fleet_context(request: Request) -> dict:
     instances = list(fleet.list_instances())
     try:
         policy_service: FleetPolicyService = ctx.require_service("fleet_policy")
-    except (KeyError, RuntimeError):
+    except KeyError, RuntimeError:
         # Keep direct context/unit-test construction compatible with modules
         # that predate the registered policy service.
         policy_service = FleetPolicyService(ctx.store)
@@ -2660,7 +2651,7 @@ async def fleet_health(request: Request, instance_id: str | None = None) -> list
                 if response.status_code != 200:
                     return "error", None
                 return "up", parser(await _response_json(request, response))
-            except TimeoutError, asyncio.TimeoutError:
+            except TimeoutError:
                 return "timeout", None
             except httpx.HTTPError, ValueError, TypeError, AttributeError:
                 return "error", None
@@ -2686,7 +2677,7 @@ async def fleet_health(request: Request, instance_id: str | None = None) -> list
                         f"{base}/api/health", timeout=FLEET_HEALTH_TIMEOUT
                     )
                     health_state = "up" if resp.status_code == 200 else "down"
-                except TimeoutError, asyncio.TimeoutError:
+                except TimeoutError:
                     health_state = "timeout"
                 except httpx.HTTPError:
                     health_state = "down"
@@ -2725,7 +2716,7 @@ async def fleet_health(request: Request, instance_id: str | None = None) -> list
                                 timeout=max(0.1, FLEET_DETAIL_TIMEOUT - 0.1),
                             )
                             return "up", value
-                        except TimeoutError, asyncio.TimeoutError:
+                        except TimeoutError:
                             return "timeout", []
                         except Exception:
                             return "error", []
@@ -2743,7 +2734,7 @@ async def fleet_health(request: Request, instance_id: str | None = None) -> list
                                 timeout=FLEET_DETAIL_TIMEOUT,
                             )
                             return "up", value
-                        except TimeoutError, asyncio.TimeoutError:
+                        except TimeoutError:
                             return "timeout", None
                         except Exception:
                             return "error", None
@@ -2980,9 +2971,7 @@ def list_bootstrap_jobs(
     require_user(request)
     return [
         _bootstrap_public(job)
-        for job in _bootstrap_store(request).list(
-            include_terminal=include_terminal
-        )
+        for job in _bootstrap_store(request).list(include_terminal=include_terminal)
     ]
 
 
@@ -3114,7 +3103,9 @@ def cancel_bootstrap(request: Request, job_id: str) -> dict[str, Any]:
         phase=job.current_phase,
         level="audit",
     )
-    if not (_bootstrap_tasks.get(job.job_id) and not _bootstrap_tasks[job.job_id].done()):
+    if not (
+        _bootstrap_tasks.get(job.job_id) and not _bootstrap_tasks[job.job_id].done()
+    ):
         job.state = BootstrapState.CANCELLED
         job.completed_at = datetime.now(UTC)
         store.secrets.clear(job.job_id)
@@ -3140,7 +3131,9 @@ def submit_bootstrap_input(
             kind=kind,
             value=value,
             confirmed=bool(body.get("confirmed")),
-            details=body.get("details") if isinstance(body.get("details"), dict) else {},
+            details=body.get("details")
+            if isinstance(body.get("details"), dict)
+            else {},
         )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -5029,9 +5022,7 @@ async def _resolve_policy_placement(
         or ctx.store.list_placement_defaults(realm_id)
     )
     for candidate in candidates:
-        policy, explicit = policies.effective_policy(
-            realm_id, candidate.instance_id
-        )
+        policy, explicit = policies.effective_policy(realm_id, candidate.instance_id)
         candidate.participation_policy = policy
         candidate.participation_policy_explicit = explicit
         candidate.group_membership = group.membership.get(
@@ -5048,7 +5039,7 @@ async def _resolve_policy_placement(
             candidate.participation_policy_supported = (
                 schema_version is None or int(schema_version) >= 1
             )
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             candidate.participation_policy_supported = False
         candidate.self_protection = dict(
             activity.get("self_protective_participation") or {}
@@ -5056,6 +5047,7 @@ async def _resolve_policy_placement(
 
     required_capabilities = sorted(
         set(body.required_capabilities)
+        | {f"mcp:{name}" for name in body.required_mcp_servers}
         | set(card.preferred_capabilities if card else [])
         | set(plan.requirements.required_capabilities)
     )
@@ -5115,6 +5107,25 @@ async def _resolve_policy_placement(
         {
             **item,
             "group_version": group.group_version,
+            "optional_mcp_warnings": [
+                {
+                    "code": "optional_mcp_unavailable",
+                    "server": name,
+                    "message": f"Optional MCP server {name!r} is not available on this instance.",
+                }
+                for name in body.optional_mcp_servers
+                if f"mcp:{name}"
+                not in set(
+                    next(
+                        (
+                            candidate.capabilities
+                            for candidate in candidates
+                            if candidate.instance_id == item.get("instance_id")
+                        ),
+                        [],
+                    )
+                )
+            ],
         }
         for item in decision.eligible_candidates
     ]
@@ -5573,13 +5584,16 @@ def _named_dispatch_identity(
         },
     )
     payload["project_id"] = project_id
-    fingerprint = placement_request_fingerprint or hashlib.sha256(
-        json.dumps(
-            {"target_instance_id": instance_id, "payload": payload},
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode()
-    ).hexdigest()
+    fingerprint = (
+        placement_request_fingerprint
+        or hashlib.sha256(
+            json.dumps(
+                {"target_instance_id": instance_id, "payload": payload},
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
+    )
     header_key = request.headers.get("idempotency-key")
     if not isinstance(header_key, str):
         header_key = None
@@ -5921,9 +5935,7 @@ def get_post_turn_action_catalog(request: Request) -> dict[str, Any]:
         "maximum_automatic_followup_turns": (
             settings.post_turn_max_automatic_followups
         ),
-        "evaluation_timeout_seconds": (
-            settings.post_turn_evaluation_timeout_seconds
-        ),
+        "evaluation_timeout_seconds": (settings.post_turn_evaluation_timeout_seconds),
         "retry_seconds": settings.post_turn_retry_seconds,
         "escalation_threshold": settings.post_turn_escalation_threshold,
     }
@@ -6004,9 +6016,7 @@ def submit_post_turn_evaluation(
     return {"accepted": True, "duplicate": False}
 
 
-@router.post(
-    "/fleet/dispatch-jobs/{dispatch_id}/actions/{action_id}", status_code=202
-)
+@router.post("/fleet/dispatch-jobs/{dispatch_id}/actions/{action_id}", status_code=202)
 async def execute_post_turn_action(
     request: Request,
     dispatch_id: str,
@@ -6030,7 +6040,11 @@ async def execute_post_turn_action(
     if not evaluation:
         raise HTTPException(status_code=404, detail="Evaluation not found")
     action = next(
-        (item for item in evaluation.recommended_actions if item.action_id == action_id),
+        (
+            item
+            for item in evaluation.recommended_actions
+            if item.action_id == action_id
+        ),
         None,
     )
     if not action:
@@ -6222,8 +6236,7 @@ def repair_terminal_dispatch(
     if _repeat_dispatch_control(record, "repair_terminal", key):
         return record.public_dict()
     acknowledged = bool(
-        record.acknowledged_at
-        or record.completion_delivery_class == "acknowledged"
+        record.acknowledged_at or record.completion_delivery_class == "acknowledged"
     )
     if not acknowledged:
         raise HTTPException(
@@ -6440,9 +6453,7 @@ async def _retry_dispatch_api(
     explicit_policies = ctx.store.list_instance_participation_policies(record.realm_id)
     policy_enforcement_active = bool(
         explicit_policies
-        or ctx.store.list_instance_groups(
-            record.realm_id, include_archived=True
-        )
+        or ctx.store.list_instance_groups(record.realm_id, include_archived=True)
         or ctx.store.list_placement_defaults(record.realm_id)
     )
     for candidate in candidates:
@@ -6487,8 +6498,7 @@ async def _retry_dispatch_api(
                 ),
                 project_id=record.project_id,
                 dispatch_intent=DispatchIntent(
-                    original.get("dispatch_intent")
-                    or DispatchIntent.AUTOMATIC.value
+                    original.get("dispatch_intent") or DispatchIntent.AUTOMATIC.value
                 ),
                 requested_group_id=original.get("requested_group_id"),
                 resolved_group_id=original.get("resolved_group_id"),
@@ -6830,9 +6840,7 @@ async def fleet_agent_proxy(
         async def relay() -> AsyncIterator[bytes]:
             pair_id = str(uuid4())
             client_id = request.query_params.get("client_id")
-            scope = (
-                "all_live" if proxied_path == "session-events" else "single_session"
-            )
+            scope = "all_live" if proxied_path == "session-events" else "single_session"
             downstream_id = sse_connections.open(
                 endpoint="/api/fleet/instances/{instance_id}/agent/session-events",
                 direction="downstream",
@@ -6855,7 +6863,7 @@ async def fleet_agent_proxy(
                 reconnect_attempt = int(
                     request.query_params.get("reconnect_attempt") or 0
                 )
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 reconnect_attempt = 0
             if reconnect_attempt > 0:
                 sse_connections.increment("reconnecting")
@@ -7531,15 +7539,11 @@ class FleetModule(Module):
                 if job and not task.done():
                     job.cancel_requested = True
                     job.state = BootstrapState.RETRYABLE
-                    job.readiness_reason = (
-                        "PA shut down during onboarding; resume from the durable checkpoint."
-                    )
+                    job.readiness_reason = "PA shut down during onboarding; resume from the durable checkpoint."
                     bootstrap_store.save(job)
                 task.cancel()
             if _bootstrap_tasks:
-                await asyncio.gather(
-                    *_bootstrap_tasks.values(), return_exceptions=True
-                )
+                await asyncio.gather(*_bootstrap_tasks.values(), return_exceptions=True)
                 _bootstrap_tasks.clear()
         lifecycle = ctx.services.get("session_lifecycle")
         if lifecycle:
@@ -7740,9 +7744,7 @@ class FleetModule(Module):
                 "visible_project_ids": visible_project_ids or [],
             }
             if permitted_placement_policies is not None:
-                payload["permitted_placement_policies"] = (
-                    permitted_placement_policies
-                )
+                payload["permitted_placement_policies"] = permitted_placement_policies
             return request_local_pa(
                 ctx.settings,
                 "POST",
@@ -7766,9 +7768,7 @@ class FleetModule(Module):
             )
 
         @mcp.tool()
-        def archive_instance_group(
-            group_id: str, realm_id: str | None = None
-        ) -> dict:
+        def archive_instance_group(group_id: str, realm_id: str | None = None) -> dict:
             """Archive a custom group without allowing defaults to fall back."""
             return request_local_pa(
                 ctx.settings,
@@ -8019,9 +8019,7 @@ class FleetModule(Module):
                     "capacity_override": capacity_override,
                     "capacity_override_reason": capacity_override_reason,
                     "participation_override": participation_override,
-                    "participation_override_reason": (
-                        participation_override_reason
-                    ),
+                    "participation_override_reason": (participation_override_reason),
                     "execution_contract": execution_contract,
                     "idempotency_key": key,
                 },
@@ -8072,9 +8070,7 @@ class FleetModule(Module):
                 payload["capacity_override_reason"] = capacity_override_reason
             if participation_override:
                 payload["participation_override"] = True
-                payload["participation_override_reason"] = (
-                    participation_override_reason
-                )
+                payload["participation_override_reason"] = participation_override_reason
             return request_local_pa(
                 ctx.settings,
                 "POST",
@@ -8238,9 +8234,7 @@ class FleetModule(Module):
             )
 
         @mcp.tool()
-        def repair_terminal_dispatch(
-            dispatch_id: str, idempotency_key: str
-        ) -> dict:
+        def repair_terminal_dispatch(dispatch_id: str, idempotency_key: str) -> dict:
             """Audit and normalize an acknowledged legacy target record to terminal."""
             key = idempotency_key.strip()
             if not key:

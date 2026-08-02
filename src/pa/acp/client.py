@@ -5,9 +5,10 @@ import copy
 import inspect
 import json
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Awaitable, Callable
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from acp import PROTOCOL_VERSION, image_block, text_block
@@ -23,6 +24,7 @@ from acp.schema import (
     WriteTextFileResponse,
 )
 
+from pa.acp.auxiliary_mcp import load_auxiliary_mcp_state, resolve_auxiliary_mcp_servers
 from pa.acp.configuration import (
     ACPConfigurationError,
     SessionConfigurationRequest,
@@ -75,7 +77,7 @@ _TOLERATED_CLIENT_METHOD_PREFIXES = ("cursor/", "elicitation/")
 def _tolerated_client_method(method: str) -> bool:
     if not isinstance(method, str) or not method:
         return False
-    name = method[1:] if method.startswith("_") else method
+    name = method.removeprefix("_")
     return name.startswith(_TOLERATED_CLIENT_METHOD_PREFIXES)
 
 
@@ -304,7 +306,7 @@ class PAClient(Client):
             except RequestError as exc:
                 if exc.code != -32601 or not _tolerated_client_method(method):
                     raise
-                name = method[1:] if method.startswith("_") else method
+                name = method.removeprefix("_")
                 payload = params if isinstance(params, dict) else {}
                 if is_notification:
                     await self.ext_notification(name, payload)
@@ -562,6 +564,7 @@ class AgentConnection:
             "last_success": None,
             "last_failure": None,
         }
+        self.auxiliary_mcp_provenance: list[dict[str, Any]] = []
         self._wire_lock = asyncio.Lock()
         self._wire_tasks: set[asyncio.Task[None]] = set()
         self._wire_task_limit = 1024
@@ -678,6 +681,22 @@ class AgentConnection:
             self.settings,
             session_environment=self.extra_env,
         )
+        provider_id = self.agent_name or DEFAULT_PROVIDER_ID
+        if provider_id in {"instance", ""}:
+            provider_id = DEFAULT_PROVIDER_ID
+        auxiliary_state = load_auxiliary_mcp_state(self.settings.data_dir)
+        auxiliary, self.auxiliary_mcp_provenance = resolve_auxiliary_mcp_servers(
+            auxiliary_state.servers,
+            provider=provider_id,
+            project_id=project_id,
+            card_id=card_id,
+        )
+        names = [server.name for server in [*mcp, *auxiliary]]
+        if len(names) != len(set(names)):
+            raise RuntimeError(
+                "MCP server name collision in effective session configuration"
+            )
+        mcp.extend(auxiliary)
         if mcp:
             try:
                 owner_health = await self._offload(
@@ -981,6 +1000,13 @@ class AgentConnection:
             self.session.project_id = project_id
 
         self._apply_session_meta(session_meta)
+        config = dict(self.session.config_json or {})
+        config["auxiliary_mcp"] = {
+            "policy": "current instance configuration is reapplied on resume",
+            "effective": self.auxiliary_mcp_provenance,
+            "applied_at": datetime.now(UTC).isoformat(),
+        }
+        self.session.config_json = config
         await self._offload(
             "sqlite.agent_session_save", self.store.save_session, self.session
         )
@@ -1018,7 +1044,7 @@ class AgentConnection:
         if not self._conn or not self.session or not self.session.external_session_id:
             raise RuntimeError("Not connected to agent")
         configuration = dict(
-            ((self.session.config_json or {}).get("configuration") or {})
+            (self.session.config_json or {}).get("configuration") or {}
         )
         if configuration.get("state") in {"applying", "failed"}:
             raise ACPConfigurationError(
@@ -1477,9 +1503,7 @@ class AgentConnection:
                     raise
                 raise ACPConfigurationError(message) from exc
 
-    async def disconnect(
-        self, *, timeout: float = 5.0, force: bool = False
-    ) -> None:
+    async def disconnect(self, *, timeout: float = 5.0, force: bool = False) -> None:
         async with self._disconnect_lock:
             ctx = self._ctx
             proc = self._proc
@@ -1490,7 +1514,7 @@ class AgentConnection:
                 if force and proc and getattr(proc, "returncode", None) is None:
                     try:
                         proc.kill()
-                    except (ProcessLookupError, OSError):
+                    except ProcessLookupError, OSError:
                         pass
                 try:
                     await asyncio.wait_for(
@@ -1500,11 +1524,11 @@ class AgentConnection:
                     if proc and getattr(proc, "returncode", None) is None:
                         try:
                             proc.kill()
-                        except (ProcessLookupError, OSError):
+                        except ProcessLookupError, OSError:
                             pass
                         try:
                             await asyncio.wait_for(proc.wait(), timeout=0.5)
-                        except (TimeoutError, ProcessLookupError):
+                        except TimeoutError, ProcessLookupError:
                             logger.error("ACP child did not exit after forced kill")
         if self.session and self.session.status not in {"closed", "quiesced"}:
             self.session.status = "disconnected"
