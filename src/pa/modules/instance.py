@@ -1,11 +1,25 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
+from datetime import UTC, datetime
 from typing import Any, Literal
+from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
 
+from pa.acp.auxiliary_mcp import (
+    AuxiliaryMcpCollection,
+    AuxiliaryMcpServer,
+    AuxiliaryMcpState,
+    import_common_mcp_json,
+    load_auxiliary_mcp_state,
+    probe_auxiliary_server,
+    resolve_auxiliary_mcp_servers,
+    save_auxiliary_mcp_state,
+)
 from pa.auth.middleware import get_principal_id, require_user
 from pa.configuration.service import (
     apply_update,
@@ -34,6 +48,7 @@ router = APIRouter()
 
 _quiesce_task: asyncio.Task[Any] | None = None
 _quiesce_progress: QuiesceProgress | None = None
+_auxiliary_mcp_probes: dict[str, dict[str, Any]] = {}
 
 
 class QuiesceRequest(BaseModel):
@@ -82,6 +97,53 @@ class ConfigurationPatch(BaseModel):
     idempotency_key: str | None = None
     interface: Literal["api", "web", "cli", "mcp", "interactive_cli"] = "api"
     target: str = "local"
+
+
+class AuxiliaryMcpSaveRequest(BaseModel):
+    servers: list[AuxiliaryMcpServer]
+    expected_revision: str
+    idempotency_key: str
+
+
+class AuxiliaryMcpImportRequest(BaseModel):
+    document: dict[str, Any]
+
+
+def _auxiliary_revision(servers: list[AuxiliaryMcpServer]) -> str:
+    payload = [item.model_dump(mode="json") for item in servers]
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
+def _auxiliary_snapshot(request: Request) -> dict[str, Any]:
+    ctx = request.app.state.ctx
+    persisted = load_auxiliary_mcp_state(ctx.settings.data_dir)
+    servers = list(persisted.servers)
+    _, availability = resolve_auxiliary_mcp_servers(servers)
+    active: dict[str, int] = {}
+    agent = ctx.services.get("instance_agent")
+    for runtime in agent.list_runtimes() if agent else []:
+        connection = runtime.connection
+        for item in connection.auxiliary_mcp_provenance if connection else []:
+            if item.get("state") == "ready":
+                active[item["name"]] = active.get(item["name"], 0) + 1
+    states = {item["name"]: item for item in availability}
+    return {
+        "instance_id": ctx.settings.instance_id,
+        "revision": _auxiliary_revision(servers),
+        "servers": [
+            {
+                **server.model_dump(mode="json"),
+                "env": {key: reference for key, reference in server.env.items()},
+                "availability": states.get(server.name, {"state": "disabled"}),
+                "last_probe": _auxiliary_mcp_probes.get(server.name),
+                "active_session_usage": active.get(server.name, 0),
+            }
+            for server in servers
+        ],
+        "takes_effect": "new and recovered sessions; running sessions are unchanged until restarted",
+    }
 
 
 def _configuration_error(exc: Exception, *, conflict: bool = False) -> HTTPException:
@@ -544,6 +606,155 @@ def get_config(request: Request) -> dict:
     }
 
 
+@router.get("/mcp-servers")
+def list_auxiliary_mcp_servers(request: Request) -> dict[str, Any]:
+    """Return local definitions and redacted effective readiness."""
+    require_user(request)
+    return _auxiliary_snapshot(request)
+
+
+@router.post("/mcp-servers/import")
+def import_auxiliary_mcp_servers(
+    request: Request, body: AuxiliaryMcpImportRequest
+) -> dict[str, Any]:
+    """Validate common mcpServers JSON without persisting it."""
+    require_user(request)
+    try:
+        imported = import_common_mcp_json(body.document)
+        _, availability = resolve_auxiliary_mcp_servers(imported.servers)
+    except (TypeError, ValueError, RuntimeError) as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "auxiliary_mcp_invalid", "message": str(exc)},
+        ) from exc
+    return {
+        "valid": True,
+        "servers": [item.model_dump(mode="json") for item in imported.servers],
+        "availability": availability,
+        "warning": "Environment values are imported as protected variable references, never as plaintext.",
+    }
+
+
+@router.put("/mcp-servers")
+def save_auxiliary_mcp_servers(
+    request: Request, body: AuxiliaryMcpSaveRequest
+) -> dict[str, Any]:
+    """Replace the local collection with optimistic concurrency/idempotency."""
+    require_user(request)
+    ctx = request.app.state.ctx
+    collection = AuxiliaryMcpCollection(servers=body.servers)
+    persisted = load_auxiliary_mcp_state(ctx.settings.data_dir)
+    current = list(persisted.servers)
+    revision = _auxiliary_revision(current)
+    if body.expected_revision != revision:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "auxiliary_mcp_revision_conflict",
+                "message": "MCP server configuration changed; refresh and preview again.",
+                "revision": revision,
+            },
+        )
+    fingerprint = _auxiliary_revision(collection.servers)
+    idempotency = dict(persisted.idempotency)
+    mutations = list(persisted.mutations)
+    prior = idempotency.get(body.idempotency_key)
+    if prior:
+        if prior != fingerprint:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "idempotency_conflict",
+                    "message": "Idempotency key was already used for a different mutation.",
+                },
+            )
+        return {**_auxiliary_snapshot(request), "duplicate": True}
+    idempotency[body.idempotency_key] = fingerprint
+    mutations.append(
+        {
+            "event_id": str(uuid4()),
+            "timestamp": datetime.now(UTC).isoformat(),
+            "principal_id": get_principal_id(request),
+            "action": "auxiliary_mcp.collection_replaced",
+            "previous_revision": revision,
+            "revision": fingerprint,
+            "server_names": [item.name for item in collection.servers],
+        }
+    )
+    save_auxiliary_mcp_state(
+        ctx.settings.data_dir,
+        AuxiliaryMcpState(
+            servers=collection.servers,
+            idempotency=dict(list(idempotency.items())[-1000:]),
+            mutations=mutations[-1000:],
+        ),
+    )
+    return {**_auxiliary_snapshot(request), "duplicate": False}
+
+
+@router.get("/mcp-servers/audit")
+def auxiliary_mcp_audit(request: Request) -> dict[str, Any]:
+    require_user(request)
+    persisted = load_auxiliary_mcp_state(request.app.state.ctx.settings.data_dir)
+    return {"events": list(reversed(persisted.mutations))}
+
+
+@router.post("/mcp-servers/{name}/probe")
+async def probe_auxiliary_mcp(request: Request, name: str) -> dict[str, Any]:
+    require_user(request)
+    persisted = load_auxiliary_mcp_state(request.app.state.ctx.settings.data_dir)
+    servers = list(persisted.servers)
+    definition = next((item for item in servers if item.name == name), None)
+    if definition is None:
+        raise HTTPException(status_code=404, detail="Unknown auxiliary MCP server")
+    result = await probe_auxiliary_server(definition)
+    if result.get("state") == "ready":
+        tool_names = set(result.get("tool_names") or [])
+        collisions = sorted(
+            tool_names
+            & {
+                tool
+                for server_name, probe in _auxiliary_mcp_probes.items()
+                if server_name != name and probe.get("state") == "ready"
+                for tool in probe.get("tool_names") or []
+            }
+        )
+        if collisions:
+            result.update(
+                state="unavailable",
+                error="tool_name_collision",
+                collisions=collisions,
+                detail="Tool names must be unique across enabled auxiliary MCP servers.",
+            )
+    _auxiliary_mcp_probes[name] = result
+    ctx = request.app.state.ctx
+    capability = f"mcp:{name}"
+    capabilities = set(ctx.settings.capabilities)
+    if result.get("state") == "ready" and definition.enabled:
+        capabilities.add(capability)
+    else:
+        capabilities.discard(capability)
+    ctx.settings.capabilities = sorted(capabilities)
+    fleet = ctx.services.get("fleet_registry")
+    if fleet:
+        from pa.fleet.join import owner_public_url
+
+        fleet.register_self(
+            ctx.settings.instance_id,
+            ctx.settings.instance_name,
+            owner_public_url(ctx.settings),
+            zone=ctx.settings.zone,
+            capabilities=ctx.settings.capabilities,
+            dispatch_capacity=ctx.settings.dispatch_capacity,
+            dispatch_provider_capacities=dict(
+                ctx.settings.dispatch_provider_capacities
+            ),
+            relay_enabled=ctx.settings.relay_enabled,
+            actor=get_principal_id(request),
+        )
+    return result
+
+
 @router.get("/configuration/schema")
 def get_configuration_schema(request: Request, target: str = "local") -> dict:
     """Return the stable machine-readable registry shared by every surface."""
@@ -782,6 +993,48 @@ class InstanceModule(Module):
                     "dispatch_capacity": dispatch_capacity,
                     "dispatch_provider_capacities": provider_capacities or {},
                 },
+            )
+
+        @mcp.tool()
+        def list_auxiliary_mcp_servers() -> dict:
+            """List this instance's redacted auxiliary MCP definitions and readiness."""
+            return request_local_pa(settings, "GET", "/api/mcp-servers")
+
+        @mcp.tool()
+        def import_auxiliary_mcp_servers(document: dict[str, Any]) -> dict:
+            """Validate common mcpServers JSON without persisting secret values."""
+            return request_local_pa(
+                settings,
+                "POST",
+                "/api/mcp-servers/import",
+                json={"document": document},
+            )
+
+        @mcp.tool()
+        def save_auxiliary_mcp_servers(
+            servers: list[dict[str, Any]],
+            expected_revision: str,
+            idempotency_key: str,
+        ) -> dict:
+            """Replace this instance's auxiliary MCP collection idempotently."""
+            return request_local_pa(
+                settings,
+                "PUT",
+                "/api/mcp-servers",
+                json={
+                    "servers": servers,
+                    "expected_revision": expected_revision,
+                    "idempotency_key": idempotency_key,
+                },
+            )
+
+        @mcp.tool()
+        def probe_auxiliary_mcp_server(name: str) -> dict:
+            """Start and handshake one local auxiliary MCP definition."""
+            return request_local_pa(
+                settings,
+                "POST",
+                f"/api/mcp-servers/{name}/probe",
             )
 
         @mcp.tool()

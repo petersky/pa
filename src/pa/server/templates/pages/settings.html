@@ -7,6 +7,7 @@
   {{ section_nav([
     ('appearance', 'Appearance'),
     ('agent', 'Agent defaults'),
+    ('mcp-servers', 'MCP Servers'),
     ('prompts', 'Prompts'),
     ('telemetry', 'Telemetry'),
     ('configuration', 'Configuration'),
@@ -17,6 +18,24 @@
 {% endset %}
 
 {% set main %}
+<section class="hidden stack" data-section="mcp-servers" hidden>
+  <div class="panel">
+    <div class="panel-header"><h2>Auxiliary MCP servers</h2></div>
+    <p class="muted">These definitions belong only to <strong>{{ settings.instance_name }}</strong>. PA MCP is mandatory and separate. Changes apply to new and recovered sessions; restart an existing session to reconfigure it.</p>
+    <form class="stack" id="pa-mcp-servers-form">
+      <label for="pa-mcp-import">Common <code>mcpServers</code> JSON import</label>
+      <textarea id="pa-mcp-import" rows="7" spellcheck="false" placeholder='{"mcpServers":{"blender":{"command":"uvx","args":["blender-mcp"]}}}'></textarea>
+      <div class="button-row">
+        <button type="button" class="secondary" id="pa-mcp-preview">Validate and preview import</button>
+        <button type="submit">Save previewed configuration</button>
+      </div>
+      <p class="muted small">Environment values are treated as protected service-environment references and are never returned after write.</p>
+      <div id="pa-mcp-preview-output" class="stack" aria-live="polite"></div>
+      <p id="pa-mcp-status" aria-live="polite"></p>
+    </form>
+  </div>
+</section>
+
 <section class="hidden" data-section="appearance" hidden>
   <div class="panel">
     <div class="panel-header"><h2>Appearance</h2></div>
@@ -667,6 +686,79 @@
 {% endset %}
 
 {{ page_layout(left=left, main=main, class='page-settings') }}
+
+<script>
+(function () {
+  var form = document.getElementById("pa-mcp-servers-form");
+  if (!form) return;
+  var input = document.getElementById("pa-mcp-import");
+  var output = document.getElementById("pa-mcp-preview-output");
+  var status = document.getElementById("pa-mcp-status");
+  var preview = null;
+  var revision = null;
+  var headers = {"Content-Type": "application/json", Accept: "application/json"};
+  var csrf = document.querySelector('meta[name="csrf-token"]');
+  if (csrf && csrf.content) headers["X-CSRF-Token"] = csrf.content;
+  async function load() {
+    var response = await fetch("/api/mcp-servers", {credentials: "same-origin"});
+    if (!response.ok) return;
+    var data = await response.json();
+    revision = data.revision;
+    if (!input.value.trim() && data.servers.length) {
+      var common = {};
+      data.servers.forEach(function (item) {
+        common[item.name] = {
+          command: item.command, args: item.args, enabled: item.enabled,
+          cwd: item.cwd, required: item.required,
+          startupTimeout: item.startup_timeout_seconds,
+          env: item.env
+        };
+      });
+      input.value = JSON.stringify({mcpServers: common}, null, 2);
+    }
+    output.innerHTML = data.servers.map(function (item) {
+      var readiness = item.last_probe || item.availability || {};
+      return '<div class="notice"><strong>' + item.name + '</strong> — ' +
+        (item.enabled ? readiness.state || "unknown" : "disabled") +
+        ' · <code>' + item.command + ' ' + item.args.join(" ") + '</code>' +
+        ' · active sessions: ' + item.active_session_usage +
+        '<br><button type="button" class="secondary small" data-mcp-probe="' + item.name + '">Test</button></div>';
+    }).join("") || '<p class="muted">No auxiliary servers configured.</p>';
+  }
+  document.getElementById("pa-mcp-preview").addEventListener("click", async function () {
+    status.textContent = "Validating…";
+    try {
+      var documentValue = JSON.parse(input.value);
+      var response = await fetch("/api/mcp-servers/import", {method: "POST", credentials: "same-origin", headers: headers, body: JSON.stringify({document: documentValue})});
+      var data = await response.json();
+      if (!response.ok) throw data;
+      preview = data.servers;
+      status.textContent = "Valid preview: " + preview.length + " server(s). Saving replaces the instance collection.";
+    } catch (error) {
+      preview = null;
+      status.textContent = (error.detail && error.detail.message) || error.message || "Invalid MCP JSON.";
+    }
+  });
+  form.addEventListener("submit", async function (event) {
+    event.preventDefault();
+    if (!preview) { status.textContent = "Validate a preview before saving."; return; }
+    var response = await fetch("/api/mcp-servers", {method: "PUT", credentials: "same-origin", headers: headers, body: JSON.stringify({servers: preview, expected_revision: revision, idempotency_key: crypto.randomUUID()})});
+    var data = await response.json();
+    status.textContent = response.ok ? "Saved. Running sessions were not changed." : ((data.detail && data.detail.message) || "Save failed.");
+    if (response.ok) { preview = null; revision = data.revision; await load(); }
+  });
+  output.addEventListener("click", async function (event) {
+    var name = event.target.dataset && event.target.dataset.mcpProbe;
+    if (!name) return;
+    status.textContent = "Testing " + name + "…";
+    var response = await fetch("/api/mcp-servers/" + encodeURIComponent(name) + "/probe", {method: "POST", credentials: "same-origin", headers: headers});
+    var data = await response.json();
+    status.textContent = name + ": " + (data.state || "error") + (data.error ? " (" + data.error + ")" : "");
+    await load();
+  });
+  load();
+})();
+</script>
 
 <script>
 (function () {
