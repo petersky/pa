@@ -895,16 +895,29 @@ def get_status(settings: Settings | None = None) -> ServiceStatus:
     )
 
 
-def tail_logs(lines: int = 50, follow: bool = False) -> None:
-    settings = Settings()
-    log_path = settings.data_dir / "logs" / "server.log"
-    if not log_path.exists():
-        raise RuntimeError(f"Log file not found: {log_path}")
-    args = ["tail"]
-    if follow:
-        args.append("-f")
-    args.extend(["-n", str(lines), str(log_path)])
-    subprocess.run(args, check=False)
+def tail_logs(
+    lines: int = 50,
+    follow: bool = False,
+    *,
+    sources: list[str] | None = None,
+    since: str | None = None,
+    severity: str | None = None,
+    component: str | None = None,
+    json_output: bool = False,
+) -> None:
+    """Display service logs; retained as the compatibility API for callers."""
+    from pa.cli.logs import show_logs
+
+    show_logs(
+        settings=Settings(),
+        sources=sources or ["stdout", "stderr", "structured"],
+        lines=lines,
+        follow=follow,
+        since=since,
+        severity=severity,
+        component=component,
+        json_output=json_output,
+    )
 
 
 def service_supported() -> bool:
