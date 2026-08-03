@@ -44,7 +44,7 @@ class HistoryPolicyContractTests(unittest.TestCase):
         popstate = spa[spa.index('window.addEventListener("popstate"') :]
         self.assertLess(
             popstate.index("if (event.state && event.state.htmx) return;"),
-            popstate.index('htmx.ajax("GET"'),
+            popstate.index("window.PANavigation.navigate"),
         )
 
     def test_every_live_controller_has_reload_teardown(self) -> None:

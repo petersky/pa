@@ -1710,6 +1710,15 @@
     showToast(message, "error");
   });
 
+  document.body.addEventListener("pa:navigationError", function (event) {
+    var detail = event.detail || {};
+    var error = detail.error || {};
+    showToast(error.message || "Navigation failed", "error");
+    console.error("PA navigation failed", {
+      operation: "spa-navigation", url: detail.url || "", status: detail.status || "network"
+    });
+  });
+
   window.addEventListener("popstate", function (event) {
     // HTMX owns entries carrying its state marker. Handling them here as well
     // starts a second restoration request and can duplicate live controllers.
@@ -1731,11 +1740,8 @@
       closeCardDialog(false);
       return;
     }
-    if (typeof htmx === "undefined") return;
-    htmx.ajax("GET", window.location.pathname + window.location.search, {
-      target: "#app-view",
-      swap: "innerHTML",
-    });
+    if (!window.PANavigation) return;
+    window.PANavigation.navigate(window.location.href, { history: false }).catch(function () {});
     setActiveNav(window.location.pathname);
     updateTitle();
   });
