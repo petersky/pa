@@ -77,6 +77,7 @@ from pa.execution.post_turn import (
     PostTurnEvaluator,
     TurnEndSnapshotV1,
     action_catalog,
+    is_authorized_same_session_continuation,
     mark_record_only_actions,
 )
 from pa.execution.profiles import (
@@ -6786,6 +6787,31 @@ async def execute_post_turn_action(
             status_code=409,
             detail={"code": "action_not_executable", "status": action.status.value},
         )
+    if action.name == FollowupActionName.PROMPT_SAME_SESSION and not action.human_approval_required:
+        inherited = is_authorized_same_session_continuation(
+            action, decision=evaluation.decision, session_id=record.session_id
+        )
+        automatic_used = sum(
+            1 for prior_evaluation in record.post_turn_evaluations
+            for prior_action in prior_evaluation.recommended_actions
+            if prior_action.name == FollowupActionName.PROMPT_SAME_SESSION
+            and any(event.get("automatic") for event in prior_action.audit)
+        )
+        budget = request.app.state.ctx.settings.post_turn_max_automatic_followups
+        if not inherited or automatic_used >= budget:
+            action.human_approval_required = True
+            action.status_reason = (
+                "Withheld for operator approval: continuation scope was not inherited "
+                "or the automatic follow-up budget is exhausted. Approve this action "
+                "to continue."
+            )
+        else:
+            action.audit.append({
+                "event": "authorized", "at": datetime.now(UTC).isoformat(),
+                "executor": "pa.post-turn", "automatic": True,
+                "authorization_basis": "original_implementation_dispatch",
+                "budget_used": automatic_used + 1, "budget_maximum": budget,
+            })
     if action.human_approval_required and not body.approve:
         raise HTTPException(
             status_code=403,
