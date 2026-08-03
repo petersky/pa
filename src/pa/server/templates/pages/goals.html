@@ -1,0 +1,18 @@
+{% extends "shell.html" %}
+{% block content %}
+<section class="page-header"><div><h1>Goals</h1><p>Durable intent, evidence coverage, controller ownership, and wakeups.</p></div></section>
+<div class="card-list">
+{% for goal in goals %}
+  <article class="card">
+    <header><strong>{{ goal.objective }}</strong><span class="badge">{{ goal.state.value }}</span></header>
+    <p>{{ goal.progress_summary or goal.motivation }}</p>
+    <p>{{ goal.criteria | selectattr('verdict.value', 'equalto', 'satisfied') | list | length }}/{{ goal.criteria | length }} criteria satisfied · revision {{ goal.revision }} · policy {{ goal.policy.revision }}</p>
+    {% if goal.lease.holder_instance_id %}<p>Controller: {{ goal.lease.holder_instance_id }} (fence {{ goal.lease.fencing_token }})</p>{% endif %}
+    {% if goal.wakeup %}<p>Next wake: {{ goal.wakeup.wake_at }} — {{ goal.wakeup.reason }}</p>{% endif %}
+    <details><summary>Evidence and criteria</summary>
+      <ul>{% for criterion in goal.criteria %}<li>{{ criterion.verdict.value }} — {{ criterion.description }} ({{ criterion.evidence_ids | length }} evidence)</li>{% endfor %}</ul>
+    </details>
+  </article>
+{% else %}<p>No durable goals yet.</p>{% endfor %}
+</div>
+{% endblock %}

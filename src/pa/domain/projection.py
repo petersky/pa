@@ -147,6 +147,8 @@ class CardProjection:
                 );
                 CREATE INDEX IF NOT EXISTS idx_cards_realm ON cards(realm_id);
                 CREATE INDEX IF NOT EXISTS idx_cards_lane ON cards(lane);
+                CREATE INDEX IF NOT EXISTS idx_cards_realm_lane_updated
+                    ON cards(realm_id, lane, updated_at DESC);
                 CREATE TABLE IF NOT EXISTS projects (
                     id TEXT PRIMARY KEY,
                     realm_id TEXT NOT NULL DEFAULT 'default',
@@ -334,6 +336,10 @@ class CardProjection:
             self._migrate_schema(conn)
             self._migrate_project_repositories(conn)
 
+            from pa.goals.projection import init_goal_schema
+
+            init_goal_schema(conn)
+
     def _migrate_schema(self, conn: sqlite3.Connection) -> None:
         card_cols = {
             row[1] for row in conn.execute("PRAGMA table_info(cards)").fetchall()
@@ -396,6 +402,10 @@ class CardProjection:
             conn.execute("ALTER TABLE agent_sessions ADD COLUMN principal_id TEXT")
         if "project_id" not in session_cols:
             conn.execute("ALTER TABLE agent_sessions ADD COLUMN project_id TEXT")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_agent_sessions_card_updated "
+            "ON agent_sessions(card_id, updated_at DESC)"
+        )
         for col, decl in (
             ("origin_instance_id", "TEXT"),
             ("origin_instance_name", "TEXT"),
@@ -624,7 +634,11 @@ class CardProjection:
                 conn.execute("UPDATE projects SET repos='[]' WHERE id=?", (row["id"],))
 
     def apply_event(self, event: CardEvent) -> None:
-        if event.type == EventType.CARD_CREATED:
+        if event.type == EventType.GOAL_UPSERTED:
+            from pa.goals.projection import apply_goal_event
+
+            apply_goal_event(self, event)
+        elif event.type == EventType.CARD_CREATED:
             self._apply_created(event)
         elif event.type == EventType.CARD_UPDATED:
             self._apply_updated(event)
@@ -2623,6 +2637,20 @@ class CardProjection:
                 rows = conn.execute(
                     "SELECT * FROM agent_sessions ORDER BY updated_at DESC"
                 ).fetchall()
+        return [self._row_to_session(row) for row in rows]
+
+    def list_sessions_for_cards(self, card_ids: set[str]) -> list[AgentSession]:
+        """Load sessions only for cards currently rendered on a board page."""
+        if not card_ids:
+            return []
+        placeholders = ",".join("?" for _ in card_ids)
+        with self._conn() as conn:
+            rows = conn.execute(
+                f"""SELECT * FROM agent_sessions
+                    WHERE card_id IN ({placeholders})
+                    ORDER BY updated_at DESC""",
+                tuple(card_ids),
+            ).fetchall()
         return [self._row_to_session(row) for row in rows]
 
     def get_session(self, session_id: str) -> AgentSession | None:

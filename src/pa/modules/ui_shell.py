@@ -101,11 +101,6 @@ def render_page(request: Request, page: PageDefinition) -> HTMLResponse:
     context["page"] = page
     timing_name = "settings-section" if page.id == "settings" else "page_context"
     context.update(timings.measure(timing_name, lambda: page.build_context(request)))
-    if page.id != "settings":
-        if request.headers.get("HX-Request"):
-            return templates.TemplateResponse(request, page.template, context)
-        context["include_template"] = page.template
-        return templates.TemplateResponse(request, "shell.html", context)
     context["request"] = request
     template_name = page.template
     if not request.headers.get("HX-Request"):
@@ -116,9 +111,19 @@ def render_page(request: Request, page: PageDefinition) -> HTMLResponse:
     )
     response = HTMLResponse(html)
     response.headers["Server-Timing"] = timings.header()
+    response_bytes = len(html.encode("utf-8"))
+    if page.id == "work":
+        diagnostics = {
+            "event": "work.render",
+            "timings_ms": {name: round(value, 1) for name, value in timings.values},
+            "total_ms": round((perf_counter() - timings.started) * 1000, 1),
+            "response_bytes": response_bytes,
+            "htmx": bool(request.headers.get("HX-Request")),
+        }
+        response.headers["X-PA-Work-Bytes"] = str(response_bytes)
+        logger.info("work_render %s", json.dumps(diagnostics, sort_keys=True))
     if page.id == "settings":
         section = str(context.get("active_settings_section") or "agent")
-        response_bytes = len(html.encode("utf-8"))
         diagnostics = {
             "event": "settings.render",
             "section": section,

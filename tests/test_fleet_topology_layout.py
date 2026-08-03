@@ -16,8 +16,19 @@ ROOT = Path(__file__).parents[1]
 CHROME = next(
     (
         executable
-        for name in ("google-chrome", "chromium", "chromium-browser")
-        if (executable := shutil.which(name))
+        for candidate in (
+            "google-chrome",
+            "chromium",
+            "chromium-browser",
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        )
+        if (
+            executable := (
+                shutil.which(candidate)
+                if not candidate.startswith("/")
+                else (candidate if Path(candidate).is_file() else None)
+            )
+        )
     ),
     None,
 )
@@ -90,7 +101,8 @@ class FleetTopologyBrowserLayoutTests(unittest.TestCase):
             }
         ).replace("</", "<\\/")
         fixture = f"""<!doctype html>
-<html><head><meta charset="utf-8"><link rel="stylesheet" href="{stylesheet}"></head>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="{stylesheet}">
+<style>:root {{--pa-surface:#fff;--pa-text:#172033;--pa-text-muted:#536079;--pa-border:#73809a;--pa-accent:#315fc7;--pa-ok:#167447;--pa-danger:#b42318;--pa-focus:#7047eb}}</style></head>
 <body>
 <div id="pa-fleet-root">
   <script type="application/json" id="pa-fleet-overview-data">{overview}</script>
@@ -174,7 +186,29 @@ class FleetTopologyBrowserLayoutTests(unittest.TestCase):
     var nodeElsewhere = svg.querySelector('[data-fleet-node="mac-mini"]');
     nodeElsewhere.dispatchEvent(new PointerEvent("pointerover", {{ bubbles: true }}));
     desktop.selectedSurvivesHover = firstEdge.classList.contains("fleet-selected");
-    desktop.edgesAfterHover = svg.querySelectorAll("[data-fleet-edge]").length;
+    var layers = Array.from(svg.querySelectorAll("[data-fleet-layer]"));
+    desktop.layerOrder = layers.map(function (layer) {{ return layer.dataset.fleetLayer; }});
+    desktop.nodeBeforeEdge = layers.findIndex(function (layer) {{ return layer.dataset.fleetLayer === "nodes"; }}) <
+      layers.findIndex(function (layer) {{ return layer.dataset.fleetLayer === "edges"; }});
+    desktop.edgeHitWidth = Number(getComputedStyle(
+      svg.querySelector('[data-fleet-layer="interactions"] .fleet-edge-hit')
+    ).strokeWidth.replace("px", ""));
+    desktop.edgeSelectedHaloVisible = getComputedStyle(
+      svg.querySelector('[data-fleet-layer="edges"] .fleet-selected .fleet-edge-halo')
+    ).stroke !== "none";
+    var selectedNode = svg.querySelector('[data-fleet-node="mac-mini"]');
+    selectedNode.dispatchEvent(new MouseEvent("click", {{ bubbles: true }}));
+    selectedNode = svg.querySelector('[data-fleet-node="mac-mini"]');
+    desktop.nodeSelectedHaloVisible = getComputedStyle(
+      selectedNode.querySelector(".fleet-node-halo")
+    ).stroke !== "none";
+    api.render();
+    desktop.nodeSelectionSurvivesRerender = svg.querySelector(
+      '[data-fleet-node="mac-mini"]'
+    ).classList.contains("fleet-selected");
+    desktop.edgesAfterHover = svg.querySelectorAll(
+      '[data-fleet-layer="interactions"] [data-fleet-edge]'
+    ).length;
     desktop.visibleEdgePaths = Array.from(svg.querySelectorAll(".fleet-edge-visual"))
       .every(function (path) {{
         var style = getComputedStyle(path);
@@ -182,7 +216,9 @@ class FleetTopologyBrowserLayoutTests(unittest.TestCase):
           Number(style.opacity || 1) > 0;
       }});
     svg.dispatchEvent(new PointerEvent("pointerout", {{ bubbles: true }}));
-    desktop.edgesAfterExit = svg.querySelectorAll("[data-fleet-edge]").length;
+    desktop.edgesAfterExit = svg.querySelectorAll(
+      '[data-fleet-layer="interactions"] [data-fleet-edge]'
+    ).length;
 
     document.querySelector('[data-fleet-topology-action="zoom-in"]').click();
     var zoomed = Object.assign({{}}, controller.viewport);
@@ -270,6 +306,15 @@ class FleetTopologyBrowserLayoutTests(unittest.TestCase):
         self.assertEqual(by_name["desktop"]["focusedNode"], "mac-mini")
         self.assertEqual(by_name["desktop"]["autoNodeCount"], 3)
         self.assertTrue(by_name["desktop"]["selectedSurvivesHover"])
+        self.assertEqual(
+            by_name["desktop"]["layerOrder"],
+            ["nodes", "edges", "labels", "interactions"],
+        )
+        self.assertTrue(by_name["desktop"]["nodeBeforeEdge"])
+        self.assertGreaterEqual(by_name["desktop"]["edgeHitWidth"], 18)
+        self.assertTrue(by_name["desktop"]["edgeSelectedHaloVisible"])
+        self.assertTrue(by_name["desktop"]["nodeSelectedHaloVisible"])
+        self.assertTrue(by_name["desktop"]["nodeSelectionSurvivesRerender"])
         self.assertTrue(by_name["desktop"]["edgeDomStable"])
         self.assertEqual(by_name["desktop"]["edgesAfterHover"], 4)
         self.assertTrue(by_name["desktop"]["visibleEdgePaths"])

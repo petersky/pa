@@ -476,12 +476,23 @@ pa-instance-identity {
   transition: opacity 120ms ease;
 }
 
-.fleet-node rect {
+.fleet-node rect:not(.fleet-node-halo) {
   fill: var(--pa-surface);
   stroke: var(--pa-border);
   stroke-width: 3;
   vector-effect: non-scaling-stroke;
 }
+
+.fleet-node .fleet-node-halo,
+.fleet-edge .fleet-edge-halo {
+  fill: none;
+  stroke: transparent;
+  pointer-events: none;
+  vector-effect: non-scaling-stroke;
+}
+
+.fleet-node .fleet-node-halo { stroke-width: 4; }
+.fleet-edge .fleet-edge-halo { stroke-width: 10; }
 
 .fleet-node text {
   fill: var(--pa-text);
@@ -502,17 +513,17 @@ pa-instance-identity {
 
 .fleet-node .fleet-node-readiness { font-size: 10.5px; }
 
-.fleet-node-local rect { stroke-width: 5; }
-.fleet-node-fresh rect { stroke: var(--pa-ok); }
-.fleet-node-partial rect,
-.fleet-node-stale rect { stroke: var(--pa-accent); stroke-dasharray: 8 4; }
-.fleet-node-timeout rect { stroke: var(--pa-danger); stroke-dasharray: 3 4; }
-.fleet-node-error rect,
-.fleet-node-down rect { stroke: var(--pa-danger); }
-.fleet-node-unavailable rect { stroke: var(--pa-text-muted); stroke-dasharray: 2 6; }
+.fleet-node-local rect:not(.fleet-node-halo) { stroke-width: 5; }
+.fleet-node-fresh rect:not(.fleet-node-halo) { stroke: var(--pa-ok); }
+.fleet-node-partial rect:not(.fleet-node-halo),
+.fleet-node-stale rect:not(.fleet-node-halo) { stroke: var(--pa-accent); stroke-dasharray: 8 4; }
+.fleet-node-timeout rect:not(.fleet-node-halo) { stroke: var(--pa-danger); stroke-dasharray: 3 4; }
+.fleet-node-error rect:not(.fleet-node-halo),
+.fleet-node-down rect:not(.fleet-node-halo) { stroke: var(--pa-danger); }
+.fleet-node-unavailable rect:not(.fleet-node-halo) { stroke: var(--pa-text-muted); stroke-dasharray: 2 6; }
 
-.fleet-node:focus rect,
-.fleet-node:hover rect,
+.fleet-node:focus rect:not(.fleet-node-halo),
+.fleet-node:hover rect:not(.fleet-node-halo),
 .fleet-edge:focus .fleet-edge-visual,
 .fleet-edge:hover .fleet-edge-visual {
   stroke: var(--pa-focus);
@@ -534,7 +545,13 @@ pa-instance-identity {
   vector-effect: non-scaling-stroke;
 }
 
-.fleet-edge text {
+.fleet-edge:focus .fleet-edge-hit,
+.fleet-edge:hover .fleet-edge-hit {
+  stroke: var(--pa-focus);
+  stroke-width: 5;
+}
+
+.fleet-edge-label {
   fill: var(--pa-text-muted);
   font-size: 11px;
   paint-order: stroke;
@@ -549,12 +566,22 @@ pa-instance-identity {
 .fleet-edge-stale .fleet-edge-visual { stroke: var(--pa-accent); stroke-dasharray: 8 5; }
 .fleet-edge-unavailable line,
 .fleet-edge-unavailable .fleet-edge-visual { stroke: var(--pa-text-muted); stroke-dasharray: 2 7; }
+.fleet-edge-conflict .fleet-edge-visual { stroke: var(--pa-danger); stroke-dasharray: 3 3 10 3; }
 
-.fleet-node.fleet-selected rect,
+.fleet-node.fleet-selected rect:not(.fleet-node-halo),
 .fleet-edge.fleet-selected .fleet-edge-visual {
   stroke: var(--pa-focus);
   stroke-width: 6;
 }
+
+.fleet-node.fleet-selected .fleet-node-halo,
+.fleet-edge.fleet-selected .fleet-edge-halo {
+  stroke: var(--pa-focus);
+  opacity: 0.72;
+}
+
+.fleet-node.fleet-selected .fleet-node-halo { stroke-dasharray: 10 3; }
+.fleet-edge.fleet-selected .fleet-edge-hit { stroke-width: 18; }
 
 .fleet-topology.has-transient-emphasis .fleet-transient-dimmed:not(.fleet-selected) {
   opacity: 0.42;

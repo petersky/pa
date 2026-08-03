@@ -27,6 +27,7 @@ from pa.modules.fleet import (
     RemoteAgentStartBody,
     _assert_dispatch_sync_health,
     _process_remote_dispatch,
+    _wait_for_dispatch_sync_health,
     cancel_dispatch,
     complete_dispatch,
     materialize_dispatch,
@@ -1125,6 +1126,47 @@ class ScopedDispatchHealthTests(unittest.IsolatedAsyncioTestCase):
             raised.exception.detail["code"], "target_projection_not_ready"
         )
         self.assertEqual(raised.exception.headers["Retry-After"], "1")
+
+    async def test_dispatch_waits_for_recoverable_projection_lag(self) -> None:
+        lag = HTTPException(
+            status_code=503,
+            detail={
+                "code": "target_projection_not_ready",
+                "recoverable": True,
+            },
+            headers={"Retry-After": "1"},
+        )
+        evidence = {"code": "scoped_sync_healthy"}
+        with (
+            patch(
+                "pa.modules.fleet._assert_dispatch_sync_health",
+                AsyncMock(side_effect=[lag, lag, evidence]),
+            ) as check,
+            patch("pa.modules.fleet.asyncio.sleep", AsyncMock()) as sleep,
+        ):
+            result = await _wait_for_dispatch_sync_health(
+                self._request(), "default", TARGET_ID
+            )
+        self.assertEqual(result, evidence)
+        self.assertEqual(check.await_count, 3)
+        self.assertEqual(sleep.await_count, 2)
+
+    async def test_dispatch_does_not_wait_for_non_sync_failure(self) -> None:
+        unavailable = HTTPException(
+            status_code=409,
+            detail={"code": "target_unavailable", "recoverable": True},
+        )
+        with (
+            patch(
+                "pa.modules.fleet._assert_dispatch_sync_health",
+                AsyncMock(side_effect=unavailable),
+            ) as check,
+            patch("pa.modules.fleet.asyncio.sleep", AsyncMock()) as sleep,
+            self.assertRaises(HTTPException),
+        ):
+            await _wait_for_dispatch_sync_health(self._request(), "default", TARGET_ID)
+        self.assertEqual(check.await_count, 1)
+        sleep.assert_not_awaited()
 
 
 class DurableDispatchJobTests(unittest.IsolatedAsyncioTestCase):
