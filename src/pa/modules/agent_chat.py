@@ -2401,6 +2401,7 @@ class AgentChatModule(Module):
                 "GET",
                 "/api/agent/observability/v1/sessions",
                 params={"limit": limit},
+                timeout_seconds=15.0,
             )
 
         @mcp.tool()
@@ -2411,6 +2412,7 @@ class AgentChatModule(Module):
                 "GET",
                 f"/api/agent/observability/v1/sessions/{session_id}",
                 allow_not_found=True,
+                timeout_seconds=15.0,
             )
 
         @mcp.tool()
@@ -2421,6 +2423,7 @@ class AgentChatModule(Module):
                 "GET",
                 f"/api/agent/observability/v1/sessions/{session_id}/turns",
                 allow_not_found=True,
+                timeout_seconds=15.0,
             )
 
         @mcp.tool()
@@ -2434,4 +2437,5 @@ class AgentChatModule(Module):
                 f"/api/agent/observability/v1/sessions/{session_id}/diagnostics",
                 params={"limit": limit},
                 allow_not_found=True,
+                timeout_seconds=15.0,
             )

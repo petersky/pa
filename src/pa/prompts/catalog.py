@@ -285,16 +285,19 @@ _register(
     key="card.reconciliation.disposition",
     purpose="Recover a missing card disposition without repeating the prior turn.",
     scope="card-reconciliation",
-    version=1,
+    version=2,
     template="""Your preceding card-linked turn ended without a valid
 `pa.card-disposition/v1` payload. Do not repeat implementation unless current
 verification finds a problem.
 
-Revalidate the current worktree and commit, the exact pull-request head, required
-CI checks, required approvals and actionable review threads, mergeability, merge
-state and merge commit, the durable PA PR watch, and the card's evidence. If PA
-card or PR-supervisor tooling is unavailable, report that problem and do not
-guess.
+First revalidate the card's actual scope and completed outcome. If the task did
+not require repository integration, do not invent or inspect pull-request work:
+set `integration_required` to false and use `done` when the requested outcome is
+verified. If integration is required, revalidate the current worktree and commit,
+the exact pull-request head, required CI checks, required approvals and actionable
+review threads, mergeability, merge state and merge commit, the durable PA PR
+watch, and the card's evidence. If required PA card or PR-supervisor tooling is
+unavailable, report that problem and do not guess.
 
 Return exactly one JSON object and no Markdown or prose:
 {
@@ -302,7 +305,7 @@ Return exactly one JSON object and no Markdown or prose:
   "lane": "active | waiting | done",
   "outcome": "concise verified outcome",
   "evidence": {
-    "integration_required": true,
+    "integration_required": false,
     "pr_watch_id": "watch id or null",
     "watched_head_sha": "exact head SHA or null",
     "merge_commit_sha": "merge commit SHA or null",
@@ -310,12 +313,17 @@ Return exactly one JSON object and no Markdown or prose:
   }
 }
 
+The JSON example shows a no-integration outcome. Change `integration_required` to
+true only when the card actually requires repository integration.
+
 Use `active` only when verification found implementation or agent-owned corrective
 work still in progress. Use `waiting` for every open or unmerged pull request and
 for external pending work. Use `done` only when project completion policy is
-satisfied; integration work requires an exact watched head, terminal stable-green
-required checks, satisfied required-review gates, a merged PR, and matching merge
-commit evidence. Never infer or claim Done from prose or incomplete evidence.""",
+satisfied. A verified no-integration task may use `done` with
+`integration_required: false`. Integration work requires an exact watched head,
+terminal stable-green required checks, satisfied required-review gates, a merged
+PR, and matching merge commit evidence. Never infer or claim Done from prose or
+incomplete evidence.""",
 )
 
 _register(
