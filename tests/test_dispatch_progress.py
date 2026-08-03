@@ -18,10 +18,12 @@ from pa.execution.progress import (
     DispatchProgressEventV1,
     DispatchProgressHeartbeatV1,
     ExplicitProgressCheckpointV1,
+    OperatorInputRequestV1,
     ProgressPhase,
     ProgressService,
     ProgressValidationV1,
     sanitize_completion_report,
+    sanitize_operator_input,
     sanitize_text,
 )
 from pa.modules.fleet import ingest_dispatch_progress
@@ -208,7 +210,9 @@ class ProgressStoreTests(unittest.TestCase):
                 all(event.acp_session_id == first.session_id for event in first_events)
             )
             self.assertTrue(
-                all(event.acp_session_id == second.session_id for event in second_events)
+                all(
+                    event.acp_session_id == second.session_id for event in second_events
+                )
             )
 
     def test_legacy_dispatch_renders_lifecycle_only(self) -> None:
@@ -432,7 +436,10 @@ class ProgressDerivationTests(unittest.IsolatedAsyncioTestCase):
     async def test_transient_delivery_retries_without_duplicate_authority_entry(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as target_tmp, tempfile.TemporaryDirectory() as authority_tmp:
+        with (
+            tempfile.TemporaryDirectory() as target_tmp,
+            tempfile.TemporaryDirectory() as authority_tmp,
+        ):
             target = DispatchStore(Path(target_tmp))
             authority = DispatchStore(Path(authority_tmp))
             target.put(record())
@@ -475,9 +482,7 @@ class ProgressDerivationTests(unittest.IsolatedAsyncioTestCase):
                 "disconnected",
             )
             await service._send(target_record, payload)
-            self.assertIsNotNone(
-                target.get(DISPATCH).progress_events[0].delivered_at
-            )
+            self.assertIsNotNone(target.get(DISPATCH).progress_events[0].delivered_at)
             self.assertEqual(
                 target.get(DISPATCH).public_dict()["progress"]["freshness"]["state"],
                 "live",
@@ -489,6 +494,28 @@ class ProgressDerivationTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ProgressApiAndUiTests(unittest.TestCase):
+    def test_operator_input_preserves_legacy_strings_and_structured_contracts(
+        self,
+    ) -> None:
+        self.assertEqual(
+            sanitize_operator_input("Run gh auth login token=secret"),
+            "Run gh auth login token=[REDACTED]",
+        )
+        structured = sanitize_operator_input(
+            OperatorInputRequestV1(
+                request_id="auth-choice",
+                prompt="Choose the target",
+                choices=[{"id": "local", "label": "Local", "value": "local"}],
+                allow_freeform=False,
+            )
+        )
+        self.assertIsInstance(structured, OperatorInputRequestV1)
+        self.assertEqual(structured.request_id, "auth-choice")
+        event = checkpoint(1).model_copy(update={"operator_input": structured})
+        self.assertEqual(
+            event.transport_dict()["operator_input"]["choices"][0]["id"], "local"
+        )
+
     def test_authority_ingestion_requires_exact_origin_and_idempotency(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), instance_id=AUTHORITY)
@@ -503,17 +530,13 @@ class ProgressApiAndUiTests(unittest.TestCase):
                 "X-PA-Origin-Instance-ID": TARGET,
                 "idempotency-key": "checkpoint-1",
             }
-            response = ingest_dispatch_progress(
-                request, DISPATCH, checkpoint(1)
-            )
+            response = ingest_dispatch_progress(request, DISPATCH, checkpoint(1))
             self.assertEqual(response.status_code, 200)
             self.assertEqual(len(store.get(DISPATCH).progress_events), 1)
 
     def test_templates_expose_card_fleet_freshness_and_sanitized_details(self) -> None:
         root = Path(__file__).parents[1]
-        card = (
-            root / "src/pa/server/templates/partials/card-detail.html"
-        ).read_text()
+        card = (root / "src/pa/server/templates/partials/card-detail.html").read_text()
         activity = (
             root / "src/pa/server/templates/partials/card-detail-activity.html"
         ).read_text()

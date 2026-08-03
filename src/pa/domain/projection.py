@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import TypeVar
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
+from pydantic import ValidationError
+
 from pa.domain.card_summaries import fallback_card_summary
 from pa.domain.models import (
     AgentSession,
@@ -51,6 +53,7 @@ from pa.domain.models import (
     TranscriptEvent,
     lane_from_legacy_status,
 )
+from pa.domain.notifications import Notification
 from pa.fleet.policy import (
     FleetPolicyAuditEvent,
     GroupLifecycle,
@@ -278,6 +281,41 @@ class CardProjection:
                     payload TEXT NOT NULL,
                     PRIMARY KEY(realm_id, scope_key)
                 );
+                CREATE TABLE IF NOT EXISTS notifications (
+                    realm_id TEXT NOT NULL,
+                    id TEXT NOT NULL,
+                    version INTEGER NOT NULL DEFAULT 1,
+                    type TEXT NOT NULL DEFAULT 'general',
+                    priority TEXT NOT NULL DEFAULT 'normal',
+                    visibility TEXT NOT NULL DEFAULT 'realm',
+                    principal_id TEXT,
+                    outstanding INTEGER NOT NULL DEFAULT 0,
+                    unread INTEGER NOT NULL DEFAULT 1,
+                    resolved INTEGER NOT NULL DEFAULT 0,
+                    deduplication_key TEXT,
+                    updated_at TEXT NOT NULL,
+                    expires_at TEXT,
+                    payload TEXT NOT NULL,
+                    PRIMARY KEY(realm_id, id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_notifications_realm_updated
+                    ON notifications(realm_id, updated_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_notifications_realm_outstanding
+                    ON notifications(realm_id, outstanding, updated_at DESC);
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_notifications_realm_dedup
+                    ON notifications(realm_id, deduplication_key)
+                    WHERE deduplication_key IS NOT NULL;
+                CREATE TABLE IF NOT EXISTS notification_audit_events (
+                    id TEXT PRIMARY KEY,
+                    realm_id TEXT NOT NULL,
+                    notification_id TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    actor TEXT NOT NULL,
+                    version INTEGER,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_notification_audit_notice_time
+                    ON notification_audit_events(notification_id, created_at);
                 CREATE TABLE IF NOT EXISTS fleet_policy_audit_events (
                     id TEXT PRIMARY KEY,
                     realm_id TEXT NOT NULL,
@@ -324,6 +362,26 @@ class CardProjection:
                     """,
                     (fallback_card_summary(row["body"]), row["id"]),
                 )
+
+        notification_cols = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(notifications)").fetchall()
+        }
+        for col, decl in (
+            ("visibility", "TEXT NOT NULL DEFAULT 'realm'"),
+            ("principal_id", "TEXT"),
+            ("resolved", "INTEGER NOT NULL DEFAULT 0"),
+        ):
+            if col not in notification_cols:
+                conn.execute(f"ALTER TABLE notifications ADD COLUMN {col} {decl}")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_notifications_realm_resolved "
+            "ON notifications(realm_id, resolved, updated_at DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_notifications_realm_principal "
+            "ON notifications(realm_id, visibility, principal_id, outstanding)"
+        )
 
         session_cols = {
             row[1]
@@ -614,6 +672,132 @@ class CardProjection:
             EventType.PLACEMENT_DEFAULT_DELETED,
         }:
             self._apply_placement_default_event(event)
+        elif event.type in {
+            EventType.NOTIFICATION_UPSERTED,
+            EventType.NOTIFICATION_DELETED,
+        }:
+            self._apply_notification_event(event)
+
+    def _apply_notification_event(self, event: CardEvent) -> None:
+        notification_id = str(event.payload.get("id") or "")
+        if not notification_id:
+            return
+        if event.type == EventType.NOTIFICATION_DELETED:
+            with self._conn() as conn:
+                conn.execute(
+                    "DELETE FROM notifications WHERE realm_id=? AND id=?",
+                    (event.realm_id, notification_id),
+                )
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO notification_audit_events
+                    (id, realm_id, notification_id, action, actor, version, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        event.id,
+                        event.realm_id,
+                        notification_id,
+                        event.type.value,
+                        event.author_principal,
+                        event.payload.get("version"),
+                        event.timestamp.isoformat(),
+                    ),
+                )
+            return
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT payload, version FROM notifications WHERE realm_id=? AND id=?",
+                (event.realm_id, notification_id),
+            ).fetchone()
+            current = json.loads(row["payload"]) if row else {}
+            prior = dict(current)
+            incoming_version = int(event.payload.get("version") or 1)
+            current_version = int(row["version"]) if row else 0
+            if incoming_version < current_version:
+                return
+            current.update(event.payload)
+            current["realm_id"] = event.realm_id
+            try:
+                notification = Notification.model_validate(current)
+            except ValidationError:
+                # A field-only automatic merge resolution can arrive before the
+                # originating upsert on a partially materialized peer. The full
+                # event will make the row valid when its history is replayed.
+                return
+            payload = json.dumps(notification.model_dump(mode="json"))
+            action = "created" if not prior else "updated"
+            if prior:
+                if not prior.get("read_at") and notification.read_at:
+                    action = "read"
+                if not prior.get("acknowledged_at") and notification.acknowledged_at:
+                    action = "acknowledged"
+                if not prior.get("resolved_at") and notification.resolved_at:
+                    action = "resolved"
+                prior_interaction = prior.get("interaction") or {}
+                if (
+                    notification.interaction
+                    and prior_interaction.get("state")
+                    != notification.interaction.state.value
+                ):
+                    action = f"interaction.{notification.interaction.state.value}"
+            conn.execute(
+                """
+                INSERT INTO notifications
+                    (realm_id, id, version, type, priority, visibility,
+                     principal_id, outstanding, unread, resolved,
+                     deduplication_key, updated_at, expires_at, payload)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(realm_id, id) DO UPDATE SET
+                    version=excluded.version,
+                    type=excluded.type,
+                    priority=excluded.priority,
+                    visibility=excluded.visibility,
+                    principal_id=excluded.principal_id,
+                    outstanding=excluded.outstanding,
+                    unread=excluded.unread,
+                    resolved=excluded.resolved,
+                    deduplication_key=excluded.deduplication_key,
+                    updated_at=excluded.updated_at,
+                    expires_at=excluded.expires_at,
+                    payload=excluded.payload
+                WHERE excluded.version >= notifications.version
+                """,
+                (
+                    notification.realm_id,
+                    notification.id,
+                    notification.version,
+                    notification.type.value,
+                    notification.priority.value,
+                    notification.visibility.value,
+                    notification.principal_id,
+                    int(notification.outstanding),
+                    int(notification.read_at is None),
+                    int(notification.resolved_at is not None),
+                    notification.deduplication_key,
+                    notification.updated_at.isoformat(),
+                    notification.expires_at.isoformat()
+                    if notification.expires_at
+                    else None,
+                    payload,
+                ),
+            )
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO notification_audit_events
+                (id, realm_id, notification_id, action, actor, version, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event.id,
+                    event.realm_id,
+                    notification.id,
+                    action,
+                    event.author_principal,
+                    notification.version,
+                    event.timestamp.isoformat(),
+                ),
+            )
 
     @serialized_mutation
     def commit_event(self, event: CardEvent):
@@ -1363,6 +1547,146 @@ class CardProjection:
         with self._conn() as conn:
             row = conn.execute(query, params).fetchone()
         return self._row_to_card(row) if row else None
+
+    def get_notification(
+        self, notification_id: str, *, realm_id: str | None = None
+    ) -> Notification | None:
+        query = "SELECT payload FROM notifications WHERE id=?"
+        params: list[object] = [notification_id]
+        if realm_id:
+            query += " AND realm_id=?"
+            params.append(realm_id)
+        with self._conn() as conn:
+            row = conn.execute(query, params).fetchone()
+        return Notification.model_validate_json(row["payload"]) if row else None
+
+    def find_notification_by_dedup(
+        self, realm_id: str, deduplication_key: str
+    ) -> Notification | None:
+        with self._conn() as conn:
+            row = conn.execute(
+                """
+                SELECT payload FROM notifications
+                WHERE realm_id=? AND deduplication_key=?
+                """,
+                (realm_id, deduplication_key),
+            ).fetchone()
+        return Notification.model_validate_json(row["payload"]) if row else None
+
+    def list_notifications(
+        self,
+        *,
+        realm_id: str,
+        principal_id: str | None = None,
+        notification_type: str | None = None,
+        priority: str | None = None,
+        unread: bool | None = None,
+        outstanding: bool | None = None,
+        resolved: bool | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[Notification]:
+        query = "SELECT payload FROM notifications WHERE realm_id=?"
+        params: list[object] = [realm_id]
+        if principal_id is not None:
+            query += " AND (visibility != 'principal' OR principal_id=?)"
+            params.append(principal_id)
+        if notification_type:
+            query += " AND type=?"
+            params.append(notification_type)
+        if priority:
+            query += " AND priority=?"
+            params.append(priority)
+        if resolved is not None:
+            query += " AND resolved=?"
+            params.append(int(resolved))
+        if unread is not None:
+            query += " AND unread=?"
+            params.append(int(unread))
+        if outstanding is not None:
+            query += " AND outstanding=?"
+            params.append(int(outstanding))
+        query += " ORDER BY updated_at DESC, id LIMIT ? OFFSET ?"
+        params.extend([max(1, min(limit, 200)), max(0, offset)])
+        with self._conn() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [Notification.model_validate_json(row["payload"]) for row in rows]
+
+    def count_outstanding_notifications(
+        self, *, realm_id: str, principal_id: str | None = None
+    ) -> int:
+        with self._conn() as conn:
+            row = conn.execute(
+                """
+                SELECT COUNT(*) AS total
+                FROM notifications
+                WHERE realm_id=? AND outstanding=1
+                  AND (visibility != 'principal' OR principal_id=?)
+                """,
+                (realm_id, principal_id),
+            ).fetchone()
+        return int(row["total"] if row else 0)
+
+    @serialized_mutation
+    def save_notification(
+        self,
+        notification: Notification,
+        *,
+        principal_id: str,
+        instance_id: str,
+    ) -> Notification:
+        event = CardEvent(
+            type=EventType.NOTIFICATION_UPSERTED,
+            realm_id=notification.realm_id,
+            card_id=None,
+            project_id=None,
+            author_principal=principal_id,
+            author_instance=instance_id,
+            payload=notification.model_dump(mode="json"),
+        )
+        if self.event_log:
+            self.commit_event(event)
+        else:
+            self.apply_event(event)
+        return notification
+
+    @serialized_mutation
+    def delete_notification(
+        self,
+        notification_id: str,
+        *,
+        realm_id: str,
+        principal_id: str,
+        instance_id: str,
+    ) -> bool:
+        current = self.get_notification(notification_id, realm_id=realm_id)
+        if not current:
+            return False
+        event = CardEvent(
+            type=EventType.NOTIFICATION_DELETED,
+            realm_id=realm_id,
+            author_principal=principal_id,
+            author_instance=instance_id,
+            payload={"id": notification_id, "version": current.version + 1},
+        )
+        if self.event_log:
+            self.commit_event(event)
+        else:
+            self.apply_event(event)
+        return True
+
+    def list_notification_audit(
+        self, notification_id: str, *, limit: int = 100
+    ) -> list[dict]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM notification_audit_events
+                WHERE notification_id=? ORDER BY created_at DESC LIMIT ?
+                """,
+                (notification_id, max(1, min(limit, 500))),
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     @serialized_mutation
     def update_card(

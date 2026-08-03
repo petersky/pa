@@ -55,8 +55,7 @@ def context_for(
 ):
     return PostTurnEvaluator().build_context(
         item,
-        card=card
-        or {"id": "card-1", "lane": "active", "updated_at": "version-1"},
+        card=card or {"id": "card-1", "lane": "active", "updated_at": "version-1"},
         project={"id": "project-1", "title": "PA Core"},
         execution_contract={"repository": "petersky/pa"},
         dispatch_history=[],
@@ -126,9 +125,7 @@ class PostTurnEvaluatorTests(unittest.TestCase):
         evaluation = PostTurnEvaluator().evaluate(context_for(snapshot()))
 
         self.assertEqual(evaluation.decision, PostTurnDecision.UNABLE_TO_DETERMINE)
-        self.assertGreaterEqual(
-            len(evaluation.missing_or_ambiguous_evidence), 3
-        )
+        self.assertGreaterEqual(len(evaluation.missing_or_ambiguous_evidence), 3)
 
     def test_catalog_and_action_validation_reject_executable_payloads(self) -> None:
         catalog = action_catalog()
@@ -174,6 +171,26 @@ class PostTurnEvaluatorTests(unittest.TestCase):
         first = evaluation.model_dump(mode="json")
         mark_record_only_actions(evaluation)
         self.assertEqual(first, evaluation.model_dump(mode="json"))
+
+    def test_operator_input_action_accepts_choice_and_structured_contracts(
+        self,
+    ) -> None:
+        action = FollowupActionV1(
+            name=FollowupActionName.REQUEST_OPERATOR_INPUT,
+            parameters={
+                "question": "Choose a target",
+                "keep_lane": "waiting",
+                "request_id": "target-1",
+                "choices": [{"id": "staging", "label": "Staging", "value": "staging"}],
+                "allow_freeform": False,
+                "allow_cancel": True,
+            },
+            idempotency_key_inputs=["dispatch", "turn", "action"],
+            safety=SafetyClassification.RECORD_ONLY,
+            human_approval_required=False,
+        )
+        self.assertEqual(action.parameters["request_id"], "target-1")
+        self.assertEqual(action.parameters["choices"][0]["id"], "staging")
 
 
 class TerminalDispatchTests(unittest.TestCase):
@@ -256,9 +273,7 @@ class FollowupTurnDeliveryTests(unittest.IsolatedAsyncioTestCase):
                 event_seq=10,
             )
             outbox = CompletionOutbox(store, "token")
-            self.assertTrue(
-                outbox.queue("session-1", {"stop_reason": "end_turn"})
-            )
+            self.assertTrue(outbox.queue("session-1", {"stop_reason": "end_turn"}))
 
             def handler(request: httpx.Request) -> httpx.Response:
                 self.assertTrue(request.url.path.endswith("/turn-end"))
@@ -268,9 +283,7 @@ class FollowupTurnDeliveryTests(unittest.IsolatedAsyncioTestCase):
                 )
                 return httpx.Response(200, json={"acknowledged": True})
 
-            outbox._client = httpx.AsyncClient(
-                transport=httpx.MockTransport(handler)
-            )
+            outbox._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
             pending = store.pending_followup_turns()
             self.assertEqual(len(pending), 1)
             await outbox._send_followup(*pending[0])

@@ -67,6 +67,7 @@ UpdateHandler = Callable[[str, Any], Awaitable[None] | None]
 PermissionHandler = Callable[
     [str, dict[str, Any]], Awaitable[RequestPermissionResponse | dict[str, Any]]
 ]
+ElicitationHandler = Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]]
 WireLogger = Callable[[str, dict[str, Any]], None]
 
 # Cursor ACP sends vendor client methods (e.g. cursor/update_todos) without the
@@ -258,6 +259,7 @@ class PAClient(Client):
         *,
         on_update: UpdateHandler | None = None,
         on_permission: PermissionHandler | None = None,
+        on_elicitation: ElicitationHandler | None = None,
         wire_logger: WireLogger | None = None,
         auto_approve: bool = False,
         async_runtime: AsyncRuntime | None = None,
@@ -265,6 +267,7 @@ class PAClient(Client):
         self.store = store
         self.on_update = on_update
         self.on_permission = on_permission
+        self.on_elicitation = on_elicitation
         self.wire_logger = wire_logger
         self.auto_approve = auto_approve
         self.async_runtime = async_runtime
@@ -480,7 +483,27 @@ class PAClient(Client):
         return WriteTextFileResponse()
 
     async def ext_method(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
-        """Acknowledge optional agent extensions that PA does not interpret."""
+        """Handle interoperable elicitation extensions; acknowledge other optional calls."""
+        name = method.removeprefix("_")
+        if name.startswith("elicitation/") and self.on_elicitation:
+            session_id = str(
+                params.get("sessionId") or params.get("session_id") or ""
+            )
+            request = {
+                **params,
+                "request_id": str(
+                    params.get("requestId")
+                    or params.get("request_id")
+                    or params.get("elicitationId")
+                    or params.get("elicitation_id")
+                    or uuid4()
+                ),
+                "method": name,
+            }
+            self._wire("in", {"method": name, "params": request})
+            response = await self.on_elicitation(session_id, request)
+            self._wire("out", {"method": name, "result": response})
+            return response
         self._wire(
             "in",
             {"method": f"_{method}", "params": params, "ignored": True},
@@ -488,6 +511,25 @@ class PAClient(Client):
         return {}
 
     async def ext_notification(self, method: str, params: dict[str, Any]) -> None:
+        name = method.removeprefix("_")
+        if name.endswith("elicitation/cancel") and self.on_elicitation:
+            session_id = str(
+                params.get("sessionId") or params.get("session_id") or ""
+            )
+            request = {
+                **params,
+                "request_id": str(
+                    params.get("requestId")
+                    or params.get("request_id")
+                    or params.get("elicitationId")
+                    or params.get("elicitation_id")
+                    or uuid4()
+                ),
+                "method": name,
+            }
+            self._wire("in", {"method": name, "params": request})
+            await self.on_elicitation(session_id, request)
+            return
         self._wire(
             "in",
             {"method": f"_{method}", "params": params, "ignored": True},
@@ -526,6 +568,7 @@ class AgentConnection:
         provider_spec: AgentProviderSpec | None = None,
         on_update: UpdateHandler | None = None,
         on_permission: PermissionHandler | None = None,
+        on_elicitation: ElicitationHandler | None = None,
         wire_path: Path | None = None,
         auto_approve: bool = False,
         async_runtime: AsyncRuntime | None = None,
@@ -537,6 +580,7 @@ class AgentConnection:
         self.provider_spec = provider_spec
         self.on_update = on_update
         self.on_permission = on_permission
+        self.on_elicitation = on_elicitation
         self.wire_path = wire_path
         self.auto_approve = auto_approve
         self.async_runtime = async_runtime
@@ -774,6 +818,7 @@ class AgentConnection:
             self.store,
             on_update=self.on_update,
             on_permission=self.on_permission,
+            on_elicitation=self.on_elicitation,
             wire_logger=self._wire_log,
             auto_approve=self.auto_approve,
             async_runtime=self.async_runtime,

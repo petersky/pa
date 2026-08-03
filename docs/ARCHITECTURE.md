@@ -1,5 +1,9 @@
 # Architecture
 
+See [Interactions and fleet notifications](INTERACTIONS_AND_NOTIFICATIONS.md)
+for the durable notification envelope, interaction lifecycle, fleet routing,
+authorization, sync, and delivery contracts.
+
 Remote dispatch transport and business-level card completion use the versioned
 [card disposition contract](CARD_DISPOSITIONS.md). An agent turn ending never
 implies that its card is Done.

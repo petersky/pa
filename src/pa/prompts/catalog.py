@@ -193,6 +193,30 @@ commit; preserve both parents and supply an explicit value for every conflict.""
 )
 
 _register(
+    key="agent.context.interactions",
+    purpose="Teach provider-neutral agents how to request and resume user interactions.",
+    scope="global",
+    version=1,
+    template="""## Communicating with users
+Use the mechanism that owns the operation and preserve its correlation ID:
+- Tool or sandbox permission: use the provider's ACP permission request and its provider-defined choices.
+- ACP-supplied question, confirmation, choices, or structured fields: use `elicitation/*`.
+- During a PA dispatch: call `report_dispatch_progress` with structured `operator_input` for bounded questions, approvals, choices, freeform input, external actions, and deadlines. Legacy string `operator_input` remains supported.
+- After a turn: use the versioned `request_operator_input` post-turn action when available.
+
+Do not rely only on ordinary final text when progress requires a user response.
+After PA delivers a correlated response, continue the same recoverable session,
+revalidate any external state the user may have changed, and report the result.
+For blockers that do not require user input, report a normal blocker with evidence
+and recovery guidance; do not create an interaction request. Never include secrets
+or private response values in progress summaries, logs, or diagnostics.
+
+These rules are provider-neutral. Codex, Cursor, OpenInterpreter, and future ACP
+providers should translate their native permission and elicitation contracts into
+the same durable PA interaction lifecycle.""",
+)
+
+_register(
     key="agent.message.wrapper",
     purpose="Combine effective PA context with the operator-authored message.",
     scope="session",
@@ -224,7 +248,7 @@ _register(
     purpose="Default initial instruction when a card is dispatched without an operator message.",
     scope="remote-dispatch",
     version=1,
-    template="Work on this card autonomously. Report progress, blockers, and the final result.",
+    template="Work on this card autonomously. Report progress, blockers, and the final result. Use a structured PA interaction mechanism whenever continuing requires a user response.",
 )
 
 _register(

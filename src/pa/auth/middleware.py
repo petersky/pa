@@ -96,6 +96,10 @@ def _is_fleet_instance_route(request: Request) -> bool:
     ):
         return True
     if request.method == "POST" and re.fullmatch(
+        r"/api/notifications/[A-Za-z0-9-]{1,80}/respond", request.url.path
+    ):
+        return True
+    if request.method == "POST" and re.fullmatch(
         r"/api/agent/sessions/[A-Za-z0-9-]{1,80}/prompt", request.url.path
     ):
         return True

@@ -22,6 +22,7 @@ from pa.acp.configuration import SessionConfigurationRequest
 from pa.acp.final_message import (
     assemble_final_assistant_message,
     is_agent_message_type,
+    likely_user_input_request,
 )
 from pa.acp.providers.registry import DEFAULT_PROVIDER_ID, known_provider_ids
 from pa.acp.providers.resolve import resolve_agent_provider, resolve_provider_id
@@ -157,6 +158,10 @@ class AgentSessionRuntime:
         self._subscribers: list[asyncio.Queue[dict[str, Any]]] = []
         self._pending_permissions: dict[str, asyncio.Future[Any]] = {}
         self._permission_requests: dict[str, dict[str, Any]] = {}
+        self._permission_notification_ids: dict[str, str] = {}
+        self._pending_elicitations: dict[str, asyncio.Future[Any]] = {}
+        self._elicitation_requests: dict[str, dict[str, Any]] = {}
+        self._elicitation_notification_ids: dict[str, str] = {}
         self._seq = (
             initial_transcript_seq
             if initial_transcript_seq is not None
@@ -214,6 +219,7 @@ class AgentSessionRuntime:
             ),
             "last_event_cursor": self._seq,
             "pending_permissions": list(self._permission_requests.values()),
+            "pending_elicitations": list(self._elicitation_requests.values()),
             "updated_at": datetime.now(UTC).isoformat(),
         }
         self.session.config_json = config
@@ -434,6 +440,25 @@ class AgentSessionRuntime:
                 "Failed to queue dispatch progress for session %s", self.session_id
             )
 
+    @staticmethod
+    def _stored_interaction_response(notice, *, retry_key: str):
+        """Rebuild a protocol response after reconnect without exposing its value."""
+        from pa.domain.notifications import InteractionResponse
+
+        interaction = notice.interaction
+        if not interaction or interaction.response is None:
+            return None
+        stored = interaction.response
+        if stored == {"cancelled": True}:
+            return InteractionResponse(idempotency_key=retry_key, cancel=True)
+        if isinstance(stored, dict) and "choice_id" in stored:
+            return InteractionResponse(
+                idempotency_key=retry_key, choice_id=str(stored["choice_id"])
+            )
+        if interaction.response_schema and isinstance(stored, dict):
+            return InteractionResponse(idempotency_key=retry_key, fields=stored)
+        return InteractionResponse(idempotency_key=retry_key, value=stored)
+
     async def _on_permission(
         self, _external_session_id: str, request: dict[str, Any]
     ) -> Any:
@@ -468,12 +493,363 @@ class AgentSessionRuntime:
         self._pending_permissions[request_id] = future
         self._permission_requests[request_id] = request
         self._append_transcript("permission_request", request)
+        notification_service = getattr(self.manager, "notification_service", None)
+        notification_id = None
+        if notification_service:
+            from pa.domain.notifications import (
+                InteractionChoice,
+                InteractionKind,
+                InteractionRequest,
+                InteractionResponse,
+                NotificationAction,
+                NotificationCreate,
+                NotificationPriority,
+                NotificationType,
+                NotificationVisibility,
+            )
+
+            options = request.get("options") or []
+            choices = []
+            for option in options:
+                if not isinstance(option, dict):
+                    continue
+                option_id = option.get("optionId") or option.get("option_id")
+                if not option_id:
+                    continue
+                choices.append(
+                    InteractionChoice(
+                        id=str(option_id),
+                        label=str(
+                            option.get("name")
+                            or option.get("label")
+                            or option.get("kind")
+                            or option_id
+                        ),
+                        description=option.get("description"),
+                        value=str(option_id),
+                    )
+                )
+            tool = request.get("tool_call") or {}
+            title = str(tool.get("title") or tool.get("kind") or "Agent permission")
+            notice = await self._offload(
+                "sqlite.notification_create",
+                notification_service.create,
+                NotificationCreate(
+                    realm_id=self.session.realm_id,
+                    visibility=(
+                        NotificationVisibility.PRINCIPAL
+                        if self.session.principal_id
+                        else NotificationVisibility.REALM
+                    ),
+                    principal_id=self.session.principal_id,
+                    type=NotificationType.INTERACTION,
+                    priority=NotificationPriority.HIGH,
+                    title="Permission requested",
+                    body=title,
+                    summary=f"{self.session.agent_name} needs permission: {title}",
+                    card_id=self.session.card_id or self.session.item_id,
+                    session_id=self.session.id,
+                    dispatch_id=self.session.dispatch_id,
+                    project_id=self.session.project_id,
+                    destination_url=f"/agent?session={self.session.id}",
+                    deduplication_key=(
+                        "acp-permission:"
+                        f"{self.session.id}:"
+                        f"{tool.get('toolCallId') or tool.get('tool_call_id') or request_id}"
+                    ),
+                    actions=[
+                        NotificationAction(
+                            id="respond",
+                            kind="respond",
+                            label="Respond",
+                            method="POST",
+                        )
+                    ],
+                    interaction=InteractionRequest(
+                        request_id=request_id,
+                        kind=InteractionKind.ACP_PERMISSION,
+                        prompt=title,
+                        choices=choices,
+                        allow_cancel=bool(
+                            request.get(
+                                "allowCancel", request.get("allow_cancel", True)
+                            )
+                        ),
+                        protocol_method="session/request_permission",
+                        protocol_request_id=request_id,
+                        continuation_mode="protocol",
+                    ),
+                ),
+                principal_id=self.session.principal_id or "user:local",
+            )
+            notification_id = notice.id
+            self._permission_notification_ids[request_id] = notification_id
+
+            async def deliver_permission(response: InteractionResponse) -> None:
+                if future.done():
+                    return
+                if response.cancel:
+                    future.set_result(permission_cancelled())
+                else:
+                    selected = response.choice_id
+                    if not selected and isinstance(response.value, str):
+                        selected = response.value
+                    if not selected:
+                        raise ValueError("Permission response requires an option")
+                    future.set_result(permission_selected(selected))
+                self._append_transcript(
+                    "permission_resolved",
+                    {
+                        "request_id": request_id,
+                        "notification_id": notification_id,
+                        "response": "cancelled"
+                        if response.cancel
+                        else {"option_id": response.choice_id},
+                    },
+                )
+                self._flush_transcript()
+                await self._drain_transcripts()
+
+            notification_service.register_delivery_handler(
+                notification_id, deliver_permission
+            )
+            recovered = self._stored_interaction_response(
+                notice, retry_key=f"protocol-retry:{request_id}:{uuid4()}"
+            )
+            if notice.interaction and notice.interaction.state.value == "expired":
+                await deliver_permission(
+                    InteractionResponse(
+                        idempotency_key=f"protocol-expired:{request_id}", cancel=True
+                    )
+                )
+            elif recovered:
+                if notice.interaction and notice.interaction.state.value in {
+                    "delivered",
+                    "cancelled",
+                }:
+                    await deliver_permission(recovered)
+                else:
+                    await notification_service.respond(
+                        notice,
+                        recovered,
+                        principal_id=(
+                            notice.interaction.response_principal
+                            or self.session.principal_id
+                            or "user:local"
+                        ),
+                    )
         await self._checkpoint_runtime_async(lifecycle="permission_pending")
         try:
             return await future
         finally:
+            if notification_service and notification_id:
+                notification_service.unregister_delivery_handler(notification_id)
             self._pending_permissions.pop(request_id, None)
             self._permission_requests.pop(request_id, None)
+            self._permission_notification_ids.pop(request_id, None)
+            await self._checkpoint_runtime_async(
+                lifecycle="prompting" if self._in_flight else "ready"
+            )
+
+    async def _on_elicitation(
+        self, _external_session_id: str, request: dict[str, Any]
+    ) -> dict[str, Any]:
+        request_id = str(request.get("request_id") or uuid4())
+        request["request_id"] = request_id
+        if str(request.get("method") or "").endswith("/cancel"):
+            service = getattr(self.manager, "notification_service", None)
+            notification_id = self._elicitation_notification_ids.get(request_id)
+            if service and notification_id:
+                notice = await self._offload(
+                    "sqlite.notification_read",
+                    self.store.get_notification,
+                    notification_id,
+                    realm_id=self.session.realm_id,
+                )
+                if notice:
+                    await self._offload(
+                        "sqlite.notification_supersede",
+                        service.supersede,
+                        notice,
+                        principal_id="system:provider",
+                        idempotency_key=f"provider-cancel:{request_id}",
+                    )
+            existing = self._pending_elicitations.get(request_id)
+            if existing and not existing.done():
+                existing.set_result({"action": "cancel"})
+            return {"action": "cancel"}
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[Any] = loop.create_future()
+        self._pending_elicitations[request_id] = future
+        self._elicitation_requests[request_id] = request
+        self._append_transcript("elicitation_request", request)
+        notification_service = getattr(self.manager, "notification_service", None)
+        notification_id = None
+        if notification_service:
+            from pa.domain.notifications import (
+                InteractionChoice,
+                InteractionKind,
+                InteractionRequest,
+                InteractionResponse,
+                NotificationAction,
+                NotificationCreate,
+                NotificationPriority,
+                NotificationType,
+                NotificationVisibility,
+            )
+
+            raw_choices = request.get("choices") or request.get("options") or []
+            choices = []
+            for index, option in enumerate(raw_choices):
+                if isinstance(option, dict):
+                    choice_id = str(
+                        option.get("id")
+                        or option.get("value")
+                        or option.get("optionId")
+                        or index
+                    )
+                    label = str(option.get("label") or option.get("name") or choice_id)
+                    value = option.get("value", choice_id)
+                    description = option.get("description")
+                else:
+                    choice_id = str(index)
+                    label = str(option)
+                    value = option
+                    description = None
+                choices.append(
+                    InteractionChoice(
+                        id=choice_id,
+                        label=label,
+                        description=description,
+                        value=value,
+                    )
+                )
+            prompt = str(
+                request.get("message")
+                or request.get("prompt")
+                or request.get("title")
+                or "Agent input requested"
+            )
+            response_schema = (
+                request.get("requestedSchema")
+                or request.get("requested_schema")
+                or request.get("schema")
+            )
+            notice = await self._offload(
+                "sqlite.notification_create",
+                notification_service.create,
+                NotificationCreate(
+                    realm_id=self.session.realm_id,
+                    visibility=(
+                        NotificationVisibility.PRINCIPAL
+                        if self.session.principal_id
+                        else NotificationVisibility.REALM
+                    ),
+                    principal_id=self.session.principal_id,
+                    type=NotificationType.INTERACTION,
+                    priority=NotificationPriority.HIGH,
+                    title="Agent input requested",
+                    body=prompt,
+                    summary=prompt[:1000],
+                    card_id=self.session.card_id or self.session.item_id,
+                    session_id=self.session.id,
+                    dispatch_id=self.session.dispatch_id,
+                    project_id=self.session.project_id,
+                    destination_url=f"/agent?session={self.session.id}",
+                    deduplication_key=f"acp-elicitation:{self.session.id}:{request_id}",
+                    actions=[
+                        NotificationAction(
+                            id="respond",
+                            kind="respond",
+                            label="Respond",
+                            method="POST",
+                            input_schema=response_schema,
+                        )
+                    ],
+                    interaction=InteractionRequest(
+                        request_id=request_id,
+                        kind=InteractionKind.ACP_ELICITATION,
+                        prompt=prompt,
+                        choices=choices,
+                        response_schema=response_schema,
+                        allow_freeform=bool(
+                            request.get(
+                                "allowFreeform", request.get("allow_freeform", True)
+                            )
+                        ),
+                        allow_cancel=bool(
+                            request.get(
+                                "allowCancel", request.get("allow_cancel", True)
+                            )
+                        ),
+                        sensitive=bool(request.get("sensitive", False)),
+                        protocol_method=str(
+                            request.get("method") or "elicitation/create"
+                        ),
+                        protocol_request_id=request_id,
+                        continuation_mode="protocol",
+                    ),
+                ),
+                principal_id=self.session.principal_id or "user:local",
+            )
+            notification_id = notice.id
+            self._elicitation_notification_ids[request_id] = notification_id
+
+            async def deliver_elicitation(response: InteractionResponse) -> None:
+                if future.done():
+                    return
+                if response.cancel:
+                    future.set_result({"action": "cancel"})
+                    return
+                if response.fields is not None:
+                    content: Any = response.fields
+                elif response.choice_id is not None:
+                    choice = next(
+                        (item for item in choices if item.id == response.choice_id),
+                        None,
+                    )
+                    content = choice.value if choice else response.choice_id
+                else:
+                    content = response.value
+                future.set_result({"action": "accept", "content": content})
+
+            notification_service.register_delivery_handler(
+                notification_id, deliver_elicitation
+            )
+            recovered = self._stored_interaction_response(
+                notice, retry_key=f"protocol-retry:{request_id}:{uuid4()}"
+            )
+            if notice.interaction and notice.interaction.state.value == "expired":
+                await deliver_elicitation(
+                    InteractionResponse(
+                        idempotency_key=f"protocol-expired:{request_id}", cancel=True
+                    )
+                )
+            elif recovered:
+                if notice.interaction and notice.interaction.state.value in {
+                    "delivered",
+                    "cancelled",
+                }:
+                    await deliver_elicitation(recovered)
+                else:
+                    await notification_service.respond(
+                        notice,
+                        recovered,
+                        principal_id=(
+                            notice.interaction.response_principal
+                            or self.session.principal_id
+                            or "user:local"
+                        ),
+                    )
+        await self._checkpoint_runtime_async(lifecycle="elicitation_pending")
+        try:
+            return await future
+        finally:
+            if notification_service and notification_id:
+                notification_service.unregister_delivery_handler(notification_id)
+            self._pending_elicitations.pop(request_id, None)
+            self._elicitation_requests.pop(request_id, None)
+            self._elicitation_notification_ids.pop(request_id, None)
             await self._checkpoint_runtime_async(
                 lifecycle="prompting" if self._in_flight else "ready"
             )
@@ -521,6 +897,7 @@ class AgentSessionRuntime:
             provider_spec=provider_spec,
             on_update=self._on_acp_update,
             on_permission=self._on_permission,
+            on_elicitation=self._on_elicitation,
             wire_path=wire_path,
             auto_approve=False,
             async_runtime=self.async_runtime,
@@ -1065,6 +1442,8 @@ class AgentSessionRuntime:
                 )
                 self._flush_transcript()
                 await self._drain_transcripts()
+                final_text = assemble_final_assistant_message(self._turn_agent_events)
+                await self._surface_final_input_fallback(final_text, item)
                 if (
                     self.connection
                     and self.connection.last_memory_candidate
@@ -1093,9 +1472,6 @@ class AgentSessionRuntime:
                             extract_card_disposition,
                         )
 
-                        final_text = assemble_final_assistant_message(
-                            self._turn_agent_events
-                        )
                         disposition, disposition_error = extract_card_disposition(
                             final_text
                         )
@@ -1167,6 +1543,95 @@ class AgentSessionRuntime:
                 return stop_reason
             finally:
                 self._finish_turn_state()
+
+    async def _surface_final_input_fallback(
+        self, final_text: str, item: QueuedPrompt
+    ) -> None:
+        prompt = likely_user_input_request(final_text)
+        service = getattr(self.manager, "notification_service", None)
+        if not prompt or not service:
+            return
+        existing = await self._offload(
+            "sqlite.notification_list",
+            service.list_authorized,
+            principal_id=self.session.principal_id or "user:local",
+            realms={self.session.realm_id},
+            realm_id=self.session.realm_id,
+            outstanding=True,
+            limit=200,
+            offset=0,
+        )
+        if any(
+            notice.session_id == self.session_id
+            and notice.interaction
+            and notice.interaction.kind.value != "final_output_fallback"
+            for notice in existing
+        ):
+            return
+        import hashlib
+
+        from pa.domain.notifications import (
+            InteractionKind,
+            InteractionRequest,
+            NotificationAction,
+            NotificationCreate,
+            NotificationPriority,
+            NotificationType,
+            NotificationVisibility,
+        )
+
+        digest = hashlib.sha256(prompt.encode()).hexdigest()[:24]
+        notice = await self._offload(
+            "sqlite.notification_create",
+            service.create,
+            NotificationCreate(
+                realm_id=self.session.realm_id,
+                visibility=(
+                    NotificationVisibility.PRINCIPAL
+                    if self.session.principal_id
+                    else NotificationVisibility.REALM
+                ),
+                principal_id=self.session.principal_id,
+                type=NotificationType.INTERACTION,
+                priority=NotificationPriority.HIGH,
+                title="Agent is waiting for you",
+                body=prompt,
+                summary=prompt[:1000],
+                card_id=item.card_id,
+                session_id=self.session_id,
+                dispatch_id=self.session.dispatch_id,
+                project_id=item.project_id,
+                destination_url=f"/agent?session={self.session_id}",
+                deduplication_key=f"final-input:{self.session_id}:{digest}",
+                actions=[
+                    NotificationAction(
+                        id="respond",
+                        kind="respond",
+                        label="Reply",
+                        method="POST",
+                    )
+                ],
+                interaction=InteractionRequest(
+                    kind=InteractionKind.FINAL_OUTPUT_FALLBACK,
+                    prompt=prompt,
+                    allow_freeform=True,
+                    allow_cancel=True,
+                    protocol_method="pa/final-output-fallback",
+                    continuation_mode="prompt",
+                ),
+            ),
+            principal_id=self.session.principal_id or "user:local",
+        )
+        self._append_transcript(
+            "interaction_request",
+            {
+                "request_id": notice.interaction.request_id,
+                "notification_id": notice.id,
+                "kind": "final_output_fallback",
+            },
+        )
+        self._flush_transcript()
+        await self._drain_transcripts()
 
     def _finish_turn_state(self) -> None:
         self._in_flight = None
@@ -1284,17 +1749,40 @@ class AgentSessionRuntime:
             await self.manager.set_auto_approve_async(
                 True, scope=scope, principal_id=principal_id
             )
-        future.set_result(response)
-        self._append_transcript(
-            "permission_resolved",
-            {
-                "request_id": request_id,
-                "response": response.model_dump(mode="json", by_alias=True),
-                "remember": remember,
-            },
-        )
-        self._flush_transcript()
-        await self._drain_transcripts()
+        notification_service = getattr(self.manager, "notification_service", None)
+        notification_id = self._permission_notification_ids.get(request_id)
+        if notification_service and notification_id:
+            from pa.domain.notifications import InteractionResponse
+
+            notice = await self._offload(
+                "sqlite.notification_read",
+                self.store.get_notification,
+                notification_id,
+                realm_id=self.session.realm_id,
+            )
+            if not notice:
+                return False
+            await notification_service.respond(
+                notice,
+                InteractionResponse(
+                    idempotency_key=f"session-permission:{request_id}:{uuid4()}",
+                    choice_id=option_id if allow else None,
+                    cancel=not allow,
+                ),
+                principal_id=principal_id or self.session.principal_id or "user:local",
+            )
+        else:
+            future.set_result(response)
+            self._append_transcript(
+                "permission_resolved",
+                {
+                    "request_id": request_id,
+                    "response": response.model_dump(mode="json", by_alias=True),
+                    "remember": remember,
+                },
+            )
+            self._flush_transcript()
+            await self._drain_transcripts()
         return True
 
     async def set_model(self, model_id: str) -> None:
@@ -1387,6 +1875,11 @@ class AgentSessionRuntime:
                 for rid in self._pending_permissions
                 if rid in self._permission_requests
             ],
+            "pending_elicitations": [
+                getattr(self, "_elicitation_requests", {})[rid]
+                for rid in getattr(self, "_pending_elicitations", {})
+                if rid in getattr(self, "_elicitation_requests", {})
+            ],
         }
         if include_transcript:
             snapshot["transcript"] = [e.model_dump(mode="json") for e in events]
@@ -1450,11 +1943,55 @@ class AgentSessionRuntime:
         self._queue_paused = True
         if self._drain_task and not self._drain_task.done():
             self._drain_task.cancel()
+        notification_service = getattr(self.manager, "notification_service", None)
+
+        async def supersede_notification(notification_id: str | None) -> None:
+            if not notification_service or not notification_id:
+                return
+            try:
+                notice = await self._offload(
+                    "sqlite.notification_read",
+                    self.store.get_notification,
+                    notification_id,
+                    realm_id=self.session.realm_id,
+                )
+                if notice:
+                    await self._offload(
+                        "sqlite.notification_supersede",
+                        notification_service.supersede,
+                        notice,
+                        principal_id="system:session-close",
+                        idempotency_key=(
+                            f"session-close:{self.session_id}:{notification_id}"
+                        ),
+                    )
+            except Exception:
+                logger.exception(
+                    "Failed to supersede interaction %s while closing session %s",
+                    notification_id,
+                    self.session_id,
+                )
+
         for req_id, fut in list(self._pending_permissions.items()):
+            await supersede_notification(
+                getattr(self, "_permission_notification_ids", {}).get(req_id)
+            )
             if not fut.done():
                 fut.set_result(permission_cancelled())
             self._pending_permissions.pop(req_id, None)
             self._permission_requests.pop(req_id, None)
+            getattr(self, "_permission_notification_ids", {}).pop(req_id, None)
+        pending_elicitations = getattr(self, "_pending_elicitations", {})
+        elicitation_requests = getattr(self, "_elicitation_requests", {})
+        for req_id, fut in list(pending_elicitations.items()):
+            await supersede_notification(
+                getattr(self, "_elicitation_notification_ids", {}).get(req_id)
+            )
+            if not fut.done():
+                fut.set_result({"action": "cancel"})
+            pending_elicitations.pop(req_id, None)
+            elicitation_requests.pop(req_id, None)
+            getattr(self, "_elicitation_notification_ids", {}).pop(req_id, None)
         self._append_transcript(
             "session_closed",
             {"reason": reason, "prior_status": prior_status},

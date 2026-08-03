@@ -94,6 +94,48 @@ class PAClientFileSystemTests(unittest.TestCase):
         asyncio.run(run())
         self.assertEqual(wire.call_count, 2)
 
+    def test_elicitation_extension_is_correlated_and_returned_to_provider(self) -> None:
+        seen: list[tuple[str, dict]] = []
+
+        async def elicit(session_id: str, request: dict) -> dict:
+            seen.append((session_id, request))
+            return {"action": "accept", "content": {"environment": "staging"}}
+
+        client = PAClient(MagicMock(), on_elicitation=elicit)
+        result = asyncio.run(
+            client.ext_method(
+                "elicitation/create",
+                {
+                    "sessionId": "session-1",
+                    "requestId": "request-1",
+                    "message": "Select an environment",
+                    "requestedSchema": {
+                        "type": "object",
+                        "properties": {"environment": {"type": "string"}},
+                    },
+                },
+            )
+        )
+        self.assertEqual(
+            result,
+            {"action": "accept", "content": {"environment": "staging"}},
+        )
+        self.assertEqual(seen[0][0], "session-1")
+        self.assertEqual(seen[0][1]["request_id"], "request-1")
+        self.assertEqual(seen[0][1]["method"], "elicitation/create")
+
+        asyncio.run(
+            client.ext_notification(
+                "elicitation/cancel",
+                {
+                    "sessionId": "session-1",
+                    "elicitationId": "request-1",
+                },
+            )
+        )
+        self.assertEqual(seen[1][1]["request_id"], "request-1")
+        self.assertEqual(seen[1][1]["method"], "elicitation/cancel")
+
     def test_tolerated_client_methods_include_cursor_and_elicitation(self) -> None:
         self.assertTrue(_tolerated_client_method("cursor/update_todos"))
         self.assertTrue(_tolerated_client_method("_cursor/update_todos"))
@@ -768,9 +810,7 @@ class AgentSessionRestoreTests(unittest.TestCase):
                     }
                 }
             )
-            acp.list_sessions = AsyncMock(
-                return_value=SimpleNamespace(sessions=[])
-            )
+            acp.list_sessions = AsyncMock(return_value=SimpleNamespace(sessions=[]))
             acp.load_session = AsyncMock()
             acp.new_session = AsyncMock(
                 return_value=SimpleNamespace(session_id="should-not-create")

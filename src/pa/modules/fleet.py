@@ -44,6 +44,16 @@ from pa.domain.models import (
     KnowledgeEntry,
     RealmRole,
 )
+from pa.domain.notifications import (
+    InteractionChoice,
+    InteractionKind,
+    InteractionRequest,
+    NotificationAction,
+    NotificationCreate,
+    NotificationPriority,
+    NotificationType,
+    NotificationVisibility,
+)
 from pa.execution.dispatch import (
     CapacityAdmission,
     CompletionOutbox,
@@ -77,6 +87,7 @@ from pa.execution.progress import (
     DispatchProgressEventV1,
     DispatchProgressHeartbeatV1,
     ExplicitProgressCheckpointV1,
+    OperatorInputRequestV1,
     ProgressKind,
     ProgressService,
     sanitize_completion_report,
@@ -1351,9 +1362,13 @@ def _record_post_turn_evaluation(
                 "recoverable": record.reconciliation_recoverable,
             }
         )
-    operator_requests = (
-        [latest.operator_input] if latest and latest.operator_input else []
-    )
+    operator_requests = []
+    if latest and latest.operator_input:
+        operator_requests = [
+            latest.operator_input.prompt
+            if isinstance(latest.operator_input, OperatorInputRequestV1)
+            else latest.operator_input
+        ]
     current_card = _model_json(card)
     current_lane = str(current_card.get("lane") or "") or None
     authority_version = str(current_card.get("updated_at") or "") or record.card_version
@@ -1931,7 +1946,120 @@ async def report_dispatch_checkpoint(
         result = await service.explicit(dispatch_id, body)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if body.operator_input:
+        await _create_operator_input_notification(
+            request,
+            record,
+            body.operator_input,
+            idempotency_key=body.idempotency_key
+            or f"checkpoint:{dispatch_id}:{result.sequence}",
+            kind=InteractionKind.MCP_OPERATOR_INPUT,
+        )
     return result.model_dump(mode="json")
+
+
+async def _create_operator_input_notification(
+    request: Request,
+    record: DispatchRecord,
+    operator_input: str | OperatorInputRequestV1 | dict[str, Any],
+    *,
+    idempotency_key: str,
+    kind: InteractionKind,
+) -> dict[str, Any]:
+    structured = (
+        OperatorInputRequestV1.model_validate(operator_input)
+        if isinstance(operator_input, dict)
+        else operator_input
+    )
+    if isinstance(structured, str):
+        prompt = structured
+        request_id = idempotency_key
+        response_schema = None
+        choices = []
+        allow_freeform = True
+        allow_cancel = True
+        sensitive = False
+        deadline = None
+    else:
+        prompt = structured.prompt
+        request_id = structured.request_id or idempotency_key
+        response_schema = structured.response_schema
+        choices = [
+            InteractionChoice(
+                id=item.id,
+                label=item.label,
+                description=item.description,
+                value=item.value,
+            )
+            for item in structured.choices
+        ]
+        allow_freeform = structured.allow_freeform
+        allow_cancel = structured.allow_cancel
+        sensitive = structured.sensitive
+        deadline = structured.deadline
+    ctx = request.app.state.ctx
+    data = NotificationCreate(
+        realm_id=record.realm_id,
+        visibility=NotificationVisibility.REALM,
+        type=NotificationType.INTERACTION,
+        priority=NotificationPriority.HIGH,
+        title="Operator input requested",
+        body=prompt,
+        summary=prompt[:1000],
+        card_id=record.card_id,
+        session_id=record.session_id,
+        dispatch_id=record.dispatch_id,
+        project_id=record.project_id,
+        destination_url=(
+            f"/agent?session={record.session_id}" if record.session_id else "/fleet"
+        ),
+        owner_instance_id=record.target_instance_id,
+        owner_url=(
+            record.authority_url
+            if record.target_instance_id == record.authority_instance_id
+            else None
+        ),
+        distributable=True,
+        deduplication_key=f"operator-input:{record.dispatch_id}:{request_id}",
+        actions=[
+            NotificationAction(
+                id="respond",
+                kind="respond",
+                label="Respond",
+                method="POST",
+                input_schema=response_schema,
+            )
+        ],
+        interaction=InteractionRequest(
+            request_id=request_id,
+            kind=kind,
+            prompt=prompt,
+            response_schema=response_schema,
+            choices=choices,
+            allow_freeform=allow_freeform,
+            allow_cancel=allow_cancel,
+            sensitive=sensitive,
+            protocol_method="pa/report_dispatch_progress.operator_input",
+            protocol_request_id=request_id,
+            continuation_mode="prompt",
+            deadline=deadline,
+        ),
+        expires_at=deadline,
+    )
+    create = ctx.require_service("notifications").create
+    async_runtime = ctx.services.get("async_runtime")
+    if async_runtime:
+        notification = await async_runtime.run_blocking(
+            "sqlite.notification_create",
+            create,
+            data,
+            principal_id=get_principal_id(request),
+        )
+    else:
+        notification = await asyncio.to_thread(
+            create, data, principal_id=get_principal_id(request)
+        )
+    return notification.public_dict()
 
 
 def _fleet_context(request: Request) -> dict:
@@ -6181,9 +6309,35 @@ async def execute_post_turn_action(
                 instance_id=request.app.state.ctx.settings.instance_id,
             )
             result = {"card": _model_json(created), "duplicate": existing is not None}
+        elif action.name == FollowupActionName.REQUEST_OPERATOR_INPUT:
+            operator_contract = {
+                "request_id": action.parameters.get("request_id") or action.action_id,
+                "prompt": (
+                    action.parameters.get("prompt")
+                    or action.parameters.get("question")
+                    or action.parameters.get("reason")
+                    or evaluation.operator_status_text
+                    or "Operator input is required to continue."
+                ),
+                "response_schema": action.parameters.get("response_schema"),
+                "choices": action.parameters.get("choices") or [],
+                "allow_freeform": action.parameters.get("allow_freeform", True),
+                "allow_cancel": action.parameters.get("allow_cancel", True),
+                "sensitive": action.parameters.get("sensitive", False),
+                "deadline": action.parameters.get("deadline"),
+            }
+            result = {
+                "notification": await _create_operator_input_notification(
+                    request,
+                    record,
+                    operator_contract,
+                    idempotency_key=body.idempotency_key,
+                    kind=InteractionKind.POST_TURN_OPERATOR_INPUT,
+                )
+            }
         else:
-            # Wait, input, refresh, and escalation are intentional record-only
-            # state. A separate condition scheduler may later supersede them.
+            # Wait, refresh, and escalation remain condition records. Operator
+            # input is executable above and resumes the same session.
             result = {"recorded": True, "condition": action.parameters}
         action.status = FollowupActionStatus.EXECUTED
         action.executed_at = datetime.now(UTC)
@@ -8125,7 +8279,7 @@ class FleetModule(Module):
             changed_file_count: int | None = None,
             blockers: list[str] | None = None,
             retry_reason: str | None = None,
-            operator_input: str | None = None,
+            operator_input: str | dict[str, Any] | None = None,
         ) -> dict:
             """Emit a sanitized structured checkpoint for a linked durable dispatch."""
             key = idempotency_key.strip()

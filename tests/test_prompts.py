@@ -27,6 +27,7 @@ EXPECTED_PROMPT_KEYS = {
     "agent.context.card",
     "agent.context.data_safety",
     "agent.context.execution",
+    "agent.context.interactions",
     "agent.context.project",
     "agent.message.wrapper",
     "dispatch.remote.default",
