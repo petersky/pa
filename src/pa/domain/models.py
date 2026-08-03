@@ -474,6 +474,7 @@ class CardUpdate(BaseModel):
 
 
 class EventType(StrEnum):
+    GOAL_UPSERTED = "goal_upserted"
     CARD_CREATED = "card_created"
     CARD_UPDATED = "card_updated"
     CARD_DELETED = "card_deleted"

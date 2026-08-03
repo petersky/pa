@@ -42,6 +42,10 @@ _FLEET_ENTITY_DELETE_EVENT = {
 
 
 def _event_entity(event: CardEvent) -> tuple[str | None, str | None]:
+    if event.type == EventType.GOAL_UPSERTED:
+        goal = event.payload.get("goal") or {}
+        goal_id = str(goal.get("id") or "")
+        return ("goal", goal_id or None)
     if event.card_id:
         return "card", event.card_id
     if event.project_id and event.type not in {
@@ -81,9 +85,7 @@ def _latest_timestamp_value(left: Any, right: Any) -> Any:
                 stamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
                 if stamp.tzinfo is None:
                     stamp = stamp.replace(tzinfo=UTC)
-                parsed.append(
-                    (stamp.astimezone(UTC), _canonical_value(value), value)
-                )
+                parsed.append((stamp.astimezone(UTC), _canonical_value(value), value))
             except ValueError:
                 parsed = []
                 break
@@ -501,9 +503,8 @@ class EventLog:
             if "__terminal__" in left_fields or "__terminal__" in right_fields:
                 if left_fields != right_fields:
                     if entity in _FLEET_ENTITY_UPDATE_EVENT:
-                        terminal = (
-                            left_fields.get("__terminal__")
-                            or right_fields.get("__terminal__")
+                        terminal = left_fields.get("__terminal__") or right_fields.get(
+                            "__terminal__"
                         )
                         automatic_resolutions.append(
                             {
@@ -566,9 +567,7 @@ class EventLog:
                                 )
                             else:
                                 value = winner["value"]
-                                strategy = (
-                                    "highest_policy_version_then_event_identity"
-                                )
+                                strategy = "highest_policy_version_then_event_identity"
                         else:
                             value = _latest_timestamp_value(
                                 left_fields[field]["value"],
@@ -607,9 +606,7 @@ class EventLog:
             "common_ancestors": sorted(common),
         }
 
-    def entity_snapshot(
-        self, head: str, entity: str, entity_id: str
-    ) -> dict | None:
+    def entity_snapshot(self, head: str, entity: str, entity_id: str) -> dict | None:
         """Materialize one entity at an arbitrary immutable history head."""
         state: dict | None = None
 

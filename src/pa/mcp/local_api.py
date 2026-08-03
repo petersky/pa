@@ -177,6 +177,7 @@ def request_local_pa(
     params: dict | None = None,
     json: dict | None = None,
     files: dict | None = None,
+    headers: dict[str, str] | None = None,
     allow_not_found: bool = False,
     timeout_seconds: float = 2.0,
 ):
@@ -185,12 +186,20 @@ def request_local_pa(
         token = UserDirectory(settings.data_dir).ensure_default_user().cli_token
     expected_instance_id = os.environ.get("PA_INSTANCE_ID", "").strip()
     correlation_id = str(uuid4())
-    headers = {
+    request_headers = {
         "Authorization": f"Bearer {token}",
         "X-Request-ID": correlation_id,
     }
+    reserved_headers = {"authorization", "x-request-id", "x-pa-mcp-instance-id"}
+    request_headers.update(
+        {
+            key: value
+            for key, value in (headers or {}).items()
+            if key.lower() not in reserved_headers
+        }
+    )
     if expected_instance_id:
-        headers["X-PA-MCP-Instance-ID"] = expected_instance_id
+        request_headers["X-PA-MCP-Instance-ID"] = expected_instance_id
     now = time.monotonic()
     with _circuit_lock:
         retry_at = _circuit.retry_at
@@ -213,7 +222,7 @@ def request_local_pa(
                 "params": _normalized_query_params(params),
                 "json": json,
                 "files": files,
-                "headers": headers,
+                "headers": request_headers,
                 "timeout": max(0.1, deadline - time.monotonic()),
             }
             if socket_path:

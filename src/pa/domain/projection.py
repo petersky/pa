@@ -336,6 +336,10 @@ class CardProjection:
             self._migrate_schema(conn)
             self._migrate_project_repositories(conn)
 
+            from pa.goals.projection import init_goal_schema
+
+            init_goal_schema(conn)
+
     def _migrate_schema(self, conn: sqlite3.Connection) -> None:
         card_cols = {
             row[1] for row in conn.execute("PRAGMA table_info(cards)").fetchall()
@@ -630,7 +634,11 @@ class CardProjection:
                 conn.execute("UPDATE projects SET repos='[]' WHERE id=?", (row["id"],))
 
     def apply_event(self, event: CardEvent) -> None:
-        if event.type == EventType.CARD_CREATED:
+        if event.type == EventType.GOAL_UPSERTED:
+            from pa.goals.projection import apply_goal_event
+
+            apply_goal_event(self, event)
+        elif event.type == EventType.CARD_CREATED:
             self._apply_created(event)
         elif event.type == EventType.CARD_UPDATED:
             self._apply_updated(event)

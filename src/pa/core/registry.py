@@ -69,6 +69,7 @@ class ModuleRegistry:
         from pa.modules.debug import DebugModule
         from pa.modules.files import FilesModule
         from pa.modules.fleet import FleetModule
+        from pa.modules.goals import GoalsModule
         from pa.modules.instance import InstanceModule
         from pa.modules.integrations import IntegrationsModule
         from pa.modules.items import ItemsModule
@@ -93,6 +94,7 @@ class ModuleRegistry:
             PRSupervisorModule(),
             TrustModule(),
             ItemsModule(),
+            GoalsModule(),
             OrchestrationModule(),
             InstanceModule(),
             CollaborationModule(),
