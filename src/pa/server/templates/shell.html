@@ -14,6 +14,8 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <title>{{ page.label | default('PA') }} — {{ serving_identity.display_name }}</title>
+  <link rel="icon" href="{{ static_url('favicon.svg') }}" type="image/svg+xml">
+  <link rel="icon" href="/favicon.ico" sizes="any">
   <link rel="stylesheet" href="{{ static_url('style.css') }}">
   <link id="pa-theme-variant" rel="stylesheet"
         href="{{ static_url('themes/' ~ (theme_id | default('pa')) ~ '/light.css') }}">

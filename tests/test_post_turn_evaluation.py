@@ -19,6 +19,7 @@ from pa.execution.post_turn import (
     SafetyClassification,
     TurnEndSnapshotV1,
     action_catalog,
+    is_authorized_same_session_continuation,
     mark_record_only_actions,
 )
 
@@ -90,6 +91,50 @@ class PostTurnEvaluatorTests(unittest.TestCase):
             if action.name == FollowupActionName.REDISPATCH_CARD
         )
         self.assertTrue(redispatch.human_approval_required)
+
+    def test_incomplete_implementation_inherits_same_session_authorization(self) -> None:
+        item = snapshot(
+            disposition={"lane": "active"},
+            disposition_status="accepted",
+        )
+        evaluation = PostTurnEvaluator().evaluate(context_for(item))
+        action = next(
+            candidate
+            for candidate in evaluation.recommended_actions
+            if candidate.name == FollowupActionName.PROMPT_SAME_SESSION
+        )
+
+        self.assertFalse(action.human_approval_required)
+        self.assertEqual(
+            action.preconditions["authorization_basis"],
+            "original_implementation_dispatch",
+        )
+        self.assertTrue(
+            is_authorized_same_session_continuation(
+                action, decision=evaluation.decision, session_id=item.session_id
+            )
+        )
+
+    def test_scope_expanding_same_session_prompt_remains_approval_gated(self) -> None:
+        action = FollowupActionV1(
+            name=FollowupActionName.PROMPT_SAME_SESSION,
+            parameters={
+                "purpose": "Deploy the result.",
+                "prompt": "Deploy this implementation to production.",
+                "session_id": "session-1",
+            },
+            preconditions={"authority_version": "version-1"},
+            idempotency_key_inputs=["dispatch", "turn", "action"],
+            safety=SafetyClassification.EXTERNAL_WRITE,
+            human_approval_required=True,
+        )
+        self.assertFalse(
+            is_authorized_same_session_continuation(
+                action,
+                decision=PostTurnDecision.FURTHER_AGENT_WORK_NEEDED,
+                session_id="session-1",
+            )
+        )
 
     def test_exact_merged_pr_evidence_achieves_outcome(self) -> None:
         item = snapshot(
