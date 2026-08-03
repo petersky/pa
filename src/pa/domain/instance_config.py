@@ -10,7 +10,13 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field
 
 from pa.core.io import atomic_write_json
-from pa.fleet.capacity import MAX_DISPATCH_CAPACITY, DispatchCapacity
+from pa.fleet.capacity import (
+    DEFAULT_DISPATCH_QUEUE_CAPACITY,
+    MAX_DISPATCH_CAPACITY,
+    MAX_DISPATCH_QUEUE_CAPACITY,
+    DispatchCapacity,
+    DispatchQueueCapacity,
+)
 
 
 class InstanceConfig(BaseModel):
@@ -35,6 +41,14 @@ class InstanceConfig(BaseModel):
     capabilities: list[str] = Field(default_factory=list)
     dispatch_capacity: int | None = Field(default=None, ge=1, le=MAX_DISPATCH_CAPACITY)
     dispatch_provider_capacities: dict[str, DispatchCapacity] = Field(
+        default_factory=dict
+    )
+    dispatch_queue_capacity: int = Field(
+        default=DEFAULT_DISPATCH_QUEUE_CAPACITY,
+        ge=0,
+        le=MAX_DISPATCH_QUEUE_CAPACITY,
+    )
+    dispatch_provider_queue_capacities: dict[str, DispatchQueueCapacity] = Field(
         default_factory=dict
     )
     relay_enabled: bool = False

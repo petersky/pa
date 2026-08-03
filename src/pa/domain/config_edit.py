@@ -416,6 +416,38 @@ def validate_field_value(key: str, value: Any) -> Any:
             normalized[provider_name] = limit
         return normalized
 
+    if key == "dispatch_queue_capacity":
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ConfigError(
+                "dispatch_queue_capacity must be an integer from 0 to 10000"
+            )
+        if not 0 <= value <= 10_000:
+            raise ConfigError(
+                "dispatch_queue_capacity must be between 0 and 10000"
+            )
+        return value
+
+    if key == "dispatch_provider_queue_capacities":
+        if not isinstance(value, dict):
+            raise ConfigError(
+                "dispatch_provider_queue_capacities must be a JSON object of provider limits"
+            )
+        normalized_queue: dict[str, int] = {}
+        for provider, limit in value.items():
+            provider_name = str(provider).strip().lower()
+            if not provider_name:
+                raise ConfigError("provider queue capacity names cannot be empty")
+            if (
+                isinstance(limit, bool)
+                or not isinstance(limit, int)
+                or not 0 <= limit <= 10_000
+            ):
+                raise ConfigError(
+                    f"queue capacity for provider {provider!r} must be an integer from 0 to 10000"
+                )
+            normalized_queue[provider_name] = limit
+        return normalized_queue
+
     if spec.kind in ("list_str", "optional_list_str") and value is not None:
         if not isinstance(value, list) or not all(isinstance(x, str) for x in value):
             raise ConfigError(f"{key} must be a list of strings")

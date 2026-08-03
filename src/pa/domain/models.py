@@ -4,7 +4,11 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, model_validator
 
-from pa.fleet.capacity import DispatchCapacity
+from pa.fleet.capacity import (
+    MAX_DISPATCH_QUEUE_CAPACITY,
+    DispatchCapacity,
+    DispatchQueueCapacity,
+)
 
 # --- Control plane (Fleet / Realm / Membership) ---
 
@@ -108,6 +112,13 @@ class FleetInstance(BaseModel):
     # None identifies an older member that did not advertise the typed setting.
     dispatch_capacity: int | None = Field(default=None, ge=1, le=256)
     dispatch_provider_capacities: dict[str, DispatchCapacity] = Field(
+        default_factory=dict
+    )
+    # None identifies an older member that did not advertise durable queue support.
+    dispatch_queue_capacity: int | None = Field(
+        default=None, ge=0, le=MAX_DISPATCH_QUEUE_CAPACITY
+    )
+    dispatch_provider_queue_capacities: dict[str, DispatchQueueCapacity] = Field(
         default_factory=dict
     )
     relay_enabled: bool = False

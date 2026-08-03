@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from pa.config import Settings, reset_settings
 from pa.core.kernel import Kernel
+from pa.domain.instance_config import InstanceConfig, save_instance_config
 from pa.domain.models import CardCreate
 from pa.domain.store import reset_store
 from pa.execution.dispatch import (
@@ -241,6 +242,90 @@ def test_stale_authorization_capacity_provider_and_empty_sets_fail_explainably()
 
         with pytest.raises(PlacementError):
             service.resolve(_request(PlacementPolicy.BEST_MATCH), [])
+
+
+def test_full_queue_capable_candidate_remains_eligible_until_queue_limit() -> None:
+    full = _candidate("full", active=4, capacity=4)
+    full.dispatch_queue_capacity = 100
+    with tempfile.TemporaryDirectory() as tmp:
+        decision = PlacementService(RoundRobinCursorStore(Path(tmp))).resolve(
+            _request(PlacementPolicy.BEST_MATCH), [full]
+        )
+    detail = decision.eligible_candidates[0]
+    assert detail["admission_disposition"] == "queued"
+    assert detail["execution_slot_available"] is False
+    assert detail["queue_capacity"] == 100
+
+    full.activity["value"]["dispatch_waiting"] = 100
+    with tempfile.TemporaryDirectory() as tmp, pytest.raises(PlacementError) as raised:
+        PlacementService(RoundRobinCursorStore(Path(tmp))).resolve(
+            _request(PlacementPolicy.BEST_MATCH), [full]
+        )
+    assert raised.value.rejected_candidates[0]["rejection_codes"] == [
+        "dispatch_queue_full"
+    ]
+
+
+def test_zero_queue_capacity_is_an_explicit_full_queue() -> None:
+    full = _candidate("full", active=4, capacity=4)
+    full.dispatch_queue_capacity = 0
+    with tempfile.TemporaryDirectory() as tmp, pytest.raises(PlacementError) as raised:
+        PlacementService(RoundRobinCursorStore(Path(tmp))).resolve(
+            _request(PlacementPolicy.BEST_MATCH), [full]
+        )
+
+    detail = raised.value.rejected_candidates[0]
+    assert detail["rejection_codes"] == ["dispatch_queue_full"]
+    assert detail["queue_count"] == 0
+    assert detail["queue_capacity"] == 0
+
+
+def test_named_dispatch_queue_full_returns_structured_actionable_details() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        settings = Settings(
+            data_dir=Path(tmp),
+            instance_id="local",
+            instance_name="Local",
+            instance_url="http://pa.test:8080",
+            agent_enabled=False,
+            subscribed_realms=["default"],
+            peers=[],
+        )
+        app = Kernel.boot(settings=settings).build_app()
+        full = _candidate("local", active=4, capacity=4, local=True)
+        full.dispatch_queue_capacity = 0
+        with (
+            patch(
+                "pa.modules.fleet._placement_candidates",
+                autospec=True,
+                return_value=[full],
+            ),
+            TestClient(app) as client,
+        ):
+            card = app.state.ctx.store.create_card(CardCreate(title="No queue slot"))
+            assert client.get("/").status_code == 200
+            response = client.post(
+                "/api/fleet/instances/local/agent/start",
+                headers={"X-CSRF-Token": client.cookies.get("pa_csrf")},
+                json={
+                    "card_id": card.id,
+                    "provider": "codex",
+                    "idempotency_key": "queue-full",
+                    "execution_contract": {
+                        "version": 1,
+                        "profile": "research",
+                        "confirmed": True,
+                    },
+                },
+            )
+
+        assert response.status_code == 429, response.text
+        detail = response.json()["detail"]
+        assert detail["code"] == "dispatch_queue_full"
+        assert detail["current_count"] == 0
+        assert detail["maximum_count"] == 0
+        assert detail["retry_after_seconds"] == 5
+        assert "increase dispatch_queue_capacity" in detail["remediation_options"]
 
 
 def test_capacity_precedence_and_documented_default_are_explicit() -> None:
@@ -592,6 +677,15 @@ def test_named_dispatch_retry_returns_before_repeating_placement() -> None:
 
 def test_capacity_config_api_updates_live_fleet_advertisement() -> None:
     with tempfile.TemporaryDirectory() as tmp:
+        save_instance_config(
+            Path(tmp),
+            InstanceConfig(
+                data_dir=tmp,
+                instance_id="local",
+                instance_name="Local",
+                instance_url="http://pa.test:8080",
+            ),
+        )
         settings = Settings(
             data_dir=Path(tmp),
             instance_id="local",
@@ -612,9 +706,13 @@ def test_capacity_config_api_updates_live_fleet_advertisement() -> None:
                 json={
                     "dispatch_capacity": 11,
                     "dispatch_provider_capacities": {"Codex": 3},
+                    "dispatch_queue_capacity": 77,
+                    "dispatch_provider_queue_capacities": {"Codex": 25},
+                    "idempotency_key": "capacity-api-test",
                 },
             )
             config = client.get("/api/config").json()
+            audit = client.get("/api/configuration/audit").json()
             settings_page = client.get("/settings")
             fleet_page = client.get("/fleet")
             instance = next(
@@ -631,5 +729,11 @@ def test_capacity_config_api_updates_live_fleet_advertisement() -> None:
         assert response.json()["takes_effect"].startswith("immediately")
         assert config["dispatch_capacity"] == 11
         assert config["dispatch_provider_capacities"] == {"codex": 3}
+        assert config["dispatch_queue_capacity"] == 77
+        assert config["dispatch_provider_queue_capacities"] == {"codex": 25}
         assert instance["dispatch_capacity"] == 11
         assert instance["dispatch_provider_capacities"] == {"codex": 3}
+        assert instance["dispatch_queue_capacity"] == 77
+        assert instance["dispatch_provider_queue_capacities"] == {"codex": 25}
+        assert audit["events"][-1]["idempotency_key"] == "capacity-api-test"
+        assert "dispatch_queue_capacity" in audit["events"][-1]["keys"]

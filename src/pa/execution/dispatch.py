@@ -23,6 +23,7 @@ from pa.core.async_runtime import (
     BlockingQueueFull,
 )
 from pa.core.io import atomic_write_json
+from pa.execution.post_turn import PostTurnEvaluationV1, TurnEndSnapshotV1
 from pa.execution.progress import (
     MAX_PROGRESS_EVENTS,
     MAX_PROGRESS_SEEN_KEYS,
@@ -36,11 +37,12 @@ from pa.execution.progress import (
     sanitize_progress_event,
     sanitize_text,
 )
-from pa.execution.post_turn import PostTurnEvaluationV1, TurnEndSnapshotV1
 
 logger = logging.getLogger(__name__)
 
 DISPATCH_STAGES = {
+    "waiting_capacity",
+    "blocked",
     "queued",
     "checking_sync",
     "materializing",
@@ -62,6 +64,7 @@ CAPACITY_RESERVATION_STATES = {
     "starting_session",
     "delivering_prompt",
 }
+QUEUE_CONSUMING_STATES = {"waiting_capacity", "blocked"}
 CAPACITY_RESERVATION_TTL = timedelta(hours=1)
 RECOVERABLE_DISPATCH_STATES = {
     "checking_sync",
@@ -120,6 +123,19 @@ class DispatchRecord(BaseModel):
     capacity_release_reason: str | None = None
     capacity_override: bool = False
     capacity_override_reason: str | None = None
+    queue_limit: int = Field(default=100, ge=0, le=10_000)
+    queue_source: str = "documented_default"
+    queue_provider_specific: bool = False
+    queue_observed_count: int = Field(default=0, ge=0)
+    queue_admitted_at: datetime | None = None
+    queue_launched_at: datetime | None = None
+    queue_position: int | None = Field(default=None, ge=1)
+    queue_wait_reason: str | None = None
+    queue_blocked_code: str | None = None
+    requested_priority: int = Field(default=0, ge=-10, le=10)
+    scheduling_class: str | None = None
+    scheduling_class_sequence: int = Field(default=1, ge=1)
+    queue_audit: list[dict[str, Any]] = Field(default_factory=list)
     allow_concurrent: bool = False
     session_id: str | None = None
     resume_requested: bool = False
@@ -197,6 +213,8 @@ class DispatchRecord(BaseModel):
         )
         data["can_retry"] = self.state in {"failed", "cancelled"} and self.recoverable
         data["can_cancel"] = self.state in {
+            "waiting_capacity",
+            "blocked",
             "queued",
             "checking_sync",
             "materializing",
@@ -206,6 +224,26 @@ class DispatchRecord(BaseModel):
         data["collaboration"] = {
             "requested_mode": self.request_payload.get("collaboration_mode"),
             "decision": self.request_payload.get("collaboration_decision"),
+        }
+        data["queue"] = {
+            "waiting": self.state in QUEUE_CONSUMING_STATES,
+            "position": self.queue_position,
+            "scheduling_class": self.scheduling_class,
+            "requested_priority": self.requested_priority,
+            "reason": self.queue_wait_reason,
+            "blocked_code": self.queue_blocked_code,
+            "admitted_at": (
+                self.queue_admitted_at.isoformat() if self.queue_admitted_at else None
+            ),
+            "launched_at": (
+                self.queue_launched_at.isoformat() if self.queue_launched_at else None
+            ),
+            "capacity": self.queue_limit,
+            "observed_count": self.queue_observed_count,
+            "estimated_eligibility_at": None,
+            "estimate_reason": "Completion times are not predictable enough for a defensible ETA."
+            if self.state in QUEUE_CONSUMING_STATES
+            else None,
         }
         data["completion_outbox"] = {
             "pending": self.state == "completion_pending",
@@ -388,6 +426,22 @@ class CapacityAdmission(BaseModel):
     observed_reservations: int = Field(default=0, ge=0)
     observed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     consumer_links: list[dict[str, Any]] = Field(default_factory=list)
+    global_limit: int | None = Field(default=None, ge=1, le=256)
+    provider_limit: int | None = Field(default=None, ge=1, le=256)
+    observed_global_active: int | None = Field(default=None, ge=0)
+    observed_global_queued: int | None = Field(default=None, ge=0)
+    observed_global_reservations: int | None = Field(default=None, ge=0)
+    observed_provider_active: int | None = Field(default=None, ge=0)
+    observed_provider_queued: int | None = Field(default=None, ge=0)
+    observed_provider_reservations: int | None = Field(default=None, ge=0)
+    queue_limit: int | None = Field(default=None, ge=0, le=10_000)
+    global_queue_limit: int | None = Field(default=None, ge=0, le=10_000)
+    provider_queue_limit: int | None = Field(default=None, ge=0, le=10_000)
+    queue_source: str = "documented_default"
+    queue_provider_specific: bool = False
+    observed_waiting: int = Field(default=0, ge=0)
+    observed_global_waiting: int | None = Field(default=None, ge=0)
+    observed_provider_waiting: int | None = Field(default=None, ge=0)
     override: bool = False
     override_reason: str | None = None
 
@@ -397,9 +451,22 @@ class DispatchStore:
 
     def __init__(self, data_dir: Path) -> None:
         self.path = data_dir / "dispatch_mutations.json"
+        self.metrics_path = data_dir / "dispatch_queue_metrics.json"
         self._records: dict[str, DispatchRecord] = {}
         self._lock = RLock()
+        try:
+            metrics = json.loads(self.metrics_path.read_text())
+            self._queue_rejections = max(0, int(metrics.get("rejections") or 0))
+        except (OSError, ValueError, TypeError):
+            self._queue_rejections = 0
         self._load()
+
+    def _record_queue_rejection_locked(self) -> None:
+        self._queue_rejections += 1
+        atomic_write_json(
+            self.metrics_path,
+            {"rejections": self._queue_rejections, "updated_at": datetime.now(UTC).isoformat()},
+        )
 
     def _load(self) -> None:
         try:
@@ -445,6 +512,7 @@ class DispatchStore:
         self, *, target_instance_id: str | None = None, limit: int = 100
     ) -> list[DispatchRecord]:
         with self._lock:
+            self._refresh_queue_positions_locked()
             records = list(self._records.values())
         if target_instance_id:
             records = [
@@ -455,6 +523,36 @@ class DispatchStore:
         return sorted(records, key=lambda record: record.updated_at, reverse=True)[
             :limit
         ]
+
+    def capacity_snapshot(self, target_instance_id: str) -> dict[str, Any]:
+        """Return authority-local reservations and waiting work for one target."""
+
+        self.expire_capacity_reservations()
+        with self._lock:
+            records = [
+                record
+                for record in self._records.values()
+                if record.target_instance_id == target_instance_id
+            ]
+            providers: dict[str, dict[str, int]] = {}
+            for record in records:
+                provider = (record.capacity_provider or "unknown").lower()
+                counts = providers.setdefault(
+                    provider, {"dispatch_reservations": 0, "dispatch_waiting": 0}
+                )
+                if record.state in CAPACITY_RESERVATION_STATES:
+                    counts["dispatch_reservations"] += 1
+                if record.state in QUEUE_CONSUMING_STATES:
+                    counts["dispatch_waiting"] += 1
+            return {
+                "dispatch_reservations": sum(
+                    record.state in CAPACITY_RESERVATION_STATES for record in records
+                ),
+                "dispatch_waiting": sum(
+                    record.state in QUEUE_CONSUMING_STATES for record in records
+                ),
+                "provider_concurrency": providers,
+            }
 
     def by_session(self, session_id: str) -> DispatchRecord | None:
         with self._lock:
@@ -500,6 +598,160 @@ class DispatchStore:
                 None,
             )
 
+    @staticmethod
+    def _class_key(record: DispatchRecord) -> str:
+        return "|".join(
+            (
+                record.principal_id or "unknown",
+                record.project_id or "no-project",
+                record.capacity_provider or "any-provider",
+                record.target_instance_id,
+            )
+        )
+
+    def _refresh_queue_positions_locked(self) -> None:
+        waiting = sorted(
+            (
+                item
+                for item in self._records.values()
+                if item.state in QUEUE_CONSUMING_STATES
+            ),
+            key=lambda item: (
+                -item.requested_priority,
+                item.scheduling_class_sequence,
+                item.queue_admitted_at or item.created_at,
+                item.dispatch_id,
+            ),
+        )
+        for position, item in enumerate(waiting, 1):
+            item.queue_position = position
+        for item in self._records.values():
+            if item.state not in QUEUE_CONSUMING_STATES:
+                item.queue_position = None
+
+    def _constraint_counts_locked(
+        self,
+        record: DispatchRecord,
+        capacity: CapacityAdmission,
+        *,
+        exclude_dispatch_id: str | None = None,
+    ) -> tuple[bool, bool, int, int, int | None]:
+        """Evaluate global and provider execution/queue constraints together."""
+
+        records = [
+            item
+            for item in self._records.values()
+            if item.dispatch_id != exclude_dispatch_id
+            and item.target_instance_id == record.target_instance_id
+        ]
+
+        def local_counts(*, provider_only: bool) -> tuple[int, int, int]:
+            scoped = [
+                item
+                for item in records
+                if not provider_only or item.capacity_provider == capacity.provider
+            ]
+            return (
+                sum(item.state == "running" for item in scoped),
+                sum(item.state in CAPACITY_RESERVATION_STATES for item in scoped),
+                sum(item.state in QUEUE_CONSUMING_STATES for item in scoped),
+            )
+
+        global_running, global_reservations, global_waiting = local_counts(
+            provider_only=False
+        )
+        provider_running, provider_reservations, provider_waiting = local_counts(
+            provider_only=True
+        )
+        global_limit = capacity.global_limit or capacity.limit
+        global_consumed = (
+            max(
+                capacity.observed_global_active
+                if capacity.observed_global_active is not None
+                else capacity.observed_active,
+                global_running,
+            )
+            + (
+                capacity.observed_global_queued
+                if capacity.observed_global_queued is not None
+                else capacity.observed_queued
+            )
+            + max(
+                capacity.observed_global_reservations
+                if capacity.observed_global_reservations is not None
+                else capacity.observed_reservations,
+                global_reservations,
+            )
+        )
+        provider_consumed = 0
+        if capacity.provider_limit is not None:
+            provider_consumed = (
+                max(
+                    capacity.observed_provider_active or 0,
+                    provider_running,
+                )
+                + (capacity.observed_provider_queued or 0)
+                + max(
+                    capacity.observed_provider_reservations or 0,
+                    provider_reservations,
+                )
+            )
+        execution_full = global_consumed >= global_limit or (
+            capacity.provider_limit is not None
+            and provider_consumed >= capacity.provider_limit
+        )
+
+        global_queue_limit = (
+            capacity.global_queue_limit
+            if capacity.global_queue_limit is not None
+            else capacity.queue_limit
+        )
+        provider_queue_limit = capacity.provider_queue_limit
+        global_queue_count = max(
+            capacity.observed_global_waiting
+            if capacity.observed_global_waiting is not None
+            else capacity.observed_waiting,
+            global_waiting,
+        )
+        provider_queue_count = max(
+            capacity.observed_provider_waiting or 0,
+            provider_waiting,
+        )
+        queue_full = bool(
+            global_queue_limit is not None
+            and global_queue_count >= global_queue_limit
+        ) or bool(
+            provider_queue_limit is not None
+            and provider_queue_count >= provider_queue_limit
+        )
+        effective_queue_count = (
+            provider_queue_count
+            if provider_queue_limit is not None
+            and provider_queue_count >= provider_queue_limit
+            else global_queue_count
+        )
+        effective_queue_limit = (
+            provider_queue_limit
+            if provider_queue_limit is not None
+            and provider_queue_count >= provider_queue_limit
+            else global_queue_limit
+        )
+        effective_reservations = max(
+            capacity.observed_reservations,
+            (
+                provider_reservations
+                if capacity.provider_specific
+                else global_reservations
+            ),
+        )
+        return (
+            execution_full,
+            queue_full,
+            effective_queue_count,
+            effective_reservations,
+            effective_queue_limit,
+        )
+
     def admit(
         self,
         record: DispatchRecord,
@@ -509,6 +761,7 @@ class DispatchStore:
     ) -> tuple[DispatchRecord, bool]:
         """Atomically deduplicate and prevent unsafe concurrent card dispatch."""
         with self._lock:
+            self.expire_capacity_reservations()
             if idempotency_scope == "target":
                 existing = next(
                     (
@@ -549,60 +802,91 @@ class DispatchStore:
                 if active:
                     raise ConcurrentCardDispatch(active)
 
+            admission_state = "queued"
             if capacity:
                 now = datetime.now(UTC)
-                current_reservations = [
-                    item
-                    for item in self._records.values()
-                    if item.target_instance_id == record.target_instance_id
-                    and item.state in CAPACITY_RESERVATION_STATES
-                    and (
-                        item.capacity_reservation_expires_at is None
-                        or item.capacity_reservation_expires_at > now
-                    )
-                    and (
-                        not capacity.provider_specific
-                        or item.capacity_provider == capacity.provider
-                    )
-                ]
-                reserved = max(
-                    capacity.observed_reservations, len(current_reservations)
+                execution_full, queue_full, queue_count, reserved, queue_max = (
+                    self._constraint_counts_locked(record, capacity)
                 )
-                consumed = (
-                    capacity.observed_active + capacity.observed_queued + reserved
-                )
-                if consumed >= capacity.limit and not capacity.override:
-                    raise DispatchCapacityExhausted(
-                        limit=capacity.limit,
-                        source=capacity.source,
-                        provider=capacity.provider,
-                        active=capacity.observed_active,
-                        queued=capacity.observed_queued,
-                        reservations=reserved,
-                        observed_at=capacity.observed_at,
-                        consumer_links=capacity.consumer_links,
-                    )
                 record.capacity_limit = capacity.limit
                 record.capacity_source = capacity.source
                 record.capacity_provider = capacity.provider
                 record.capacity_observed_active = capacity.observed_active
                 record.capacity_observed_queued = capacity.observed_queued
-                record.capacity_observed_reservations = reserved
-                record.capacity_reserved_at = now
-                record.capacity_reservation_expires_at = now + CAPACITY_RESERVATION_TTL
+                record.capacity_observed_reservations = capacity.observed_reservations
                 record.capacity_override = capacity.override
                 record.capacity_override_reason = capacity.override_reason
+                record.queue_limit = (
+                    capacity.queue_limit if capacity.queue_limit is not None else 0
+                )
+                record.queue_source = capacity.queue_source
+                record.queue_provider_specific = capacity.queue_provider_specific
+                record.queue_observed_count = queue_count
+                record.scheduling_class = self._class_key(record)
+                class_sequences = [
+                    item.scheduling_class_sequence
+                    for item in self._records.values()
+                    if item.scheduling_class == record.scheduling_class
+                    and item.state not in TERMINAL_DISPATCH_STATES
+                ]
+                record.scheduling_class_sequence = max(class_sequences, default=0) + 1
+                if execution_full and not capacity.override:
+                    if capacity.queue_limit is None:
+                        raise DispatchCapacityExhausted(
+                            limit=capacity.limit,
+                            source=capacity.source,
+                            provider=capacity.provider,
+                            active=capacity.observed_active,
+                            queued=capacity.observed_queued,
+                            reservations=reserved,
+                            observed_at=capacity.observed_at,
+                            consumer_links=capacity.consumer_links,
+                        )
+                    if queue_full:
+                        self._record_queue_rejection_locked()
+                        raise DispatchQueueFull(
+                            limit=queue_max if queue_max is not None else capacity.queue_limit,
+                            source=capacity.queue_source,
+                            provider=capacity.provider,
+                            current=queue_count,
+                            active_capacity=capacity.limit,
+                            observed_at=capacity.observed_at,
+                        )
+                    admission_state = "waiting_capacity"
+                    record.queue_admitted_at = now
+                    record.queue_wait_reason = (
+                        f"All {capacity.limit} execution slots are occupied; "
+                        "waiting for capacity."
+                    )
+                    record.queue_audit.append(
+                        {
+                            "action": "admitted",
+                            "at": now.isoformat(),
+                            "priority": record.requested_priority,
+                            "scheduling_class": record.scheduling_class,
+                        }
+                    )
+                else:
+                    record.capacity_reserved_at = now
+                    record.capacity_reservation_expires_at = (
+                        now + CAPACITY_RESERVATION_TTL
+                    )
 
-            record.state = "queued"
+            record.state = admission_state
             record.events.append(
                 DispatchEvent(
                     seq=1,
-                    state="queued",
-                    message="Dispatch admitted for background execution.",
+                    state=admission_state,
+                    message=(
+                        "Dispatch durably queued until execution capacity is available."
+                        if admission_state == "waiting_capacity"
+                        else "Dispatch admitted for background execution."
+                    ),
                 )
             )
             record.updated_at = datetime.now(UTC)
             self._records[record.dispatch_id] = record
+            self._refresh_queue_positions_locked()
             self._save()
             if capacity:
                 logger.info(
@@ -648,48 +932,30 @@ class DispatchStore:
         """Atomically renew the same target reservation for a safe retry."""
 
         with self._lock:
+            self.expire_capacity_reservations()
             current = self._records.get(record.dispatch_id)
             if not current or current.mutation_id != record.mutation_id:
                 raise ValueError("dispatch changed before retry admission")
             if current.state not in {"failed", "cancelled"} or not current.recoverable:
                 raise ValueError(f"dispatch in {current.state} is not retryable")
             now = datetime.now(UTC)
-            current_reservations = [
-                item
-                for item in self._records.values()
-                if item.dispatch_id != current.dispatch_id
-                and item.target_instance_id == current.target_instance_id
-                and item.state in CAPACITY_RESERVATION_STATES
-                and (
-                    item.capacity_reservation_expires_at is None
-                    or item.capacity_reservation_expires_at > now
+            execution_full, queue_full, queue_count, reserved, queue_max = (
+                self._constraint_counts_locked(
+                    current, capacity, exclude_dispatch_id=current.dispatch_id
                 )
-                and (
-                    not capacity.provider_specific
-                    or item.capacity_provider == capacity.provider
-                )
-            ]
-            reserved = max(capacity.observed_reservations, len(current_reservations))
-            consumed = capacity.observed_active + capacity.observed_queued + reserved
-            if consumed >= capacity.limit and not capacity.override:
-                raise DispatchCapacityExhausted(
-                    limit=capacity.limit,
-                    source=capacity.source,
-                    provider=capacity.provider,
-                    active=capacity.observed_active,
-                    queued=capacity.observed_queued,
-                    reservations=reserved,
-                    observed_at=capacity.observed_at,
-                    consumer_links=capacity.consumer_links,
-                )
+            )
             current.capacity_limit = capacity.limit
             current.capacity_source = capacity.source
             current.capacity_provider = capacity.provider
             current.capacity_observed_active = capacity.observed_active
             current.capacity_observed_queued = capacity.observed_queued
-            current.capacity_observed_reservations = reserved
-            current.capacity_reserved_at = now
-            current.capacity_reservation_expires_at = now + CAPACITY_RESERVATION_TTL
+            current.capacity_observed_reservations = capacity.observed_reservations
+            current.queue_limit = (
+                capacity.queue_limit if capacity.queue_limit is not None else 0
+            )
+            current.queue_source = capacity.queue_source
+            current.queue_provider_specific = capacity.queue_provider_specific
+            current.queue_observed_count = queue_count
             current.capacity_released_at = None
             current.capacity_release_reason = None
             current.capacity_override = capacity.override
@@ -698,15 +964,50 @@ class DispatchStore:
             current.last_error = None
             current.error_code = None
             current.control_operations[idempotency_key] = "retry"
-            current.state = "queued"
+            if execution_full and not capacity.override:
+                if capacity.queue_limit is None:
+                    raise DispatchCapacityExhausted(
+                        limit=capacity.limit,
+                        source=capacity.source,
+                        provider=capacity.provider,
+                        active=capacity.observed_active,
+                        queued=capacity.observed_queued,
+                        reservations=reserved,
+                        observed_at=capacity.observed_at,
+                        consumer_links=capacity.consumer_links,
+                    )
+                if queue_full:
+                    self._record_queue_rejection_locked()
+                    raise DispatchQueueFull(
+                        limit=queue_max if queue_max is not None else capacity.queue_limit,
+                        source=capacity.queue_source,
+                        provider=capacity.provider,
+                        current=queue_count,
+                        active_capacity=capacity.limit,
+                        observed_at=capacity.observed_at,
+                    )
+                current.state = "waiting_capacity"
+                current.queue_admitted_at = current.queue_admitted_at or now
+                current.queue_wait_reason = "Waiting for execution capacity after retry."
+            else:
+                current.state = "queued"
+                current.capacity_reserved_at = now
+                current.capacity_reservation_expires_at = (
+                    now + CAPACITY_RESERVATION_TTL
+                )
             current.events.append(
                 DispatchEvent(
                     seq=(current.events[-1].seq + 1 if current.events else 1),
-                    state="queued",
-                    message="Operator queued a safe retry with a fresh capacity reservation.",
+                    state=current.state,
+                    message=(
+                        "Operator durably queued a safe retry until capacity is available."
+                        if current.state == "waiting_capacity"
+                        else "Operator queued a safe retry with a fresh capacity reservation."
+                    ),
                 )
             )
             current.updated_at = now
+            self._refresh_queue_positions_locked()
             self._save()
             return current
 
@@ -1148,6 +1449,9 @@ class DispatchStore:
                 detail=detail or {},
             )
         )
+        if previous_state in QUEUE_CONSUMING_STATES or state in QUEUE_CONSUMING_STATES:
+            with self._lock:
+                self._refresh_queue_positions_locked()
         return self.put(record)
 
     def record_followup_started(
@@ -1248,8 +1552,194 @@ class DispatchStore:
                 )
         return expired
 
+    def waiting(self) -> list[DispatchRecord]:
+        with self._lock:
+            self._refresh_queue_positions_locked()
+            waiting = [
+                record
+                for record in self._records.values()
+                if record.state in QUEUE_CONSUMING_STATES
+            ]
+        return sorted(
+            waiting,
+            key=lambda item: (
+                -item.requested_priority,
+                item.scheduling_class_sequence,
+                item.queue_admitted_at or item.created_at,
+                item.dispatch_id,
+            ),
+        )
+
+    def promote_waiting(
+        self, record: DispatchRecord, capacity: CapacityAdmission | None = None
+    ) -> bool:
+        """Atomically consume a newly free slot without changing target contract."""
+
+        with self._lock:
+            current = self._records.get(record.dispatch_id)
+            if not current or current.state not in QUEUE_CONSUMING_STATES:
+                return False
+            effective = capacity or CapacityAdmission(
+                limit=current.capacity_limit or 1,
+                source=current.capacity_source or "stored_admission",
+                provider=current.capacity_provider,
+                provider_specific=bool(current.capacity_provider),
+                observed_active=current.capacity_observed_active,
+                observed_queued=current.capacity_observed_queued,
+                observed_reservations=current.capacity_observed_reservations,
+                queue_limit=current.queue_limit,
+                queue_source=current.queue_source,
+                queue_provider_specific=current.queue_provider_specific,
+                observed_waiting=current.queue_observed_count,
+            )
+            execution_full, _queue_full, queue_count, _reserved, _queue_max = (
+                self._constraint_counts_locked(
+                    current, effective, exclude_dispatch_id=current.dispatch_id
+                )
+            )
+            current.capacity_limit = effective.limit
+            current.capacity_source = effective.source
+            current.capacity_observed_active = effective.observed_active
+            current.capacity_observed_queued = effective.observed_queued
+            current.capacity_observed_reservations = effective.observed_reservations
+            current.queue_observed_count = queue_count
+            if execution_full and not effective.override:
+                current.state = "waiting_capacity"
+                current.queue_blocked_code = None
+                current.queue_wait_reason = (
+                    f"All {effective.limit} execution slots remain occupied."
+                )
+                current.updated_at = datetime.now(UTC)
+                self._refresh_queue_positions_locked()
+                self._save()
+                return False
+            now = datetime.now(UTC)
+            current.state = "queued"
+            current.queue_launched_at = now
+            current.queue_wait_reason = None
+            current.queue_blocked_code = None
+            current.capacity_reserved_at = now
+            current.capacity_reservation_expires_at = now + CAPACITY_RESERVATION_TTL
+            current.events.append(
+                DispatchEvent(
+                    seq=(current.events[-1].seq + 1 if current.events else 1),
+                    state="queued",
+                    message="Execution capacity became available; dispatch promoted exactly once.",
+                    created_at=now,
+                )
+            )
+            current.queue_audit.append(
+                {"action": "promoted", "at": now.isoformat()}
+            )
+            current.updated_at = now
+            self._refresh_queue_positions_locked()
+            self._save()
+            return True
+
+    def block_waiting(
+        self, record: DispatchRecord, *, code: str, reason: str
+    ) -> DispatchRecord:
+        with self._lock:
+            current = self._records.get(record.dispatch_id)
+            if not current or current.state not in QUEUE_CONSUMING_STATES:
+                return current or record
+            current.state = "blocked"
+            current.queue_blocked_code = sanitize_text(code, limit=120)
+            current.queue_wait_reason = sanitize_text(reason, limit=500)
+            current.updated_at = datetime.now(UTC)
+            self._refresh_queue_positions_locked()
+            self._save()
+            return current
+
+    def reprioritize(
+        self,
+        record: DispatchRecord,
+        *,
+        priority: int,
+        principal_id: str,
+        idempotency_key: str,
+    ) -> DispatchRecord:
+        with self._lock:
+            current = self._records.get(record.dispatch_id)
+            if not current or current.state not in QUEUE_CONSUMING_STATES:
+                raise ValueError("only waiting dispatches can be reprioritized")
+            operation = f"priority:{priority}"
+            previous = current.control_operations.get(idempotency_key)
+            if previous and previous != operation:
+                raise DispatchIdempotencyConflict(current)
+            if previous == operation:
+                return current
+            old = current.requested_priority
+            current.requested_priority = priority
+            current.control_operations[idempotency_key] = operation
+            current.queue_audit.append(
+                {
+                    "action": "priority_changed",
+                    "at": datetime.now(UTC).isoformat(),
+                    "principal_id": principal_id,
+                    "from": old,
+                    "to": priority,
+                    "idempotency_key": idempotency_key,
+                }
+            )
+            current.updated_at = datetime.now(UTC)
+            self._refresh_queue_positions_locked()
+            self._save()
+            return current
+
+    def queue_snapshot(self) -> dict[str, Any]:
+        waiting = self.waiting()
+        now = datetime.now(UTC)
+        blocked = sum(item.state == "blocked" for item in waiting)
+        ages = [
+            max(0.0, (now - (item.queue_admitted_at or item.created_at)).total_seconds())
+            for item in waiting
+        ]
+        wait_times = [
+            max(
+                0.0,
+                ((item.queue_launched_at or now) - (item.queue_admitted_at or item.created_at)).total_seconds(),
+            )
+            for item in self.list(limit=1000)
+            if item.queue_admitted_at
+        ]
+        records = self.list(limit=1000)
+        admissions = sum(item.queue_admitted_at is not None for item in records)
+        launches = sum(item.queue_launched_at is not None for item in records)
+        launch_failures = sum(
+            item.queue_launched_at is not None and item.state == "failed"
+            for item in records
+        )
+        starvation = sum(age >= 3600 for age in ages)
+        return {
+            "queued": len(waiting) - blocked,
+            "blocked": blocked,
+            "total": len(waiting),
+            "oldest_age_seconds": round(max(ages), 3) if ages else None,
+            "records": [item.public_dict() for item in waiting],
+            "metrics": {
+                "depth": len(waiting),
+                "age_seconds": round(max(ages), 3) if ages else 0.0,
+                "admissions_total": admissions,
+                "rejections_total": self._queue_rejections,
+                "launches_total": launches,
+                "launch_failures_total": launch_failures,
+                "wait_time_average_seconds": (
+                    round(sum(wait_times) / len(wait_times), 3) if wait_times else 0.0
+                ),
+                "wait_time_max_seconds": round(max(wait_times), 3) if wait_times else 0.0,
+                "starvation_count": starvation,
+            },
+            "alerts": (["dispatch_queue_starvation"] if starvation else []),
+        }
+
     def runnable(self) -> list[DispatchRecord]:
         self.expire_capacity_reservations()
+        # Stored observations are sufficient for locally tracked slot releases.
+        # The worker additionally refreshes target readiness for external changes.
+        for record in self.waiting():
+            if record.state == "waiting_capacity" and not record.placement_decision:
+                self.promote_waiting(record)
         return [record for record in self.list(limit=1000) if record.state == "queued"]
 
     def pending(self) -> list[DispatchRecord]:
@@ -1345,6 +1835,42 @@ class DispatchCapacityExhausted(ValueError):
         }
 
 
+class DispatchQueueFull(ValueError):
+    def __init__(
+        self,
+        *,
+        limit: int,
+        source: str,
+        provider: str | None,
+        current: int,
+        active_capacity: int,
+        observed_at: datetime,
+    ) -> None:
+        super().__init__("dispatch queue is full")
+        self.detail = {
+            "code": "dispatch_queue_full",
+            "message": (
+                f"The durable dispatch queue is full ({current} of {limit}) while "
+                f"all {active_capacity} execution slots are occupied."
+            ),
+            "current_count": current,
+            "maximum_count": limit,
+            "active_execution_capacity": active_capacity,
+            "source": source,
+            "provider": provider,
+            "observed_at": observed_at.isoformat(),
+            "recoverable": True,
+            "retry_after_seconds": 5,
+            "retry_guidance": "Retry after queued work launches or is cancelled.",
+            "remediation_options": [
+                "cancel unneeded queued dispatches",
+                "increase dispatch_queue_capacity",
+                "use a different eligible target",
+            ],
+            "recovery_url": "/fleet?section=operations",
+        }
+
+
 class DispatchWorker:
     """Supervise durable dispatch consumption on an isolated control lane."""
 
@@ -1358,6 +1884,8 @@ class DispatchWorker:
         retry_seconds: float = 0.1,
         retry_max_seconds: float = 5.0,
         rng: random.Random | None = None,
+        readiness: Callable[[DispatchRecord], Awaitable[CapacityAdmission]]
+        | None = None,
     ) -> None:
         self.store, self.handler = store, handler
         self.concurrency, self.async_runtime = max(1, concurrency), async_runtime
@@ -1372,6 +1900,7 @@ class DispatchWorker:
         self.retry_seconds = max(0.01, retry_seconds)
         self.retry_max_seconds = max(self.retry_seconds, retry_max_seconds)
         self.rng = rng or random.Random()
+        self.readiness = readiness
         self._runner: asyncio.Task[None] | None = None
         self._active: dict[str, asyncio.Task[None]] = {}
         self._wake, self._closing = asyncio.Event(), False
@@ -1482,6 +2011,44 @@ class DispatchWorker:
             }
             available = self.concurrency - len(self._active)
             try:
+                if self.readiness:
+                    waiting = await self._offload(
+                        "dispatch.waiting_read", self.store.waiting
+                    )
+                    refreshed_scopes: set[tuple[str, str | None]] = set()
+                    for waiting_record in waiting:
+                        scope = (
+                            waiting_record.target_instance_id,
+                            waiting_record.capacity_provider,
+                        )
+                        if scope in refreshed_scopes:
+                            continue
+                        refreshed_scopes.add(scope)
+                        try:
+                            refreshed = await self.readiness(waiting_record)
+                            await self._offload(
+                                "dispatch.promote_waiting",
+                                self.store.promote_waiting,
+                                waiting_record,
+                                refreshed,
+                            )
+                        except asyncio.CancelledError:
+                            raise
+                        except Exception as exc:  # noqa: BLE001 - readiness adapters
+                            detail = getattr(exc, "detail", None)
+                            if isinstance(detail, dict):
+                                code = str(detail.get("code") or "target_not_ready")
+                                reason = str(detail.get("message") or detail)
+                            else:
+                                code = type(exc).__name__
+                                reason = str(exc) or "Target readiness could not be confirmed."
+                            await self._offload(
+                                "dispatch.block_waiting",
+                                self.store.block_waiting,
+                                waiting_record,
+                                code=code,
+                                reason=reason,
+                            )
                 runnable = await self._offload(
                     "dispatch.runnable_read", self.store.runnable
                 )
@@ -1554,6 +2121,7 @@ class DispatchWorker:
             if self.last_failure_type
             else None,
             "queued_dispatch_count": self.queued_dispatch_count,
+            "waiting_dispatch_count": self.store.queue_snapshot()["total"],
             "oldest_queued_age_seconds": round(age, 3) if age is not None else None,
             "active_dispatch_count": len(self._active),
             "poll_failures": self.poll_failures,

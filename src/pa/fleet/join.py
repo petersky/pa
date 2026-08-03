@@ -255,6 +255,8 @@ async def join_fleet(
     capabilities: list[str] | None = None,
     dispatch_capacity: int | None = None,
     dispatch_provider_capacities: dict[str, int] | None = None,
+    dispatch_queue_capacity: int = 100,
+    dispatch_provider_queue_capacities: dict[str, int] | None = None,
     sync_token: str = "",
 ) -> dict:
     """POST to fleet owner to join."""
@@ -271,6 +273,10 @@ async def join_fleet(
         "capabilities": capabilities or [],
         "dispatch_capacity": dispatch_capacity,
         "dispatch_provider_capacities": dispatch_provider_capacities or {},
+        "dispatch_queue_capacity": dispatch_queue_capacity,
+        "dispatch_provider_queue_capacities": (
+            dispatch_provider_queue_capacities or {}
+        ),
     }
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(
@@ -338,6 +344,8 @@ def register_joiner_on_owner(
     capabilities: list[str] | None = None,
     dispatch_capacity: int | None = None,
     dispatch_provider_capacities: dict[str, int] | None = None,
+    dispatch_queue_capacity: int | None = None,
+    dispatch_provider_queue_capacities: dict[str, int] | None = None,
     realms: list[str] | None = None,
 ) -> tuple[FleetInstance, str]:
     """Register joiner, wire peers/sync, return (instance, sync_token)."""
@@ -351,6 +359,10 @@ def register_joiner_on_owner(
         capabilities=capabilities or [],
         dispatch_capacity=dispatch_capacity,
         dispatch_provider_capacities=dispatch_provider_capacities or {},
+        dispatch_queue_capacity=dispatch_queue_capacity,
+        dispatch_provider_queue_capacities=(
+            dispatch_provider_queue_capacities or {}
+        ),
         healthy=True,
     )
     fleet.upsert_instance(inst)

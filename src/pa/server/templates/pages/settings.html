@@ -727,6 +727,15 @@
           <span>Provider limits (JSON)</span>
           <textarea name="dispatch_provider_capacities" rows="3" spellcheck="false" placeholder='{"codex": 2}'>{{ settings.dispatch_provider_capacities | tojson }}</textarea>
         </label>
+        <label>
+          <span>Total waiting queue capacity</span>
+          <input type="number" name="dispatch_queue_capacity" min="0" max="10000" required value="{{ settings.dispatch_queue_capacity }}">
+        </label>
+        <label>
+          <span>Provider queue limits (JSON)</span>
+          <textarea name="dispatch_provider_queue_capacities" rows="3" spellcheck="false" placeholder='{"codex": 50}'>{{ settings.dispatch_provider_queue_capacities | tojson }}</textarea>
+        </label>
+        <p class="muted small">Default waiting capacity: 100. Provisioning and provider startup consume execution slots; durable waiting records do not. A value of 0 disables waiting when execution is full.</p>
         <p class="muted small">Default: 4 slots. This preserves the historical ceiling and is intentionally conservative because PA cannot infer host resources or provider account limits. Legacy <code>capacity:N</code> tags remain readable only when a typed setting is absent.</p>
         <button type="submit" class="primary">Save capacity</button>
         <p class="muted small" id="pa-capacity-settings-status" role="status" hidden></p>
@@ -1210,9 +1219,10 @@
     status.hidden = false;
     status.classList.remove("danger");
     status.textContent = "Validating capacity…";
-    var providerLimits;
+    var providerLimits, providerQueueLimits;
     try {
       providerLimits = JSON.parse(form.dispatch_provider_capacities.value || "{}");
+      providerQueueLimits = JSON.parse(form.dispatch_provider_queue_capacities.value || "{}");
     } catch (error) {
       status.classList.add("danger");
       status.textContent = "Provider limits must be a JSON object, for example {\"codex\": 2}.";
@@ -1229,13 +1239,19 @@
         body: JSON.stringify({
           dispatch_capacity: Number(form.dispatch_capacity.value),
           dispatch_provider_capacities: providerLimits,
+          dispatch_queue_capacity: Number(form.dispatch_queue_capacity.value),
+          dispatch_provider_queue_capacities: providerQueueLimits,
+          idempotency_key: "capacity-web-" + (window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : Date.now()),
+          interface: "web",
         }),
       });
       var data = await response.json().catch(function () { return {}; });
       if (!response.ok) throw data;
       status.textContent = "Saved. New placement admissions now use " +
         data.dispatch_capacity + " global slot" +
-        (data.dispatch_capacity === 1 ? "" : "s") + ".";
+        (data.dispatch_capacity === 1 ? "" : "s") + " and " +
+        data.dispatch_queue_capacity + " waiting slot" +
+        (data.dispatch_queue_capacity === 1 ? "" : "s") + ".";
     } catch (error) {
       var detail = error && error.detail ? error.detail : error;
       var message = detail && detail.message ? detail.message :

@@ -17,8 +17,11 @@ from pydantic import BaseModel, Field
 from pa.core.io import atomic_write_json
 from pa.fleet.capacity import (
     DispatchCapacity,
+    DispatchQueueCapacity,
     EffectiveCapacity,
+    EffectiveQueueCapacity,
     effective_capacity,
+    effective_queue_capacity,
     workload_counts,
 )
 from pa.fleet.policy import (
@@ -45,6 +48,10 @@ class PlacementCandidate(BaseModel):
     capabilities: list[str] = Field(default_factory=list)
     dispatch_capacity: int | None = None
     dispatch_provider_capacities: dict[str, DispatchCapacity] = Field(
+        default_factory=dict
+    )
+    dispatch_queue_capacity: int | None = None
+    dispatch_provider_queue_capacities: dict[str, DispatchQueueCapacity] = Field(
         default_factory=dict
     )
     reachability: dict[str, Any] = Field(default_factory=dict)
@@ -253,9 +260,31 @@ def _workload(
     candidate: PlacementCandidate, provider: str | None = None
 ) -> tuple[dict[str, Any], EffectiveCapacity, float]:
     activity = _envelope(candidate, "activity").get("value") or {}
-    counts = workload_counts(activity, provider=provider)
     capacity = _capacity(candidate, provider)
+    counts = workload_counts(
+        activity,
+        provider=provider if capacity.source == "configured_provider" else None,
+    )
     return counts, capacity, counts["consumed"] / capacity.limit
+
+
+def _queue_capacity(
+    candidate: PlacementCandidate, provider: str | None = None
+) -> EffectiveQueueCapacity:
+    activity = _envelope(candidate, "activity").get("value") or {}
+    advertised = activity.get("queue_capacity") or {}
+    return effective_queue_capacity(
+        configured=(
+            candidate.dispatch_queue_capacity
+            if candidate.dispatch_queue_capacity is not None
+            else advertised.get("configured")
+        ),
+        provider_capacities=(
+            candidate.dispatch_provider_queue_capacities
+            or advertised.get("provider_limits")
+        ),
+        provider=provider,
+    )
 
 
 def _repository_locality(
@@ -504,6 +533,38 @@ def _evaluate(
         reject("provider_unavailable", provider_reason)
 
     counts, capacity, normalized = _workload(candidate, request.provider)
+    queue_capacity = _queue_capacity(candidate, request.provider)
+    activity_value = _envelope(candidate, "activity").get("value") or {}
+    global_counts = workload_counts(activity_value)
+    provider_counts = (
+        workload_counts(activity_value, provider=request.provider)
+        if request.provider
+        else global_counts
+    )
+    queue_advertised = candidate.dispatch_queue_capacity is not None or bool(
+        activity_value.get("queue_capacity")
+    )
+    provider_key = (request.provider or "").strip().lower()
+    provider_activity = (activity_value.get("provider_concurrency") or {}).get(
+        provider_key, {}
+    )
+    global_waiting_count = max(0, int(activity_value.get("dispatch_waiting") or 0))
+    provider_waiting_count = max(
+        0, int(provider_activity.get("dispatch_waiting") or 0)
+    )
+    global_queue_full = global_waiting_count >= queue_capacity.global_limit
+    provider_queue_full = (
+        queue_capacity.provider_limit is not None
+        and provider_waiting_count >= queue_capacity.provider_limit
+    )
+    if provider_queue_full:
+        waiting_count = provider_waiting_count
+        waiting_limit = queue_capacity.provider_limit
+        queue_constraint_source = "provider"
+    else:
+        waiting_count = global_waiting_count
+        waiting_limit = queue_capacity.global_limit
+        queue_constraint_source = "global"
     profile_active_limit = policy.max_concurrent_by_profile.get(workload_profile)
     if profile_active_limit is not None and counts["active"] >= profile_active_limit:
         reject(
@@ -533,13 +594,28 @@ def _evaluate(
             f"instance self-protective {workload_profile} limit "
             f"({min(hard_limits)}) is exhausted",
         )
-    if counts["consumed"] >= capacity.limit and not request.capacity_override:
+    execution_available = request.capacity_override or (
+        global_counts["consumed"] < capacity.global_limit
+        and (
+            capacity.provider_limit is None
+            or provider_counts["consumed"] < capacity.provider_limit
+        )
+    )
+    queue_available = not global_queue_full and not provider_queue_full
+    if not execution_available and not queue_advertised and not request.capacity_override:
         reject(
             "capacity_exhausted",
-            "capacity is exhausted "
-            f"({counts['active']} working + {counts['queued']} queued + "
-            f"{counts['reservations']} reserved of {capacity.limit} "
-            f"{capacity.source} slots)",
+            "capacity is exhausted and this mixed-version peer does not advertise durable queue admission",
+        )
+    elif (
+        not execution_available
+        and not queue_available
+        and not request.capacity_override
+    ):
+        reject(
+            "dispatch_queue_full",
+            "execution slots are occupied and the durable dispatch queue is full "
+            f"({waiting_count} of {waiting_limit})",
         )
 
     locality, cached_repositories = _repository_locality(
@@ -580,6 +656,18 @@ def _evaluate(
         "workload_semantics": counts["semantic_source"],
         "capacity": capacity.limit,
         "capacity_detail": capacity.model_dump(mode="json"),
+        "execution_slot_available": execution_available,
+        "admission_disposition": (
+            "launchable" if execution_available else "queued"
+        ),
+        "queue_count": waiting_count,
+        "queue_capacity": waiting_limit,
+        "queue_constraint_source": queue_constraint_source,
+        "queue_capacity_detail": queue_capacity.model_dump(mode="json"),
+        "global_workload": global_counts,
+        "provider_workload": provider_counts,
+        "global_queue_count": global_waiting_count,
+        "provider_queue_count": provider_waiting_count,
         "consumer_links": (_envelope(candidate, "activity").get("value") or {}).get(
             "capacity_consumer_links", []
         ),

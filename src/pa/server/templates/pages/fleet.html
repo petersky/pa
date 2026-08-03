@@ -140,10 +140,12 @@
             {% endif %}
           </td>
           {% set capacity = activity.value.capacity if activity.value and activity.value.capacity else none %}
+          {% set queue_capacity = activity.value.queue_capacity if activity.value and activity.value.queue_capacity else none %}
           <td data-fleet-capacity class="fleet-field fleet-field-{{ activity.state }}">
             {% if capacity %}
             <strong>{{ capacity.consumed }}/{{ capacity.limit }} used</strong>
             <span class="muted small">{{ capacity.source | replace('_', ' ') }}</span>
+            {% if queue_capacity %}<span class="muted small">{{ queue_capacity.consumed }}/{{ queue_capacity.limit }} waiting</span>{% endif %}
             {% else %}
             <strong>{{ node.dispatch_capacity or 'pending' }}</strong>
             <span class="muted small">{{ 'configured' if node.dispatch_capacity else 'compatibility probe pending' }}</span>

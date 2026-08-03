@@ -61,7 +61,9 @@ from pa.execution.dispatch import (
     CompletionOutbox,
     ConcurrentCardDispatch,
     DispatchCapacityExhausted,
+    DispatchEvent,
     DispatchIdempotencyConflict,
+    DispatchQueueFull,
     DispatchRecord,
     DispatchStore,
     DispatchWorker,
@@ -313,6 +315,7 @@ class RemoteAgentStartBody(BaseModel):
     participation_override: bool = False
     participation_override_reason: str | None = Field(default=None, max_length=500)
     execution_contract: dict[str, Any] | None = None
+    priority: int = Field(default=0, ge=-10, le=10)
 
 
 class FleetDispatchBody(RemoteAgentStartBody):
@@ -342,6 +345,11 @@ class DispatchControlBody(BaseModel):
     """Idempotency context for a durable dispatch lifecycle mutation."""
 
     idempotency_key: str | None = None
+
+
+class DispatchPriorityBody(BaseModel):
+    priority: int = Field(ge=-10, le=10)
+    idempotency_key: str
 
 
 class DispatchFollowupBody(BaseModel):
@@ -2223,6 +2231,10 @@ async def fleet_update_readiness(
         capabilities=list(settings.capabilities),
         dispatch_capacity=settings.dispatch_capacity,
         dispatch_provider_capacities=dict(settings.dispatch_provider_capacities),
+        dispatch_queue_capacity=settings.dispatch_queue_capacity,
+        dispatch_provider_queue_capacities=dict(
+            settings.dispatch_provider_queue_capacities
+        ),
         relay_enabled=settings.relay_enabled,
     )
 
@@ -2470,6 +2482,10 @@ def _overview_instance(request: Request, instance_id: str) -> FleetInstance:
             dispatch_provider_capacities=dict(
                 ctx.settings.dispatch_provider_capacities
             ),
+            dispatch_queue_capacity=ctx.settings.dispatch_queue_capacity,
+            dispatch_provider_queue_capacities=dict(
+                ctx.settings.dispatch_provider_queue_capacities
+            ),
             healthy=True,
         )
     raise HTTPException(status_code=404, detail="Fleet instance not found")
@@ -2564,6 +2580,10 @@ async def fleet_join(request: Request, body: dict) -> dict:
     capabilities = body.get("capabilities", [])
     dispatch_capacity = body.get("dispatch_capacity")
     dispatch_provider_capacities = body.get("dispatch_provider_capacities", {})
+    dispatch_queue_capacity = body.get("dispatch_queue_capacity")
+    dispatch_provider_queue_capacities = body.get(
+        "dispatch_provider_queue_capacities", {}
+    )
     if not token or not joiner_id:
         raise HTTPException(status_code=400, detail="token and instance_id required")
 
@@ -2595,6 +2615,10 @@ async def fleet_join(request: Request, body: dict) -> dict:
             capabilities=capabilities,
             dispatch_capacity=dispatch_capacity,
             dispatch_provider_capacities=dispatch_provider_capacities,
+            dispatch_queue_capacity=dispatch_queue_capacity,
+            dispatch_provider_queue_capacities=(
+                dispatch_provider_queue_capacities
+            ),
             realms=realms,
         )
     except ValueError as exc:
@@ -2696,6 +2720,8 @@ async def update_instance(request: Request, instance_id: str, body: dict) -> dic
         "capabilities",
         "dispatch_capacity",
         "dispatch_provider_capacities",
+        "dispatch_queue_capacity",
+        "dispatch_provider_queue_capacities",
         "relay_enabled",
         "lifecycle_state",
         "credential_fingerprint",
@@ -4598,6 +4624,81 @@ def _dispatch_request(app) -> Request:
     return Request({"type": "http", "app": app, "headers": []})
 
 
+async def _refresh_queued_dispatch_readiness(
+    app, record: DispatchRecord
+) -> CapacityAdmission:
+    """Recheck the fixed target contract before a waiting dispatch consumes a slot."""
+
+    request = _dispatch_request(app)
+    ctx = app.state.ctx
+    fleet: FleetRegistry = ctx.require_service("fleet_registry")
+    inst = fleet.get_instance(record.target_instance_id)
+    if not inst or inst.lifecycle_state != "active":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "queued_target_unavailable",
+                "message": "The requested target is unavailable; PA will keep waiting without rerouting it.",
+                "recoverable": True,
+            },
+        )
+    candidates = await _placement_candidates(request, [inst])
+    candidate = candidates[0]
+    policy_service = _policy_service(request)
+    policy, explicit = policy_service.effective_policy(
+        record.realm_id, candidate.instance_id
+    )
+    candidate.participation_policy = policy
+    candidate.participation_policy_explicit = explicit
+    candidate.group_membership = "included"
+    original = record.placement_decision or {}
+    try:
+        decision = await _offload_ctx(
+            ctx,
+            "fleet.queued_readiness_resolve",
+            ctx.require_service("placement_service").resolve,
+            PlacementRequest(
+                realm_id=record.realm_id,
+                fleet_id=ctx.settings.fleet_id,
+                instance_id=record.target_instance_id,
+                card_id=record.card_id,
+                provider=record.capacity_provider
+                or record.request_payload.get("provider"),
+                model_id=record.request_payload.get("model_id"),
+                workload_profile=str(original.get("workload_profile") or "research"),
+                project_id=record.project_id,
+                dispatch_intent=DispatchIntent(
+                    original.get("dispatch_intent")
+                    or DispatchIntent.AUTOMATIC.value
+                ),
+                principal_id=record.principal_id,
+                allow_concurrent=True,
+                # Suppress only the placement queue-full rejection so the store can
+                # atomically decide whether a slot is actually free.
+                capacity_override=True,
+            ),
+            candidates,
+        )
+    except PlacementError as exc:
+        raise _placement_http_error(exc) from exc
+    capacity = _capacity_admission_from_decision(
+        decision.model_dump(mode="json"),
+        provider=record.capacity_provider or record.request_payload.get("provider"),
+        override=False,
+        override_reason=None,
+    )
+    if not capacity:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "queued_readiness_unavailable",
+                "message": "Fresh target capacity could not be confirmed; PA will retry without rerouting.",
+                "recoverable": True,
+            },
+        )
+    return capacity
+
+
 async def _dispatch_cancelled(
     ctx: AppContext, ledger: DispatchStore, record: DispatchRecord
 ) -> bool:
@@ -4657,9 +4758,48 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
                     "recovery_url": f"/fleet?section=sync&realm={quote(record.realm_id)}",
                 },
             )
+        if card.lane == CardLane.DONE:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "queued_card_terminal",
+                    "message": "The card moved to Done while queued; the dispatch was not launched.",
+                    "recoverable": False,
+                },
+            )
+        prior_card_version = record.card_version
+        if prior_card_version and prior_card_version != card.updated_at.isoformat():
+            record.events.append(
+                DispatchEvent(
+                    seq=(record.events[-1].seq + 1 if record.events else 1),
+                    state=record.state,
+                    message="Card changed while queued; launching the latest authoritative snapshot without changing target or execution contract.",
+                    detail={
+                        "admitted_card_version": prior_card_version,
+                        "launch_card_version": card.updated_at.isoformat(),
+                    },
+                )
+            )
         record.card_version = card.updated_at.isoformat()
         record.card_snapshot = card.model_dump(mode="json")
         record.project_id = record.project_id or card.project_id
+        if record.project_id:
+            project = await _offload_ctx(
+                ctx,
+                "sqlite.project_read",
+                store.get_project,
+                record.project_id,
+                realm_id=record.realm_id,
+            )
+            if not project or str(project.status) != "active":
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "queued_project_unavailable",
+                        "message": "The project was deleted or archived while queued; the dispatch was not launched.",
+                        "recoverable": False,
+                    },
+                )
         await _offload_ctx(ctx, "dispatch.record_write", ledger.put, record)
     if await _dispatch_cancelled(ctx, ledger, record):
         return
@@ -5034,6 +5174,38 @@ async def _placement_candidates(
                 )
             )
         )
+        dispatch_store = ctx.services.get("dispatch_store")
+        if (
+            isinstance(dispatch_store, DispatchStore)
+            and activity.get("state") == "fresh"
+        ):
+            authority_counts = dispatch_store.capacity_snapshot(inst.instance_id)
+            value = dict(activity.get("value") or {})
+            value["dispatch_reservations"] = max(
+                int(value.get("dispatch_reservations") or 0),
+                authority_counts["dispatch_reservations"],
+            )
+            value["dispatch_waiting"] = max(
+                int(value.get("dispatch_waiting") or 0),
+                authority_counts["dispatch_waiting"],
+            )
+            if value.get("queue_capacity"):
+                queue_capacity = dict(value["queue_capacity"])
+                queue_capacity["consumed"] = max(
+                    int(queue_capacity.get("consumed") or 0),
+                    authority_counts["dispatch_waiting"],
+                )
+                value["queue_capacity"] = queue_capacity
+            provider_concurrency = {
+                key: dict(counts)
+                for key, counts in (value.get("provider_concurrency") or {}).items()
+            }
+            for provider, counts in authority_counts["provider_concurrency"].items():
+                current = provider_concurrency.setdefault(provider, {})
+                for key, count in counts.items():
+                    current[key] = max(int(current.get(key) or 0), count)
+            value["provider_concurrency"] = provider_concurrency
+            activity = {**activity, "value": value}
         return PlacementCandidate(
             instance_id=inst.instance_id,
             name=inst.name,
@@ -5043,6 +5215,10 @@ async def _placement_candidates(
             capabilities=list(inst.capabilities),
             dispatch_capacity=inst.dispatch_capacity,
             dispatch_provider_capacities=dict(inst.dispatch_provider_capacities),
+            dispatch_queue_capacity=inst.dispatch_queue_capacity,
+            dispatch_provider_queue_capacities=dict(
+                inst.dispatch_provider_queue_capacities
+            ),
             reachability=reachability,
             activity=activity,
             providers=providers,
@@ -5377,23 +5553,99 @@ def _capacity_admission_from_decision(
     if not detail:
         return None
     capacity = detail.get("capacity_detail") or {}
+    queue_capacity = detail.get("queue_capacity_detail") or {}
+    global_workload = detail.get("global_workload") or {}
+    provider_workload = detail.get("provider_workload") or {}
     observed_at = (detail.get("freshness") or {}).get("activity")
+    queue_limit = detail.get("queue_capacity")
+    if queue_limit is None:
+        queue_limit = 100
+    global_queue_limit = queue_capacity.get("global_limit")
+    if global_queue_limit is None:
+        global_queue_limit = queue_limit
     return CapacityAdmission(
         limit=int(detail.get("capacity") or capacity.get("limit")),
         source=str(capacity.get("source") or "unknown"),
         provider=provider.strip().lower() if provider else None,
-        provider_specific=capacity.get("provider_limit") is not None,
+        provider_specific=capacity.get("source") == "configured_provider",
         observed_active=int(detail.get("active") or 0),
         observed_queued=int(detail.get("queued") or 0),
         observed_reservations=int(detail.get("reserved") or 0),
         observed_at=observed_at or datetime.now(UTC),
         consumer_links=list(detail.get("consumer_links") or []),
+        global_limit=int(capacity.get("global_limit") or detail.get("capacity")),
+        provider_limit=(
+            int(capacity["provider_limit"])
+            if capacity.get("provider_limit") is not None
+            else None
+        ),
+        observed_global_active=int(global_workload.get("active") or 0),
+        observed_global_queued=int(global_workload.get("queued") or 0),
+        observed_global_reservations=int(
+            global_workload.get("reservations") or 0
+        ),
+        observed_provider_active=int(provider_workload.get("active") or 0),
+        observed_provider_queued=int(provider_workload.get("queued") or 0),
+        observed_provider_reservations=int(
+            provider_workload.get("reservations") or 0
+        ),
+        queue_limit=int(queue_limit),
+        queue_source=str(
+            (detail.get("queue_capacity_detail") or {}).get("source")
+            or "documented_default"
+        ),
+        queue_provider_specific=(
+            queue_capacity.get("source") == "configured_provider"
+        ),
+        observed_waiting=int(detail.get("queue_count") or 0),
+        global_queue_limit=int(global_queue_limit),
+        provider_queue_limit=(
+            int(queue_capacity["provider_limit"])
+            if queue_capacity.get("provider_limit") is not None
+            else None
+        ),
+        observed_global_waiting=int(detail.get("global_queue_count") or 0),
+        observed_provider_waiting=int(detail.get("provider_queue_count") or 0),
         override=override,
         override_reason=override_reason,
     )
 
 
 def _placement_http_error(exc: PlacementError) -> HTTPException:
+    queue_full = next(
+        (
+            item
+            for item in exc.rejected_candidates
+            if "dispatch_queue_full" in (item.get("rejection_codes") or [])
+        ),
+        None,
+    )
+    if queue_full is not None:
+        current = int(queue_full.get("queue_count") or 0)
+        maximum = int(queue_full.get("queue_capacity") or 0)
+        return HTTPException(
+            status_code=429,
+            detail={
+                "code": "dispatch_queue_full",
+                "message": f"The durable dispatch queue is full ({current} of {maximum}).",
+                "current_count": current,
+                "maximum_count": maximum,
+                "active_execution_capacity": queue_full.get("capacity"),
+                "source": (
+                    queue_full.get("queue_capacity_detail") or {}
+                ).get("source"),
+                "recoverable": True,
+                "retry_after_seconds": 5,
+                "retry_guidance": "Retry after queued work launches or is cancelled.",
+                "remediation_options": [
+                    "cancel unneeded queued dispatches",
+                    "increase dispatch_queue_capacity",
+                    "use a different eligible target",
+                ],
+                "rejected_candidates": exc.rejected_candidates,
+                "recovery_url": "/fleet?section=operations",
+            },
+        )
     status = 404 if exc.code == "instance_not_found" else 409
     return HTTPException(
         status_code=status,
@@ -5522,6 +5774,7 @@ async def dispatch_fleet_work(request: Request, body: FleetDispatchBody) -> dict
         return {
             "accepted": True,
             "duplicate": True,
+            "admission": "duplicate",
             "dispatch_id": existing.dispatch_id,
             "job_id": existing.dispatch_id,
             "dispatch": existing.public_dict(),
@@ -6022,6 +6275,7 @@ async def _admit_remote_agent_work(
         allow_concurrent=body.allow_concurrent,
         resume_requested=bool(body.resume_session_id),
         resume_session_id=body.resume_session_id,
+        requested_priority=body.priority,
     )
     if collaboration_service is not None and collaboration_decision is not None:
         collaboration_service.store.record_decision(
@@ -6071,10 +6325,19 @@ async def _admit_remote_agent_work(
             exc.detail,
         )
         raise HTTPException(status_code=409, detail=exc.detail) from exc
+    except DispatchQueueFull as exc:
+        logger.warning(
+            "fleet dispatch queue admission rejected target=%s provider=%s detail=%s",
+            instance_id,
+            body.provider,
+            exc.detail,
+        )
+        raise HTTPException(status_code=429, detail=exc.detail) from exc
     if duplicate:
         return {
             "accepted": True,
             "duplicate": True,
+            "admission": "duplicate",
             "dispatch_id": record.dispatch_id,
             "job_id": record.dispatch_id,
             "dispatch": record.public_dict(),
@@ -6088,6 +6351,11 @@ async def _admit_remote_agent_work(
     return {
         "accepted": True,
         "duplicate": False,
+        "admission": (
+            "queued"
+            if record.state in {"waiting_capacity", "blocked"}
+            else "launchable"
+        ),
         "dispatch_id": record.dispatch_id,
         "job_id": record.dispatch_id,
         "dispatch": record.public_dict(),
@@ -6108,6 +6376,61 @@ def list_dispatches(
             target_instance_id=target_instance_id, limit=limit
         )
     ]
+
+
+@router.get("/fleet/dispatch-queue")
+def get_dispatch_queue(request: Request) -> dict[str, Any]:
+    """Return bounded queue depth, age, blocked work, and scheduling order."""
+
+    require_user(request)
+    snapshot = _dispatch_store(request).queue_snapshot()
+    settings = request.app.state.ctx.settings
+    return {
+        **snapshot,
+        "capacity": settings.dispatch_queue_capacity,
+        "provider_capacities": dict(
+            settings.dispatch_provider_queue_capacities
+        ),
+        "active_execution_capacity": settings.dispatch_capacity or 4,
+    }
+
+
+@router.post("/fleet/dispatch-jobs/{dispatch_id}/priority")
+def update_dispatch_priority(
+    request: Request, dispatch_id: str, body: DispatchPriorityBody
+) -> dict[str, Any]:
+    """Idempotently reprioritize waiting work with an immutable audit entry."""
+
+    user = require_user(request)
+    if getattr(user, "role", None) != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "dispatch_priority_forbidden",
+                "message": "Only an administrator may reprioritize queued work.",
+            },
+        )
+    record = _dispatch_store(request).get(dispatch_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Dispatch not found")
+    try:
+        updated = _dispatch_store(request).reprioritize(
+            record,
+            priority=body.priority,
+            principal_id=get_principal_id(request),
+            idempotency_key=body.idempotency_key,
+        )
+    except DispatchIdempotencyConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "idempotency_conflict", "dispatch_id": dispatch_id},
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "dispatch_not_waiting", "message": str(exc)},
+        ) from exc
+    return updated.public_dict()
 
 
 @router.get("/fleet/dispatch-jobs/{dispatch_id}")
@@ -6763,6 +7086,8 @@ async def _retry_dispatch_api(
         )
     except PlacementError as exc:
         raise _placement_http_error(exc) from exc
+    except DispatchQueueFull as exc:
+        raise HTTPException(status_code=429, detail=exc.detail) from exc
     except DispatchCapacityExhausted as exc:
         raise HTTPException(status_code=409, detail=exc.detail) from exc
     except ValueError as exc:
@@ -6816,6 +7141,8 @@ def retry_dispatch(
             record = ledger.retry_with_capacity(
                 record, capacity, idempotency_key=idempotency_key
             )
+        except DispatchQueueFull as exc:
+            raise HTTPException(status_code=429, detail=exc.detail) from exc
         except DispatchCapacityExhausted as exc:
             raise HTTPException(status_code=409, detail=exc.detail) from exc
     else:
@@ -6888,9 +7215,11 @@ def cancel_dispatch(
     idempotency_key = _dispatch_control_key(request, body)
     if _repeat_dispatch_control(record, "cancel", idempotency_key):
         return record.public_dict()
-    if record.state == "queued":
+    if record.state in {"waiting_capacity", "blocked", "queued"}:
         record.control_operations[idempotency_key] = "cancel"
-        ledger.transition(record, "cancelled", "Operator cancelled queued dispatch.")
+        ledger.transition(
+            record, "cancelled", "Operator cancelled queued dispatch."
+        )
         return record.public_dict()
     if record.state not in {
         "checking_sync",
@@ -7630,6 +7959,10 @@ class FleetModule(Module):
             capabilities=settings.capabilities,
             dispatch_capacity=settings.dispatch_capacity,
             dispatch_provider_capacities=dict(settings.dispatch_provider_capacities),
+            dispatch_queue_capacity=settings.dispatch_queue_capacity,
+            dispatch_provider_queue_capacities=dict(
+                settings.dispatch_provider_queue_capacities
+            ),
             relay_enabled=settings.relay_enabled,
         )
         ctx.register_service("fleet_registry", fleet)
@@ -7707,6 +8040,7 @@ class FleetModule(Module):
             ctx.require_service("dispatch_store"),
             lambda record: _process_remote_dispatch(app, record),
             async_runtime=async_runtime,
+            readiness=lambda record: _refresh_queued_dispatch_readiness(app, record),
         )
         dispatch_worker.start()
         ctx.register_service("dispatch_worker", dispatch_worker)
@@ -8215,6 +8549,7 @@ class FleetModule(Module):
             participation_override: bool = False,
             participation_override_reason: str | None = None,
             execution_contract: dict[str, Any] | None = None,
+            priority: int = 0,
         ) -> dict:
             """Resolve a concrete target or policy and durably dispatch a card."""
             key = idempotency_key.strip()
@@ -8253,6 +8588,7 @@ class FleetModule(Module):
                     "participation_override": participation_override,
                     "participation_override_reason": (participation_override_reason),
                     "execution_contract": execution_contract,
+                    "priority": priority,
                     "idempotency_key": key,
                 },
             )
@@ -8280,6 +8616,7 @@ class FleetModule(Module):
             participation_override: bool = False,
             participation_override_reason: str | None = None,
             execution_contract: dict[str, Any] | None = None,
+            priority: int = 0,
         ) -> dict:
             """Durably and idempotently dispatch an authoritative card to a fleet instance."""
             key = idempotency_key.strip()
@@ -8305,6 +8642,8 @@ class FleetModule(Module):
                 "config": config or {},
                 "idempotency_key": key,
             }
+            if priority:
+                payload["priority"] = priority
             if execution_contract is not None:
                 payload["execution_contract"] = execution_contract
             if allow_concurrent:
@@ -8336,6 +8675,28 @@ class FleetModule(Module):
                     else f"/api/fleet/dispatch-jobs/{dispatch_id}"
                 ),
                 allow_not_found=True,
+            )
+
+        @mcp.tool()
+        def get_dispatch_queue() -> dict:
+            """Return waiting, blocked, active, and queue-capacity state."""
+            return request_local_pa(
+                ctx.settings, "GET", "/api/fleet/dispatch-queue"
+            )
+
+        @mcp.tool()
+        def set_dispatch_priority(
+            dispatch_id: str, priority: int, idempotency_key: str
+        ) -> dict:
+            """Idempotently reprioritize a waiting dispatch with audit history."""
+            return request_local_pa(
+                ctx.settings,
+                "POST",
+                f"/api/fleet/dispatch-jobs/{dispatch_id}/priority",
+                json={
+                    "priority": priority,
+                    "idempotency_key": idempotency_key,
+                },
             )
 
         @mcp.tool()
