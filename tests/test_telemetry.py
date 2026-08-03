@@ -396,6 +396,38 @@ class StorageTests(unittest.TestCase):
         )
 
 
+    def test_empty_zero_single_and_sparse_series_have_explicit_diagnostics(self) -> None:
+        empty = self.storage.query(TelemetryQuery(start=self.now - timedelta(hours=1), end=self.now, bucket_seconds=60))
+        self.assertEqual(empty["series"], [])
+        self.assertEqual(empty["diagnostics"]["point_count"], 0)
+        self.storage.insert_samples([
+            sample(self.now - timedelta(minutes=2), value=0),
+            sample(self.now, value=0),
+        ])
+        result = self.storage.query(TelemetryQuery(start=self.now - timedelta(minutes=3), end=self.now + timedelta(seconds=1), bucket_seconds=60))
+        points = result["series"][0]["points"]
+        self.assertEqual([point["avg"] for point in points], [0, 0])
+        self.assertEqual(result["diagnostics"]["series_count"], 1)
+        self.assertEqual(result["diagnostics"]["point_count"], 2)
+        self.assertEqual(result["diagnostics"]["bucket_count"], 2)
+        self.assertIsNotNone(result["diagnostics"]["collection_freshness"])
+
+    def test_non_finite_aggregate_is_dropped_and_counted(self) -> None:
+        malformed = sample(self.now, value=float("inf"))
+        self.storage.insert_samples([malformed])
+        result = self.storage.query(TelemetryQuery(start=self.now - timedelta(seconds=1), end=self.now + timedelta(seconds=1), bucket_seconds=60))
+        self.assertEqual(result["series"], [])
+        self.assertEqual(result["diagnostics"]["dropped_invalid_samples"], 1)
+
+
+    def test_timezone_boundary_is_serialized_in_utc_bucket_order(self) -> None:
+        boundary = datetime.fromisoformat("2026-11-01T01:59:30-07:00")
+        self.storage.insert_samples([sample(boundary, value=1), sample(boundary + timedelta(minutes=2), value=2)])
+        result = self.storage.query(TelemetryQuery(start=boundary - timedelta(minutes=1), end=boundary + timedelta(minutes=3), bucket_seconds=60))
+        timestamps = [point["timestamp"] for point in result["series"][0]["points"]]
+        self.assertEqual(timestamps, sorted(timestamps))
+        self.assertTrue(all(timestamp.endswith("+00:00") for timestamp in timestamps))
+
 class FailingStorage:
     def insert_samples(self, _samples) -> int:
         raise OSError("disk unavailable")
@@ -461,8 +493,14 @@ class TelemetryUITests(unittest.TestCase):
         ).read_text()
         self.assertIn("Fleet instances", template)
         self.assertIn("data-chart-cursor", template)
+        self.assertIn("data-chart-points", template)
+        self.assertIn("data-report-diagnostics", template)
         self.assertIn("ArrowLeft", script)
         self.assertIn("sampling gap", script)
+        self.assertIn("ResizeObserver", script)
+        self.assertIn("AbortController", script)
+        self.assertIn("Report could not be loaded", script)
+        self.assertIn("Number.isFinite", script)
         self.assertIn("unsupported", script)
         self.assertIn("js/telemetry.js", shell)
         self.assertIn("data-session-telemetry", chat)

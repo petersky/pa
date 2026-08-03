@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import os
 import sqlite3
 import threading
@@ -387,8 +388,12 @@ class TelemetryStorage:
             current["first_ts"] = min(current["first_ts"], incoming["first_ts"])
             current["last_ts"] = max(current["last_ts"], incoming["last_ts"])
 
+        dropped_invalid_samples = 0
         series: dict[tuple, list] = defaultdict(list)
         for row in sorted(combined.values(), key=lambda item: item["bucket_start"]):
+            if any(value is not None and not math.isfinite(float(value)) for value in (row["value_avg"], row["value_min"], row["value_max"])):
+                dropped_invalid_samples += 1
+                continue
             series[
                 (
                     row["instance_id"],
@@ -444,6 +449,13 @@ class TelemetryStorage:
                 }
                 for key, points in series.items()
             ],
+            "diagnostics": {
+                "bucket_count": len({point["timestamp"] for points in series.values() for point in points}),
+                "series_count": len(series),
+                "point_count": sum(len(points) for points in series.values()),
+                "collection_freshness": max((point["last_timestamp"] for points in series.values() for point in points), default=None),
+                "dropped_invalid_samples": dropped_invalid_samples,
+            },
         }
 
     @staticmethod

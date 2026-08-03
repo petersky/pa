@@ -32,6 +32,7 @@
     <div class="telemetry-legend" data-telemetry-legend aria-label="Series legend"></div>
   </header>
   <div class="telemetry-gap-banner" data-telemetry-gaps role="status" hidden></div>
+  <div class="telemetry-report-diagnostics muted small" data-report-diagnostics aria-live="polite">Preparing report…</div>
   <div class="telemetry-chart-grid">
     {% for group, title, metrics in [
       ('cpu', 'CPU and concurrency', 'cpu.utilization,pa.cpu,session.cpu,agents.concurrent'),
@@ -45,7 +46,7 @@
       <div class="telemetry-chart-stage" tabindex="0" role="img"
            aria-label="{{ title }} time series. Use left and right arrow keys to inspect synchronized points.">
         <svg viewBox="0 0 800 220" preserveAspectRatio="none" aria-hidden="true">
-          <g data-chart-grid></g><g data-chart-lines></g><line data-chart-cursor x1="0" x2="0" y1="12" y2="196" hidden></line>
+          <g data-chart-grid></g><g data-chart-axes></g><g data-chart-lines></g><g data-chart-points></g><line data-chart-cursor x1="0" x2="0" y1="12" y2="196" hidden></line>
         </svg>
         <div class="telemetry-tooltip" data-chart-tooltip hidden></div>
         <p class="telemetry-chart-empty muted" data-chart-empty>Loading…</p>

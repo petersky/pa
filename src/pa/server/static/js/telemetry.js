@@ -122,8 +122,8 @@
     return body;
   }
 
-  function lineSegments(points, width, height, max, bucketSeconds) {
-    const valid = points.filter(function (p) { return p.avg !== null; });
+  function lineSegments(points, width, height, min, max, bucketSeconds) {
+    const seen = new Set(); const valid = points.filter(function (p) { const time = Date.parse(p ? p.timestamp : null), value = Number(p ? p.avg : NaN); if (!Number.isFinite(time) || !Number.isFinite(value) || seen.has(time)) return false; seen.add(time); p.avg = value; return true; }).sort(function (a, b) { return Date.parse(a.timestamp) - Date.parse(b.timestamp); });
     if (!valid.length) return [];
     const times = valid.map(function (p) { return Date.parse(p.timestamp); });
     const minTime = Math.min.apply(null, times);
@@ -137,7 +137,7 @@
       }
       current.push({
         x: 42 + (timestamp - minTime) / timeSpan * (width - 58),
-        y: 12 + (1 - Number(point.avg) / (max || 1)) * (height - 36),
+        y: 12 + (1 - (Number(point.avg) - min) / (max - min || 1)) * (height - 36),
         point: point
       });
     });
@@ -147,6 +147,11 @@
 
   function drawReport(report, data) {
     const allSeries = data.series || [];
+    const diagnostics = report.querySelector("[data-report-diagnostics]");
+    const pointCount = allSeries.reduce(function (count, series) { return count + (series.points || []).length; }, 0);
+    const bucketCount = new Set(allSeries.flatMap(function (series) { return (series.points || []).map(function (point) { return point.timestamp; }); })).size;
+    const newest = allSeries.flatMap(function (series) { return series.points || []; }).sort(function (a, b) { return Date.parse(b.timestamp) - Date.parse(a.timestamp); })[0];
+    if (diagnostics) diagnostics.textContent = "Range " + new Date(data.start).toLocaleString() + " – " + new Date(data.end).toLocaleString() + " · " + bucketCount + " buckets · " + allSeries.length + " series · " + pointCount + " points" + (newest ? " · newest " + new Date(newest.timestamp).toLocaleString() : " · no collected samples");
     const legend = report.querySelector("[data-telemetry-legend]");
     legend.replaceChildren();
     allSeries.slice(0, 16).forEach(function (series, index) {
@@ -163,22 +168,33 @@
       const names = chart.dataset.metrics.split(",");
       const selected = allSeries.filter(function (series) { return names.indexOf(series.metric) >= 0; });
       const lines = chart.querySelector("[data-chart-lines]");
+      const pointsLayer = chart.querySelector("[data-chart-points]");
       const empty = chart.querySelector("[data-chart-empty]");
       const status = chart.querySelector("[data-chart-status]");
-      lines.replaceChildren(); status.replaceChildren();
+      const grid = chart.querySelector("[data-chart-grid]"), axes = chart.querySelector("[data-chart-axes]");
+      grid.replaceChildren(); axes.replaceChildren();
+      [12, 58, 104, 150, 196].forEach(function (y) { const line = document.createElementNS("http://www.w3.org/2000/svg", "line"); line.setAttribute("x1", "42"); line.setAttribute("x2", "784"); line.setAttribute("y1", y); line.setAttribute("y2", y); grid.appendChild(line); });
+      lines.replaceChildren(); pointsLayer.replaceChildren(); status.replaceChildren();
       if (!selected.length) {
         empty.hidden = false; empty.textContent = "This dimension is unavailable for the selected scopes.";
         return;
       }
       empty.hidden = true;
-      const maxima = selected.flatMap(function (series) {
-        return series.points.map(function (point) { return point.max; }).filter(function (value) { return value !== null; });
-      });
-      const max = Math.max.apply(null, maxima.concat([1]));
+      const values = selected.flatMap(function (series) { return series.points.map(function (point) { return Number(point.avg); }).filter(Number.isFinite); });
+      if (!values.length) { empty.hidden = false; empty.textContent = "Samples were returned, but none contain finite values."; return; }
+      let min = Math.min.apply(null, values), max = Math.max.apply(null, values);
+      if (min === max) { const padding = Math.abs(min) * 0.1 || 1; min -= padding; max += padding; }
       selected.forEach(function (series, index) {
-        const segments = lineSegments(series.points, 800, 220, max, data.bucket_seconds);
+        const segments = lineSegments(series.points, 800, 220, min, max, data.bucket_seconds);
         if (segments.length > 1) hasGaps = true;
         segments.forEach(function (segment) {
+          segment.forEach(function (item) {
+            const point = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+            point.setAttribute("cx", item.x.toFixed(1)); point.setAttribute("cy", item.y.toFixed(1));
+            point.setAttribute("r", segment.length === 1 ? "4" : "2.5");
+            point.setAttribute("fill", COLORS[index % COLORS.length]);
+            point.dataset.seriesIndex = String(allSeries.indexOf(series)); pointsLayer.appendChild(point);
+          });
           const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
           path.setAttribute("d", segment.map(function (point, i) {
             return (i ? "L" : "M") + point.x.toFixed(1) + "," + point.y.toFixed(1);
@@ -258,8 +274,13 @@
       });
       stage.addEventListener("click", function () { inspectChart(stage.closest("[data-chart-group]"), 0); });
     });
+    const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(function () { if (report.isConnected && report._lastData && report.getBoundingClientRect().width > 0) drawReport(report, report._lastData); });
+    if (resizeObserver) resizeObserver.observe(report);
+    report._cleanup = function () { if (report._request) report._request.abort(); if (resizeObserver) resizeObserver.disconnect(); report._lastData = null; };
     function load() {
       const body = reportBody(report, form);
+      if (report._request) report._request.abort();
+      report._request = new AbortController();
       const fleet = form.view.value === "fleet";
       if (fleet) {
         body.scope_type = "instance"; body.scope_ids = []; body.provider_ids = []; body.card_ids = [];
@@ -267,16 +288,21 @@
       fetch(fleet ? "/api/telemetry/fleet/query" : "/api/telemetry/query", {
         method: "POST", credentials: "same-origin",
         headers: Object.assign({"Content-Type": "application/json"}, csrfHeader()),
-        body: JSON.stringify(body)
+        body: JSON.stringify(body), signal: report._request.signal
       }).then(function (response) {
         if (!response.ok) return response.json().then(function (value) { throw value; });
         return response.json();
       }).then(function (data) {
-        drawReport(report, data);
+        report._lastData = data;
+        if (report.getBoundingClientRect().width > 0) drawReport(report, data);
         const health = document.querySelector("[data-report-health]");
         if (health) health.textContent = "Updated " + new Date().toLocaleTimeString() +
           " · " + (data.series || []).length + " series · " + data.bucket_seconds + "s aggregation";
       }).catch(function (error) {
+        if (error && error.name === "AbortError") return;
+        report.querySelectorAll("[data-chart-empty]").forEach(function (empty) {
+          empty.hidden = false; empty.textContent = "Report could not be loaded. Check collection health and retry.";
+        });
         const health = document.querySelector("[data-report-health]");
         if (health) health.textContent = "Report unavailable: " +
           (error && error.detail || "request failed");
@@ -297,6 +323,11 @@
     initReport(scope || document);
     refreshSessions(scope || document);
   }
+  document.body && document.body.addEventListener("htmx:beforeSwap", function (event) {
+    const target = event.detail && event.detail.target;
+    const report = target && (target.matches("[data-telemetry-report]") ? target : target.querySelector("[data-telemetry-report]"));
+    if (report && report._cleanup) report._cleanup();
+  });
 
   document.addEventListener("DOMContentLoaded", function () {
     init(document); refreshHeader();
