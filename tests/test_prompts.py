@@ -25,6 +25,7 @@ EXPECTED_PROMPT_KEYS = {
     "card.reconciliation.disposition",
     "agent.context.browser",
     "agent.context.card",
+    "agent.context.collaboration",
     "agent.context.data_safety",
     "agent.context.execution",
     "agent.context.interactions",

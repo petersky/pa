@@ -21,6 +21,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from pydantic import BaseModel, Field
 
 from pa.acp.configuration import SessionConfigurationRequest
+from pa.acp.providers.registry import get_provider
 from pa.attachments import (
     CHUNK_BYTES,
     AttachmentError,
@@ -28,6 +29,7 @@ from pa.attachments import (
     manifest_digest,
 )
 from pa.auth.middleware import get_principal_id, require_user
+from pa.collaboration.models import CollaborationMode, PolicyInput
 from pa.core.async_runtime import AsyncRuntime
 from pa.core.context import AppContext
 from pa.core.contracts import Module
@@ -94,7 +96,6 @@ from pa.execution.progress import (
     sanitize_text,
 )
 from pa.execution.reconciliation import CompletionReconciler
-from pa.fleet.credentials import CredentialRotationStore, router as credential_router
 from pa.fleet.bootstrap import (
     BootstrapJob,
     BootstrapJobStore,
@@ -106,6 +107,8 @@ from pa.fleet.bootstrap import (
     run_bootstrap_job,
 )
 from pa.fleet.control_plane import build_control_plane_status
+from pa.fleet.credentials import CredentialRotationStore
+from pa.fleet.credentials import router as credential_router
 from pa.fleet.join import (
     apply_reachability_settings,
     ensure_sync_token,
@@ -295,6 +298,10 @@ class RemoteAgentStartBody(BaseModel):
     provider: str | None = None
     model_id: str | None = None
     mode_id: str | None = None
+    collaboration_mode: CollaborationMode | None = None
+    collaboration_risk: str = "low"
+    collaboration_ambiguous: bool = False
+    collaboration_unattended: bool = False
     effort: str | None = None
     cwd: str | None = None
     config: dict[str, str | bool] = Field(default_factory=dict)
@@ -5891,6 +5898,54 @@ async def _admit_remote_agent_work(
             "dispatch": existing.public_dict(),
         }
 
+    collaboration_service = ctx.services.get("collaboration")
+    collaboration_decision = None
+    if collaboration_service is not None:
+        provider_id = body.provider or settings.agent_provider
+        try:
+            advertised_modes = list(
+                get_provider(provider_id).default_spec().collaboration_modes
+            )
+        except KeyError:
+            advertised_modes = []
+        collaboration_decision = collaboration_service.resolve_dispatch_policy(
+            PolicyInput(
+                realm_id=realm_id,
+                project_id=project_id,
+                instance_id=instance_id,
+                provider=provider_id,
+                card_id=card.id if card else None,
+                card_kind=(
+                    card.kind.value
+                    if card and hasattr(card.kind, "value")
+                    else str(card.kind)
+                    if card
+                    else None
+                ),
+                card_tags=list(card.tags if card else []),
+                capabilities=list(getattr(inst, "capabilities", []) or []),
+                dispatch_intent=(
+                    "automatic" if body.collaboration_unattended else "manual"
+                ),
+                risk=body.collaboration_risk,
+                ambiguous=body.collaboration_ambiguous,
+                unattended=body.collaboration_unattended,
+                dispatch_override=body.collaboration_mode,
+                supported_modes=advertised_modes,
+            ),
+            card_id=card.id if card else None,
+        )
+        payload["collaboration_mode"] = collaboration_decision.effective_mode.value
+        payload["collaboration_decision"] = collaboration_decision.model_dump(
+            mode="json"
+        )
+        payload_config = dict(payload.get("config") or {})
+        if "plan" in advertised_modes:
+            payload_config["collaboration_mode"] = (
+                collaboration_decision.effective_mode.value
+            )
+        payload["config"] = payload_config
+
     project_repositories = (
         list(store.list_project_repositories(project_id, realm_id=realm_id))
         if project_id
@@ -5968,6 +6023,12 @@ async def _admit_remote_agent_work(
         resume_requested=bool(body.resume_session_id),
         resume_session_id=body.resume_session_id,
     )
+    if collaboration_service is not None and collaboration_decision is not None:
+        collaboration_service.store.record_decision(
+            collaboration_decision,
+            dispatch_id=record.dispatch_id,
+            card_id=record.card_id,
+        )
     try:
         record, duplicate = await _offload_request(
             request,
@@ -8143,6 +8204,10 @@ class FleetModule(Module):
             provider: str | None = None,
             model_id: str | None = None,
             mode_id: str | None = None,
+            collaboration_mode: CollaborationMode | None = None,
+            collaboration_risk: str = "low",
+            collaboration_ambiguous: bool = False,
+            collaboration_unattended: bool = False,
             effort: str | None = None,
             allow_concurrent: bool = False,
             capacity_override: bool = False,
@@ -8173,6 +8238,14 @@ class FleetModule(Module):
                     "provider": provider,
                     "model_id": model_id,
                     "mode_id": mode_id,
+                    "collaboration_mode": (
+                        collaboration_mode.value
+                        if isinstance(collaboration_mode, CollaborationMode)
+                        else collaboration_mode
+                    ),
+                    "collaboration_risk": collaboration_risk,
+                    "collaboration_ambiguous": collaboration_ambiguous,
+                    "collaboration_unattended": collaboration_unattended,
                     "effort": effort,
                     "allow_concurrent": allow_concurrent,
                     "capacity_override": capacity_override,
@@ -8194,6 +8267,10 @@ class FleetModule(Module):
             provider: str | None = None,
             model_id: str | None = None,
             mode_id: str | None = None,
+            collaboration_mode: CollaborationMode | None = None,
+            collaboration_risk: str = "low",
+            collaboration_ambiguous: bool = False,
+            collaboration_unattended: bool = False,
             effort: str | None = None,
             cwd: str | None = None,
             config: dict[str, str | bool] | None = None,
@@ -8215,6 +8292,14 @@ class FleetModule(Module):
                 "provider": provider,
                 "model_id": model_id,
                 "mode_id": mode_id,
+                "collaboration_mode": (
+                    collaboration_mode.value
+                    if isinstance(collaboration_mode, CollaborationMode)
+                    else collaboration_mode
+                ),
+                "collaboration_risk": collaboration_risk,
+                "collaboration_ambiguous": collaboration_ambiguous,
+                "collaboration_unattended": collaboration_unattended,
                 "effort": effort,
                 "cwd": cwd,
                 "config": config or {},

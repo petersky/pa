@@ -165,7 +165,120 @@
       <p class="muted small" id="pa-agent-prefs-status" hidden></p>
     </form>
   </div>
+  <div class="panel">
+    <div class="panel-header"><h2>Collaboration-mode policy</h2></div>
+    <p class="muted">Controls whether new sessions start in Default or Plan mode. This never changes sandbox, filesystem, network, command, or approval authority.</p>
+    <form class="stack" id="pa-collaboration-policy-form" data-instance-id="{{ settings.instance_id }}">
+      <label><span>Policy scope</span>
+        <select name="scope_type">
+          <option value="instance">This instance</option>
+          <option value="project">Project</option>
+          <option value="realm">Realm</option>
+          <option value="fleet">Fleet</option>
+          <option value="provider">Provider</option>
+        </select>
+      </label>
+      <label><span>Scope ID</span><input name="scope_id" value="{{ settings.instance_id }}" required autocomplete="off"></label>
+      <label><span>Strategy</span>
+        <select name="strategy">
+          <option value="always_default">Always Default</option>
+          <option value="always_plan_first">Always Plan-first</option>
+          <option value="automatic">Automatic (deterministic risk/ambiguity)</option>
+          <option value="conditional">Plan-first for configured tags/kinds/capabilities</option>
+        </select>
+      </label>
+      <label><span>Mandatory constraint</span>
+        <select name="mandatory_mode">
+          <option value="">None</option>
+          <option value="default">Require Default</option>
+          <option value="plan">Require Plan</option>
+        </select>
+      </label>
+      <label class="checkbox-row"><input type="checkbox" name="allow_agent_transitions" checked><span>Allow policy-evaluated agent transition requests</span></label>
+      <label><span>Maximum Plan turns</span><input type="number" name="max_turns" min="1" max="20" value="3"></label>
+      <label><span>Plan expiry (minutes)</span><input type="number" name="expires_minutes" min="1" max="10080" value="60"></label>
+      <button type="submit" class="primary">Save collaboration policy</button>
+      <p class="muted small" data-collaboration-policy-status role="status" aria-live="polite">Loading effective policy…</p>
+    </form>
+  </div>
 </section>
+
+<script>
+(function () {
+  var form = document.getElementById("pa-collaboration-policy-form");
+  if (!form) return;
+  var policies = [];
+  var version = null;
+  var status = form.querySelector("[data-collaboration-policy-status]");
+  function policyId() { return form.scope_type.value + "-default-" + form.scope_id.value.trim(); }
+  function loadSelected() {
+    var policy = policies.find(function (item) { return item.id === policyId(); });
+    version = policy ? policy.version : null;
+    if (policy) {
+      form.strategy.value = policy.strategy;
+      form.mandatory_mode.value = policy.mandatory_mode || "";
+      form.allow_agent_transitions.checked = !!policy.allow_agent_transitions;
+      form.max_turns.value = policy.lifecycle.max_turns;
+      form.expires_minutes.value = policy.lifecycle.expires_minutes;
+    }
+    status.textContent = policy ? "Loaded version " + policy.version + "." : "No policy at this scope; lower-precedence policy or Default fallback applies.";
+  }
+  function headers() {
+    var value = { "Content-Type": "application/json", Accept: "application/json" };
+    var csrf = document.querySelector('meta[name="csrf-token"]');
+    if (csrf && csrf.content) value["X-CSRF-Token"] = csrf.content;
+    return value;
+  }
+  fetch("/api/agent/collaboration/policies", { credentials: "same-origin", headers: { Accept: "application/json" } })
+    .then(function (response) { return response.ok ? response.json() : Promise.reject(new Error("Could not load policy")); })
+    .then(function (loaded) { policies = loaded; loadSelected(); })
+    .catch(function (error) { status.textContent = error.message; });
+  form.scope_type.addEventListener("change", function () {
+    if (form.scope_type.value === "instance") form.scope_id.value = form.dataset.instanceId;
+    else if (form.scope_type.value === "fleet") form.scope_id.value = "default";
+    loadSelected();
+  });
+  form.scope_id.addEventListener("change", loadSelected);
+  form.addEventListener("submit", function (event) {
+    event.preventDefault();
+    status.textContent = "Saving…";
+    var now = new Date().toISOString();
+    var policy = {
+      id: policyId(),
+      scope_type: form.scope_type.value,
+      scope_id: form.scope_id.value.trim(),
+      provider: null,
+      strategy: form.strategy.value,
+      mandatory_mode: form.mandatory_mode.value || null,
+      allowed_modes: ["default", "plan"],
+      allow_agent_transitions: !!form.allow_agent_transitions.checked,
+      allowed_transitions: ["default:plan", "plan:default"],
+      plan_first_card_kinds: [], plan_first_tags: [], plan_first_capabilities: [], plan_first_intents: [],
+      automatic_risk_levels: ["high"], automatic_on_ambiguity: true,
+      lifecycle: {
+        max_turns: Number(form.max_turns.value),
+        expires_minutes: Number(form.expires_minutes.value),
+        max_questions: 5,
+        require_user_approval: true,
+        unattended_auto_approve: false,
+        unavailable_user_fallback: "escalate"
+      },
+      version: version || 1, enabled: true, updated_at: now
+    };
+    fetch("/api/agent/collaboration/policies/" + encodeURIComponent(policy.id), {
+      method: "PUT", credentials: "same-origin", headers: headers(),
+      body: JSON.stringify({ policy: policy, expected_version: version })
+    }).then(function (response) {
+      return response.json().then(function (body) { if (!response.ok) throw new Error((body.detail && body.detail.message) || "Policy save failed"); return body; });
+    }).then(function (saved) {
+      version = saved.version;
+      policies = policies.filter(function (item) { return item.id !== saved.id; });
+      policies.push(saved);
+      status.textContent = "Saved version " + saved.version + ".";
+    }).catch(function (error) { status.textContent = error.message; });
+  });
+})();
+</script>
 
 <section class="hidden stack" data-section="telemetry" hidden>
   <div class="panel">

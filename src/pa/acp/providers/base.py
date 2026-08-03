@@ -31,6 +31,9 @@ class AgentProviderSpec(BaseModel):
     # runtime support. None = trust initialize; False skips session/load.
     session_load_supported: bool | None = None
     capability_notes: str = ""
+    # Provider-neutral collaboration modes. These are intentionally separate
+    # from ACP session modes, which can encode execution/permission posture.
+    collaboration_modes: list[str] = Field(default_factory=list)
 
 
 class ProviderStatus(BaseModel):

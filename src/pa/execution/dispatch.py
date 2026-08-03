@@ -203,6 +203,10 @@ class DispatchRecord(BaseModel):
             "provisioning",
             "starting_session",
         }
+        data["collaboration"] = {
+            "requested_mode": self.request_payload.get("collaboration_mode"),
+            "decision": self.request_payload.get("collaboration_decision"),
+        }
         data["completion_outbox"] = {
             "pending": self.state == "completion_pending",
             "attempts": self.attempts,

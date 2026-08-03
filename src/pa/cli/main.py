@@ -74,6 +74,7 @@ from pa.cli.agent_provider import agent_provider_app
 from pa.cli.backup import backup_app
 from pa.cli.browser import browser_app
 from pa.cli.card import card_app
+from pa.cli.collaboration import collaboration_app
 from pa.cli.config_cmd import config_app
 from pa.cli.notifications import notifications_app
 from pa.cli.telemetry import telemetry_app
@@ -82,6 +83,7 @@ app.add_typer(agent_provider_app, name="agent-provider")
 app.add_typer(backup_app, name="backup")
 app.add_typer(browser_app, name="browser")
 app.add_typer(card_app, name="card")
+app.add_typer(collaboration_app, name="collaboration")
 app.add_typer(config_app, name="config")
 app.add_typer(telemetry_app, name="telemetry")
 app.add_typer(notifications_app, name="notifications")

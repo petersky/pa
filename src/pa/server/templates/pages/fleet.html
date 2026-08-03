@@ -411,6 +411,22 @@
             </label>
             <label>Model <input name="model_id" placeholder="Provider default" autocomplete="off"></label>
             <label>Mode <input name="mode_id" placeholder="Provider default" autocomplete="off"></label>
+            <label>Collaboration mode
+              <select name="collaboration_mode">
+                <option value="">Policy decision</option>
+                <option value="default">Default</option>
+                <option value="plan">Plan-first</option>
+              </select>
+            </label>
+            <label>Planning risk
+              <select name="collaboration_risk">
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
+            </label>
+            <label class="checkbox-row"><input type="checkbox" name="collaboration_ambiguous"><span>Scope is ambiguous; automatic policy may choose Plan-first</span></label>
+            <label class="checkbox-row"><input type="checkbox" name="collaboration_unattended"><span>Unattended fleet session (use durable interactions)</span></label>
             <label>Effort
               <select name="effort">
                 <option value="">Provider default</option>

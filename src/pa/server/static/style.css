@@ -2384,6 +2384,84 @@ code {
   background: var(--pa-accent-subtle);
 }
 
+.acw-command-menu {
+  max-height: min(22rem, 45dvh);
+  overflow-y: auto;
+  border: 1px solid var(--pa-border);
+  border-radius: 0.55rem;
+  background: var(--pa-surface-raised);
+  box-shadow: 0 0.75rem 2rem color-mix(in srgb, var(--pa-text) 14%, transparent);
+  padding: 0.35rem;
+  z-index: 12;
+}
+
+.acw-command-state,
+.acw-command-help {
+  margin: 0;
+  padding: 0.35rem 0.5rem;
+}
+
+.acw-command-option {
+  display: grid;
+  grid-template-columns: minmax(7rem, auto) auto 1fr;
+  width: 100%;
+  gap: 0.25rem 0.65rem;
+  padding: 0.5rem;
+  border: 0;
+  border-radius: 0.4rem;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.acw-command-option:hover,
+.acw-command-option.is-selected {
+  background: var(--pa-accent-subtle);
+}
+
+.acw-command-option:focus-visible {
+  outline: 2px solid var(--pa-accent);
+  outline-offset: -2px;
+}
+
+.acw-command-option:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+}
+
+.acw-command-title {
+  font-weight: 700;
+}
+
+.acw-command-origin {
+  align-self: center;
+  border: 1px solid var(--pa-border);
+  border-radius: 999px;
+  padding: 0.05rem 0.4rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.acw-command-description {
+  min-width: 0;
+}
+
+.acw-command-input {
+  grid-column: 1 / -1;
+  color: var(--pa-muted);
+  font-size: 0.78rem;
+}
+
+@media (max-width: 42rem) {
+  .acw-command-option {
+    grid-template-columns: 1fr auto;
+  }
+
+  .acw-command-description {
+    grid-column: 1 / -1;
+  }
+}
+
 .acw-attachments {
   display: flex;
   flex-wrap: wrap;

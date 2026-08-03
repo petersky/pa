@@ -259,6 +259,15 @@ PA resolves which ACP server to spawn per invocation:
 
 Surfaces are string keys (`chat.default`, `chat.card`, `project`, `execution`, …) so new agent entry points can opt into the same cascade. Manage installs with `pa agent-provider` / MCP `agent_provider_*` tools; fleet admins can target peers by `instance_id`. Capability notes live in [docs/acp/](acp/README.md).
 
+### Collaboration-mode control plane
+
+PA evaluates collaboration mode separately from provider execution mode and
+sandbox authority. Dispatch policy decisions, agent transition requests, ACP
+command snapshots, and command results use an authority-local durable ledger;
+fleet UI/API calls route to the session owner. Pending changes are revalidated
+and applied between turns. The provider-neutral contracts and precedence model
+are documented in [COLLABORATION_MODES.md](COLLABORATION_MODES.md).
+
 ## External integrations
 
 Planned sync with GitHub Issues, Notion, Jira, and others. Scaffold only — see [INTEGRATIONS.md](INTEGRATIONS.md).
