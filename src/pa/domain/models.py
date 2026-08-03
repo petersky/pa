@@ -491,6 +491,8 @@ class EventType(StrEnum):
     )
     PLACEMENT_DEFAULT_UPDATED = "placement_default_updated"
     PLACEMENT_DEFAULT_DELETED = "placement_default_deleted"
+    NOTIFICATION_UPSERTED = "notification_upserted"
+    NOTIFICATION_DELETED = "notification_deleted"
 
 
 class CardEvent(BaseModel):

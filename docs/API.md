@@ -1,5 +1,8 @@
 # PA HTTP API authentication
 
+Durable notification and correlated user-interaction endpoints are documented
+in [Interactions and fleet notifications](INTERACTIONS_AND_NOTIFICATIONS.md).
+
 PA publishes its live OpenAPI document at `/openapi.json` and interactive
 documentation at `/docs`. The document includes the authentication and CSRF
 requirements below, plus request and response examples for remote dispatch.

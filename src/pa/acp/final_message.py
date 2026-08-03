@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Mapping
 from typing import Any
 
@@ -21,6 +22,18 @@ _FINAL_MESSAGE_TYPES = {
     "assistant_message",
     "message_completed",
 }
+
+_INPUT_REQUEST = re.compile(
+    r"(?is)(?:\b(?:please|need you to|can you|could you|would you|"
+    r"choose|select|confirm|approve|provide|reply|respond|run|sign in|log in)\b"
+    r".{0,500}(?:\?|\b(?:then|after that|to continue|before I can continue)\b))|"
+    r"(?:\b(?:I|we)\s+need you to\s+(?:choose|select|confirm|approve|provide|"
+    r"reply|respond|run|sign in|log in)\b)|"
+    r"(?:\b(?:gh|aws|gcloud|az|npm|docker)\s+(?:auth\s+)?login\b)"
+)
+_NO_INPUT_REQUIRED = re.compile(
+    r"(?i)\b(?:no (?:user|operator) action (?:is )?required|nothing for you to do)\b"
+)
 
 
 def normalize_provider_phase(value: Any) -> str | None:
@@ -127,3 +140,26 @@ def assemble_final_assistant_message(events: Iterable[Any]) -> str:
         else:
             text += chunk
     return text.strip()
+
+
+def likely_user_input_request(text: str) -> str | None:
+    """Conservatively identify a final answer that explicitly blocks on a user.
+
+    Structured permission, elicitation, and operator-input mechanisms always
+    take precedence. This fallback intentionally avoids treating every final
+    question or suggestion as a durable request.
+    """
+    normalized = str(text or "").strip()
+    if not normalized or _NO_INPUT_REQUIRED.search(normalized):
+        return None
+    match = _INPUT_REQUEST.search(normalized)
+    if not match:
+        return None
+    paragraphs = [
+        part.strip() for part in re.split(r"\n\s*\n", normalized) if part.strip()
+    ]
+    selected = next(
+        (part for part in reversed(paragraphs) if _INPUT_REQUEST.search(part)),
+        match.group(0),
+    )
+    return selected[:4000]

@@ -90,6 +90,30 @@ class ProgressToolDetailV1(BaseModel):
     result: str | None = Field(default=None, max_length=MAX_PROGRESS_DETAIL)
 
 
+class OperatorInputChoiceV1(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1, max_length=200)
+    label: str = Field(min_length=1, max_length=300)
+    description: str | None = Field(default=None, max_length=1000)
+    value: Any = None
+
+
+class OperatorInputRequestV1(BaseModel):
+    """Structured operator-input request accepted alongside legacy strings."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    request_id: str | None = Field(default=None, max_length=300)
+    prompt: str = Field(min_length=1, max_length=8000)
+    response_schema: dict[str, Any] | None = None
+    choices: list[OperatorInputChoiceV1] = Field(default_factory=list, max_length=100)
+    allow_freeform: bool = True
+    allow_cancel: bool = True
+    sensitive: bool = False
+    deadline: datetime | None = None
+
+
 class CompletionReportV1(BaseModel):
     """Sanitized final evidence, separate from the card-disposition decision."""
 
@@ -148,7 +172,7 @@ class DispatchProgressEventV1(BaseModel):
     )
     blockers: list[str] = Field(default_factory=list, max_length=20)
     retry_reason: str | None = Field(default=None, max_length=MAX_PROGRESS_DETAIL)
-    operator_input: str | None = Field(default=None, max_length=MAX_PROGRESS_DETAIL)
+    operator_input: str | OperatorInputRequestV1 | None = None
     tool_details: list[ProgressToolDetailV1] = Field(
         default_factory=list, max_length=MAX_PROGRESS_TOOL_DETAILS
     )
@@ -230,7 +254,7 @@ class ExplicitProgressCheckpointV1(BaseModel):
     )
     blockers: list[str] = Field(default_factory=list, max_length=20)
     retry_reason: str | None = Field(default=None, max_length=1000)
-    operator_input: str | None = Field(default=None, max_length=1000)
+    operator_input: str | OperatorInputRequestV1 | None = None
     idempotency_key: str | None = Field(default=None, max_length=200)
 
     @model_validator(mode="after")
@@ -262,6 +286,31 @@ def sanitize_text(value: Any, *, limit: int = MAX_PROGRESS_SUMMARY) -> str:
     text = _URL_CREDENTIALS.sub(r"\1[REDACTED]@", text)
     text = " ".join(text.replace("\x00", "").split())
     return text[:limit].strip()
+
+
+def sanitize_operator_input(
+    value: str | OperatorInputRequestV1,
+) -> str | OperatorInputRequestV1:
+    if isinstance(value, str):
+        return sanitize_text(value, limit=1000)
+    return value.model_copy(
+        update={
+            "prompt": sanitize_text(value.prompt, limit=8000),
+            "choices": [
+                item.model_copy(
+                    update={
+                        "label": sanitize_text(item.label, limit=300),
+                        "description": (
+                            sanitize_text(item.description, limit=1000)
+                            if item.description
+                            else None
+                        ),
+                    }
+                )
+                for item in value.choices
+            ],
+        }
+    )
 
 
 def sanitize_validation(value: ProgressValidationV1) -> ProgressValidationV1:
@@ -368,7 +417,7 @@ def sanitize_progress_event(
                 else None
             ),
             "operator_input": (
-                sanitize_text(event.operator_input, limit=MAX_PROGRESS_DETAIL)
+                sanitize_operator_input(event.operator_input)
                 if event.operator_input
                 else None
             ),
@@ -807,7 +856,7 @@ class ProgressService:
         validations: list[ProgressValidationV1] | None = None,
         blockers: list[str] | None = None,
         retry_reason: str | None = None,
-        operator_input: str | None = None,
+        operator_input: str | OperatorInputRequestV1 | None = None,
         tool_details: list[ProgressToolDetailV1] | None = None,
         explicit_key: str | None = None,
         final: bool = False,
@@ -886,7 +935,7 @@ class ProgressService:
                 else None
             ),
             operator_input=(
-                sanitize_text(operator_input, limit=MAX_PROGRESS_DETAIL)
+                sanitize_operator_input(operator_input)
                 if operator_input
                 else None
             ),

@@ -24,6 +24,39 @@
     <span aria-hidden="true">+</span> New
   </button>
 
+  <div class="notification-chrome" data-notification-chrome>
+    <button type="button"
+            id="pa-notification-bell"
+            class="icon-btn notification-bell"
+            title="Notifications"
+            aria-label="Open notifications"
+            aria-haspopup="dialog"
+            aria-expanded="false"
+            aria-controls="pa-notification-panel">
+      {{ icon('bell') }}
+      <span class="notification-badge" data-notification-count hidden></span>
+    </button>
+    <section id="pa-notification-panel"
+             class="notification-panel"
+             role="dialog"
+             aria-label="Fleet notifications"
+             aria-modal="false"
+             tabindex="-1"
+             hidden>
+      <header>
+        <div><strong>Notifications</strong><span data-notification-status aria-live="polite"></span></div>
+        <button type="button" class="ghost small" data-notification-close aria-label="Close notifications">Close</button>
+      </header>
+      <div class="notification-filters" role="group" aria-label="Notification filters">
+        <button type="button" class="small active" data-notification-filter="outstanding">Outstanding</button>
+        <button type="button" class="ghost small" data-notification-filter="unread">Unread</button>
+        <button type="button" class="ghost small" data-notification-filter="all">All</button>
+      </div>
+      <div class="notification-list" data-notification-list></div>
+      <button type="button" class="ghost small notification-more" data-notification-more hidden>Load more</button>
+    </section>
+  </div>
+
   {% if agent_connected %}
   <a href="/agent"
      class="status-btn online"

@@ -147,6 +147,8 @@ class SessionLifecyclePolicy:
                 return "retained", "prompt_pending"
             if runtime._pending_permissions:
                 return "retained", "permission_pending"
+            if getattr(runtime, "_pending_elicitations", None):
+                return "retained", "elicitation_pending"
             if runtime._transcript_buffer or not runtime._transcript_queue.empty():
                 return "deferred", "transcript_delivery_pending"
         durable = dict((session.config_json or {}).get("durable_runtime") or {})

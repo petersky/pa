@@ -25,15 +25,19 @@ _FLEET_EVENT_ENTITY = {
     EventType.INSTANCE_PARTICIPATION_POLICY_UPDATED: "instance_policy",
     EventType.PLACEMENT_DEFAULT_UPDATED: "placement_default",
     EventType.PLACEMENT_DEFAULT_DELETED: "placement_default",
+    EventType.NOTIFICATION_UPSERTED: "notification",
+    EventType.NOTIFICATION_DELETED: "notification",
 }
 _FLEET_ENTITY_UPDATE_EVENT = {
     "instance_group": EventType.INSTANCE_GROUP_UPDATED,
     "instance_policy": EventType.INSTANCE_PARTICIPATION_POLICY_UPDATED,
     "placement_default": EventType.PLACEMENT_DEFAULT_UPDATED,
+    "notification": EventType.NOTIFICATION_UPSERTED,
 }
 _FLEET_ENTITY_DELETE_EVENT = {
     "instance_group": EventType.INSTANCE_GROUP_DELETED,
     "placement_default": EventType.PLACEMENT_DEFAULT_DELETED,
+    "notification": EventType.NOTIFICATION_DELETED,
 }
 
 
@@ -58,6 +62,8 @@ def _event_entity(event: CardEvent) -> tuple[str | None, str | None]:
                 f"profile:{event.payload.get('workload_profile') or '*'}"
             )
         return entity, str(scope_key)
+    if entity == "notification":
+        return entity, str(event.payload.get("id") or "") or None
     return None, None
 
 
@@ -87,6 +93,30 @@ def _latest_timestamp_value(left: Any, right: Any) -> Any:
     if len(parsed) == 2:
         return max(parsed)[2]
     return max((left, right), key=_canonical_value)
+
+
+def _notification_conflict_value(
+    field: str, left: Any, right: Any, winner: dict[str, Any]
+) -> tuple[Any, str]:
+    """Merge commutative notification fields without losing durable receipts."""
+    if field == "idempotency_keys":
+        values = sorted({str(item) for item in [*(left or []), *(right or [])]})
+        return values[-128:], "set_union"
+    if field in {"version", "coalesced_count"}:
+        try:
+            return max(int(left or 0), int(right or 0)), "highest_value"
+        except TypeError, ValueError:
+            pass
+    if field.endswith("_at"):
+        present = [value for value in (left, right) if value not in {None, ""}]
+        if not present:
+            return None, "optional_timestamp"
+        if field == "created_at":
+            return min(present, key=_canonical_value), "earliest_timestamp"
+        if len(present) == 1:
+            return present[0], "non_null_timestamp"
+        return _latest_timestamp_value(*present), "latest_timestamp"
+    return winner["value"], "highest_notification_version_then_event_identity"
 
 
 class EventLog:
@@ -235,7 +265,14 @@ class EventLog:
             (
                 {
                     key: resolution[key]
-                    for key in ("entity", "id", "field", "value", "strategy")
+                    for key in (
+                        "entity",
+                        "id",
+                        "field",
+                        "value",
+                        "strategy",
+                        "version",
+                    )
                     if key in resolution
                 }
                 for resolution in (automatic_resolutions or [])
@@ -260,6 +297,7 @@ class EventLog:
                     "instance_group",
                     "instance_policy",
                     "placement_default",
+                    "notification",
                 }
                 or not entity_id
                 or not field
@@ -278,7 +316,7 @@ class EventLog:
                 event_type = _FLEET_ENTITY_DELETE_EVENT[entity]
                 payload = (
                     {"id": entity_id}
-                    if entity == "instance_group"
+                    if entity in {"instance_group", "notification"}
                     else {"scope_key": entity_id}
                 )
             else:
@@ -287,11 +325,14 @@ class EventLog:
                     "instance_group": "id",
                     "instance_policy": "instance_id",
                     "placement_default": "scope_key",
+                    "notification": "id",
                 }[entity]
                 payload = {
                     identity_field: entity_id,
                     field: resolution.get("value"),
                 }
+                if entity == "notification":
+                    payload["version"] = max(1, int(resolution.get("version") or 1))
             resolution_events.append(
                 CardEvent(
                     id=f"auto-resolve-{object_hash(resolution_key)}",
@@ -438,6 +479,7 @@ class EventLog:
                         EventType.PROJECT_ARCHIVED,
                         EventType.INSTANCE_GROUP_DELETED,
                         EventType.PLACEMENT_DEFAULT_DELETED,
+                        EventType.NOTIFICATION_DELETED,
                     }:
                         entity_changes["__terminal__"] = {
                             **source,
@@ -515,10 +557,18 @@ class EventLog:
                                     _canonical_value(item.get("value")),
                                 ),
                             )
-                            value = winner["value"]
-                            strategy = (
-                                "highest_policy_version_then_event_identity"
-                            )
+                            if entity == "notification":
+                                value, strategy = _notification_conflict_value(
+                                    field,
+                                    left_fields[field]["value"],
+                                    right_fields[field]["value"],
+                                    winner,
+                                )
+                            else:
+                                value = winner["value"]
+                                strategy = (
+                                    "highest_policy_version_then_event_identity"
+                                )
                         else:
                             value = _latest_timestamp_value(
                                 left_fields[field]["value"],
@@ -532,6 +582,11 @@ class EventLog:
                                 "field": field,
                                 "value": value,
                                 "strategy": strategy,
+                                **(
+                                    {"version": int(winner.get("version") or 1)}
+                                    if entity == "notification"
+                                    else {}
+                                ),
                                 "local": left_fields[field],
                                 "remote": right_fields[field],
                             }
@@ -579,6 +634,7 @@ class EventLog:
                 EventType.INSTANCE_GROUP_ARCHIVED,
                 EventType.INSTANCE_PARTICIPATION_POLICY_UPDATED,
                 EventType.PLACEMENT_DEFAULT_UPDATED,
+                EventType.NOTIFICATION_UPSERTED,
             }:
                 if state is None:
                     state = {}
@@ -587,6 +643,7 @@ class EventLog:
                 EventType.CARD_DELETED,
                 EventType.INSTANCE_GROUP_DELETED,
                 EventType.PLACEMENT_DEFAULT_DELETED,
+                EventType.NOTIFICATION_DELETED,
             }:
                 state = None
             elif event.type == EventType.PROJECT_ARCHIVED and state is not None:

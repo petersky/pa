@@ -108,6 +108,7 @@ class Kernel:
         )
         agent.async_runtime = async_runtime
         agent.browser.async_runtime = async_runtime
+        agent.notification_service = self.ctx.services.get("notifications")
         import os
 
         from pa.instance.quiesce import consume_skip_resume

@@ -112,9 +112,23 @@ class _WaitParameters(_ActionParameters):
     condition: str = Field(min_length=1, max_length=1_000)
 
 
+class _OperatorInputChoice(_ActionParameters):
+    id: str = Field(min_length=1, max_length=200)
+    label: str = Field(min_length=1, max_length=300)
+    description: str | None = Field(default=None, max_length=1_000)
+    value: Any = None
+
+
 class _OperatorInputParameters(_ActionParameters):
     question: str = Field(min_length=1, max_length=2_000)
     keep_lane: Literal["inbox", "active", "waiting"]
+    request_id: str | None = Field(default=None, max_length=300)
+    response_schema: dict[str, Any] | None = None
+    choices: list[_OperatorInputChoice] = Field(default_factory=list, max_length=100)
+    allow_freeform: bool = True
+    allow_cancel: bool = True
+    sensitive: bool = False
+    deadline: datetime | None = None
 
 
 class _CreateCardParameters(_ActionParameters):
