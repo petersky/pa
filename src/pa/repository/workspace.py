@@ -1102,6 +1102,7 @@ class WorkspaceManager:
             "examined": 0,
             "cards_completed": 0,
             "standalone_completed": 0,
+            "orphaned_completed": 0,
             "closed_expired": 0,
             "missing_cards": 0,
             "nonterminal_cards": 0,
@@ -1123,6 +1124,15 @@ class WorkspaceManager:
                 )
                 if card is None:
                     result["missing_cards"] += 1
+                    if session_closed:
+                        terminal = True
+                        if not (lease.completed and lease.merged):
+                            lease.completed = True
+                            lease.merged = True
+                            lease.state = "completed"
+                            lease.stage = "reconciled_missing_card_session_closed"
+                            lease.error = None
+                            result["orphaned_completed"] += 1
                 elif not terminal:
                     result["nonterminal_cards"] += 1
                 if terminal and not (lease.completed and lease.merged):
@@ -1150,10 +1160,15 @@ class WorkspaceManager:
                 self._save(lease)
             else:
                 result["retained"] += 1
-        if result["cards_completed"] or result["standalone_completed"]:
+        reconciled = (
+            result["cards_completed"]
+            + result["standalone_completed"]
+            + result["orphaned_completed"]
+        )
+        if reconciled:
             self._increment_metric(
                 "reconciled_workspaces",
-                result["cards_completed"] + result["standalone_completed"],
+                reconciled,
             )
         if result["closed_expired"]:
             self._increment_metric(
@@ -1375,14 +1390,37 @@ class WorkspaceManager:
             return False, {**evidence, "proof": "missing watched head object"}
         if self._git("-C", str(cache), "cat-file", "-e", f"{merge_sha}^{{commit}}", check=False).returncode:
             return False, {**evidence, "proof": "missing merge commit object"}
-        source_changes = self._changed_paths(cache, lease.base_sha, head)
+        merge_parent = f"{merge_sha}^"
+        if self._git(
+            "-C",
+            str(cache),
+            "cat-file",
+            "-e",
+            f"{merge_parent}^{{commit}}",
+            check=False,
+        ).returncode:
+            return False, {**evidence, "proof": "missing merge parent object"}
+        source_base = self._git(
+            "-C", str(cache), "merge-base", head, merge_parent, check=False
+        ).stdout.strip()
+        if not source_base:
+            return False, {
+                **evidence,
+                "proof": "watched head and merge target have no common base",
+            }
+        source_changes = self._changed_paths(cache, source_base, head)
         commit_count = int(
             self._git(
-                "-C", str(cache), "rev-list", "--count", f"{lease.base_sha}..{head}"
+                "-C",
+                str(cache),
+                "rev-list",
+                "--count",
+                "--no-merges",
+                f"{source_base}..{head}",
             ).stdout.strip()
             or "0"
         )
-        candidates = [("squash", f"{merge_sha}^")]
+        candidates = [("squash", merge_parent)]
         if commit_count > 0:
             candidates.append(("rebase", f"{merge_sha}~{commit_count}"))
         for method, target_base in candidates:
@@ -1412,7 +1450,8 @@ class WorkspaceManager:
                     **evidence,
                     "merge_method": method,
                     "proof": "changed-path status and resulting blobs are equivalent",
-                    "source_base_sha": lease.base_sha,
+                    "source_base_sha": source_base,
+                    "lease_base_sha": lease.base_sha,
                     "target_base": target_base,
                     "changed_paths": sorted(source_changes),
                 }
@@ -1420,7 +1459,8 @@ class WorkspaceManager:
             **evidence,
             "merge_method": "squash_or_rebase",
             "proof": "content equivalence did not match",
-            "source_base_sha": lease.base_sha,
+            "source_base_sha": source_base,
+            "lease_base_sha": lease.base_sha,
             "changed_paths": sorted(source_changes),
         }
 

@@ -459,6 +459,32 @@ def test_reconcile_closed_standalone_session_preserves_unpushed_work(
     assert worktree.exists()
 
 
+def test_reconcile_closed_session_collects_missing_card_workspace(
+    tmp_path: Path,
+) -> None:
+    manager, _, linked = manager_for(tmp_path)
+    lease = manager.provision_repository(
+        linked, project_id="project-1", session_id="session-1", card_id="missing-card"
+    )
+    manager.store.list_cards.return_value = []
+    manager.store.list_sessions.return_value = [
+        AgentSession(id="session-1", agent_name="codex", status="closed")
+    ]
+
+    result = manager.reconcile_terminal_state()
+    reconciled = manager.get(linked.repository.id, "session-1")
+
+    assert result["missing_cards"] == 1
+    assert result["orphaned_completed"] == 1
+    assert reconciled is not None
+    assert reconciled.completed is True
+    assert reconciled.merged is True
+    assert reconciled.stage == "reconciled_missing_card_session_closed"
+    assert reconciled.expires_at <= datetime.now(UTC)
+    assert manager.collect_garbage()["cleaned"] == 1
+    assert not Path(lease.worktree_path).exists()
+
+
 def test_reconcile_retains_nonterminal_card_workspace(tmp_path: Path) -> None:
     manager, _, linked = manager_for(tmp_path)
     manager.provision_repository(
@@ -599,6 +625,58 @@ def test_deleted_pr_branch_is_cleaned_after_content_equivalence(
         ).returncode
         != 0
     )
+
+
+def test_squash_equivalence_uses_pr_merge_base_after_branch_update(
+    tmp_path: Path,
+) -> None:
+    manager, _, linked = manager_for(tmp_path)
+    lease = manager.provision_repository(
+        linked, project_id="project-1", session_id="session-1", card_id="card-1"
+    )
+    worktree = Path(lease.worktree_path)
+    git(worktree, "config", "user.email", "test@pa.invalid")
+    git(worktree, "config", "user.name", "PA Test")
+
+    integrator = tmp_path / "integrator-updated-base"
+    subprocess.run(
+        ["git", "clone", str(linked.repository.url), str(integrator)], check=True
+    )
+    git(integrator, "config", "user.email", "test@pa.invalid")
+    git(integrator, "config", "user.name", "PA Test")
+    (integrator / "main-only.txt").write_text("concurrent\n")
+    git(integrator, "add", "main-only.txt")
+    git(integrator, "commit", "-m", "concurrent main change")
+    git(integrator, "push", "origin", "main")
+
+    git(worktree, "fetch", "origin", "main")
+    git(worktree, "merge", "--no-edit", "origin/main")
+    (worktree / "README.md").write_text("feature\n")
+    git(worktree, "add", "README.md")
+    git(worktree, "commit", "-m", "feature")
+    head = git(worktree, "rev-parse", "HEAD").stdout.strip()
+    git(worktree, "push", "origin", f"HEAD:refs/heads/{lease.branch}")
+
+    git(integrator, "fetch", "origin", lease.branch)
+    git(integrator, "merge", "--squash", f"origin/{lease.branch}")
+    git(integrator, "commit", "-m", "squash feature")
+    merge_sha = git(integrator, "rev-parse", "HEAD").stdout.strip()
+    git(integrator, "push", "origin", "main")
+    git(integrator, "push", "origin", "--delete", lease.branch)
+
+    manager.set_pr_watch_provider(
+        lambda **_: [_terminal_watch(lease, head, merge_sha)]
+    )
+    manager.mark_card_completed("card-1", merged=True)
+    manager.expire_session("session-1")
+
+    result = manager.collect_garbage()
+    cleaned = manager.get(linked.repository.id, "session-1")
+    assert result["cleaned"] == 1
+    assert cleaned is not None
+    assert cleaned.cleanup_evidence["source_base_sha"] != lease.base_sha
+    assert cleaned.cleanup_evidence["lease_base_sha"] == lease.base_sha
+    assert not worktree.exists()
 
 
 def test_closed_unmerged_pr_does_not_authorize_unique_commit_cleanup(
