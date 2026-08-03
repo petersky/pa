@@ -25,5 +25,14 @@ jobs:
       - name: Boot smoke test
         run: uv run python -c "from pa.core.kernel import Kernel; Kernel.boot().build_app()"
 
+      - name: Build published artifacts
+        run: uv build
+
+      - name: Packaged MCP 2 stdio smoke
+        run: |
+          uv venv --python 3.14 --seed .packaged-venv
+          uv pip install --python .packaged-venv/bin/python dist/*.whl
+          .packaged-venv/bin/python scripts/packaged_mcp_smoke.py
+
       - name: Channel resolution smoke
         run: uv run python -c "from pa.update.channels import resolve_track_ref; print(resolve_track_ref('release'))"

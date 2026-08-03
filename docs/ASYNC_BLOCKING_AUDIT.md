@@ -59,7 +59,7 @@ Agent transcripts, dispatch completion, and Fleet/PR-supervisor job state have b
 
 The audit deliberately retained synchronous code where it does not execute on the ASGI loop:
 
-- FastAPI `def` endpoints execute in Starlette's worker pool, and synchronous FastMCP tools execute in the framework's worker boundary. Their transitive calls were still reviewed for finite external timeouts.
+- FastAPI `def` endpoints execute in Starlette's worker pool, and synchronous MCPServer tools execute in the framework's worker boundary. Their transitive calls were still reviewed for finite external timeouts.
 - Module `configure` and kernel construction happen before the server accepts requests. Small in-memory registration remains synchronous; startup work that may touch providers, disk, SQLite, or the network was moved to the runtime or a background task.
 - CLI commands, release/install commands, migration helpers, and synchronous compatibility APIs remain synchronous. Async server callers use their explicit async wrappers; CLI callers gain no responsiveness from conversion.
 - Pure in-memory registry/table reads and short lock-protected event-buffer reads remain direct.

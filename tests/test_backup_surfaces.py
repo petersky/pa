@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from starlette.testclient import TestClient
 from typer.testing import CliRunner
 
@@ -17,7 +17,7 @@ from pa.modules.backups import BackupsModule
 
 class BackupSurfaceTests(unittest.IsolatedAsyncioTestCase):
     async def test_mcp_exposes_complete_backup_and_restore_operations(self) -> None:
-        mcp = FastMCP("backup-contract")
+        mcp = MCPServer("backup-contract")
         BackupsModule().register_mcp(mcp, SimpleNamespace(settings=SimpleNamespace()))
         tools = {tool.name: tool for tool in await mcp.list_tools()}
         self.assertTrue(
@@ -34,10 +34,10 @@ class BackupSurfaceTests(unittest.IsolatedAsyncioTestCase):
                 "backup_restore_status",
             }.issubset(tools)
         )
-        self.assertIn("idempotency_key", tools["backup_run"].inputSchema["required"])
+        self.assertIn("idempotency_key", tools["backup_run"].input_schema["required"])
         self.assertIn(
             "confirm_instance_id",
-            tools["backup_restore_initiate"].inputSchema["required"],
+            tools["backup_restore_initiate"].input_schema["required"],
         )
 
 

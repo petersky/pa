@@ -116,14 +116,14 @@ def _ensure_supported_mcp_sdk(context: Mapping[str, Any]) -> None:
         major = int(version.split(".", 1)[0])
     except ValueError:
         return
-    if major >= 2:
+    if major != 2:
         raise McpHandshakeError(
             "dependency_incompatible",
-            "Reinstall or upgrade PA so its declared dependency resolves mcp>=1.9.0,<2, then restart PA.",
-            f"installed mcp SDK {version} is incompatible with pa.mcp.server FastMCP imports",
+            "Run `pa update`, then `pa restart`, so PA resolves its supported mcp>=2.0.0,<3 SDK.",
+            f"installed mcp SDK {version} is outside PA's supported mcp>=2.0.0,<3 range",
             phase="dependency_preflight",
             context=context,
-            root_exception="ModuleNotFoundError: mcp.server.fastmcp",
+            root_exception=f"UnsupportedMcpSdkVersion: {version}",
         )
 
 

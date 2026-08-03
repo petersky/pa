@@ -149,11 +149,19 @@ def test_nested_taskgroup_retains_child_stderr_and_bootstrap_context(
     assert error.context["process_exit_code"] is None
 
 
-def test_mcp_2_is_classified_before_child_spawn() -> None:
+@pytest.mark.parametrize("version", ["1.27.1", "3.0.0"])
+def test_unsupported_mcp_major_is_classified_before_child_spawn(
+    version: str,
+) -> None:
     with pytest.raises(McpHandshakeError) as raised:
-        _ensure_supported_mcp_sdk({"mcp_sdk_version": "2.0.0"})
+        _ensure_supported_mcp_sdk({"mcp_sdk_version": version})
     assert raised.value.classification == "dependency_incompatible"
     assert raised.value.phase == "dependency_preflight"
+    assert version in raised.value.detail
+
+
+def test_mcp_2_passes_dependency_preflight() -> None:
+    _ensure_supported_mcp_sdk({"mcp_sdk_version": "2.0.0"})
 
 
 def _fresh(value):

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from fastapi import APIRouter, FastAPI
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server.mcpserver import MCPServer
 
     from pa.core.context import AppContext
 
@@ -50,7 +50,7 @@ class Module(ABC):
 
         return []
 
-    def register_mcp(self, mcp: FastMCP, ctx: AppContext) -> None:
+    def register_mcp(self, mcp: MCPServer, ctx: AppContext) -> None:
         """Register MCP tools/resources on the shared server."""
 
     def cli_commands(self) -> list[Any]:

@@ -4,7 +4,7 @@ import tomllib
 from pathlib import Path
 
 
-def test_published_metadata_excludes_incompatible_mcp_2() -> None:
+def test_published_metadata_requires_supported_mcp_2() -> None:
     root = Path(__file__).parents[1]
     metadata = tomllib.loads((root / "pyproject.toml").read_text())
     requirement = next(
@@ -12,7 +12,7 @@ def test_published_metadata_excludes_incompatible_mcp_2() -> None:
         for item in metadata["project"]["dependencies"]
         if item.startswith("mcp")
     )
-    assert requirement == "mcp>=1.9.0,<2"
-    assert 'name = "mcp", specifier = ">=1.9.0,<2"' in (
+    assert requirement == "mcp>=2.0.0,<3"
+    assert 'name = "mcp", specifier = ">=2.0.0,<3"' in (
         root / "uv.lock"
     ).read_text()
