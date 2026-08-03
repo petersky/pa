@@ -25,6 +25,7 @@ from pa.domain.models import (
     KnowledgeStatus,
     KnowledgeUpdate,
     ProjectCreate,
+    RepositoryCreate,
 )
 from pa.domain.projection import CardProjection
 from pa.domain.session_selection import preferred_sessions_by_card
@@ -302,8 +303,8 @@ class CoreWorkUiRouteTests(unittest.TestCase):
             self.assertNotIn('aria-label="Instance:', non_local.text)
             self.assertRegex(
                 non_local.text,
-                r'data-new-card-open[\s\S]*?</button>\s*'
-                r'(?!<span[^>]+instance)',
+                r"data-new-card-open[\s\S]*?</button>\s*"
+                r"(?!<span[^>]+instance)",
             )
             for page in self.app.state.ctx.require_service("pages").nav_pages():
                 with self.subTest(page=page.path):
@@ -340,7 +341,9 @@ class CoreWorkUiRouteTests(unittest.TestCase):
         self.assertIn("font-size: 0.6875rem", instance_rules)
         self.assertIn("color: var(--pa-text-muted)", instance_rules)
         self.assertIn("white-space: nowrap", instance_rules)
-        self.assertIn(".header-start { min-width: 0; flex-wrap: nowrap; }", mobile_rules)
+        self.assertIn(
+            ".header-start { min-width: 0; flex-wrap: nowrap; }", mobile_rules
+        )
         self.assertIn(
             'document.querySelector("[data-pa-instance-name]")',
             spa,
@@ -683,9 +686,7 @@ class CoreWorkUiRouteTests(unittest.TestCase):
             first_page = client.get("/partials/cards?lane=done&q=Matching")
 
             self.assertEqual(first_page.status_code, 200)
-            self.assertEqual(
-                first_page.text.count('<article class="compact-card'), 10
-            )
+            self.assertEqual(first_page.text.count('<article class="compact-card'), 10)
             self.assertIn("Matching outcome 11", first_page.text)
             for title in omitted:
                 self.assertNotIn(title, first_page.text)
@@ -700,9 +701,7 @@ class CoreWorkUiRouteTests(unittest.TestCase):
             self.assertIn("q=Matching", first_page.text)
             self.assertIn("limit=12", first_page.text)
 
-            expanded = client.get(
-                "/partials/cards?lane=done&q=Matching&limit=12"
-            )
+            expanded = client.get("/partials/cards?lane=done&q=Matching&limit=12")
 
             self.assertEqual(expanded.status_code, 200)
             self.assertEqual(expanded.text.count('<article class="compact-card'), 12)
@@ -725,6 +724,142 @@ class CoreWorkUiRouteTests(unittest.TestCase):
             )
             self.assertEqual(created.status_code, 201, created.text)
             self.assertEqual(created.json()["summary"], "Works safely.")
+
+    def test_card_project_change_simple_assign_change_and_clear(self) -> None:
+        with TestClient(self.app) as client:
+            first = self.app.state.ctx.store.create_project(
+                ProjectCreate(title="First")
+            )
+            second = self.app.state.ctx.store.create_project(
+                ProjectCreate(title="Second")
+            )
+            card = self.app.state.ctx.store.create_card(CardCreate(title="Movable"))
+            page = client.get("/")
+            token = re.search(
+                r'<meta name="csrf-token" content="([^"]+)"', page.text
+            ).group(1)
+
+            assigned = client.post(
+                f"/api/cards/{card.id}/project-change",
+                headers={"X-CSRF-Token": token},
+                json={"project_id": first.id},
+            )
+            self.assertEqual(assigned.status_code, 200, assigned.text)
+            self.assertEqual(assigned.json()["status"], "changed")
+            self.assertEqual(assigned.json()["card"]["project_id"], first.id)
+
+            changed = client.post(
+                f"/api/cards/{card.id}/project-change",
+                headers={"X-CSRF-Token": token},
+                json={"project_id": second.id},
+            )
+            self.assertEqual(changed.status_code, 200, changed.text)
+            self.assertEqual(changed.json()["card"]["project_id"], second.id)
+
+            cleared = client.post(
+                f"/api/cards/{card.id}/project-change",
+                headers={"X-CSRF-Token": token},
+                json={"project_id": None},
+            )
+            self.assertEqual(cleared.status_code, 200, cleared.text)
+            self.assertIsNone(cleared.json()["card"]["project_id"])
+
+    def test_card_project_change_reviews_dependencies_and_cancel_preserves_card(
+        self,
+    ) -> None:
+        with TestClient(self.app) as client:
+            source = self.app.state.ctx.store.create_project(
+                ProjectCreate(title="Source")
+            )
+            target = self.app.state.ctx.store.create_project(
+                ProjectCreate(title="Target")
+            )
+            repository = self.app.state.ctx.store.create_repository(
+                RepositoryCreate(url="https://example.test/source.git", name="source")
+            )
+            self.app.state.ctx.store.link_project_repository(source.id, repository.id)
+            card = self.app.state.ctx.store.create_card(
+                CardCreate(title="Dependent", project_id=source.id)
+            )
+            page = client.get("/")
+            token = re.search(
+                r'<meta name="csrf-token" content="([^"]+)"', page.text
+            ).group(1)
+
+            review = client.post(
+                f"/api/cards/{card.id}/project-change",
+                headers={"X-CSRF-Token": token},
+                json={"project_id": target.id},
+            )
+            self.assertEqual(review.status_code, 200, review.text)
+            self.assertEqual(review.json()["status"], "review_required")
+            self.assertEqual(review.json()["impact"]["repository_count"], 1)
+            self.assertFalse(review.json()["impact"]["migration_compatible"])
+            self.assertEqual(
+                self.app.state.ctx.store.get_card(card.id).project_id, source.id
+            )
+
+            rejected = client.post(
+                f"/api/cards/{card.id}/project-change",
+                headers={"X-CSRF-Token": token},
+                json={"project_id": target.id, "decision": "migrate"},
+            )
+            self.assertEqual(rejected.status_code, 409)
+            self.assertEqual(
+                self.app.state.ctx.store.get_card(card.id).project_id, source.id
+            )
+
+            cancelled = client.post(
+                f"/api/cards/{card.id}/project-change",
+                headers={"X-CSRF-Token": token},
+                json={"project_id": target.id, "decision": "cancel"},
+            )
+            self.assertEqual(cancelled.json()["status"], "cancelled")
+            self.assertEqual(
+                self.app.state.ctx.store.get_card(card.id).project_id, source.id
+            )
+
+    def test_card_project_change_compatible_migration_preserves_repository_links(
+        self,
+    ) -> None:
+        with TestClient(self.app) as client:
+            source = self.app.state.ctx.store.create_project(
+                ProjectCreate(title="Source")
+            )
+            target = self.app.state.ctx.store.create_project(
+                ProjectCreate(title="Target")
+            )
+            repository = self.app.state.ctx.store.create_repository(
+                RepositoryCreate(url="https://example.test/shared.git", name="shared")
+            )
+            self.app.state.ctx.store.link_project_repository(source.id, repository.id)
+            self.app.state.ctx.store.link_project_repository(target.id, repository.id)
+            card = self.app.state.ctx.store.create_card(
+                CardCreate(title="Compatible", project_id=source.id)
+            )
+            token = re.search(
+                r'<meta name="csrf-token" content="([^"]+)"', client.get("/").text
+            ).group(1)
+
+            review = client.post(
+                f"/api/cards/{card.id}/project-change",
+                headers={"X-CSRF-Token": token},
+                json={"project_id": target.id},
+            )
+            self.assertTrue(review.json()["impact"]["migration_compatible"])
+            migrated = client.post(
+                f"/api/cards/{card.id}/project-change",
+                headers={"X-CSRF-Token": token},
+                json={"project_id": target.id, "decision": "migrate"},
+            )
+            self.assertEqual(migrated.status_code, 200, migrated.text)
+            self.assertEqual(migrated.json()["card"]["project_id"], target.id)
+            self.assertEqual(
+                len(self.app.state.ctx.store.list_project_repositories(source.id)), 1
+            )
+            self.assertEqual(
+                len(self.app.state.ctx.store.list_project_repositories(target.id)), 1
+            )
 
     def test_detail_agent_is_explicit_and_responsive_breakpoints_exist(self) -> None:
         root = Path(__file__).parents[1] / "src" / "pa" / "server"
