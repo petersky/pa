@@ -42,6 +42,12 @@ DIMENSIONS = (
 )
 DETAIL_TIMEOUT = 4.0
 REACHABILITY_TIMEOUT = 2.5
+# The stdio probe owns a ten-second initialize/tools/shutdown budget.  Fleet
+# callers get two additional seconds to schedule the blocking probe and reap the
+# child; never wrap that handshake in DETAIL_TIMEOUT.
+MCP_STDIO_HANDSHAKE_TIMEOUT = 10.0
+MCP_BOOTSTRAP_TIMEOUT = 12.0
+MCP_BOOTSTRAP_CACHE_TTL = 30.0
 GOOD_STATES = {"fresh", "stale"}
 EDGE_STATUS_SEVERITY = {
     "healthy": 0,
@@ -718,13 +724,18 @@ def local_dimension(ctx: Any, dimension: str) -> Any:
 
 
 async def _json_get(
-    ctx: Any, client: httpx.AsyncClient, url: str, headers: dict[str, str]
+    ctx: Any,
+    client: httpx.AsyncClient,
+    url: str,
+    headers: dict[str, str],
+    *,
+    timeout: float = DETAIL_TIMEOUT,
 ) -> Any:
     runtime = _runtime(ctx)
     request = client.get(url, headers=headers)
     response = (
         await runtime.observe(
-            "http.fleet_overview", request, timeout=DETAIL_TIMEOUT
+            "http.fleet_overview", request, timeout=timeout
         )
         if runtime
         else await request
@@ -738,7 +749,13 @@ async def _json_get(
 async def _probe(ctx: Any, inst: FleetInstance, dimension: str) -> dict[str, Any]:
     started = time.perf_counter()
     is_local = inst.instance_id == ctx.settings.instance_id
-    timeout = REACHABILITY_TIMEOUT if dimension == "reachability" else DETAIL_TIMEOUT
+    timeout = (
+        REACHABILITY_TIMEOUT
+        if dimension == "reachability"
+        else MCP_BOOTSTRAP_TIMEOUT
+        if dimension == "mcp_bootstrap"
+        else DETAIL_TIMEOUT
+    )
     try:
         if is_local and dimension not in {"providers", "mcp_bootstrap", "update"}:
             value = await _offload(
@@ -764,7 +781,11 @@ async def _probe(ctx: Any, inst: FleetInstance, dimension: str) -> dict[str, Any
             value = await _offload(
                 ctx,
                 "fleet.overview.mcp_bootstrap",
-                partial(probe_pa_mcp_stdio, ctx.settings, timeout=3.0),
+                partial(
+                    probe_pa_mcp_stdio,
+                    ctx.settings,
+                    timeout=MCP_STDIO_HANDSHAKE_TIMEOUT,
+                ),
                 timeout=timeout,
             )
         elif is_local and dimension == "update":
@@ -809,6 +830,7 @@ async def _probe(ctx: Any, inst: FleetInstance, dimension: str) -> dict[str, Any
                         client,
                         f"{base}/api/agent/providers/mcp-bootstrap",
                         headers,
+                        timeout=timeout,
                     )
                 elif dimension == "update":
                     value = await _json_get(
@@ -938,7 +960,13 @@ async def probe_dimension(
         try:
             observed = datetime.fromisoformat(str(cached.get("observed_at")))
             age = (datetime.now(UTC) - observed).total_seconds()
-            ttl = 30.0 if dimension in {"providers", "update"} else 3.0
+            ttl = (
+                MCP_BOOTSTRAP_CACHE_TTL
+                if dimension == "mcp_bootstrap"
+                else 30.0
+                if dimension in {"providers", "update"}
+                else 3.0
+            )
             if age < ttl:
                 return {**cached, "cache_hit": True}
         except TypeError, ValueError:
@@ -946,7 +974,15 @@ async def probe_dimension(
     key = (str(ctx.settings.data_dir), inst.instance_id, dimension)
     async with _probe_lock:
         active = _probe_tasks.get(key)
-        if active is None or active[1].done() or force:
+        # Bootstrap is process-heavy and must stay single-flight even when a
+        # preview/admission caller requests a forced refresh.  Cheap dimensions
+        # retain the established force semantics where an explicit refresh may
+        # supersede an older background attempt.
+        if (
+            active is None
+            or active[1].done()
+            or (force and dimension != "mcp_bootstrap")
+        ):
             attempt_id = time.time_ns()
             task = asyncio.create_task(_probe(ctx, inst, dimension))
             _probe_tasks[key] = (attempt_id, task)

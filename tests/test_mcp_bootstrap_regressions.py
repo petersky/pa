@@ -5,6 +5,7 @@ import json
 import tempfile
 from contextlib import AbstractAsyncContextManager
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -32,6 +33,12 @@ from pa.fleet.placement import (
     PlacementService,
     RoundRobinCursorStore,
 )
+from pa.fleet.overview import (
+    MCP_BOOTSTRAP_TIMEOUT,
+    MCP_STDIO_HANDSHAKE_TIMEOUT,
+    probe_dimension,
+)
+from pa.domain.models import FleetInstance
 
 
 def _event_payload(*, command: str = "pytest") -> dict:
@@ -162,6 +169,45 @@ def test_unsupported_mcp_major_is_classified_before_child_spawn(
 
 def test_mcp_2_passes_dependency_preflight() -> None:
     _ensure_supported_mcp_sdk({"mcp_sdk_version": "2.0.0"})
+
+
+def test_fleet_bootstrap_budget_exceeds_healthy_cold_handshake() -> None:
+    assert MCP_STDIO_HANDSHAKE_TIMEOUT > 4.0
+    assert MCP_BOOTSTRAP_TIMEOUT > MCP_STDIO_HANDSHAKE_TIMEOUT
+
+
+def test_forced_bootstrap_refreshes_coalesce(tmp_path: Path) -> None:
+    calls = 0
+
+    async def slow_probe(_ctx, _instance, _dimension):
+        nonlocal calls
+        calls += 1
+        await asyncio.sleep(0.02)
+        return {
+            "state": "fresh",
+            "value": {"state": "connected"},
+            "observed_at": "2026-01-01T00:00:00+00:00",
+        }
+
+    ctx = SimpleNamespace(
+        settings=SimpleNamespace(data_dir=tmp_path),
+        services={},
+    )
+    instance = FleetInstance(
+        instance_id="target",
+        name="target",
+        url="http://target.test",
+    )
+    async def exercise():
+        with patch("pa.fleet.overview._probe", side_effect=slow_probe):
+            return await asyncio.gather(
+                probe_dimension(ctx, instance, "mcp_bootstrap", force=True),
+                probe_dimension(ctx, instance, "mcp_bootstrap", force=True),
+            )
+
+    first, second = asyncio.run(exercise())
+    assert calls == 1
+    assert first["state"] == second["state"] == "fresh"
 
 
 def _fresh(value):

@@ -522,6 +522,7 @@ def _card_agent_context(request: Request, card) -> dict:
                 "explicit": explicit,
             }
     fleet_capacity: dict[str, dict] = {}
+    dispatch_inventory: dict[str, dict] = {}
     for node in overview.get("nodes", []):
         activity = (node.get("dimensions") or {}).get("activity") or {}
         value = activity.get("value") or {}
@@ -546,6 +547,13 @@ def _card_agent_context(request: Request, card) -> dict:
                 else f"capacity unavailable · {freshness}"
             ),
         }
+        providers = (node.get("dimensions") or {}).get("providers") or {}
+        dispatch_inventory[node["id"]] = {
+            "instance_name": node.get("name") or node["id"],
+            "state": providers.get("state") or "unavailable",
+            "observed_at": providers.get("observed_at"),
+            "providers": providers.get("value") or [],
+        }
     return {
         "card": card,
         "related_sessions": related_sessions,
@@ -554,6 +562,7 @@ def _card_agent_context(request: Request, card) -> dict:
         "latest_dispatch": dispatches[0] if dispatches else None,
         "fleet_instances": instances,
         "fleet_capacity": fleet_capacity,
+        "dispatch_inventory": dispatch_inventory,
         "local_instance_id": ctx.settings.instance_id,
         "local_instance_name": ctx.settings.instance_name,
         "agent_enabled": ctx.settings.agent_enabled,

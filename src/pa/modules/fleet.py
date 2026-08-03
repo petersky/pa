@@ -18,7 +18,7 @@ from uuid import UUID, uuid4
 import httpx
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from pa.acp.configuration import SessionConfigurationRequest
 from pa.acp.providers.registry import get_provider
@@ -316,6 +316,20 @@ class RemoteAgentStartBody(BaseModel):
     participation_override_reason: str | None = Field(default=None, max_length=500)
     execution_contract: dict[str, Any] | None = None
     priority: int = Field(default=0, ge=-10, le=10)
+
+    @field_validator("provider", "model_id", mode="before")
+    @classmethod
+    def normalize_optional_selector(cls, value):
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        # Legacy form serialization emitted the Python display value. It is
+        # never a stable provider/model ID, so preserve automatic selection.
+        return (
+            None
+            if not normalized or normalized.casefold() == "none"
+            else normalized
+        )
 
 
 class FleetDispatchBody(RemoteAgentStartBody):
@@ -5293,10 +5307,10 @@ async def _resolve_policy_placement(
     project_id: str | None,
 ) -> tuple[Any, Any]:
     ctx = request.app.state.ctx
-    # Resolve the effective provider before eligibility/capacity checks. Leaving
-    # this as None admits any healthy provider, then may launch the unavailable
-    # instance default (the original Cursor-on-macmini failure).
-    body.provider = (body.provider or ctx.settings.agent_provider).strip().lower()
+    # An omitted provider means automatic target-compatible selection.  Do not
+    # inject the authority host's default before placement (for example Cursor
+    # when the selected worker is Codex-only).
+    body.provider = (body.provider or "").strip().lower() or None
     realm_id = card.realm_id if card else ctx.settings.primary_realm
     plan, repository_ids = _placement_materialization_plan(
         request,
@@ -5458,6 +5472,23 @@ async def _resolve_policy_placement(
         }
         for item in decision.rejected_candidates
     ]
+    if body.provider is None:
+        chosen = next(
+            (
+                item
+                for item in decision.eligible_candidates
+                if item.get("instance_id") == decision.chosen_instance_id
+            ),
+            None,
+        )
+        body.provider = str((chosen or {}).get("provider_id") or "").strip() or None
+        if body.provider is None:
+            raise PlacementError(
+                "provider_unavailable",
+                "The selected target has no concrete authenticated provider "
+                "for automatic selection.",
+                rejected_candidates=decision.rejected_candidates,
+            )
     return decision, plan
 
 
@@ -5665,6 +5696,21 @@ def _placement_http_error(exc: PlacementError) -> HTTPException:
             ],
             "recovery_url": "/fleet?section=operations",
             "rejected_candidates": exc.rejected_candidates,
+            "field_errors": (
+                {
+                    "provider": {
+                        "code": "provider_unavailable",
+                        "message": exc.message,
+                        "recovery_choices": [
+                            "select an authenticated provider",
+                            "choose another target instance",
+                            "refresh provider inventory",
+                        ],
+                    }
+                }
+                if exc.code == "provider_unavailable"
+                else {}
+            ),
         }
     return HTTPException(
         status_code=status,
