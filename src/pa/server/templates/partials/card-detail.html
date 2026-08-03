@@ -37,6 +37,7 @@
         </div>
       </div>
       <div class="card-detail-actions">
+        <button type="button" data-card-dispatch-open data-card-id="{{ card.id }}" data-card-realm="{{ card.realm_id }}">Dispatch</button>
         <button type="button" class="ghost danger"
                 hx-delete="/partials/cards/{{ card.id }}?realm={{ card.realm_id }}"
                 hx-target="#card-detail-dialog-content"

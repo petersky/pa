@@ -3528,6 +3528,22 @@ a.ghost {
   box-shadow: 0 1.5rem 5rem rgb(0 0 0 / 0.35);
 }
 .card-detail-dialog::backdrop { background: rgb(0 0 0 / 0.56); backdrop-filter: blur(2px); }
+.card-dispatch-dialog {
+  width: min(760px, calc(100vw - 2rem));
+  max-height: min(90dvh, 900px);
+  padding: 0;
+  border: 1px solid var(--pa-border);
+  border-radius: 0.8rem;
+  background: var(--pa-surface);
+  color: var(--pa-text);
+}
+.card-dispatch-dialog::backdrop { background: rgb(0 0 0 / 0.56); backdrop-filter: blur(2px); }
+#card-dispatch-dialog-content { max-height: inherit; overflow: auto; }
+.card-dispatch-modal { padding: 1rem; }
+.card-dispatch-modal-header { display: flex; justify-content: space-between; gap: 1rem; align-items: start; }
+.card-dispatch-modal-header h2, .card-dispatch-modal-header p { margin: 0; }
+.compact-card-dispatch { align-self: flex-start; }
+.workshop-order-wrap { display: flex; align-items: center; gap: 0.35rem; }
 #card-detail-dialog-content { max-height: inherit; overflow: hidden; }
 .card-dialog-state { display: grid; place-items: center; min-height: 16rem; padding: 2rem; text-align: center; }
 .card-dialog-state .form-actions { display: flex; gap: 0.5rem; }

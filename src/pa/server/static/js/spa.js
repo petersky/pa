@@ -329,6 +329,75 @@
   var cardDialogRequest = null;
   var cardDialogBackNavigation = false;
   var cardTabs = ["summary", "agent", "activity"];
+  var cardDispatchDialogOpener = null;
+  var cardDispatchRequest = null;
+
+  function cardDispatchDialog() {
+    return document.getElementById("card-dispatch-dialog");
+  }
+
+  function cardDispatchDialogContent() {
+    return document.getElementById("card-dispatch-dialog-content");
+  }
+
+  function closeCardDispatchDialog() {
+    if (cardDispatchRequest) cardDispatchRequest.abort();
+    cardDispatchRequest = null;
+    var dialog = cardDispatchDialog();
+    if (dialog && dialog.open) dialog.close();
+    var content = cardDispatchDialogContent();
+    if (content) content.replaceChildren();
+    if (cardDispatchDialogOpener && document.contains(cardDispatchDialogOpener)) {
+      cardDispatchDialogOpener.focus();
+    }
+    cardDispatchDialogOpener = null;
+  }
+
+  function openCardDispatchDialog(cardId, realm, opener) {
+    var dialog = cardDispatchDialog();
+    var content = cardDispatchDialogContent();
+    if (!dialog || !content || !cardId) return;
+    if (cardDispatchRequest) cardDispatchRequest.abort();
+    cardDispatchDialogOpener = opener || document.activeElement;
+    content.innerHTML = '<div class="card-dialog-state" role="status"><p>Loading dispatch configuration…</p></div>';
+    if (!dialog.open) {
+      if (typeof dialog.showModal === "function") dialog.showModal();
+      else dialog.setAttribute("open", "");
+    }
+    cardDispatchRequest = new AbortController();
+    fetch("/partials/cards/" + encodeURIComponent(cardId) + "/dispatch?realm=" + encodeURIComponent(realm || "default"), {
+      credentials: "same-origin", signal: cardDispatchRequest.signal,
+    }).then(function (response) {
+      if (!response.ok) throw new Error("Dispatch configuration could not be loaded.");
+      return response.text();
+    }).then(function (html) {
+      content.innerHTML = html;
+      var context = content.querySelector("[data-card-dispatch-context]");
+      initCardDispatchContext(context);
+      var title = content.querySelector("#card-dispatch-dialog-title");
+      if (title) title.focus();
+    }).catch(function (error) {
+      if (error.name === "AbortError") return;
+      content.innerHTML = '<div class="card-dialog-state" role="alert"><h2>Dispatch unavailable</h2><p>' +
+        error.message + '</p><button type="button" data-card-dispatch-close>Close</button></div>';
+    });
+  }
+
+  window.PACardDispatch = { open: openCardDispatchDialog, close: closeCardDispatchDialog };
+
+  var dispatchDialogElement = cardDispatchDialog();
+  if (dispatchDialogElement) {
+    dispatchDialogElement.addEventListener("cancel", function (event) {
+      event.preventDefault();
+      closeCardDispatchDialog();
+    });
+  }
+
+  function hideCardDispatchActions(cardId) {
+    document.querySelectorAll('[data-card-dispatch-open][data-card-id="' + CSS.escape(cardId) + '"]').forEach(function (button) {
+      if (!button.closest("[data-card-detail]")) button.remove();
+    });
+  }
 
   function cardDialog() {
     return document.getElementById("card-detail-dialog");
@@ -767,6 +836,17 @@
     previewCardPlacement(dispatchForm);
   }
 
+  function initCardDispatchContext(context) {
+    if (!context) return;
+    var dispatchStatus = context.querySelector("[data-card-dispatch-status]");
+    if (dispatchStatus && dispatchStatus.dataset.dispatchId) {
+      pollCardDispatch(context, dispatchStatus.dataset.dispatchId, 0);
+    }
+    var dispatchForm = context.querySelector("[data-card-dispatch-form]");
+    updateCardDispatchUtilization(dispatchForm);
+    previewCardPlacement(dispatchForm);
+  }
+
   function updateCardDispatchUtilization(form) {
     if (!form) return;
     var select = form.elements.dispatch_target;
@@ -866,7 +946,7 @@
 
   function previewCardPlacement(form) {
     if (!form) return;
-    var detail = form.closest("[data-card-detail]");
+    var detail = form.closest("[data-card-dispatch-context]");
     var region = form.querySelector("[data-card-dispatch-preview]");
     if (!detail || !region) return;
     window.clearTimeout(form._placementPreviewTimer);
@@ -1600,7 +1680,7 @@
     var form = event.target.closest("[data-card-dispatch-form]");
     if (!form) return;
     event.preventDefault();
-    var detail = form.closest("[data-card-detail]");
+    var detail = form.closest("[data-card-dispatch-context]");
     var key = form.dataset.idempotencyKey || dispatchOperationKey("card-dispatch:" + detail.dataset.cardId);
     form.dataset.idempotencyKey = key;
     var payload = cardDispatchPayload(form, detail);
@@ -1623,9 +1703,15 @@
       .then(function (result) {
         renderCardDispatch(detail, result.dispatch);
         pollCardDispatch(detail, result.dispatch_id, 500);
+        hideCardDispatchActions(detail.dataset.cardId);
+        document.body.dispatchEvent(new CustomEvent("boardRefresh"));
       })
       .catch(function (error) {
         renderCardDispatchError(detail, error);
+        var dispatchError = error && error.detail ? error.detail : error || {};
+        if (dispatchError.code === "card_dispatch_in_progress") {
+          hideCardDispatchActions(detail.dataset.cardId);
+        }
         submit.disabled = false;
         submit.textContent = "Retry dispatch";
       });
@@ -1642,6 +1728,16 @@
   });
 
   document.body.addEventListener("click", function (event) {
+    var dispatchOpen = event.target.closest("[data-card-dispatch-open]");
+    if (dispatchOpen) {
+      event.preventDefault();
+      openCardDispatchDialog(dispatchOpen.dataset.cardId, dispatchOpen.dataset.cardRealm, dispatchOpen);
+      return;
+    }
+    if (event.target.closest("[data-card-dispatch-close]")) {
+      closeCardDispatchDialog();
+      return;
+    }
     var newCardOpen = event.target.closest("[data-new-card-open]");
     if (newCardOpen) {
       event.preventDefault();
@@ -1668,7 +1764,7 @@
       closeCardDialog(true);
       return;
     }
-    var detail = event.target.closest("[data-card-detail]");
+    var detail = event.target.closest("[data-card-detail], [data-card-dispatch-context]");
     if (!detail) return;
     var cardTab = event.target.closest("[data-card-tab]");
     if (cardTab) {

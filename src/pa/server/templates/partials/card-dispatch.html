@@ -1,0 +1,106 @@
+{% from "macros/instance_identity.html" import instance_identity %}
+<article class="card-dispatch-modal" data-card-dispatch-context data-card-id="{{ card.id }}" data-card-realm="{{ card.realm_id }}">
+  <header class="card-dispatch-modal-header">
+    <div><p class="eyebrow">{{ card.title }}</p><h2 id="card-dispatch-dialog-title" tabindex="-1">Dispatch card</h2></div>
+    <button type="button" class="ghost" data-card-dispatch-close aria-label="Close dispatch dialog">Close</button>
+  </header>
+  <section class="card-dispatch-panel" aria-labelledby="card-dispatch-title-{{ card.id }}">
+    <div>
+      <h4 id="card-dispatch-title-{{ card.id }}">Durable fleet dispatch</h4>
+      <p class="muted">Resolve a healthy target and queue this card through the fleet control plane. This does not change preferred-instance metadata.</p>
+    </div>
+    <form data-card-dispatch-form>
+      <label for="card-dispatch-profile-{{ card.id }}">Workspace profile</label>
+      <select id="card-dispatch-profile-{{ card.id }}" name="execution_profile" required>
+        <option value="automatic">Automatic (show a choice if ambiguous)</option>
+        <option value="repository">Repository work — verified isolated worktree</option>
+        <option value="research">Research/artifact work — no Git required</option>
+        <option value="operations">Operations/external tools — no source checkout</option>
+      </select>
+      <label for="card-dispatch-group-{{ card.id }}">Worker group</label>
+      <select id="card-dispatch-group-{{ card.id }}" name="worker_group">
+        <option value="">Configured default — most specific project/profile rule</option>
+        {% for group in worker_groups %}
+        <option value="{{ group.id }}">{{ group.name }} — {{ group.summary }}</option>
+        {% endfor %}
+      </select>
+      <div class="card-dispatch-provider-grid">
+        <label for="card-dispatch-provider-{{ card.id }}">Provider
+          <input id="card-dispatch-provider-{{ card.id }}" name="provider" placeholder="Any authenticated provider">
+        </label>
+        <label for="card-dispatch-model-{{ card.id }}">Model
+          <input id="card-dispatch-model-{{ card.id }}" name="model_id" placeholder="Provider default">
+        </label>
+      </div>
+      <label for="card-dispatch-target-{{ card.id }}">Placement policy or named instance</label>
+      <div class="card-dispatch-controls">
+        <select id="card-dispatch-target-{{ card.id }}" name="dispatch_target" required>
+          <optgroup label="Placement policies">
+            <option value="policy:best_match">Best match</option>
+            <option value="policy:least_busy">Least busy</option>
+            <option value="policy:round_robin">Round-robin</option>
+            <option value="policy:random_eligible">Random eligible</option>
+          </optgroup>
+          <optgroup label="Concrete instances">
+            {% set local_capacity = fleet_capacity.get(local_instance_id, {}) %}
+            {% set local_participation = participation_summaries.get(local_instance_id, {}) %}
+            <option value="instance:{{ local_instance_id }}"
+                    data-capacity-summary="{{ local_capacity.get('summary', 'Capacity will be checked before admission') }}"
+                    data-capacity-eligible="{{ 'true' if local_capacity.get('eligible') else 'false' }}">Local instance — {{ local_instance_name }} · {{ local_participation.get('summary', 'policy pending') }} · {{ local_capacity.get('summary', 'capacity pending') }}</option>
+            {% for instance in fleet_instances %}
+            {% if instance.instance_id != local_instance_id %}
+            {% set capacity = fleet_capacity.get(instance.instance_id, {}) %}
+            {% set participation = participation_summaries.get(instance.instance_id, {}) %}
+            <option value="instance:{{ instance.instance_id }}"
+                    data-capacity-summary="{{ capacity.get('summary', 'Capacity will be checked before admission') }}"
+                    data-capacity-eligible="{{ 'true' if capacity.get('eligible') else 'false' }}">Named instance — {{ instance.name }} · {{ participation.get('summary', 'policy pending') }} · {{ capacity.get('summary', 'capacity pending') }}</option>
+            {% endif %}
+            {% endfor %}
+          </optgroup>
+        </select>
+        {% set dispatch_active = latest_dispatch and latest_dispatch.state not in ['failed', 'completed', 'cancelled', 'acknowledged'] %}
+        <button type="submit"{% if dispatch_active %} disabled{% endif %}>{{ 'Dispatch in progress…' if dispatch_active else 'Dispatch card' }}</button>
+      </div>
+      <p class="muted card-dispatch-hint" data-card-dispatch-utilization>Policies probe fresh utilization on every candidate before admission.</p>
+      <p class="muted card-dispatch-hint">Policies use fresh health, provider authentication, workload, repository/worktree, capacity, and authorization checks.</p>
+      <details class="panel-inset">
+        <summary>Privileged named-instance override</summary>
+        <p class="muted small">Administrators may explicitly override synchronized soft participation, workload, project, or repository rules for a named instance. Self-protective hard limits, health, authentication, workspace fencing, and capacity remain enforced and the reason is audited.</p>
+        <label><input type="checkbox" name="participation_override"> Request privileged participation override</label>
+        <label>Override reason <input name="participation_override_reason" maxlength="500" placeholder="Required when override is enabled"></label>
+      </details>
+      <div class="card-dispatch-preview"
+           data-card-dispatch-preview
+           role="status"
+           aria-live="polite">
+        <p class="muted">Choose a group, profile, policy, provider, or model to preview every eligible and rejected candidate.</p>
+      </div>
+    </form>
+
+    <div class="card-dispatch-status"
+         data-card-dispatch-status
+         data-dispatch-id="{{ latest_dispatch.dispatch_id if latest_dispatch else '' }}"
+         role="status"
+         aria-live="polite">
+      {% if latest_dispatch %}
+      <div class="card-dispatch-status-heading">
+        <span class="status status-{{ latest_dispatch.state }}">{{ latest_dispatch.state | replace('_', ' ') }}</span>
+        <strong>{{ latest_dispatch.target_instance_name or latest_dispatch.target_instance_id }}</strong>
+      </div>
+      <p>{{ latest_dispatch.events[-1].message if latest_dispatch.events else 'Dispatch admitted.' }}</p>
+      {% if latest_dispatch.materialization_plan %}<p class="muted">{{ latest_dispatch.materialization_plan.summary }}</p>{% endif %}
+      {% if latest_dispatch.last_error %}<p class="danger">{{ latest_dispatch.last_error }}</p>{% endif %}
+      {% if latest_dispatch.placement_decision %}
+      <p class="muted">{{ latest_dispatch.placement_decision.tie_breaking_reason }}</p>
+      {% endif %}
+      <div class="card-dispatch-links">
+        {% if latest_dispatch.session_id %}<a href="/agent?session={{ latest_dispatch.session_id }}">Open durable session</a>{% endif %}
+        {% if latest_dispatch.can_retry %}<button type="button" class="ghost small" data-card-dispatch-retry="{{ latest_dispatch.dispatch_id }}">Retry dispatch</button>{% endif %}
+      </div>
+      {% else %}
+      <p class="muted">No durable fleet dispatch has been created for this card.</p>
+      {% endif %}
+    </div>
+  </section>
+
+</article>

@@ -21,6 +21,11 @@
        data-card-id="{{ card.id }}"
        data-card-realm="{{ card.realm_id }}">{{ card.title }}</a>
   </h3>
+  {% if not progress %}
+  <button type="button" class="ghost small compact-card-dispatch" data-card-dispatch-open
+          data-card-id="{{ card.id }}" data-card-realm="{{ card.realm_id }}"
+          aria-label="Dispatch {{ card.title }}">Dispatch</button>
+  {% endif %}
   {% if not title_only %}
   <div class="card-markdown compact-card-summary" data-card-markdown>
     <span hidden data-card-markdown-source>{{ card.summary | tojson }}</span>
