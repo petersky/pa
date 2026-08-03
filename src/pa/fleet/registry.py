@@ -21,6 +21,8 @@ _SEMANTIC_MEMBER_FIELDS = {
     "capabilities",
     "dispatch_capacity",
     "dispatch_provider_capacities",
+    "dispatch_queue_capacity",
+    "dispatch_provider_queue_capacities",
     "relay_enabled",
     "lifecycle_state",
     "credential_fingerprint",
@@ -249,6 +251,8 @@ class FleetRegistry:
         capabilities: list[str] | None = None,
         dispatch_capacity: int | None = None,
         dispatch_provider_capacities: dict[str, int] | None = None,
+        dispatch_queue_capacity: int = 100,
+        dispatch_provider_queue_capacities: dict[str, int] | None = None,
         relay_enabled: bool = False,
         actor: str = "",
     ) -> FleetInstance:
@@ -265,6 +269,9 @@ class FleetRegistry:
             and previous.dispatch_capacity == dispatch_capacity
             and previous.dispatch_provider_capacities
             == (dispatch_provider_capacities or {})
+            and previous.dispatch_queue_capacity == dispatch_queue_capacity
+            and previous.dispatch_provider_queue_capacities
+            == (dispatch_provider_queue_capacities or {})
             and previous.relay_enabled == relay_enabled
         ):
             previous.last_seen = datetime.now(UTC)
@@ -278,6 +285,10 @@ class FleetRegistry:
             capabilities=capabilities or [],
             dispatch_capacity=dispatch_capacity,
             dispatch_provider_capacities=dispatch_provider_capacities or {},
+            dispatch_queue_capacity=dispatch_queue_capacity,
+            dispatch_provider_queue_capacities=(
+                dispatch_provider_queue_capacities or {}
+            ),
             relay_enabled=relay_enabled,
             joined_by=actor,
             updated_by=actor,

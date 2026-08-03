@@ -18,8 +18,8 @@ import httpx
 from pa.core.async_runtime import AsyncRuntime
 from pa.core.io import atomic_write_json
 from pa.domain.models import FleetInstance
-from pa.execution.dispatch import TERMINAL_DISPATCH_STATES
-from pa.fleet.capacity import effective_capacity
+from pa.execution.dispatch import TERMINAL_DISPATCH_STATES, DispatchStore
+from pa.fleet.capacity import effective_capacity, effective_queue_capacity
 from pa.fleet.update import TERMINAL_PHASES
 from pa.pr_supervisor.models import (
     PRWatchStatus,
@@ -454,6 +454,12 @@ def _local_activity(ctx: Any) -> dict[str, Any]:
         and item.get("state") in reservation_states
         and item.get("session_id") not in prompting_session_ids
     ]
+    waiting_dispatches = [
+        item
+        for item in dispatches
+        if item.get("target_instance_id") == ctx.settings.instance_id
+        and item.get("state") in {"waiting_capacity", "blocked"}
+    ]
     completion_work = [
         item
         for item in dispatches
@@ -478,10 +484,18 @@ def _local_activity(ctx: Any) -> dict[str, Any]:
             },
         )
         counts["dispatch_reservations"] = counts.get("dispatch_reservations", 0) + 1
+    for item in waiting_dispatches:
+        provider = str(item.get("capacity_provider") or "unknown").lower()
+        counts = provider_concurrency.setdefault(provider, {})
+        counts["dispatch_waiting"] = counts.get("dispatch_waiting", 0) + 1
     effective = effective_capacity(
         configured=ctx.settings.dispatch_capacity,
         provider_capacities=ctx.settings.dispatch_provider_capacities,
         capabilities=list(ctx.settings.capabilities),
+    )
+    effective_queue = effective_queue_capacity(
+        configured=ctx.settings.dispatch_queue_capacity,
+        provider_capacities=ctx.settings.dispatch_provider_queue_capacities,
     )
     capacity_links = [
         {
@@ -532,6 +546,8 @@ def _local_activity(ctx: Any) -> dict[str, Any]:
         state = "active"
     current_dispatch = None
     active_dispatch_states = {
+        "waiting_capacity",
+        "blocked",
         "queued",
         "checking_sync",
         "materializing",
@@ -574,6 +590,12 @@ def _local_activity(ctx: Any) -> dict[str, Any]:
         "active_capacity_consumers": progress.get("active_capacity_consumers", 0),
         "queued_prompts": progress.get("queued_prompts", 0),
         "dispatch_reservations": len(reservations),
+        "dispatch_waiting": sum(
+            item.get("state") == "waiting_capacity" for item in waiting_dispatches
+        ),
+        "dispatch_blocked": sum(
+            item.get("state") == "blocked" for item in waiting_dispatches
+        ),
         "durable_dispatches_starting": len(reservations),
         "completion_work": len(completion_work),
         "provider_concurrency": provider_concurrency,
@@ -584,6 +606,14 @@ def _local_activity(ctx: Any) -> dict[str, Any]:
             "consumed": progress.get("active_capacity_consumers", 0)
             + progress.get("queued_prompts", 0)
             + len(reservations),
+        },
+        "queue_capacity": {
+            **effective_queue.model_dump(mode="json"),
+            "configured": ctx.settings.dispatch_queue_capacity,
+            "provider_limits": dict(
+                ctx.settings.dispatch_provider_queue_capacities
+            ),
+            "consumed": len(waiting_dispatches),
         },
         "capacity_consumer_links": capacity_links,
         "capacity_policy": {
@@ -955,6 +985,9 @@ def build_overview(
     nodes = []
     by_url = {item.url.rstrip("/"): item.instance_id for item in instances}
     by_id: dict[str, dict[str, Any]] = {}
+    dispatch_store = ctx.services.get("dispatch_store")
+    if not isinstance(dispatch_store, DispatchStore):
+        dispatch_store = None
     for inst in instances:
         dimensions = {
             dimension: _cached_or_default(cache, inst, dimension)
@@ -985,6 +1018,35 @@ def build_overview(
                     KeyError,
                 ) as exc:
                     dimensions[dimension] = field("error", None, error=str(exc))
+        activity = dimensions.get("activity") or {}
+        if dispatch_store and activity.get("state") == "fresh":
+            authority_counts = dispatch_store.capacity_snapshot(inst.instance_id)
+            value = dict(activity.get("value") or {})
+            value["dispatch_reservations"] = max(
+                int(value.get("dispatch_reservations") or 0),
+                authority_counts["dispatch_reservations"],
+            )
+            value["dispatch_waiting"] = max(
+                int(value.get("dispatch_waiting") or 0),
+                authority_counts["dispatch_waiting"],
+            )
+            if value.get("queue_capacity"):
+                queue_capacity = dict(value["queue_capacity"])
+                queue_capacity["consumed"] = max(
+                    int(queue_capacity.get("consumed") or 0),
+                    authority_counts["dispatch_waiting"],
+                )
+                value["queue_capacity"] = queue_capacity
+            provider_concurrency = {
+                key: dict(counts)
+                for key, counts in (value.get("provider_concurrency") or {}).items()
+            }
+            for provider, counts in authority_counts["provider_concurrency"].items():
+                current = provider_concurrency.setdefault(provider, {})
+                for key, count in counts.items():
+                    current[key] = max(int(current.get(key) or 0), count)
+            value["provider_concurrency"] = provider_concurrency
+            dimensions["activity"] = {**activity, "value": value}
         node = {
             "id": inst.instance_id,
             "name": inst.name,
@@ -993,6 +1055,10 @@ def build_overview(
             "capabilities": list(inst.capabilities),
             "dispatch_capacity": inst.dispatch_capacity,
             "dispatch_provider_capacities": dict(inst.dispatch_provider_capacities),
+            "dispatch_queue_capacity": inst.dispatch_queue_capacity,
+            "dispatch_provider_queue_capacities": dict(
+                inst.dispatch_provider_queue_capacities
+            ),
             "lifecycle_state": inst.lifecycle_state,
             "membership_generation": inst.membership_generation,
             "local": inst.instance_id == ctx.settings.instance_id,
@@ -1021,7 +1087,6 @@ def build_overview(
             }
         )
 
-    dispatch_store = ctx.services.get("dispatch_store")
     if dispatch_store:
         for item in dispatch_store.list(limit=100):
             if item.state in TERMINAL_DISPATCH_STATES:

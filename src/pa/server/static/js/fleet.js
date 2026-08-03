@@ -889,6 +889,8 @@
 
   function remoteDispatchStageLabel(state) {
     return {
+      waiting_capacity: "Queued for capacity",
+      blocked: "Queued · blocked",
       queued: "Queued",
       checking_sync: "Checking sync",
       materializing: "Materializing",
@@ -921,6 +923,12 @@
         ? dispatch.events[dispatch.events.length - 1].message : "";
       var error = dispatch.last_error
         ? '<p class="status status-blocked small">' + escapeHtml(dispatch.last_error) + "</p>" : "";
+      var queue = dispatch.queue || {};
+      var queueText = queue.waiting
+        ? '<p class="muted small">Queue position ' + escapeHtml(queue.position || "pending") +
+          ' · priority ' + escapeHtml(queue.requested_priority || 0) +
+          (queue.reason ? " · " + escapeHtml(queue.reason) : "") + "</p>"
+        : "";
       var syncEvidence = dispatch.sync_evidence || {};
       var degradedPeers = syncEvidence.degraded_peers || [];
       var syncWarning = degradedPeers.length
@@ -1025,7 +1033,7 @@
         '<span class="status status-' + badge + '">' + escapeHtml(remoteDispatchStageLabel(state)) + "</span>" +
         '<p class="muted small"><code>' + escapeHtml(dispatch.dispatch_id) + "</code>" +
         (latest ? " · " + escapeHtml(latest) : "") + "</p></div>" + actions + "</div>" +
-        error + syncWarning + diagnosticText + evaluationText + progressText + lifecycle + cardText + reconciliationText + outboxText +
+        error + queueText + syncWarning + diagnosticText + evaluationText + progressText + lifecycle + cardText + reconciliationText + outboxText +
         (terminal ? "" : '<progress></progress>') + "</li>";
     }).join("");
   }
@@ -1072,7 +1080,7 @@
     renderRemoteDispatches(rows);
     var active = rows.some(function (item) {
       if (((item.dispatch_completion || {}).completed)) return false;
-      return ["queued", "checking_sync", "materializing", "starting_session",
+      return ["waiting_capacity", "blocked", "queued", "checking_sync", "materializing", "starting_session",
         "delivering_prompt", "running", "completion_pending"].indexOf(item.state) >= 0;
     });
     if (active) remoteDispatchTimer = setTimeout(function () {
@@ -1766,11 +1774,15 @@
     var capacityEl = $("[data-fleet-capacity]", tr);
     if (capacityEl) {
       var utilization = (activity.value || {}).capacity || {};
+      var queueUtilization = (activity.value || {}).queue_capacity || {};
       var configured = utilization.limit || node.dispatch_capacity;
       capacityEl.innerHTML = configured
         ? "<strong>" + escapeHtml(utilization.consumed || 0) + "/" +
           escapeHtml(configured) + ' used</strong><span class="muted small">' +
-          escapeHtml((utilization.source || (node.dispatch_capacity ? "configured" : "compatibility pending")).replace(/_/g, " ")) + "</span>"
+          escapeHtml((utilization.source || (node.dispatch_capacity ? "configured" : "compatibility pending")).replace(/_/g, " ")) + "</span>" +
+          (queueUtilization.limit == null ? "" : '<span class="muted small">' +
+            escapeHtml(queueUtilization.consumed || 0) + "/" +
+            escapeHtml(queueUtilization.limit) + " waiting</span>")
         : '<strong>pending</strong><span class="muted small">capacity probe unavailable</span>';
       setFieldState(capacityEl, activity.state);
     }

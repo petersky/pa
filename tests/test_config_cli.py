@@ -102,6 +102,21 @@ class ConfigEditTests(unittest.TestCase):
                 '{"codex": 0}',
             )
 
+    def test_dispatch_queue_capacity_defaults_and_validates_safe_bounds(self) -> None:
+        queue = set_config_value(self.data_dir, "dispatch_queue_capacity", "100")
+        self.assertEqual(queue.after, 100)
+        disabled = set_config_value(self.data_dir, "dispatch_queue_capacity", "0")
+        self.assertEqual(disabled.after, 0)
+        providers = set_config_value(
+            self.data_dir,
+            "dispatch_provider_queue_capacities",
+            '{"Codex": 50}',
+        )
+        self.assertEqual(providers.after, {"codex": 50})
+        for value in ("-1", "10001", "unbounded"):
+            with self.subTest(value=value), self.assertRaises(ConfigError):
+                set_config_value(self.data_dir, "dispatch_queue_capacity", value)
+
     def test_add_remove_peers(self) -> None:
         add_config_value(self.data_dir, "peers", "http://macbook:8080")
         result = add_config_value(self.data_dir, "peers", "http://studio:8080")

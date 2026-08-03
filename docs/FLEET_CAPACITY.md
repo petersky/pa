@@ -1,7 +1,7 @@
 # Fleet execution capacity
 
 Fleet execution capacity is the number of concurrent execution slots an
-instance admits for prompting and not-yet-started dispatch work. It is a global
+instance admits for prompting and provisioning work. It is a global
 instance limit with optional per-provider ceilings. When a provider ceiling is
 configured, both limits apply and the lower value wins. PA does not currently
 support per-model limits.
@@ -43,7 +43,7 @@ The activity probe exposes these counts separately:
 - `deferred_sessions`: durable nonterminal sessions without a live runtime;
 - `prompting_turns` / `active_capacity_consumers`: turns currently executing;
 - `queued_prompts`: prompts waiting behind a runtime;
-- `dispatch_reservations`: durable dispatches in queued, sync-check,
+- `dispatch_reservations`: launchable durable dispatches in queued, sync-check,
   materialization, session-start, or prompt-delivery stages;
 - `completion_work`: completion-outbox and reconciliation work; and
 - `provider_concurrency`: the same execution counts grouped by provider.
@@ -77,11 +77,42 @@ that target again and renews its reservation atomically. Reservations survive
 restart, release when work begins running or fails/cancels/completes, and fail
 recoverably after a one-hour pre-start timeout.
 
+## Durable waiting queue
+
+Execution capacity is not an admission limit. When every execution slot is
+occupied, PA promptly persists eligible work as `waiting_capacity`. Waiting and
+visibly `blocked` records do not consume execution slots, and terminal history
+consumes neither execution nor queue capacity. Provisioning does consume an
+execution slot, so PA creates no worktree or provider process before promotion.
+
+`dispatch_queue_capacity` defaults to 100 and accepts 0 through 10,000. Zero
+disables waiting when execution is full. Optional
+`dispatch_provider_queue_capacities` apply together with the instance limit;
+the lower value wins. These settings use the same web, CLI, authenticated API,
+MCP, validation, and configuration-audit surfaces as execution capacity.
+
+Idempotency and concurrent-card checks run before queue counting. Identical
+retries return the existing record without using another queue slot. Queue
+ordering is priority first, then fair principal/project/provider/target waves,
+then admission time. This preserves FIFO within equal classes while preventing
+one bulk class from starving the first item in another class. Authorized
+priority changes and cancellation are idempotent and audited.
+
+Before promotion, PA rechecks readiness for the original target and contract.
+Unavailable targets remain blocked and are retried without silent rerouting;
+Done cards and deleted or archived projects do not launch. Atomic promotion
+ensures a newly free execution slot starts one queued dispatch exactly once,
+including after restart.
+
+When the queue is full, PA returns `dispatch_queue_full` with current and maximum
+counts, execution capacity, source/provider, retry guidance, remediation
+options, and the Operations recovery URL. Mixed-version targets that do not
+advertise durable queue support retain the legacy capacity rejection for safety.
+
 An administrator can set `capacity_override=true` with a non-empty
 `capacity_override_reason`. The dispatch record retains both fields. Overrides
 skip only the capacity-full rejection; readiness, authorization, provider,
 repository, and lifecycle checks still apply.
 
-A full-instance rejection includes the configured effective limit and source,
-active consumers, queued prompts, reservations, observation time, links to the
-relevant sessions/dispatches, and the Fleet Overview recovery URL.
+Capacity overrides intentionally exceed concurrent execution limits and are not
+required for ordinary queue admission.

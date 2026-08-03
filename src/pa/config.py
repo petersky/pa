@@ -12,7 +12,13 @@ from pa.domain.instance_config import (
     ensure_session_secret,
     merge_config_into_settings,
 )
-from pa.fleet.capacity import MAX_DISPATCH_CAPACITY, DispatchCapacity
+from pa.fleet.capacity import (
+    DEFAULT_DISPATCH_QUEUE_CAPACITY,
+    MAX_DISPATCH_CAPACITY,
+    MAX_DISPATCH_QUEUE_CAPACITY,
+    DispatchCapacity,
+    DispatchQueueCapacity,
+)
 
 
 def default_data_dir() -> Path:
@@ -56,6 +62,14 @@ class Settings(BaseSettings):
     # ceiling and is conservative when PA cannot infer host/provider limits.
     dispatch_capacity: int | None = Field(default=None, ge=1, le=MAX_DISPATCH_CAPACITY)
     dispatch_provider_capacities: dict[str, DispatchCapacity] = Field(
+        default_factory=dict
+    )
+    dispatch_queue_capacity: int = Field(
+        default=DEFAULT_DISPATCH_QUEUE_CAPACITY,
+        ge=0,
+        le=MAX_DISPATCH_QUEUE_CAPACITY,
+    )
+    dispatch_provider_queue_capacities: dict[str, DispatchQueueCapacity] = Field(
         default_factory=dict
     )
     relay_enabled: bool = False

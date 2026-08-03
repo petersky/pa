@@ -8,7 +8,7 @@ from typing import Any, Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
 from pa.acp.auxiliary_mcp import (
     AuxiliaryMcpCollection,
@@ -32,12 +32,15 @@ from pa.configuration.service import (
 from pa.core.context import AppContext
 from pa.core.contracts import Module
 from pa.domain.config_edit import ConfigConflictError, ConfigError
-from pa.domain.instance_config import update_instance_config
 from pa.fleet.capacity import (
     DEFAULT_DISPATCH_CAPACITY,
+    DEFAULT_DISPATCH_QUEUE_CAPACITY,
     MAX_DISPATCH_CAPACITY,
+    MAX_DISPATCH_QUEUE_CAPACITY,
     DispatchCapacity,
+    DispatchQueueCapacity,
     effective_capacity,
+    effective_queue_capacity,
 )
 from pa.instance.agent_session import AgentStartupNotReady
 from pa.instance.quiesce import QuiesceProgress
@@ -72,19 +75,39 @@ class CapacityConfigUpdate(BaseModel):
     dispatch_provider_capacities: dict[str, DispatchCapacity] = Field(
         default_factory=dict
     )
+    dispatch_queue_capacity: int = Field(
+        default=DEFAULT_DISPATCH_QUEUE_CAPACITY,
+        ge=0,
+        le=MAX_DISPATCH_QUEUE_CAPACITY,
+    )
+    dispatch_provider_queue_capacities: dict[str, DispatchQueueCapacity] = Field(
+        default_factory=dict
+    )
+    idempotency_key: str | None = None
+    interface: Literal["api", "web", "mcp"] = "api"
 
-    @field_validator("dispatch_provider_capacities")
+    @field_validator(
+        "dispatch_provider_capacities", "dispatch_provider_queue_capacities"
+    )
     @classmethod
-    def validate_provider_capacities(cls, value: dict[str, int]) -> dict[str, int]:
+    def validate_provider_capacities(
+        cls, value: dict[str, int], info: ValidationInfo
+    ) -> dict[str, int]:
         normalized: dict[str, int] = {}
         for provider, limit in value.items():
             key = provider.strip().lower()
             if not key:
                 raise ValueError("provider capacity names cannot be empty")
-            if isinstance(limit, bool) or not 1 <= limit <= MAX_DISPATCH_CAPACITY:
+            minimum = 0 if "queue" in info.field_name else 1
+            maximum = (
+                MAX_DISPATCH_QUEUE_CAPACITY
+                if "queue" in info.field_name
+                else MAX_DISPATCH_CAPACITY
+            )
+            if isinstance(limit, bool) or not minimum <= limit <= maximum:
                 raise ValueError(
-                    f"capacity for provider {provider!r} must be between 1 and "
-                    f"{MAX_DISPATCH_CAPACITY}"
+                    f"capacity for provider {provider!r} must be between "
+                    f"{minimum} and {maximum}"
                 )
             normalized[key] = limit
         return normalized
@@ -592,10 +615,18 @@ def get_config(request: Request) -> dict:
         "capabilities": settings.capabilities,
         "dispatch_capacity": settings.dispatch_capacity,
         "dispatch_provider_capacities": settings.dispatch_provider_capacities,
+        "dispatch_queue_capacity": settings.dispatch_queue_capacity,
+        "dispatch_provider_queue_capacities": (
+            settings.dispatch_provider_queue_capacities
+        ),
         "effective_dispatch_capacity": effective_capacity(
             configured=settings.dispatch_capacity,
             provider_capacities=settings.dispatch_provider_capacities,
             capabilities=settings.capabilities,
+        ).model_dump(mode="json"),
+        "effective_dispatch_queue_capacity": effective_queue_capacity(
+            configured=settings.dispatch_queue_capacity,
+            provider_capacities=settings.dispatch_provider_queue_capacities,
         ).model_dump(mode="json"),
         "relay_enabled": settings.relay_enabled,
         "host": settings.host,
@@ -749,6 +780,10 @@ async def probe_auxiliary_mcp(request: Request, name: str) -> dict[str, Any]:
             dispatch_provider_capacities=dict(
                 ctx.settings.dispatch_provider_capacities
             ),
+            dispatch_queue_capacity=ctx.settings.dispatch_queue_capacity,
+            dispatch_provider_queue_capacities=dict(
+                ctx.settings.dispatch_provider_queue_capacities
+            ),
             relay_enabled=ctx.settings.relay_enabled,
             actor=get_principal_id(request),
         )
@@ -832,7 +867,12 @@ def update_configuration(request: Request, body: ConfigurationPatch) -> dict:
         raise _configuration_error(exc, conflict=True) from exc
     except ConfigError as exc:
         raise _configuration_error(exc) from exc
-    if result.changed & {"dispatch_capacity", "dispatch_provider_capacities"}:
+    if result.changed & {
+        "dispatch_capacity",
+        "dispatch_provider_capacities",
+        "dispatch_queue_capacity",
+        "dispatch_provider_queue_capacities",
+    }:
         ctx = request.app.state.ctx
         fleet = ctx.services.get("fleet_registry")
         if fleet:
@@ -847,6 +887,10 @@ def update_configuration(request: Request, body: ConfigurationPatch) -> dict:
                 dispatch_capacity=ctx.settings.dispatch_capacity,
                 dispatch_provider_capacities=dict(
                     ctx.settings.dispatch_provider_capacities
+                ),
+                dispatch_queue_capacity=ctx.settings.dispatch_queue_capacity,
+                dispatch_provider_queue_capacities=dict(
+                    ctx.settings.dispatch_provider_queue_capacities
                 ),
                 relay_enabled=ctx.settings.relay_enabled,
                 actor=get_principal_id(request),
@@ -897,15 +941,22 @@ def update_capacity_config(request: Request, body: CapacityConfigUpdate) -> dict
 
     require_user(request)
     ctx = request.app.state.ctx
-    updated = update_instance_config(
-        ctx.settings.data_dir,
-        dispatch_capacity=body.dispatch_capacity,
-        dispatch_provider_capacities=body.dispatch_provider_capacities,
-    )
-    ctx.settings.dispatch_capacity = updated.dispatch_capacity
-    ctx.settings.dispatch_provider_capacities = dict(
-        updated.dispatch_provider_capacities
-    )
+    snapshot = configuration_snapshot(ctx.settings)
+    changes = body.model_dump(exclude={"idempotency_key", "interface"})
+    try:
+        result = apply_update(
+            ctx.settings,
+            changes,
+            [],
+            expected_revision=snapshot["revision"],
+            idempotency_key=body.idempotency_key or f"capacity:{uuid4()}",
+            principal_id=get_principal_id(request),
+            interface=body.interface,
+        )
+    except ConfigConflictError as exc:
+        raise _configuration_error(exc, conflict=True) from exc
+    except ConfigError as exc:
+        raise _configuration_error(exc) from exc
     fleet = ctx.services.get("fleet_registry")
     if fleet:
         from pa.fleet.join import owner_public_url
@@ -920,6 +971,10 @@ def update_capacity_config(request: Request, body: CapacityConfigUpdate) -> dict
             dispatch_provider_capacities=dict(
                 ctx.settings.dispatch_provider_capacities
             ),
+            dispatch_queue_capacity=ctx.settings.dispatch_queue_capacity,
+            dispatch_provider_queue_capacities=dict(
+                ctx.settings.dispatch_provider_queue_capacities
+            ),
             relay_enabled=ctx.settings.relay_enabled,
             actor=f"user:{get_principal_id(request)}",
         )
@@ -933,9 +988,19 @@ def update_capacity_config(request: Request, body: CapacityConfigUpdate) -> dict
     )
     return {
         "ok": True,
+        "duplicate": result.duplicate,
+        "changed": sorted(result.changed),
         "dispatch_capacity": ctx.settings.dispatch_capacity,
         "dispatch_provider_capacities": ctx.settings.dispatch_provider_capacities,
+        "dispatch_queue_capacity": ctx.settings.dispatch_queue_capacity,
+        "dispatch_provider_queue_capacities": (
+            ctx.settings.dispatch_provider_queue_capacities
+        ),
         "effective_dispatch_capacity": effective.model_dump(mode="json"),
+        "effective_dispatch_queue_capacity": effective_queue_capacity(
+            configured=ctx.settings.dispatch_queue_capacity,
+            provider_capacities=ctx.settings.dispatch_provider_queue_capacities,
+        ).model_dump(mode="json"),
         "takes_effect": "immediately for new placement admissions",
     }
 
@@ -983,6 +1048,8 @@ class InstanceModule(Module):
         def set_dispatch_capacity(
             dispatch_capacity: int,
             provider_capacities: dict[str, int] | None = None,
+            queue_capacity: int = DEFAULT_DISPATCH_QUEUE_CAPACITY,
+            provider_queue_capacities: dict[str, int] | None = None,
         ) -> dict:
             """Validate and immediately apply fleet execution capacity."""
             return request_local_pa(
@@ -992,6 +1059,11 @@ class InstanceModule(Module):
                 json={
                     "dispatch_capacity": dispatch_capacity,
                     "dispatch_provider_capacities": provider_capacities or {},
+                    "dispatch_queue_capacity": queue_capacity,
+                    "dispatch_provider_queue_capacities": (
+                        provider_queue_capacities or {}
+                    ),
+                    "interface": "mcp",
                 },
             )
 

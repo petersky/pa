@@ -151,6 +151,9 @@ def dispatch_card(
     idempotency_key: Annotated[
         str | None, typer.Option("--idempotency-key", help="Stable retry key")
     ] = None,
+    priority: Annotated[
+        int, typer.Option(min=-10, max=10, help="Requested queue priority")
+    ] = 0,
 ) -> None:
     """Durably queue a card on a fleet instance."""
 
@@ -172,6 +175,8 @@ def dispatch_card(
             "effort": effort,
             "message": message.strip(),
         }
+        if priority:
+            body["priority"] = priority
         body = {name: value for name, value in body.items() if value is not None}
         if not body["message"]:
             raise CardCommandError("Initial instruction cannot be empty.")

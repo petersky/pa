@@ -13,6 +13,14 @@ DEFAULT_DISPATCH_CAPACITY = 4
 MAX_DISPATCH_CAPACITY = 256
 DispatchCapacity = Annotated[int, Field(ge=1, le=MAX_DISPATCH_CAPACITY, strict=True)]
 
+# Waiting dispatches are cheap durable records, but still need a finite bound so a
+# broken or abusive submitter cannot grow the authority ledger forever.
+DEFAULT_DISPATCH_QUEUE_CAPACITY = 100
+MAX_DISPATCH_QUEUE_CAPACITY = 10_000
+DispatchQueueCapacity = Annotated[
+    int, Field(ge=0, le=MAX_DISPATCH_QUEUE_CAPACITY, strict=True)
+]
+
 
 class EffectiveCapacity(BaseModel):
     """Effective global/provider limit and where the value came from."""
@@ -24,6 +32,18 @@ class EffectiveCapacity(BaseModel):
     provider: str | None = None
     legacy_capability: str | None = None
     rationale: str | None = None
+
+
+class EffectiveQueueCapacity(BaseModel):
+    """Effective waiting-queue limit and its configuration provenance."""
+
+    limit: int = Field(ge=0, le=MAX_DISPATCH_QUEUE_CAPACITY)
+    global_limit: int = Field(ge=0, le=MAX_DISPATCH_QUEUE_CAPACITY)
+    provider_limit: int | None = Field(
+        default=None, ge=0, le=MAX_DISPATCH_QUEUE_CAPACITY
+    )
+    source: str
+    provider: str | None = None
 
 
 def _valid_limit(value: Any) -> int | None:
@@ -98,6 +118,48 @@ def effective_capacity(
         provider=normalized_provider,
         legacy_capability=legacy_tag,
         rationale=rationale,
+    )
+
+
+def effective_queue_capacity(
+    *,
+    configured: Any = None,
+    provider_capacities: dict[str, Any] | None = None,
+    provider: str | None = None,
+) -> EffectiveQueueCapacity:
+    """Resolve a provider ceiling together with the instance queue limit."""
+
+    global_limit = (
+        configured
+        if isinstance(configured, int)
+        and not isinstance(configured, bool)
+        and 0 <= configured <= MAX_DISPATCH_QUEUE_CAPACITY
+        else DEFAULT_DISPATCH_QUEUE_CAPACITY
+    )
+    normalized_provider = provider.strip().lower() if provider else None
+    provider_limit = None
+    if normalized_provider and provider_capacities:
+        candidate = provider_capacities.get(normalized_provider)
+        if (
+            isinstance(candidate, int)
+            and not isinstance(candidate, bool)
+            and 0 <= candidate <= MAX_DISPATCH_QUEUE_CAPACITY
+        ):
+            provider_limit = candidate
+    return EffectiveQueueCapacity(
+        limit=min(global_limit, provider_limit if provider_limit is not None else global_limit),
+        global_limit=global_limit,
+        provider_limit=provider_limit,
+        source=(
+            "configured_provider"
+            if provider_limit is not None and provider_limit <= global_limit
+            else (
+                "configured"
+                if configured is not None
+                else "documented_default"
+            )
+        ),
+        provider=normalized_provider,
     )
 
 
