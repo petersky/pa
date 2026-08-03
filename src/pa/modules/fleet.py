@@ -5405,6 +5405,16 @@ async def _resolve_policy_placement(
     )
     fleet: FleetRegistry = ctx.require_service("fleet_registry")
     instances = list(fleet.list_instances())
+    if body.target_instance_id:
+        # A named dispatch has no scheduling choice to make. Probing unrelated
+        # peers adds several remote round trips to the admission path and can
+        # outlive the MCP owner-channel deadline even though the selected target
+        # is healthy and the durable dispatch is successfully admitted.
+        instances = [
+            instance
+            for instance in instances
+            if instance.instance_id == body.target_instance_id
+        ]
     candidates = await _placement_candidates(request, instances)
     policies = _policy_service(request)
     requested_group_id = body.group_id
@@ -8740,6 +8750,7 @@ class FleetModule(Module):
                     "priority": priority,
                     "idempotency_key": key,
                 },
+                timeout_seconds=30.0,
             )
 
         @mcp.tool()
@@ -8808,6 +8819,7 @@ class FleetModule(Module):
                 "POST",
                 f"/api/fleet/instances/{instance_id}/agent/start",
                 json=payload,
+                timeout_seconds=30.0,
             )
 
         @mcp.tool()

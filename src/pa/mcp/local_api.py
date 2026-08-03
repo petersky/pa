@@ -178,6 +178,7 @@ def request_local_pa(
     json: dict | None = None,
     files: dict | None = None,
     allow_not_found: bool = False,
+    timeout_seconds: float = 2.0,
 ):
     token = os.environ.get("PA_LOCAL_API_TOKEN", "").strip()
     if not token:
@@ -203,7 +204,8 @@ def request_local_pa(
             f"endpoint={endpoint_type} retry_in={retry_in:.1f}s). "
             "PA itself may still be healthy; do not write PA_DATA_DIR."
         )
-    deadline = now + 2.0
+    timeout_seconds = max(0.1, min(float(timeout_seconds), 120.0))
+    deadline = now + timeout_seconds
     while True:
         try:
             socket_path = os.environ.get("PA_LOCAL_API_SOCKET", "").strip()
@@ -212,7 +214,7 @@ def request_local_pa(
                 "json": json,
                 "files": files,
                 "headers": headers,
-                "timeout": min(2.0, max(0.1, deadline - time.monotonic())),
+                "timeout": max(0.1, deadline - time.monotonic()),
             }
             if socket_path:
                 with httpx.Client(
@@ -281,5 +283,7 @@ def request_local_pa(
                 ) from exc
             raise LocalPAServerUnavailable(
                 f"The PA API request failed (operation={method.upper()} "
-                f"endpoint={path} correlation_id={correlation_id})."
+                f"endpoint={path} correlation_id={correlation_id}). "
+                "The request outcome is unknown; retry mutations only with the "
+                "same idempotency key."
             ) from exc

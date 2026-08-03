@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from pa.config import Settings, reset_settings
 from pa.core.kernel import Kernel
 from pa.domain.instance_config import InstanceConfig, save_instance_config
-from pa.domain.models import CardCreate
+from pa.domain.models import CardCreate, FleetInstance
 from pa.domain.store import reset_store
 from pa.execution.dispatch import (
     CapacityAdmission,
@@ -695,6 +695,56 @@ def test_named_dispatch_retry_returns_before_repeating_placement() -> None:
         assert second.json()["duplicate"] is True
         assert second.json()["dispatch_id"] == first.json()["dispatch_id"]
         assert candidates.call_count == 1
+
+
+def test_named_dispatch_only_probes_the_requested_instance() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        settings = Settings(
+            data_dir=Path(tmp),
+            instance_id="local",
+            instance_name="Local",
+            instance_url="http://pa.test:8080",
+            agent_enabled=False,
+            subscribed_realms=["default"],
+            peers=[],
+        )
+        app = Kernel.boot(settings=settings).build_app()
+        candidate = _candidate("remote")
+        with (
+            patch(
+                "pa.modules.fleet._placement_candidates",
+                autospec=True,
+                return_value=[candidate],
+            ) as candidates,
+            TestClient(app) as client,
+        ):
+            app.state.ctx.require_service("fleet_registry").upsert_instance(
+                FleetInstance(
+                    instance_id="remote",
+                    name="Remote",
+                    url="http://remote.test:8080",
+                )
+            )
+            card = app.state.ctx.store.create_card(CardCreate(title="Dispatch me"))
+            assert client.get("/").status_code == 200
+            response = client.post(
+                "/api/fleet/instances/remote/agent/start",
+                headers={"X-CSRF-Token": client.cookies.get("pa_csrf")},
+                json={
+                    "card_id": card.id,
+                    "provider": "codex",
+                    "idempotency_key": "named-target-only",
+                    "execution_contract": {
+                        "version": 1,
+                        "profile": "research",
+                        "confirmed": True,
+                    },
+                },
+            )
+
+        assert response.status_code == 202, response.text
+        inspected = candidates.call_args.args[1]
+        assert [item.instance_id for item in inspected] == ["remote"]
 
 
 def test_capacity_config_api_updates_live_fleet_advertisement() -> None:
