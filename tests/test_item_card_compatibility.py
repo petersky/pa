@@ -37,6 +37,9 @@ class ItemCardModelCompatibilityTests(unittest.TestCase):
     def test_kind_is_one_canonical_enum(self) -> None:
         self.assertIs(ItemKind, CardKind)
 
+    def test_card_update_accepts_kind_for_enrichment(self) -> None:
+        self.assertEqual(CardUpdate(kind="concern").kind, CardKind.CONCERN)
+
     def test_canonical_inputs_accept_legacy_status(self) -> None:
         self.assertEqual(
             CardCreate.model_validate({"title": "old", "status": "blocked"}).lane,

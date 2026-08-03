@@ -439,6 +439,7 @@ class CardCreate(BaseModel):
     tags: list[str] = Field(default_factory=list)
     preferred_instance: str | None = None
     preferred_capabilities: list[str] = Field(default_factory=list)
+    auto_enrich: bool = Field(default=True, exclude=True)
 
     @model_validator(mode="before")
     @classmethod
@@ -447,6 +448,7 @@ class CardCreate(BaseModel):
 
 
 class CardUpdate(BaseModel):
+    kind: CardKind | None = None
     title: str | None = None
     body: str | None = None
     summary: str | None = None

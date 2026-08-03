@@ -14,7 +14,16 @@ from urllib.parse import quote, urlencode, urlsplit
 from uuid import uuid4
 
 import httpx
-from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    Response,
+    UploadFile,
+)
 from fastapi.responses import (
     FileResponse,
     HTMLResponse,
@@ -36,6 +45,7 @@ from pa.core.ui.instance_identity import (
     resolve_instance_identity,
 )
 from pa.core.ui.pages import PageDefinition, PageRegistry
+from pa.domain.card_enrichment import enrich_card, explicit_enrichment_fields
 from pa.domain.models import (
     CardAttachment,
     CardCreate,
@@ -1225,7 +1235,9 @@ def list_cards_api(
 
 
 @router.post("/cards", status_code=201)
-def create_card_api(request: Request, data: CardCreate) -> dict:
+def create_card_api(
+    request: Request, data: CardCreate, background_tasks: BackgroundTasks
+) -> dict:
     store = get_store()
     settings = request.app.state.ctx.settings
     card = store.create_card(
@@ -1233,6 +1245,14 @@ def create_card_api(request: Request, data: CardCreate) -> dict:
         principal_id=get_principal_id(request),
         instance_id=settings.instance_id,
     )
+    if data.auto_enrich:
+        background_tasks.add_task(
+            enrich_card,
+            request.app.state.ctx,
+            card.id,
+            card.realm_id,
+            explicit_enrichment_fields(data),
+        )
     return card.model_dump(mode="json")
 
 
@@ -1612,6 +1632,7 @@ def new_card_form(request: Request) -> HTMLResponse:
 @ui_router.post("/partials/cards/new", response_model=None)
 async def create_card_modal_ui(
     request: Request,
+    background_tasks: BackgroundTasks,
     title: str = Form(...),
     body: str = Form(""),
     summary: str = Form(""),
@@ -1622,6 +1643,7 @@ async def create_card_modal_ui(
     tags: str = Form(""),
     preferred_instance: str = Form(""),
     preferred_capabilities: str = Form(""),
+    auto_enrich: bool = Form(True),
     link_urls: list[str] | None = Form(None),
     link_labels: list[str] | None = Form(None),
     file_tokens: list[str] | None = Form(None),
@@ -1647,30 +1669,40 @@ async def create_card_modal_ui(
     attachments: list[dict[str, str | int | Path]] = []
     settings = request.app.state.ctx.settings
     principal = get_principal_id(request)
-    card = store.create_card(
-        CardCreate(
-            realm_id=realm,
-            kind=kind,
-            title=cleaned_title,
-            body=_compose_card_body(
-                body,
-                link_urls=link_urls or [],
-                link_labels=link_labels or [],
-                attachments=[],
-                file_tokens=file_tokens or [],
-            ),
-            summary=summary.strip(),
-            summary_source=(CardSummarySource.MANUAL if summary.strip() else None),
-            lane=lane,
-            parent_id=selected_parent,
-            project_id=selected_project,
-            tags=_comma_separated(tags),
-            preferred_instance=preferred_instance.strip() or None,
-            preferred_capabilities=_comma_separated(preferred_capabilities),
+    create_data = CardCreate(
+        realm_id=realm,
+        kind=kind,
+        title=cleaned_title,
+        body=_compose_card_body(
+            body,
+            link_urls=link_urls or [],
+            link_labels=link_labels or [],
+            attachments=[],
+            file_tokens=file_tokens or [],
         ),
+        summary=summary.strip(),
+        summary_source=(CardSummarySource.MANUAL if summary.strip() else None),
+        lane=lane,
+        parent_id=selected_parent,
+        project_id=selected_project,
+        tags=_comma_separated(tags),
+        preferred_instance=preferred_instance.strip() or None,
+        preferred_capabilities=_comma_separated(preferred_capabilities),
+        auto_enrich=auto_enrich,
+    )
+    card = store.create_card(
+        create_data,
         principal_id=principal,
         instance_id=settings.instance_id,
     )
+    if auto_enrich:
+        background_tasks.add_task(
+            enrich_card,
+            request.app.state.ctx,
+            card.id,
+            card.realm_id,
+            explicit_enrichment_fields(create_data),
+        )
     try:
         for index, upload in enumerate(uploads, 1):
             sha256, size = await runtime.run_blocking(
@@ -1892,17 +1924,35 @@ def card_attachment(
 @ui_router.post("/cards")
 def create_card_ui(
     request: Request,
+    background_tasks: BackgroundTasks,
     kind: CardKind = Form(CardKind.TASK),
     title: str = Form(...),
     body: str = Form(""),
     lane: CardLane = Form(CardLane.INBOX),
+    auto_enrich: bool = Form(True),
 ) -> RedirectResponse:
     realm = _active_realm(request)
-    get_store().create_card(
-        CardCreate(realm_id=realm, kind=kind, title=title, body=body, lane=lane),
+    data = CardCreate(
+        realm_id=realm,
+        kind=kind,
+        title=title,
+        body=body,
+        lane=lane,
+        auto_enrich=auto_enrich,
+    )
+    card = get_store().create_card(
+        data,
         principal_id=get_principal_id(request),
         instance_id=request.app.state.ctx.settings.instance_id,
     )
+    if auto_enrich:
+        background_tasks.add_task(
+            enrich_card,
+            request.app.state.ctx,
+            card.id,
+            card.realm_id,
+            explicit_enrichment_fields(data),
+        )
     return RedirectResponse(url=f"/work?realm={realm}", status_code=303)
 
 
@@ -2456,13 +2506,14 @@ class ItemsModule(Module):
         @mcp.tool()
         def create_card(
             title: str,
-            kind: CardKind = CardKind.TASK,
+            kind: CardKind | None = None,
             body: str = "",
             lane: CardLane = CardLane.INBOX,
             realm: str = "default",
             parent_id: str | None = None,
             project_id: str | None = None,
             tags: list[str] | None = None,
+            auto_enrich: bool = True,
         ) -> dict:
             """Create a canonical card. Use lane: inbox, active, waiting, or done."""
             return request_local_pa(
@@ -2471,13 +2522,14 @@ class ItemsModule(Module):
                 "/api/cards",
                 json={
                     "realm_id": realm,
-                    "kind": kind,
                     "title": title,
                     "body": body,
                     "lane": lane,
                     "parent_id": parent_id,
                     "project_id": project_id,
                     "tags": tags or [],
+                    "auto_enrich": auto_enrich,
+                    **({"kind": kind} if kind is not None else {}),
                 },
             )
 
@@ -2619,12 +2671,13 @@ class ItemsModule(Module):
         @mcp.tool()
         def create_card(
             title: str,
-            kind: CardKind = CardKind.TASK,
+            kind: CardKind | None = None,
             body: str = "",
             lane: CardLane = CardLane.INBOX,
             realm: str = "default",
             parent_id: str | None = None,
             project_id: str | None = None,
+            auto_enrich: bool = True,
         ) -> dict:
             """Create a card in a realm."""
             return request_local_pa(
@@ -2633,12 +2686,13 @@ class ItemsModule(Module):
                 "/api/cards",
                 json={
                     "realm_id": realm,
-                    "kind": kind,
                     "title": title,
                     "body": body,
                     "lane": lane,
                     "parent_id": parent_id,
                     "project_id": project_id,
+                    "auto_enrich": auto_enrich,
+                    **({"kind": kind} if kind is not None else {}),
                 },
             )
 
