@@ -2,9 +2,11 @@
   "use strict";
 
   var pollTimer = null;
-  var eventSource = null;
+  var activitySource = null;
+  var cardSource = null;
   var refreshGeneration = 0;
   var selected = null;
+  var lastSnapshotAt = "";
 
   function escapeHtml(value) {
     return String(value == null ? "" : value)
@@ -44,7 +46,7 @@
       '" aria-label="' + escapeHtml(worker.title + ", " + stateLabel(worker.state)) +
       '"><span class="workshop-worker-figure" aria-hidden="true"><i></i></span>' +
       '<span><strong>' + escapeHtml(worker.title) + "</strong><small>" +
-      escapeHtml(stateLabel(worker.state)) + "</small></span>" + tool +
+      escapeHtml(stateLabel(worker.state) + (worker.live === false ? " · last known" : "")) + "</small></span>" + tool +
       "</button>" + card + "</div>";
   }
 
@@ -55,15 +57,18 @@
     var workers = bay.workers.length ?
       bay.workers.map(workerButton).join("") :
       '<p class="workshop-empty">No current workers</p>';
+    var activityAge = bay.activity_age_seconds == null ? "age unknown" :
+      (bay.activity_age_seconds < 2 ? "now" : bay.activity_age_seconds + "s ago");
     return '<section class="workshop-bay" data-state="' +
-      escapeHtml(bay.connectivity === "connected" ? bay.freshness : "disconnected") +
+      escapeHtml(bay.connectivity === "connected" ? bay.activity_freshness : "disconnected") +
       '"><button type="button" class="workshop-bay-header" data-workshop-kind="bay" ' +
       'data-workshop-id="' + escapeHtml(bay.id) + '" aria-label="Inspect work bay ' +
       escapeHtml(bay.name) + '"><span><strong>' + escapeHtml(bay.name) +
       '</strong><small>' + escapeHtml(bay.zone || "No zone") + "</small></span>" +
       '<span class="status status-' +
       (bay.connectivity === "connected" ? "active" : "blocked") + '">' +
-      escapeHtml(bay.connectivity) + " · " + escapeHtml(bay.freshness) +
+      escapeHtml(bay.connectivity) + " · activity " + escapeHtml(bay.activity_freshness) +
+      " · " + escapeHtml(activityAge) +
       "</span><span class=\"workshop-capacity\">" + escapeHtml(capacity) +
       "</span></button><div class=\"workshop-bench\">" + workers + "</div></section>";
   }
@@ -204,11 +209,34 @@
   }
 
   function render(root, data) {
+    var focused = document.activeElement && document.activeElement.closest &&
+      document.activeElement.closest("[data-workshop-kind]");
+    var focusKey = focused ? {
+      kind: focused.dataset.workshopKind, id: focused.dataset.workshopId
+    } : null;
     root.__workshopData = data;
     renderSync(root, data);
     renderScene(root, data);
     renderCompact(root, data);
     if (selected) inspect(root, data, selected.kind, selected.id);
+    if (focusKey) {
+      var candidates = root.querySelectorAll("[data-workshop-kind]");
+      for (var i = 0; i < candidates.length; i += 1) {
+        if (candidates[i].dataset.workshopKind === focusKey.kind &&
+            candidates[i].dataset.workshopId === focusKey.id) {
+          candidates[i].focus({ preventScroll: true });
+          break;
+        }
+      }
+    }
+  }
+
+  function acceptSnapshot(root, data) {
+    var observed = String((data && data.generated_at) || "");
+    if (!data || !observed || (lastSnapshotAt && observed <= lastSnapshotAt)) return false;
+    lastSnapshotAt = observed;
+    render(root, data);
+    return true;
   }
 
   async function refresh(root, announced) {
@@ -216,13 +244,13 @@
     var status = root.querySelector("[data-workshop-live]");
     if (announced) status.textContent = "Refreshing canonical state…";
     try {
-      var response = await fetch("/api/fleet/workshop", {
+      var response = await fetch("/api/fleet/workshop" + (announced ? "?refresh=true" : ""), {
         credentials: "same-origin", headers: { Accept: "application/json" }
       });
       if (!response.ok) throw new Error("Workshop refresh failed (" + response.status + ")");
       var data = await response.json();
       if (generation !== refreshGeneration || !document.body.contains(root)) return;
-      render(root, data);
+      acceptSnapshot(root, data);
       status.textContent = "Live · updated " + new Date(data.generated_at).toLocaleTimeString();
       root.querySelector("[data-workshop-alert]").hidden = true;
     } catch (error) {
@@ -248,8 +276,20 @@
   function stop() {
     if (pollTimer) window.clearInterval(pollTimer);
     pollTimer = null;
-    if (eventSource) eventSource.close();
-    eventSource = null;
+    if (activitySource) activitySource.close();
+    if (cardSource) cardSource.close();
+    activitySource = null;
+    cardSource = null;
+  }
+
+  function startFallback(root) {
+    if (pollTimer) return;
+    pollTimer = window.setInterval(function () { refresh(root, false); }, 10000);
+  }
+
+  function stopFallback() {
+    if (pollTimer) window.clearInterval(pollTimer);
+    pollTimer = null;
   }
 
   function init() {
@@ -257,17 +297,33 @@
     var root = document.querySelector("#pa-workshop-root");
     if (!root) return;
     selected = null;
+    lastSnapshotAt = "";
     var initial = readInitial(root);
-    if (initial) render(root, initial);
+    if (initial) acceptSnapshot(root, initial);
     refresh(root, false);
-    pollTimer = window.setInterval(function () { refresh(root, false); }, 5000);
     if (window.EventSource) {
-      eventSource = new EventSource("/api/cards/events?realm=" + encodeURIComponent(root.dataset.realm));
-      eventSource.addEventListener("cards-changed", function () { refresh(root, false); });
-      eventSource.onerror = function () {
+      activitySource = new EventSource("/api/fleet/workshop/events");
+      activitySource.onopen = function () {
+        stopFallback();
         root.querySelector("[data-workshop-live]").textContent =
-          "Reconnecting · polling last-known state";
+          "Live activity transport connected";
       };
+      activitySource.addEventListener("snapshot", function (event) {
+        var data;
+        try { data = JSON.parse(event.data || "{}"); } catch (error) { return; }
+        if (!acceptSnapshot(root, data)) return;
+        root.querySelector("[data-workshop-live]").textContent =
+          "Live · updated " + new Date(data.generated_at).toLocaleTimeString();
+      });
+      activitySource.onerror = function () {
+        root.querySelector("[data-workshop-live]").textContent =
+          "Activity reconnecting · showing last-known state";
+        startFallback(root);
+      };
+      cardSource = new EventSource("/api/cards/events?realm=" + encodeURIComponent(root.dataset.realm));
+      cardSource.addEventListener("cards-changed", function () { refresh(root, false); });
+    } else {
+      startFallback(root);
     }
   }
 
@@ -290,4 +346,8 @@
   document.addEventListener("htmx:afterSwap", init);
   document.addEventListener("htmx:beforeSwap", stop);
   document.addEventListener("pa:historyWillReload", stop);
+  if (window.PA_TEST) window.PAWorkshopTest = {
+    acceptSnapshot: acceptSnapshot,
+    reset: function () { lastSnapshotAt = ""; }
+  };
 })();

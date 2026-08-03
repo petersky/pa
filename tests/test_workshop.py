@@ -159,6 +159,60 @@ def test_sync_degradation_does_not_mark_healthy_bay_unhealthy():
     assert snapshot["bays"][0]["connectivity"] == "connected"
 
 
+def test_stale_activity_is_preserved_but_never_presented_as_live():
+    overview = _overview()
+    overview["nodes"][0]["dimensions"]["activity"]["state"] = "stale"
+
+    snapshot = build_workshop_snapshot(_ctx(), overview)
+
+    bay = snapshot["bays"][0]
+    assert bay["activity_freshness"] == "stale"
+    assert bay["workers"][0]["live"] is False
+    assert bay["workers"][0]["state"] == "stalled"
+
+
+def test_multi_instance_activity_can_begin_after_initial_snapshot():
+    overview = _overview()
+    remote = {
+        **overview["nodes"][0],
+        "id": "monica",
+        "name": "Monica",
+        "local": False,
+        "dimensions": {
+            **overview["nodes"][0]["dimensions"],
+            "activity": {
+                **overview["nodes"][0]["dimensions"]["activity"],
+                "value": {
+                    "capacity": {"consumed": 0, "limit": 2},
+                    "sessions": [],
+                    "dispatches": [],
+                },
+            },
+        },
+    }
+    overview["nodes"].append(remote)
+    initial = build_workshop_snapshot(_ctx(), overview)
+    assert initial["bays"][1]["workers"] == []
+
+    remote["dimensions"]["activity"]["value"] = {
+        "capacity": {"consumed": 1, "limit": 2},
+        "sessions": [
+            {
+                "id": "monica-session",
+                "title": "Monica worker",
+                "status": "working",
+                "connected": True,
+                "provider": "codex",
+                "updated_at": datetime.now(UTC).isoformat(),
+            }
+        ],
+        "dispatches": [],
+    }
+    updated = build_workshop_snapshot(_ctx(), overview)
+    assert updated["bays"][1]["workers"][0]["id"] == "monica-session"
+    assert updated["bays"][1]["capacity"]["consumed"] == 1
+
+
 def test_starting_dispatch_appears_only_after_durable_admission():
     overview = _overview()
     overview["nodes"][0]["dimensions"]["activity"]["value"]["sessions"] = []
@@ -205,7 +259,10 @@ def test_workshop_ui_contract_is_accessible_and_excludes_replay_controls():
     assert "Compact list" in template
     assert 'aria-live="polite"' in template
     assert "/api/cards/events" in script
+    assert "/api/fleet/workshop/events" in script
     assert "/api/fleet/workshop" in script
+    assert "acceptSnapshot" in script
+    assert "Activity reconnecting" in script
     assert "refreshGeneration" in script
     assert "prefers-reduced-motion" in style
     assert "timeline" not in template.lower()
