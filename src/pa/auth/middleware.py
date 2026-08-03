@@ -21,6 +21,7 @@ PUBLIC_PATHS = {
     "/api/auth/login",
     "/api/fleet/join",
     "/api/pr-supervisor/webhook/github",
+    "/favicon.ico",
     "/login",
 }
 
