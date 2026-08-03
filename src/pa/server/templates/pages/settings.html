@@ -1,6 +1,7 @@
 {% from "macros/instance_identity.html" import instance_identity %}
 {% from "macros/layout.html" import page_layout, section_nav %}
 
+<span data-settings-loaded-section="{{ active_settings_section }}" hidden></span>
 {% set left %}
 <div class="panel">
   <div class="panel-header"><h2>Settings</h2></div>
@@ -13,7 +14,7 @@
     ('configuration', 'Configuration'),
     ('backups', 'Backups'),
     ('instance', 'Instance'),
-  ], active='agent') }}
+  ], active=active_settings_section) }}
 </div>
 {% endset %}
 
@@ -65,7 +66,7 @@
   </div>
 </section>
 
-<section class="stack" data-section="agent">
+<section class="{{ "" if active_settings_section == "agent" else "hidden " }}stack" data-section="agent"{% if active_settings_section != "agent" %} hidden{% endif %}>
   <div class="panel">
     <div class="panel-header"><h2>Agent defaults</h2></div>
     <p class="muted">Choose the provider and session options PA uses for new agent work. Instance defaults apply to everyone; account overrides apply only to you.</p>
@@ -1039,6 +1040,7 @@
           scope: "global",
         }),
       });
+      try { sessionStorage.removeItem("pa:settings:agent-draft"); } catch (_error) {}
       if (status) {
         status.hidden = false;
         status.textContent = "Saved.";

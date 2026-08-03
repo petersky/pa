@@ -129,7 +129,33 @@
     }));
   }
 
+  function preserveSettingsDraft() {
+    var form = document.getElementById("pa-agent-prefs-form");
+    if (!form) return;
+    var values = {};
+    Array.from(form.elements).forEach(function (field) {
+      if (!field.name || field.type === "password") return;
+      values[field.name] = field.type === "checkbox" ? field.checked : field.value;
+    });
+    try { sessionStorage.setItem("pa:settings:agent-draft", JSON.stringify(values)); } catch (_error) {}
+  }
+
+  function restoreSettingsDraft() {
+    var form = document.getElementById("pa-agent-prefs-form");
+    if (!form) return;
+    var values = null;
+    try { values = JSON.parse(sessionStorage.getItem("pa:settings:agent-draft") || "null"); } catch (_error) {}
+    if (!values) return;
+    Object.keys(values).forEach(function (name) {
+      var field = form.elements[name];
+      if (!field) return;
+      if (field.type === "checkbox") field.checked = !!values[name];
+      else field.value = values[name];
+    });
+  }
+
   function initSections(root) {
+    restoreSettingsDraft();
     var scope = root || document;
     scope.querySelectorAll(".page-layout").forEach(function (layout) {
       var links = layout.querySelectorAll("[data-section-link]");
@@ -180,8 +206,20 @@
     if (!link) return;
     var layout = link.closest(".page-layout");
     if (!layout) return;
+    var settingsMarker = document.querySelector("[data-settings-loaded-section]");
+    var requestedSection = link.getAttribute("data-section-link");
+    if (settingsMarker && settingsMarker.getAttribute("data-settings-loaded-section") !== requestedSection) {
+      e.preventDefault();
+      preserveSettingsDraft();
+      var url = new URL(window.location.href);
+      url.searchParams.set("section", requestedSection);
+      link.textContent = "Loading…";
+      layout.setAttribute("aria-busy", "true");
+      window.location.assign(url.toString());
+      return;
+    }
     e.preventDefault();
-    showSection(layout, link.getAttribute("data-section-link"));
+    showSection(layout, requestedSection);
   });
 
   // The app shell keeps the document itself at overflow:hidden and scrolls

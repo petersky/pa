@@ -400,6 +400,41 @@ class ConfigurationCliContractTests(unittest.TestCase):
         ):
             self.assertIn(f"def {tool}(", source)
 
+    def test_settings_shell_budget_and_repeated_navigation_defer_slow_sections(
+        self,
+    ) -> None:
+        from pa.core.kernel import Kernel
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                data_dir=Path(tmp),
+                instance_id="settings-performance",
+                instance_name="settings-performance",
+                session_secret="settings-performance-secret",
+                agent_enabled=False,
+                peers=[],
+            )
+            app = Kernel.boot(settings=settings).build_app()
+            with (
+                patch(
+                    "pa.configuration.service.configuration_snapshot"
+                ) as configuration,
+                patch("pa.status.info.build_status_snapshot") as status,
+                TestClient(app) as client,
+            ):
+                for _ in range(20):
+                    response = client.get("/settings")
+                    self.assertEqual(response.status_code, 200)
+                    self.assertLess(len(response.content), 150_000)
+                    self.assertIn("shell;dur=", response.headers["server-timing"])
+                    self.assertIn(
+                        "settings-section;dur=", response.headers["server-timing"]
+                    )
+                    self.assertIn("template;dur=", response.headers["server-timing"])
+                    self.assertEqual(response.headers["x-pa-settings-section"], "agent")
+                configuration.assert_not_called()
+                status.assert_not_called()
+
     def test_http_patch_validates_revision_is_idempotent_and_audited(self) -> None:
         from pa.core.kernel import Kernel
 
