@@ -2854,7 +2854,7 @@
     const list = document.querySelector("[data-agent-session-list]");
     if (!list) return;
     const toggle = document.querySelector("[data-agent-history-toggle]");
-    const includeClosed = !!(toggle && toggle.checked);
+    const includeClosed = !!(toggle && toggle.getAttribute("aria-checked") === "true");
     csrfFetch(includeClosed ? "/history?limit=500" : "/sessions")
       .then(function (sessions) {
         list.innerHTML = "";
@@ -2883,14 +2883,18 @@
           const sessionIdentity = sessionInstanceId && window.PAInstanceIdentity
             ? window.PAInstanceIdentity.html(sessionInstanceId)
             : "";
+          const title = s.title || s.label || "Agent";
           li.innerHTML =
-            "<strong>" + escapeHtml(s.title || s.label || "Agent") + "</strong>" +
-            '<span class="muted">' + escapeHtml(s.status || "") + "</span>" +
-            '<span class="muted agent-session-runtime">' + sessionIdentity +
-            (sessionIdentity ? " · " : "") + escapeHtml(
-              [s.agent_name, s.model_id, s.mode_id].filter(Boolean).join(" · ")
-            ) + "</span>" +
-            sessionConfigSummary(s.config_json);
+            '<strong class="agent-session-title" data-agent-session-title data-full-title="' +
+            escapeHtml(title) + '">' + escapeHtml(title) + "</strong>" +
+            '<span class="agent-session-title-tooltip" role="tooltip">' + escapeHtml(title) + "</span>" +
+            '<dl class="agent-session-metadata">' +
+            metadataField("Instance", sessionIdentity || "Local instance", !!sessionIdentity) +
+            metadataField("Provider", s.agent_name || "Default provider") +
+            metadataField("Model", s.model_id || "Default model") +
+            (s.mode_id ? metadataField("Mode", s.mode_id) : "") +
+            metadataField("Status", s.status || "unknown") +
+            "</dl>" + sessionConfigSummary(s.config_json);
           if (s.status !== "closed") {
             const close = document.createElement("button");
             close.type = "button";
@@ -2900,13 +2904,36 @@
             close.title = s.live === false
               ? "Forget this orphan so it is not retried"
               : "Close the live session";
-            li.appendChild(close);
+            const actions = document.createElement("span");
+            actions.className = "agent-session-actions";
+            actions.appendChild(close);
+            li.appendChild(actions);
           }
           list.appendChild(li);
         });
+        updateSessionTitleTooltips(list);
         filterSessionList();
       })
       .catch(function () { /* ignore */ });
+  }
+
+  function metadataField(label, value, trustedHtml) {
+    return "<div><dt>" + escapeHtml(label) + "</dt><dd>" +
+      (trustedHtml ? value : escapeHtml(value)) + "</dd></div>";
+  }
+
+  function updateSessionTitleTooltips(scope) {
+    (scope || document).querySelectorAll("[data-agent-session-title]").forEach(function (title) {
+      const item = title.closest("[data-session-id]");
+      if (!item) return;
+      const clamped = title.scrollHeight > title.clientHeight + 1;
+      item.dataset.titleClamped = clamped ? "true" : "false";
+      if (clamped) {
+        item.setAttribute("aria-label", title.dataset.fullTitle || title.textContent || "Agent session");
+      } else {
+        item.removeAttribute("aria-label");
+      }
+    });
   }
 
   function filterSessionList() {
@@ -2953,8 +2980,8 @@
       const summary = [
         requestedParts.length && ("requested: " + requestedParts.join(", ")),
         effectiveParts.length && ("effective: " + effectiveParts.join(", ")),
-        admission.state && ("state: " + admission.state)
-      ].filter(Boolean).join(" · ");
+        admission.state && ("settings status: " + admission.state)
+      ].filter(Boolean).join("\n");
       if (summary) {
         return '<span class="muted small agent-session-config">' +
           escapeHtml(summary) + "</span>";
@@ -2963,7 +2990,7 @@
     const values = config && config.values;
     if (!values || !Object.keys(values).length) return "";
     return '<span class="muted small agent-session-config">' + escapeHtml(
-      Object.keys(values).map(function (key) { return key + ": " + values[key]; }).join(" · ")
+      Object.keys(values).map(function (key) { return key + ": " + values[key]; }).join("\n")
     ) + "</span>";
   }
 
@@ -3183,14 +3210,23 @@
     const sessionSearch = root.querySelector("[data-agent-session-search]");
     if (historyToggle && !historyToggle._acwBound) {
       historyToggle._acwBound = true;
-      historyToggle.addEventListener("change", function () {
+      historyToggle.addEventListener("click", function () {
+        const enabled = historyToggle.getAttribute("aria-checked") !== "true";
+        historyToggle.setAttribute("aria-checked", enabled ? "true" : "false");
+        const state = historyToggle.querySelector("[data-agent-history-state]");
+        if (state) state.textContent = enabled ? "On" : "Off";
         if (sessionSearch) {
-          sessionSearch.hidden = !historyToggle.checked;
-          if (!historyToggle.checked) sessionSearch.value = "";
+          sessionSearch.hidden = !enabled;
+          if (!enabled) sessionSearch.value = "";
         }
         const widget = document.querySelector("[data-agent-chat]");
         refreshSessionList(widget && widget._acw && widget._acw.sessionId);
       });
+    }
+    updateSessionTitleTooltips(root);
+    if (!window._paAgentTitleResizeBound) {
+      window._paAgentTitleResizeBound = true;
+      window.addEventListener("resize", function () { updateSessionTitleTooltips(document); });
     }
     if (sessionSearch && !sessionSearch._acwBound) {
       sessionSearch._acwBound = true;
