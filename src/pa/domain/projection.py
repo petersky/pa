@@ -908,9 +908,7 @@ class CardProjection:
             event, entity_type="instance_group", entity_id=group_id
         )
 
-    def _apply_instance_participation_policy_event(
-        self, event: CardEvent
-    ) -> None:
+    def _apply_instance_participation_policy_event(self, event: CardEvent) -> None:
         instance_id = str(event.payload.get("instance_id") or "")
         if not instance_id:
             return
@@ -1711,7 +1709,7 @@ class CardProjection:
                 payload["summary_source"] = (
                     value.value if hasattr(value, "value") else value
                 )
-            elif value is not None:
+            elif value is not None or key == "project_id":
                 payload[key] = value
         if data.body is not None and data.summary is None:
             if card.summary_source == CardSummarySource.FALLBACK:
@@ -1759,7 +1757,11 @@ class CardProjection:
                 card.summary_updated_at = _coerce_datetime(value)
             elif key == "summary_source":
                 card.summary_source = CardSummarySource(value)
-            elif key != "updated_at" and value is not None and hasattr(card, key):
+            elif (
+                key != "updated_at"
+                and (value is not None or key == "project_id")
+                and hasattr(card, key)
+            ):
                 setattr(card, key, value)
         card.updated_at = now
         self._upsert_card(card)
@@ -2131,9 +2133,7 @@ class CardProjection:
                 "SELECT payload FROM instance_groups WHERE realm_id=? AND id=?",
                 (realm_id, group_id),
             ).fetchone()
-        return (
-            InstanceGroup.model_validate(json.loads(row["payload"])) if row else None
-        )
+        return InstanceGroup.model_validate(json.loads(row["payload"])) if row else None
 
     @serialized_mutation
     def create_instance_group(
@@ -2300,9 +2300,7 @@ class CardProjection:
         )
         self.commit_event(event) if self.event_log else self.apply_event(event)
         return (
-            self.get_instance_participation_policy(
-                policy.instance_id, policy.realm_id
-            )
+            self.get_instance_participation_policy(policy.instance_id, policy.realm_id)
             or policy
         )
 
@@ -2811,7 +2809,9 @@ class CardProjection:
 
     def add_knowledge(self, entry: KnowledgeEntry) -> KnowledgeEntry:
         if not entry.content_hash:
-            entry.content_hash = hashlib.sha256(entry.summary.encode("utf-8")).hexdigest()
+            entry.content_hash = hashlib.sha256(
+                entry.summary.encode("utf-8")
+            ).hexdigest()
         with self._conn() as conn:
             duplicate = conn.execute(
                 """SELECT * FROM knowledge
@@ -3219,9 +3219,7 @@ class CardProjection:
             else None,
             tags=json.loads(row["tags"]),
             content_hash=row["content_hash"] if "content_hash" in keys else "",
-            provenance=KnowledgeProvenance.model_validate(
-                json.loads(row["provenance"])
-            )
+            provenance=KnowledgeProvenance.model_validate(json.loads(row["provenance"]))
             if "provenance" in keys and row["provenance"]
             else None,
             created_at=datetime.fromisoformat(row["created_at"]),
