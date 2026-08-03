@@ -20,4 +20,5 @@ def test_bell_panel_accessibility_live_updates_and_draft_preservation_contract()
     assert 'new EventSource("/api/cards/events")' in script
     assert "setInterval" in script
     assert 'event.key === "Escape"' in script
+    assert "if (flyout.hidden) return;" in script
     assert "@media (max-width: 640px)" in styles
