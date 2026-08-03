@@ -304,6 +304,16 @@ class Kernel:
             lambda instance_id: resolve_instance_identity(self.ctx, instance_id)
         )
 
+        from fastapi.responses import FileResponse
+
+        @app.get("/favicon.ico", include_in_schema=False)
+        async def favicon() -> FileResponse:
+            return FileResponse(
+                DEFAULT_STATIC / "favicon.ico",
+                media_type="image/x-icon",
+                headers={"Cache-Control": "public, max-age=604800"},
+            )
+
         if DEFAULT_STATIC.exists():
             app.mount(
                 "/static", StaticFiles(directory=str(DEFAULT_STATIC)), name="static"
