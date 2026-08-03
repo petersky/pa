@@ -62,6 +62,13 @@ class PromptRegistryTests(unittest.TestCase):
                     ),
                 )
 
+    def test_card_reconciliation_distinguishes_no_integration_outcomes(self) -> None:
+        prompt = PROMPTS.render("card.reconciliation.disposition").text
+
+        self.assertIn("set `integration_required` to false", prompt)
+        self.assertIn("do not invent or inspect pull-request work", prompt)
+        self.assertIn("A verified no-integration task may use `done`", prompt)
+
     def test_all_registered_prompts_have_an_operational_call_site(self) -> None:
         root = Path(__file__).parents[1] / "src" / "pa"
         source = "\n".join(
