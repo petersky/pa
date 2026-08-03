@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
+import logging
 from datetime import UTC, datetime
+from time import perf_counter
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
@@ -15,6 +18,33 @@ from pa.modules.theme import get_theme_catalog
 from pa.prompts import PROMPTS
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+_SETTINGS_SECTIONS = {
+    "appearance",
+    "agent",
+    "mcp-servers",
+    "prompts",
+    "telemetry",
+    "configuration",
+    "backups",
+    "instance",
+}
+
+
+class _Timings:
+    def __init__(self) -> None:
+        self.started = perf_counter()
+        self.values: list[tuple[str, float]] = []
+
+    def measure(self, name: str, call):
+        started = perf_counter()
+        value = call()
+        self.values.append((name, (perf_counter() - started) * 1000))
+        return value
+
+    def header(self) -> str:
+        values = [*self.values, ("total", (perf_counter() - self.started) * 1000)]
+        return ", ".join(f"{name};dur={duration:.1f}" for name, duration in values)
 
 
 def _templates(request: Request):
@@ -61,17 +91,42 @@ def _shell_context(request: Request) -> dict:
 
 
 def render_page(request: Request, page: PageDefinition) -> HTMLResponse:
+    timings = _Timings()
     templates = _templates(request)
-    context = _shell_context(request)
+    context = timings.measure("shell", lambda: _shell_context(request))
     context["active_path"] = page.path
     context["page"] = page
-    context.update(page.build_context(request))
-
-    if request.headers.get("HX-Request"):
-        return templates.TemplateResponse(request, page.template, context)
-
-    context["include_template"] = page.template
-    return templates.TemplateResponse(request, "shell.html", context)
+    timing_name = "settings-section" if page.id == "settings" else "page_context"
+    context.update(timings.measure(timing_name, lambda: page.build_context(request)))
+    if page.id != "settings":
+        if request.headers.get("HX-Request"):
+            return templates.TemplateResponse(request, page.template, context)
+        context["include_template"] = page.template
+        return templates.TemplateResponse(request, "shell.html", context)
+    context["request"] = request
+    template_name = page.template
+    if not request.headers.get("HX-Request"):
+        context["include_template"] = page.template
+        template_name = "shell.html"
+    html = timings.measure(
+        "template", lambda: templates.get_template(template_name).render(context)
+    )
+    response = HTMLResponse(html)
+    response.headers["Server-Timing"] = timings.header()
+    if page.id == "settings":
+        section = str(context.get("active_settings_section") or "agent")
+        response_bytes = len(html.encode("utf-8"))
+        diagnostics = {
+            "event": "settings.render",
+            "section": section,
+            "timings_ms": {name: round(value, 1) for name, value in timings.values},
+            "total_ms": round((perf_counter() - timings.started) * 1000, 1),
+            "response_bytes": response_bytes,
+        }
+        response.headers["X-PA-Settings-Section"] = section
+        response.headers["X-PA-Settings-Bytes"] = str(response_bytes)
+        logger.info("settings_render %s", json.dumps(diagnostics, sort_keys=True))
+    return response
 
 
 def _settings_context(request: Request) -> dict:
@@ -81,42 +136,67 @@ def _settings_context(request: Request) -> dict:
     user_id = principal[5:] if principal.startswith("user:") else None
     prefs = get_preferences_store(settings.data_dir, user_id=user_id).load()
     global_prefs = get_preferences_store(settings.data_dir).load()
-    kernel = request.app.state.kernel
+    requested = request.query_params.get("section", "agent")
+    section = requested if requested in _SETTINGS_SECTIONS else "agent"
     from pa.acp.providers.registry import list_providers
-    from pa.configuration.service import configuration_snapshot
-    from pa.status.info import build_status_snapshot
 
-    status = build_status_snapshot(ctx, module_count=len(kernel.registry.modules))
-    backup_service = ctx.services.get("backup_service")
-    backup_status = backup_service.status() if backup_service else None
-    backup_records = (
-        [item.public_dict() for item in backup_service.list_backups()]
-        if backup_service
-        else []
-    )
-    return {
+    result = {
+        "active_settings_section": section,
         "prefs": prefs,
         "global_prefs": global_prefs,
         "settings": settings,
-        "status": status,
+        "status": {
+            "service": {"state": "deferred", "backend": "none", "installed": False}
+        },
         "themes": get_theme_catalog(),
         "agent_providers": [
             {"id": provider.id, "display_name": provider.display_name}
             for provider in list_providers()
         ],
-        "prompt_catalog": PROMPTS.catalog(provider=settings.agent_provider),
-        "prompt_adapters": [
+        "prompt_catalog": [],
+        "prompt_adapters": [],
+        "telemetry_health": {"state": "deferred"},
+        "configuration": {
+            "settings": [],
+            "precedence": [],
+            "deprecated": [],
+            "unknown": [],
+            "revision": "",
+        },
+        "backup_status": None,
+        "backup_records": [],
+    }
+    if section == "prompts":
+        result["prompt_catalog"] = PROMPTS.catalog(provider=settings.agent_provider)
+        result["prompt_adapters"] = [
             item.model_dump(mode="json") for item in PROMPTS.adapters()
-        ],
-        "telemetry_health": (
+        ]
+    elif section == "telemetry":
+        result["telemetry_health"] = (
             ctx.services["telemetry"].health()
             if "telemetry" in ctx.services
             else {"state": "starting"}
-        ),
-        "configuration": configuration_snapshot(settings),
-        "backup_status": backup_status,
-        "backup_records": backup_records,
-    }
+        )
+    elif section == "configuration":
+        from pa.configuration.service import configuration_snapshot
+
+        result["configuration"] = configuration_snapshot(settings)
+    elif section == "backups":
+        backup_service = ctx.services.get("backup_service")
+        result["backup_status"] = backup_service.status() if backup_service else None
+        result["backup_records"] = (
+            [item.public_dict() for item in backup_service.list_backups()]
+            if backup_service
+            else []
+        )
+    elif section == "instance":
+        from pa.status.info import build_status_snapshot
+
+        kernel = request.app.state.kernel
+        result["status"] = build_status_snapshot(
+            ctx, module_count=len(kernel.registry.modules)
+        )
+    return result
 
 
 def _agent_context(request: Request) -> dict:
