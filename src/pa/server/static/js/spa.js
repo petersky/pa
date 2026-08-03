@@ -289,13 +289,18 @@
   var boardEventSource = null;
   var boardEventRealm = null;
 
+  function stopBoardLiveUpdates() {
+    if (boardEventSource) boardEventSource.close();
+    boardEventSource = null;
+    boardEventRealm = null;
+    window.__paWorkResources = { eventSources: 0 };
+  }
+
   function initBoardLiveUpdates() {
     var board = document.querySelector("[data-work-board]");
     var realm = board && board.dataset.realm;
     if (!realm) {
-      if (boardEventSource) boardEventSource.close();
-      boardEventSource = null;
-      boardEventRealm = null;
+      stopBoardLiveUpdates();
       return;
     }
     if (boardEventSource && boardEventRealm === realm) return;
@@ -304,6 +309,7 @@
     boardEventSource = new EventSource(
       "/api/cards/events?realm=" + encodeURIComponent(realm)
     );
+    window.__paWorkResources = { eventSources: 1 };
     boardEventSource.addEventListener("cards-changed", function (event) {
       var current = document.querySelector("[data-work-board]");
       if (!current || current.dataset.realm !== realm) return;
@@ -318,9 +324,14 @@
   }
 
   document.addEventListener("pa:historyWillReload", function () {
-    if (boardEventSource) boardEventSource.close();
-    boardEventSource = null;
-    boardEventRealm = null;
+    stopBoardLiveUpdates();
+  });
+
+  document.body.addEventListener("htmx:beforeSwap", function (event) {
+    var target = event.detail && event.detail.target;
+    if (target && (target.matches("#app-view") || target.querySelector("[data-work-board]"))) {
+      stopBoardLiveUpdates();
+    }
   });
 
   var cardDialogOpener = null;

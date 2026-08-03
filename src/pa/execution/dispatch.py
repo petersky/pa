@@ -453,6 +453,7 @@ class DispatchStore:
         self.path = data_dir / "dispatch_mutations.json"
         self.metrics_path = data_dir / "dispatch_queue_metrics.json"
         self._records: dict[str, DispatchRecord] = {}
+        self._latest_card_records: dict[str, DispatchRecord] = {}
         self._lock = RLock()
         try:
             metrics = json.loads(self.metrics_path.read_text())
@@ -460,6 +461,30 @@ class DispatchStore:
         except (OSError, ValueError, TypeError):
             self._queue_rejections = 0
         self._load()
+
+    @staticmethod
+    def _prefer_card_record(candidate: DispatchRecord, current: DispatchRecord) -> bool:
+        active_states = {
+            "queued", "checking_sync", "materializing", "provisioning",
+            "starting_session", "delivering_prompt", "running",
+        }
+        return (
+            (candidate.state in active_states) > (current.state in active_states)
+            or (
+                (candidate.state in active_states) == (current.state in active_states)
+                and candidate.updated_at > current.updated_at
+            )
+        )
+
+    def _rebuild_latest_card_records_locked(self) -> None:
+        selected: dict[str, DispatchRecord] = {}
+        for record in self._records.values():
+            if not record.card_id:
+                continue
+            current = selected.get(record.card_id)
+            if current is None or self._prefer_card_record(record, current):
+                selected[record.card_id] = record
+        self._latest_card_records = selected
 
     def _record_queue_rejection_locked(self) -> None:
         self._queue_rejections += 1
@@ -532,6 +557,7 @@ class DispatchStore:
                 )
                 migrated = True
         self._records = records
+        self._rebuild_latest_card_records_locked()
         for record in self._records.values():
             if (
                 record.card_id
@@ -548,6 +574,7 @@ class DispatchStore:
             self._save()
 
     def _save(self) -> None:
+        self._rebuild_latest_card_records_locked()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         atomic_write_json(
             self.path,
@@ -576,6 +603,17 @@ class DispatchStore:
         return sorted(records, key=lambda record: record.updated_at, reverse=True)[
             :limit
         ]
+
+    def latest_by_card(self, card_ids: set[str]) -> dict[str, DispatchRecord]:
+        """Return one useful dispatch per requested card without copying history."""
+        if not card_ids:
+            return {}
+        with self._lock:
+            return {
+                card_id: self._latest_card_records[card_id]
+                for card_id in card_ids
+                if card_id in self._latest_card_records
+            }
 
     def capacity_snapshot(self, target_instance_id: str) -> dict[str, Any]:
         """Return authority-local reservations and waiting work for one target."""
