@@ -1276,7 +1276,9 @@ class CardProjection:
                 "summary_updated_at",
             }:
                 continue
-            if key == "lane":
+            if key == "kind":
+                card.kind = CardKind(value)
+            elif key == "lane":
                 card.lane = CardLane(value)
             elif key == "summary_source":
                 card.summary_source = CardSummarySource(value)
@@ -1717,8 +1719,8 @@ class CardProjection:
         now = datetime.now(UTC)
         payload = {}
         for key, value in updates.items():
-            if key == "lane" and value is not None:
-                payload["lane"] = value.value if hasattr(value, "value") else value
+            if key in {"kind", "lane"} and value is not None:
+                payload[key] = value.value if hasattr(value, "value") else value
             elif key == "summary_source" and value is not None:
                 payload["summary_source"] = (
                     value.value if hasattr(value, "value") else value

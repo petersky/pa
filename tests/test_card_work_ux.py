@@ -376,13 +376,14 @@ class CoreWorkUiRouteTests(unittest.TestCase):
             "tags",
             "preferred_instance",
             "preferred_capabilities",
+            "auto_enrich",
             "link_urls",
             "link_labels",
         ):
             self.assertIn(f'name="{field}"', response.text)
         self.assertIn("data-new-card-files", response.text)
         self.assertIn("Drop files here", response.text)
-        self.assertNotIn('type="checkbox"', response.text)
+        self.assertIn('type="checkbox" name="auto_enrich"', response.text)
 
     def test_new_card_modal_creates_links_and_file_attachments(self) -> None:
         with TestClient(self.app) as client:
