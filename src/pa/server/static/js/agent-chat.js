@@ -609,7 +609,7 @@
     boot
       .then(function (snap) {
         const sid = (snap.session && snap.session.id) || (snap.id) || self.sessionId;
-        if (self.drafts) self.drafts.switchSession(sid);
+        if (self.drafts) self.drafts.promoteSession(sid);
         self.sessionId = sid;
         self.root.dataset.sessionId = sid;
         return self.openSession(sid, "", { replace: true });

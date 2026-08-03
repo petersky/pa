@@ -57,29 +57,18 @@
     </section>
   </div>
 
-  {% if agent_connected %}
   <a href="/agent"
-     class="status-btn online"
-     title="Agent online — open chat"
+     class="status-btn {{ 'online' if agent_connected else 'offline' }}"
+     title="{{ 'Agent online — open Sessions' if agent_connected else ('Agent starting — open Sessions' if not agent_startup.get('complete', true) else 'Agent offline — open Sessions') }}"
+     aria-label="Open Sessions; agent is {{ 'online' if agent_connected else ('starting' if not agent_startup.get('complete', true) else 'offline') }}"
      hx-get="/agent"
      hx-target="#app-view"
      hx-push-url="true"
      hx-swap="innerHTML">
     {{ icon('agent', 'icon icon-sm') }}
     <span class="status-dot"></span>
-    <span class="status-label">Agent</span>
+    <span class="status-label">{{ 'Agent' if agent_connected else ('Starting' if not agent_startup.get('complete', true) else 'Offline') }}</span>
   </a>
-  {% else %}
-  <button type="button"
-          class="status-btn offline"
-          id="pa-agent-reconnect"
-          title="Agent offline — click to reconnect"
-          aria-label="Reconnect agent">
-    {{ icon('agent', 'icon icon-sm') }}
-    <span class="status-dot"></span>
-    <span class="status-label">Offline</span>
-  </button>
-  {% endif %}
 
   <button type="button"
           id="pa-theme-toggle"
