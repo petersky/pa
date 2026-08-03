@@ -18,6 +18,7 @@ from typing import Any
 import httpx
 import typer
 
+from pa import __version__
 from pa.acp.environment import (
     private_provider_environment_names,
     sanitize_provider_environment,
@@ -462,7 +463,7 @@ def _owner_findings(
             _repair_commands(int((public_status or {}).get("session_count") or 0))
             if causal
             else [
-                Command("pa logs --stderr --lines 100"),
+                Command("pa logs --stderr -n 100"),
                 Command(
                     "pa restart",
                     True,
@@ -662,12 +663,36 @@ def run_doctor(*, verbose: bool = False, json_output: bool = False) -> int:
                 f"The public health endpoint at {instance_url} is unreachable.",
                 "PA's UI and HTTP API are unavailable.",
                 next_commands=[
-                    Command("pa logs --stderr --lines 100"),
+                    Command("pa logs --stderr -n 100"),
                     Command("pa restart", True, True),
                 ],
             )
         )
     active_sessions = int((public_status or {}).get("session_count") or 0)
+    cli_version = _binary_version(pa_bin)
+    service_version = _binary_version(service_bin)
+    running_version = str((public_status or {}).get("version") or "") or None
+    installed_version = install.version if install else None
+    observed_versions = {
+        "module": __version__,
+        "cli": cli_version,
+        "service": service_version,
+        "running": running_version,
+        "installed": installed_version,
+    }
+    known_versions = {value for value in observed_versions.values() if value}
+    if len(known_versions) > 1:
+        findings.append(
+            Finding(
+                "PA-DOC-PINNED-VERSION-MISMATCH",
+                "error",
+                "The CLI, loaded service, running server, or install metadata report different PA versions.",
+                "ACP may launch a stale executable with an incompatible MCP or owner-channel contract.",
+                observed_versions,
+                _repair_commands(active_sessions),
+                root_cause="service_drift",
+            )
+        )
     loaded, service_findings, service_causes = _service_findings(
         settings, status, service_bin, active_sessions
     )
@@ -707,17 +732,38 @@ def run_doctor(*, verbose: bool = False, json_output: bool = False) -> int:
         try:
             probe_pa_mcp_stdio(settings, timeout=12.0, owner_environment=environment)
         except McpHandshakeError as exc:
+            incompatible = exc.classification == "dependency_incompatible"
             findings.append(
                 Finding(
-                    "PA-DOC-MCP-HANDSHAKE-FAILED",
+                    "PA-DOC-MCP-DEPENDENCY-INCOMPATIBLE"
+                    if incompatible
+                    else "PA-DOC-MCP-HANDSHAKE-FAILED",
                     "error",
                     f"The MCP handshake failed: {exc.classification}.",
                     "Agents cannot enumerate or call PA tools.",
-                    {"detail": redact_log_text(exc.detail)},
+                    {
+                        "phase": exc.phase,
+                        "detail": redact_log_text(exc.detail),
+                        "root_exception": redact_log_text(
+                            exc.root_exception or "unknown"
+                        ),
+                        **{
+                            key: _safe(key, value)
+                            for key, value in exc.context.items()
+                        },
+                    },
                     [
                         Command("pa doctor --verbose"),
-                        Command("pa logs --stderr --lines 100"),
+                        Command("pa install --service-only", True)
+                        if incompatible
+                        else Command("pa logs --stderr -n 100"),
+                        Command("pa restart", True, True, active_sessions > 0)
+                        if incompatible
+                        else Command("pa version"),
                     ],
+                    root_cause="mcp_dependency"
+                    if incompatible
+                    else "mcp_bootstrap",
                 )
             )
     findings.extend(_provider_findings(settings))

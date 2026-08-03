@@ -57,6 +57,7 @@ class PlacementCandidate(BaseModel):
     reachability: dict[str, Any] = Field(default_factory=dict)
     activity: dict[str, Any] = Field(default_factory=dict)
     providers: dict[str, Any] = Field(default_factory=dict)
+    mcp_bootstrap: dict[str, Any] = Field(default_factory=dict)
     repositories: dict[str, Any] = Field(default_factory=dict)
     authorized: bool = True
     authorization_reason: str | None = None
@@ -526,6 +527,24 @@ def _evaluate(
     if bool(activity.get("quiescing")):
         reject("quiescing", "instance is quiescing")
 
+    bootstrap_envelope = _envelope(candidate, "mcp_bootstrap")
+    if bootstrap_envelope:
+        bootstrap = bootstrap_envelope.get("value") or {}
+        if (
+            bootstrap_envelope.get("state") != "fresh"
+            or bootstrap.get("state") != "connected"
+        ):
+            classification = (
+                bootstrap.get("classification")
+                or bootstrap_envelope.get("failure_code")
+                or "unavailable"
+            )
+            reject(
+                "mcp_bootstrap_unavailable",
+                "PA stdio MCP bootstrap is unavailable "
+                f"({classification}); run pa doctor --verbose on the target",
+            )
+
     provider_ready, provider_reason, provider_score = _provider_ready(
         candidate, request.provider, request.model_id
     )
@@ -740,12 +759,31 @@ class PlacementService:
                 recoverable=True,
             )
         if not eligible:
-            named = f" {request.instance_id!r}" if request.instance_id else ""
+            rejection_codes = {
+                code
+                for item in rejected
+                for code in item.get("rejection_codes") or []
+            }
+            if rejection_codes and rejection_codes <= {"provider_unavailable"}:
+                code = "provider_unavailable"
+                message = (
+                    f"Provider {request.provider!r} is unavailable on every candidate."
+                )
+            elif rejection_codes and rejection_codes <= {
+                "mcp_bootstrap_unavailable"
+            }:
+                code = "mcp_bootstrap_unavailable"
+                message = "PA stdio MCP bootstrap is unavailable on every candidate."
+            else:
+                code = "no_eligible_instance"
+                message = (
+                    f"No eligible fleet instance{' ' + repr(request.instance_id) if request.instance_id else ''} "
+                    "passed group, participation, workload, readiness, authorization, provider, repository, and capacity checks. "
+                    "PA will not fall back to the authority/local instance."
+                )
             raise PlacementError(
-                "no_eligible_instance",
-                f"No eligible fleet instance{named} passed group, participation, "
-                "workload, readiness, authorization, provider, repository, and "
-                "capacity checks. PA will not fall back to the authority/local instance.",
+                code,
+                message,
                 rejected_candidates=rejected,
                 recoverable=True,
             )

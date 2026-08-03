@@ -6,12 +6,14 @@ import asyncio
 import json
 import sys
 from contextlib import asynccontextmanager
+from functools import partial
 from typing import Any
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from pa.acp.mcp_config import McpHandshakeError, probe_pa_mcp_stdio
 from pa.acp.providers.base import ProviderConfigureBody
 from pa.acp.providers.codex_auth import get_codex_login_store, resolve_codex_cli
 from pa.acp.providers.registry import get_provider
@@ -132,6 +134,33 @@ async def list_local_providers(request: Request) -> list[dict]:
     return await list_provider_summaries_bounded(
         _data_dir(request), manager=manager, async_runtime=runtime
     )
+
+
+@router.get("/mcp-bootstrap")
+async def probe_local_mcp_bootstrap(request: Request) -> dict[str, Any]:
+    """Exercise the exact PA stdio MCP child required by every ACP session."""
+    settings = request.app.state.ctx.settings
+    try:
+        return await _offload_request(
+            request,
+            "mcp.bootstrap_probe",
+            partial(probe_pa_mcp_stdio, settings, timeout=12.0),
+            timeout=15.0,
+        )
+    except McpHandshakeError as exc:
+        return {
+            "state": "unavailable",
+            "classification": exc.classification,
+            "phase": exc.phase,
+            "detail": exc.detail,
+            "context": exc.context,
+            "recoverable": True,
+            "recovery_actions": [
+                "run pa doctor --verbose on the target instance",
+                "repair or upgrade the target PA installation and restart it",
+                "retry this instance or choose an alternate instance/provider",
+            ],
+        }
 
 
 @router.get("/{provider_id}")
