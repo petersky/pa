@@ -952,13 +952,21 @@
       var freshness = progress.freshness || {};
       var progressText = "";
       if (checkpoint) {
+        var compactDetail = function (value, limit) {
+          value = String(value || "");
+          return value.length > limit ? value.slice(0, limit) + "…" : value;
+        };
         var toolRows = (checkpoint.tool_details || []).map(function (detail) {
-          return "<li>" + escapeHtml(detail.title || "Tool") +
+          return "<li title=\"" + escapeHtml(detail.title || "Tool") + "\">" +
+            escapeHtml(compactDetail(detail.title || "Tool", 240)) +
             (detail.status ? " · " + escapeHtml(detail.status) : "") + "</li>";
         }).join("");
         var validationRows = (checkpoint.validations || []).map(function (validation) {
-          return "<li><code>" + escapeHtml(validation.command || "validation") +
-            "</code> · " + escapeHtml(validation.status || "unknown") + "</li>";
+          var command = validation.command || "validation";
+          return "<li><details><summary><code>" +
+            escapeHtml(compactDetail(command, 240)) + "</code> · " +
+            escapeHtml(validation.status || "unknown") +
+            "</summary><code>" + escapeHtml(command) + "</code></details></li>";
         }).join("");
         progressText = '<div class="dispatch-progress dispatch-progress-' +
           escapeHtml(freshness.state || "delayed") + '"><p><strong>' +

@@ -85,16 +85,22 @@ Before persistence and again before transport, PA:
 - removes bearer credentials, common GitHub/OpenAI/Slack token forms, URL
   credentials, private keys, and secret-like assignments;
 - collapses control/whitespace-heavy content;
-- caps summaries at 500 characters and tool/detail fields at 240 characters;
+- caps summaries at 500 characters, tool/detail fields at 240 characters, and
+  stored validation command labels at 2,000 characters;
 - accepts at most 20 validation records and 10 tool-detail records per
   checkpoint; and
-- rejects checkpoint/heartbeat payloads over 32 KB and completion reports over
-  64 KB; and
+- rejects checkpoint, heartbeat, and explicit-event payloads over 64,000
+  encoded UTF-8 bytes; completion reports intentionally retain their separate
+  64,000-byte ceiling; and
 - stores no unrestricted command output.
 
 Validation records contain only a sanitized command label, normalized result,
 optional concise summary, and duration. Operators must open the exact ACP
 session for full transcript context.
+
+The compact UI truncates long command labels to 240 characters independently
+of durable storage and exposes the complete sanitized label in an expandable
+detail. Storage limits must not be reused as presentation limits.
 
 ## UI semantics and retention
 
@@ -128,6 +134,11 @@ watch before persisting it. Card disposition remains a separate guarded
 business decision, so transport completion, PR supervision, and lane changes
 cannot contradict one another.
 
-Future versions should add fields through a new negotiated schema version.
+Future incompatible changes should use a new negotiated schema version. Readers
+must tolerate historical records independently: an invalid versioned progress
+event may be discarded without preventing its dispatch or other dispatches from
+loading. Schema-bound migrations should preserve the dispatch lifecycle record,
+and startup/MCP registration must not depend on every historical side-channel
+payload validating under the current schema.
 Provider-specific derivation may extend the normalizer only with deliberate
 user-visible content or explicitly allowlisted lifecycle metadata.

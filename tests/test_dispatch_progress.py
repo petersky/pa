@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
@@ -12,8 +13,10 @@ from pydantic import ValidationError
 from pa.config import Settings
 from pa.execution.dispatch import DispatchRecord, DispatchStore
 from pa.execution.progress import (
+    MAX_FINAL_REPORT_BYTES,
     MAX_PROGRESS_EVENTS,
     MAX_PROGRESS_PAYLOAD_BYTES,
+    MAX_VALIDATION_COMMAND,
     CompletionReportV1,
     DispatchProgressEventV1,
     DispatchProgressHeartbeatV1,
@@ -75,6 +78,23 @@ def checkpoint(
 
 
 class ProgressStoreTests(unittest.TestCase):
+    def test_malformed_historical_progress_does_not_break_ledger_loading(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "dispatch_mutations.json"
+            good = record().model_copy(update={"dispatch_id": "good"})
+            malformed = record().model_dump(mode="json")
+            malformed["progress_events"] = [{"schema_version": 999}]
+            path.write_text(
+                json.dumps({"good": good.model_dump(mode="json"), DISPATCH: malformed})
+            )
+
+            store = DispatchStore(Path(tmp))
+
+            self.assertIsNotNone(store.get("good"))
+            recovered = store.get(DISPATCH)
+            self.assertIsNotNone(recovered)
+            self.assertEqual(recovered.progress_events, [])
+
     def test_idempotent_ordering_conflicts_and_reload(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = DispatchStore(Path(tmp))
@@ -310,7 +330,9 @@ class ProgressDerivationTests(unittest.IsolatedAsyncioTestCase):
             tool_event = persisted.progress_events[0]
             self.assertLessEqual(len(tool_event.summary), 500)
             self.assertLessEqual(len(tool_event.tool_details[0].title), 240)
-            self.assertLessEqual(len(tool_event.validations[0].command), 240)
+            self.assertLessEqual(
+                len(tool_event.validations[0].command), MAX_VALIDATION_COMMAND
+            )
             self.assertLessEqual(len(tool_event.validations[0].summary or ""), 240)
             self.assertIn(
                 "Unrelated progress",
@@ -494,6 +516,64 @@ class ProgressDerivationTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ProgressApiAndUiTests(unittest.TestCase):
+    def test_validation_command_character_boundaries_and_unicode(self) -> None:
+        for size in (MAX_VALIDATION_COMMAND - 1, MAX_VALIDATION_COMMAND):
+            value = ProgressValidationV1(command="é" * size, status="passed")
+            self.assertEqual(len(value.command), size)
+            self.assertEqual(len(value.command.encode()), size * 2)
+        value = ProgressValidationV1(
+            command="é" * (MAX_VALIDATION_COMMAND + 1), status="passed"
+        )
+        self.assertEqual(len(value.command), MAX_VALIDATION_COMMAND)
+
+    def test_checkpoint_encoded_byte_boundaries_with_multibyte_unicode(self) -> None:
+        base = checkpoint(1).model_copy(update={"operator_input": ""})
+        base_size = len(base.model_dump_json().encode())
+
+        below = checkpoint(1).model_copy(
+            update={
+                "operator_input": "x" * (MAX_PROGRESS_PAYLOAD_BYTES - base_size - 1)
+            }
+        )
+        exact = checkpoint(1).model_copy(
+            update={"operator_input": "x" * (MAX_PROGRESS_PAYLOAD_BYTES - base_size)}
+        )
+        self.assertEqual(
+            len(below.model_dump_json().encode()), MAX_PROGRESS_PAYLOAD_BYTES - 1
+        )
+        self.assertEqual(
+            len(exact.model_dump_json().encode()), MAX_PROGRESS_PAYLOAD_BYTES
+        )
+        DispatchProgressEventV1.model_validate(exact.model_dump(mode="json"))
+        with self.assertRaises(ValidationError):
+            DispatchProgressEventV1.model_validate(
+                {
+                    **exact.model_dump(mode="json"),
+                    "operator_input": exact.operator_input + "x",
+                }
+            )
+
+        unicode_exact = checkpoint(1).model_copy(
+            update={
+                "operator_input": "x" * (MAX_PROGRESS_PAYLOAD_BYTES - base_size - 4)
+                + "😀"
+            }
+        )
+        self.assertEqual(
+            len(unicode_exact.model_dump_json().encode()), MAX_PROGRESS_PAYLOAD_BYTES
+        )
+        DispatchProgressEventV1.model_validate(unicode_exact.model_dump(mode="json"))
+        with self.assertRaises(ValidationError):
+            DispatchProgressEventV1.model_validate(
+                {
+                    **unicode_exact.model_dump(mode="json"),
+                    "operator_input": unicode_exact.operator_input + "é",
+                }
+            )
+
+    def test_completion_report_limit_remains_intentionally_at_least_64kb(self) -> None:
+        self.assertGreaterEqual(MAX_FINAL_REPORT_BYTES, 64_000)
+
     def test_operator_input_preserves_legacy_strings_and_structured_contracts(
         self,
     ) -> None:

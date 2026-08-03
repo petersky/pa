@@ -14,7 +14,7 @@ from typing import Any
 from uuid import uuid4
 
 import httpx
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from pa.core.async_runtime import (
     AsyncRuntime,
@@ -471,13 +471,40 @@ class DispatchStore:
     def _load(self) -> None:
         try:
             payload = json.loads(self.path.read_text())
-            self._records = {
-                key: DispatchRecord.model_validate(value)
-                for key, value in payload.items()
-            }
-        except OSError, ValueError:
+        except OSError, ValueError, TypeError:
             self._records = {}
             return
+        if not isinstance(payload, dict):
+            self._records = {}
+            return
+        self._records = {}
+        recovered = False
+        for key, value in payload.items():
+            try:
+                self._records[key] = DispatchRecord.model_validate(value)
+                continue
+            except ValidationError as exc:
+                if not isinstance(value, dict):
+                    logger.warning(
+                        "Skipping malformed dispatch record %s: %s", key, exc
+                    )
+                    continue
+            # Progress is a versioned side channel. Preserve the dispatch when a
+            # historical or malformed progress payload no longer validates,
+            # dropping only the unusable side-channel fields.
+            compatible = dict(value)
+            compatible["progress_events"] = []
+            compatible["progress_heartbeat"] = None
+            compatible["final_report"] = None
+            compatible["progress_seen_keys"] = []
+            try:
+                self._records[key] = DispatchRecord.model_validate(compatible)
+                recovered = True
+                logger.warning(
+                    "Recovered dispatch %s without malformed progress payloads", key
+                )
+            except ValidationError as exc:
+                logger.warning("Skipping malformed dispatch record %s: %s", key, exc)
         migrated = False
         for record in self._records.values():
             if (
@@ -491,7 +518,7 @@ class DispatchStore:
                     "the stored card lane was left unchanged."
                 )
                 migrated = True
-        if migrated:
+        if migrated or recovered:
             self._save()
 
     def _save(self) -> None:

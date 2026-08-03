@@ -12,7 +12,14 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Literal
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 if TYPE_CHECKING:
     from pa.core.async_runtime import AsyncRuntime
@@ -25,9 +32,11 @@ MAX_PROGRESS_EVENTS = 200
 MAX_PROGRESS_SEEN_KEYS = 512
 MAX_PROGRESS_SUMMARY = 500
 MAX_PROGRESS_DETAIL = 240
+MAX_VALIDATION_COMMAND = 2_000
 MAX_PROGRESS_VALIDATIONS = 20
 MAX_PROGRESS_TOOL_DETAILS = 10
-MAX_PROGRESS_PAYLOAD_BYTES = 32_000
+# Progress payload limits are encoded UTF-8 byte limits, not display limits.
+MAX_PROGRESS_PAYLOAD_BYTES = 64_000
 MAX_FINAL_REPORT_BYTES = 64_000
 PROGRESS_HEARTBEAT_SECONDS = 15.0
 PROGRESS_RETRY_SECONDS = 3.0
@@ -48,6 +57,20 @@ _PRIVATE_KEY = re.compile(
     r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----",
     re.DOTALL,
 )
+
+
+def _sanitize_ingress_text(value: Any, *, limit: int) -> str:
+    """Redact and normalize untrusted text before field constraints run."""
+    text = str(value or "")
+    text = _PRIVATE_KEY.sub("[REDACTED PRIVATE KEY]", text)
+    text = _BEARER.sub("Bearer [REDACTED]", text)
+    text = _KNOWN_TOKEN.sub("[REDACTED TOKEN]", text)
+    text = _SECRET_ASSIGNMENT.sub(
+        lambda match: f"{match.group(1)}{match.group(2)}[REDACTED]", text
+    )
+    text = _URL_CREDENTIALS.sub(r"\1[REDACTED]@", text)
+    text = " ".join(text.replace("\x00", "").split())
+    return text[:limit].strip()
 
 
 class ProgressPhase(StrEnum):
@@ -75,10 +98,24 @@ class ProgressKind(StrEnum):
 class ProgressValidationV1(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    command: str = Field(max_length=240)
+    command: str = Field(max_length=MAX_VALIDATION_COMMAND)
     status: Literal["queued", "running", "passed", "failed", "cancelled", "unknown"]
     summary: str | None = Field(default=None, max_length=MAX_PROGRESS_DETAIL)
     duration_ms: int | None = Field(default=None, ge=0)
+
+    @field_validator("command", mode="before")
+    @classmethod
+    def sanitize_command(cls, value: Any) -> str:
+        return _sanitize_ingress_text(value, limit=MAX_VALIDATION_COMMAND)
+
+    @field_validator("summary", mode="before")
+    @classmethod
+    def sanitize_validation_summary(cls, value: Any) -> str | None:
+        return (
+            _sanitize_ingress_text(value, limit=MAX_PROGRESS_DETAIL)
+            if value is not None
+            else None
+        )
 
 
 class ProgressToolDetailV1(BaseModel):
@@ -180,10 +217,15 @@ class DispatchProgressEventV1(BaseModel):
     delivery_attempts: int = Field(default=0, ge=0)
     delivery_error: str | None = Field(default=None, max_length=MAX_PROGRESS_DETAIL)
 
+    @field_validator("summary", mode="before")
+    @classmethod
+    def sanitize_summary_ingress(cls, value: Any) -> str:
+        return _sanitize_ingress_text(value, limit=MAX_PROGRESS_SUMMARY)
+
     @model_validator(mode="after")
     def payload_is_bounded(self) -> DispatchProgressEventV1:
         if len(self.model_dump_json().encode()) > MAX_PROGRESS_PAYLOAD_BYTES:
-            raise ValueError("progress checkpoint exceeds the 32 KB payload limit")
+            raise ValueError("progress checkpoint exceeds the 64 KB payload limit")
         return self
 
     def transport_dict(self) -> dict[str, Any]:
@@ -219,10 +261,15 @@ class DispatchProgressHeartbeatV1(BaseModel):
     delivery_attempts: int = Field(default=0, ge=0)
     delivery_error: str | None = Field(default=None, max_length=MAX_PROGRESS_DETAIL)
 
+    @field_validator("summary", mode="before")
+    @classmethod
+    def sanitize_summary_ingress(cls, value: Any) -> str:
+        return _sanitize_ingress_text(value, limit=MAX_PROGRESS_SUMMARY)
+
     @model_validator(mode="after")
     def payload_is_bounded(self) -> DispatchProgressHeartbeatV1:
         if len(self.model_dump_json().encode()) > MAX_PROGRESS_PAYLOAD_BYTES:
-            raise ValueError("progress heartbeat exceeds the 32 KB payload limit")
+            raise ValueError("progress heartbeat exceeds the 64 KB payload limit")
         return self
 
     def transport_dict(self) -> dict[str, Any]:
@@ -257,11 +304,16 @@ class ExplicitProgressCheckpointV1(BaseModel):
     operator_input: str | OperatorInputRequestV1 | None = None
     idempotency_key: str | None = Field(default=None, max_length=200)
 
+    @field_validator("summary", mode="before")
+    @classmethod
+    def sanitize_summary_ingress(cls, value: Any) -> str:
+        return _sanitize_ingress_text(value, limit=MAX_PROGRESS_SUMMARY)
+
     @model_validator(mode="after")
     def payload_is_bounded(self) -> ExplicitProgressCheckpointV1:
         if len(self.model_dump_json().encode()) > MAX_PROGRESS_PAYLOAD_BYTES:
             raise ValueError(
-                "explicit progress checkpoint exceeds the 32 KB payload limit"
+                "explicit progress checkpoint exceeds the 64 KB payload limit"
             )
         return self
 
@@ -276,16 +328,7 @@ class ProgressIngestResult(BaseModel):
 
 def sanitize_text(value: Any, *, limit: int = MAX_PROGRESS_SUMMARY) -> str:
     """Remove common credentials and bound deliberate user-visible text."""
-    text = str(value or "")
-    text = _PRIVATE_KEY.sub("[REDACTED PRIVATE KEY]", text)
-    text = _BEARER.sub("Bearer [REDACTED]", text)
-    text = _KNOWN_TOKEN.sub("[REDACTED TOKEN]", text)
-    text = _SECRET_ASSIGNMENT.sub(
-        lambda match: f"{match.group(1)}{match.group(2)}[REDACTED]", text
-    )
-    text = _URL_CREDENTIALS.sub(r"\1[REDACTED]@", text)
-    text = " ".join(text.replace("\x00", "").split())
-    return text[:limit].strip()
+    return _sanitize_ingress_text(value, limit=limit)
 
 
 def sanitize_operator_input(
@@ -316,7 +359,7 @@ def sanitize_operator_input(
 def sanitize_validation(value: ProgressValidationV1) -> ProgressValidationV1:
     return value.model_copy(
         update={
-            "command": sanitize_text(value.command, limit=240),
+            "command": sanitize_text(value.command, limit=MAX_VALIDATION_COMMAND),
             "summary": (
                 sanitize_text(value.summary, limit=MAX_PROGRESS_DETAIL)
                 if value.summary
@@ -608,7 +651,7 @@ def derived_checkpoint(
         validations = (
             [
                 ProgressValidationV1(
-                    command=sanitize_text(title, limit=240),
+                    command=sanitize_text(title, limit=MAX_VALIDATION_COMMAND),
                     status=validation_status,
                     summary=sanitize_text(summary, limit=MAX_PROGRESS_DETAIL),
                 )
@@ -882,7 +925,7 @@ class ProgressService:
         ).hexdigest()[:24]
         normalized_validations = [
             ProgressValidationV1(
-                command=sanitize_text(item.command, limit=240),
+                command=sanitize_text(item.command, limit=MAX_VALIDATION_COMMAND),
                 status=item.status,
                 summary=(
                     sanitize_text(item.summary, limit=MAX_PROGRESS_DETAIL)
