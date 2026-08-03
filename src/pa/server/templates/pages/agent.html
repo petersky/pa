@@ -24,10 +24,12 @@
   <button type="button" class="ghost small" id="pa-agent-reconnect">Reconnect agent</button>
   {% endif %}
   <div class="agent-session-history-controls">
-    <label class="agent-session-history-toggle">
-      <input type="checkbox" data-agent-history-toggle>
+    <button type="button" class="agent-session-history-toggle" role="switch"
+            aria-checked="false" data-agent-history-toggle>
+      <span class="agent-session-toggle-track" aria-hidden="true"><span></span></span>
       <span>Show closed sessions</span>
-    </label>
+      <span class="sr-only" data-agent-history-state>Off</span>
+    </button>
     <label class="sr-only" for="agent-session-search">Filter sessions</label>
     <input id="agent-session-search"
            type="search"
@@ -46,13 +48,20 @@
         data-session-live="{{ 'true' if s.id in live_session_ids else 'false' }}"
         role="button"
         tabindex="0">
-      <strong>{{ s.title or s.label or s.agent_name }}</strong>
-      <span class="metadata-row"><span class="badge">{{ s.status }}</span>{% if detail.pending_approval %}<span class="badge status-waiting">Approval needed</span>{% endif %}</span>
-      <span class="muted agent-session-runtime">{% if s.origin_instance_id %}{{ instance_identity(s.origin_instance_id) }}{% else %}{{ detail.host }}{% endif %} · {{ s.agent_name }}{% if s.model_id %} · {{ s.model_id }}{% else %} · default model{% endif %}{% if s.mode_id %} · {{ s.mode_id }}{% endif %}</span>
+      {% set session_title = s.title or s.label or s.agent_name %}
+      <strong class="agent-session-title" data-agent-session-title data-full-title="{{ session_title }}">{{ session_title }}</strong>
+      <span class="agent-session-title-tooltip" role="tooltip">{{ session_title }}</span>
+      <dl class="agent-session-metadata">
+        <div><dt>Instance</dt><dd>{% if s.origin_instance_id %}{{ instance_identity(s.origin_instance_id) }}{% else %}{{ detail.host or 'Local instance' }}{% endif %}</dd></div>
+        <div><dt>Provider</dt><dd>{{ s.agent_name }}</dd></div>
+        <div><dt>Model</dt><dd>{{ s.model_id or 'Default model' }}</dd></div>
+        {% if s.mode_id %}<div><dt>Mode</dt><dd>{{ s.mode_id }}</dd></div>{% endif %}
+        <div><dt>Status</dt><dd><span class="badge">{{ s.status }}</span>{% if detail.pending_approval %} <span class="badge status-waiting">Approval needed</span>{% endif %}</dd></div>
+      </dl>
       {% set admission = (s.config_json or {}).get('configuration', {}) %}
       {% set requested = admission.get('requested', {}) %}
       {% set effective = admission.get('effective', {}) %}
-      {% if requested or effective %}<span class="muted small agent-session-config">requested: {{ requested.get('model_id') or 'default model' }}{% if requested.get('reasoning') %} · reasoning {{ requested.get('reasoning') }}{% endif %} · effective: {{ effective.get('model_id') or s.model_id or 'default model' }}{% if effective.get('reasoning') %} · reasoning {{ effective.get('reasoning') }}{% endif %} · {{ admission.get('state', 'unknown') }}</span>{% endif %}
+      {% if requested or effective %}<span class="muted small agent-session-config"><b>Requested</b> {{ requested.get('model_id') or 'default model' }}{% if requested.get('reasoning') %} · effort {{ requested.get('reasoning') }}{% endif %}<br><b>Effective</b> {{ effective.get('model_id') or s.model_id or 'default model' }}{% if effective.get('reasoning') %} · effort {{ effective.get('reasoning') }}{% endif %}<br><b>Settings status</b> {{ admission.get('state', 'unknown') }}</span>{% endif %}
       {% if detail.card %}<a href="/work?card={{ detail.card.id }}">Card · {{ detail.card.title }}</a>{% endif %}
       {% if detail.project %}<a href="/projects?project={{ detail.project.id }}">Project · {{ detail.project.title }}</a>{% endif %}
       <span class="muted small">Elapsed {{ detail.elapsed }} · Last activity <time datetime="{{ s.updated_at.isoformat() }}">{{ s.updated_at.strftime('%Y-%m-%d %H:%M') }}</time></span>
@@ -63,12 +72,13 @@
         PR #{{ watch.pr_number }} · {{ watch.status.value }}
       </a>
       {% endfor %}
-      <button type="button"
-              class="ghost small danger agent-session-close"
-              data-agent-session-close
-              title="{{ 'Close the live session' if s.id in live_session_ids else 'Forget this orphan so it is not retried' }}">
-        {{ 'Close' if s.id in live_session_ids else 'Forget' }}
-      </button>
+      <span class="agent-session-actions">
+        <button type="button" class="ghost small danger agent-session-close"
+                data-agent-session-close
+                title="{{ 'Close the live session' if s.id in live_session_ids else 'Forget this orphan so it is not retried' }}">
+          {{ 'Close' if s.id in live_session_ids else 'Forget' }}
+        </button>
+      </span>
     </li>
     {% endfor %}
     {% else %}
