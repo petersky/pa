@@ -172,7 +172,9 @@
   }
   function close() {
     var chrome = root(); if (!chrome) return;
-    chrome.querySelector("#pa-notification-panel").hidden = true;
+    var flyout = chrome.querySelector("#pa-notification-panel");
+    if (flyout.hidden) return;
+    flyout.hidden = true;
     var bell = chrome.querySelector("#pa-notification-bell"); bell.setAttribute("aria-expanded", "false"); bell.focus();
   }
   document.addEventListener("click", function (event) {
