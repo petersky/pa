@@ -1,5 +1,9 @@
 # Architecture
 
+See [Durable goal orchestration](DURABLE_GOAL_ORCHESTRATION.md) for the proposed
+goal control plane, event-driven supervisor, limbic appraisal layer, memory
+architecture, and multimodal channel intake design.
+
 See [Interactions and fleet notifications](INTERACTIONS_AND_NOTIFICATIONS.md)
 for the durable notification envelope, interaction lifecycle, fleet routing,
 authorization, sync, and delivery contracts.
