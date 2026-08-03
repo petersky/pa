@@ -309,6 +309,29 @@ assert.strictEqual(topology.viewportAfterZoom(zoomed, 0.01, center).scale, 0.5);
 """
         )
 
+    def test_selection_is_preserved_only_while_the_entity_exists(self) -> None:
+        self.run_node(
+            r"""
+const current = overview(["local", "peer-a"]);
+current.edges = [{
+  id: "repository-local-peer", kind: "repository", source: "local", target: "peer-a",
+  status: "healthy", details: {}
+}];
+let snapshot = model.createSnapshot(current, null, { kind: "node", id: "local" });
+assert.strictEqual(snapshot.selection.id, "local");
+assert.strictEqual(snapshot.selectedNode.node.id, "local");
+snapshot = model.createSnapshot(current, null, { kind: "edge", id: "repository-local-peer" });
+assert.strictEqual(snapshot.selection.id, "repository-local-peer");
+assert.strictEqual(snapshot.selectedEdge.id, "repository-local-peer");
+snapshot = model.createSnapshot(overview(["peer-a"]), null, { kind: "node", id: "local" });
+assert.strictEqual(snapshot.selection, null);
+snapshot = model.createSnapshot(overview(["local", "peer-a"]), null, {
+  kind: "edge", id: "repository-local-peer"
+});
+assert.strictEqual(snapshot.selection, null);
+"""
+        )
+
     def test_partial_metadata_adds_nodes_without_erasing_cached_fields(self) -> None:
         self.run_node(
             r"""

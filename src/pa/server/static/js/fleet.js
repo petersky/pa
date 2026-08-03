@@ -1582,6 +1582,14 @@
         snapshot.selection.id
       ) || null;
     }
+    if (
+      snapshot.selection &&
+      !snapshot.selectedNode &&
+      !snapshot.selectedEdge &&
+      !snapshot.selectedEdgeItem
+    ) {
+      snapshot.selection = null;
+    }
     return snapshot;
   }
 
@@ -2076,6 +2084,14 @@
     };
   }
 
+  function topologyNodeBoundaryPoint(node, toward) {
+    var dx = toward.x - node.x;
+    var dy = toward.y - node.y;
+    if (!dx && !dy) return { x: node.x, y: node.y };
+    var scale = Math.min(94 / (Math.abs(dx) || Infinity), 58 / (Math.abs(dy) || Infinity));
+    return { x: node.x + dx * scale, y: node.y + dy * scale };
+  }
+
   function syncTopologyElement(current, incoming) {
     Array.prototype.slice.call(current.attributes || []).forEach(function (attribute) {
       if (!incoming.hasAttribute(attribute.name)) current.removeAttribute(attribute.name);
@@ -2409,6 +2425,10 @@
         layout.width + '" height="' + layout.height + '"></rect>',
       '<g data-fleet-topology-viewport><g data-fleet-topology-content>'
     ];
+    var edgeVisuals = [];
+    var edgeLabels = [];
+    var edgeInteractions = [];
+    var nodeVisuals = [];
     var parallelEdges = {};
     edges.forEach(function (edge) {
       if (!positions[edge.source] || !positions[edge.target]) return;
@@ -2440,10 +2460,10 @@
       if (edge.source === edge.target) {
         var loopLift = 92 + Math.abs(parallelOffset);
         var loopSpread = 115 + parallelIndex * 16;
-        path = "M " + (from.x + 58) + " " + (from.y - 28) + " C " +
+        path = "M " + (from.x + 58) + " " + (from.y - 58) + " C " +
           (from.x + loopSpread) + " " + (from.y - loopLift) + ", " +
           (from.x - loopSpread) + " " + (from.y - loopLift) + ", " +
-          (from.x - 58) + " " + (from.y - 28);
+          (from.x - 58) + " " + (from.y - 58);
         labelX = from.x;
         labelY = from.y - loopLift + 10;
       } else {
@@ -2455,20 +2475,26 @@
         var length = Math.sqrt(dx * dx + dy * dy) || 1;
         var controlX = (from.x + to.x) / 2 - dy / length * parallelOffset;
         var controlY = (from.y + to.y) / 2 + dx / length * parallelOffset;
+        var pathFrom = topologyNodeBoundaryPoint(from, { x: controlX, y: controlY });
+        var pathTo = topologyNodeBoundaryPoint(to, { x: controlX, y: controlY });
         labelX = (from.x + 2 * controlX + to.x) / 4;
         labelY = (from.y + 2 * controlY + to.y) / 4 - 8;
-        path = "M " + from.x + " " + from.y + " Q " + controlX + " " +
-          controlY + ", " + to.x + " " + to.y;
+        path = "M " + pathFrom.x + " " + pathFrom.y + " Q " + controlX + " " +
+          controlY + ", " + pathTo.x + " " + pathTo.y;
       }
-      parts.push('<g class="fleet-edge fleet-edge-' + escapeHtml(visualStatus) +
-        (selectedEdgeId === edge.id ? " fleet-selected" : "") +
-        '" data-fleet-edge="' + escapeHtml(edge.id) + '" data-fleet-source="' +
-        escapeHtml(edge.source) + '" data-fleet-target="' + escapeHtml(edge.target) +
-        '" tabindex="0" role="button" aria-label="' + label + '"><title>' + label +
-        '</title><path class="fleet-edge-hit" d="' + path +
-        '"></path><path class="fleet-edge-visual" marker-end="url(#' + this.markerId +
-        ')" d="' + path + '"></path><text x="' + labelX + '" y="' + labelY +
-        '" text-anchor="middle">' + escapeHtml(visualLabel) + "</text></g>");
+      var edgeClass = 'fleet-edge fleet-edge-' + escapeHtml(visualStatus) +
+        (selectedEdgeId === edge.id ? " fleet-selected" : "");
+      var edgeAttributes = ' class="' + edgeClass + '" data-fleet-edge="' +
+        escapeHtml(edge.id) + '" data-fleet-source="' + escapeHtml(edge.source) +
+        '" data-fleet-target="' + escapeHtml(edge.target) + '"';
+      edgeVisuals.push('<g' + edgeAttributes + ' aria-hidden="true"><path class="fleet-edge-halo" d="' +
+        path + '"></path><path class="fleet-edge-visual" marker-end="url(#' +
+        this.markerId + ')" d="' + path + '"></path></g>');
+      edgeLabels.push('<text class="fleet-edge-label" x="' + labelX + '" y="' +
+        labelY + '" text-anchor="middle">' + escapeHtml(visualLabel) + '</text>');
+      edgeInteractions.push('<g' + edgeAttributes + ' tabindex="0" role="button" aria-label="' +
+        label + '"><title>' + label + '</title><path class="fleet-edge-hit" d="' +
+        path + '"></path></g>');
     }, this);
     nodes.forEach(function (nodeState) {
       var node = nodeState.node;
@@ -2493,12 +2519,14 @@
       var visualUpdateLabel = update.value && update.value.upgrade_available
         ? "upgrade " + (update.value.available_version || update.value.latest || "available")
         : (update.state === "fresh" ? "current" : update.state);
-      parts.push('<g class="fleet-node fleet-node-' + escapeHtml(nodeState.topologyStatus) +
+      nodeVisuals.push('<g class="fleet-node fleet-node-' + escapeHtml(nodeState.topologyStatus) +
         (node.local ? " fleet-node-local" : "") +
         (selectedNodeId === node.id ? " fleet-selected" : "") +
         '" data-fleet-node="' + escapeHtml(node.id) +
         '" tabindex="0" role="button" aria-label="' + escapeHtml(nodeState.accessibleLabel) + '"><title>' +
-        escapeHtml(nodeState.accessibleLabel) + '</title><rect x="' + (pos.x - 94) + '" y="' + (pos.y - 58) +
+        escapeHtml(nodeState.accessibleLabel) + '</title><rect class="fleet-node-halo" x="' +
+        (pos.x - 99) + '" y="' + (pos.y - 63) + '" width="198" height="126" rx="18"></rect><rect x="' +
+        (pos.x - 94) + '" y="' + (pos.y - 58) +
         '" width="188" height="116" rx="14"></rect><text class="fleet-node-name" x="' +
         pos.x + '" y="' + (pos.y - 34) + '" text-anchor="middle">' + escapeHtml(mark + " " + node.name) +
         '</text><text x="' + pos.x + '" y="' + (pos.y - 10) + '" text-anchor="middle">' +
@@ -2510,6 +2538,11 @@
         '</text><text class="fleet-node-freshness" x="' + pos.x + '" y="' + (pos.y + 49) +
         '" text-anchor="middle">' + escapeHtml(nodeState.freshness) + "</text></g>");
     });
+    parts.push('<g class="fleet-topology-layer fleet-topology-layer-nodes" data-fleet-layer="nodes">' +
+      nodeVisuals.join("") + '</g><g class="fleet-topology-layer fleet-topology-layer-edges" data-fleet-layer="edges">' +
+      edgeVisuals.join("") + '</g><g class="fleet-topology-layer fleet-topology-layer-labels" data-fleet-layer="labels">' +
+      edgeLabels.join("") + '</g><g class="fleet-topology-layer fleet-topology-layer-interactions" data-fleet-layer="interactions">' +
+      edgeInteractions.join("") + '</g>');
     parts.push("</g></g>");
     var markup = parts.join("");
     var existingContent = $("[data-fleet-topology-content]", svg);
@@ -2517,33 +2550,7 @@
       var scratch = document.createElementNS("http://www.w3.org/2000/svg", "svg");
       scratch.innerHTML = markup;
       var incomingContent = $("[data-fleet-topology-content]", scratch);
-      var existingItems = Object.create(null);
-      $all(":scope > [data-fleet-edge], :scope > [data-fleet-node]", existingContent)
-        .forEach(function (item) {
-          var key = item.hasAttribute("data-fleet-edge")
-            ? "edge:" + item.dataset.fleetEdge
-            : "node:" + item.dataset.fleetNode;
-          existingItems[key] = item;
-        });
-      var cursor = existingContent.firstElementChild;
-      $all(":scope > [data-fleet-edge], :scope > [data-fleet-node]", incomingContent)
-        .forEach(function (incoming) {
-          var key = incoming.hasAttribute("data-fleet-edge")
-            ? "edge:" + incoming.dataset.fleetEdge
-            : "node:" + incoming.dataset.fleetNode;
-          var existing = existingItems[key];
-          if (existing) {
-            syncTopologyElement(existing, incoming);
-            delete existingItems[key];
-          } else {
-            existing = incoming.cloneNode(true);
-          }
-          if (existing !== cursor) existingContent.insertBefore(existing, cursor);
-          cursor = existing.nextElementSibling;
-        });
-      Object.keys(existingItems).forEach(function (key) {
-        existingItems[key].remove();
-      });
+      syncTopologyElement(existingContent, incomingContent);
     } else {
       svg.innerHTML = markup;
     }
@@ -2616,7 +2623,15 @@
 
   function renderFleetOverview(snapshot) {
     if (!fleetOverview) return;
+    var requestedSelection = snapshot && snapshot.selection || selectedFleetItem;
     var current = snapshot || createFleetSnapshot(fleetOverview, fleetRefresh, selectedFleetItem);
+    if (requestedSelection && !current.selection) {
+      selectedFleetItem = null;
+      var detail = $("#pa-fleet-detail");
+      if (detail) detail.innerHTML = "<h3>Inspect activity</h3><p class=\"muted\">The selected topology item is no longer available.</p>";
+    } else {
+      selectedFleetItem = current.selection;
+    }
     fleetRenderedSnapshot = current;
     current.nodes.forEach(renderFleetRow);
     renderFleetTopology(current);
