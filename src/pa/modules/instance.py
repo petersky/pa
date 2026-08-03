@@ -1239,5 +1239,6 @@ class InstanceModule(Module):
                 "POST",
                 "/api/workspaces/reconcile",
                 json={"collect": collect},
+                timeout_seconds=120.0,
                 timeout=300.0,
             )
