@@ -4689,6 +4689,39 @@ async def _assert_dispatch_sync_health(
         )
 
 
+async def _wait_for_dispatch_sync_health(
+    request: Request,
+    realm_id: str,
+    target_instance_id: str,
+    *,
+    attempts: int = 60,
+) -> dict[str, Any] | None:
+    """Wait through ordinary projection lag before failing a dispatch."""
+    for attempt in range(1, attempts + 1):
+        try:
+            return await _assert_dispatch_sync_health(
+                request, realm_id, target_instance_id
+            )
+        except HTTPException as exc:
+            detail = exc.detail if isinstance(exc.detail, dict) else {}
+            if (
+                detail.get("code")
+                not in {"authority_projection_stale", "target_projection_not_ready"}
+                or not detail.get("recoverable")
+                or attempt == attempts
+            ):
+                raise
+            retry_after = 1.0
+            if exc.headers:
+                try:
+                    retry_after = max(
+                        0.1, min(float(exc.headers.get("Retry-After", "1")), 5.0)
+                    )
+                except TypeError, ValueError:
+                    pass
+            await asyncio.sleep(retry_after)
+
+
 def _project_working_directory(
     project,
     *,
@@ -4833,7 +4866,7 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
     )
     card = None
     if record.card_id:
-        sync_evidence = await _assert_dispatch_sync_health(
+        sync_evidence = await _wait_for_dispatch_sync_health(
             request, record.realm_id, record.target_instance_id
         )
         if isinstance(sync_evidence, dict):
