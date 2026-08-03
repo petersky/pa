@@ -847,7 +847,7 @@ class BrowserModule(Module):
         @mcp.tool()
         def browser_screenshot(browser_handle: str | None = None):
             """Capture the current browser viewport as PNG."""
-            from mcp.server.fastmcp import Image
+            from mcp.server.mcpserver import Image
 
             result = call("screenshot", browser_handle=browser_handle)
             return Image(data=base64.b64decode(result["data_base64"]), format="png")

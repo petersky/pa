@@ -1,3 +1,4 @@
+from pa import __version__
 from pa.core.kernel import Kernel
 
 mcp = None
@@ -6,9 +7,9 @@ mcp = None
 def _get_mcp():
     global mcp
     if mcp is None:
-        from mcp.server.fastmcp import FastMCP
+        from mcp.server.mcpserver import MCPServer
 
-        mcp = FastMCP("pa")
+        mcp = MCPServer("pa", version=__version__)
         kernel = Kernel.boot()
         kernel.register_mcp(mcp)
     return mcp

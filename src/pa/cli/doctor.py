@@ -754,7 +754,7 @@ def run_doctor(*, verbose: bool = False, json_output: bool = False) -> int:
                     },
                     [
                         Command("pa doctor --verbose"),
-                        Command("pa install --service-only", True)
+                        Command("pa update", True)
                         if incompatible
                         else Command("pa logs --stderr -n 100"),
                         Command("pa restart", True, True, active_sessions > 0)

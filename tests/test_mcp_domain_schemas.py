@@ -1,8 +1,8 @@
 from types import SimpleNamespace
 from unittest import IsolatedAsyncioTestCase
 
-from mcp.server.fastmcp import FastMCP
-from mcp.server.fastmcp.exceptions import ToolError
+from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 
 from pa.domain.models import (
     CardCreate,
@@ -29,13 +29,13 @@ def _property_enum(schema: dict, property_name: str) -> list[str]:
 
 class McpDomainSchemaTests(IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
-        self.mcp = FastMCP("schema-contract")
+        self.mcp = MCPServer("schema-contract")
         ctx = SimpleNamespace(settings=SimpleNamespace())
         ItemsModule().register_mcp(self.mcp, ctx)
         FleetModule().register_mcp(self.mcp, ctx)
         ProjectsModule().register_mcp(self.mcp, ctx)
         self.schemas = {
-            tool.name: tool.inputSchema for tool in await self.mcp.list_tools()
+            tool.name: tool.input_schema for tool in await self.mcp.list_tools()
         }
 
     def assert_enum_matches_model(
