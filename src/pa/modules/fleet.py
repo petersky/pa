@@ -5163,13 +5163,14 @@ async def _placement_candidates(
     ctx = request.app.state.ctx
 
     async def inspect(inst: FleetInstance) -> PlacementCandidate:
-        reachability, activity, providers, repositories = await asyncio.gather(
+        reachability, activity, providers, mcp_bootstrap, repositories = await asyncio.gather(
             *(
                 probe_dimension(ctx, inst, dimension, force=True)
                 for dimension in (
                     "reachability",
                     "activity",
                     "providers",
+                    "mcp_bootstrap",
                     "repositories",
                 )
             )
@@ -5222,6 +5223,7 @@ async def _placement_candidates(
             reachability=reachability,
             activity=activity,
             providers=providers,
+            mcp_bootstrap=mcp_bootstrap,
             repositories=repositories,
             authorized=True,
         )
@@ -5291,6 +5293,10 @@ async def _resolve_policy_placement(
     project_id: str | None,
 ) -> tuple[Any, Any]:
     ctx = request.app.state.ctx
+    # Resolve the effective provider before eligibility/capacity checks. Leaving
+    # this as None admits any healthy provider, then may launch the unavailable
+    # instance default (the original Cursor-on-macmini failure).
+    body.provider = (body.provider or ctx.settings.agent_provider).strip().lower()
     realm_id = card.realm_id if card else ctx.settings.primary_realm
     plan, repository_ids = _placement_materialization_plan(
         request,
@@ -5647,12 +5653,26 @@ def _placement_http_error(exc: PlacementError) -> HTTPException:
             },
         )
     status = 404 if exc.code == "instance_not_found" else 409
+    recovery: dict[str, Any] = {}
+    if exc.code in {"provider_unavailable", "mcp_bootstrap_unavailable"}:
+        recovery = {
+            "retry_guidance": "Repair the target and retry with the same idempotency key.",
+            "remediation_options": [
+                "run pa doctor --verbose on the target instance",
+                "retry after repairing/restarting the target",
+                "choose an alternate eligible instance",
+                "choose an alternate authenticated provider",
+            ],
+            "recovery_url": "/fleet?section=operations",
+            "rejected_candidates": exc.rejected_candidates,
+        }
     return HTTPException(
         status_code=status,
         detail={
             "code": exc.code,
             "message": exc.message,
             "recoverable": exc.recoverable,
+            **recovery,
             "rejected_candidates": exc.rejected_candidates,
             "recovery_url": "/fleet?section=overview",
         },

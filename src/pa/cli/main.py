@@ -16,6 +16,7 @@ app = typer.Typer(
     name="pa",
     help="PA — human–agent orchestration",
     no_args_is_help=True,
+    invoke_without_command=True,
     rich_markup_mode="rich",
     pretty_exceptions_enable=False,
 )
@@ -37,6 +38,23 @@ app.add_typer(realm_app, name="realm")
 
 sync_app = typer.Typer(help="Sync status and control")
 app.add_typer(sync_app, name="sync")
+
+
+@app.callback()
+def cli_root(
+    version_option: Annotated[
+        bool,
+        typer.Option(
+            "--version",
+            help="Show PA version and exit",
+            is_eager=True,
+        ),
+    ] = False,
+) -> None:
+    """PA command-line interface."""
+    if version_option:
+        typer.echo(f"pa {__version__}")
+        raise typer.Exit()
 
 
 @app.command("service-inspect")
@@ -371,7 +389,9 @@ def logs(
     follow: Annotated[
         bool, typer.Option("-f", "--follow", help="Follow log output")
     ] = False,
-    lines: Annotated[int, typer.Option("-n", help="Number of lines")] = 50,
+    lines: Annotated[
+        int, typer.Option("-n", "--lines", help="Number of lines")
+    ] = 50,
     stdout: Annotated[
         bool, typer.Option("--stdout", help="Show the access/stdout log only")
     ] = False,

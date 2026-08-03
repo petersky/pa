@@ -14,7 +14,7 @@ from typing import Any
 from uuid import uuid4
 
 import httpx
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field
 
 from pa.core.async_runtime import (
     AsyncRuntime,
@@ -471,41 +471,67 @@ class DispatchStore:
     def _load(self) -> None:
         try:
             payload = json.loads(self.path.read_text())
-        except OSError, ValueError, TypeError:
+        except (OSError, ValueError, TypeError):
             self._records = {}
             return
         if not isinstance(payload, dict):
             self._records = {}
             return
-        self._records = {}
-        recovered = False
-        for key, value in payload.items():
-            try:
-                self._records[key] = DispatchRecord.model_validate(value)
-                continue
-            except ValidationError as exc:
-                if not isinstance(value, dict):
-                    logger.warning(
-                        "Skipping malformed dispatch record %s: %s", key, exc
-                    )
-                    continue
-            # Progress is a versioned side channel. Preserve the dispatch when a
-            # historical or malformed progress payload no longer validates,
-            # dropping only the unusable side-channel fields.
-            compatible = dict(value)
-            compatible["progress_events"] = []
-            compatible["progress_heartbeat"] = None
-            compatible["final_report"] = None
-            compatible["progress_seen_keys"] = []
-            try:
-                self._records[key] = DispatchRecord.model_validate(compatible)
-                recovered = True
-                logger.warning(
-                    "Recovered dispatch %s without malformed progress payloads", key
-                )
-            except ValidationError as exc:
-                logger.warning("Skipping malformed dispatch record %s: %s", key, exc)
         migrated = False
+        records: dict[str, DispatchRecord] = {}
+        for key, value in payload.items():
+            if not isinstance(value, dict):
+                logger.warning("Ignoring malformed persisted dispatch %s", key)
+                migrated = True
+                continue
+            candidate = dict(value)
+            # Progress is observational evidence, not dispatch identity. Keep a
+            # dispatch usable even when one historical progress item no longer
+            # validates; valid siblings are retained and rewritten below.
+            valid_events = []
+            for raw_event in candidate.get("progress_events") or []:
+                try:
+                    valid_events.append(
+                        DispatchProgressEventV1.model_validate(raw_event)
+                    )
+                except (ValueError, TypeError):
+                    logger.warning(
+                        "Ignoring malformed historical progress event for dispatch %s",
+                        key,
+                    )
+                    migrated = True
+            candidate["progress_events"] = [
+                event.model_dump(mode="json") for event in valid_events
+            ]
+            for optional_field, model in (
+                ("progress_heartbeat", DispatchProgressHeartbeatV1),
+                ("final_report", CompletionReportV1),
+            ):
+                raw = candidate.get(optional_field)
+                if raw is None:
+                    continue
+                try:
+                    candidate[optional_field] = model.model_validate(raw).model_dump(
+                        mode="json"
+                    )
+                except (ValueError, TypeError):
+                    candidate[optional_field] = None
+                    logger.warning(
+                        "Ignoring malformed historical %s for dispatch %s",
+                        optional_field,
+                        key,
+                    )
+                    migrated = True
+            try:
+                records[str(key)] = DispatchRecord.model_validate(candidate)
+            except (ValueError, TypeError) as exc:
+                logger.warning(
+                    "Ignoring malformed persisted dispatch %s (%s)",
+                    key,
+                    exc.__class__.__name__,
+                )
+                migrated = True
+        self._records = records
         for record in self._records.values():
             if (
                 record.card_id
@@ -518,7 +544,7 @@ class DispatchStore:
                     "the stored card lane was left unchanged."
                 )
                 migrated = True
-        if migrated or recovered:
+        if migrated:
             self._save()
 
     def _save(self) -> None:

@@ -9,6 +9,7 @@ import logging
 import time
 from collections import Counter
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 from threading import Lock, RLock
 from typing import Any
@@ -32,6 +33,7 @@ DIMENSIONS = (
     "reachability",
     "status",
     "providers",
+    "mcp_bootstrap",
     "update",
     "activity",
     "sync",
@@ -738,7 +740,7 @@ async def _probe(ctx: Any, inst: FleetInstance, dimension: str) -> dict[str, Any
     is_local = inst.instance_id == ctx.settings.instance_id
     timeout = REACHABILITY_TIMEOUT if dimension == "reachability" else DETAIL_TIMEOUT
     try:
-        if is_local and dimension not in {"providers", "update"}:
+        if is_local and dimension not in {"providers", "mcp_bootstrap", "update"}:
             value = await _offload(
                 ctx,
                 f"fleet.overview.{dimension}",
@@ -755,6 +757,15 @@ async def _probe(ctx: Any, inst: FleetInstance, dimension: str) -> dict[str, Any
                 manager=ctx.services.get("instance_agent"),
                 async_runtime=_runtime(ctx),
                 timeout=max(0.5, timeout - 0.5),
+            )
+        elif is_local and dimension == "mcp_bootstrap":
+            from pa.acp.mcp_config import probe_pa_mcp_stdio
+
+            value = await _offload(
+                ctx,
+                "fleet.overview.mcp_bootstrap",
+                partial(probe_pa_mcp_stdio, ctx.settings, timeout=3.0),
+                timeout=timeout,
             )
         elif is_local and dimension == "update":
             from pa.update.runner import check_update
@@ -791,6 +802,13 @@ async def _probe(ctx: Any, inst: FleetInstance, dimension: str) -> dict[str, Any
                 elif dimension == "providers":
                     value = await _json_get(
                         ctx, client, f"{base}/api/agent/providers", headers
+                    )
+                elif dimension == "mcp_bootstrap":
+                    value = await _json_get(
+                        ctx,
+                        client,
+                        f"{base}/api/agent/providers/mcp-bootstrap",
+                        headers,
                     )
                 elif dimension == "update":
                     value = await _json_get(

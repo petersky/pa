@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.metadata
 import os
+import platform
 import sys
 import tempfile
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
 import httpx
 from acp.schema import EnvVariable, McpServerStdio
@@ -40,12 +44,87 @@ class OwnerChannelError(RuntimeError):
 
 
 class McpHandshakeError(RuntimeError):
-    def __init__(self, classification: str, recovery: str, detail: str = ""):
+    def __init__(
+        self,
+        classification: str,
+        recovery: str,
+        detail: str = "",
+        *,
+        phase: str | None = None,
+        context: Mapping[str, Any] | None = None,
+        root_exception: str | None = None,
+    ):
         self.classification = classification
         self.recovery = recovery
         self.detail = detail
+        self.phase = phase or classification.removesuffix("_failed")
+        self.context = dict(context or {})
+        self.root_exception = root_exception
         suffix = f" ({detail})" if detail else ""
         super().__init__(f"PA stdio MCP handshake {classification}{suffix}. {recovery}")
+
+
+def _exception_leaves(exc: BaseException) -> list[BaseException]:
+    """Flatten nested TaskGroup failures while preserving the useful root cause."""
+    if isinstance(exc, BaseExceptionGroup):
+        return [leaf for child in exc.exceptions for leaf in _exception_leaves(child)]
+    return [exc]
+
+
+def _installed_version(distribution: str) -> str:
+    try:
+        return importlib.metadata.version(distribution)
+    except importlib.metadata.PackageNotFoundError:
+        return "not-installed"
+
+
+def _bootstrap_context(
+    settings: Settings,
+    server: McpServerStdio,
+    *,
+    owner_environment: Mapping[str, str] | None,
+) -> dict[str, Any]:
+    endpoint = owner_endpoint(settings, owner_environment)
+    source = (
+        "PA_OWNER_API_URL"
+        if endpoint.kind == "explicit_private_http"
+        else (
+            "PA_OWNER_SOCKET"
+            if (owner_environment or os.environ).get("PA_OWNER_SOCKET")
+            else "runtime_default"
+        )
+    )
+    return {
+        "pa_executable": server.command,
+        "pa_arguments": list(server.args),
+        "pa_version": _installed_version("pa"),
+        "mcp_sdk_version": _installed_version("mcp"),
+        "python_version": platform.python_version(),
+        "owner_endpoint_type": endpoint.kind,
+        "owner_endpoint_source": source,
+        "owner_endpoint_path": endpoint.uds or endpoint.url,
+        "cwd": str(Path.cwd()),
+        "process_exit_code": None,
+        "stderr_provenance": "stdio_child_captured",
+        "environment_provenance": "minimal_pa_owner_environment",
+    }
+
+
+def _ensure_supported_mcp_sdk(context: Mapping[str, Any]) -> None:
+    version = str(context.get("mcp_sdk_version") or "")
+    try:
+        major = int(version.split(".", 1)[0])
+    except ValueError:
+        return
+    if major >= 2:
+        raise McpHandshakeError(
+            "dependency_incompatible",
+            "Reinstall or upgrade PA so its declared dependency resolves mcp>=1.9.0,<2, then restart PA.",
+            f"installed mcp SDK {version} is incompatible with pa.mcp.server FastMCP imports",
+            phase="dependency_preflight",
+            context=context,
+            root_exception="ModuleNotFoundError: mcp.server.fastmcp",
+        )
 
 
 def owner_endpoint(
@@ -223,6 +302,8 @@ async def _probe_pa_mcp_stdio_async(
         session_environment=session_environment,
     )[0]
     environment = {item.name: item.value for item in server.env}
+    context = _bootstrap_context(settings, server, owner_environment=owner_environment)
+    _ensure_supported_mcp_sdk(context)
     params = StdioServerParameters(
         command=server.command,
         args=list(server.args),
@@ -249,11 +330,25 @@ async def _probe_pa_mcp_stdio_async(
                 "timeout" if isinstance(exc, TimeoutError) else f"{stage}_failed"
             )
             stderr.seek(0)
-            detail = redact_log_text(str(exc).strip() or stderr.read().strip())
+            child_stderr = redact_log_text(stderr.read().strip())
+            leaves = _exception_leaves(exc)
+            root = redact_log_text(
+                "; ".join(
+                    f"{leaf.__class__.__name__}: {leaf}"
+                    for leaf in leaves
+                    if str(leaf).strip()
+                )
+            )
+            # The outer AnyIO ExceptionGroup is generic; captured child stderr
+            # contains import/validation failures and is therefore authoritative.
+            detail = child_stderr or root or redact_log_text(str(exc))
             raise McpHandshakeError(
                 classification,
-                "Run the pinned PA executable manually with the reported owner environment and inspect PA logs.",
-                detail[:500],
+                "Run `pa doctor --verbose`; repair the reported dependency, owner endpoint, or loaded service drift, then retry placement.",
+                detail[:2000],
+                phase=stage,
+                context=context,
+                root_exception=root[:1000] or exc.__class__.__name__,
             ) from exc
 
 
