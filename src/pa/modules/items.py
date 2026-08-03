@@ -404,6 +404,26 @@ def _latest_card_progress(request: Request, card_id: str) -> dict | None:
     return progress
 
 
+def _progress_from_dispatch(record) -> dict:
+    public = record.public_dict()
+    progress = dict(public.get("progress") or {})
+    progress.update(
+        {
+            "dispatch_id": record.dispatch_id,
+            "session_id": record.session_id,
+            "dispatch_state": record.state,
+            "target_instance_id": record.target_instance_id,
+            "target_instance_name": record.target_instance_name,
+            "updated_at": record.updated_at.isoformat(),
+            "evaluated_outcome": public.get("evaluated_outcome"),
+            "post_turn_evaluation": public.get("post_turn_evaluation"),
+            "turn_end": public.get("turn_end"),
+            "followup_state": public.get("followup_state"),
+        }
+    )
+    return progress
+
+
 def _card_summary_context(request: Request, card) -> dict:
     store = get_store()
     dispatch_store = request.app.state.ctx.services.get("dispatch_store")
@@ -871,6 +891,7 @@ def _cards_context(
     kind: CardKind | None = None,
     lane: CardLane | None = None,
     apply_filters: bool = True,
+    result_limit: int | None = None,
 ) -> dict:
     store = get_store()
     realm = _active_realm(request)
@@ -916,11 +937,20 @@ def _cards_context(
             cards = [card for card in cards if card.updated_at >= cutoff]
         except ValueError:
             updated = ""
+    total_cards = len(cards)
+    if result_limit is not None:
+        cards = cards[:result_limit]
     projects = store.list_projects(realm_id=realm)
     project_by_id = {project.id: project for project in projects}
-    card_sessions = preferred_sessions_by_card(store.list_sessions())
+    card_ids = {card.id for card in cards}
+    card_sessions = preferred_sessions_by_card(store.list_sessions_for_cards(card_ids))
+    dispatch_store = request.app.state.ctx.services.get("dispatch_store")
+    selected_dispatches = (
+        dispatch_store.latest_by_card(card_ids) if dispatch_store else {}
+    )
     card_progress = {
-        card.id: _latest_card_progress(request, card.id) for card in cards
+        card_id: _progress_from_dispatch(record)
+        for card_id, record in selected_dispatches.items()
     }
     filter_params = {
         "realm": realm,
@@ -935,6 +965,7 @@ def _cards_context(
     }
     return {
         "cards": cards,
+        "total_cards": total_cards,
         "items": [Item.from_card(c) for c in cards],
         "kinds": list(CardKind),
         "lanes": list(CardLane),
@@ -983,6 +1014,45 @@ def _items_context(request: Request, *, kind: ItemKind | None = None) -> dict:
     ctx["kinds"] = list(ItemKind)
     ctx["statuses"] = list(ItemStatus)
     return ctx
+
+
+def _work_context(request: Request) -> dict:
+    """Build only filter metadata; lane rows are fetched as bounded partials."""
+    realm = _active_realm(request)
+    store = get_store()
+    cards = store.list_cards(realm_id=realm)
+    projects = store.list_projects(realm_id=realm)
+    project_id = _active_project(request)
+    filters = {
+        key: request.query_params.get(key, "").strip()
+        for key in ("q", "owner", "instance", "blocked", "tag", "updated")
+    }
+    filters["project"] = project_id or ""
+    filters["kind"] = request.query_params.get("kind", "").strip()
+    filter_params = {"realm": realm, **filters}
+    return {
+        "kinds": list(CardKind),
+        "lanes": list(CardLane),
+        "projects": projects,
+        "owners": sorted({c.owner_principal for c in cards if c.owner_principal}),
+        "instances": [
+            {
+                "id": instance_id,
+                "display_name": resolve_instance_identity(
+                    request.app.state.ctx, instance_id
+                )["display_name"],
+            }
+            for instance_id in sorted(
+                {c.preferred_instance for c in cards if c.preferred_instance}
+            )
+        ],
+        "tags": sorted({tag for card in cards for tag in card.tags}),
+        "filters": filters,
+        "filter_query": urlencode(
+            {key: value for key, value in filter_params.items() if value}
+        ),
+        "active_realm": realm,
+    }
 
 
 def _home_context(request: Request) -> dict:
@@ -1780,15 +1850,14 @@ def cards_partial(
     project: str | None = None,
     limit: int = 10,
 ) -> HTMLResponse:
-    context = _cards_context(request, lane=lane)
+    page_limit = min(100, max(10, limit))
+    context = _cards_context(request, lane=lane, result_limit=page_limit)
     done_total = 0
     done_visible = 0
     done_show_more_count = 0
     done_show_more_query = ""
     if lane == CardLane.DONE:
-        done_total = len(context["cards"])
-        done_limit = max(10, limit)
-        context["cards"] = context["cards"][:done_limit]
+        done_total = context["total_cards"]
         done_visible = len(context["cards"])
         done_show_more_count = min(10, done_total - done_visible)
         if done_show_more_count:
@@ -2149,7 +2218,7 @@ class ItemsModule(Module):
                 icon="work",
                 template="pages/work.html",
                 nav_order=10,
-                context_builder=_items_context,
+                context_builder=_work_context,
             )
         )
         pages.register(
