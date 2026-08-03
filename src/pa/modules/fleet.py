@@ -2185,6 +2185,45 @@ def _workshop_context(request: Request) -> dict:
     }
 
 
+_workshop_refresh_lock = asyncio.Lock()
+_workshop_refresh_tasks: dict[str, asyncio.Task[None]] = {}
+
+
+async def _refresh_workshop_dimensions(
+    ctx: Any, instances: list[FleetInstance], *, force: bool
+) -> None:
+    """Refresh the small Workshop projection as one coalesced fleet operation."""
+    key = str(ctx.settings.data_dir)
+    async with _workshop_refresh_lock:
+        task = _workshop_refresh_tasks.get(key)
+        if task is None or task.done():
+            active = [item for item in instances if item.lifecycle_state == "active"]
+
+            async def refresh() -> None:
+                await asyncio.gather(
+                    *(
+                        probe_dimension(ctx, instance, dimension, force=force)
+                        for instance in active
+                        for dimension in ("reachability", "activity", "providers")
+                    ),
+                    return_exceptions=True,
+                )
+
+            task = asyncio.create_task(refresh())
+            _workshop_refresh_tasks[key] = task
+    try:
+        await asyncio.shield(task)
+    finally:
+        if task.done():
+            async with _workshop_refresh_lock:
+                if _workshop_refresh_tasks.get(key) is task:
+                    _workshop_refresh_tasks.pop(key, None)
+
+
+def _build_workshop(ctx: Any, instances: list[FleetInstance], routes: list[Any]) -> dict:
+    return build_workshop_snapshot(ctx, build_overview(ctx, instances, routes))
+
+
 @router.get("/fleet/readiness")
 def fleet_readiness(request: Request) -> dict:
     require_user(request)
@@ -2531,15 +2570,59 @@ def fleet_overview(request: Request) -> dict:
 
 
 @router.get("/fleet/workshop")
-def fleet_workshop(request: Request) -> dict:
+async def fleet_workshop(request: Request, refresh: bool = False) -> dict:
     """Return one canonical, presentation-ready Workshop snapshot."""
     require_user(request)
     ctx = request.app.state.ctx
     fleet: FleetRegistry = ctx.require_service("fleet_registry")
     peer_table: PeerTable = ctx.require_service("peer_table")
     instances = list(fleet.list_instances())
-    overview = build_overview(ctx, instances, list(peer_table.all_routes()))
-    return build_workshop_snapshot(ctx, overview)
+    await _refresh_workshop_dimensions(ctx, instances, force=refresh)
+    return _build_workshop(ctx, instances, list(peer_table.all_routes()))
+
+
+@router.get("/fleet/workshop/events")
+async def fleet_workshop_events(request: Request) -> StreamingResponse:
+    """Stream one fleet-wide Workshop projection with bounded probe fallback."""
+    require_user(request)
+    ctx = request.app.state.ctx
+    fleet: FleetRegistry = ctx.require_service("fleet_registry")
+    peer_table: PeerTable = ctx.require_service("peer_table")
+
+    async def stream() -> AsyncIterator[str]:
+        last_digest = ""
+        sequence = 0
+        while not await request.is_disconnected():
+            instances = list(fleet.list_instances())
+            await _refresh_workshop_dimensions(ctx, instances, force=False)
+            snapshot = _build_workshop(
+                ctx, instances, list(peer_table.all_routes())
+            )
+            stable = {**snapshot, "generated_at": None}
+            digest = hashlib.sha256(
+                json.dumps(stable, sort_keys=True, default=str).encode()
+            ).hexdigest()
+            if digest != last_digest:
+                sequence += 1
+                last_digest = digest
+                yield (
+                    f"id: {sequence}\nevent: snapshot\ndata: "
+                    + json.dumps(snapshot, default=str)
+                    + "\n\n"
+                )
+            else:
+                yield ": workshop heartbeat\n\n"
+            await asyncio.sleep(2.0)
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/fleet/overview/local")

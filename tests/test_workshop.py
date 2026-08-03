@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 import tempfile
 from pathlib import Path
+import subprocess
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
@@ -159,6 +160,60 @@ def test_sync_degradation_does_not_mark_healthy_bay_unhealthy():
     assert snapshot["bays"][0]["connectivity"] == "connected"
 
 
+def test_stale_activity_is_preserved_but_never_presented_as_live():
+    overview = _overview()
+    overview["nodes"][0]["dimensions"]["activity"]["state"] = "stale"
+
+    snapshot = build_workshop_snapshot(_ctx(), overview)
+
+    bay = snapshot["bays"][0]
+    assert bay["activity_freshness"] == "stale"
+    assert bay["workers"][0]["live"] is False
+    assert bay["workers"][0]["state"] == "stalled"
+
+
+def test_multi_instance_activity_can_begin_after_initial_snapshot():
+    overview = _overview()
+    remote = {
+        **overview["nodes"][0],
+        "id": "monica",
+        "name": "Monica",
+        "local": False,
+        "dimensions": {
+            **overview["nodes"][0]["dimensions"],
+            "activity": {
+                **overview["nodes"][0]["dimensions"]["activity"],
+                "value": {
+                    "capacity": {"consumed": 0, "limit": 2},
+                    "sessions": [],
+                    "dispatches": [],
+                },
+            },
+        },
+    }
+    overview["nodes"].append(remote)
+    initial = build_workshop_snapshot(_ctx(), overview)
+    assert initial["bays"][1]["workers"] == []
+
+    remote["dimensions"]["activity"]["value"] = {
+        "capacity": {"consumed": 1, "limit": 2},
+        "sessions": [
+            {
+                "id": "monica-session",
+                "title": "Monica worker",
+                "status": "working",
+                "connected": True,
+                "provider": "codex",
+                "updated_at": datetime.now(UTC).isoformat(),
+            }
+        ],
+        "dispatches": [],
+    }
+    updated = build_workshop_snapshot(_ctx(), overview)
+    assert updated["bays"][1]["workers"][0]["id"] == "monica-session"
+    assert updated["bays"][1]["capacity"]["consumed"] == 1
+
+
 def test_starting_dispatch_appears_only_after_durable_admission():
     overview = _overview()
     overview["nodes"][0]["dimensions"]["activity"]["value"]["sessions"] = []
@@ -205,11 +260,36 @@ def test_workshop_ui_contract_is_accessible_and_excludes_replay_controls():
     assert "Compact list" in template
     assert 'aria-live="polite"' in template
     assert "/api/cards/events" in script
+    assert "/api/fleet/workshop/events" in script
     assert "/api/fleet/workshop" in script
+    assert "acceptSnapshot" in script
+    assert "Activity reconnecting" in script
     assert "refreshGeneration" in script
     assert "prefers-reduced-motion" in style
     assert "timeline" not in template.lower()
     assert "speed" not in template.lower()
+
+
+def test_browser_transport_rejects_duplicate_and_out_of_order_snapshots():
+    root = Path(__file__).parents[1]
+    script = root / "src/pa/server/static/js/workshop.js"
+    harness = """
+const fs = require("fs");
+global.window = { PA_TEST: true };
+global.document = { addEventListener() {} };
+eval(fs.readFileSync(process.argv[1], "utf8"));
+const api = window.PAWorkshopTest;
+api.reset();
+if (!api.shouldAcceptSnapshot({generated_at: "2026-08-03T10:00:00Z"})) process.exit(2);
+api.markSnapshot("2026-08-03T10:00:00Z");
+if (api.shouldAcceptSnapshot({generated_at: "2026-08-03T10:00:00Z"})) process.exit(3);
+if (api.shouldAcceptSnapshot({generated_at: "2026-08-03T09:59:59Z"})) process.exit(4);
+if (!api.shouldAcceptSnapshot({generated_at: "2026-08-03T10:00:01Z"})) process.exit(5);
+"""
+    result = subprocess.run(
+        ["node", "-e", harness, str(script)], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_workshop_page_and_api_render_from_same_canonical_snapshot():

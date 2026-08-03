@@ -35,6 +35,14 @@ def _iso(value: Any) -> str | None:
     return value.isoformat() if hasattr(value, "isoformat") else value
 
 
+def _age_seconds(value: Any) -> int | None:
+    try:
+        observed = datetime.fromisoformat(str(value))
+        return max(0, int((datetime.now(UTC) - observed).total_seconds()))
+    except (TypeError, ValueError):
+        return None
+
+
 def _worker_state(session: dict[str, Any], dispatch: dict[str, Any] | None) -> str:
     if dispatch:
         state = str(dispatch.get("state") or "")
@@ -168,6 +176,7 @@ def build_workshop_snapshot(
         reachability = dimensions.get("reachability") or {}
         activity_field = dimensions.get("activity") or {}
         activity = activity_field.get("value") or {}
+        activity_state = activity_field.get("state") or "unavailable"
         capacity = activity.get("capacity") or {}
         providers = (dimensions.get("providers") or {}).get("value") or []
         workers = []
@@ -179,6 +188,8 @@ def build_workshop_snapshot(
             dispatch = dispatch_by_session.get(session_id)
             card_id = session.get("card_id") or (dispatch or {}).get("card_id")
             state = _worker_state(session, dispatch)
+            if activity_state != "fresh" and state in {"working", "quiet-active"}:
+                state = "stalled"
             workers.append(
                 {
                     "id": session_id,
@@ -195,6 +206,7 @@ def build_workshop_snapshot(
                     ).get("summary"),
                     "tool_category": _tool_category(dispatch),
                     "href": f"/agent?session={session_id}&instance={node.get('id')}",
+                    "live": activity_state == "fresh",
                 }
             )
         # Durable dispatch admission is visible even before a session exists.
@@ -222,6 +234,7 @@ def build_workshop_snapshot(
                     "latest_progress": None,
                     "tool_category": None,
                     "href": card_payloads.get(card_id, {}).get("href") or "/fleet",
+                    "live": activity_state == "fresh",
                 }
             )
         reach_value = reachability.get("value") or {}
@@ -235,6 +248,9 @@ def build_workshop_snapshot(
                 "health": reach_value.get("health") or "unknown",
                 "freshness": reachability.get("state") or "unavailable",
                 "observed_at": reachability.get("observed_at"),
+                "activity_freshness": activity_state,
+                "activity_observed_at": activity_field.get("observed_at"),
+                "activity_age_seconds": _age_seconds(activity_field.get("observed_at")),
                 "connectivity": (
                     "connected"
                     if reach_value.get("health") == "up"
