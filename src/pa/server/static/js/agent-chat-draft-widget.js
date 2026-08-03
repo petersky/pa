@@ -70,7 +70,9 @@
       instanceId: this.instanceId,
       principalId: this.principalId,
     });
-    this.sessionId = widget.sessionId || "";
+    // A stable provisional identity keeps text typed before ACP admission
+    // across startup retries, HTMX swaps, and full-page reconnect refreshes.
+    this.sessionId = widget.sessionId || widget.root.dataset.draftPendingId || "";
     this.record = null;
     this.cardId = widget.cardId || null;
     this.projectId = null;
@@ -269,6 +271,27 @@
     this.projectId = null;
     this.submissionId = null;
     this.attachmentMetadata = [];
+    this.restore();
+  };
+
+  WidgetDraftController.prototype.promoteSession = function (sessionId) {
+    const next = String(sessionId || "");
+    if (!next || next === this.sessionId) return;
+    this.flush({ force: true });
+    const pending = this.record && !this.record.cleared ? this.record : null;
+    const previous = this.sessionId;
+    this.sessionId = next;
+    if (pending) {
+      const result = this.store.write(next, {
+        text: pending.text, selection_start: pending.selection_start,
+        selection_end: pending.selection_end, selection_direction: pending.selection_direction,
+        attachments: pending.attachments, submission_id: pending.submission_id,
+        card_id: pending.card_id, project_id: pending.project_id, cleared: false,
+      });
+      this.apply(result && result.record, "Draft preserved while the agent started.");
+      this.store.clear(previous, pending);
+      return;
+    }
     this.restore();
   };
 

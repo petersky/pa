@@ -12,6 +12,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import HTTPException
+from jinja2 import Environment, FileSystemLoader
 
 from pa.domain.models import TranscriptEvent
 from pa.domain.projection import CardProjection
@@ -37,6 +38,14 @@ class AgentChatDraftContractTests(unittest.TestCase):
         self.assertIn("data-acw-draft-status", widget)
         self.assertIn('role="status" aria-live="polite"', widget)
         self.assertIn("data-pa-instance-id", shell)
+        chrome = (SERVER / "templates" / "partials" / "chrome-actions.html").read_text()
+        agent_page = (SERVER / "templates" / "pages" / "agent.html").read_text()
+        draft_widget = (SERVER / "static" / "js" / "agent-chat-draft-widget.js").read_text()
+        self.assertIn('href="/agent"', chrome)
+        self.assertIn("starting up — restoring sessions", agent_page)
+        self.assertIn("else 'offline'", agent_page)
+        self.assertIn("data-draft-pending-id", widget)
+        self.assertIn("promoteSession", draft_widget)
         self.assertIn("data-pa-principal-id", shell)
         self.assertLess(
             shell.index("js/agent-chat-drafts.js"),
@@ -50,6 +59,25 @@ class AgentChatDraftContractTests(unittest.TestCase):
         self.assertIn("30 days", docs)
         self.assertIn("plaintext", docs)
         self.assertIn("never persists attachment bytes", docs)
+
+    def test_sessions_control_navigates_while_offline_or_starting(self) -> None:
+        env = Environment(loader=FileSystemLoader(SERVER / "templates"), autoescape=True)
+        template = env.get_template("partials/chrome-actions.html")
+        common = {"telemetry_enabled": False, "appearance": "system", "active_path": "/"}
+        offline = template.render(
+            **common, agent_connected=False,
+            agent_startup={"complete": True, "phase": "ready"},
+        )
+        starting = template.render(
+            **common, agent_connected=False,
+            agent_startup={"complete": False, "phase": "recovering"},
+        )
+        for html in (offline, starting):
+            self.assertIn('href="/agent"', html)
+            self.assertIn('hx-get="/agent"', html)
+            self.assertNotIn("disabled", html)
+        self.assertIn("Offline", offline)
+        self.assertIn("Starting", starting)
 
     def test_session_routing_scopes_draft_before_restoring_conversation(self) -> None:
         script = (SERVER / "static" / "js" / "agent-chat.js").read_text()
@@ -401,7 +429,7 @@ function makeWidget(sessionId) {
     pendingImages: [],
     els: { input },
     root: {
-      dataset: {},
+      dataset: { draftPendingId: "pending:default:standalone" },
       querySelector: (selector) => lookup[selector] || null,
       querySelectorAll: () => [],
       isConnected: true,
@@ -410,6 +438,22 @@ function makeWidget(sessionId) {
     status, notice, clear,
   };
 }
+
+const startingWidget = makeWidget("");
+const starting = window.PAAgentDrafts.installWidget(startingWidget);
+startingWidget.els.input.value = "typed while starting";
+startingWidget.els.input.selectionStart = 8;
+startingWidget.els.input.selectionEnd = 8;
+startingWidget.els.input.dispatch("input");
+starting.flush({ force: true });
+startingWidget.root.isConnected = false;
+const remountedWidget = makeWidget("");
+const remounted = window.PAAgentDrafts.installWidget(remountedWidget);
+assert.strictEqual(remountedWidget.els.input.value, "typed while starting");
+remounted.promoteSession("session-started");
+assert.strictEqual(remountedWidget.els.input.value, "typed while starting");
+assert.strictEqual(remountedWidget.els.input.selectionStart, 8);
+assert.strictEqual(remounted.store.read("session-started").text, "typed while starting");
 
 const firstWidget = makeWidget("session-a");
 const first = window.PAAgentDrafts.installWidget(firstWidget);

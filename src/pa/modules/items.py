@@ -100,6 +100,11 @@ class KnowledgeBulkRequest(BaseModel):
     action: Literal["archive", "supersede"]
 
 
+class CardProjectChangeRequest(BaseModel):
+    project_id: str | None = None
+    decision: Literal["preserve", "migrate", "cancel"] | None = None
+
+
 def _require_memory_editor(request: Request) -> str:
     user = getattr(request.state, "user", None)
     if not user or getattr(user, "role", "viewer") not in {"editor", "admin"}:
@@ -424,6 +429,74 @@ def _progress_from_dispatch(record) -> dict:
     return progress
 
 
+def _card_project_impact(request: Request, card, project_id: str | None) -> dict:
+    """Describe project-sensitive relationships without changing their provenance."""
+    store = get_store()
+    source_links = (
+        store.list_project_repositories(card.project_id, realm_id=card.realm_id)
+        if card.project_id
+        else []
+    )
+    target_repository_ids = {
+        repository.id
+        for repository, _link in (
+            store.list_project_repositories(project_id, realm_id=card.realm_id)
+            if project_id
+            else []
+        )
+    }
+    repositories = []
+    checkout_count = 0
+    for repository, link in source_links:
+        checkouts = store.list_repository_checkouts(repository.id)
+        checkout_count += len(checkouts)
+        repositories.append(
+            {
+                "id": repository.id,
+                "name": repository.name or repository.url,
+                "branch": link.branch,
+                "checkout_count": len(checkouts),
+                "available_in_target": repository.id in target_repository_ids,
+            }
+        )
+    dispatch_store = request.app.state.ctx.services.get("dispatch_store")
+    dispatches = (
+        [
+            record
+            for record in dispatch_store.list(limit=1000)
+            if record.card_id == card.id
+        ]
+        if dispatch_store
+        else []
+    )
+    watches = _pr_watch_context(request, card.id, include_events=False)["pr_watches"]
+    agent = request.app.state.ctx.services.get("instance_agent")
+    workspace_manager = getattr(agent, "workspace_manager", None)
+    leases = workspace_manager.list(card_id=card.id) if workspace_manager else []
+    incompatible_repositories = [
+        repository
+        for repository in repositories
+        if not repository["available_in_target"]
+    ]
+    dependent = bool(repositories or dispatches or watches or leases)
+    return {
+        "repositories": repositories,
+        "repository_count": len(repositories),
+        "checkout_count": checkout_count,
+        "dispatch_count": len(dispatches),
+        "session_count": len(
+            {record.session_id for record in dispatches if record.session_id}
+        ),
+        "pr_count": len(watches),
+        "workspace_count": len(leases),
+        "dependent": dependent,
+        "migration_compatible": dependent
+        and not incompatible_repositories
+        and bool(project_id),
+        "incompatible_repositories": incompatible_repositories,
+    }
+
+
 def _card_summary_context(request: Request, card) -> dict:
     store = get_store()
     dispatch_store = request.app.state.ctx.services.get("dispatch_store")
@@ -472,6 +545,7 @@ def _card_summary_context(request: Request, card) -> dict:
             else []
         ),
         "lanes": list(CardLane),
+        "projects": store.list_projects(realm_id=realm_id),
         "csrf_token": token_for_request(request),
         **watch_context,
     }
@@ -776,11 +850,7 @@ def _card_activity_context(request: Request, card) -> dict:
                     {
                         "label": validation.command,
                         "value": validation.status
-                        + (
-                            f" · {validation.summary}"
-                            if validation.summary
-                            else ""
-                        ),
+                        + (f" · {validation.summary}" if validation.summary else ""),
                     }
                     for validation in progress.validations
                 )
@@ -986,7 +1056,11 @@ def _cards_context(
                 )["display_name"],
             }
             for instance_id in sorted(
-                {card.preferred_instance for card in all_cards if card.preferred_instance}
+                {
+                    card.preferred_instance
+                    for card in all_cards
+                    if card.preferred_instance
+                }
             )
         ],
         "tags": sorted({tag for card in all_cards for tag in card.tags}),
@@ -1904,6 +1978,119 @@ def card_detail_partial(
     )
 
 
+@router.post("/cards/{card_id}/project-change")
+def change_card_project_api(
+    request: Request,
+    card_id: str,
+    body: CardProjectChangeRequest,
+    realm: str | None = None,
+) -> dict:
+    realm_id = realm or _active_realm(request)
+    store = get_store()
+    card = store.get_card(card_id, realm_id=realm_id)
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+    if body.project_id and not store.get_project(body.project_id, realm_id=realm_id):
+        raise HTTPException(status_code=422, detail="Selected project was not found")
+    impact = _card_project_impact(request, card, body.project_id)
+    if body.project_id == card.project_id:
+        return {
+            "status": "unchanged",
+            "card": card.model_dump(mode="json"),
+            "impact": impact,
+        }
+    if body.decision == "cancel":
+        return {
+            "status": "cancelled",
+            "card": card.model_dump(mode="json"),
+            "impact": impact,
+        }
+    if impact["dependent"] and body.decision is None:
+        return {"status": "review_required", "impact": impact}
+    if body.decision == "migrate" and not impact["migration_compatible"]:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "The linked repositories are not all available in the destination project.",
+                "impact": impact,
+            },
+        )
+    settings = request.app.state.ctx.settings
+    changed = store.assign_card_to_project(
+        card_id,
+        body.project_id,
+        realm_id=realm_id,
+        principal_id=get_principal_id(request),
+        instance_id=settings.instance_id,
+    )
+    if not changed:
+        raise HTTPException(status_code=404, detail="Card not found")
+    return {
+        "status": "changed",
+        "card": changed.model_dump(mode="json"),
+        "impact": impact,
+    }
+
+
+@ui_router.post("/partials/cards/{card_id}/project-change", response_class=HTMLResponse)
+def change_card_project_ui(
+    request: Request,
+    card_id: str,
+    project_id: str = Form(""),
+    decision: str = Form(""),
+    realm: str | None = None,
+) -> HTMLResponse:
+    realm_id = realm or _active_realm(request)
+    store = get_store()
+    card = store.get_card(card_id, realm_id=realm_id)
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+    selected_project_id = project_id.strip() or None
+    if selected_project_id and not store.get_project(
+        selected_project_id, realm_id=realm_id
+    ):
+        raise HTTPException(status_code=422, detail="Selected project was not found")
+    impact = _card_project_impact(request, card, selected_project_id)
+    if decision == "cancel":
+        return _templates(request).TemplateResponse(
+            request, "partials/card-detail.html", _card_summary_context(request, card)
+        )
+    if impact["dependent"] and not decision:
+        return _templates(request).TemplateResponse(
+            request,
+            "partials/card-project-impact.html",
+            {
+                "card": card,
+                "target_project": store.get_project(
+                    selected_project_id, realm_id=realm_id
+                )
+                if selected_project_id
+                else None,
+                "selected_project_id": selected_project_id or "",
+                "impact": impact,
+                "csrf_token": token_for_request(request),
+            },
+        )
+    if decision == "migrate" and not impact["migration_compatible"]:
+        raise HTTPException(
+            status_code=409,
+            detail="Linked repositories are not available in the destination project",
+        )
+    settings = request.app.state.ctx.settings
+    changed = store.assign_card_to_project(
+        card_id,
+        selected_project_id,
+        realm_id=realm_id,
+        principal_id=get_principal_id(request),
+        instance_id=settings.instance_id,
+    )
+    if not changed:
+        raise HTTPException(status_code=404, detail="Card not found")
+    return _templates(request).TemplateResponse(
+        request, "partials/card-detail.html", _card_summary_context(request, changed)
+    )
+
+
 @ui_router.get("/partials/cards/{card_id}/agent", response_class=HTMLResponse)
 def card_detail_agent_partial(
     request: Request, card_id: str, realm: str | None = None
@@ -2166,9 +2353,7 @@ def bulk_update_knowledge_ui(
     if action not in {"archive", "supersede"}:
         raise HTTPException(status_code=422, detail="Unsupported bulk action")
     status = (
-        KnowledgeStatus.ARCHIVED
-        if action == "archive"
-        else KnowledgeStatus.SUPERSEDED
+        KnowledgeStatus.ARCHIVED if action == "archive" else KnowledgeStatus.SUPERSEDED
     )
     for entry_id in dict.fromkeys(ids):
         try:

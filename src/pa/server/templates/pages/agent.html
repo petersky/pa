@@ -15,6 +15,14 @@
       {% endif %}
     </div>
   </div>
+  {% set startup_in_progress = not agent_startup.get('complete', true) %}
+  <div class="agent-lifecycle-state status status-{{ 'active' if agent_connected else ('waiting' if startup_in_progress else 'offline') }}"
+       role="status" aria-live="polite" data-agent-lifecycle-state>
+    Agent {{ 'connected' if agent_connected else ('starting up — restoring sessions' if startup_in_progress else 'offline') }}
+  </div>
+  {% if not agent_connected and not startup_in_progress %}
+  <button type="button" class="ghost small" id="pa-agent-reconnect">Reconnect agent</button>
+  {% endif %}
   <div class="agent-session-history-controls">
     <label class="agent-session-history-toggle">
       <input type="checkbox" data-agent-history-toggle>

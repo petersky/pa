@@ -16,7 +16,18 @@
               {% for lane in lanes %}<option value="{{ lane.value }}" {% if card.lane == lane %}selected{% endif %}>{{ lane.value | capitalize }}</option>{% endfor %}
             </select>
           </form>
-          {% if project %}<a href="/projects?realm={{ card.realm_id }}&project={{ project.id }}">{{ project.title }}</a>{% endif %}
+          <form class="inline-select-form"
+                hx-post="/partials/cards/{{ card.id }}/project-change?realm={{ card.realm_id }}"
+                hx-target="#card-detail-dialog-content"
+                hx-swap="innerHTML"
+                hx-trigger="change">
+            <input type="hidden" name="csrf" value="{{ csrf_token }}">
+            <label class="sr-only" for="card-project-{{ card.id }}">Project</label>
+            <select id="card-project-{{ card.id }}" name="project_id" aria-label="Change project">
+              <option value="">No project</option>
+              {% for candidate in projects %}<option value="{{ candidate.id }}" {% if card.project_id == candidate.id %}selected{% endif %}>{{ candidate.title }}</option>{% endfor %}
+            </select>
+          </form>
         </div>
         <div class="inline-edit-field inline-edit-title" data-inline-edit-field>
           <h2 id="card-detail-title" tabindex="-1">

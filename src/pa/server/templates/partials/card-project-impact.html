@@ -1,0 +1,28 @@
+<section class="card-detail card-project-impact" aria-labelledby="card-project-impact-title">
+  <h2 id="card-project-impact-title">Review project change</h2>
+  <p>Moving <strong>{{ card.title }}</strong> to <strong>{{ target_project.title if target_project else 'No project' }}</strong> affects how current work is interpreted.</p>
+  <dl class="detail-list">
+    <div><dt>Repositories</dt><dd>{{ impact.repository_count }}</dd></div>
+    <div><dt>Checkouts</dt><dd>{{ impact.checkout_count }}</dd></div>
+    <div><dt>Worktrees</dt><dd>{{ impact.workspace_count }}</dd></div>
+    <div><dt>Dispatches / sessions</dt><dd>{{ impact.dispatch_count }} / {{ impact.session_count }}</dd></div>
+    <div><dt>Pull requests</dt><dd>{{ impact.pr_count }}</dd></div>
+  </dl>
+  <p>Existing dispatch, session, worktree, and pull-request records keep their original project provenance for auditability.</p>
+  {% if impact.incompatible_repositories %}
+  <div class="card-critical-status" role="alert">
+    <strong>Relinking is not safe:</strong>
+    {% for repository in impact.incompatible_repositories %}{{ repository.name }}{% if not loop.last %}, {% endif %}{% endfor %}
+    {% if target_project %} is not linked to the destination project.{% else %} cannot be linked without a destination project.{% endif %}
+  </div>
+  {% endif %}
+  <form hx-post="/partials/cards/{{ card.id }}/project-change?realm={{ card.realm_id }}" hx-target="#card-detail-dialog-content" hx-swap="innerHTML">
+    <input type="hidden" name="csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="project_id" value="{{ selected_project_id }}">
+    <div class="inline-edit-actions">
+      <button type="submit" name="decision" value="preserve">Change project and preserve history</button>
+      {% if impact.migration_compatible %}<button type="submit" name="decision" value="migrate">Relink to compatible project</button>{% endif %}
+      <button type="submit" class="ghost" name="decision" value="cancel">Cancel</button>
+    </div>
+  </form>
+</section>

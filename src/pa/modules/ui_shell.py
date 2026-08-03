@@ -14,6 +14,7 @@ from pa.core.context import AppContext
 from pa.core.contracts import Module
 from pa.core.preferences import get_preferences_store
 from pa.core.ui.pages import PageDefinition, PageRegistry
+from pa.modules.agent_lifecycle import startup_state
 from pa.modules.theme import get_theme_catalog
 from pa.prompts import PROMPTS
 
@@ -67,12 +68,14 @@ def _shell_context(request: Request) -> dict:
     agent = ctx.require_service("instance_agent")
     pages: PageRegistry = ctx.require_service("pages")
     assets = ctx.require_service("assets")
+    agent_startup = startup_state(agent)
 
     return {
         "instance_id": settings.instance_id,
         "instance_name": settings.instance_name,
         "principal_id": get_principal_id(request),
         "agent_connected": agent.connected,
+        "agent_startup": agent_startup,
         "debug": settings.debug,
         "dev_tools": settings.dev_tools,
         "theme_id": prefs.theme_id,
@@ -258,6 +261,7 @@ def _agent_context(request: Request) -> dict:
                     watches_by_session[session.id].append(watch)
     return {
         "agent_connected": agent.connected,
+        "agent_startup": startup_state(agent),
         "agent_enabled": ctx.settings.agent_enabled,
         "sessions": sessions,
         "live_session_ids": live_ids,
