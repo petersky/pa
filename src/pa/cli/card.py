@@ -50,6 +50,8 @@ def _request(
     params: dict[str, Any] | None = None,
     body: dict[str, Any] | None = None,
     headers: dict[str, str] | None = None,
+    timeout_seconds: float = 10.0,
+    unknown_outcome_idempotency_key: str | None = None,
 ) -> dict[str, Any] | list[dict[str, Any]]:
     """Use CLI bearer auth; bearer API requests are CSRF-exempt by design."""
     user = UserDirectory(settings.data_dir).ensure_default_user()
@@ -65,8 +67,19 @@ def _request(
             params=params,
             json=body,
             headers=request_headers,
-            timeout=10.0,
+            timeout=timeout_seconds,
         )
+    except httpx.TimeoutException as exc:
+        if unknown_outcome_idempotency_key:
+            raise CardCommandError(
+                "PA did not answer before the dispatch admission deadline. The "
+                "request outcome is unknown; inspect dispatches or retry with the "
+                f"same idempotency key: {unknown_outcome_idempotency_key}"
+            ) from exc
+        raise CardCommandError(
+            f"The local PA server at {_base_url(settings)} did not answer before "
+            "the request deadline."
+        ) from exc
     except httpx.HTTPError as exc:
         raise CardCommandError(
             f"Could not reach the local PA server at {_base_url(settings)}. "
@@ -186,6 +199,8 @@ def dispatch_card(
             f"/api/fleet/instances/{target['instance_id']}/agent/start",
             body=body,
             headers={"Idempotency-Key": key},
+            timeout_seconds=30.0,
+            unknown_outcome_idempotency_key=key,
         )
         dispatch = result.get("dispatch") if isinstance(result, dict) else None
         if not isinstance(dispatch, dict):

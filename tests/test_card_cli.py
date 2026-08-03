@@ -97,6 +97,7 @@ def test_dispatch_resolves_instance_infers_project_and_sends_options(
     assert admission["url"].endswith("/api/fleet/instances/instance-1/agent/start")
     assert admission["headers"]["Authorization"] == f"Bearer {token}"
     assert admission["headers"]["Idempotency-Key"] == "attempt-1"
+    assert admission["timeout"] == 30.0
     assert admission["json"] == {
         "card_id": "card-1",
         "project_id": "project-1",
@@ -150,6 +151,39 @@ def test_dispatch_duplicate_is_reported_as_recovered(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert "Recovered durable card dispatch" in result.output
     assert "running" in result.output
+
+
+def test_dispatch_timeout_preserves_unknown_outcome_retry_key(tmp_path: Path) -> None:
+    from pa.cli.main import app
+
+    settings = _settings(tmp_path)
+    responses = [
+        _response(200, {"id": "card-1", "project_id": None}),
+        _response(
+            200, [{"instance_id": "instance-1", "name": "worker", "url": "https://w"}]
+        ),
+        httpx.ReadTimeout("slow durable admission"),
+    ]
+    with (
+        patch("pa.cli.card.get_settings", return_value=settings),
+        patch("pa.cli.card.httpx.request", side_effect=responses),
+    ):
+        result = CliRunner().invoke(
+            app,
+            [
+                "card",
+                "dispatch",
+                "card-1",
+                "--instance",
+                "instance-1",
+                "--idempotency-key",
+                "same-key",
+            ],
+        )
+
+    assert result.exit_code == 1
+    assert "outcome is unknown" in result.output
+    assert "same idempotency key: same-key" in result.output
 
 
 def test_dispatch_surfaces_actionable_api_error(tmp_path: Path) -> None:

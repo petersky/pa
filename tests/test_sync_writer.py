@@ -275,6 +275,28 @@ class LocalMcpApiTests(unittest.TestCase):
                 request_local_pa(settings, "POST", "/api/fleet/dispatch", json={})
             self.assertIn("operation=POST", str(raised.exception))
             self.assertNotIn("has no attribute", str(raised.exception))
+            self.assertIn("same idempotency key", str(raised.exception))
+
+    def test_request_timeout_can_be_extended_for_durable_admission(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), agent_enabled=False)
+            response = httpx.Response(
+                202,
+                json={"accepted": True, "dispatch_id": "dispatch-1"},
+                request=httpx.Request("POST", "http://127.0.0.1/api/fleet/dispatch"),
+            )
+            with patch("httpx.request", return_value=response) as request:
+                result = request_local_pa(
+                    settings,
+                    "POST",
+                    "/api/fleet/dispatch",
+                    json={},
+                    timeout_seconds=30.0,
+                )
+
+            self.assertTrue(result["accepted"])
+            self.assertGreater(request.call_args.kwargs["timeout"], 29.0)
+            self.assertLessEqual(request.call_args.kwargs["timeout"], 30.0)
 
     def test_no_content_mutation_returns_none(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

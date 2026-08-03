@@ -136,6 +136,7 @@ class FleetMcpTests(unittest.TestCase):
                 "config": {},
                 "idempotency_key": "dispatch-key-1",
             },
+            timeout_seconds=30.0,
         )
 
     def test_lifecycle_tools_preserve_normalized_dispatch_state(self) -> None:
