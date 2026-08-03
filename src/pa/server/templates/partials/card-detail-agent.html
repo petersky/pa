@@ -1,113 +1,9 @@
 {% from "macros/instance_identity.html" import instance_identity %}
 <div class="card-tab-loaded" data-card-tab-loaded>
   <div class="section-heading-inline">
-    <div>
-      <h3>Agent execution</h3>
-      <p class="muted">Selecting a card never starts work. Start or resume a local ACP session explicitly; durable fleet dispatch is a separate action.</p>
-    </div>
-    {% if agent_enabled | default(true) %}
-    <button type="button" data-card-agent-start>{{ 'Resume local agent' if current_session else 'Start local agent' }}</button>
-    {% endif %}
+    <div><h3>Agent execution</h3><p class="muted">Selecting a card never starts work. Start or resume a local ACP session explicitly.</p></div>
+    {% if agent_enabled | default(true) %}<button type="button" data-card-agent-start>{{ 'Resume local agent' if current_session else 'Start local agent' }}</button>{% endif %}
   </div>
-
-  <section class="card-dispatch-panel" aria-labelledby="card-dispatch-title-{{ card.id }}">
-    <div>
-      <h4 id="card-dispatch-title-{{ card.id }}">Durable fleet dispatch</h4>
-      <p class="muted">Resolve a healthy target and queue this card through the fleet control plane. This does not change preferred-instance metadata.</p>
-    </div>
-    <form data-card-dispatch-form>
-      <label for="card-dispatch-profile-{{ card.id }}">Workspace profile</label>
-      <select id="card-dispatch-profile-{{ card.id }}" name="execution_profile" required>
-        <option value="automatic">Automatic (show a choice if ambiguous)</option>
-        <option value="repository">Repository work — verified isolated worktree</option>
-        <option value="research">Research/artifact work — no Git required</option>
-        <option value="operations">Operations/external tools — no source checkout</option>
-      </select>
-      <label for="card-dispatch-group-{{ card.id }}">Worker group</label>
-      <select id="card-dispatch-group-{{ card.id }}" name="worker_group">
-        <option value="">Configured default — most specific project/profile rule</option>
-        {% for group in worker_groups %}
-        <option value="{{ group.id }}">{{ group.name }} — {{ group.summary }}</option>
-        {% endfor %}
-      </select>
-      <div class="card-dispatch-provider-grid">
-        <label for="card-dispatch-provider-{{ card.id }}">Provider
-          <input id="card-dispatch-provider-{{ card.id }}" name="provider" placeholder="Any authenticated provider">
-        </label>
-        <label for="card-dispatch-model-{{ card.id }}">Model
-          <input id="card-dispatch-model-{{ card.id }}" name="model_id" placeholder="Provider default">
-        </label>
-      </div>
-      <label for="card-dispatch-target-{{ card.id }}">Placement policy or named instance</label>
-      <div class="card-dispatch-controls">
-        <select id="card-dispatch-target-{{ card.id }}" name="dispatch_target" required>
-          <optgroup label="Placement policies">
-            <option value="policy:best_match">Best match</option>
-            <option value="policy:least_busy">Least busy</option>
-            <option value="policy:round_robin">Round-robin</option>
-            <option value="policy:random_eligible">Random eligible</option>
-          </optgroup>
-          <optgroup label="Concrete instances">
-            {% set local_capacity = fleet_capacity.get(local_instance_id, {}) %}
-            {% set local_participation = participation_summaries.get(local_instance_id, {}) %}
-            <option value="instance:{{ local_instance_id }}"
-                    data-capacity-summary="{{ local_capacity.get('summary', 'Capacity will be checked before admission') }}"
-                    data-capacity-eligible="{{ 'true' if local_capacity.get('eligible') else 'false' }}">Local instance — {{ local_instance_name }} · {{ local_participation.get('summary', 'policy pending') }} · {{ local_capacity.get('summary', 'capacity pending') }}</option>
-            {% for instance in fleet_instances %}
-            {% if instance.instance_id != local_instance_id %}
-            {% set capacity = fleet_capacity.get(instance.instance_id, {}) %}
-            {% set participation = participation_summaries.get(instance.instance_id, {}) %}
-            <option value="instance:{{ instance.instance_id }}"
-                    data-capacity-summary="{{ capacity.get('summary', 'Capacity will be checked before admission') }}"
-                    data-capacity-eligible="{{ 'true' if capacity.get('eligible') else 'false' }}">Named instance — {{ instance.name }} · {{ participation.get('summary', 'policy pending') }} · {{ capacity.get('summary', 'capacity pending') }}</option>
-            {% endif %}
-            {% endfor %}
-          </optgroup>
-        </select>
-        <button type="submit">Dispatch card</button>
-      </div>
-      <p class="muted card-dispatch-hint" data-card-dispatch-utilization>Policies probe fresh utilization on every candidate before admission.</p>
-      <p class="muted card-dispatch-hint">Policies use fresh health, provider authentication, workload, repository/worktree, capacity, and authorization checks.</p>
-      <details class="panel-inset">
-        <summary>Privileged named-instance override</summary>
-        <p class="muted small">Administrators may explicitly override synchronized soft participation, workload, project, or repository rules for a named instance. Self-protective hard limits, health, authentication, workspace fencing, and capacity remain enforced and the reason is audited.</p>
-        <label><input type="checkbox" name="participation_override"> Request privileged participation override</label>
-        <label>Override reason <input name="participation_override_reason" maxlength="500" placeholder="Required when override is enabled"></label>
-      </details>
-      <div class="card-dispatch-preview"
-           data-card-dispatch-preview
-           role="status"
-           aria-live="polite">
-        <p class="muted">Choose a group, profile, policy, provider, or model to preview every eligible and rejected candidate.</p>
-      </div>
-    </form>
-
-    <div class="card-dispatch-status"
-         data-card-dispatch-status
-         data-dispatch-id="{{ latest_dispatch.dispatch_id if latest_dispatch else '' }}"
-         role="status"
-         aria-live="polite">
-      {% if latest_dispatch %}
-      <div class="card-dispatch-status-heading">
-        <span class="status status-{{ latest_dispatch.state }}">{{ latest_dispatch.state | replace('_', ' ') }}</span>
-        <strong>{{ latest_dispatch.target_instance_name or latest_dispatch.target_instance_id }}</strong>
-      </div>
-      <p>{{ latest_dispatch.events[-1].message if latest_dispatch.events else 'Dispatch admitted.' }}</p>
-      {% if latest_dispatch.materialization_plan %}<p class="muted">{{ latest_dispatch.materialization_plan.summary }}</p>{% endif %}
-      {% if latest_dispatch.last_error %}<p class="danger">{{ latest_dispatch.last_error }}</p>{% endif %}
-      {% if latest_dispatch.placement_decision %}
-      <p class="muted">{{ latest_dispatch.placement_decision.tie_breaking_reason }}</p>
-      {% endif %}
-      <div class="card-dispatch-links">
-        {% if latest_dispatch.session_id %}<a href="/agent?session={{ latest_dispatch.session_id }}">Open durable session</a>{% endif %}
-        {% if latest_dispatch.can_retry %}<button type="button" class="ghost small" data-card-dispatch-retry="{{ latest_dispatch.dispatch_id }}">Retry dispatch</button>{% endif %}
-      </div>
-      {% else %}
-      <p class="muted">No durable fleet dispatch has been created for this card.</p>
-      {% endif %}
-    </div>
-  </section>
-
   {% if related_sessions %}
   <div class="agent-session-list">
     {% for session in related_sessions %}
@@ -115,20 +11,10 @@
     {% set instance = execution.get('instance', {}) %}
     {% set configuration = session.config_json.get('configuration', {}) %}
     <article class="agent-session-card">
-      <div class="section-heading-inline">
-        <div>
-          <h4><a href="/agent?session={{ session.id }}">{{ session.title or session.label or 'Card agent' }}</a></h4>
-          <p><span class="status status-{{ session.status }}">{{ session.status }}</span></p>
-        </div>
-        <time datetime="{{ session.updated_at.isoformat() }}">{{ session.updated_at.strftime('%b %-d, %H:%M') }}</time>
-      </div>
+      <div class="section-heading-inline"><div><h4><a href="/agent?session={{ session.id }}">{{ session.title or session.label or 'Card agent' }}</a></h4><p><span class="status status-{{ session.status }}">{{ session.status }}</span></p></div><time datetime="{{ session.updated_at.isoformat() }}">{{ session.updated_at.strftime('%b %-d, %H:%M') }}</time></div>
       <dl class="detail-list">
         <div><dt>Host</dt><dd>{% if instance.get('id') or session.origin_instance_id %}{{ instance_identity(instance.get('id') or session.origin_instance_id) }}{% else %}{{ instance.get('name') or session.origin_instance_name or 'Local instance' }}{% endif %}</dd></div>
-        <div><dt>Provider</dt><dd>{{ session.agent_name }}</dd></div>
-        <div><dt>Model</dt><dd>{{ session.model_id or configuration.get('requested', {}).get('model_id') or 'Provider default' }}</dd></div>
-        <div><dt>Mode</dt><dd>{{ session.mode_id or 'Provider default' }}</dd></div>
-        <div><dt>Approval</dt><dd>{{ execution.get('approval_policy') or 'Instance default' }}</dd></div>
-        <div><dt>Queue</dt><dd>{{ 'Ready for prompts' if session.status != 'closed' else 'Session closed' }}</dd></div>
+        <div><dt>Provider</dt><dd>{{ session.agent_name }}</dd></div><div><dt>Model</dt><dd>{{ session.model_id or configuration.get('requested', {}).get('model_id') or 'Provider default' }}</dd></div><div><dt>Mode</dt><dd>{{ session.mode_id or 'Provider default' }}</dd></div><div><dt>Approval</dt><dd>{{ execution.get('approval_policy') or 'Instance default' }}</dd></div><div><dt>Queue</dt><dd>{{ 'Ready for prompts' if session.status != 'closed' else 'Session closed' }}</dd></div>
         {% if session.cwd %}<div><dt>Worktree</dt><dd><code>{{ session.cwd }}</code></dd></div>{% endif %}
       </dl>
       {% if execution.get('repositories') %}
@@ -146,34 +32,10 @@
     </article>
     {% endfor %}
   </div>
-  {% else %}
-  <div class="card-tab-empty" role="status">
-    <h3>No agent sessions yet</h3>
-    <p class="muted">Start an agent when this card is ready for execution.</p>
-  </div>
-  {% endif %}
-
+  {% else %}<div class="card-tab-empty" role="status"><h3>No agent sessions yet</h3><p class="muted">Start an agent when this card is ready for execution.</p></div>{% endif %}
   {% if agent_enabled | default(true) %}
-  <div id="card-agent-pane-{{ card.id }}"
-       class="card-agent-pane"
-       data-card-agent-pane
-       hx-preserve="true"
-       hidden>
-    {% with
-        session_id=current_session.id if current_session else '',
-        create_label='card:' ~ card.id,
-        card_id=card.id,
-        show_model=true,
-        show_mode=true,
-        show_thinking=false,
-        show_system_prompts=false,
-        show_queue=false,
-        show_metrics=false,
-        compact=true,
-        auto_start=false
-    %}
-      {% include "partials/agent/chat-widget.html" %}
-    {% endwith %}
+  <div id="card-agent-pane-{{ card.id }}" class="card-agent-pane" data-card-agent-pane hx-preserve="true" hidden>
+    {% with session_id=current_session.id if current_session else '', create_label='card:' ~ card.id, card_id=card.id, show_model=true, show_mode=true, show_thinking=false, show_system_prompts=false, show_queue=false, show_metrics=false, compact=true, auto_start=false %}{% include "partials/agent/chat-widget.html" %}{% endwith %}
   </div>
   {% endif %}
 </div>

@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from pa.config import Settings, reset_settings
 from pa.core.kernel import Kernel
-from pa.domain.models import CardCreate
+from pa.domain.models import CardCreate, CardLane
 from pa.domain.store import reset_store
 from pa.execution.dispatch import DispatchRecord
 from pa.instance.agent_session import reset_instance_agent
@@ -68,9 +68,14 @@ def test_card_modal_distinguishes_local_start_preference_and_durable_dispatch() 
             )
         ).build_app()
         with TestClient(app) as client:
-            card = app.state.ctx.store.create_card(CardCreate(title="Modal dispatch"))
+            card = app.state.ctx.store.create_card(
+                CardCreate(title="Modal dispatch", lane=CardLane.ACTIVE)
+            )
             detail = client.get(f"/partials/cards/{card.id}/detail")
             agent = client.get(f"/partials/cards/{card.id}/agent")
+            dispatch = client.get(f"/partials/cards/{card.id}/dispatch")
+            home = client.get("/")
+            work = client.get("/partials/cards?lane=active")
 
         assert detail.status_code == 200
         assert "Preferred instance" in detail.text
@@ -83,16 +88,22 @@ def test_card_modal_distinguishes_local_start_preference_and_durable_dispatch() 
         ).read_text()
         assert "Start local agent" in template
         assert "Resume local agent" in template
-        assert "Durable fleet dispatch" in agent.text
-        assert "data-card-dispatch-form" in agent.text
-        assert "policy:best_match" in agent.text
-        assert "policy:least_busy" in agent.text
-        assert "policy:round_robin" in agent.text
-        assert "policy:random_eligible" in agent.text
-        assert "Local instance — Local" in agent.text
-        assert "slots used" in agent.text
-        assert "data-card-dispatch-utilization" in agent.text
-        assert "documented default" in agent.text
+        assert "data-card-dispatch-form" not in agent.text
+        assert "Durable fleet dispatch" not in agent.text
+        assert 'data-card-dispatch-open' in detail.text
+        assert dispatch.status_code == 200
+        assert 'aria-labelledby="card-dispatch-dialog-title"' in home.text
+        assert "data-card-dispatch-form" in dispatch.text
+        assert "policy:best_match" in dispatch.text
+        assert "policy:least_busy" in dispatch.text
+        assert "policy:round_robin" in dispatch.text
+        assert "policy:random_eligible" in dispatch.text
+        assert "Local instance — Local" in dispatch.text
+        assert "slots used" in dispatch.text
+        assert "data-card-dispatch-utilization" in dispatch.text
+        assert "documented default" in dispatch.text
+        assert 'data-card-dispatch-open' in home.text
+        assert 'data-card-dispatch-open' in work.text
 
 
 def test_card_modal_renders_dispatch_progress_retry_and_session_links() -> None:
@@ -121,7 +132,7 @@ def test_card_modal_renders_dispatch_progress_retry_and_session_links() -> None:
                 card = app.state.ctx.store.create_card(CardCreate(title=state))
                 record = _record(card.id, state)
                 store.put(record)
-                response = client.get(f"/partials/cards/{card.id}/agent")
+                response = client.get(f"/partials/cards/{card.id}/dispatch")
                 assert response.status_code == 200
                 rendered[state] = response.text
 
@@ -132,11 +143,40 @@ def test_card_modal_renders_dispatch_progress_retry_and_session_links() -> None:
         assert "Target disappeared before admission." in rendered["failed"]
         assert "completed" in rendered["completed"]
         assert "Highest deterministic readiness score." in rendered["running"]
+        assert "Dispatch in progress…" in rendered["running"]
+        assert "disabled" in rendered["running"]
 
         script = (
             Path(__file__).parents[1] / "src/pa/server/static/js/spa.js"
         ).read_text()
         assert 'fetch("/api/fleet/dispatch"' in script
         assert "pollCardDispatch" in script
-        assert "card_dispatch_in_progress" not in script
+        assert 'dispatchError.code === "card_dispatch_in_progress"' in script
         assert "no_eligible_instance" in script
+
+
+def test_existing_dispatch_hides_card_item_action_but_detail_opens_status() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        app = Kernel.boot(settings=Settings(data_dir=Path(tmp), instance_id="local", instance_name="Local", instance_url="http://pa.test:8080", agent_enabled=False, subscribed_realms=["default"], peers=[])).build_app()
+        with TestClient(app) as client:
+            eligible = app.state.ctx.store.create_card(CardCreate(title="Eligible card"))
+            dispatched = app.state.ctx.store.create_card(CardCreate(title="Already dispatched"))
+            app.state.ctx.require_service("dispatch_store").put(_record(dispatched.id, "running"))
+            cards = client.get("/partials/cards?lane=inbox")
+            detail = client.get(f"/partials/cards/{dispatched.id}/detail")
+
+        assert f'aria-label="Dispatch {eligible.title}"' in cards.text
+        assert f'aria-label="Dispatch {dispatched.title}"' not in cards.text
+        assert "data-card-dispatch-open" in detail.text
+
+
+def test_shared_modal_preserves_focus_and_workshop_uses_live_dispatch_state() -> None:
+    root = Path(__file__).parents[1] / "src/pa/server"
+    script = (root / "static/js/spa.js").read_text()
+    workshop = (root / "static/js/workshop.js").read_text()
+    assert "cardDispatchDialogOpener.focus()" in script
+    assert 'addEventListener("cancel"' in script
+    assert script.rstrip().endswith("})();")
+    assert 'id="card-dispatch-dialog-title"' in (root / "templates/partials/card-dispatch.html").read_text()
+    assert 'card.dispatch_id ? ""' in workshop
+    assert "window.PACardDispatch.open" in workshop

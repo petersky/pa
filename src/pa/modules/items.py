@@ -1841,6 +1841,19 @@ def card_detail_agent_partial(
     )
 
 
+@ui_router.get("/partials/cards/{card_id}/dispatch", response_class=HTMLResponse)
+def card_dispatch_partial(
+    request: Request, card_id: str, realm: str | None = None
+) -> HTMLResponse:
+    realm_id = realm or _active_realm(request)
+    card = get_store().get_card(card_id, realm_id=realm_id)
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+    return _templates(request).TemplateResponse(
+        request, "partials/card-dispatch.html", _card_agent_context(request, card)
+    )
+
+
 @ui_router.get("/partials/cards/{card_id}/progress", response_class=HTMLResponse)
 def card_detail_progress_partial(
     request: Request, card_id: str, realm: str | None = None

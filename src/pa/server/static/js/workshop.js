@@ -23,13 +23,15 @@
   }
 
   function cardButton(card, area) {
-    return '<button type="button" class="workshop-order" data-workshop-kind="card" ' +
+    var dispatch = card.dispatch_id ? "" : '<button type="button" class="ghost small workshop-dispatch" data-workshop-dispatch="' +
+      escapeHtml(card.id) + '" aria-label="Dispatch ' + escapeHtml(card.title) + '">Dispatch</button>';
+    return '<div class="workshop-order-wrap"><button type="button" class="workshop-order" data-workshop-kind="card" ' +
       'data-workshop-id="' + escapeHtml(card.id) + '" data-state="' +
       escapeHtml(card.dispatch_state || card.lane) + '" aria-label="' +
       escapeHtml(card.title + ", " + area) + '">' +
       '<span aria-hidden="true">▤</span><strong>' + escapeHtml(card.title) +
       '</strong><small>' + escapeHtml(card.project ? card.project.title : "No project") +
-      "</small></button>";
+      "</small></button>" + dispatch + "</div>";
   }
 
   function workerButton(worker) {
@@ -275,6 +277,11 @@
     var view = event.target.closest("[data-workshop-view]");
     if (view) { setView(root, view.dataset.workshopView); return; }
     if (event.target.closest("[data-workshop-refresh]")) { refresh(root, true); return; }
+    var dispatch = event.target.closest("[data-workshop-dispatch]");
+    if (dispatch && window.PACardDispatch) {
+      window.PACardDispatch.open(dispatch.dataset.workshopDispatch, root.dataset.realm, dispatch);
+      return;
+    }
     var target = event.target.closest("[data-workshop-kind]");
     if (target) inspect(root, root.__workshopData, target.dataset.workshopKind,
       target.dataset.workshopId);
