@@ -86,9 +86,16 @@ class HtmxDependencyContractTests(unittest.TestCase):
     def test_programmatic_surface_and_fleet_cancellation_are_explicit(self) -> None:
         spa = (STATIC / "js" / "spa.js").read_text()
         fleet = (STATIC / "js" / "fleet.js").read_text()
+        navigation = (STATIC / "js" / "navigation.js").read_text()
         self.assertIn("htmx.process(panel)", spa)
         self.assertIn("htmx.process(content)", spa)
-        self.assertIn('htmx.ajax("GET"', spa)
+        self.assertIn("window.PANavigation.navigate", spa)
+        self.assertIn('document.addEventListener("click"', navigation)
+        self.assertIn("event.stopImmediatePropagation()", navigation)
+        self.assertIn("new AbortController()", navigation)
+        self.assertIn("requestGeneration !== generation", navigation)
+        self.assertIn('htmx.swap(target, html', navigation)
+        self.assertIn('"HX-Request": "true"', navigation)
         self.assertIn("new AbortController()", fleet)
         self.assertIn("controller.abort()", fleet)
         self.assertIn("htmx.swap(target, html", fleet)
@@ -99,6 +106,74 @@ class HtmxDependencyContractTests(unittest.TestCase):
 
 @unittest.skipUnless(_browser_executable(), "managed Chromium is not installed")
 class HtmxManagedBrowserTests(unittest.IsolatedAsyncioTestCase):
+    async def test_latest_navigation_wins_without_abort_console_errors(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        browser = BrowserManager(Path(temp_dir.name))
+        manager = BrowserSessionManager(
+            browser, instance_id="navigation-contract", idle_ttl_seconds=60
+        )
+        scope = BrowserScope("user:navigation", "session-navigation", "navigation-contract")
+        navigation_source = (STATIC / "js" / "navigation.js").read_text()
+        html = f"""<!doctype html>
+<main id="app-view">initial</main>
+<a id="first" class="nav-btn" href="/first" hx-get="/first" hx-target="#app-view">First</a>
+<a id="second" class="nav-btn" href="/second" hx-get="/second" hx-target="#app-view">Second</a>
+<script>
+window.__errors = [];
+const originalError = console.error;
+console.error = (...args) => {{ __errors.push(args.map(String).join(" ")); originalError(...args); }};
+addEventListener("error", event => __errors.push(String(event.error || event.message)));
+addEventListener("unhandledrejection", event => __errors.push(String(event.reason)));
+window.htmx = {{
+  swap(target, html) {{ target.innerHTML = html; }},
+  trigger(target, name, detail) {{ target.dispatchEvent(new CustomEvent(name, {{ detail }})); }}
+}};
+window.fetch = (url, options) => new Promise((resolve, reject) => {{
+  const timer = setTimeout(() => resolve({{
+    status: 200, ok: true, text: () => Promise.resolve('<p>' + new URL(url).pathname + '</p>')
+  }}), String(url).includes('/first') ? 80 : 5);
+  options.signal.addEventListener('abort', () => {{
+    clearTimeout(timer);
+    reject(new DOMException('The operation was aborted.', 'AbortError'));
+  }});
+}});
+</script>
+<script>{navigation_source}</script>"""
+
+        async def serve_harness(reader, writer) -> None:
+            await reader.readuntil(b"\r\n\r\n")
+            body = html.encode()
+            writer.write(
+                b"HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n"
+                + f"Content-Length: {len(body)}\r\nConnection: close\r\n\r\n".encode()
+                + body
+            )
+            await writer.drain()
+            writer.close()
+            await writer.wait_closed()
+
+        server = await asyncio.start_server(serve_harness, "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        try:
+            try:
+                await manager.attach(scope, url=f"http://127.0.0.1:{port}/")
+            except (PermissionError, RuntimeError) as exc:
+                if isinstance(exc, PermissionError) or "did not expose a usable page" in str(exc):
+                    self.skipTest(str(exc))
+                raise
+            page = manager.resolve(scope).page
+            await page.evaluate("document.querySelector('#first').click(); document.querySelector('#second').click()")
+            await asyncio.sleep(0.15)
+            state = await page.evaluate("({ view: document.querySelector('#app-view').textContent, errors: __errors })")
+            self.assertEqual(state["view"], "/second")
+            self.assertEqual(state["errors"], [])
+        finally:
+            await manager.close()
+            await browser.close()
+            server.close()
+            await server.wait_closed()
+            temp_dir.cleanup()
+
     async def test_vendored_runtime_processes_fragment_and_swaps_cleanly(self) -> None:
         temp_dir = tempfile.TemporaryDirectory()
         browser = BrowserManager(Path(temp_dir.name))

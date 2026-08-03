@@ -110,6 +110,9 @@
       section = new URL(window.location.href).searchParams.get("section") || "";
     } catch (e) {}
     var url = "/fleet" + (section ? "?section=" + encodeURIComponent(section) : "");
+    if (window.PANavigation) {
+      return window.PANavigation.navigate(url).catch(function () {});
+    }
     if (!window.htmx) {
       location.href = url;
       return Promise.resolve();

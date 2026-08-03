@@ -87,14 +87,20 @@ handling is explicit in the shell: 204 and 304 never swap, 2xx/3xx swap, and
 4xx/5xx neither swap nor hide the error event. This preserves JSON error toasts
 without replacing application markup.
 
-Fleet cancellation is PA-owned. It records one in-flight navigation, aborts its
-own `fetch()` with `AbortController`, owns the resulting promise, treats only
-cancellation/stale generations as expected, and logs genuine network failures.
+All GET navigation targeting `#app-view` is PA-owned. A capture-phase link
+handler prevents HTMX from starting the corresponding XHR, and the shared
+navigation coordinator records one in-flight request, aborts its own `fetch()`
+with `AbortController`, owns the resulting promise, treats only cancellation or
+stale generations as expected, and reports genuine network and HTTP failures.
+Fleet refresh, ordinary shell links, and non-HTMX popstate restoration use the
+same coordinator.
 The successful HTML is applied through the stable `htmx.swap()` API so dynamic
 fragments are processed normally. This avoids HTMX 2's unconditional
 `console.error` for `htmx:abort`. A version change must not remove that
 coordinator or its tests merely because a library version happens to make
-aborts quieter.
+aborts quieter. HTMX 2.0.10 reports XHR aborts through `htmx:sendAbort` using
+its error-event path; PA therefore prevents expected navigation aborts from
+entering HTMX rather than suppressing that event after it has been emitted.
 
 ## Delivery, security, and availability
 
