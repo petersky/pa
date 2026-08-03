@@ -268,9 +268,12 @@ def request_local_pa(
                 ) from exc
             time.sleep(0.1)
         except httpx.HTTPError as exc:
-            if exc.response is not None:
+            # Request/transport exceptions (notably ReadTimeout) do not expose
+            # ``response``.  Do not let diagnostics mask the real failure.
+            response = getattr(exc, "response", None)
+            if response is not None:
                 raise _http_error(
-                    exc.response,
+                    response,
                     method=method,
                     path=path,
                     correlation_id=correlation_id,

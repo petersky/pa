@@ -18,7 +18,11 @@ from pa.domain.projection import CardProjection
 from pa.domain.store import reset_store
 from pa.execution.lease import LeaseManager
 from pa.instance.agent_session import reset_instance_agent
-from pa.mcp.local_api import LocalPARequestError, request_local_pa
+from pa.mcp.local_api import (
+    LocalPARequestError,
+    LocalPAServerUnavailable,
+    request_local_pa,
+)
 from pa.modules.items import ItemsModule
 from pa.modules.sync import _ensure_projection_at_head
 from pa.sync.event_log import EventLog, StaleSyncHeadError
@@ -260,6 +264,17 @@ class LocalMcpApiTests(unittest.TestCase):
                     allow_not_found=True,
                 )
             self.assertIsNone(result)
+
+    def test_read_timeout_is_reported_without_masking_attribute_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), agent_enabled=False)
+            with (
+                patch("httpx.request", side_effect=httpx.ReadTimeout("slow owner")),
+                self.assertRaises(LocalPAServerUnavailable) as raised,
+            ):
+                request_local_pa(settings, "POST", "/api/fleet/dispatch", json={})
+            self.assertIn("operation=POST", str(raised.exception))
+            self.assertNotIn("has no attribute", str(raised.exception))
 
     def test_no_content_mutation_returns_none(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

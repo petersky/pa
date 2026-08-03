@@ -238,6 +238,24 @@ def _provider_ready(
     )
 
 
+def _selected_provider_id(
+    candidate: PlacementCandidate, provider: str | None, model_id: str | None
+) -> str | None:
+    requested = provider.strip().lower() if provider else None
+    for item in _provider_statuses(candidate):
+        provider_id = str(item.get("id") or "").strip().lower()
+        if not provider_id or (requested and provider_id != requested):
+            continue
+        models = item.get("models") or (item.get("meta") or {}).get("models")
+        if (
+            bool(item.get("available"))
+            and str(item.get("auth_state") or "unknown") == "authenticated"
+            and not (model_id and isinstance(models, list) and model_id not in models)
+        ):
+            return provider_id
+    return None
+
+
 def _capacity(
     candidate: PlacementCandidate, provider: str | None = None
 ) -> EffectiveCapacity:
@@ -326,6 +344,7 @@ def _evaluate(
 ) -> tuple[list[str], dict[str, float], dict[str, Any]]:
     reasons: list[str] = []
     rejection_codes: list[str] = []
+    bootstrap_classification: str | None = None
 
     def reject(code: str, message: str) -> None:
         if code not in rejection_codes:
@@ -534,15 +553,44 @@ def _evaluate(
             bootstrap_envelope.get("state") != "fresh"
             or bootstrap.get("state") != "connected"
         ):
-            classification = (
+            raw_classification = (
                 bootstrap.get("classification")
-                or bootstrap_envelope.get("failure_code")
-                or "unavailable"
+                or (bootstrap_envelope.get("failure") or {}).get("code")
+                or bootstrap_envelope.get("last_attempt_state")
+                or bootstrap_envelope.get("state")
+                or "unhealthy"
             )
+            aliases = {
+                "deadline_exceeded": "timeout",
+                "error": "transient_probe_failure",
+                "probe_failed": "transient_probe_failure",
+                "unavailable": "unhealthy",
+                "unreachable": "owner_unreachable",
+            }
+            bootstrap_classification = aliases.get(
+                str(raw_classification), str(raw_classification)
+            )
+            recovery = {
+                "timeout": (
+                    "retry the bounded refresh; if it repeats, run pa doctor --verbose"
+                ),
+                "dependency_incompatible": (
+                    "repair the PA/MCP dependency versions and restart PA"
+                ),
+                "owner_unreachable": (
+                    "restore the private owner endpoint or restart its listener"
+                ),
+                "transient_probe_failure": (
+                    "retry the refresh after checking target transport"
+                ),
+                "unhealthy": (
+                    "run pa doctor --verbose and repair the reported health failure"
+                ),
+            }.get(bootstrap_classification, "run pa doctor --verbose on the target")
             reject(
                 "mcp_bootstrap_unavailable",
                 "PA stdio MCP bootstrap is unavailable "
-                f"({classification}); run pa doctor --verbose on the target",
+                f"({bootstrap_classification}); {recovery}",
             )
 
     provider_ready, provider_reason, provider_score = _provider_ready(
@@ -668,6 +716,10 @@ def _evaluate(
     detail = {
         "instance_id": candidate.instance_id,
         "name": candidate.name,
+        "provider_id": _selected_provider_id(
+            candidate, request.provider, request.model_id
+        ),
+        "mcp_bootstrap_classification": bootstrap_classification,
         "active": counts["active"],
         "queued": counts["queued"],
         "reserved": counts["reservations"],

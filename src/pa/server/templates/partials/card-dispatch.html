@@ -26,12 +26,18 @@
       </select>
       <div class="card-dispatch-provider-grid">
         <label for="card-dispatch-provider-{{ card.id }}">Provider
-          <input id="card-dispatch-provider-{{ card.id }}" name="provider" placeholder="Any authenticated provider">
+          <select id="card-dispatch-provider-{{ card.id }}" name="provider" data-dispatch-provider aria-describedby="card-dispatch-provider-help-{{ card.id }}">
+            <option value="">Automatic — any eligible authenticated provider</option>
+          </select>
         </label>
         <label for="card-dispatch-model-{{ card.id }}">Model
-          <input id="card-dispatch-model-{{ card.id }}" name="model_id" placeholder="Provider default">
+          <select id="card-dispatch-model-{{ card.id }}" name="model_id" data-dispatch-model aria-describedby="card-dispatch-provider-help-{{ card.id }}">
+            <option value="">Provider default / automatic</option>
+          </select>
         </label>
       </div>
+      <p class="muted small" id="card-dispatch-provider-help-{{ card.id }}" data-dispatch-provider-help aria-live="polite">Loading normalized provider inventory…</p>
+      <script type="application/json" data-card-dispatch-inventory>{{ dispatch_inventory | tojson }}</script>
       <label for="card-dispatch-target-{{ card.id }}">Placement policy or named instance</label>
       <div class="card-dispatch-controls">
         <select id="card-dispatch-target-{{ card.id }}" name="dispatch_target" required>

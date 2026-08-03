@@ -832,6 +832,7 @@
       pollCardDispatch(detail, dispatchStatus.dataset.dispatchId, 0);
     }
     var dispatchForm = detail.querySelector("[data-card-dispatch-form]");
+    refreshCardDispatchSelectors(dispatchForm);
     updateCardDispatchUtilization(dispatchForm);
     previewCardPlacement(dispatchForm);
   }
@@ -843,8 +844,72 @@
       pollCardDispatch(context, dispatchStatus.dataset.dispatchId, 0);
     }
     var dispatchForm = context.querySelector("[data-card-dispatch-form]");
+    refreshCardDispatchSelectors(dispatchForm);
     updateCardDispatchUtilization(dispatchForm);
     previewCardPlacement(dispatchForm);
+  }
+
+  function dispatchInventory(form) {
+    var script = form && form.querySelector("[data-card-dispatch-inventory]");
+    if (!script) return {};
+    try { return JSON.parse(script.textContent || "{}"); } catch (_error) { return {}; }
+  }
+
+  function refreshCardDispatchSelectors(form) {
+    if (!form) return;
+    var providerSelect = form.elements.provider;
+    var modelSelect = form.elements.model_id;
+    var help = form.querySelector("[data-dispatch-provider-help]");
+    if (!providerSelect || !modelSelect) return;
+    var previousProvider = providerSelect.value;
+    var previousModel = modelSelect.value;
+    var target = form.elements.dispatch_target.value;
+    var inventory = dispatchInventory(form);
+    var instanceIds = target.indexOf("instance:") === 0 ? [target.slice(9)] : Object.keys(inventory);
+    var snapshots = instanceIds.map(function (id) { return inventory[id]; }).filter(Boolean);
+    var fresh = snapshots.filter(function (snapshot) { return snapshot.state === "fresh"; });
+    var byProvider = {};
+    fresh.forEach(function (snapshot) {
+      (Array.isArray(snapshot.providers) ? snapshot.providers : []).forEach(function (provider) {
+        var id = String(provider.id || "").toLowerCase();
+        if (!id) return;
+        var entry = byProvider[id] || (byProvider[id] = {id: id, names: [], reasons: [], models: {}, ready: false});
+        entry.names.push(snapshot.instance_name || "instance");
+        var ready = !!provider.available && String(provider.auth_state || "unknown") === "authenticated";
+        entry.ready = entry.ready || ready;
+        if (!ready) entry.reasons.push((snapshot.instance_name || "instance") + ": " +
+          (!provider.available ? (provider.error || provider.auth_status || "provider unavailable") :
+            "authentication " + (provider.auth_state || "unknown")));
+        (provider.models || (provider.meta || {}).models || []).forEach(function (model) {
+          var modelId = typeof model === "string" ? model : String(model.id || model.model_id || "");
+          if (modelId) entry.models[modelId] = true;
+        });
+      });
+    });
+    providerSelect.replaceChildren(new Option("Automatic — any eligible authenticated provider", ""));
+    Object.keys(byProvider).sort().forEach(function (id) {
+      var entry = byProvider[id];
+      var suffix = entry.ready ? " · authenticated on " + entry.names.join(", ") : " · unavailable — " + (entry.reasons.join("; ") || "not ready");
+      var option = new Option(id.charAt(0).toUpperCase() + id.slice(1) + suffix, id);
+      option.disabled = !entry.ready;
+      providerSelect.add(option);
+    });
+    providerSelect.value = Array.from(providerSelect.options).some(function (option) {
+      return option.value === previousProvider && !option.disabled;
+    }) ? previousProvider : "";
+    var selected = byProvider[providerSelect.value];
+    modelSelect.replaceChildren(new Option("Provider default / automatic", ""));
+    Object.keys(selected ? selected.models : {}).sort().forEach(function (modelId) {
+      modelSelect.add(new Option(modelId, modelId));
+    });
+    modelSelect.value = Array.from(modelSelect.options).some(function (option) {
+      return option.value === previousModel;
+    }) ? previousModel : "";
+    if (help) {
+      help.textContent = !snapshots.length || fresh.length !== snapshots.length ?
+        "Provider inventory is stale or refreshing; unavailable choices cannot be submitted. Retry placement refresh to update it." :
+        "Choices are validated against the selected target and revalidated during admission.";
+    }
   }
 
   function updateCardDispatchUtilization(form) {
@@ -870,7 +935,7 @@
     var payload = {
       card_id: detail.dataset.cardId,
       provider: form.elements.provider ? form.elements.provider.value.trim() || null : null,
-      model_id: form.elements.model_id ? form.elements.model_id.value.trim() || null : null,
+      model_id: form.elements.model_id && form.elements.model_id.value !== "None" ? form.elements.model_id.value.trim() || null : null,
       execution_contract: {
         version: 1,
         profile: profile,
@@ -1722,6 +1787,9 @@
       "provider", "model_id", "participation_override",
       "participation_override_reason"].indexOf(event.target.name) !== -1) {
       var dispatchForm = event.target.closest("[data-card-dispatch-form]");
+      if (event.target.name === "dispatch_target" || event.target.name === "provider") {
+        refreshCardDispatchSelectors(dispatchForm);
+      }
       updateCardDispatchUtilization(dispatchForm);
       previewCardPlacement(dispatchForm);
     }

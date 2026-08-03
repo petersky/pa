@@ -101,6 +101,11 @@ def test_card_modal_distinguishes_local_start_preference_and_durable_dispatch() 
         assert "Local instance — Local" in dispatch.text
         assert "slots used" in dispatch.text
         assert "data-card-dispatch-utilization" in dispatch.text
+        assert 'name="provider" data-dispatch-provider' in dispatch.text
+        assert 'name="model_id" data-dispatch-model' in dispatch.text
+        assert 'type="application/json" data-card-dispatch-inventory' in dispatch.text
+        assert 'name="provider" placeholder=' not in dispatch.text
+        assert 'name="model_id" placeholder=' not in dispatch.text
         assert "documented default" in dispatch.text
         assert 'data-card-dispatch-open' in home.text
         assert 'data-card-dispatch-open' in work.text
@@ -153,6 +158,8 @@ def test_card_modal_renders_dispatch_progress_retry_and_session_links() -> None:
         assert "pollCardDispatch" in script
         assert 'dispatchError.code === "card_dispatch_in_progress"' in script
         assert "no_eligible_instance" in script
+        assert 'form.elements.model_id.value !== "None"' in script
+        assert "refreshCardDispatchSelectors" in script
 
 
 def test_existing_dispatch_hides_card_item_action_but_detail_opens_status() -> None:

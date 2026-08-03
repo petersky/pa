@@ -167,6 +167,28 @@ def test_least_busy_normalizes_load_and_breaks_ties_deterministically() -> None:
         assert tied.chosen_instance_id == "a"
 
 
+def test_automatic_provider_records_concrete_target_provider(tmp_path: Path) -> None:
+    decision = PlacementService(RoundRobinCursorStore(tmp_path)).resolve(
+        PlacementRequest(
+            realm_id="default",
+            fleet_id="fleet",
+            instance_id="codex-only",
+            provider=None,
+            model_id=None,
+        ),
+        [_candidate("codex-only")],
+    )
+    assert decision.eligible_candidates[0]["provider_id"] == "codex"
+
+
+def test_legacy_none_model_selector_normalizes_to_automatic() -> None:
+    from pa.modules.fleet import RemoteAgentStartBody
+
+    body = RemoteAgentStartBody(provider=" codex ", model_id="None")
+    assert body.provider == "codex"
+    assert body.model_id is None
+
+
 def test_round_robin_survives_restart_and_membership_changes() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp)
