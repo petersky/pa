@@ -215,6 +215,40 @@ _APPROVAL_REQUIRED = {
 }
 
 
+_AUTHORIZED_CONTINUATION_PROMPTS = {
+    (
+        "Address recorded validation failures.",
+        "Continue from the recorded turn and address the failed validations. "
+        "Preserve terminal dispatch history.",
+    ),
+    (
+        "Continue the incomplete card outcome.",
+        "Continue from the neutral turn-end snapshot and complete the remaining "
+        "requested outcome.",
+    ),
+}
+
+
+def is_authorized_same_session_continuation(
+    action: "FollowupActionV1",
+    *,
+    decision: PostTurnDecision,
+    session_id: str | None,
+) -> bool:
+    """Return whether a prompt is the bounded continuation PA already authorized."""
+    return (
+        decision == PostTurnDecision.FURTHER_AGENT_WORK_NEEDED
+        and action.name == FollowupActionName.PROMPT_SAME_SESSION
+        and bool(session_id)
+        and action.parameters.get("session_id") == session_id
+        and (
+            action.parameters.get("purpose"),
+            action.parameters.get("prompt"),
+        )
+        in _AUTHORIZED_CONTINUATION_PROMPTS
+    )
+
+
 def context_digest(value: dict[str, Any]) -> str:
     encoded = json.dumps(
         value, sort_keys=True, separators=(",", ":"), default=str
@@ -335,7 +369,12 @@ class FollowupActionV1(BaseModel):
         if forbidden.intersection(self.parameters):
             raise ValueError("free-form executable commands are prohibited")
         expected_approval = self.name in _APPROVAL_REQUIRED
-        if expected_approval and not self.human_approval_required:
+        inherited = self.preconditions.get("authorization_basis") == (
+            "original_implementation_dispatch"
+        )
+        if expected_approval and not self.human_approval_required and not (
+            self.name == FollowupActionName.PROMPT_SAME_SESSION and inherited
+        ):
             raise ValueError(f"{self.name} requires explicit operator approval")
         return self
 
@@ -439,6 +478,11 @@ def _action(
             "authority_version": snapshot.authority_version,
             "dispatch_state": snapshot.dispatch_state,
             "snapshot_id": snapshot.snapshot_id,
+            **(
+                {"authorization_basis": "original_implementation_dispatch"}
+                if name == FollowupActionName.PROMPT_SAME_SESSION and approval is False
+                else {}
+            ),
         },
         idempotency_key_inputs=[
             snapshot.dispatch_id,
@@ -699,6 +743,7 @@ class PostTurnEvaluator:
                     },
                     snapshot,
                     safety=SafetyClassification.EXTERNAL_WRITE,
+                    approval=False,
                 ),
             ]
             status = "Attempt blocked; validation failures need follow-up."
@@ -773,6 +818,7 @@ class PostTurnEvaluator:
                         },
                         snapshot,
                         safety=SafetyClassification.EXTERNAL_WRITE,
+                        approval=False,
                     )
                 )
             else:
