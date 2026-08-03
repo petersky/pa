@@ -172,6 +172,9 @@
       placeholder: root.querySelector("[data-acw-placeholder]"),
       form: root.querySelector("[data-acw-form]"),
       input: root.querySelector("[data-acw-input]"),
+      commandMenu: root.querySelector("[data-acw-command-menu]"),
+      commandState: root.querySelector("[data-acw-command-state]"),
+      commandOptions: root.querySelector("[data-acw-command-options]"),
       attachments: root.querySelector("[data-acw-attachments]"),
       attach: root.querySelector("[data-acw-attach]"),
       fileInput: root.querySelector("[data-acw-file-input]"),
@@ -261,6 +264,12 @@
     this.browserVisible = false;
     this.browserDeviceScaleFactor = 1;
     this.browserRefreshId = null;
+    this.commandCatalog = null;
+    this.commandCatalogSession = "";
+    this.commandMatches = [];
+    this.commandSelectedIndex = 0;
+    this.commandLoading = false;
+    this.commandError = "";
 
     this.startupRetryId = null;
     this.liveStateRetryId = null;
@@ -371,10 +380,30 @@
     });
     if (this.els.input) {
       this.els.input.addEventListener("keydown", function (e) {
+        if (self.commandMenuOpen()) {
+          if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+            e.preventDefault();
+            self.moveCommandSelection(e.key === "ArrowDown" ? 1 : -1);
+            return;
+          }
+          if (e.key === "Escape") {
+            e.preventDefault();
+            self.closeCommandMenu();
+            return;
+          }
+          if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
+            e.preventDefault();
+            self.selectCommand(self.commandMatches[self.commandSelectedIndex]);
+            return;
+          }
+        }
         if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
           e.preventDefault();
           self.send(self.prompting ? "append" : "append");
         }
+      });
+      this.els.input.addEventListener("input", function () {
+        self.updateCommandMenu();
       });
       ["dragenter", "dragover"].forEach(function (name) {
         self.els.input.addEventListener(name, function (e) {
@@ -1143,6 +1172,7 @@
     this.renderModelsModes(snap);
     this.renderConfigOptions(snap);
     this.renderMetrics(snap.metrics || session.metrics_json || {});
+    if (this.commandCatalogSession !== this.sessionId) this.refreshCommandCatalog();
     if (this.els.permissions) {
       this.els.permissions.innerHTML = "";
       this.els.permissions.hidden = true;
@@ -1515,11 +1545,18 @@
       case "current_mode_update":
       case "config_changed":
       case "config_option_update":
+      case "config_options_update":
         if (!replay) {
           this.api("/sessions/" + this.sessionId).then(function (snap) {
             self.applyOptionSnapshot(snap);
           }).catch(function () { /* ignore */ });
         }
+        break;
+      case "available_commands_update":
+        if (!replay) this.refreshCommandCatalog(true);
+        break;
+      case "command_result":
+        this.addBubble("system", payload.reason || "Command finished.", created, { system: true, forceVisible: true });
         break;
       case "session_closed":
         if (this.drafts) this.drafts.clear(true, "Draft cleared because this session ended.");
@@ -2385,7 +2422,7 @@
     });
     if (this.els.input) {
       this.els.input.placeholder = enabled
-        ? "Message the agent or drop images here…"
+        ? "Message the agent, type / for commands, or drop images here…"
         : "This session has ended. Start or select another session.";
     }
   };
@@ -2412,6 +2449,204 @@
     return distance <= 48;
   };
 
+  AgentChatWidget.prototype.commandMenuOpen = function () {
+    return !!(this.els.commandMenu && !this.els.commandMenu.hidden);
+  };
+
+  AgentChatWidget.prototype.closeCommandMenu = function () {
+    if (!this.els.commandMenu) return;
+    this.els.commandMenu.hidden = true;
+    if (this.els.input) {
+      this.els.input.setAttribute("aria-expanded", "false");
+      this.els.input.removeAttribute("aria-activedescendant");
+    }
+  };
+
+  AgentChatWidget.prototype.refreshCommandCatalog = function (force) {
+    if (!this.sessionId || this.commandLoading) return Promise.resolve(null);
+    if (!force && this.commandCatalogSession === this.sessionId && this.commandCatalog) {
+      return Promise.resolve(this.commandCatalog);
+    }
+    const self = this;
+    const expectedSession = this.sessionId;
+    this.commandLoading = true;
+    this.commandError = "";
+    this.updateCommandMenu();
+    return this.api("/sessions/" + encodeURIComponent(expectedSession) + "/commands")
+      .then(function (catalog) {
+        if (self.sessionId !== expectedSession) return null;
+        self.commandCatalog = catalog;
+        self.commandCatalogSession = expectedSession;
+        self.commandError = "";
+        self.updateCommandMenu();
+        return catalog;
+      })
+      .catch(function (err) {
+        if (self.sessionId === expectedSession) {
+          self.commandError = err.message || "Commands are temporarily unavailable.";
+          self.updateCommandMenu();
+        }
+        return null;
+      })
+      .finally(function () {
+        if (self.sessionId === expectedSession) {
+          self.commandLoading = false;
+          self.updateCommandMenu();
+        }
+      });
+  };
+
+  AgentChatWidget.prototype.updateCommandMenu = function () {
+    if (!this.els.input || !this.els.commandMenu || !this.els.commandOptions) return;
+    const raw = this.els.input.value || "";
+    if (raw.charAt(0) !== "/" || raw.indexOf("//") === 0 || /\s/.test(raw.slice(1))) {
+      this.closeCommandMenu();
+      return;
+    }
+    const query = raw.slice(1).toLowerCase();
+    const commands = this.commandCatalog && this.commandCatalog.commands || [];
+    this.commandMatches = commands
+      .filter(function (command) { return command.name.toLowerCase().indexOf(query) !== -1; })
+      .sort(function (a, b) {
+        const ap = a.name.toLowerCase().indexOf(query) === 0 ? 0 : 1;
+        const bp = b.name.toLowerCase().indexOf(query) === 0 ? 0 : 1;
+        return ap - bp || a.name.localeCompare(b.name) || a.origin.localeCompare(b.origin);
+      });
+    if (this.commandSelectedIndex >= this.commandMatches.length) this.commandSelectedIndex = 0;
+    this.els.commandOptions.innerHTML = "";
+    const self = this;
+    this.commandMatches.forEach(function (command, index) {
+      const option = document.createElement("button");
+      option.type = "button";
+      option.id = "acw-command-option-" + index + "-" + command.name.replace(/[^a-z0-9_-]/gi, "-");
+      option.className = "acw-command-option" + (index === self.commandSelectedIndex ? " is-selected" : "");
+      option.setAttribute("role", "option");
+      option.setAttribute("aria-selected", index === self.commandSelectedIndex ? "true" : "false");
+      const disabled = command.availability && command.availability !== "available";
+      option.disabled = disabled;
+      const title = document.createElement("span");
+      title.className = "acw-command-title";
+      title.textContent = "/" + command.name;
+      const origin = document.createElement("span");
+      origin.className = "acw-command-origin";
+      origin.textContent = command.origin === "pa" ? "PA" : (command.provider || "provider");
+      const description = document.createElement("span");
+      description.className = "acw-command-description";
+      description.textContent = command.description || "No description provided.";
+      const input = document.createElement("span");
+      input.className = "acw-command-input";
+      input.textContent = disabled
+        ? (command.disabled_reason || "Unavailable")
+        : command.input_required
+          ? ("Input required" + (command.input_hint ? ": " + command.input_hint : ""))
+          : "Runs immediately";
+      option.appendChild(title);
+      option.appendChild(origin);
+      option.appendChild(description);
+      option.appendChild(input);
+      option.addEventListener("pointerdown", function (event) { event.preventDefault(); });
+      option.addEventListener("click", function () { self.selectCommand(command); });
+      self.els.commandOptions.appendChild(option);
+    });
+    this.els.commandMenu.hidden = false;
+    this.els.input.setAttribute("aria-expanded", "true");
+    if (this.els.commandState) {
+      this.els.commandState.hidden = false;
+      this.els.commandState.textContent = this.commandLoading
+        ? "Loading commands…"
+        : this.commandError
+          ? this.commandError
+          : this.commandMatches.length
+            ? this.commandMatches.length + " command" + (this.commandMatches.length === 1 ? "" : "s")
+            : "No matching commands.";
+    }
+    this.moveCommandSelection(0);
+  };
+
+  AgentChatWidget.prototype.moveCommandSelection = function (delta) {
+    if (!this.commandMatches.length) {
+      if (this.els.input) this.els.input.removeAttribute("aria-activedescendant");
+      return;
+    }
+    const count = this.commandMatches.length;
+    this.commandSelectedIndex = (this.commandSelectedIndex + delta + count) % count;
+    const options = this.els.commandOptions.querySelectorAll("[role=option]");
+    options.forEach(function (option, index) {
+      option.classList.toggle("is-selected", index === this.commandSelectedIndex);
+      option.setAttribute("aria-selected", index === this.commandSelectedIndex ? "true" : "false");
+    }, this);
+    const active = options[this.commandSelectedIndex];
+    if (active) {
+      this.els.input.setAttribute("aria-activedescendant", active.id);
+      active.scrollIntoView({ block: "nearest" });
+    }
+  };
+
+  AgentChatWidget.prototype.selectCommand = function (command) {
+    if (!command || (command.availability && command.availability !== "available")) return;
+    if (command.input_required) {
+      this.els.input.value = "/" + command.name + " ";
+      this.closeCommandMenu();
+      this.els.input.focus();
+      this.els.input.dispatchEvent(new Event("input", { bubbles: true }));
+      return;
+    }
+    this.closeCommandMenu();
+    this.executeCommand(command, "", this.els.input.value || ("/" + command.name));
+  };
+
+  AgentChatWidget.prototype.commandInvocation = function (rawText) {
+    if (!rawText || rawText.charAt(0) !== "/" || rawText.indexOf("//") === 0) return null;
+    const match = rawText.match(/^\/([^\s]+)(?:\s+([\s\S]*))?$/);
+    if (!match) return null;
+    const name = match[1];
+    const commands = this.commandCatalog && this.commandCatalog.commands || [];
+    const command = commands.find(function (item) { return item.name === name; });
+    return command ? { command: command, arguments: match[2] || "" } : null;
+  };
+
+  AgentChatWidget.prototype.executeCommand = function (command, argumentsText, rawText) {
+    if (!command || this.submissionPending || !this.sessionId) return;
+    const self = this;
+    const key = window.PAAgentDrafts ? window.PAAgentDrafts.randomId() : ("command-" + Date.now());
+    this.submissionPending = true;
+    if (this.els.send) this.els.send.disabled = true;
+    this.addBubble("system", "Running /" + command.name + "…", new Date().toISOString(), { system: true, forceVisible: true });
+    this.api("/sessions/" + encodeURIComponent(this.sessionId) + "/commands/execute", {
+      method: "POST",
+      body: JSON.stringify({
+        name: command.name,
+        arguments: argumentsText || null,
+        catalog_generation: this.commandCatalog && this.commandCatalog.generation,
+        dispatch_id: this.commandCatalog && this.commandCatalog.dispatch_id,
+        card_id: this.commandCatalog && this.commandCatalog.card_id,
+        authority_instance_id: this.commandCatalog && this.commandCatalog.authority_instance_id,
+        authority_version: this.commandCatalog && this.commandCatalog.authority_version,
+        idempotency_key: key,
+      }),
+    }).then(function (result) {
+      self.addBubble(
+        "system",
+        "/" + command.name + ": " + (result.reason || result.status),
+        new Date().toISOString(),
+        { system: true, forceVisible: true }
+      );
+      if (self.els.input && self.els.input.value === rawText) {
+        self.els.input.value = "";
+        self.els.input.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      if (self.drafts) self.drafts.submissionAccepted({ rawText: rawText, images: [] });
+      if (result.status === "stale") self.refreshCommandCatalog(true);
+    }).catch(function (err) {
+      self.addBubble("system", "Command failed: " + err.message, new Date().toISOString(), { system: true, forceVisible: true });
+      if (self.drafts) self.drafts.submissionFailed({ rawText: rawText, images: [], conflict: err.status === 409 });
+    }).finally(function () {
+      self.submissionPending = false;
+      if (self.els.send) self.els.send.disabled = false;
+      if (self.els.input) self.els.input.focus();
+    });
+  };
+
   AgentChatWidget.prototype.send = function (action) {
     const self = this;
     if (this.submissionPending) return;
@@ -2424,7 +2659,15 @@
       );
       return;
     }
-    const rawText = this.els.input && this.els.input.value || "";
+    let rawText = this.els.input && this.els.input.value || "";
+    const draftRawText = rawText;
+    const invocation = this.commandInvocation(rawText.trim());
+    if (invocation) {
+      this.executeCommand(invocation.command, invocation.arguments, rawText);
+      return;
+    }
+    const literalLeadingSlash = rawText.indexOf("//") === 0;
+    if (literalLeadingSlash) rawText = rawText.slice(1);
     const text = rawText.trim();
     if ((!text && !this.pendingImages.length) || !this.sessionId) return;
     if (this.pendingImages.some(function (image) { return !image.data; })) {
@@ -2472,11 +2715,11 @@
         self.scrollToBottom();
         if (self.drafts) {
           self.drafts.submissionAccepted({
-            rawText: rawText,
+            rawText: draftRawText,
             images: submittedImages,
           });
         } else {
-          if (self.els.input && self.els.input.value === rawText) self.els.input.value = "";
+          if (self.els.input && self.els.input.value === draftRawText) self.els.input.value = "";
           self.clearPendingImages();
         }
         if (res.queued) self.refreshQueue();
@@ -2484,7 +2727,7 @@
       .catch(function (err) {
         if (self.drafts) {
           self.drafts.submissionFailed({
-            rawText: rawText,
+            rawText: draftRawText,
             images: submittedImages,
             conflict: err.status === 409,
           });

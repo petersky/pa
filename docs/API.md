@@ -116,6 +116,16 @@ Structured live progress is described in
 `report_dispatch_progress`; ordinary ACP commentary and sanitized tool lifecycle
 updates are also derived automatically after version negotiation.
 
+## Collaboration modes and slash commands
+
+New dispatches accept `collaboration_mode`, `collaboration_risk`,
+`collaboration_ambiguous`, and `collaboration_unattended`. These inputs feed the
+recorded Plan-first policy decision and do not replace the existing execution
+`mode_id`. Session policy, transition, and command endpoints live under
+`/api/agent`; MCP and CLI expose the same state and mutations. See
+[`COLLABORATION_MODES.md`](COLLABORATION_MODES.md) for endpoint paths, result
+states, precedence, recovery, and command-catalog behavior.
+
 ## Metadata backups
 
 The authenticated backup surface is instance-local:

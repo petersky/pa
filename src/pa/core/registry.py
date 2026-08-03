@@ -65,19 +65,20 @@ class ModuleRegistry:
         from pa.modules.auth import AuthModule
         from pa.modules.backups import BackupsModule
         from pa.modules.browser import BrowserModule
+        from pa.modules.collaboration import CollaborationModule
         from pa.modules.debug import DebugModule
-        from pa.modules.fleet import FleetModule
         from pa.modules.files import FilesModule
-        from pa.modules.integrations import IntegrationsModule
+        from pa.modules.fleet import FleetModule
         from pa.modules.instance import InstanceModule
+        from pa.modules.integrations import IntegrationsModule
         from pa.modules.items import ItemsModule
         from pa.modules.notifications import NotificationsModule
         from pa.modules.orchestration import OrchestrationModule
-        from pa.modules.projects import ProjectsModule
         from pa.modules.pr_supervisor import PRSupervisorModule
+        from pa.modules.projects import ProjectsModule
         from pa.modules.sync import SyncModule
-        from pa.modules.theme import ThemeModule
         from pa.modules.telemetry import TelemetryModule
+        from pa.modules.theme import ThemeModule
         from pa.modules.trust import TrustModule
         from pa.modules.ui_shell import UiShellModule
 
@@ -94,6 +95,7 @@ class ModuleRegistry:
             ItemsModule(),
             OrchestrationModule(),
             InstanceModule(),
+            CollaborationModule(),
             AgentChatModule(),
             TelemetryModule(),
             BrowserModule(),

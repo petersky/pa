@@ -18,6 +18,7 @@ from pa.acp.providers.base import (
     ProviderInstallResult,
     ProviderStatus,
 )
+from pa.acp.providers.codex_auth import get_codex_login_store, resolve_codex_cli
 from pa.acp.providers.metadata import (
     ProviderMetadata,
     load_credentials,
@@ -26,7 +27,6 @@ from pa.acp.providers.metadata import (
     save_credentials,
     save_metadata,
 )
-from pa.acp.providers.codex_auth import get_codex_login_store, resolve_codex_cli
 from pa.packaging.paths import resolve_executable
 
 logger = logging.getLogger(__name__)
@@ -50,6 +50,7 @@ class CodexProvider:
             docs_key="codex",
             install_method="npm",
             npm_package=NPM_PACKAGE,
+            collaboration_modes=["default", "plan"],
             capability_notes="Codex ACP adapter. See docs/acp/codex.md.",
         )
 

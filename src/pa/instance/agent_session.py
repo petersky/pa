@@ -404,7 +404,7 @@ class AgentSessionRuntime:
         ):
             self.session.mode_id = normalized["mode_id"]
             await self._save_session_preserving_external_browser_async()
-        if event_type == "config_option_update" and configuration_state != "applying":
+        if event_type in {"config_option_update", "config_options_update"} and configuration_state != "applying":
             options = normalized.get("config_options")
             if options is not None:
                 cfg = dict(self.session.config_json or {})
@@ -413,6 +413,14 @@ class AgentSessionRuntime:
                 await self._save_session_preserving_external_browser_async()
                 if self.connection:
                     self.connection.config_options = options
+        if event_type == "available_commands_update":
+            collaboration = getattr(self.manager, "collaboration_service", None)
+            if collaboration is not None:
+                collaboration.capture_available_commands(
+                    self.session,
+                    list(normalized.get("available_commands") or []),
+                    connection_generation=self._connection_generation,
+                )
         self._append_transcript(event_type, normalized)
         await self._report_progress(normalized)
 
@@ -1299,6 +1307,11 @@ class AgentSessionRuntime:
         except Exception:
             logger.exception("Could not renew workspace lease for %s", self.session_id)
         async with self._prompt_lock:
+            collaboration = getattr(self.manager, "collaboration_service", None)
+            if collaboration is not None:
+                # This is the exact between-turn boundary. Revalidate and apply
+                # a durable pending transition before the next prompt is built.
+                await collaboration.prepare_turn(self)
             self._in_flight = item
             self._turn_started_at = datetime.now(UTC)
             self._turn_agent_events = []

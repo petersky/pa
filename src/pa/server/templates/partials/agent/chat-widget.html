@@ -190,7 +190,16 @@
     </div>
     <label class="sr-only" for="acw-input-{{ label | replace(':', '-') }}">Message</label>
     <textarea id="acw-input-{{ label | replace(':', '-') }}" data-acw-input rows="2"
-              placeholder="Message the agent or drop images here…"></textarea>
+              placeholder="Message the agent, type / for commands, or drop images here…"
+              aria-autocomplete="list" aria-controls="acw-command-menu-{{ label | replace(':', '-') }}"
+              aria-expanded="false"></textarea>
+    <div id="acw-command-menu-{{ label | replace(':', '-') }}"
+         class="acw-command-menu" data-acw-command-menu role="listbox"
+         aria-label="Available commands" hidden>
+      <div class="acw-command-state muted" data-acw-command-state role="status">Loading commands…</div>
+      <div data-acw-command-options></div>
+      <p class="muted small acw-command-help">Use ↑/↓ and Enter to select, Esc to close. Start with <code>//</code> to send literal leading-slash text.</p>
+    </div>
     <div class="acw-attachments" data-acw-attachments hidden></div>
     <p class="muted small acw-draft-attachments" data-acw-draft-attachments
        role="status" aria-live="polite" hidden></p>

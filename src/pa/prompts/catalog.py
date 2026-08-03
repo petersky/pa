@@ -217,6 +217,26 @@ the same durable PA interaction lifecycle.""",
 )
 
 _register(
+    key="agent.context.collaboration",
+    purpose="Explain PA-owned collaboration-mode transition authority.",
+    scope="global",
+    version=1,
+    template="""## PA collaboration modes
+Collaboration mode is selected and changed only by PA policy. It is separate from
+execution/permission mode and never expands filesystem, network, command, sandbox,
+or approval authority.
+
+If a different collaboration mode is necessary between turns, call PA MCP
+`request_collaboration_mode` with requested_mode (`default` or `plan`), a concrete
+purpose, intended_next_action, the current session/dispatch/card and authority
+provenance shown in PA context, and a stable idempotency_key. Do not mutate provider
+session configuration directly. A request made during an active turn may be
+approved-pending-next-turn. Never say the mode changed until PA returns
+`approved_applied`; report rejected, unsupported, stale, or failed results exactly.
+Use durable PA interactions for questions in unattended Plan-first sessions.""",
+)
+
+_register(
     key="agent.message.wrapper",
     purpose="Combine effective PA context with the operator-authored message.",
     scope="session",

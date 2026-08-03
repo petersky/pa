@@ -235,6 +235,7 @@ def compose_session_prompt(
             ),
             PROMPTS.render("agent.context.data_safety", provider=provider),
             PROMPTS.render("agent.context.interactions", provider=provider),
+            PROMPTS.render("agent.context.collaboration", provider=provider),
             PROMPTS.render("agent.context.browser", provider=provider),
         ]
     )

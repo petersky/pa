@@ -196,10 +196,16 @@ def normalize_session_update(update: Any) -> dict[str, Any]:
             payload["mode_id"] = plain.get("currentModeId") or plain.get(
                 "current_mode_id"
             )
-        elif update_type == "config_option_update":
+        elif update_type in {"config_option_update", "config_options_update"}:
             payload["config_options"] = plain.get("configOptions") or plain.get(
                 "config_options"
             )
+        elif update_type == "available_commands_update":
+            # ACP defines this as a complete replacement snapshot. Preserve the
+            # raw provider records so PA can retain future action metadata.
+            payload["available_commands"] = plain.get("availableCommands") or plain.get(
+                "available_commands"
+            ) or []
 
     return payload
 
