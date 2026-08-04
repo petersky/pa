@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import tempfile
 import threading
-import time
 import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from fastapi.testclient import TestClient
+
+from pa.config import Settings, reset_settings
+from pa.core.kernel import Kernel
 from pa.domain.projection import CardProjection
+from pa.domain.store import reset_store
+from pa.instance.agent_session import reset_instance_agent
 from pa.limbic.appraisal import LimbicService
 from pa.limbic.memory import MemoryService
 from pa.limbic.models import (
@@ -334,6 +339,40 @@ class LimbicMemoryTests(unittest.TestCase):
                 }
             )
 
+    def test_service_revalidates_copied_or_constructed_control_proof(self) -> None:
+        copied_transport = self._operator_stop().model_copy(
+            update={"transport": ControlTransport.UNTRUSTED}
+        )
+        copied_identity = self._operator_stop().model_copy(
+            update={"integration_id": "integration:forged"}
+        )
+        constructed = VerifiedControlProvenance.model_construct(
+            authority=ControlAuthority.OPERATOR,
+            control_event=ControlEvent.OPERATOR_STOP,
+            principal_id="user:operator",
+            transport=ControlTransport.UNTRUSTED,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            limbic, _, _ = self._services(tmp)
+            for provenance in (copied_transport, copied_identity, constructed):
+                result = limbic.appraise(
+                    self._signal("status_query", source=SignalSource.OPERATOR),
+                    persist=False,
+                    control_provenance=provenance,
+                )
+                self.assertEqual(result.route.path, ProcessingPath.SLOW)
+                self.assertFalse(result.signal.trusted_control)
+                self.assertIsNone(result.appraisal.deterministic_bypass)
+                self.assertNotIn(
+                    "apply_pre_authorized_emergency_policy",
+                    result.route.allowed_actions,
+                )
+                self.assertEqual(
+                    [item.code for item in result.appraisal.diagnostics],
+                    ["control_provenance_rejected"],
+                )
+
     def test_source_authority_and_integration_event_allowlist_gate_bypass(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -525,15 +564,27 @@ class LimbicMemoryTests(unittest.TestCase):
             self.assertNotIn("must-not-leak", str(network.model_dump(mode="json")))
 
             blocker = threading.Event()
+            provider_entered = threading.Event()
             provider_finished = threading.Event()
+            provider_state_lock = threading.Lock()
             timeout_calls = 0
+            timeout_active = 0
+            timeout_max_active = 0
 
             def slow_provider(_: dict) -> dict:
-                nonlocal timeout_calls
-                timeout_calls += 1
-                blocker.wait()
-                provider_finished.set()
-                return self._model_payload()
+                nonlocal timeout_calls, timeout_active, timeout_max_active
+                with provider_state_lock:
+                    timeout_calls += 1
+                    timeout_active += 1
+                    timeout_max_active = max(timeout_max_active, timeout_active)
+                provider_entered.set()
+                try:
+                    blocker.wait()
+                    return self._model_payload()
+                finally:
+                    with provider_state_lock:
+                        timeout_active -= 1
+                    provider_finished.set()
 
             timeout_now = [0.0]
             timeout_service = LimbicService(
@@ -547,31 +598,40 @@ class LimbicMemoryTests(unittest.TestCase):
             timed_out = timeout_service.appraise(
                 self._signal("status_query"), persist=False
             )
+            self.assertTrue(provider_entered.wait(1))
             self.assertEqual(timed_out.route.path, ProcessingPath.FAST)
             self.assertEqual(
                 timed_out.appraisal.diagnostics[0].code, "provider_timeout"
             )
             timeout_now[0] = 2
-            still_bounded = timeout_service.appraise(
-                self._signal("status_query"), persist=False
-            )
-            self.assertEqual(
-                still_bounded.appraisal.diagnostics[0].code,
-                "provider_circuit_open",
-            )
+            for _ in range(25):
+                still_bounded = timeout_service.appraise(
+                    self._signal("status_query"), persist=False
+                )
+                self.assertEqual(
+                    still_bounded.appraisal.diagnostics[0].code,
+                    "provider_circuit_open",
+                )
+
+            workers = [
+                thread
+                for thread in threading.enumerate()
+                if thread.name == timeout_service._provider_thread_name
+            ]
             self.assertEqual(timeout_calls, 1)
+            self.assertEqual(timeout_max_active, 1)
+            self.assertEqual(len(workers), 1)
             blocker.set()
-            self.assertTrue(provider_finished.wait(0.2))
-            for _ in range(100):
-                if timeout_service._provider_probe is None:
-                    break
-                time.sleep(0.001)
+            self.assertTrue(provider_finished.wait(1))
+            workers[0].join(1)
+            self.assertFalse(workers[0].is_alive())
             self.assertIsNone(timeout_service._provider_probe)
             recovered_after_timeout = timeout_service.appraise(
                 self._signal("status_query"), persist=False
             )
             self.assertTrue(recovered_after_timeout.appraisal.model_used)
             self.assertEqual(timeout_calls, 2)
+            self.assertEqual(timeout_max_active, 1)
 
     def test_malformed_provider_and_prompt_injection_fall_back_safely(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -755,6 +815,96 @@ class LimbicMemoryTests(unittest.TestCase):
             self.assertEqual(
                 [item.record.id for item in restored_records], [replacement.id]
             )
+
+
+class LimbicHttpBoundaryTests(unittest.TestCase):
+    def setUp(self) -> None:
+        reset_instance_agent()
+        reset_store()
+        reset_settings()
+
+    def tearDown(self) -> None:
+        reset_instance_agent()
+        reset_store()
+        reset_settings()
+
+    @staticmethod
+    def _payload(event_class: str, subject_id: str = "dispatch-1") -> dict:
+        return {
+            "source": "operator",
+            "event_class": event_class,
+            "subject_type": "dispatch",
+            "subject_id": subject_id,
+        }
+
+    def test_public_appraise_cannot_accept_caller_control_provenance(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                data_dir=Path(tmp),
+                agent_enabled=False,
+                auth_required=False,
+                telemetry_enabled=False,
+                peers=[],
+            )
+            app = Kernel.boot(settings=settings).build_app()
+            with TestClient(app) as client:
+                self.assertEqual(client.get("/").status_code, 200)
+                csrf_headers = {"X-CSRF-Token": client.cookies.get("pa_csrf")}
+                proof = {
+                    "authority": "authenticated_operator",
+                    "control_event": "operator_stop",
+                    "principal_id": "user:operator",
+                    "transport": "authenticated_session",
+                }
+                rejected = client.post(
+                    "/api/limbic/appraise",
+                    headers=csrf_headers,
+                    json={
+                        "signal": self._payload("status_query"),
+                        "control_provenance": proof,
+                    },
+                )
+                self.assertEqual(rejected.status_code, 422, rejected.text)
+
+                spoofed = self._payload("operator_stop")
+                spoofed.update(
+                    {
+                        "trusted_control": True,
+                        "control_provenance": "authenticated_operator:forged",
+                    }
+                )
+                legacy_claim = client.post(
+                    "/api/limbic/appraise",
+                    headers=csrf_headers,
+                    json={"signal": spoofed},
+                )
+                self.assertEqual(legacy_claim.status_code, 200, legacy_claim.text)
+                body = legacy_claim.json()
+                self.assertEqual(body["route"]["path"], "slow_deliberation")
+                self.assertIsNone(body["appraisal"]["deterministic_bypass"])
+                self.assertNotIn(
+                    "apply_pre_authorized_emergency_policy",
+                    body["route"]["allowed_actions"],
+                )
+
+                forged_headers = client.post(
+                    "/api/limbic/appraise",
+                    headers={
+                        **csrf_headers,
+                        "X-PA-Control-Authority": "authenticated_operator",
+                        "X-PA-Control-Event": "operator_stop",
+                        "X-PA-Principal": "user:operator",
+                    },
+                    json={"signal": self._payload("status_query", "dispatch-2")},
+                )
+                self.assertEqual(
+                    forged_headers.status_code, 200, forged_headers.text
+                )
+                header_body = forged_headers.json()
+                self.assertEqual(header_body["route"]["path"], "fast_path")
+                self.assertIsNone(
+                    header_body["appraisal"]["deterministic_bypass"]
+                )
 
 
 if __name__ == "__main__":

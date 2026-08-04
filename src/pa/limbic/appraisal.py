@@ -154,6 +154,7 @@ class LimbicService:
         self._provider_failures = 0
         self._provider_open_until = 0.0
         self._provider_probe: _ProviderProbe | None = None
+        self._provider_thread_name = f"pa-limbic-provider-{id(self):x}"
 
     def appraise(
         self,
@@ -166,7 +167,9 @@ class LimbicService:
         caller_claimed_trust = bool(
             signal.trusted_control or signal.control_provenance != "untrusted"
         )
-        provenance = control_provenance or VerifiedControlProvenance()
+        provenance, provenance_rejected = self._validated_control_provenance(
+            control_provenance
+        )
         emergency_rule = self._emergency_rule(signal, provenance)
 
         # The canonical event class for a verified control is selected from the
@@ -195,7 +198,7 @@ class LimbicService:
             signal.event_class in _PRIVILEGED_EVENT_ALIASES and not emergency_rule
         ):
             diagnostics.append(_diagnostic("control_provenance_spoof", "security"))
-        if provenance.control_event and not emergency_rule:
+        if provenance_rejected or (provenance.control_event and not emergency_rule):
             diagnostics.append(_diagnostic("control_provenance_rejected", "security"))
 
         baseline = self._deterministic_appraisal(signal, emergency_rule, diagnostics)
@@ -229,6 +232,25 @@ class LimbicService:
                 )
             )
         return result
+
+    @staticmethod
+    def _validated_control_provenance(
+        provenance: VerifiedControlProvenance | None,
+    ) -> tuple[VerifiedControlProvenance, bool]:
+        if provenance is None:
+            return VerifiedControlProvenance(), False
+        try:
+            # model_copy/model_construct do not validate updates. Round-trip
+            # through ordinary data so this service boundary always enforces
+            # authority, identity, and transport binding before policy use.
+            return (
+                VerifiedControlProvenance.model_validate(
+                    provenance.model_dump(mode="python")
+                ),
+                False,
+            )
+        except Exception:  # noqa: BLE001 - reject malformed proof without details
+            return VerifiedControlProvenance(), True
 
     def _emergency_rule(
         self,
@@ -498,7 +520,7 @@ class LimbicService:
 
         worker = threading.Thread(
             target=invoke,
-            name="pa-limbic-provider",
+            name=self._provider_thread_name,
             daemon=True,
         )
         try:
