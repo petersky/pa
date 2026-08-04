@@ -2,19 +2,20 @@
 <div class="card-tab-loaded" data-card-tab-loaded>
   <div class="section-heading-inline">
     <div><h3>Agent execution</h3><p class="muted">Selecting a card never starts work. Start or resume a local ACP session explicitly.</p></div>
-    {% if agent_enabled | default(true) %}<button type="button" data-card-agent-start>{{ 'Resume local agent' if current_session else 'Start local agent' }}</button>{% endif %}
+    {% if agent_enabled | default(true) %}<div class="button-row">{% if current_session_view %}<button type="button" data-card-agent-select="{{ current_session.id }}" data-owner-instance-id="{{ current_session_view.owner_id }}" data-resume="{{ '1' if current_session_view.resumable else '0' }}">{{ 'Resume session' if current_session_view.resumable else 'Open current session' }}</button>{% endif %}<button type="button" data-card-agent-start-new>Start new session</button></div>{% endif %}
   </div>
-  {% if related_sessions %}
+  {% if session_views %}
+  <p class="muted">Multiple sessions are preserved per card. The newest active local session is current; otherwise the newest resumable local session is the default. Concurrent local sessions are allowed and remain independently selectable.</p>
   <div class="agent-session-list">
-    {% for session in related_sessions %}
+    {% for view in session_views %}{% set session = view.session %}
     {% set execution = session.config_json.get('execution_context', {}) %}
     {% set instance = execution.get('instance', {}) %}
     {% set configuration = session.config_json.get('configuration', {}) %}
     <article class="agent-session-card">
-      <div class="section-heading-inline"><div><h4><a href="/agent?session={{ session.id }}">{{ session.title or session.label or 'Card agent' }}</a></h4><p><span class="status status-{{ session.status }}">{{ session.status }}</span></p></div><time datetime="{{ session.updated_at.isoformat() }}">{{ session.updated_at.strftime('%b %-d, %H:%M') }}</time></div>
+      <div class="section-heading-inline"><div><h4><a href="/agent?session={{ session.id }}{% if view.owner_id %}&amp;instance={{ view.owner_id }}{% endif %}">{{ session.title or session.label or 'Card agent' }}</a></h4><p><span class="status status-{{ view.state }}">{{ view.state }}</span>{% if current_session and current_session.id == session.id %} <span class="muted">Current</span>{% endif %}</p><p class="muted">{{ view.detail }}</p></div><time datetime="{{ session.updated_at.isoformat() }}">{{ session.updated_at.strftime('%b %-d, %H:%M') }}</time></div>
       <dl class="detail-list">
         <div><dt>Host</dt><dd>{% if instance.get('id') or session.origin_instance_id %}{{ instance_identity(instance.get('id') or session.origin_instance_id) }}{% else %}{{ instance.get('name') or session.origin_instance_name or 'Local instance' }}{% endif %}</dd></div>
-        <div><dt>Provider</dt><dd>{{ session.agent_name }}</dd></div><div><dt>Model</dt><dd>{{ session.model_id or configuration.get('requested', {}).get('model_id') or 'Provider default' }}</dd></div><div><dt>Mode</dt><dd>{{ session.mode_id or 'Provider default' }}</dd></div><div><dt>Approval</dt><dd>{{ execution.get('approval_policy') or 'Instance default' }}</dd></div><div><dt>Queue</dt><dd>{{ 'Ready for prompts' if session.status != 'closed' else 'Session closed' }}</dd></div>
+        <div><dt>Provider</dt><dd>{{ session.agent_name }}</dd></div><div><dt>Model</dt><dd>{{ session.model_id or configuration.get('requested', {}).get('model_id') or 'Provider default' }}</dd></div><div><dt>Mode</dt><dd>{{ session.mode_id or 'Provider default' }}</dd></div><div><dt>Approval</dt><dd>{{ execution.get('approval_policy') or 'Instance default' }}</dd></div><div><dt>Session ID</dt><dd><code>{{ session.id }}</code></dd></div>{% if session.dispatch_id %}<div><dt>Dispatch</dt><dd><code>{{ session.dispatch_id }}</code></dd></div>{% endif %}
         {% if session.cwd %}<div><dt>Worktree</dt><dd><code>{{ session.cwd }}</code></dd></div>{% endif %}
       </dl>
       {% if execution.get('repositories') %}
@@ -29,13 +30,17 @@
         {% endfor %}
       </details>
       {% endif %}
+      {% if view.selectable %}<button type="button" class="ghost" data-card-agent-select="{{ session.id }}" data-owner-instance-id="{{ view.owner_id }}" data-resume="{{ '1' if view.resumable else '0' }}">{{ 'Resume this session' if view.resumable else 'Select this session' }}</button>{% endif %}
     </article>
     {% endfor %}
   </div>
   {% else %}<div class="card-tab-empty" role="status"><h3>No agent sessions yet</h3><p class="muted">Start an agent when this card is ready for execution.</p></div>{% endif %}
   {% if agent_enabled | default(true) %}
-  <div id="card-agent-pane-{{ card.id }}" class="card-agent-pane" data-card-agent-pane hx-preserve="true" hidden>
+  <div id="card-agent-pane-{{ card.id }}" class="card-agent-pane" data-card-agent-pane="existing" hx-preserve="true" hidden>
     {% with session_id=current_session.id if current_session else '', create_label='card:' ~ card.id, card_id=card.id, show_model=true, show_mode=true, show_thinking=false, show_system_prompts=false, show_queue=false, show_metrics=false, compact=true, auto_start=false %}{% include "partials/agent/chat-widget.html" %}{% endwith %}
+  </div>
+  <div id="card-agent-new-pane-{{ card.id }}" class="card-agent-pane" data-card-agent-pane="new" hx-preserve="true" hidden>
+    {% with session_id='', create_label='card:' ~ card.id, card_id=card.id, fresh=true, show_model=true, show_mode=true, show_thinking=false, show_system_prompts=false, show_queue=false, show_metrics=false, compact=true, auto_start=false %}{% include "partials/agent/chat-widget.html" %}{% endwith %}
   </div>
   {% endif %}
 </div>

@@ -621,6 +621,54 @@ class AgentSessionRestoreTests(unittest.TestCase):
             self.assertTrue(capabilities.fs.write_text_file)
             self.assertEqual(existing.status, "idle")
 
+    def test_failed_resume_falls_back_to_load_before_new_session(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = MagicMock()
+            acp = MagicMock()
+            acp.initialize = AsyncMock(
+                return_value={
+                    "agentCapabilities": {
+                        "loadSession": True,
+                        "sessionCapabilities": {"resume": {"supported": True}},
+                    }
+                }
+            )
+            acp.resume_session = AsyncMock(side_effect=RuntimeError("unavailable"))
+            acp.load_session = AsyncMock(return_value=SimpleNamespace())
+            acp.new_session = AsyncMock()
+            context = MagicMock()
+            context.__aenter__ = AsyncMock(return_value=(acp, MagicMock()))
+            context.__aexit__ = AsyncMock()
+            existing = AgentSession(
+                id="pa-session",
+                agent_name="generic",
+                external_session_id="agent-session",
+                status="closed",
+            )
+            connection = AgentConnection(
+                Settings(data_dir=Path(tmp)),
+                store,
+                provider_spec=AgentProviderSpec(
+                    id="generic", display_name="Generic", command="agent"
+                ),
+            )
+
+            async def run() -> None:
+                with (
+                    patch("pa.acp.client.spawn_agent", return_value=context),
+                    patch("pa.acp.client.pa_mcp_servers", return_value=[]),
+                ):
+                    restored = await connection.connect(
+                        resume_external_id="agent-session", existing_session=existing
+                    )
+                self.assertIs(restored, existing)
+
+            asyncio.run(run())
+            acp.resume_session.assert_awaited_once()
+            acp.load_session.assert_awaited_once()
+            acp.new_session.assert_not_awaited()
+            self.assertEqual(existing.status, "idle")
+
     def test_loads_with_cwd_from_session_list(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = MagicMock()
