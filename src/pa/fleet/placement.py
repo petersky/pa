@@ -857,7 +857,11 @@ class PlacementService:
                     item[0].instance_id,
                 ),
             )
-            tie_reason = "Lowest normalized active-plus-queued workload; instance ID breaks exact ties."
+            tie_reason = (
+                "Lowest normalized execution-slot consumption (active capacity "
+                "consumers plus durable dispatch reservations); queued prompts are "
+                "backlog telemetry. Instance ID breaks exact ties."
+            )
         elif request.policy == PlacementPolicy.ROUND_ROBIN:
             chosen_id = self.cursor_store.choose(
                 request.fleet_id,

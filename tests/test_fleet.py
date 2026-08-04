@@ -491,6 +491,7 @@ class FleetPageLazyLoadTests(unittest.TestCase):
 
         from pa.core.kernel import Kernel
         from pa.domain.store import reset_store
+        from pa.fleet.overview import build_overview as actual_build_overview
         from pa.instance.agent_session import reset_instance_agent
 
         reset_store()
@@ -503,14 +504,44 @@ class FleetPageLazyLoadTests(unittest.TestCase):
             agent_enabled=False,
             peers=[],
         )
+
+        def overview_with_prompt_backlog(ctx, instances, routes):
+            overview = actual_build_overview(ctx, instances, routes)
+            activity = overview["nodes"][0]["dimensions"]["activity"]
+            value = dict(activity.get("value") or {})
+            value.update(
+                {
+                    "state": "working",
+                    "queued_prompts": 9,
+                    "capacity": {
+                        "consumed": 1,
+                        "limit": 4,
+                        "source": "configured",
+                    },
+                }
+            )
+            activity.update({"state": "fresh", "value": value})
+            return overview
+
         try:
             app = Kernel.boot(settings=settings).build_app()
             with TestClient(app) as client:
-                page = client.get("/fleet")
+                with patch(
+                    "pa.modules.fleet.build_overview",
+                    side_effect=overview_with_prompt_backlog,
+                ):
+                    page = client.get("/fleet")
                 self.assertEqual(page.status_code, 200, page.text)
                 self.assertIn("pa-fleet-overview-data", page.text)
                 self.assertIn("pa-fleet-topology", page.text)
                 self.assertNotIn("Checking…", page.text)
+
+                self.assertIn(
+                    'aria-label="1/4 slots used · 9 prompts queued"', page.text
+                )
+                self.assertIn(">1/4 slots used · 9 prompts queued</strong>", page.text)
+                self.assertNotIn(">10/4", page.text)
+                self.assertNotIn(">1/4 used</strong>", page.text)
 
                 dimension = client.get(
                     "/api/fleet/overview/dimension",

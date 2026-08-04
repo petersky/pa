@@ -160,6 +160,12 @@ def test_least_busy_normalizes_load_and_breaks_ties_deterministically() -> None:
             ],
         )
         assert decision.chosen_instance_id == "large"
+        assert decision.tie_breaking_reason == (
+            "Lowest normalized execution-slot consumption (active capacity "
+            "consumers plus durable dispatch reservations); queued prompts are "
+            "backlog telemetry. Instance ID breaks exact ties."
+        )
+        assert "active-plus-queued" not in decision.tie_breaking_reason
 
         tied = service.resolve(
             _request(PlacementPolicy.LEAST_BUSY),
