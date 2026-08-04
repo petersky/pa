@@ -8592,6 +8592,9 @@ class FleetModule(Module):
         client = ctx.services.get("fleet_http_client")
         if client:
             await client.aclose()
+        dispatch_store = ctx.services.get("dispatch_store")
+        if dispatch_store:
+            await asyncio.to_thread(dispatch_store.close)
 
     def api_routers(self):
         return [("/api", router, ["fleet"])]

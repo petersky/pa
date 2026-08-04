@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import random
+import sqlite3
+import time
+from collections import deque
 from collections.abc import Awaitable, Callable
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import RLock
@@ -22,7 +27,7 @@ from pa.core.async_runtime import (
     BlockingOperationTimeout,
     BlockingQueueFull,
 )
-from pa.core.io import atomic_write_json
+from pa.core.io import atomic_write_json, atomic_write_text
 from pa.execution.post_turn import PostTurnEvaluationV1, TurnEndSnapshotV1
 from pa.execution.progress import (
     MAX_PROGRESS_EVENTS,
@@ -447,20 +452,428 @@ class CapacityAdmission(BaseModel):
 
 
 class DispatchStore:
-    """Atomic JSON ledger shared by dispatch admission, worker, and outbox."""
+    """Transactional incremental ledger shared by dispatch, progress, and outbox.
 
-    def __init__(self, data_dir: Path) -> None:
+    Dispatch metadata is one bounded JSON document per dispatch. High-rate progress,
+    heartbeat, and idempotency receipt state is normalized so a mutation appends or
+    updates only its own rows in a WAL transaction. The legacy JSON ledger is an
+    immutable migration source and rollback artifact after verification.
+    """
+
+    SCHEMA_VERSION = 1
+    LEGACY_BACKUP_SUFFIX = ".pre-sqlite-backup"
+    RECEIPT_REPLAY_DAYS = 30
+    MAX_PROGRESS_BYTES_PER_DISPATCH = 4 * 1024 * 1024
+
+    def __init__(
+        self,
+        data_dir: Path,
+        *,
+        fault_injector: Callable[[str], None] | None = None,
+    ) -> None:
         self.path = data_dir / "dispatch_mutations.json"
+        self.db_path = data_dir / "dispatch_mutations.db"
+        self.backup_path = self.path.with_name(
+            self.path.name + self.LEGACY_BACKUP_SUFFIX
+        )
         self.metrics_path = data_dir / "dispatch_queue_metrics.json"
         self._records: dict[str, DispatchRecord] = {}
         self._latest_card_records: dict[str, DispatchRecord] = {}
         self._lock = RLock()
+        self._fault_injector = fault_injector
+        self._commit_latencies_ms: deque[float] = deque(maxlen=4096)
+        self._checkpoint_latencies_ms: deque[float] = deque(maxlen=256)
+        self._commits = 0
+        self._write_rows = 0
+        self._retention_actions = 0
+        self._queued_writers = 0
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._conn = sqlite3.connect(
+            self.db_path, timeout=30.0, check_same_thread=False
+        )
+        self._conn.row_factory = sqlite3.Row
+        self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA synchronous=NORMAL")
+        self._conn.execute("PRAGMA foreign_keys=ON")
+        self._conn.execute("PRAGMA busy_timeout=30000")
+        self._ensure_schema()
+        self._migrate_legacy_if_needed()
         try:
             metrics = json.loads(self.metrics_path.read_text())
             self._queue_rejections = max(0, int(metrics.get("rejections") or 0))
         except (OSError, ValueError, TypeError):
             self._queue_rejections = 0
         self._load()
+
+    def _fault(self, boundary: str) -> None:
+        if self._fault_injector:
+            self._fault_injector(boundary)
+
+    @contextmanager
+    def _read_connection(self):
+        """Give ordinary indexed reads an independent WAL snapshot."""
+        conn = sqlite3.connect(
+            f"file:{self.db_path}?mode=ro", uri=True, timeout=5.0
+        )
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA query_only=ON")
+        conn.execute("PRAGMA busy_timeout=5000")
+        try:
+            yield conn
+        finally:
+            conn.close()
+
+    @contextmanager
+    def _transaction(self, *, durability: str = "normal"):
+        """Commit one mutation and record time only after SQLite acknowledges it."""
+        self._queued_writers += 1
+        started = time.perf_counter()
+        committed = False
+        try:
+            if durability == "full":
+                self._conn.execute("PRAGMA synchronous=FULL")
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                yield self._conn
+                self._fault("commit_before")
+                self._conn.commit()
+                committed = True
+                self._fault("commit_after")
+            except BaseException:
+                self._conn.rollback()
+                raise
+        finally:
+            if durability == "full":
+                self._conn.execute("PRAGMA synchronous=NORMAL")
+            self._queued_writers = max(0, self._queued_writers - 1)
+            elapsed = (time.perf_counter() - started) * 1000
+            if committed:
+                self._commit_latencies_ms.append(elapsed)
+                self._commits += 1
+
+    def _ensure_schema(self) -> None:
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS dispatch_meta "
+            "(key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+        )
+        existing = self._conn.execute(
+            "SELECT value FROM dispatch_meta WHERE key='schema_version'"
+        ).fetchone()
+        if existing:
+            try:
+                observed_version = int(existing["value"])
+            except (TypeError, ValueError) as exc:
+                raise RuntimeError("invalid dispatch database schema version") from exc
+            if observed_version > self.SCHEMA_VERSION:
+                raise RuntimeError(
+                    "dispatch database was written by a newer PA version; "
+                    "refusing unsafe downgrade"
+                )
+        self._conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS dispatch_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS dispatches (
+                dispatch_id TEXT PRIMARY KEY,
+                card_id TEXT,
+                project_id TEXT,
+                session_id TEXT,
+                authority_instance_id TEXT NOT NULL,
+                target_instance_id TEXT NOT NULL,
+                state TEXT NOT NULL,
+                idempotency_key TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                payload_json TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS dispatches_card_recent
+                ON dispatches(card_id, updated_at DESC);
+            CREATE INDEX IF NOT EXISTS dispatches_project_recent
+                ON dispatches(project_id, updated_at DESC);
+            CREATE INDEX IF NOT EXISTS dispatches_session_recent
+                ON dispatches(session_id, updated_at DESC);
+            CREATE INDEX IF NOT EXISTS dispatches_authority_idem
+                ON dispatches(authority_instance_id, idempotency_key);
+            CREATE INDEX IF NOT EXISTS dispatches_target_state_recent
+                ON dispatches(target_instance_id, state, updated_at DESC);
+            CREATE INDEX IF NOT EXISTS dispatches_target_idem
+                ON dispatches(target_instance_id, idempotency_key);
+            CREATE INDEX IF NOT EXISTS dispatches_state_recent
+                ON dispatches(state, updated_at DESC);
+
+            CREATE TABLE IF NOT EXISTS dispatch_progress_events (
+                dispatch_id TEXT NOT NULL REFERENCES dispatches(dispatch_id)
+                    ON DELETE CASCADE,
+                sequence INTEGER NOT NULL,
+                idempotency_key TEXT NOT NULL,
+                occurred_at TEXT NOT NULL,
+                byte_size INTEGER NOT NULL,
+                protected INTEGER NOT NULL DEFAULT 0,
+                payload_json TEXT NOT NULL,
+                PRIMARY KEY(dispatch_id, idempotency_key),
+                UNIQUE(dispatch_id, sequence)
+            );
+            CREATE INDEX IF NOT EXISTS progress_dispatch_recent
+                ON dispatch_progress_events(dispatch_id, occurred_at DESC);
+
+            CREATE TABLE IF NOT EXISTS dispatch_heartbeats (
+                dispatch_id TEXT PRIMARY KEY REFERENCES dispatches(dispatch_id)
+                    ON DELETE CASCADE,
+                sequence INTEGER NOT NULL,
+                idempotency_key TEXT NOT NULL,
+                occurred_at TEXT NOT NULL,
+                payload_json TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS heartbeat_recent
+                ON dispatch_heartbeats(occurred_at DESC);
+
+            CREATE TABLE IF NOT EXISTS dispatch_receipts (
+                dispatch_id TEXT NOT NULL REFERENCES dispatches(dispatch_id)
+                    ON DELETE CASCADE,
+                idempotency_key TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                sequence INTEGER NOT NULL,
+                payload_hash TEXT NOT NULL,
+                result_status TEXT NOT NULL,
+                accepted INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                replay_expires_at TEXT,
+                PRIMARY KEY(dispatch_id, idempotency_key)
+            );
+            CREATE INDEX IF NOT EXISTS receipts_expiry
+                ON dispatch_receipts(replay_expires_at);
+            """
+        )
+        self._conn.execute(
+            "INSERT INTO dispatch_meta(key,value) VALUES('schema_version',?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (str(self.SCHEMA_VERSION),),
+        )
+        self._conn.commit()
+
+    @staticmethod
+    def _checksum(raw: bytes) -> str:
+        return hashlib.sha256(raw).hexdigest()
+
+    @staticmethod
+    def _progress_protected(event: DispatchProgressEventV1) -> bool:
+        return bool(
+            event.kind.value == "final"
+            or event.operator_input
+            or event.blockers
+            or event.phase.value
+            in {
+                "blocked",
+                "turn_ended",
+                "completed",
+                "opening_pr",
+                "waiting_ci",
+                "addressing_review",
+                "merging",
+            }
+        )
+
+    @staticmethod
+    def _core_payload(record: DispatchRecord) -> str:
+        return json.dumps(
+            record.model_dump(
+                mode="json",
+                exclude={
+                    "progress_events",
+                    "progress_heartbeat",
+                    "progress_seen_keys",
+                },
+            ),
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+
+    @classmethod
+    def _validated_legacy_record(
+        cls, key: str, value: Any
+    ) -> DispatchRecord | None:
+        if not isinstance(value, dict):
+            logger.warning("Ignoring malformed persisted dispatch %s", key)
+            return None
+        candidate = dict(value)
+        events: list[dict[str, Any]] = []
+        for raw_event in candidate.get("progress_events") or []:
+            try:
+                events.append(
+                    DispatchProgressEventV1.model_validate(raw_event).model_dump(
+                        mode="json"
+                    )
+                )
+            except (ValueError, TypeError):
+                logger.warning(
+                    "Ignoring malformed historical progress event for dispatch %s",
+                    key,
+                )
+        candidate["progress_events"] = events
+        for field, model in (
+            ("progress_heartbeat", DispatchProgressHeartbeatV1),
+            ("final_report", CompletionReportV1),
+        ):
+            raw = candidate.get(field)
+            if raw is None:
+                continue
+            try:
+                candidate[field] = model.model_validate(raw).model_dump(mode="json")
+            except (ValueError, TypeError):
+                logger.warning("Ignoring malformed historical %s for %s", field, key)
+                candidate[field] = None
+        try:
+            return DispatchRecord.model_validate(candidate)
+        except (ValueError, TypeError) as exc:
+            logger.warning(
+                "Ignoring malformed persisted dispatch %s (%s)",
+                key,
+                exc.__class__.__name__,
+            )
+            return None
+
+    def _migration_meta(self) -> dict[str, Any] | None:
+        row = self._conn.execute(
+            "SELECT value FROM dispatch_meta WHERE key='legacy_migration'"
+        ).fetchone()
+        return json.loads(row["value"]) if row else None
+
+    def _migrate_legacy_if_needed(self) -> None:
+        migration = self._migration_meta()
+        if migration and migration.get("state") == "verified":
+            if self.path.exists():
+                checksum = self._checksum(self.path.read_bytes())
+                if checksum != migration.get("source_sha256"):
+                    raise RuntimeError(
+                        "legacy dispatch_mutations.json changed after verified SQLite "
+                        "migration; refusing mixed-version startup"
+                    )
+            return
+        existing = self._conn.execute("SELECT COUNT(*) FROM dispatches").fetchone()[0]
+        if (
+            migration
+            and migration.get("state") == "not_needed"
+            and self.path.exists()
+            and existing
+        ):
+            raise RuntimeError(
+                "legacy dispatch_mutations.json appeared after SQLite initialization; "
+                "refusing mixed-version startup"
+            )
+        if not self.path.exists():
+            if existing:
+                return
+            state = {
+                "state": "not_needed",
+                "schema_version": self.SCHEMA_VERSION,
+                "verified_at": datetime.now(UTC).isoformat(),
+            }
+            with self._transaction(durability="full") as conn:
+                conn.execute(
+                    "INSERT OR REPLACE INTO dispatch_meta(key,value) VALUES(?,?)",
+                    ("legacy_migration", json.dumps(state, sort_keys=True)),
+                )
+            return
+
+        raw = self.path.read_bytes()
+        checksum = self._checksum(raw)
+        try:
+            payload = json.loads(raw)
+        except (ValueError, TypeError) as exc:
+            raise RuntimeError("legacy dispatch ledger is not valid JSON") from exc
+        if not isinstance(payload, dict):
+            raise TypeError("legacy dispatch ledger root must be an object")
+
+        if self.backup_path.exists():
+            if self._checksum(self.backup_path.read_bytes()) != checksum:
+                raise RuntimeError("legacy dispatch backup checksum mismatch")
+        else:
+            atomic_write_text(self.backup_path, raw.decode("utf-8"))
+        self._fault("migration_backup_verified")
+
+        records = [
+            record
+            for key, value in payload.items()
+            if (record := self._validated_legacy_record(str(key), value)) is not None
+        ]
+        expected_events = sum(len(record.progress_events) for record in records)
+        expected_heartbeats = sum(record.progress_heartbeat is not None for record in records)
+        expected_receipts = sum(len(set(record.progress_seen_keys)) for record in records)
+        expected_finals = sum(record.final_report is not None for record in records)
+        self._fault("migration_before_commit")
+        with self._transaction(durability="full") as conn:
+            conn.execute("DELETE FROM dispatches")
+            for record in records:
+                self._persist_record_conn(conn, record)
+                for event in record.progress_events:
+                    self._persist_event_conn(conn, event)
+                if record.progress_heartbeat:
+                    self._persist_heartbeat_conn(conn, record.progress_heartbeat)
+                event_by_key = {
+                    event.idempotency_key: event for event in record.progress_events
+                }
+                heartbeat = record.progress_heartbeat
+                for key in set(record.progress_seen_keys):
+                    item = event_by_key.get(key)
+                    kind = "progress"
+                    sequence = item.sequence if item else 0
+                    if heartbeat and heartbeat.idempotency_key == key:
+                        kind, sequence = "heartbeat", heartbeat.sequence
+                    conn.execute(
+                        "INSERT OR IGNORE INTO dispatch_receipts VALUES(?,?,?,?,?,?,?,?,NULL)",
+                        (
+                            record.dispatch_id,
+                            key,
+                            kind,
+                            sequence,
+                            "legacy",
+                            "accepted",
+                            1,
+                            record.updated_at.isoformat(),
+                        ),
+                    )
+            observed = {
+                "dispatches": conn.execute("SELECT COUNT(*) FROM dispatches").fetchone()[0],
+                "progress_events": conn.execute(
+                    "SELECT COUNT(*) FROM dispatch_progress_events"
+                ).fetchone()[0],
+                "heartbeats": conn.execute(
+                    "SELECT COUNT(*) FROM dispatch_heartbeats"
+                ).fetchone()[0],
+                "receipts": conn.execute(
+                    "SELECT COUNT(*) FROM dispatch_receipts"
+                ).fetchone()[0],
+                "final_reports": sum(record.final_report is not None for record in records),
+            }
+            expected = {
+                "dispatches": len(records),
+                "progress_events": expected_events,
+                "heartbeats": expected_heartbeats,
+                "receipts": expected_receipts,
+                "final_reports": expected_finals,
+            }
+            if observed != expected:
+                raise RuntimeError(
+                    f"dispatch migration reconciliation failed expected={expected} "
+                    f"observed={observed}"
+                )
+            state = {
+                "state": "verified",
+                "schema_version": self.SCHEMA_VERSION,
+                "source": self.path.name,
+                "backup": self.backup_path.name,
+                "source_sha256": checksum,
+                "backup_sha256": checksum,
+                "counts": observed,
+                "verified_at": datetime.now(UTC).isoformat(),
+            }
+            conn.execute(
+                "INSERT OR REPLACE INTO dispatch_meta(key,value) VALUES(?,?)",
+                ("legacy_migration", json.dumps(state, sort_keys=True)),
+            )
+        self._fault("migration_after_commit")
 
     @staticmethod
     def _prefer_card_record(candidate: DispatchRecord, current: DispatchRecord) -> bool:
@@ -486,6 +899,25 @@ class DispatchStore:
                 selected[record.card_id] = record
         self._latest_card_records = selected
 
+    def _update_latest_card_record_locked(self, candidate: DispatchRecord) -> None:
+        if not candidate.card_id:
+            return
+        current = self._latest_card_records.get(candidate.card_id)
+        if current is None or self._prefer_card_record(candidate, current):
+            self._latest_card_records[candidate.card_id] = candidate
+            return
+        if current.dispatch_id == candidate.dispatch_id:
+            peers = [
+                record
+                for record in self._records.values()
+                if record.card_id == candidate.card_id
+            ]
+            selected = candidate
+            for record in peers:
+                if self._prefer_card_record(record, selected):
+                    selected = record
+            self._latest_card_records[candidate.card_id] = selected
+
     def _record_queue_rejection_locked(self) -> None:
         self._queue_rejections += 1
         atomic_write_json(
@@ -494,70 +926,45 @@ class DispatchStore:
         )
 
     def _load(self) -> None:
-        try:
-            payload = json.loads(self.path.read_text())
-        except (OSError, ValueError, TypeError):
-            self._records = {}
-            return
-        if not isinstance(payload, dict):
-            self._records = {}
-            return
-        migrated = False
         records: dict[str, DispatchRecord] = {}
-        for key, value in payload.items():
-            if not isinstance(value, dict):
-                logger.warning("Ignoring malformed persisted dispatch %s", key)
-                migrated = True
-                continue
-            candidate = dict(value)
-            # Progress is observational evidence, not dispatch identity. Keep a
-            # dispatch usable even when one historical progress item no longer
-            # validates; valid siblings are retained and rewritten below.
-            valid_events = []
-            for raw_event in candidate.get("progress_events") or []:
-                try:
-                    valid_events.append(
-                        DispatchProgressEventV1.model_validate(raw_event)
-                    )
-                except (ValueError, TypeError):
-                    logger.warning(
-                        "Ignoring malformed historical progress event for dispatch %s",
-                        key,
-                    )
-                    migrated = True
-            candidate["progress_events"] = [
-                event.model_dump(mode="json") for event in valid_events
-            ]
-            for optional_field, model in (
-                ("progress_heartbeat", DispatchProgressHeartbeatV1),
-                ("final_report", CompletionReportV1),
-            ):
-                raw = candidate.get(optional_field)
-                if raw is None:
-                    continue
-                try:
-                    candidate[optional_field] = model.model_validate(raw).model_dump(
-                        mode="json"
-                    )
-                except (ValueError, TypeError):
-                    candidate[optional_field] = None
-                    logger.warning(
-                        "Ignoring malformed historical %s for dispatch %s",
-                        optional_field,
-                        key,
-                    )
-                    migrated = True
+        for row in self._conn.execute(
+            "SELECT dispatch_id, payload_json FROM dispatches"
+        ).fetchall():
             try:
-                records[str(key)] = DispatchRecord.model_validate(candidate)
-            except (ValueError, TypeError) as exc:
-                logger.warning(
-                    "Ignoring malformed persisted dispatch %s (%s)",
-                    key,
-                    exc.__class__.__name__,
+                records[row["dispatch_id"]] = DispatchRecord.model_validate_json(
+                    row["payload_json"]
                 )
-                migrated = True
+            except (ValueError, TypeError):
+                logger.exception("Invalid dispatch row %s", row["dispatch_id"])
+                raise RuntimeError("dispatch database contains an invalid record")
+
+        for row in self._conn.execute(
+            "SELECT dispatch_id, payload_json FROM dispatch_progress_events "
+            "ORDER BY dispatch_id, sequence, occurred_at, idempotency_key"
+        ).fetchall():
+            record = records.get(row["dispatch_id"])
+            if record:
+                record.progress_events.append(
+                    DispatchProgressEventV1.model_validate_json(row["payload_json"])
+                )
+        for row in self._conn.execute(
+            "SELECT dispatch_id, payload_json FROM dispatch_heartbeats"
+        ).fetchall():
+            record = records.get(row["dispatch_id"])
+            if record:
+                record.progress_heartbeat = DispatchProgressHeartbeatV1.model_validate_json(
+                    row["payload_json"]
+                )
+        for dispatch_id, record in records.items():
+            rows = self._conn.execute(
+                "SELECT idempotency_key FROM dispatch_receipts WHERE dispatch_id=? "
+                "ORDER BY created_at DESC LIMIT ?",
+                (dispatch_id, MAX_PROGRESS_SEEN_KEYS),
+            ).fetchall()
+            record.progress_seen_keys = [row["idempotency_key"] for row in reversed(rows)]
         self._records = records
         self._rebuild_latest_card_records_locked()
+        migrated = False
         for record in self._records.values():
             if (
                 record.card_id
@@ -571,49 +978,185 @@ class DispatchStore:
                 )
                 migrated = True
         if migrated:
-            self._save()
+            self._save(self._records.values())
 
-    def _save(self) -> None:
-        self._rebuild_latest_card_records_locked()
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write_json(
-            self.path,
-            {
-                key: value.model_dump(mode="json")
-                for key, value in self._records.items()
-            },
+    def _persist_record_conn(
+        self, conn: sqlite3.Connection, record: DispatchRecord
+    ) -> None:
+        conn.execute(
+            """
+            INSERT INTO dispatches(
+                dispatch_id,card_id,project_id,session_id,authority_instance_id,
+                target_instance_id,state,idempotency_key,created_at,updated_at,payload_json
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(dispatch_id) DO UPDATE SET
+                card_id=excluded.card_id,
+                project_id=excluded.project_id,
+                session_id=excluded.session_id,
+                authority_instance_id=excluded.authority_instance_id,
+                target_instance_id=excluded.target_instance_id,
+                state=excluded.state,
+                idempotency_key=excluded.idempotency_key,
+                created_at=excluded.created_at,
+                updated_at=excluded.updated_at,
+                payload_json=excluded.payload_json
+            """,
+            (
+                record.dispatch_id,
+                record.card_id,
+                record.project_id,
+                record.session_id,
+                record.authority_instance_id,
+                record.target_instance_id,
+                record.state,
+                record.idempotency_key,
+                record.created_at.isoformat(),
+                record.updated_at.isoformat(),
+                self._core_payload(record),
+            ),
         )
 
+    def _persist_event_conn(
+        self, conn: sqlite3.Connection, event: DispatchProgressEventV1
+    ) -> None:
+        payload = event.model_dump_json()
+        conn.execute(
+            """
+            INSERT INTO dispatch_progress_events(
+                dispatch_id,sequence,idempotency_key,occurred_at,byte_size,protected,payload_json
+            ) VALUES(?,?,?,?,?,?,?)
+            ON CONFLICT(dispatch_id,idempotency_key) DO UPDATE SET
+                sequence=excluded.sequence,
+                occurred_at=excluded.occurred_at,
+                byte_size=excluded.byte_size,
+                protected=excluded.protected,
+                payload_json=excluded.payload_json
+            """,
+            (
+                event.dispatch_id,
+                event.sequence,
+                event.idempotency_key,
+                event.occurred_at.isoformat(),
+                len(payload.encode()),
+                int(self._progress_protected(event)),
+                payload,
+            ),
+        )
+
+    @staticmethod
+    def _persist_heartbeat_conn(
+        conn: sqlite3.Connection, heartbeat: DispatchProgressHeartbeatV1
+    ) -> None:
+        conn.execute(
+            """
+            INSERT INTO dispatch_heartbeats(
+                dispatch_id,sequence,idempotency_key,occurred_at,payload_json
+            ) VALUES(?,?,?,?,?)
+            ON CONFLICT(dispatch_id) DO UPDATE SET
+                sequence=excluded.sequence,
+                idempotency_key=excluded.idempotency_key,
+                occurred_at=excluded.occurred_at,
+                payload_json=excluded.payload_json
+            """,
+            (
+                heartbeat.dispatch_id,
+                heartbeat.sequence,
+                heartbeat.idempotency_key,
+                heartbeat.occurred_at.isoformat(),
+                heartbeat.model_dump_json(),
+            ),
+        )
+
+    @staticmethod
+    def _payload_hash(payload: BaseModel) -> str:
+        return hashlib.sha256(payload.model_dump_json().encode()).hexdigest()
+
+    def _persist_receipt_conn(
+        self,
+        conn: sqlite3.Connection,
+        payload: DispatchProgressEventV1 | DispatchProgressHeartbeatV1,
+        result: ProgressIngestResult,
+    ) -> None:
+        conn.execute(
+            """
+            INSERT INTO dispatch_receipts(
+                dispatch_id,idempotency_key,kind,sequence,payload_hash,
+                result_status,accepted,created_at,replay_expires_at
+            ) VALUES(?,?,?,?,?,?,?,?,NULL)
+            """,
+            (
+                payload.dispatch_id,
+                payload.idempotency_key,
+                payload.kind.value,
+                payload.sequence,
+                self._payload_hash(payload),
+                result.status,
+                int(result.accepted),
+                datetime.now(UTC).isoformat(),
+            ),
+        )
+
+    def _save(
+        self, records: DispatchRecord | Any | None = None, *, durability: str = "normal"
+    ) -> None:
+        """Persist only explicitly changed dispatch rows, never the full ledger."""
+        if records is None:
+            raise RuntimeError("incremental dispatch save requires explicit records")
+        if isinstance(records, DispatchRecord):
+            selected = [records]
+        else:
+            selected = list(records)
+        with self._transaction(durability=durability) as conn:
+            for record in selected:
+                self._persist_record_conn(conn, record)
+        for record in selected:
+            self._update_latest_card_record_locked(record)
+        self._write_rows += len(selected)
+
     def get(self, dispatch_id: str) -> DispatchRecord | None:
-        with self._lock:
-            return self._records.get(dispatch_id)
+        return self._records.get(dispatch_id)
 
     def list(
         self, *, target_instance_id: str | None = None, limit: int = 100
     ) -> list[DispatchRecord]:
-        with self._lock:
-            self._refresh_queue_positions_locked()
-            records = list(self._records.values())
-        if target_instance_id:
-            records = [
-                record
-                for record in records
-                if record.target_instance_id == target_instance_id
-            ]
-        return sorted(records, key=lambda record: record.updated_at, reverse=True)[
-            :limit
+        with self._read_connection() as conn:
+            if target_instance_id:
+                rows = conn.execute(
+                    "SELECT dispatch_id FROM dispatches WHERE target_instance_id=? "
+                    "ORDER BY updated_at DESC LIMIT ?",
+                    (target_instance_id, limit),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT dispatch_id FROM dispatches ORDER BY updated_at DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+        return [
+            self._records[row["dispatch_id"]]
+            for row in rows
+            if row["dispatch_id"] in self._records
         ]
 
     def latest_by_card(self, card_ids: set[str]) -> dict[str, DispatchRecord]:
         """Return one useful dispatch per requested card without copying history."""
         if not card_ids:
             return {}
-        with self._lock:
-            return {
-                card_id: self._latest_card_records[card_id]
-                for card_id in card_ids
-                if card_id in self._latest_card_records
-            }
+        with self._read_connection() as conn:
+            placeholders = ",".join("?" for _ in card_ids)
+            rows = conn.execute(
+                f"SELECT dispatch_id,card_id FROM dispatches WHERE card_id IN ({placeholders}) "
+                "ORDER BY updated_at DESC",
+                tuple(card_ids),
+            ).fetchall()
+        selected: dict[str, DispatchRecord] = {}
+        for row in rows:
+            record = self._records.get(row["dispatch_id"])
+            if not record:
+                continue
+            current = selected.get(row["card_id"])
+            if current is None or self._prefer_card_record(record, current):
+                selected[row["card_id"]] = record
+        return selected
 
     def capacity_snapshot(self, target_instance_id: str) -> dict[str, Any]:
         """Return authority-local reservations and waiting work for one target."""
@@ -646,12 +1189,18 @@ class DispatchStore:
             }
 
     def by_session(self, session_id: str) -> DispatchRecord | None:
-        with self._lock:
-            matches = sorted(
-                (r for r in self._records.values() if r.session_id == session_id),
-                key=lambda record: record.updated_at,
-                reverse=True,
-            )
+        with self._read_connection() as conn:
+            rows = conn.execute(
+                "SELECT dispatch_id FROM dispatches WHERE session_id=? "
+                "ORDER BY CASE WHEN state IN ('completed','acknowledged','cancelled') "
+                "THEN 1 ELSE 0 END, updated_at DESC LIMIT 1",
+                (session_id,),
+            ).fetchall()
+        matches = [
+            self._records[row["dispatch_id"]]
+            for row in rows
+            if row["dispatch_id"] in self._records
+        ]
         return next(
             (
                 record
@@ -664,30 +1213,24 @@ class DispatchStore:
     def by_idempotency(
         self, target_instance_id: str, idempotency_key: str
     ) -> DispatchRecord | None:
-        with self._lock:
-            return next(
-                (
-                    record
-                    for record in self._records.values()
-                    if record.target_instance_id == target_instance_id
-                    and record.idempotency_key == idempotency_key
-                ),
-                None,
-            )
+        with self._read_connection() as conn:
+            row = conn.execute(
+                "SELECT dispatch_id FROM dispatches WHERE target_instance_id=? "
+                "AND idempotency_key=? ORDER BY updated_at DESC LIMIT 1",
+                (target_instance_id, idempotency_key),
+            ).fetchone()
+        return self._records.get(row["dispatch_id"]) if row else None
 
     def by_authority_idempotency(
         self, authority_instance_id: str, idempotency_key: str
     ) -> DispatchRecord | None:
-        with self._lock:
-            return next(
-                (
-                    record
-                    for record in self._records.values()
-                    if record.authority_instance_id == authority_instance_id
-                    and record.idempotency_key == idempotency_key
-                ),
-                None,
-            )
+        with self._read_connection() as conn:
+            row = conn.execute(
+                "SELECT dispatch_id FROM dispatches WHERE authority_instance_id=? "
+                "AND idempotency_key=? ORDER BY updated_at DESC LIMIT 1",
+                (authority_instance_id, idempotency_key),
+            ).fetchone()
+        return self._records.get(row["dispatch_id"]) if row else None
 
     @staticmethod
     def _class_key(record: DispatchRecord) -> str:
@@ -978,7 +1521,7 @@ class DispatchStore:
             record.updated_at = datetime.now(UTC)
             self._records[record.dispatch_id] = record
             self._refresh_queue_positions_locked()
-            self._save()
+            self._save(record, durability="full")
             if capacity:
                 logger.info(
                     "fleet capacity reservation admitted dispatch=%s target=%s "
@@ -1010,7 +1553,7 @@ class DispatchStore:
                 raise ValueError("dispatch id already belongs to another mutation")
             record.updated_at = datetime.now(UTC)
             self._records[record.dispatch_id] = record
-            self._save()
+            self._save(record, durability="full")
         return record
 
     def retry_with_capacity(
@@ -1099,7 +1642,7 @@ class DispatchStore:
             )
             current.updated_at = now
             self._refresh_queue_positions_locked()
-            self._save()
+            self._save(current, durability="full")
             return current
 
     def allocate_progress_sequence(self, dispatch_id: str) -> int:
@@ -1111,7 +1654,7 @@ class DispatchStore:
             sequence = max(1, record.progress_next_sequence)
             record.progress_next_sequence = sequence + 1
             record.updated_at = datetime.now(UTC)
-            self._save()
+            self._save(record)
             return sequence
 
     @staticmethod
@@ -1200,7 +1743,7 @@ class DispatchStore:
             record.authority_url = authority_url
             record.card_version = authority_version
             record.updated_at = datetime.now(UTC)
-            self._save()
+            self._save(record, durability="full")
             return record
 
     def ingest_progress(
@@ -1215,7 +1758,11 @@ class DispatchStore:
             self._validate_progress_provenance(record, sanitized)
             if delivered and sanitized.delivered_at is None:
                 sanitized.delivered_at = datetime.now(UTC)
-            if sanitized.idempotency_key in record.progress_seen_keys:
+            receipt = self._conn.execute(
+                "SELECT 1 FROM dispatch_receipts WHERE dispatch_id=? AND idempotency_key=?",
+                (record.dispatch_id, sanitized.idempotency_key),
+            ).fetchone()
+            if receipt:
                 return ProgressIngestResult(
                     accepted=True,
                     status="duplicate",
@@ -1231,21 +1778,35 @@ class DispatchStore:
                 ),
                 None,
             )
-            if same_sequence:
+            durable_sequence = self._conn.execute(
+                "SELECT 1 FROM dispatch_receipts WHERE dispatch_id=? AND sequence=? "
+                "AND kind IN ('checkpoint','final','progress') LIMIT 1",
+                (record.dispatch_id, sanitized.sequence),
+            ).fetchone()
+            original = record.model_copy(deep=True)
+            if same_sequence or durable_sequence:
                 record.progress_conflicts += 1
                 record.progress_seen_keys.append(sanitized.idempotency_key)
                 record.progress_seen_keys = record.progress_seen_keys[
                     -MAX_PROGRESS_SEEN_KEYS:
                 ]
                 record.updated_at = datetime.now(UTC)
-                self._save()
-                return ProgressIngestResult(
+                result = ProgressIngestResult(
                     accepted=False,
                     status="conflict",
                     dispatch_id=record.dispatch_id,
                     sequence=sanitized.sequence,
                     idempotency_key=sanitized.idempotency_key,
                 )
+                try:
+                    with self._transaction() as conn:
+                        self._persist_receipt_conn(conn, sanitized, result)
+                        self._persist_record_conn(conn, record)
+                except BaseException:
+                    self._records[record.dispatch_id] = original
+                    raise
+                self._write_rows += 2
+                return result
             latest = record.latest_progress
             if (
                 latest
@@ -1259,14 +1820,22 @@ class DispatchStore:
                     -MAX_PROGRESS_SEEN_KEYS:
                 ]
                 record.updated_at = datetime.now(UTC)
-                self._save()
-                return ProgressIngestResult(
+                result = ProgressIngestResult(
                     accepted=True,
                     status="coalesced",
                     dispatch_id=record.dispatch_id,
                     sequence=sanitized.sequence,
                     idempotency_key=sanitized.idempotency_key,
                 )
+                try:
+                    with self._transaction() as conn:
+                        self._persist_receipt_conn(conn, sanitized, result)
+                        self._persist_record_conn(conn, record)
+                except BaseException:
+                    self._records[record.dispatch_id] = original
+                    raise
+                self._write_rows += 2
+                return result
             previous_max = max(
                 (item.sequence for item in record.progress_events), default=0
             )
@@ -1274,7 +1843,28 @@ class DispatchStore:
             record.progress_events.sort(
                 key=lambda item: (item.sequence, item.occurred_at, item.idempotency_key)
             )
-            record.progress_events = record.progress_events[-MAX_PROGRESS_EVENTS:]
+            removed: list[DispatchProgressEventV1] = []
+            retained_bytes = sum(
+                len(item.model_dump_json().encode())
+                for item in record.progress_events
+            )
+            while (
+                len(record.progress_events) > MAX_PROGRESS_EVENTS
+                or retained_bytes > self.MAX_PROGRESS_BYTES_PER_DISPATCH
+            ):
+                candidate = next(
+                    (
+                        item
+                        for item in record.progress_events
+                        if not self._progress_protected(item)
+                    ),
+                    None,
+                )
+                if candidate is None:
+                    break
+                record.progress_events.remove(candidate)
+                removed.append(candidate)
+                retained_bytes -= len(candidate.model_dump_json().encode())
             record.progress_seen_keys.append(sanitized.idempotency_key)
             record.progress_seen_keys = record.progress_seen_keys[
                 -MAX_PROGRESS_SEEN_KEYS:
@@ -1284,14 +1874,30 @@ class DispatchStore:
                 record.progress_next_sequence, sanitized.sequence + 1
             )
             record.updated_at = datetime.now(UTC)
-            self._save()
-            return ProgressIngestResult(
+            result = ProgressIngestResult(
                 accepted=True,
                 status="late" if sanitized.sequence < previous_max else "accepted",
                 dispatch_id=record.dispatch_id,
                 sequence=sanitized.sequence,
                 idempotency_key=sanitized.idempotency_key,
             )
+            try:
+                with self._transaction() as conn:
+                    self._persist_event_conn(conn, sanitized)
+                    self._persist_receipt_conn(conn, sanitized, result)
+                    for stale in removed:
+                        conn.execute(
+                            "DELETE FROM dispatch_progress_events "
+                            "WHERE dispatch_id=? AND idempotency_key=?",
+                            (record.dispatch_id, stale.idempotency_key),
+                        )
+                    self._persist_record_conn(conn, record)
+            except BaseException:
+                self._records[record.dispatch_id] = original
+                raise
+            self._write_rows += 3 + len(removed)
+            self._retention_actions += len(removed)
+            return result
 
     def ingest_heartbeat(
         self,
@@ -1306,7 +1912,11 @@ class DispatchStore:
             if not record:
                 raise ValueError("dispatch not found")
             self._validate_progress_provenance(record, sanitized)
-            if sanitized.idempotency_key in record.progress_seen_keys:
+            receipt = self._conn.execute(
+                "SELECT 1 FROM dispatch_receipts WHERE dispatch_id=? AND idempotency_key=?",
+                (record.dispatch_id, sanitized.idempotency_key),
+            ).fetchone()
+            if receipt:
                 return ProgressIngestResult(
                     accepted=True,
                     status="duplicate",
@@ -1314,20 +1924,30 @@ class DispatchStore:
                     sequence=sanitized.sequence,
                     idempotency_key=sanitized.idempotency_key,
                 )
+            original = record.model_copy(deep=True)
             current = record.progress_heartbeat
             if current and sanitized.sequence < current.sequence:
                 record.progress_seen_keys.append(sanitized.idempotency_key)
                 record.progress_seen_keys = record.progress_seen_keys[
                     -MAX_PROGRESS_SEEN_KEYS:
                 ]
-                self._save()
-                return ProgressIngestResult(
+                record.updated_at = datetime.now(UTC)
+                result = ProgressIngestResult(
                     accepted=True,
                     status="late",
                     dispatch_id=record.dispatch_id,
                     sequence=sanitized.sequence,
                     idempotency_key=sanitized.idempotency_key,
                 )
+                try:
+                    with self._transaction() as conn:
+                        self._persist_receipt_conn(conn, sanitized, result)
+                        self._persist_record_conn(conn, record)
+                except BaseException:
+                    self._records[record.dispatch_id] = original
+                    raise
+                self._write_rows += 2
+                return result
             if delivered and sanitized.delivered_at is None:
                 sanitized.delivered_at = datetime.now(UTC)
             record.progress_heartbeat = sanitized
@@ -1340,14 +1960,25 @@ class DispatchStore:
                 record.progress_next_sequence, sanitized.sequence + 1
             )
             record.updated_at = datetime.now(UTC)
-            self._save()
-            return ProgressIngestResult(
+            result = ProgressIngestResult(
                 accepted=True,
                 status="accepted",
                 dispatch_id=record.dispatch_id,
                 sequence=sanitized.sequence,
                 idempotency_key=sanitized.idempotency_key,
             )
+            try:
+                # NORMAL WAL commits acknowledge process-crash durability without
+                # issuing an fsync for every replaceable observational heartbeat.
+                with self._transaction() as conn:
+                    self._persist_heartbeat_conn(conn, sanitized)
+                    self._persist_receipt_conn(conn, sanitized, result)
+                    self._persist_record_conn(conn, record)
+            except BaseException:
+                self._records[record.dispatch_id] = original
+                raise
+            self._write_rows += 3
+            return result
 
     def pending_progress(
         self, originating_instance_id: str
@@ -1401,7 +2032,13 @@ class DispatchStore:
             payload.delivered_at = datetime.now(UTC)
             payload.delivery_error = None
             record.updated_at = datetime.now(UTC)
-            self._save()
+            with self._transaction() as conn:
+                if isinstance(payload, DispatchProgressHeartbeatV1):
+                    self._persist_heartbeat_conn(conn, payload)
+                else:
+                    self._persist_event_conn(conn, payload)
+                self._persist_record_conn(conn, record)
+            self._write_rows += 2
 
     def mark_progress_delivery_failed(
         self, dispatch_id: str, idempotency_key: str, error: str
@@ -1424,7 +2061,13 @@ class DispatchStore:
             payload.delivery_attempts += 1
             payload.delivery_error = sanitize_text(error, limit=240)
             record.updated_at = datetime.now(UTC)
-            self._save()
+            with self._transaction() as conn:
+                if isinstance(payload, DispatchProgressHeartbeatV1):
+                    self._persist_heartbeat_conn(conn, payload)
+                else:
+                    self._persist_event_conn(conn, payload)
+                self._persist_record_conn(conn, record)
+            self._write_rows += 2
 
     def build_final_report(
         self, dispatch_id: str, result: dict[str, Any]
@@ -1486,7 +2129,7 @@ class DispatchStore:
                 raise ValueError("dispatch not found")
             record.final_report = sanitize_completion_report(report)
             record.updated_at = datetime.now(UTC)
-            self._save()
+            self._save(record, durability="full")
             return record
 
     def transition(
@@ -1635,7 +2278,7 @@ class DispatchStore:
                 record.updated_at = checked_at
                 expired.append(record)
             if expired:
-                self._save()
+                self._save(expired, durability="full")
                 logger.warning(
                     "fleet capacity reservations timed out count=%s dispatches=%s",
                     len(expired),
@@ -1702,7 +2345,7 @@ class DispatchStore:
                 )
                 current.updated_at = datetime.now(UTC)
                 self._refresh_queue_positions_locked()
-                self._save()
+                self._save(current)
                 return False
             now = datetime.now(UTC)
             current.state = "queued"
@@ -1724,7 +2367,7 @@ class DispatchStore:
             )
             current.updated_at = now
             self._refresh_queue_positions_locked()
-            self._save()
+            self._save(current, durability="full")
             return True
 
     def block_waiting(
@@ -1739,7 +2382,7 @@ class DispatchStore:
             current.queue_wait_reason = sanitize_text(reason, limit=500)
             current.updated_at = datetime.now(UTC)
             self._refresh_queue_positions_locked()
-            self._save()
+            self._save(current, durability="full")
             return current
 
     def reprioritize(
@@ -1775,7 +2418,7 @@ class DispatchStore:
             )
             current.updated_at = datetime.now(UTC)
             self._refresh_queue_positions_locked()
-            self._save()
+            self._save(current, durability="full")
             return current
 
     def queue_snapshot(self) -> dict[str, Any]:
@@ -1822,7 +2465,213 @@ class DispatchStore:
                 "starvation_count": starvation,
             },
             "alerts": (["dispatch_queue_starvation"] if starvation else []),
+            "storage": self.storage_metrics(),
         }
+
+    @staticmethod
+    def _percentile(values: deque[float], percentile: float) -> float:
+        if not values:
+            return 0.0
+        ordered = sorted(values)
+        index = min(len(ordered) - 1, max(0, int(len(ordered) * percentile) - 1))
+        return round(ordered[index], 3)
+
+    def storage_metrics(self) -> dict[str, Any]:
+        """Expose bounded ledger health without deserializing historical payloads."""
+        with self._lock:
+            counts = {
+                "dispatches": self._conn.execute(
+                    "SELECT COUNT(*) FROM dispatches"
+                ).fetchone()[0],
+                "progress_events": self._conn.execute(
+                    "SELECT COUNT(*) FROM dispatch_progress_events"
+                ).fetchone()[0],
+                "heartbeats": self._conn.execute(
+                    "SELECT COUNT(*) FROM dispatch_heartbeats"
+                ).fetchone()[0],
+                "receipts": self._conn.execute(
+                    "SELECT COUNT(*) FROM dispatch_receipts"
+                ).fetchone()[0],
+                "final_reports": sum(
+                    record.final_report is not None
+                    for record in self._records.values()
+                ),
+            }
+            sizes = {}
+            for label, path in (
+                ("database", self.db_path),
+                ("wal", Path(str(self.db_path) + "-wal")),
+                ("shm", Path(str(self.db_path) + "-shm")),
+                ("legacy_source", self.path),
+                ("legacy_backup", self.backup_path),
+            ):
+                try:
+                    sizes[label] = path.stat().st_size
+                except OSError:
+                    sizes[label] = 0
+            migration = self._migration_meta() or {"state": "unknown"}
+            return {
+                "schema_version": self.SCHEMA_VERSION,
+                "journal_mode": "wal",
+                "synchronous": "normal",
+                "store_bytes": sum(
+                    sizes[key] for key in ("database", "wal", "shm")
+                ),
+                "bytes": sizes,
+                "rows": counts,
+                "writes": {
+                    "commits": self._commits,
+                    "rows": self._write_rows,
+                    "queue_depth": self._queued_writers,
+                    "latency_ms": {
+                        "p50": self._percentile(self._commit_latencies_ms, 0.50),
+                        "p99": self._percentile(self._commit_latencies_ms, 0.99),
+                        "max": round(max(self._commit_latencies_ms, default=0.0), 3),
+                    },
+                },
+                "checkpoint": {
+                    "runs": len(self._checkpoint_latencies_ms),
+                    "cost_ms_p99": self._percentile(
+                        self._checkpoint_latencies_ms, 0.99
+                    ),
+                    "cost_ms_max": round(
+                        max(self._checkpoint_latencies_ms, default=0.0), 3
+                    ),
+                },
+                "retention": {
+                    "actions": self._retention_actions,
+                    "max_events_per_dispatch": MAX_PROGRESS_EVENTS,
+                    "max_bytes_per_dispatch": self.MAX_PROGRESS_BYTES_PER_DISPATCH,
+                    "receipt_replay_days": self.RECEIPT_REPLAY_DAYS,
+                },
+                "migration": migration,
+            }
+
+    def checkpoint(self, *, truncate: bool = False) -> dict[str, Any]:
+        """Run an explicit observable WAL checkpoint outside mutation commits."""
+        with self._lock:
+            started = time.perf_counter()
+            row = self._conn.execute(
+                f"PRAGMA wal_checkpoint({'TRUNCATE' if truncate else 'PASSIVE'})"
+            ).fetchone()
+            elapsed = (time.perf_counter() - started) * 1000
+            self._checkpoint_latencies_ms.append(elapsed)
+            return {
+                "busy": int(row[0]),
+                "wal_pages": int(row[1]),
+                "checkpointed_pages": int(row[2]),
+                "duration_ms": round(elapsed, 3),
+                "truncated": truncate,
+            }
+
+    def compact(self, *, now: datetime | None = None) -> dict[str, int]:
+        """Expire closed-horizon detail while fencing active/evaluator evidence."""
+        current = now or datetime.now(UTC)
+        cutoff = current - timedelta(days=self.RECEIPT_REPLAY_DAYS)
+        removed_events = 0
+        removed_receipts = 0
+        with self._lock:
+            safe: list[DispatchRecord] = []
+            for record in self._records.values():
+                if not (
+                    record.state in TERMINAL_DISPATCH_STATES | {"acknowledged"}
+                    and record.acknowledged_at
+                    and record.final_report
+                    and record.post_turn_evaluations
+                    and not any(
+                        turn.get("delivery_state") == "pending"
+                        for turn in record.followup_turns
+                    )
+                    and all(
+                        event.delivered_at is not None for event in record.progress_events
+                    )
+                    and (
+                        record.progress_heartbeat is None
+                        or record.progress_heartbeat.delivered_at is not None
+                    )
+                ):
+                    continue
+                safe.append(record)
+            if not safe:
+                return {"events": 0, "receipts": 0}
+            with self._transaction() as conn:
+                for record in safe:
+                    stale = [
+                        event
+                        for event in record.progress_events
+                        if event.occurred_at < cutoff
+                        and not self._progress_protected(event)
+                    ]
+                    for event in stale:
+                        conn.execute(
+                            "DELETE FROM dispatch_progress_events "
+                            "WHERE dispatch_id=? AND idempotency_key=?",
+                            (record.dispatch_id, event.idempotency_key),
+                        )
+                        record.progress_events.remove(event)
+                    protected_keys = {
+                        event.idempotency_key for event in record.progress_events
+                    }
+                    if record.progress_heartbeat:
+                        protected_keys.add(record.progress_heartbeat.idempotency_key)
+                    if protected_keys:
+                        placeholders = ",".join("?" for _ in protected_keys)
+                        cursor = conn.execute(
+                            "DELETE FROM dispatch_receipts WHERE dispatch_id=? "
+                            f"AND created_at<? AND idempotency_key NOT IN ({placeholders})",
+                            (record.dispatch_id, cutoff.isoformat(), *protected_keys),
+                        )
+                    else:
+                        cursor = conn.execute(
+                            "DELETE FROM dispatch_receipts WHERE dispatch_id=? AND created_at<?",
+                            (record.dispatch_id, cutoff.isoformat()),
+                        )
+                    removed_events += len(stale)
+                    removed_receipts += max(0, cursor.rowcount)
+                    self._persist_record_conn(conn, record)
+            self._retention_actions += removed_events + removed_receipts
+            self._write_rows += removed_events + removed_receipts + len(safe)
+        return {"events": removed_events, "receipts": removed_receipts}
+
+    def export_legacy_json(self, destination: Path) -> dict[str, Any]:
+        """Create an atomic downgrade/rollback export with every durable receipt."""
+        if destination.resolve() in {self.path.resolve(), self.backup_path.resolve()}:
+            raise ValueError("refusing to overwrite migration source or verified backup")
+        with self._lock:
+            payload: dict[str, Any] = {}
+            for dispatch_id, record in self._records.items():
+                data = record.model_dump(mode="json")
+                data["progress_seen_keys"] = [
+                    row["idempotency_key"]
+                    for row in self._conn.execute(
+                        "SELECT idempotency_key FROM dispatch_receipts "
+                        "WHERE dispatch_id=? ORDER BY created_at,idempotency_key",
+                        (dispatch_id,),
+                    ).fetchall()
+                ]
+                payload[dispatch_id] = data
+            text = json.dumps(payload, indent=2) + "\n"
+            atomic_write_text(destination, text)
+            return {
+                "path": str(destination),
+                "sha256": self._checksum(text.encode()),
+                "dispatches": len(payload),
+                "progress_events": sum(
+                    len(record.progress_events) for record in self._records.values()
+                ),
+                "receipts": sum(
+                    len(data["progress_seen_keys"]) for data in payload.values()
+                ),
+            }
+
+    def close(self) -> None:
+        """Drain committed WAL state and close the store without dropping writes."""
+        with self._lock:
+            if getattr(self, "_conn", None) is None:
+                return
+            self.checkpoint(truncate=True)
+            self._conn.close()
+            self._conn = None
 
     def runnable(self) -> list[DispatchRecord]:
         self.expire_capacity_reservations()
