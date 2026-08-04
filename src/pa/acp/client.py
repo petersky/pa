@@ -905,28 +905,24 @@ class AgentConnection:
         self.session_cwd = session_cwd
         restored = False
         session_meta: dict[str, Any] = {}
-        restore_method = (
-            "session/resume"
-            if self._resume_supported
-            else "session/load"
-            if self._load_supported
-            else None
-        )
-        if resume_external_id and restore_method:
-            load_cwd = session_cwd
-            skip_restore = False
-            if restore_method == "session/load" and self._list_supported:
-                resolved = await _resolve_session_load_target(
-                    self._conn,
-                    session_id=resume_external_id,
-                    cwd=session_cwd,
-                )
-                if resolved is None:
-                    skip_restore = True
-                else:
+        restore_methods = []
+        if self._resume_supported:
+            restore_methods.append("session/resume")
+        if self._load_supported:
+            restore_methods.append("session/load")
+        if resume_external_id:
+            for restore_method in restore_methods:
+                load_cwd = session_cwd
+                if restore_method == "session/load" and self._list_supported:
+                    resolved = await _resolve_session_load_target(
+                        self._conn,
+                        session_id=resume_external_id,
+                        cwd=session_cwd,
+                    )
+                    if resolved is None:
+                        continue
                     resume_external_id, load_cwd = resolved
                     self.session_cwd = load_cwd
-            if not skip_restore:
                 await self._abort_connect_if_shutting_down(stage=restore_method)
                 try:
                     restore = (
@@ -951,15 +947,13 @@ class AgentConnection:
                     )
                     session_meta = extract_models_modes_config(restore_resp)
                     restored = True
+                    break
                 except Exception as exc:
-                    # Cursor wraps unknown session ids as Invalid params with
-                    # data.message "Session … not found"; fall back quietly.
                     logger.warning(
-                        "ACP %s failed (%s); creating new session",
+                        "ACP %s failed (%s); trying the next restore method",
                         restore_method,
                         _format_acp_error(exc),
                     )
-                    restored = False
 
         if restored:
             if existing_session:

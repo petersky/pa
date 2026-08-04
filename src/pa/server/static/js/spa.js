@@ -1911,23 +1911,31 @@
         });
       return;
     }
-    var agentButton = event.target.closest("[data-card-agent-start]");
+    var agentButton = event.target.closest("[data-card-agent-start-new], [data-card-agent-select]");
     if (agentButton) {
-      var pane = detail.querySelector("[data-card-agent-pane]");
+      var startingNew = agentButton.hasAttribute("data-card-agent-start-new");
+      var pane = detail.querySelector('[data-card-agent-pane="' + (startingNew ? "new" : "existing") + '"]');
       if (!pane) return;
+      detail.querySelectorAll("[data-card-agent-pane]").forEach(function (candidate) { candidate.hidden = candidate !== pane; });
       pane.hidden = false;
       if (window.PAAgentChat && typeof window.PAAgentChat.mount === "function") {
         window.PAAgentChat.mount(pane);
       }
       var widget = pane.querySelector("[data-agent-chat]");
-      if (widget && widget._acw && !widget.dataset.explicitlyStarted) {
+      if (widget && widget._acw) {
+        if (!startingNew) {
+          var selectedId = agentButton.dataset.cardAgentSelect;
+          var ownerId = agentButton.dataset.ownerInstanceId || "";
+          widget._acw.openSession(selectedId, ownerId, {replace: true}).then(function () {
+            if (agentButton.dataset.resume === "1") return widget._acw.recoverSession(selectedId);
+          }).catch(function () {});
+          return;
+        }
+        if (widget.dataset.explicitlyStarted) return;
         widget.dataset.explicitlyStarted = "1";
         agentButton.disabled = true;
-        agentButton.textContent = widget.dataset.sessionId ? "Resuming…" : "Starting…";
+        agentButton.textContent = "Starting…";
         widget._acw.init();
-        window.setTimeout(function () {
-          agentButton.hidden = true;
-        }, 250);
       }
     }
   });

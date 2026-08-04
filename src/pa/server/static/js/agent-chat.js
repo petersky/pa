@@ -600,6 +600,7 @@
       card_id: this.cardId || null,
       title: this.cardId ? "Card agent" : null,
     };
+    if (this.root.dataset.fresh === "1") body.fresh = true;
     if (this.preferredProvider) body.provider = this.preferredProvider;
     const boot = this.api("/sessions", {
       method: "POST",

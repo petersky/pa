@@ -8,7 +8,11 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 from pa.acp.client import AgentConnection
 from pa.config import Settings
 from pa.domain.models import AgentSession, TranscriptEvent
-from pa.instance.agent_session import AgentSessionManager, AgentSessionRuntime
+from pa.instance.agent_session import (
+    AgentSessionManager,
+    AgentSessionRecoveryError,
+    AgentSessionRuntime,
+)
 from pa.instance.quiesce import QueuedPrompt, QuiesceSnapshot, SessionSnapshot
 
 
@@ -1021,6 +1025,63 @@ class AgentSessionLiveEventTests(unittest.TestCase):
             self.assertIs(first, runtime)
             self.assertIs(second, runtime)
             self.assertEqual(manager.create_session.await_count, 1)
+
+    def test_concurrent_recovery_of_closed_resumable_session_keeps_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            session = AgentSession(
+                id="session-closed",
+                agent_name="codex",
+                external_session_id="provider-closed",
+                origin_instance_id="local",
+                status="closed",
+            )
+            store = MagicMock()
+            store.get_session.return_value = session
+            manager = AgentSessionManager(
+                Settings(data_dir=Path(tmp), instance_id="local"), store
+            )
+            runtime = MagicMock()
+            runtime._closed = False
+
+            async def create(**_kwargs):
+                await asyncio.sleep(0.01)
+                manager._runtimes[session.id] = runtime
+                return runtime
+
+            manager.create_session = AsyncMock(side_effect=create)
+
+            async def recover_both():
+                return await asyncio.gather(
+                    manager.recover_session(session.id),
+                    manager.recover_session(session.id),
+                )
+
+            first, second = asyncio.run(recover_both())
+            self.assertIs(first, runtime)
+            self.assertIs(second, runtime)
+            self.assertEqual(manager.create_session.await_count, 1)
+            kwargs = manager.create_session.await_args.kwargs
+            self.assertIs(kwargs["existing"], session)
+            self.assertEqual(kwargs["resume_external_id"], "provider-closed")
+
+    def test_cross_instance_session_cannot_be_recovered_locally(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            session = AgentSession(
+                id="session-remote",
+                agent_name="codex",
+                external_session_id="provider-remote",
+                origin_instance_id="remote",
+                status="closed",
+            )
+            store = MagicMock()
+            store.get_session.return_value = session
+            manager = AgentSessionManager(
+                Settings(data_dir=Path(tmp), instance_id="local"), store
+            )
+            with self.assertRaisesRegex(
+                AgentSessionRecoveryError, "belongs to another instance"
+            ):
+                asyncio.run(manager.recover_session(session.id))
 
     def test_prompt_lazily_recovers_deferred_idle_session(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

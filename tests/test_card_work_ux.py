@@ -876,7 +876,8 @@ class CoreWorkUiRouteTests(unittest.TestCase):
         css = (root / "static" / "style.css").read_text()
         new_card = (root / "templates" / "partials" / "card-new.html").read_text()
 
-        self.assertIn("data-card-agent-start", agent_detail)
+        self.assertIn("data-card-agent-start-new", agent_detail)
+        self.assertIn("data-card-agent-select", agent_detail)
         self.assertIn("auto_start=false", agent_detail)
         self.assertIn('hx-preserve="true"', agent_detail)
         self.assertIn("Selecting a card never starts work", agent_detail)

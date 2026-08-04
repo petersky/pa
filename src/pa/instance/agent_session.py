@@ -3454,10 +3454,19 @@ class AgentSessionManager:
             )
             if session is None:
                 raise AgentSessionRecoveryError("PA session was deleted")
-            if session.status == "closed":
-                raise AgentSessionRecoveryError("PA session is closed")
+            if session.status == "closed" and not session.external_session_id:
+                raise AgentSessionRecoveryError(
+                    "PA session is closed and has no resumable provider identity"
+                )
             if session.status == RECOVERY_BLOCKED_STATUS:
                 raise AgentSessionRecoveryError("PA session recovery is blocked")
+            if (
+                session.origin_instance_id
+                and session.origin_instance_id != self.settings.instance_id
+            ):
+                raise AgentSessionRecoveryError(
+                    "PA session belongs to another instance and is unavailable locally"
+                )
             if not provider_override and session.agent_name not in known_provider_ids():
 
                 def resolve_rollout_provider() -> str:

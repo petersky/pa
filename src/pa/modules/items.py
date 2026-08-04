@@ -561,16 +561,59 @@ def _card_summary_context(request: Request, card) -> dict:
     }
 
 
+def _card_session_view(session, local_instance_id: str) -> dict:
+    owner_id = session.origin_instance_id or local_instance_id
+    local = owner_id == local_instance_id
+    failed = session.status in {"failed", "error", "recovery_blocked"}
+    if failed:
+        state, detail = (
+            "failed",
+            "Recovery failed; start a new session or retry after resolving the error.",
+        )
+    elif not local:
+        state, detail = (
+            "unavailable",
+            "Owned by another instance; history remains available here.",
+        )
+    elif (
+        session.status not in {"idle", "connected", "prompting"}
+        and session.external_session_id
+    ):
+        state, detail = (
+            "resumable",
+            "Closed locally; the provider thread can be resumed or loaded.",
+        )
+    elif session.status not in {"idle", "connected", "prompting"}:
+        state, detail = "unavailable", "Not active and has no resumable provider identity."
+    else:
+        state, detail = "active", "Active on this instance and ready to select."
+    return {
+        "session": session,
+        "owner_id": owner_id,
+        "state": state,
+        "detail": detail,
+        "selectable": state in {"active", "resumable"},
+        "resumable": state == "resumable",
+    }
+
+
 def _card_agent_context(request: Request, card) -> dict:
     store = get_store()
     ctx = request.app.state.ctx
     related_sessions = [
         session for session in store.list_sessions() if session.card_id == card.id
     ]
-    current_session = next(
-        (session for session in related_sessions if session.status != "closed"),
-        None,
+    session_views = [
+        _card_session_view(session, ctx.settings.instance_id)
+        for session in related_sessions
+    ]
+    # Store order is updated_at DESC. Prefer the most recently updated active
+    # local session, then the most recently updated closed-but-resumable one.
+    current_view = next(
+        (view for view in session_views if view["state"] == "active"),
+        next((view for view in session_views if view["resumable"]), None),
     )
+    current_session = current_view["session"] if current_view else None
     dispatch_store = ctx.services.get("dispatch_store")
     dispatches = (
         [
@@ -661,6 +704,8 @@ def _card_agent_context(request: Request, card) -> dict:
     return {
         "card": card,
         "related_sessions": related_sessions,
+        "session_views": session_views,
+        "current_session_view": current_view,
         "current_session": current_session,
         "dispatches": dispatches,
         "latest_dispatch": dispatches[0] if dispatches else None,

@@ -234,6 +234,7 @@ class CreateSessionBody(BaseModel):
     dispatch_id: str | None = None
     resume: bool = False
     resume_session_id: str | None = None
+    fresh: bool = False
 
 
 def _config_option_id(runtime, requested: str) -> str:
@@ -638,7 +639,7 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                     else None
                 ),
             )
-        elif body.label:
+        elif body.label and not body.fresh:
             # Reuse a live/persisted session with the same label (e.g. card:{id}).
             async with mgr.label_lock(body.label):
                 existing = None
