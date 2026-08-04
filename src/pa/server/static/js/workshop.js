@@ -80,12 +80,13 @@
 
   function orderSearchText(order) {
     return [order.title, order.lane_label, order.dispatch_label, order.activity_label,
-      order.freshness_label, order.outcome_label,
+      order.freshness_label, order.progress_freshness_label, order.outcome_label,
       order.location && order.location.name,
       order.card && order.card.project && order.card.project.title,
       order.session && order.session.title,
       order.reservation && order.reservation.state_label,
-      order.reservation && order.reservation.reason].filter(Boolean).join(" ").toLowerCase();
+      order.reservation && order.reservation.reason,
+      (order.attention_reasons || []).join(" ")].filter(Boolean).join(" ").toLowerCase();
   }
 
   function matches(order) {
@@ -132,6 +133,21 @@
       '">' + escapeHtml(label) + "</span>";
   }
 
+  function attentionSummary(order) {
+    var axisLabels = {
+      card: "Card", dispatch: "Dispatch", session: "Session", reservation: "Reservation",
+      progress: "Progress", card_disposition: "Card disposition",
+      card_reconciliation: "Card reconciliation", completion_delivery: "Completion delivery"
+    };
+    var details = Array.isArray(order.attention_details) ? order.attention_details : [];
+    if (details.length) {
+      return details.map(function (detail) {
+        return (axisLabels[detail.axis] || detail.axis || "Attention") + ": " + detail.summary;
+      }).join("; ");
+    }
+    return (order.attention_reasons || []).length ? order.attention_reasons.join("; ") : "None";
+  }
+
   function orderButton(order, className) {
     var relationship = order.session ? '<span class="workshop-relationship">' +
       escapeHtml(order.session.relationship_label) + "</span>" :
@@ -140,7 +156,7 @@
       '<span class="workshop-relationship">No current session</span>';
     var attention = order.attention ? '<span class="status status-blocked">Needs attention</span>' : "";
     var accessibleState = [order.title, order.lane_label, order.dispatch_label,
-      order.activity_label, order.freshness_label, order.outcome_label,
+      order.activity_label, order.freshness_label, order.progress_freshness_label, order.outcome_label,
       order.attention ? "Needs attention" : "No attention issue"].filter(Boolean).join(", ");
     return '<button type="button" class="' + className + '" data-workshop-kind="card" ' +
       'data-workshop-id="' + escapeHtml(order.id) + '" aria-pressed="false" ' +
@@ -150,8 +166,10 @@
       '<dl class="workshop-order-states"><div><dt>Lane</dt><dd>' +
       stateCell(order.lane_label, order.lane) + "</dd></div><div><dt>Dispatch</dt><dd>" +
       stateCell(order.dispatch_label, order.dispatch_state) + "</dd></div><div><dt>Activity</dt><dd>" +
-      stateCell(order.activity_label, order.activity_state) + "</dd></div><div><dt>Freshness</dt><dd>" +
-      stateCell(order.freshness_label, order.freshness) + "</dd></div><div><dt>Outcome</dt><dd>" +
+      stateCell(order.activity_label, order.activity_state) + "</dd></div><div><dt>Session signal</dt><dd>" +
+      stateCell(order.freshness_label, order.freshness) + "</dd></div><div><dt>Progress</dt><dd>" +
+      stateCell(order.progress_freshness_label || "No progress signal", order.progress_freshness) +
+      "</dd></div><div><dt>Outcome</dt><dd>" +
       stateCell(order.outcome_label, order.evaluated_outcome) + "</dd></div></dl></button>";
   }
 
@@ -257,11 +275,12 @@
       var group = groupLabel(order);
       if (group !== currentGroup) {
         currentGroup = group;
-        rows.push('<tr class="workshop-group-row"><th colspan="6" scope="rowgroup">' +
+        rows.push('<tr class="workshop-group-row"><th colspan="7" scope="rowgroup">' +
           escapeHtml(group) + "</th></tr>");
       }
       var accessibleState = [order.title, order.lane_label, order.dispatch_label,
-        order.activity_label, order.freshness_label, order.outcome_label,
+        order.activity_label, order.freshness_label, order.progress_freshness_label,
+        order.outcome_label,
         order.attention ? "Needs attention" : "No attention issue"].filter(Boolean).join(", ");
       rows.push('<tr data-workshop-compact-row="work-order"><td data-label="Work order">' +
         '<button class="link-button" type="button" data-workshop-kind="card" data-workshop-id="' +
@@ -275,14 +294,16 @@
         '</td><td data-label="Lane">' + stateCell(order.lane_label, order.lane) +
         '</td><td data-label="Dispatch">' + stateCell(order.dispatch_label, order.dispatch_state) +
         '</td><td data-label="Activity">' + stateCell(order.activity_label, order.activity_state) +
-        '</td><td data-label="Freshness">' + stateCell(order.freshness_label, order.freshness) +
+        '</td><td data-label="Session signal">' + stateCell(order.freshness_label, order.freshness) +
+        '</td><td data-label="Progress freshness">' +
+        stateCell(order.progress_freshness_label || "No progress signal", order.progress_freshness) +
         '</td><td data-label="Evaluated outcome">' + stateCell(order.outcome_label, order.evaluated_outcome) +
         "</td></tr>");
     });
     compact.innerHTML = '<table class="data-table"><caption>Bounded operational work orders</caption>' +
       '<thead><tr><th>Work order</th><th>Card lane</th><th>Dispatch</th><th>Session activity</th>' +
-      "<th>Freshness</th><th>Evaluated outcome</th></tr></thead><tbody>" +
-      (rows.length ? rows.join("") : '<tr><td colspan="6">No work matches this view.</td></tr>') +
+      "<th>Session signal</th><th>Progress freshness</th><th>Evaluated outcome</th></tr></thead><tbody>" +
+      (rows.length ? rows.join("") : '<tr><td colspan="7">No work matches this view.</td></tr>') +
       "</tbody></table>";
   }
 
@@ -348,7 +369,7 @@
         escapeHtml(item.id) + '">Open Fleet details</a></p>';
     } else if (kind === "card") {
       var card = item.card;
-      var reasons = item.attention_reasons.length ? item.attention_reasons.join("; ") : "None";
+      var reasons = attentionSummary(item);
       var relationship = item.session ? item.session.relationship_label :
         item.reservation ? item.reservation.label + ": " + item.reservation.state_label :
         "No current session";
@@ -372,7 +393,11 @@
             "Completed" : "Not completed"],
           ["Card disposition", item.card_completion && item.card_completion.status],
           ["Reconciliation", item.card_reconciliation && item.card_reconciliation.state],
-          ["Freshness", item.freshness_label], ["Evaluated outcome", item.outcome_label],
+          ["Session signal freshness", item.freshness_label],
+          ["Dispatch progress freshness", item.progress_freshness_label],
+          ["Dispatch progress age", ageMarkup(item.progress_last_activity_at,
+            item.progress_age_seconds), true],
+          ["Evaluated outcome", item.outcome_label],
           ["Location", item.location ? item.location.name : "Not assigned"],
           ["Needs attention", reasons], ["Latest progress", item.session && item.session.latest_progress]]) +
         action + '<p class="workshop-inspector-links"><a data-workshop-focus-key="card-detail" href="' +

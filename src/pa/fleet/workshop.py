@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from copy import deepcopy
 from datetime import UTC, datetime
+from heapq import nsmallest
 from typing import Any
 
 from pa.domain.models import CardLane
@@ -99,6 +101,17 @@ FRESHNESS_LABELS = {
     "unavailable": "Unavailable",
     "unknown": "Unknown",
 }
+PROGRESS_FRESHNESS_LABELS = {
+    "fresh": "Current",
+    "live": "Current",
+    "delayed": "Delayed",
+    "stale": "Stale",
+    "stalled": "Update overdue",
+    "disconnected": "Disconnected",
+    "completed": "Completed",
+    "failed": "Failed",
+    "unavailable": "Unavailable",
+}
 OUTCOME_LABELS = {
     "success": "Successful",
     "successful": "Successful",
@@ -153,6 +166,59 @@ def _dispatch_sort_key(dispatch: dict[str, Any]) -> tuple[int, str]:
         1 if _dispatch_is_current(dispatch) else 0,
         str(dispatch.get("updated_at") or dispatch.get("created_at") or ""),
     )
+
+
+def _session_rank_key(session: dict[str, Any]) -> tuple[int, float, str]:
+    status = str(session.get("status") or "")
+    return (
+        0
+        if status in {"working", "prompting"}
+        else 1
+        if status in {"failed", "recoverable", "deferred"}
+        else 2,
+        -_time_score(session.get("updated_at")),
+        str(session.get("id") or ""),
+    )
+
+
+def _evidence_text(value: Any) -> str | None:
+    if isinstance(value, dict):
+        value = next(
+            (
+                value.get(key)
+                for key in ("summary", "message", "reason", "error", "code")
+                if value.get(key)
+            ),
+            None,
+        )
+    text = str(value or "").strip()
+    return text[:500] if text else None
+
+
+def _append_evidence(
+    details: list[dict[str, str]], axis: str, code: str, value: Any
+) -> None:
+    summary = _evidence_text(value)
+    if not summary:
+        return
+    candidate = {"axis": axis, "code": code, "summary": summary}
+    if candidate not in details:
+        details.append(candidate)
+
+
+def _sessions_for_realm(
+    sessions: list[dict[str, Any]], realm_id: str, counts: dict[str, int]
+) -> Iterator[dict[str, Any]]:
+    for session in sessions:
+        session_realm = session.get("realm_id")
+        if not session_realm:
+            counts["unknown"] += 1
+            continue
+        if session_realm != realm_id:
+            counts["other"] += 1
+            continue
+        counts["eligible"] += 1
+        yield session
 
 
 def _worker_state(session: dict[str, Any], dispatch: dict[str, Any] | None) -> str:
@@ -224,24 +290,40 @@ def build_workshop_snapshot(
     projects = {
         project.id: project for project in ctx.store.list_projects(realm_id=realm_id)
     }
+
+    def enrich_card(card_id: Any) -> None:
+        normalized = str(card_id or "")
+        if not normalized or normalized in card_by_id:
+            return
+        getter = getattr(ctx.store, "get_card", None)
+        if not callable(getter):
+            return
+        try:
+            card = getter(normalized, realm_id=realm_id)
+        except TypeError:  # Compatibility for small extension/read stores.
+            card = getter(normalized)
+        if card:
+            card_by_id[card.id] = card
+
     dispatch_store = ctx.services.get("dispatch_store")
     if dispatch_store and hasattr(dispatch_store, "current_card_ids"):
         for card_id in dispatch_store.current_card_ids(
             realm_id=realm_id, limit=WORKSHOP_PROJECTION_LIMIT
         ):
-            if card_id in card_by_id:
-                continue
-            card = ctx.store.get_card(card_id, realm_id=realm_id)
-            if card:
-                card_by_id[card.id] = card
-        cards = list(card_by_id.values())
-    session_ids = {
-        str(session.get("id"))
+            enrich_card(card_id)
+    operational_sessions = [
+        session
         for node in overview.get("nodes", [])
         for session in ((node.get("dimensions") or {}).get("activity") or {})
         .get("value", {})
         .get("sessions", [])
-        if session.get("id") and session.get("realm_id") == realm_id
+        if session.get("realm_id") == realm_id
+    ]
+    for session in operational_sessions:
+        enrich_card(session.get("card_id"))
+    cards = list(card_by_id.values())
+    session_ids = {
+        str(session.get("id")) for session in operational_sessions if session.get("id")
     }
     if dispatch_store and hasattr(dispatch_store, "latest_by_card"):
         latest_records = dispatch_store.latest_by_card(
@@ -389,6 +471,86 @@ def build_workshop_snapshot(
             "state": "not_requested",
             "reason": None,
         }
+        completion_delivery = (dispatch or {}).get("completion_outbox") or {
+            "pending": dispatch_state == "completion_pending",
+            "last_error": None,
+            "classification": None,
+        }
+        progress_freshness = progress.get("freshness") or {}
+        attention_evidence: list[dict[str, str]] = []
+
+        for blocker in blockers[:5]:
+            _append_evidence(attention_evidence, "progress", "blocker", blocker)
+        _append_evidence(
+            attention_evidence,
+            "dispatch",
+            "last_error",
+            (dispatch or {}).get("last_error"),
+        )
+        _append_evidence(
+            attention_evidence,
+            "dispatch",
+            "error_code",
+            (dispatch or {}).get("error_code"),
+        )
+        _append_evidence(
+            attention_evidence,
+            "completion_delivery",
+            "last_error",
+            completion_delivery.get("last_error"),
+        )
+        if completion_delivery.get("pending") and completion_delivery.get(
+            "classification"
+        ) not in {None, "pending", "acknowledged"}:
+            _append_evidence(
+                attention_evidence,
+                "completion_delivery",
+                "classification",
+                completion_delivery.get("classification"),
+            )
+        _append_evidence(
+            attention_evidence,
+            "progress",
+            "delivery_error",
+            progress.get("delivery_error"),
+        )
+        progress_state = str(progress_freshness.get("state") or "")
+        if progress_state in {"delayed", "stale", "stalled", "disconnected"}:
+            _append_evidence(
+                attention_evidence,
+                "progress",
+                f"freshness_{progress_state}",
+                f"Structured progress is {_label(progress_state, {}, progress_state).lower()}",
+            )
+        completion_status = str(card_completion.get("status") or "")
+        _append_evidence(
+            attention_evidence,
+            "card_disposition",
+            "extraction_error",
+            card_completion.get("extraction_error"),
+        )
+        if completion_status not in {"applied", "completed", "acknowledged", "valid"}:
+            _append_evidence(
+                attention_evidence,
+                "card_disposition",
+                "reason",
+                card_completion.get("reason"),
+            )
+        reconciliation_state = str(card_reconciliation.get("state") or "")
+        if reconciliation_state in {"pending", "running", "retrying", "blocked"}:
+            for key in (
+                "reason",
+                "disposition_error",
+                "last_dependency_error",
+                "condition",
+                "recovery_action",
+            ):
+                _append_evidence(
+                    attention_evidence,
+                    "card_reconciliation",
+                    key,
+                    card_reconciliation.get(key),
+                )
         return {
             "id": card.id,
             "title": card.title,
@@ -406,7 +568,13 @@ def build_workshop_snapshot(
             "dispatch_exclusive": exclusive_dispatch,
             "can_dispatch": can_dispatch,
             "dispatch_unavailable_reason": dispatch_reason,
-            "progress_freshness": (progress.get("freshness") or {}).get("state"),
+            "progress_freshness": progress_state or None,
+            "progress_freshness_label": _label(
+                progress_state, PROGRESS_FRESHNESS_LABELS, "No progress signal"
+            ),
+            "progress_last_activity_at": progress_freshness.get("last_activity_at"),
+            "progress_age_seconds": progress_freshness.get("age_seconds"),
+            "progress_delivery_error": progress.get("delivery_error"),
             "target_instance_id": (dispatch or {}).get("target_instance_id"),
             "blockers": [
                 str(item.get("summary") if isinstance(item, dict) else item)[:160]
@@ -423,6 +591,12 @@ def build_workshop_snapshot(
             "dispatch_completion": dispatch_completion,
             "card_completion": card_completion,
             "card_reconciliation": card_reconciliation,
+            "dispatch_error": {
+                "message": (dispatch or {}).get("last_error"),
+                "code": (dispatch or {}).get("error_code"),
+            },
+            "completion_delivery": completion_delivery,
+            "attention_evidence": attention_evidence,
             "href": f"/?card={card.id}",
         }
 
@@ -452,26 +626,18 @@ def build_workshop_snapshot(
             else len(raw_sessions)
         )
         reported_session_omitted += int(activity.get("session_omitted") or 0)
-        ranked_sessions = sorted(
-            raw_sessions,
-            key=lambda session: (
-                0
-                if session.get("status") in {"working", "prompting"}
-                else 1
-                if session.get("status") in {"failed", "recoverable", "deferred"}
-                else 2,
-                -_time_score(session.get("updated_at")),
-                str(session.get("id") or ""),
-            ),
+        session_counts = {"eligible": 0, "unknown": 0, "other": 0}
+        ranked_sessions = nsmallest(
+            WORKSHOP_WORKER_LIMIT,
+            _sessions_for_realm(raw_sessions, realm_id, session_counts),
+            key=_session_rank_key,
+        )
+        unknown_realm_sessions += session_counts["unknown"]
+        other_realm_sessions += session_counts["other"]
+        worker_projection_omitted += max(
+            0, session_counts["eligible"] - len(ranked_sessions)
         )
         for session in ranked_sessions:
-            session_realm = session.get("realm_id")
-            if not session_realm:
-                unknown_realm_sessions += 1
-                continue
-            if session_realm != realm_id:
-                other_realm_sessions += 1
-                continue
             session_id = str(session.get("id") or "")
             if not session_id or session_id in seen_workers:
                 continue
@@ -484,6 +650,9 @@ def build_workshop_snapshot(
             state = _worker_state(session, dispatch)
             if activity_state != "fresh" and state in {"working", "quiet-active"}:
                 state = "stalled"
+            dispatch_progress = (dispatch or {}).get("progress") or {}
+            dispatch_progress_freshness = dispatch_progress.get("freshness") or {}
+            progress_state = str(dispatch_progress_freshness.get("state") or "")
             workers.append(
                 {
                     "id": session_id,
@@ -500,9 +669,21 @@ def build_workshop_snapshot(
                     "dispatch_id": (dispatch or {}).get("dispatch_id"),
                     "elapsed_from": (dispatch or {}).get("created_at")
                     or session.get("updated_at"),
-                    "latest_progress": (
-                        ((dispatch or {}).get("progress") or {}).get("latest") or {}
-                    ).get("summary"),
+                    "latest_progress": (dispatch_progress.get("latest") or {}).get(
+                        "summary"
+                    ),
+                    "progress_freshness": progress_state or None,
+                    "progress_freshness_label": _label(
+                        progress_state,
+                        PROGRESS_FRESHNESS_LABELS,
+                        "No progress signal",
+                    ),
+                    "progress_last_activity_at": dispatch_progress_freshness.get(
+                        "last_activity_at"
+                    ),
+                    "progress_age_seconds": dispatch_progress_freshness.get(
+                        "age_seconds"
+                    ),
                     "tool_category": _tool_category(dispatch),
                     "href": f"/agent?session={session_id}&instance={node.get('id')}",
                     "relationship_kind": "session",
@@ -700,39 +881,90 @@ def build_workshop_snapshot(
             if session_worker
             else payload["progress_freshness"]
         )
+        progress_freshness = (
+            session_worker.get("progress_freshness")
+            if session_worker and session_worker.get("progress_freshness")
+            else payload["progress_freshness"]
+        )
+        progress_freshness_label = (
+            session_worker.get("progress_freshness_label")
+            if session_worker and session_worker.get("progress_freshness")
+            else payload["progress_freshness_label"]
+        )
+        progress_last_activity_at = (
+            session_worker.get("progress_last_activity_at")
+            if session_worker and session_worker.get("progress_freshness")
+            else payload["progress_last_activity_at"]
+        )
+        progress_age_seconds = (
+            session_worker.get("progress_age_seconds")
+            if session_worker and session_worker.get("progress_freshness")
+            else payload["progress_age_seconds"]
+        )
         live = bool(
             session_worker
             and session_worker.get("live")
             and activity_state not in {"completed", "failed"}
         )
-        attention_reasons = list(payload["blockers"])
+        attention_details = list(payload["attention_evidence"])
+
         if payload["dispatch_state"] in {"blocked", "failed"}:
-            attention_reasons.append(payload["dispatch_label"])
+            _append_evidence(
+                attention_details, "dispatch", "state", payload["dispatch_label"]
+            )
         if not session_worker and payload["dispatch_state"] in {
             "waiting_capacity",
             "blocked",
             "completion_pending",
         }:
-            attention_reasons.append(payload["dispatch_label"])
+            _append_evidence(
+                attention_details, "dispatch", "state", payload["dispatch_label"]
+            )
         reconciliation_state = str(
             (payload.get("card_reconciliation") or {}).get("state") or ""
         )
         if reconciliation_state in {"pending", "running", "retrying", "blocked"}:
-            attention_reasons.append(
-                _label(reconciliation_state, {}, "Card reconciliation needs attention")
+            _append_evidence(
+                attention_details,
+                "card_reconciliation",
+                "state",
+                _label(reconciliation_state, {}, "Card reconciliation needs attention"),
             )
         if activity_state in {"stalled", "failed", "recovering"}:
-            attention_reasons.append(
-                worker.get("state_label") or ACTIVITY_LABELS.get(activity_state)
+            _append_evidence(
+                attention_details,
+                "session",
+                "activity_state",
+                worker.get("state_label") or ACTIVITY_LABELS.get(activity_state),
             )
         if card.lane == CardLane.WAITING:
-            attention_reasons.append("Card is waiting")
-        if card.lane == CardLane.ACTIVE and not payload["dispatch_current"]:
-            attention_reasons.append("Active card has no current dispatch")
-        if reservation_worker:
-            attention_reasons.append(
-                reservation_worker.get("state_label") or "Dispatch is preparing"
+            _append_evidence(
+                attention_details, "card", "lane_waiting", "Card is waiting"
             )
+        if card.lane == CardLane.ACTIVE and not payload["dispatch_current"]:
+            _append_evidence(
+                attention_details,
+                "dispatch",
+                "missing_current",
+                "Active card has no current dispatch",
+            )
+        if reservation_worker:
+            _append_evidence(
+                attention_details,
+                "reservation",
+                "state",
+                reservation_worker.get("state_label") or "Dispatch is preparing",
+            )
+            _append_evidence(
+                attention_details,
+                "reservation",
+                "reason",
+                reservation_worker.get("queue_reason")
+                or reservation_worker.get("latest_progress"),
+            )
+        attention_reasons = list(
+            dict.fromkeys(detail["summary"] for detail in attention_details)
+        )
         relationship_label = None
         if session_worker:
             relationship_label = (
@@ -763,12 +995,19 @@ def build_workshop_snapshot(
                     if session_worker
                     else _label(freshness, FRESHNESS_LABELS, "No session signal")
                 ),
+                "progress_freshness": progress_freshness,
+                "progress_freshness_label": progress_freshness_label,
+                "progress_last_activity_at": progress_last_activity_at,
+                "progress_age_seconds": progress_age_seconds,
+                "progress_delivery_error": payload["progress_delivery_error"],
                 "evaluated_outcome": payload["evaluated_outcome"],
                 "outcome_label": payload["outcome_label"],
                 "agent_turn": payload["agent_turn"],
                 "dispatch_completion": payload["dispatch_completion"],
                 "card_completion": payload["card_completion"],
                 "card_reconciliation": payload["card_reconciliation"],
+                "dispatch_error": payload["dispatch_error"],
+                "completion_delivery": payload["completion_delivery"],
                 "session": (
                     {
                         "id": session_worker["id"],
@@ -808,8 +1047,9 @@ def build_workshop_snapshot(
                     else None
                 ),
                 "live": live,
-                "attention": bool(attention_reasons),
-                "attention_reasons": list(dict.fromkeys(attention_reasons)),
+                "attention": bool(attention_details),
+                "attention_reasons": attention_reasons,
+                "attention_details": attention_details,
                 "updated_at": payload["updated_at"],
             }
         )

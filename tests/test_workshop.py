@@ -49,6 +49,9 @@ class _Store:
     def count_cards(self, *, realm_id, lane):
         return sum(card.lane == lane for card in self.cards)
 
+    def get_card(self, card_id, *, realm_id):
+        return next((card for card in self.cards if card.id == card_id), None)
+
     def list_projects(self, *, realm_id):
         return self.projects
 
@@ -615,6 +618,152 @@ def test_worker_projection_is_bounded_and_prioritizes_live_turns():
         "projected": 80,
         "omitted": 41,
     }
+
+
+def test_two_thousand_unlinked_sessions_remain_bounded_with_truthful_counts():
+    overview = _overview()
+    activity = overview["nodes"][0]["dimensions"]["activity"]["value"]
+    activity["sessions"] = [
+        {
+            "id": f"unlinked-{index:04d}",
+            "realm_id": "default",
+            "status": "idle",
+            "updated_at": "2026-08-03T12:00:00+00:00",
+        }
+        for index in range(2_000)
+    ]
+    activity["session_total"] = 2_000
+
+    snapshot = build_workshop_snapshot(_ctx(), overview)
+
+    assert len(snapshot["bays"][0]["workers"]) == WORKSHOP_WORKER_LIMIT
+    assert len(snapshot["orphan_sessions"]) == WORKSHOP_WORKER_LIMIT
+    assert snapshot["counts"]["sessions"] == {
+        "reported": 2_000,
+        "projected": WORKSHOP_WORKER_LIMIT,
+        "omitted": 2_000 - WORKSHOP_WORKER_LIMIT,
+    }
+
+
+def test_live_session_enriches_card_beyond_newest_card_read_window():
+    ctx = _ctx()
+    ctx.store.cards = [
+        Card(
+            id=f"card-{index}",
+            title=f"Card {index}",
+            lane=CardLane.ACTIVE,
+        )
+        for index in range(121)
+    ]
+    overview = _overview()
+    overview["nodes"][0]["dimensions"]["activity"]["value"]["sessions"] = [
+        {
+            "id": "live-on-121st-card",
+            "realm_id": "default",
+            "card_id": "card-120",
+            "title": "Old card, live turn",
+            "status": "working",
+            "connected": True,
+            "provider": "codex",
+            "updated_at": "2026-08-04T12:00:00+00:00",
+        }
+    ]
+
+    snapshot = build_workshop_snapshot(ctx, overview)
+    row = next(item for item in snapshot["work_orders"] if item["id"] == "card-120")
+
+    assert row["live"] is True
+    assert row["session"]["id"] == "live-on-121st-card"
+    assert snapshot["orphan_sessions"] == []
+    assert snapshot["inventory"] == {
+        "loaded": WORKSHOP_PROJECTION_LIMIT,
+        "total": 121,
+        "omitted": 121 - WORKSHOP_PROJECTION_LIMIT,
+        "overflow_href": "/?realm=default",
+        "description": (
+            "Newest and operational cards are bounded in Workshop; "
+            "open Cards for the full inventory."
+        ),
+    }
+
+
+def test_work_order_preserves_exact_attention_axes_and_progress_freshness():
+    dispatch = _Dispatch(
+        last_error="Completion delivery timed out after three attempts",
+        error_code="completion_delivery_timeout",
+        completion_outbox={
+            "pending": True,
+            "last_error": "Authority endpoint closed the delivery stream",
+            "classification": "transport_retry",
+        },
+        card_completion={
+            "status": "invalid",
+            "lane_before": "active",
+            "lane_after": None,
+            "reason": "Disposition requested done before integration merged",
+            "extraction_error": "Disposition JSON omitted evidence.watched_head_sha",
+        },
+        card_reconciliation={
+            "state": "blocked",
+            "reason": "Reconciliation is blocked on the exact PR head",
+            "disposition_error": "No valid card disposition was recorded",
+            "last_dependency_error": "PR supervisor has not observed a stable head",
+            "condition": "stable_green_head_required",
+            "recovery_action": "Wait for the next supervisor observation",
+        },
+        progress={
+            "schema_version": 1,
+            "freshness": {
+                "state": "stale",
+                "last_activity_at": "2026-08-04T10:00:00+00:00",
+                "age_seconds": 901,
+            },
+            "delivery_error": "Progress heartbeat delivery failed",
+            "latest": {
+                "phase": "testing",
+                "summary": "Tests were running",
+                "blockers": [],
+            },
+        },
+    )
+
+    class EvidenceStore:
+        def list(self, *, limit):
+            return [dispatch]
+
+    ctx = _ctx()
+    ctx.services["dispatch_store"] = EvidenceStore()
+    snapshot = build_workshop_snapshot(ctx, _overview())
+    row = next(item for item in snapshot["work_orders"] if item["id"] == "active")
+
+    assert row["live"] is True
+    assert row["freshness_label"] == "Current"
+    assert row["progress_freshness"] == "stale"
+    assert row["progress_freshness_label"] == "Stale"
+    assert row["progress_age_seconds"] == 901
+    assert row["attention"] is True
+    assert {detail["axis"] for detail in row["attention_details"]} >= {
+        "dispatch",
+        "completion_delivery",
+        "progress",
+        "card_disposition",
+        "card_reconciliation",
+    }
+    for exact_reason in (
+        "Completion delivery timed out after three attempts",
+        "completion_delivery_timeout",
+        "Authority endpoint closed the delivery stream",
+        "Progress heartbeat delivery failed",
+        "Disposition requested done before integration merged",
+        "Disposition JSON omitted evidence.watched_head_sha",
+        "Reconciliation is blocked on the exact PR head",
+        "No valid card disposition was recorded",
+        "PR supervisor has not observed a stable head",
+        "stable_green_head_required",
+        "Wait for the next supervisor observation",
+        "Structured progress is stale",
+    ):
+        assert exact_reason in row["attention_reasons"]
 
 
 def test_workshop_uses_card_scoped_pr_watch_projection():

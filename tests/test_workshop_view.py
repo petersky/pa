@@ -62,6 +62,10 @@ def _work_order(
         "activity_label": "Working" if active else "No current session",
         "freshness": "fresh" if active else None,
         "freshness_label": "Current" if active else "No live signal",
+        "progress_freshness": "live" if active else None,
+        "progress_freshness_label": "Current" if active else "No progress signal",
+        "progress_last_activity_at": ("2026-08-03T10:00:00Z" if active else None),
+        "progress_age_seconds": 0 if active else None,
         "evaluated_outcome": None,
         "outcome_label": "No outcome yet",
         "session": session,
@@ -74,6 +78,11 @@ def _work_order(
         "live": active,
         "attention": attention,
         "attention_reasons": ["Card is waiting"] if attention else [],
+        "attention_details": (
+            [{"axis": "card", "code": "lane_waiting", "summary": "Card is waiting"}]
+            if attention
+            else []
+        ),
         "updated_at": "2026-08-03T10:00:00Z",
     }
 
@@ -500,6 +509,45 @@ class WorkshopCompactViewBrowserTests(unittest.IsolatedAsyncioTestCase):
             for state in ("Active", "Running", "Working", "Current"):
                 self.assertIn(state, accessible_names["order"])
 
+            exact_attention = await page.evaluate(
+                """(() => {
+                  var root = document.querySelector("#pa-workshop-root");
+                  var update = JSON.parse(JSON.stringify(window.__snapshot));
+                  update.generated_at = "2026-08-03T10:00:00Z~~";
+                  var active = update.work_orders.find(function (order) { return order.id === "active"; });
+                  active.attention = true;
+                  active.progress_freshness = "stale";
+                  active.progress_freshness_label = "Stale";
+                  active.progress_last_activity_at = "2026-08-03T09:30:00Z";
+                  active.progress_age_seconds = 1800;
+                  active.attention_reasons = ["Exact reconciliation dependency error",
+                    "Exact disposition extraction error", "Structured progress is stale"];
+                  active.attention_details = [
+                    {axis:"card_reconciliation", code:"last_dependency_error",
+                      summary:"Exact reconciliation dependency error"},
+                    {axis:"card_disposition", code:"extraction_error",
+                      summary:"Exact disposition extraction error"},
+                    {axis:"progress", code:"freshness_stale", summary:"Structured progress is stale"}
+                  ];
+                  window.PAWorkshopTest.acceptSnapshot(root, update);
+                  window.__snapshot = update;
+                  document.querySelector('[data-workshop-kind="card"][data-workshop-id="active"]').click();
+                  var panel = document.querySelector("[data-workshop-inspector]");
+                  var cardButton = document.querySelector('[data-workshop-kind="card"][data-workshop-id="active"]');
+                  return {text:panel.textContent, cardText:cardButton.textContent,
+                    accessibleName:cardButton.getAttribute("aria-label")};
+                })()"""
+            )
+            self.assertIn("Session signal freshnessCurrent", exact_attention["text"])
+            self.assertIn("Dispatch progress freshnessStale", exact_attention["text"])
+            self.assertIn(
+                "Exact reconciliation dependency error", exact_attention["text"]
+            )
+            self.assertIn("Exact disposition extraction error", exact_attention["text"])
+            self.assertIn("Structured progress is stale", exact_attention["text"])
+            self.assertIn("ProgressStale", exact_attention["cardText"])
+            self.assertIn("Stale", exact_attention["accessibleName"])
+
             lightweight_age = await page.evaluate(
                 """(() => {
                   var root = document.querySelector("#pa-workshop-root");
@@ -893,7 +941,7 @@ class WorkshopCompactViewBrowserTests(unittest.IsolatedAsyncioTestCase):
                     floorVisible: !scene.hidden,
                     noPageOverflow: document.documentElement.scrollWidth <= window.innerWidth,
                     allStates: Array.from(scene.querySelectorAll(".workshop-operation-card"))
-                      .every(function (card) { return card.querySelectorAll("dt").length === 5; }),
+                      .every(function (card) { return card.querySelectorAll("dt").length === 6; }),
                     baysBeforeInventory: !unassigned || bay.compareDocumentPosition(unassigned) & Node.DOCUMENT_POSITION_FOLLOWING
                   };
                   document.querySelector('[data-workshop-view="compact"]').click();
