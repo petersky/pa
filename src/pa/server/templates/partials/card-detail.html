@@ -109,13 +109,19 @@
       <section class="card-detail-section" aria-labelledby="card-summary-title">
         <div class="section-heading-inline">
           <h3 id="card-summary-title">Summary</h3>
-          <span class="muted">{{ card.summary_source.value }}{% if card.summary_updated_at %} · {{ card.summary_updated_at.strftime('%b %-d, %Y') }}{% endif %}</span>
+          <span class="muted">{{ card.summary_status.value }}{% if card.summary_status.value == 'ready' %} · {{ card.summary_source.value }}{% endif %}{% if card.summary_updated_at %} · {{ card.summary_updated_at.strftime('%b %-d, %Y') }}{% endif %}</span>
         </div>
         <div class="inline-edit-field" data-inline-edit-field>
           <div class="inline-edit-trigger inline-edit-block" data-inline-edit-open tabindex="0" aria-label="Edit summary">
+            {% if card.summary_status.value == 'ready' and card.summary %}
             <span class="card-markdown card-detail-summary" data-card-markdown>
               <span hidden data-card-markdown-source>{{ card.summary | tojson }}</span>
             </span>
+            {% elif card.summary_status.value in ('pending', 'stale') %}
+            <span class="muted" role="status" aria-live="polite">Summary pending.</span>
+            {% else %}
+            <span class="muted" role="status">Summary unavailable.</span>
+            {% endif %}
           </div>
           <form class="inline-edit-form" data-inline-edit-form hidden
                 hx-post="/partials/cards/{{ card.id }}?realm={{ card.realm_id }}"
@@ -131,6 +137,11 @@
             </div>
           </form>
         </div>
+        <form hx-post="/api/cards/{{ card.id }}/summary/regenerate?realm={{ card.realm_id }}"
+              hx-swap="none">
+          <input type="hidden" name="csrf" value="{{ csrf_token }}">
+          <button type="submit" class="ghost small">Regenerate summary</button>
+        </form>
       </section>
 
       <section class="card-detail-section" aria-labelledby="card-details-title">

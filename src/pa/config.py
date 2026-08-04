@@ -134,6 +134,17 @@ class Settings(BaseSettings):
     # only policy-marked candidates enter pending review.
     memory_auto_capture_enabled: bool = False
 
+    # Card summaries use an OpenAI-compatible structured-output endpoint. A
+    # blank API key leaves summaries pending/failed without delaying card I/O.
+    card_summary_provider: str = "openai"
+    card_summary_model: str = "gpt-5-mini"
+    card_summary_base_url: str = "https://api.openai.com/v1"
+    card_summary_api_key: str = ""
+    card_summary_timeout_seconds: float = Field(default=20.0, gt=0, le=120)
+    card_summary_max_concurrency: int = Field(default=2, ge=1, le=16)
+    card_summary_max_retries: int = Field(default=2, ge=0, le=4)
+    card_summary_migration_batch: int = Field(default=20, ge=0, le=500)
+
     # Bounded post-turn evaluation and automatic follow-up policy. Evaluators
     # remain read-only; PA validates and executes eligible catalog actions.
     post_turn_evaluator_max_attempts: int = Field(default=2, ge=1, le=5)

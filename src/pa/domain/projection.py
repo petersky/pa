@@ -16,7 +16,6 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from pydantic import ValidationError
 
-from pa.domain.card_summaries import fallback_card_summary
 from pa.domain.models import (
     AgentSession,
     Card,
@@ -26,6 +25,7 @@ from pa.domain.models import (
     CardKind,
     CardLane,
     CardSummarySource,
+    CardSummaryStatus,
     CardUpdate,
     EventType,
     Item,
@@ -141,6 +141,12 @@ class CardProjection:
                     body TEXT NOT NULL DEFAULT '',
                     summary TEXT NOT NULL DEFAULT '',
                     summary_source TEXT NOT NULL DEFAULT 'fallback',
+                    summary_status TEXT NOT NULL DEFAULT 'pending',
+                    summary_provider TEXT,
+                    summary_model TEXT,
+                    summary_prompt_version TEXT,
+                    summary_input_hash TEXT,
+                    summary_failure TEXT,
                     summary_updated_at TEXT,
                     summary_stale INTEGER NOT NULL DEFAULT 0,
                     lane TEXT NOT NULL DEFAULT 'inbox',
@@ -372,6 +378,12 @@ class CardProjection:
             ("summary_source", "TEXT NOT NULL DEFAULT 'fallback'"),
             ("summary_updated_at", "TEXT"),
             ("summary_stale", "INTEGER NOT NULL DEFAULT 0"),
+            ("summary_status", "TEXT NOT NULL DEFAULT 'pending'"),
+            ("summary_provider", "TEXT"),
+            ("summary_model", "TEXT"),
+            ("summary_prompt_version", "TEXT"),
+            ("summary_input_hash", "TEXT"),
+            ("summary_failure", "TEXT"),
             ("attachments", "TEXT NOT NULL DEFAULT '[]'"),
         ):
             if col not in card_cols:
@@ -383,11 +395,12 @@ class CardProjection:
                 conn.execute(
                     """
                     UPDATE cards
-                    SET summary=?, summary_source='fallback',
-                        summary_updated_at=updated_at, summary_stale=0
+                    SET summary='', summary_source='fallback',
+                        summary_updated_at=NULL, summary_stale=1,
+                        summary_status='stale'
                     WHERE id=?
                     """,
-                    (fallback_card_summary(row["body"]), row["id"]),
+                    (row["id"],),
                 )
 
         notification_cols = {
@@ -1197,9 +1210,7 @@ class CardProjection:
         p = event.payload
         created_at = _coerce_datetime(p.get("created_at")) or datetime.now(UTC)
         updated_at = _coerce_datetime(p.get("updated_at")) or created_at
-        summary = (p.get("summary") or "").strip() or fallback_card_summary(
-            p.get("body", "")
-        )
+        summary = (p.get("summary") or "").strip()
         card = Card(
             id=p.get("id", event.card_id or str(uuid4())),
             realm_id=event.realm_id,
@@ -1210,8 +1221,16 @@ class CardProjection:
             summary_source=CardSummarySource(
                 p.get("summary_source", CardSummarySource.FALLBACK.value)
             ),
-            summary_updated_at=_coerce_datetime(p.get("summary_updated_at"))
-            or updated_at,
+            summary_status=p.get("summary_status", "ready" if summary else "pending"),
+            summary_provider=p.get("summary_provider"),
+            summary_model=p.get("summary_model"),
+            summary_prompt_version=p.get("summary_prompt_version"),
+            summary_input_hash=p.get("summary_input_hash"),
+            summary_failure=p.get("summary_failure"),
+            summary_updated_at=(
+                _coerce_datetime(p.get("summary_updated_at"))
+                or (updated_at if summary else None)
+            ),
             summary_stale=bool(p.get("summary_stale", False)),
             lane=CardLane(
                 p.get("lane") or lane_from_legacy_status(p.get("status", "open")).value
@@ -1341,15 +1360,9 @@ class CardProjection:
         # Translate during projection without rewriting the durable event.
         if "lane" not in payload and "status" in payload:
             payload["lane"] = lane_from_legacy_status(payload["status"]).value
-        if "body" in payload and "summary" not in payload:
-            if card.summary_source == CardSummarySource.FALLBACK:
-                card.summary = fallback_card_summary(payload.get("body", ""))
-                card.summary_updated_at = _coerce_datetime(
-                    payload.get("updated_at")
-                ) or datetime.now(UTC)
-                card.summary_stale = False
-            else:
-                card.summary_stale = True
+        if ({"title", "body"} & payload.keys()) and "summary" not in payload:
+            card.summary_stale = True
+            card.summary_status = CardSummaryStatus.STALE
         for key, value in payload.items():
             if key in {
                 "created_at",
@@ -1364,6 +1377,8 @@ class CardProjection:
                 card.lane = CardLane(value)
             elif key == "summary_source":
                 card.summary_source = CardSummarySource(value)
+            elif key == "summary_status":
+                card.summary_status = CardSummaryStatus(value)
             elif hasattr(card, key):
                 setattr(card, key, value)
         if "lease_expires_at" in payload:
@@ -1462,11 +1477,13 @@ class CardProjection:
                 """
                 INSERT OR REPLACE INTO cards
                 (id, realm_id, kind, title, body, summary, summary_source,
-                 summary_updated_at, summary_stale, lane, parent_id, project_id, tags, attachments, visibility,
+                 summary_updated_at, summary_stale, summary_status, summary_provider,
+                 summary_model, summary_prompt_version, summary_input_hash, summary_failure,
+                 lane, parent_id, project_id, tags, attachments, visibility,
                  owner_principal, preferred_instance, preferred_capabilities,
                  lease_holder_instance, lease_holder_principal, lease_expires_at,
                  created_by_principal, created_by_instance, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     card.id,
@@ -1480,6 +1497,12 @@ class CardProjection:
                     if card.summary_updated_at
                     else None,
                     int(card.summary_stale),
+                    card.summary_status.value,
+                    card.summary_provider,
+                    card.summary_model,
+                    card.summary_prompt_version,
+                    card.summary_input_hash,
+                    card.summary_failure,
                     card.lane.value,
                     card.parent_id,
                     card.project_id,
@@ -1519,13 +1542,14 @@ class CardProjection:
             kind=data.kind,
             title=data.title,
             body=data.body,
-            summary=supplied_summary or fallback_card_summary(data.body),
+            summary=supplied_summary,
             summary_source=(
                 data.summary_source or CardSummarySource.MANUAL
                 if supplied_summary
                 else CardSummarySource.FALLBACK
             ),
-            summary_updated_at=now,
+            summary_status="ready" if supplied_summary else "pending",
+            summary_updated_at=now if supplied_summary else None,
             lane=data.lane,
             parent_id=data.parent_id,
             project_id=data.project_id,
@@ -1823,30 +1847,22 @@ class CardProjection:
                 payload["summary_source"] = (
                     value.value if hasattr(value, "value") else value
                 )
-            elif value is not None or key == "project_id":
+            elif value is not None or key in {"project_id", "summary_failure"}:
                 payload[key] = value
-        if updates.get("body") is not None and "summary" not in updates:
-            if card.summary_source == CardSummarySource.FALLBACK:
-                payload.update(
-                    summary=fallback_card_summary(updates["body"]),
-                    summary_source=CardSummarySource.FALLBACK.value,
-                    summary_stale=False,
-                    summary_updated_at=now.isoformat(),
-                )
-            else:
-                payload["summary_stale"] = True
+        if ({"title", "body"} & updates.keys()) and "summary" not in updates:
+            payload.update(
+                summary_stale=True, summary_status="stale", summary_failure=None
+            )
         if updates.get("summary") is not None:
             supplied_summary = updates["summary"].strip()
             payload.update(
-                summary=supplied_summary
-                or fallback_card_summary(
-                    updates["body"] if "body" in updates else card.body
-                ),
+                summary=supplied_summary,
                 summary_source=(
                     payload.get("summary_source") or CardSummarySource.MANUAL.value
                     if supplied_summary
                     else CardSummarySource.FALLBACK.value
                 ),
+                summary_status="ready" if supplied_summary else "pending",
                 summary_stale=(
                     updates["summary_stale"] if "summary_stale" in updates else False
                 ),
@@ -1874,9 +1890,11 @@ class CardProjection:
                 card.summary_updated_at = _coerce_datetime(value)
             elif key == "summary_source":
                 card.summary_source = CardSummarySource(value)
+            elif key == "summary_status":
+                card.summary_status = CardSummaryStatus(value)
             elif (
                 key != "updated_at"
-                and (value is not None or key == "project_id")
+                and (value is not None or key in {"project_id", "summary_failure"})
                 and hasattr(card, key)
             ):
                 setattr(card, key, value)
@@ -1954,9 +1972,10 @@ class CardProjection:
                 kind=CardKind(row["kind"]),
                 title=row["title"],
                 body=row["body"],
-                summary=fallback_card_summary(row["body"]),
+                summary="",
                 summary_source=CardSummarySource.FALLBACK,
-                summary_updated_at=_coerce_datetime(row["updated_at"]),
+                summary_status="pending",
+                summary_updated_at=None,
                 lane=lane,
                 parent_id=row["parent_id"],
                 tags=json.loads(row["tags"] or "[]"),
@@ -3366,9 +3385,7 @@ class CardProjection:
             kind=CardKind(row["kind"]),
             title=row["title"],
             body=row["body"],
-            summary=row["summary"]
-            if "summary" in keys
-            else fallback_card_summary(row["body"]),
+            summary=row["summary"] if "summary" in keys else "",
             summary_source=CardSummarySource(
                 row["summary_source"]
                 if "summary_source" in keys
@@ -3377,11 +3394,27 @@ class CardProjection:
             summary_updated_at=(
                 datetime.fromisoformat(row["summary_updated_at"])
                 if "summary_updated_at" in keys and row["summary_updated_at"]
-                else datetime.fromisoformat(row["updated_at"])
+                else None
             ),
             summary_stale=bool(row["summary_stale"])
             if "summary_stale" in keys
             else False,
+            summary_status=row["summary_status"]
+            if "summary_status" in keys
+            else ("ready" if row["summary"] else "pending"),
+            summary_provider=row["summary_provider"]
+            if "summary_provider" in keys
+            else None,
+            summary_model=row["summary_model"] if "summary_model" in keys else None,
+            summary_prompt_version=row["summary_prompt_version"]
+            if "summary_prompt_version" in keys
+            else None,
+            summary_input_hash=row["summary_input_hash"]
+            if "summary_input_hash" in keys
+            else None,
+            summary_failure=row["summary_failure"]
+            if "summary_failure" in keys
+            else None,
             lane=CardLane(row["lane"]),
             parent_id=row["parent_id"],
             project_id=row["project_id"] if "project_id" in keys else None,
