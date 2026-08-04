@@ -155,6 +155,12 @@ Environment variables (prefix `PA_`):
 | `PA_DEBUG` | `false` | Debug logging, hook history, dev tools |
 | `PA_DEV_TOOLS` | `false` | In-browser developer panel (auto-on with debug) |
 | `PA_LOG_LEVEL` | `INFO` | Log level (`DEBUG`, `INFO`, …) |
+| `PA_LOG_ROTATION_MAX_BYTES` | `26214400` | Rotate each service stdout/stderr log after this many active bytes |
+| `PA_LOG_ROTATION_INTERVAL_SECONDS` | `86400` | Rotate active service logs after this age |
+| `PA_LOG_RETENTION_COUNT` | `7` | Maximum retained compressed service-log archives |
+| `PA_LOG_RETENTION_MAX_AGE_SECONDS` | `1209600` | Maximum service-log archive age |
+| `PA_LOG_RETENTION_MAX_TOTAL_BYTES` | `268435456` | Total service-log archive byte budget |
+| `PA_LOG_DISK_PRESSURE_FREE_BYTES` | `536870912` | Stop retaining output below this free-space reserve while continuing to drain pipes |
 | `PA_GITHUB_TOKEN` | — | Instance-local GitHub token used by PA service code and, when explicitly enabled, mapped to agent `GH_TOKEN` |
 | `PA_GITHUB_WEBHOOK_SECRET` | — | Instance-local secret for HMAC-SHA256 webhook verification |
 | `PA_TELEMETRY_ENABLED` | `true` | Collect bounded instance resource telemetry |

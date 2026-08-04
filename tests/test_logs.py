@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gzip
 import io
 import json
 import logging
@@ -101,6 +102,99 @@ class LogReaderTests(unittest.TestCase):
             self.assertNotIn("abcdef", output.getvalue())
             self.assertNotIn("session-value", output.getvalue())
 
+    def test_initial_tail_includes_compressed_rotated_history(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            logs = root / "logs"
+            logs.mkdir()
+            with gzip.open(logs / "server.log.20260801.gz", "wt") as archive:
+                archive.write("2026-08-01T00:00:00Z INFO archived-access\n")
+            (logs / "server.log").write_text(
+                "2026-08-02T00:00:00Z INFO active-access\n"
+            )
+            output = io.StringIO()
+
+            show_logs(
+                settings=self.settings(root),
+                sources=["stdout"],
+                lines=2,
+                output=output,
+                diagnostics=io.StringIO(),
+            )
+
+            self.assertIn("archived-access", output.getvalue())
+            self.assertIn("active-access", output.getvalue())
+
+    def test_numbered_structured_archives_are_read_oldest_first(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            logs = root / "logs"
+            logs.mkdir()
+            for suffix, stamp, message in (
+                ("2", "2026-08-01T00:00:00Z", "oldest"),
+                ("1", "2026-08-02T00:00:00Z", "newer"),
+                ("", "2026-08-03T00:00:00Z", "active"),
+            ):
+                path = logs / ("pa.jsonl" + (f".{suffix}" if suffix else ""))
+                path.write_text(
+                    json.dumps(
+                        {
+                            "timestamp": stamp,
+                            "level": "INFO",
+                            "logger": "pa.test",
+                            "message": message,
+                        }
+                    )
+                    + "\n"
+                )
+            output = io.StringIO()
+
+            show_logs(
+                settings=self.settings(root),
+                sources=["structured"],
+                lines=3,
+                output=output,
+                diagnostics=io.StringIO(),
+            )
+
+            messages = [
+                line.rsplit(" ", 1)[-1] for line in output.getvalue().splitlines()
+            ]
+            self.assertEqual(messages, ["oldest", "newer", "active"])
+
+    def test_storage_diagnostics_expose_bounded_log_health(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            logs = root / "logs"
+            logs.mkdir()
+            (logs / "server.log").write_text("active\n")
+            (logs / "status.json").write_text(
+                json.dumps(
+                    {
+                        "current_bytes": 7,
+                        "total_bytes": 11,
+                        "oldest_age_seconds": 12,
+                        "rotation_failures": 2,
+                        "prune_failures": 3,
+                        "disk_pressure": {"state": "pressure"},
+                    }
+                )
+            )
+            diagnostics = io.StringIO()
+
+            show_logs(
+                settings=self.settings(root),
+                sources=["stdout"],
+                lines=1,
+                output=io.StringIO(),
+                diagnostics=diagnostics,
+            )
+
+            self.assertIn("current_bytes=7", diagnostics.getvalue())
+            self.assertIn("rotation_failures=2", diagnostics.getvalue())
+            self.assertIn("prune_failures=3", diagnostics.getvalue())
+            self.assertIn("disk_pressure=pressure", diagnostics.getvalue())
+
     def test_missing_source_is_actionable_and_all_missing_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             diagnostics = io.StringIO()
@@ -178,6 +272,42 @@ class LogReaderTests(unittest.TestCase):
                     diagnostics=io.StringIO(),
                 )
             self.assertIn("rotated ✓", output.getvalue())
+
+    def test_follow_drains_old_inode_before_opening_rotated_active_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / "logs" / "server.log"
+            path.parent.mkdir()
+            path.write_text("initial\n")
+            writer = path.open("a")
+            output = io.StringIO()
+            calls = 0
+
+            def rotate_then_stop(_: float) -> None:
+                nonlocal calls
+                calls += 1
+                if calls == 1:
+                    writer.write("last-old-inode\n")
+                    writer.flush()
+                    os.replace(path, path.with_name("server.log.1"))
+                    path.write_text("first-new-inode\n")
+                else:
+                    raise KeyboardInterrupt
+
+            try:
+                with patch("pa.cli.logs.time.sleep", side_effect=rotate_then_stop):
+                    show_logs(
+                        settings=self.settings(root),
+                        sources=["stdout"],
+                        lines=0,
+                        follow=True,
+                        output=output,
+                        diagnostics=io.StringIO(),
+                    )
+            finally:
+                writer.close()
+            self.assertIn("last-old-inode", output.getvalue())
+            self.assertIn("first-new-inode", output.getvalue())
 
     def test_journal_json_is_parsed(self) -> None:
         row = json.dumps(
