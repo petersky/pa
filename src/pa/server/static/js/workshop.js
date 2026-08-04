@@ -7,6 +7,9 @@
   var refreshGeneration = 0;
   var selected = null;
   var lastSnapshotAt = "";
+  var activeRoot = null;
+  var viewPreference = "floor";
+  var VIEW_STORAGE_KEY = "pa.workshop.view.v1";
 
   function escapeHtml(value) {
     return String(value == null ? "" : value)
@@ -22,6 +25,24 @@
 
   function stateLabel(state) {
     return String(state || "unsupported").replace(/-/g, " ");
+  }
+
+  function normalizeView(view) {
+    return view === "compact" ? "compact" : "floor";
+  }
+
+  function readViewPreference() {
+    try { return normalizeView(window.localStorage.getItem(VIEW_STORAGE_KEY)); }
+    catch (error) { return "floor"; }
+  }
+
+  function storeViewPreference(view) {
+    try { window.localStorage.setItem(VIEW_STORAGE_KEY, normalizeView(view)); }
+    catch (error) { /* Browser storage can be unavailable without disabling the view. */ }
+  }
+
+  function workshopBoundary(root) {
+    return root.closest("[data-pa-live-history-boundary='workshop']") || document;
   }
 
   function cardButton(card, area) {
@@ -120,23 +141,37 @@
   function renderCompact(root, data) {
     var compact = root.querySelector("[data-workshop-compact]");
     var rows = [];
+    var linkedCards = {};
     data.bays.forEach(function (bay) {
       if (!bay.workers.length) {
-        rows.push("<tr><td>" + escapeHtml(bay.name) + "</td><td>—</td><td>—</td><td>" +
+        rows.push('<tr data-workshop-compact-row="bay"><td>Bay</td><td>' +
+          '<button class="link-button" type="button" data-workshop-kind="bay" data-workshop-id="' +
+          escapeHtml(bay.id) + '">' + escapeHtml(bay.name) + "</button></td><td>—</td><td>" +
           escapeHtml(bay.connectivity + " · " + bay.freshness) + "</td></tr>");
       }
       bay.workers.forEach(function (worker) {
-        rows.push('<tr><td><button class="link-button" type="button" data-workshop-kind="bay" data-workshop-id="' +
+        if (worker.card) linkedCards[worker.card.id] = true;
+        rows.push('<tr data-workshop-compact-row="worker"><td>Session</td><td><button class="link-button" type="button" data-workshop-kind="bay" data-workshop-id="' +
           escapeHtml(bay.id) + '">' + escapeHtml(bay.name) + "</button></td><td>" +
           '<button class="link-button" type="button" data-workshop-kind="worker" data-workshop-id="' +
-          escapeHtml(worker.id) + '">' + escapeHtml(worker.title) + "</button></td><td>" +
+          escapeHtml(worker.id) + '">' + escapeHtml(worker.title) + "</button>" +
           (worker.card ? '<button class="link-button" type="button" data-workshop-kind="card" data-workshop-id="' +
-          escapeHtml(worker.card.id) + '">' + escapeHtml(worker.card.title) + "</button>" : "—") +
+          escapeHtml(worker.card.id) + '">' + escapeHtml(worker.card.title) + "</button>" : "") +
           "</td><td>" + escapeHtml(stateLabel(worker.state)) + "</td></tr>");
       });
     });
-    compact.innerHTML = '<table class="data-table"><caption>Canonical instance, session, card, and state mapping</caption>' +
-      "<thead><tr><th>Instance</th><th>Worker/session</th><th>Work order</th><th>State</th></tr></thead><tbody>" +
+    ["inbox", "active", "waiting", "done"].forEach(function (lane) {
+      (data.areas[lane] || []).forEach(function (card) {
+        if (linkedCards[card.id]) return;
+        rows.push('<tr data-workshop-compact-row="card"><td>Card</td><td>' +
+          escapeHtml(stateLabel(lane)) + '</td><td><button class="link-button" type="button" ' +
+          'data-workshop-kind="card" data-workshop-id="' + escapeHtml(card.id) + '">' +
+          escapeHtml(card.title) + "</button></td><td>" +
+          escapeHtml(stateLabel(card.dispatch_state || card.lane)) + "</td></tr>");
+      });
+    });
+    compact.innerHTML = '<table class="data-table"><caption>Dense canonical card and session list</caption>' +
+      "<thead><tr><th>Type</th><th>Instance / lane</th><th>Session / work order</th><th>State</th></tr></thead><tbody>" +
       (rows.length ? rows.join("") : '<tr><td colspan="4">No fleet activity is available.</td></tr>') +
       "</tbody></table>";
   }
@@ -266,24 +301,59 @@
     }
   }
 
-  function setView(root, view) {
-    var compact = view === "compact";
-    root.querySelector("[data-workshop-scene]").hidden = compact;
-    root.querySelector("[data-workshop-compact]").hidden = !compact;
-    root.querySelectorAll("[data-workshop-view]").forEach(function (button) {
-      var active = button.dataset.workshopView === view;
+  function setView(root, view, options) {
+    options = options || {};
+    var previousX = window.scrollX;
+    var previousY = window.scrollY;
+    var scene = root.querySelector("[data-workshop-scene]");
+    var compactList = root.querySelector("[data-workshop-compact]");
+    var boundary = workshopBoundary(root);
+    var requested = normalizeView(view);
+    var available = requested === "compact" ? !!compactList : !!scene;
+    viewPreference = available ? requested : "floor";
+    var compact = viewPreference === "compact";
+
+    if (scene) scene.hidden = compact;
+    if (compactList) compactList.hidden = !compact;
+    root.dataset.workshopLayout = viewPreference;
+    boundary.querySelectorAll("[data-workshop-view]").forEach(function (button) {
+      var buttonView = normalizeView(button.dataset.workshopView);
+      var buttonAvailable = buttonView === "compact" ? !!compactList : !!scene;
+      var active = buttonView === viewPreference;
       button.classList.toggle("active", active);
       button.setAttribute("aria-pressed", String(active));
+      button.disabled = !buttonAvailable;
+      button.title = buttonAvailable ? "" :
+        (button.textContent.trim() + " is unavailable in the current Workshop state.");
     });
+    var heading = root.querySelector("[data-workshop-view-heading]");
+    var description = root.querySelector("[data-workshop-view-description]");
+    var status = boundary.querySelector("[data-workshop-view-status]");
+    if (heading) heading.textContent = compact ? "Compact view" : "Floor view";
+    if (description) description.textContent = compact ?
+      "Cards and sessions in a dense, scan-friendly operational table." :
+      "Current work, where it is running, and what needs attention.";
+    if (status) status.textContent = available ?
+      "Current layout: " + (compact ? "Compact view" : "Floor view") :
+      "Compact view is unavailable in the current Workshop state.";
+    if (options.persist !== false) storeViewPreference(viewPreference);
+    if (options.preserveScroll !== false && window.requestAnimationFrame) {
+      window.requestAnimationFrame(function () {
+        window.scrollTo({ left: previousX, top: previousY, behavior: "instant" });
+      });
+    }
   }
 
   function stop() {
+    refreshGeneration += 1;
     if (pollTimer) window.clearInterval(pollTimer);
     pollTimer = null;
     if (activitySource) activitySource.close();
     if (cardSource) cardSource.close();
     activitySource = null;
     cardSource = null;
+    if (activeRoot) activeRoot.removeEventListener("click", handleRootClick);
+    activeRoot = null;
   }
 
   function startFallback(root) {
@@ -297,13 +367,18 @@
   }
 
   function init() {
-    stop();
     var root = document.querySelector("#pa-workshop-root");
-    if (!root) return;
+    if (!root) { if (activeRoot) stop(); return; }
+    if (root === activeRoot) return;
+    stop();
+    activeRoot = root;
+    root.addEventListener("click", handleRootClick);
     selected = null;
     lastSnapshotAt = "";
     var initial = readInitial(root);
     if (initial) acceptSnapshot(root, initial);
+    viewPreference = readViewPreference();
+    setView(root, viewPreference, { persist: false, preserveScroll: false });
     refresh(root, false);
     if (window.EventSource) {
       activitySource = new EventSource("/api/fleet/workshop/events");
@@ -331,11 +406,9 @@
     }
   }
 
-  document.addEventListener("click", function (event) {
-    var root = event.target.closest("#pa-workshop-root");
-    if (!root) return;
-    var view = event.target.closest("[data-workshop-view]");
-    if (view) { setView(root, view.dataset.workshopView); return; }
+  function handleRootClick(event) {
+    var root = event.currentTarget;
+    if (event.target.closest("[data-workshop-view]")) return;
     if (event.target.closest("[data-workshop-refresh]")) { refresh(root, true); return; }
     var dispatch = event.target.closest("[data-workshop-dispatch]");
     if (dispatch && window.PACardDispatch) {
@@ -345,10 +418,20 @@
     var target = event.target.closest("[data-workshop-kind]");
     if (target) inspect(root, root.__workshopData, target.dataset.workshopKind,
       target.dataset.workshopId);
+  }
+
+  document.addEventListener("click", function (event) {
+    var view = event.target.closest("[data-workshop-view]");
+    if (!view) return;
+    var root = document.querySelector("#pa-workshop-root");
+    if (root) setView(root, view.dataset.workshopView);
   });
   document.addEventListener("DOMContentLoaded", init);
   document.addEventListener("htmx:afterSwap", init);
-  document.addEventListener("htmx:beforeSwap", stop);
+  document.addEventListener("htmx:beforeSwap", function (event) {
+    var target = event.detail && event.detail.target;
+    if (activeRoot && (!target || target === activeRoot || target.contains(activeRoot))) stop();
+  });
   document.addEventListener("pa:historyWillReload", stop);
   if (window.PA_TEST) window.PAWorkshopTest = {
     acceptSnapshot: acceptSnapshot,
@@ -357,6 +440,9 @@
       return !!observed && (!lastSnapshotAt || observed > lastSnapshotAt);
     },
     markSnapshot: function (generatedAt) { lastSnapshotAt = generatedAt; },
-    reset: function () { lastSnapshotAt = ""; }
+    reset: function () { lastSnapshotAt = ""; },
+    getView: function () { return viewPreference; },
+    setView: setView,
+    storageKey: VIEW_STORAGE_KEY
   };
 })();

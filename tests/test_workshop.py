@@ -257,7 +257,8 @@ def test_workshop_ui_contract_is_accessible_and_excludes_replay_controls():
     style = (root / "src/pa/server/static/style.css").read_text()
 
     assert "Floor view" in template
-    assert "Compact list" in template
+    assert "Compact view" in template
+    assert 'data-workshop-view-status aria-live="polite"' in template
     assert 'aria-live="polite"' in template
     assert "/api/cards/events" in script
     assert "/api/fleet/workshop/events" in script
@@ -265,6 +266,9 @@ def test_workshop_ui_contract_is_accessible_and_excludes_replay_controls():
     assert "acceptSnapshot" in script
     assert "Activity reconnecting" in script
     assert "refreshGeneration" in script
+    assert "pa.workshop.view.v1" in script
+    assert 'data-workshop-compact-row="card"' in script
+    assert "root === activeRoot" in script
     assert "prefers-reduced-motion" in style
     assert "timeline" not in template.lower()
     assert "speed" not in template.lower()
