@@ -491,6 +491,9 @@ fencing, and leave final achievement behind Phase 1's independent audit gate.
 
 ### Phase 4: multichannel operation
 
+Implemented contract and operations are documented in
+[Multichannel multimodal intake](MULTICHANNEL_INTAKE.md).
+
 - Web intake migration to the canonical channel contract.
 - Telegram and Discord adapters with multimodal artifacts and identity linking.
 - Cross-channel correlated responses, notification routing, and delivery receipts.
@@ -518,6 +521,7 @@ attributable to the goal and authorized by the policy revision active at the tim
 ## Related architecture
 
 - [Architecture](ARCHITECTURE.md)
+- [Multichannel multimodal intake](MULTICHANNEL_INTAKE.md)
 - [Interactions and fleet notifications](INTERACTIONS_AND_NOTIFICATIONS.md)
 - [Dispatch progress](DISPATCH_PROGRESS.md)
 - [Post-turn evaluation](POST_TURN_EVALUATION.md)

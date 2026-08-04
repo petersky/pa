@@ -12,6 +12,8 @@ from pa.core.context import AppContext
 from pa.domain.store import get_store
 from pa.domain.models import Card, CardEvent, EventType, Project
 from pa.fleet.membership import MembershipStore
+from pa.intake.models import IdentityBinding, IntakeEnvelope
+from pa.intake.projection import get_envelope_payload, get_identity_payload_by_id
 from pa.sync.compaction import SyncMetrics
 from pa.sync.engine import SyncEngine
 from pa.sync.event_log import EventLog
@@ -371,15 +373,19 @@ async def resolve_sync_conflicts(request: Request, body: dict) -> dict:
     for item in resolutions:
         entity = item.get("entity")
         entity_id = item.get("id")
-        if entity not in {"card", "project"} or not entity_id:
+        if (
+            entity not in {"card", "project", "intake", "channel_identity"}
+            or not entity_id
+        ):
             raise HTTPException(
                 status_code=400, detail="each resolution needs entity and id"
             )
-        valid_actions = (
-            {"update", "delete", "upsert"}
-            if entity == "card"
-            else {"update", "archive", "upsert"}
-        )
+        if entity == "card":
+            valid_actions = {"update", "delete", "upsert"}
+        elif entity == "project":
+            valid_actions = {"update", "archive", "upsert"}
+        else:
+            valid_actions = {"update", "upsert"}
         if item.get("action", "update") not in valid_actions:
             raise HTTPException(
                 status_code=400,
@@ -467,7 +473,7 @@ async def resolve_sync_conflicts(request: Request, body: dict) -> dict:
                     field_intent=sorted(fields),
                 )
             )
-        else:
+        elif entity == "project":
             current = await _offload(
                 ctx,
                 "sqlite.project_read",
@@ -515,6 +521,58 @@ async def resolve_sync_conflicts(request: Request, body: dict) -> dict:
                     else fields,
                 )
             )
+        else:
+            current_payload = (
+                get_envelope_payload(store, entity_id)
+                if entity == "intake"
+                else get_identity_payload_by_id(store, entity_id)
+            )
+            if action == "update" and not current_payload:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"{entity} {entity_id} requires an upsert resolution",
+                )
+            model = IntakeEnvelope if entity == "intake" else IdentityBinding
+            candidate = current_payload or {"id": entity_id, "realm_id": realm_id}
+            try:
+                validated = model.model_validate(
+                    {**candidate, **fields, "id": entity_id}
+                )
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"invalid {entity} resolution for {entity_id}: {exc}",
+                ) from exc
+            normalized = validated.model_dump(mode="json")
+            payload = (
+                normalized
+                if action == "upsert"
+                else {key: normalized[key] for key in fields if key in normalized}
+            )
+            payload.update(
+                id=entity_id,
+                version=max(
+                    int(candidate.get("version") or 0) + 1,
+                    int(normalized["version"]),
+                ),
+            )
+            events.append(
+                CardEvent(
+                    type=(
+                        EventType.INTAKE_ENVELOPE_UPSERTED
+                        if entity == "intake"
+                        else EventType.CHANNEL_IDENTITY_UPSERTED
+                    ),
+                    realm_id=realm_id,
+                    project_id=(
+                        normalized.get("project_id") if entity == "intake" else None
+                    ),
+                    author_principal=principal,
+                    author_instance=instance,
+                    payload=payload,
+                )
+            )
+
     def commit_resolution():
         try:
             with store.mutation():

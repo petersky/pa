@@ -28,6 +28,7 @@ from pa.execution.observability import (
     build_session_observability,
     diagnostic_timeline,
 )
+from pa.intake.models import IntakeMutationContext
 from pa.instance.agent_session import (
     RECOVERY_BLOCKED_STATUS,
     TRANSCRIPT_WINDOW_LIMIT,
@@ -1622,6 +1623,53 @@ def _prompt_acceptance_matches(
     ) == _public_prompt_images(images)
 
 
+async def _record_web_intake(
+    request: Request,
+    session_id: str,
+    body: PromptBody,
+    runtime,
+    message: str,
+) -> dict[str, str] | None:
+    ctx = getattr(request.app.state, "ctx", None)
+    services = getattr(ctx, "services", None)
+    if not isinstance(services, dict):
+        return None
+    service = services.get("intake_service")
+    if service is None:
+        return None
+    principal_id = get_principal_id(request)
+    message_id = (
+        body.client_prompt_id
+        or body.idempotency_key
+        or (f"dispatch:{body.dispatch_id}" if body.dispatch_id else str(uuid4()))
+    )
+    realm_id = getattr(runtime.session, "realm_id", None) or ctx.settings.primary_realm
+    project_id = body.project_id or getattr(runtime.session, "project_id", None)
+    item = await _runtime_offload(
+        runtime,
+        "intake.web_prompt",
+        service.ingest_web_prompt,
+        principal_id=principal_id,
+        session_id=session_id,
+        message=message,
+        images=body.images,
+        realm_id=realm_id,
+        project_id=project_id,
+        goal_ids=[],
+        channel_message_id=message_id,
+        context=IntakeMutationContext(
+            actor_principal=principal_id,
+            authority_instance_id=ctx.settings.instance_id,
+            idempotency_key=f"web:{session_id}:{message_id}",
+        ),
+    )
+    return {
+        "id": item.id,
+        "correlation_id": item.correlation_id,
+        "disposition": item.security.disposition.value,
+    }
+
+
 async def _submit_client_prompt(
     request: Request,
     session_id: str,
@@ -1782,8 +1830,14 @@ async def session_prompt(request: Request, session_id: str, body: PromptBody) ->
                 },
             ) from exc
     assert runtime is not None
+    intake = await _record_web_intake(request, session_id, body, runtime, message)
     if body.client_prompt_id:
-        return await _submit_client_prompt(request, session_id, body, runtime, message)
+        response = await _submit_client_prompt(
+            request, session_id, body, runtime, message
+        )
+        if intake:
+            response["intake"] = intake
+        return response
     dispatch_record = None
     dispatch_store = None
     if body.dispatch_id:
@@ -1828,7 +1882,11 @@ async def session_prompt(request: Request, session_id: str, body: PromptBody) ->
                             "message": "This follow-up key was used for a different prompt.",
                         },
                     )
-                return {**dict(prior.get("response") or {}), "duplicate": True}
+                return {
+                    **dict(prior.get("response") or {}),
+                    "duplicate": True,
+                    "intake": intake,
+                }
         elif dispatch_record.prompt_ack:
             ack = dispatch_record.prompt_ack
             return {
@@ -1842,6 +1900,7 @@ async def session_prompt(request: Request, session_id: str, body: PromptBody) ->
                 "session_id": session_id,
                 "duplicate": True,
                 "queue": [item.public_dict() for item in runtime._queue],
+                "intake": intake,
             }
     # Return immediately; transcript/SSE streams the turn. Blocking here made the
     # old HTMX UI look like it only ever received "Turn completed".
@@ -1978,6 +2037,8 @@ async def session_prompt(request: Request, session_id: str, body: PromptBody) ->
                     "followup": False,
                 },
             )
+    if intake:
+        response["intake"] = intake
     return response
 
 

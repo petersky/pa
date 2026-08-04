@@ -81,6 +81,37 @@ class Settings(BaseSettings):
     secure_cookies: bool = False
     session_secret: str = Field(default_factory=lambda: str(uuid4()))
 
+    # Canonical multichannel intake. External adapters remain disabled until
+    # their provider credentials and allowlists or identity links are configured.
+    intake_max_event_bytes: int = Field(
+        default=2 * 1024 * 1024, ge=1024, le=25 * 1024 * 1024
+    )
+    intake_max_artifact_bytes: int = Field(
+        default=25 * 1024 * 1024, ge=1024, le=25 * 1024 * 1024
+    )
+    intake_raw_retention_hours: float = Field(default=168.0, ge=1, le=8760)
+    intake_canonical_retention_hours: float = Field(default=2160.0, ge=1, le=43800)
+    intake_identity_rate_limit: int = Field(default=30, ge=1, le=10_000)
+    intake_conversation_rate_limit: int = Field(default=120, ge=1, le=100_000)
+    intake_channel_routes: dict[str, dict] = Field(default_factory=dict)
+    telegram_bot_token: str = ""
+    telegram_webhook_secret: str = ""
+    telegram_webhook_url: str = ""
+    telegram_allowed_user_ids: Annotated[list[str], NoDecode] = Field(
+        default_factory=list
+    )
+    telegram_allowed_conversation_ids: Annotated[list[str], NoDecode] = Field(
+        default_factory=list
+    )
+    discord_bot_token: str = ""
+    discord_application_public_key: str = ""
+    discord_allowed_user_ids: Annotated[list[str], NoDecode] = Field(
+        default_factory=list
+    )
+    discord_allowed_conversation_ids: Annotated[list[str], NoDecode] = Field(
+        default_factory=list
+    )
+
     # OIDC hooks (T2+)
     oidc_issuer: str = ""
     oidc_client_id: str = ""
@@ -178,6 +209,10 @@ class Settings(BaseSettings):
         "capabilities",
         "agent_args",
         "web_listeners",
+        "telegram_allowed_user_ids",
+        "telegram_allowed_conversation_ids",
+        "discord_allowed_user_ids",
+        "discord_allowed_conversation_ids",
         mode="before",
     )
     @classmethod
@@ -248,6 +283,11 @@ class Settings(BaseSettings):
             raise ValueError(
                 "telemetry_rollup_retention_hours must be greater than or equal "
                 "to telemetry_raw_retention_hours"
+            )
+        if self.intake_canonical_retention_hours < self.intake_raw_retention_hours:
+            raise ValueError(
+                "intake_canonical_retention_hours must be greater than or equal "
+                "to intake_raw_retention_hours"
             )
         if self.telemetry_default_report_range not in {
             "15m",

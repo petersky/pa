@@ -22,6 +22,8 @@ PUBLIC_PATHS = {
     "/api/fleet/join",
     "/api/pr-supervisor/webhook/github",
     "/favicon.ico",
+    "/api/intake/webhooks/telegram",
+    "/api/intake/webhooks/discord",
     "/login",
 }
 
@@ -56,6 +58,8 @@ CSRF_EXEMPT_PATHS = {
     "/api/fleet/join",
     "/api/auth/login",
     "/api/pr-supervisor/webhook/github",
+    "/api/intake/webhooks/telegram",
+    "/api/intake/webhooks/discord",
     "/login",
 }
 

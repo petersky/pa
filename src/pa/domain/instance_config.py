@@ -59,6 +59,26 @@ class InstanceConfig(BaseModel):
     auth_required: bool = False
     secure_cookies: bool = False
     session_secret: str = ""
+    intake_max_event_bytes: int = Field(
+        default=2 * 1024 * 1024, ge=1024, le=25 * 1024 * 1024
+    )
+    intake_max_artifact_bytes: int = Field(
+        default=25 * 1024 * 1024, ge=1024, le=25 * 1024 * 1024
+    )
+    intake_raw_retention_hours: float = Field(default=168.0, ge=1, le=8760)
+    intake_canonical_retention_hours: float = Field(default=2160.0, ge=1, le=43800)
+    intake_identity_rate_limit: int = Field(default=30, ge=1, le=10_000)
+    intake_conversation_rate_limit: int = Field(default=120, ge=1, le=100_000)
+    intake_channel_routes: dict[str, dict] = Field(default_factory=dict)
+    telegram_bot_token: str = ""
+    telegram_webhook_secret: str = ""
+    telegram_webhook_url: str = ""
+    telegram_allowed_user_ids: list[str] = Field(default_factory=list)
+    telegram_allowed_conversation_ids: list[str] = Field(default_factory=list)
+    discord_bot_token: str = ""
+    discord_application_public_key: str = ""
+    discord_allowed_user_ids: list[str] = Field(default_factory=list)
+    discord_allowed_conversation_ids: list[str] = Field(default_factory=list)
     oidc_issuer: str = ""
     oidc_client_id: str = ""
     oidc_client_secret: str = ""
