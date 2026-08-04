@@ -34,6 +34,7 @@ RANGES = {
 DEFAULT_METRICS = [
     "cpu.utilization",
     "memory.utilization",
+    "swap.utilization",
     "disk.read_throughput",
     "disk.write_throughput",
     "disk.read_iops",
@@ -41,10 +42,17 @@ DEFAULT_METRICS = [
     "disk.latency",
     "network.ingress",
     "network.egress",
+    "network.connections",
+    "network.errors",
     "pa.cpu",
     "pa.memory_rss",
+    "pa.threads",
     "session.cpu",
     "session.memory_rss",
+    "session.disk_read",
+    "session.disk_write",
+    "session.network_ingress",
+    "session.network_egress",
     "session.processes",
     "session.tasks",
     "agents.concurrent",
@@ -417,6 +425,8 @@ async def fleet_query(request: Request, body: QueryBody) -> dict:
         ][:32]
         remote_body = body.model_dump(mode="json")
         remote_body["instance_ids"] = []
+        remote_body["start"] = local_query.start.isoformat()
+        remote_body["end"] = local_query.end.isoformat()
         responses = await asyncio.gather(
             *[
                 _peer_json(
@@ -434,7 +444,13 @@ async def fleet_query(request: Request, body: QueryBody) -> dict:
         for item, response in zip(peers, responses, strict=True):
             if isinstance(response, Exception):
                 failures.append(
-                    {"instance_id": item.instance_id, "state": "unavailable"}
+                    {
+                        "instance_id": item.instance_id,
+                        "state": "unavailable",
+                        "reason": "peer_failure",
+                        "start": local_query.start.isoformat(),
+                        "end": local_query.end.isoformat(),
+                    }
                 )
             else:
                 combined["series"].extend(response.get("series") or [])

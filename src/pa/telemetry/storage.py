@@ -11,7 +11,7 @@ from pathlib import Path
 
 from pa.telemetry.models import MetricQuality, TelemetryQuery, TelemetrySample
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 ROLLUP_BUCKET_SECONDS = 300
 _QUALITY_RANK = {
     MetricQuality.MEASURED.value: 0,
@@ -131,6 +131,7 @@ class TelemetryStorage:
                 value_last REAL,
                 value_count INTEGER NOT NULL,
                 sample_count INTEGER NOT NULL,
+                restart_ids TEXT NOT NULL DEFAULT '',
                 PRIMARY KEY(
                     bucket_start, bucket_seconds, instance_id, scope_type, scope_id,
                     provider_id, card_id, project_id, realm_id, principal_id, metric
@@ -142,6 +143,14 @@ class TelemetryStorage:
                 ON rollup_metrics(scope_type, scope_id, metric, bucket_start);
             """
         )
+        rollup_columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(rollup_metrics)")
+        }
+        if "restart_ids" not in rollup_columns:
+            conn.execute(
+                "ALTER TABLE rollup_metrics "
+                "ADD COLUMN restart_ids TEXT NOT NULL DEFAULT ''"
+            )
         conn.execute(
             "INSERT INTO telemetry_meta(key,value) VALUES('schema_version',?) "
             "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
@@ -283,7 +292,7 @@ class TelemetryStorage:
                        MAX(CASE m.quality
                          WHEN 'unsupported' THEN 3 WHEN 'unavailable' THEN 2
                          WHEN 'estimated' THEN 1 ELSE 0 END) quality_rank,
-                       COUNT(DISTINCT s.restart_id) restart_count,
+                       GROUP_CONCAT(DISTINCT s.restart_id) restart_ids,
                        MIN(s.ts) first_ts,MAX(s.ts) last_ts
                 FROM samples s JOIN sample_metrics m ON m.sample_id=s.id
                 WHERE {where}{metric_clause}
@@ -317,7 +326,8 @@ class TelemetryStorage:
                        SUM(r.value_count) value_count,
                        SUM(r.sample_count) sample_count,
                        MAX(r.quality_rank) quality_rank,
-                       0 restart_count,MIN(r.bucket_start) first_ts,
+                       GROUP_CONCAT(r.restart_ids, ',') restart_ids,
+                       MIN(r.bucket_start) first_ts,
                        MAX(r.bucket_start+r.bucket_seconds) last_ts
                 FROM rollup_metrics r
                 WHERE {rollup_where}{rollup_metric_clause}
@@ -384,14 +394,21 @@ class TelemetryStorage:
             current["quality_rank"] = max(
                 current["quality_rank"], incoming["quality_rank"]
             )
-            current["restart_count"] += incoming["restart_count"]
+            current["restart_ids"] = ",".join(
+                value
+                for value in (current["restart_ids"], incoming["restart_ids"])
+                if value
+            )
             current["first_ts"] = min(current["first_ts"], incoming["first_ts"])
             current["last_ts"] = max(current["last_ts"], incoming["last_ts"])
 
         dropped_invalid_samples = 0
         series: dict[tuple, list] = defaultdict(list)
         for row in sorted(combined.values(), key=lambda item: item["bucket_start"]):
-            if any(value is not None and not math.isfinite(float(value)) for value in (row["value_avg"], row["value_min"], row["value_max"])):
+            if any(
+                value is not None and not math.isfinite(float(value))
+                for value in (row["value_avg"], row["value_min"], row["value_max"])
+            ):
                 dropped_invalid_samples += 1
                 continue
             series[
@@ -420,7 +437,14 @@ class TelemetryStorage:
                     "quality": _RANK_QUALITY.get(
                         row["quality_rank"], MetricQuality.UNAVAILABLE.value
                     ),
-                    "restart": row["restart_count"] > 1,
+                    "restart": len(
+                        {
+                            value
+                            for value in (row["restart_ids"] or "").split(",")
+                            if value
+                        }
+                    )
+                    > 1,
                     "first_timestamp": datetime.fromtimestamp(
                         row["first_ts"], UTC
                     ).isoformat(),
@@ -445,18 +469,115 @@ class TelemetryStorage:
                     "realm_id": key[7] or None,
                     "metric": key[8],
                     "unit": key[9],
-                    "points": points,
+                    "points": self._typed_points(points),
+                    "gaps": self._series_gaps(
+                        points,
+                        start=query.start,
+                        end=query.end,
+                        bucket_seconds=bucket,
+                    ),
                 }
                 for key, points in series.items()
             ],
             "diagnostics": {
-                "bucket_count": len({point["timestamp"] for points in series.values() for point in points}),
+                "bucket_count": len(
+                    {
+                        point["timestamp"]
+                        for points in series.values()
+                        for point in points
+                    }
+                ),
                 "series_count": len(series),
                 "point_count": sum(len(points) for points in series.values()),
-                "collection_freshness": max((point["last_timestamp"] for points in series.values() for point in points), default=None),
+                "collection_freshness": max(
+                    (
+                        point["last_timestamp"]
+                        for points in series.values()
+                        for point in points
+                    ),
+                    default=None,
+                ),
                 "dropped_invalid_samples": dropped_invalid_samples,
             },
         }
+
+    @staticmethod
+    def _missing_reason(point: dict) -> str | None:
+        if point["quality"] == MetricQuality.UNSUPPORTED.value:
+            return "unsupported"
+        if point["quality"] == MetricQuality.UNAVAILABLE.value:
+            return "temporarily_unavailable"
+        if point["value_count"] == 0 or point["avg"] is None:
+            return "no_sample"
+        return None
+
+    @classmethod
+    def _typed_points(cls, points: list[dict]) -> list[dict]:
+        for point in points:
+            reason = cls._missing_reason(point)
+            point["missing_reason"] = reason
+            point["observation"] = (
+                "missing"
+                if reason
+                else "genuine_zero"
+                if point["avg"] == 0
+                else "observed"
+            )
+        return points
+
+    @classmethod
+    def _series_gaps(
+        cls,
+        points: list[dict],
+        *,
+        start: datetime,
+        end: datetime,
+        bucket_seconds: int,
+    ) -> list[dict]:
+        gaps: list[dict] = []
+        cursor = start
+        ordered = sorted(points, key=lambda point: point["timestamp"])
+        for point in ordered:
+            point_start = datetime.fromisoformat(point["timestamp"])
+            bucket_start = max(start, point_start)
+            bucket_end = min(end, point_start + timedelta(seconds=bucket_seconds))
+            if bucket_end <= start or bucket_start >= end:
+                continue
+            if cursor < bucket_start:
+                gaps.append(
+                    {
+                        "reason": "no_sample",
+                        "start": cursor.isoformat(),
+                        "end": bucket_start.isoformat(),
+                    }
+                )
+            reason = cls._missing_reason(point)
+            if reason:
+                gaps.append(
+                    {
+                        "reason": reason,
+                        "start": bucket_start.isoformat(),
+                        "end": bucket_end.isoformat(),
+                    }
+                )
+            if point["restart"]:
+                gaps.append(
+                    {
+                        "reason": "restart",
+                        "start": bucket_start.isoformat(),
+                        "end": bucket_end.isoformat(),
+                    }
+                )
+            cursor = max(cursor, bucket_end)
+        if cursor < end:
+            gaps.append(
+                {
+                    "reason": "stale" if ordered else "no_sample",
+                    "start": cursor.isoformat(),
+                    "end": end.isoformat(),
+                }
+            )
+        return gaps
 
     @staticmethod
     def _rollup_ids(conn: sqlite3.Connection, ids: list[int]) -> int:
@@ -485,7 +606,8 @@ class TelemetryStorage:
                        AND CAST(s2.ts / ? AS INTEGER)=CAST(s.ts / ? AS INTEGER)
                        AND s2.id IN ({placeholders})
                      ORDER BY s2.ts DESC LIMIT 1) value_last,
-                   COUNT(m.value) value_count,COUNT(*) sample_count
+                   COUNT(m.value) value_count,COUNT(*) sample_count,
+                   GROUP_CONCAT(DISTINCT s.restart_id) restart_ids
             FROM samples s JOIN sample_metrics m ON m.sample_id=s.id
             WHERE s.id IN ({placeholders})
             GROUP BY bucket_start,s.instance_id,s.instance_name,s.scope_type,
@@ -508,8 +630,8 @@ class TelemetryStorage:
                     bucket_start,bucket_seconds,instance_id,instance_name,
                     scope_type,scope_id,provider_id,card_id,project_id,realm_id,
                     principal_id,metric,unit,quality_rank,value_sum,value_min,
-                    value_max,value_last,value_count,sample_count
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    value_max,value_last,value_count,sample_count,restart_ids
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(
                     bucket_start,bucket_seconds,instance_id,scope_type,scope_id,
                     provider_id,card_id,project_id,realm_id,principal_id,metric
@@ -526,7 +648,11 @@ class TelemetryStorage:
                       ELSE MAX(value_max,excluded.value_max) END,
                     value_last=COALESCE(excluded.value_last,value_last),
                     value_count=value_count+excluded.value_count,
-                    sample_count=sample_count+excluded.sample_count
+                    sample_count=sample_count+excluded.sample_count,
+                    restart_ids=CASE
+                      WHEN restart_ids='' THEN excluded.restart_ids
+                      WHEN excluded.restart_ids='' THEN restart_ids
+                      ELSE restart_ids || ',' || excluded.restart_ids END
                 """,
                 (
                     row["bucket_start"],
@@ -549,6 +675,7 @@ class TelemetryStorage:
                     row["value_last"],
                     row["value_count"],
                     row["sample_count"],
+                    row["restart_ids"] or "",
                 ),
             )
         conn.execute(
