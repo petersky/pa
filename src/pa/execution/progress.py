@@ -40,6 +40,7 @@ MAX_PROGRESS_PAYLOAD_BYTES = 64_000
 MAX_FINAL_REPORT_BYTES = 64_000
 PROGRESS_HEARTBEAT_SECONDS = 15.0
 PROGRESS_RETRY_SECONDS = 3.0
+DERIVED_PROGRESS_COALESCE_SECONDS = 60.0
 PROGRESS_LIVE_SECONDS = 45
 PROGRESS_DELAYED_SECONDS = 120
 
@@ -720,6 +721,8 @@ class ProgressService:
         self._session_locks: dict[str, asyncio.Lock] = {}
         self._session_records: dict[str, tuple[datetime, Any]] = {}
         self._observations: dict[str, int] = {}
+        self._coalesced_observations: dict[str, int] = {}
+        self._derived_fingerprints: dict[tuple[str, str], tuple[str, datetime]] = {}
         self._observe_waiters = 0
         self._observe_max_waiters = 0
         self._malformed_sessions_warned: set[str] = set()
@@ -753,7 +756,7 @@ class ProgressService:
         if self._task:
             try:
                 await asyncio.wait_for(self._task, timeout=2.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 self._task.cancel()
         if self._client is not None:
             await self._client.aclose()
@@ -775,14 +778,16 @@ class ProgressService:
                 try:
                     await self._observe(session_id, update)
                 except (ValidationError, TypeError, ValueError) as exc:
-                    if session_id not in self._malformed_sessions_warned:
-                        if len(self._malformed_sessions_warned) < 256:
-                            logger.warning(
-                                "Ignoring malformed progress update session=%s error=%s",
-                                sanitize_text(session_id, limit=80),
-                                sanitize_text(exc, limit=160),
-                            )
-                            self._malformed_sessions_warned.add(session_id)
+                    if (
+                        session_id not in self._malformed_sessions_warned
+                        and len(self._malformed_sessions_warned) < 256
+                    ):
+                        logger.warning(
+                            "Ignoring malformed progress update session=%s error=%s",
+                            sanitize_text(session_id, limit=80),
+                            sanitize_text(exc, limit=160),
+                        )
+                        self._malformed_sessions_warned.add(session_id)
         finally:
             self._observe_waiters -= 1
             if len(self._session_locks) > 256:
@@ -798,8 +803,66 @@ class ProgressService:
             "waiting": self._observe_waiters,
             "max_waiting": self._observe_max_waiters,
             "observations_by_session": dict(self._observations),
+            "coalesced_observations_by_session": dict(self._coalesced_observations),
             "cached_sessions": len(self._session_records),
         }
+
+    def _coalesce_derived_update(
+        self,
+        session_id: str,
+        update: dict[str, Any],
+        derived: tuple[
+            ProgressPhase,
+            str,
+            list[ProgressToolDetailV1],
+            list[ProgressValidationV1],
+        ],
+        *,
+        now: datetime,
+    ) -> bool:
+        """Suppress repeated ACP lifecycle snapshots before any durable writes."""
+        event_type = str(update.get("type") or "")
+        if event_type not in {"plan", "tool_call", "tool_call_update"}:
+            return False
+        if event_type == "plan":
+            source = "plan"
+        else:
+            source = sanitize_text(
+                update.get("tool_call_id")
+                or f"{update.get('kind') or ''}:{update.get('title') or ''}",
+                limit=MAX_PROGRESS_DETAIL,
+            )
+            source = f"tool:{source or 'unknown'}"
+        phase, summary, tool_details, validations = derived
+        fingerprint = hashlib.sha256(
+            json.dumps(
+                {
+                    "phase": phase.value,
+                    "summary": summary,
+                    "tools": [item.model_dump(mode="json") for item in tool_details],
+                    "validations": [
+                        item.model_dump(mode="json") for item in validations
+                    ],
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
+        key = (session_id, source)
+        previous = self._derived_fingerprints.get(key)
+        self._derived_fingerprints[key] = (fingerprint, now)
+        while len(self._derived_fingerprints) > 512:
+            self._derived_fingerprints.pop(next(iter(self._derived_fingerprints)))
+        if not previous or previous[0] != fingerprint:
+            return False
+        if (now - previous[1]).total_seconds() > DERIVED_PROGRESS_COALESCE_SECONDS:
+            return False
+        self._coalesced_observations[session_id] = (
+            self._coalesced_observations.get(session_id, 0) + 1
+        )
+        while len(self._coalesced_observations) > 256:
+            self._coalesced_observations.pop(next(iter(self._coalesced_observations)))
+        return True
 
     async def _observe(self, session_id: str, update: dict[str, Any]) -> None:
         now = datetime.now(UTC)
@@ -842,6 +905,14 @@ class ProgressService:
         if derived:
             phase, summary, tool_details, validations = derived
             if summary:
+                if self._coalesce_derived_update(
+                    session_id,
+                    checkpoint_update,
+                    derived,
+                    now=now,
+                ):
+                    await self._heartbeat(record, phase, "Agent active.")
+                    return
                 await self._checkpoint(
                     record,
                     phase=phase,
@@ -978,9 +1049,7 @@ class ProgressService:
                 else None
             ),
             operator_input=(
-                sanitize_operator_input(operator_input)
-                if operator_input
-                else None
+                sanitize_operator_input(operator_input) if operator_input else None
             ),
             tool_details=normalized_tools,
         )
@@ -1080,7 +1149,7 @@ class ProgressService:
             self._wake.clear()
             try:
                 await asyncio.wait_for(self._wake.wait(), timeout=self.retry_seconds)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
 
     async def _send(
@@ -1125,7 +1194,7 @@ class ProgressService:
                 )
                 return
             error = f"HTTP {response.status_code}: {response.text[:200]}"
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - delivery failures remain retryable
             error = f"{type(exc).__name__}: {exc}"
         await self._offload(
             "progress.delivery_fail",
