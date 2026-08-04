@@ -62,13 +62,49 @@ class GoalEvidence(BaseModel):
     contradictory: bool = False
 
 
+class GoalRateLimit(BaseModel):
+    """A rolling hard limit evaluated before an autonomous action is reserved."""
+
+    key: str = Field(min_length=1, max_length=100)
+    window_seconds: int = Field(ge=1, le=31_536_000)
+    max_actions: int | None = Field(default=None, ge=1)
+    max_cost_usd: float | None = Field(default=None, ge=0)
+    max_tokens: int | None = Field(default=None, ge=1)
+    max_api_calls: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def require_a_limit(self) -> GoalRateLimit:
+        if all(
+            value is None
+            for value in (
+                self.max_actions,
+                self.max_cost_usd,
+                self.max_tokens,
+                self.max_api_calls,
+            )
+        ):
+            raise ValueError("a goal rate limit must constrain at least one metric")
+        return self
+
+
 class GoalBudget(BaseModel):
     max_cost_usd: float | None = Field(default=None, ge=0)
     max_tokens: int | None = Field(default=None, ge=1)
+    max_api_calls: int | None = Field(default=None, ge=1)
+    max_storage_mb: float | None = Field(default=None, ge=0)
+    max_actions: int | None = Field(default=None, ge=1)
     max_dispatches: int | None = Field(default=None, ge=1)
     max_concurrency: int = Field(default=1, ge=1, le=256)
     deadline: datetime | None = None
     retry_limit: int = Field(default=3, ge=0)
+    rate_limits: list[GoalRateLimit] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def unique_rate_limit_keys(self) -> GoalBudget:
+        keys = [item.key for item in self.rate_limits]
+        if len(keys) != len(set(keys)):
+            raise ValueError("goal rate-limit keys must be unique")
+        return self
 
 
 class GoalPolicy(BaseModel):
@@ -79,6 +115,14 @@ class GoalPolicy(BaseModel):
     repository_scope: list[str] = Field(default_factory=list)
     data_scope: list[str] = Field(default_factory=list)
     require_operator_for: list[str] = Field(default_factory=list)
+    max_action_risk: str = Field(default="low", pattern="^(low|medium|high|critical)$")
+    allowed_provider_ids: list[str] = Field(default_factory=list)
+    allow_derived_subgoals: bool = False
+    auto_activate_derived_subgoals: bool = False
+    allow_top_level_proposals: bool = False
+    max_subgoal_depth: int = Field(default=2, ge=0, le=16)
+    max_derived_subgoals: int = Field(default=10, ge=0, le=10_000)
+    proposal_cooldown_seconds: int = Field(default=300, ge=0, le=31_536_000)
     authored_by: str = "user:local"
     effective_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 

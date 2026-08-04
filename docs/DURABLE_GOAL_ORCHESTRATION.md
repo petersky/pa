@@ -491,6 +491,9 @@ redacted.
 - Cross-goal priority, resource allocation, and conflict management.
 - Organization-level portfolio review and governance.
 
+The implemented Phase 5 contracts and authorization order are documented in
+[Goal autonomy and governance](GOAL_AUTONOMY_AND_GOVERNANCE.md).
+
 ## Initial acceptance criteria
 
 The first production milestone is complete when PA can accept a goal, survive a

@@ -638,6 +638,10 @@ class CardProjection:
             from pa.goals.projection import apply_goal_event
 
             apply_goal_event(self, event)
+        elif event.type == EventType.GOAL_GOVERNANCE_UPSERTED:
+            from pa.goals.projection import apply_goal_governance_event
+
+            apply_goal_governance_event(self, event)
         elif event.type == EventType.CARD_CREATED:
             self._apply_created(event)
         elif event.type == EventType.CARD_UPDATED:
