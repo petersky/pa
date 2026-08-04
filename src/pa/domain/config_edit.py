@@ -29,6 +29,7 @@ FieldKind = Literal[
     "optional_int",
     "float",
     "bool",
+    "dict_json",
     "dict_int",
     "list_str",
     "optional_list_str",
@@ -286,6 +287,14 @@ def parse_value(spec: FieldSpec, raw: str) -> Any:
             return float(raw.strip())
         except ValueError as exc:
             raise ConfigError(f"Invalid number '{raw}'") from exc
+    if spec.kind == "dict_json":
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise ConfigError(f"Invalid JSON object: {exc}") from exc
+        if not isinstance(parsed, dict):
+            raise ConfigError("Value must be a JSON object")
+        return parsed
     if spec.kind == "dict_int":
         try:
             parsed = json.loads(raw)
@@ -381,6 +390,8 @@ def validate_field_value(key: str, value: Any) -> Any:
             raise ConfigError(f"{key} must be an integer")
     if spec.kind == "bool" and not isinstance(value, bool):
         raise ConfigError(f"{key} must be a boolean")
+    if spec.kind == "dict_json" and not isinstance(value, dict):
+        raise ConfigError(f"{key} must be a JSON object")
     if spec.kind in ("path", "optional_path") and value is not None:
         if not isinstance(value, (str, Path)):
             raise ConfigError(f"{key} must be a path")
@@ -588,6 +599,8 @@ def default_for_unset(spec: FieldSpec) -> Any:
         return defaults[spec.name]
     if spec.kind == "bool":
         return False
+    if spec.kind == "dict_json":
+        return {}
     if spec.kind == "dict_int":
         return {}
     if spec.kind in ("list_str",):

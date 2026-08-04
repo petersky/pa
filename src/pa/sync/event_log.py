@@ -18,6 +18,8 @@ from pa.sync.object_store import ObjectStore, object_hash
 _AUTOMATIC_METADATA_FIELDS = {("card", "updated_at")}
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 _FLEET_EVENT_ENTITY = {
+    EventType.INTAKE_ENVELOPE_UPSERTED: "intake",
+    EventType.CHANNEL_IDENTITY_UPSERTED: "channel_identity",
     EventType.INSTANCE_GROUP_CREATED: "instance_group",
     EventType.INSTANCE_GROUP_UPDATED: "instance_group",
     EventType.INSTANCE_GROUP_ARCHIVED: "instance_group",
@@ -29,6 +31,8 @@ _FLEET_EVENT_ENTITY = {
     EventType.NOTIFICATION_DELETED: "notification",
 }
 _FLEET_ENTITY_UPDATE_EVENT = {
+    "intake": EventType.INTAKE_ENVELOPE_UPSERTED,
+    "channel_identity": EventType.CHANNEL_IDENTITY_UPSERTED,
     "instance_group": EventType.INSTANCE_GROUP_UPDATED,
     "instance_policy": EventType.INSTANCE_PARTICIPATION_POLICY_UPDATED,
     "placement_default": EventType.PLACEMENT_DEFAULT_UPDATED,
@@ -51,6 +55,10 @@ def _event_entity(event: CardEvent) -> tuple[str | None, str | None]:
         entity_id = str(event.payload.get("entity_id") or "")
         identity = f"{entity_type}:{entity_id}" if entity_type and entity_id else None
         return ("goal_governance", identity)
+    if event.type == EventType.INTAKE_ENVELOPE_UPSERTED:
+        return "intake", str(event.payload.get("id") or "") or None
+    if event.type == EventType.CHANNEL_IDENTITY_UPSERTED:
+        return "channel_identity", str(event.payload.get("id") or "") or None
     if event.card_id:
         return "card", event.card_id
     if event.project_id and event.type not in {
@@ -72,6 +80,8 @@ def _event_entity(event: CardEvent) -> tuple[str | None, str | None]:
             )
         return entity, str(scope_key)
     if entity == "notification":
+        return entity, str(event.payload.get("id") or "") or None
+    if entity in {"intake", "channel_identity"}:
         return entity, str(event.payload.get("id") or "") or None
     return None, None
 
@@ -124,6 +134,45 @@ def _notification_conflict_value(
             return present[0], "non_null_timestamp"
         return _latest_timestamp_value(*present), "latest_timestamp"
     return winner["value"], "highest_notification_version_then_event_identity"
+
+
+def _record_union(left: Any, right: Any) -> list[Any]:
+    records: dict[str, Any] = {}
+    for item in [*(left or []), *(right or [])]:
+        if not isinstance(item, dict):
+            continue
+        key = str(item.get("id") or _canonical_value(item))
+        current = records.get(key)
+        if current is None or _canonical_value(item) > _canonical_value(current):
+            records[key] = item
+    return [records[key] for key in sorted(records)]
+
+
+def _intake_conflict_value(field: str, left: Any, right: Any) -> tuple[Any, str] | None:
+    if field == "receipts":
+        return _record_union(left, right), "receipt_id_union"
+    if field in {"goal_ids", "modalities"}:
+        return sorted(
+            {str(item) for item in [*(left or []), *(right or [])]}
+        ), "set_union"
+    if field == "version":
+        return max(int(left or 0), int(right or 0)), "highest_value"
+    return None
+
+
+def _identity_conflict_value(
+    field: str, left: Any, right: Any
+) -> tuple[Any, str] | None:
+    if field == "conversation_ids":
+        return sorted(
+            {str(item) for item in [*(left or []), *(right or [])]}
+        ), "set_union"
+    if field == "version":
+        return max(int(left or 0), int(right or 0)), "highest_value"
+    if field == "revoked_at":
+        present = [value for value in (left, right) if value not in {None, ""}]
+        return (max(present) if present else None), "revocation_wins"
+    return None
 
 
 class EventLog:
@@ -324,6 +373,8 @@ class EventLog:
                     "instance_policy",
                     "placement_default",
                     "notification",
+                    "intake",
+                    "channel_identity",
                 }
                 or not entity_id
                 or not field
@@ -348,6 +399,8 @@ class EventLog:
             else:
                 event_type = _FLEET_ENTITY_UPDATE_EVENT[entity]
                 identity_field = {
+                    "intake": "id",
+                    "channel_identity": "id",
                     "instance_group": "id",
                     "instance_policy": "instance_id",
                     "placement_default": "scope_key",
@@ -565,6 +618,17 @@ class EventLog:
                     continue
             for field in sorted(set(left_fields) & set(right_fields)):
                 if left_fields[field]["value"] != right_fields[field]["value"]:
+                    if entity == "channel_identity" and field == "principal_id":
+                        conflicts.append(
+                            {
+                                "entity": entity,
+                                "id": entity_id,
+                                "field": field,
+                                "local": left_fields[field],
+                                "remote": right_fields[field],
+                            }
+                        )
+                        continue
                     if (
                         (entity, field) in _AUTOMATIC_METADATA_FIELDS
                         or entity in _FLEET_ENTITY_UPDATE_EVENT
@@ -590,9 +654,29 @@ class EventLog:
                                     right_fields[field]["value"],
                                     winner,
                                 )
+                            elif entity == "intake" and (
+                                merged := _intake_conflict_value(
+                                    field,
+                                    left_fields[field]["value"],
+                                    right_fields[field]["value"],
+                                )
+                            ):
+                                value, strategy = merged
+                            elif entity == "channel_identity" and (
+                                merged := _identity_conflict_value(
+                                    field,
+                                    left_fields[field]["value"],
+                                    right_fields[field]["value"],
+                                )
+                            ):
+                                value, strategy = merged
                             else:
                                 value = winner["value"]
-                                strategy = "highest_policy_version_then_event_identity"
+                                strategy = (
+                                    "highest_entity_version_then_event_identity"
+                                    if entity in {"intake", "channel_identity"}
+                                    else "highest_policy_version_then_event_identity"
+                                )
                         else:
                             value = _latest_timestamp_value(
                                 left_fields[field]["value"],
@@ -668,6 +752,8 @@ class EventLog:
                 EventType.INSTANCE_PARTICIPATION_POLICY_UPDATED,
                 EventType.PLACEMENT_DEFAULT_UPDATED,
                 EventType.NOTIFICATION_UPSERTED,
+                EventType.INTAKE_ENVELOPE_UPSERTED,
+                EventType.CHANNEL_IDENTITY_UPSERTED,
             }:
                 if entity == "card":
                     card_seen_since_delete = True
