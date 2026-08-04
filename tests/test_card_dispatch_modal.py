@@ -185,5 +185,10 @@ def test_shared_modal_preserves_focus_and_workshop_uses_live_dispatch_state() ->
     assert 'addEventListener("cancel"' in script
     assert script.rstrip().endswith("})();")
     assert 'id="card-dispatch-dialog-title"' in (root / "templates/partials/card-dispatch.html").read_text()
-    assert 'card.dispatch_id ? ""' in workshop
+    assert "if (card.can_dispatch)" in workshop
+    assert "card.dispatch_unavailable_reason" in workshop
     assert "window.PACardDispatch.open" in workshop
+    order_button = workshop.split("function orderButton", 1)[1].split(
+        "function renderQuery", 1
+    )[0]
+    assert "data-workshop-dispatch" not in order_button

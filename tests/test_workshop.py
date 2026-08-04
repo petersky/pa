@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
-import tempfile
-from pathlib import Path
 import subprocess
+import tempfile
+from datetime import UTC, datetime
+from pathlib import Path
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
@@ -39,8 +39,8 @@ class _Store:
 
 
 class _Dispatch:
-    def public_dict(self):
-        return {
+    def __init__(self, **changes):
+        self.payload = {
             "dispatch_id": "dispatch",
             "card_id": "active",
             "session_id": "session",
@@ -58,6 +58,10 @@ class _Dispatch:
                 },
             },
         }
+        self.payload.update(changes)
+
+    def public_dict(self):
+        return self.payload
 
 
 class _DispatchStore:
@@ -98,11 +102,21 @@ def _overview():
                 "dimensions": {
                     "reachability": field({"health": "up"}),
                     "providers": field(
-                        [{"id": "codex", "display_name": "Codex", "auth_state": "authenticated"}]
+                        [
+                            {
+                                "id": "codex",
+                                "display_name": "Codex",
+                                "auth_state": "authenticated",
+                            }
+                        ]
                     ),
                     "activity": field(
                         {
-                            "capacity": {"consumed": 1, "limit": 2, "source": "configured"},
+                            "capacity": {
+                                "consumed": 1,
+                                "limit": 2,
+                                "source": "configured",
+                            },
                             "sessions": [
                                 {
                                     "id": "session",
@@ -135,7 +149,7 @@ def test_workshop_maps_each_session_and_card_to_canonical_state():
     snapshot = build_workshop_snapshot(_ctx(), _overview())
 
     worker = snapshot["bays"][0]["workers"][0]
-    assert snapshot["schema"] == "pa.workshop/v1"
+    assert snapshot["schema"] == "pa.workshop/v2"
     assert worker["id"] == "session"
     assert worker["state"] == "working"
     assert worker["tool_category"] == "testing"
@@ -144,6 +158,15 @@ def test_workshop_maps_each_session_and_card_to_canonical_state():
     assert snapshot["areas"]["active"][0]["id"] == "active"
     assert snapshot["areas"]["waiting"][0]["id"] == "waiting"
     assert snapshot["areas"]["done"][0]["id"] == "done"
+    row = next(item for item in snapshot["work_orders"] if item["id"] == "active")
+    assert row["lane_label"] == "Active"
+    assert row["dispatch_label"] == "Running"
+    assert row["activity_label"] == "Working"
+    assert row["freshness_label"] == "Current"
+    assert row["outcome_label"] == "No outcome yet"
+    assert row["location"]["name"] == "Mac mini"
+    assert row["card"]["can_dispatch"] is False
+    assert "exclusive dispatch" in row["card"]["dispatch_unavailable_reason"]
     assert snapshot["authority"]["instance_id"] is None
     assert snapshot["authority"]["mode"] == "legacy_static"
 
@@ -250,6 +273,106 @@ def test_unsupported_progress_is_explicit():
     assert snapshot["bays"][0]["workers"][0]["state"] == "unsupported"
 
 
+def test_current_followup_wins_over_completed_history_without_repeating_title():
+    completed = _Dispatch(
+        dispatch_id="completed-dispatch",
+        session_id="historical-session",
+        state="completed",
+        effective_state="completed",
+        updated_at="2026-07-28T20:05:00+00:00",
+        evaluated_outcome="completed",
+    )
+    followup = _Dispatch(
+        dispatch_id="followup-dispatch",
+        session_id="current-session",
+        state="running",
+        updated_at="2026-07-28T20:04:00+00:00",
+        evaluated_outcome="needs_evaluation",
+    )
+
+    class DispatchHistoryStore:
+        def list(self, *, limit):
+            return [completed, followup]
+
+    ctx = _ctx()
+    ctx.services["dispatch_store"] = DispatchHistoryStore()
+    ctx.store.cards[1].title = "Same work and session title"
+    overview = _overview()
+    overview["nodes"][0]["dimensions"]["activity"]["value"]["sessions"] = [
+        {
+            "id": "current-session",
+            "title": "Same work and session title",
+            "card_id": "active",
+            "status": "working",
+            "connected": True,
+            "provider": "codex",
+            "updated_at": "2026-07-28T20:04:00+00:00",
+        }
+    ]
+
+    snapshot = build_workshop_snapshot(ctx, overview)
+    row = next(item for item in snapshot["work_orders"] if item["id"] == "active")
+
+    assert row["card"]["dispatch_id"] == "followup-dispatch"
+    assert row["session"]["id"] == "current-session"
+    assert row["session"]["relationship_label"] == "Linked session"
+    assert row["card"]["historical_dispatch_count"] == 2
+    assert row["outcome_label"] == "Not evaluated"
+
+
+def test_no_session_card_keeps_lane_dispatch_activity_and_outcome_separate():
+    snapshot = build_workshop_snapshot(_ctx(), _overview())
+    row = next(item for item in snapshot["work_orders"] if item["id"] == "inbox")
+
+    assert row["lane_label"] == "Inbox"
+    assert row["dispatch_label"] == "Not dispatched"
+    assert row["activity_label"] == "No current session"
+    assert row["freshness_label"] == "No session signal"
+    assert row["outcome_label"] == "No outcome yet"
+    assert row["card"]["can_dispatch"] is True
+
+
+def test_sync_rail_names_historical_peer_condition_and_recovery():
+    overview = _overview()
+    sync = overview["nodes"][0]["dimensions"]["sync"]
+    sync["state"] = "stale"
+    sync["value"].update(
+        {
+            "consistent": False,
+            "convergence": {"phase": "retrying", "attempt": 2},
+        }
+    )
+
+    snapshot = build_workshop_snapshot(_ctx(), overview)
+    issue = snapshot["sync"]["issues"][0]
+
+    assert issue["peer_name"] == "Mac mini"
+    assert issue["condition"] == "historical"
+    assert issue["condition_label"] == "Historical observation"
+    assert issue["recovery_label"] == "Retrying"
+    assert issue["recovery_attempt"] == 2
+    assert issue["href"].endswith("instance=local")
+
+
+def test_production_cardinality_snapshot_keeps_explicit_inventory_counts():
+    ctx = _ctx()
+    ctx.store.cards.extend(
+        Card(id=f"bulk-{index}", title=f"Inventory card {index}", lane=CardLane.INBOX)
+        for index in range(125)
+    )
+
+    snapshot = build_workshop_snapshot(ctx, _overview())
+
+    assert snapshot["counts"]["total"] == 129
+    assert snapshot["counts"]["lanes"]["inbox"] == 126
+    assert len(snapshot["work_orders"]) == 129
+    assert snapshot["default_view"] == {
+        "filter": "operational",
+        "page_size": 20,
+        "description": "Live work and work needing attention",
+    }
+
+
 def test_workshop_ui_contract_is_accessible_and_excludes_replay_controls():
     root = Path(__file__).parents[1]
     template = (root / "src/pa/server/templates/pages/workshop.html").read_text()
@@ -267,7 +390,11 @@ def test_workshop_ui_contract_is_accessible_and_excludes_replay_controls():
     assert "Activity reconnecting" in script
     assert "refreshGeneration" in script
     assert "pa.workshop.view.v1" in script
-    assert 'data-workshop-compact-row="card"' in script
+    assert 'data-workshop-compact-row="work-order"' in script
+    assert "PAGE_SIZE = 20" in script
+    assert "All admitted cards" in template
+    assert "data-workshop-search" in template
+    assert 'data-label="Evaluated outcome"' in script
     assert "root === activeRoot" in script
     assert "prefers-reduced-motion" in style
     assert "timeline" not in template.lower()
@@ -291,7 +418,10 @@ if (api.shouldAcceptSnapshot({generated_at: "2026-08-03T09:59:59Z"})) process.ex
 if (!api.shouldAcceptSnapshot({generated_at: "2026-08-03T10:00:01Z"})) process.exit(5);
 """
     result = subprocess.run(
-        ["node", "-e", harness, str(script)], capture_output=True, text=True
+        ["node", "-e", harness, str(script)],
+        capture_output=True,
+        text=True,
+        check=False,
     )
     assert result.returncode == 0, result.stderr
 
@@ -321,8 +451,10 @@ def test_workshop_page_and_api_render_from_same_canonical_snapshot():
                 snapshot = client.get("/api/fleet/workshop")
                 assert snapshot.status_code == 200
                 payload = snapshot.json()
-                assert payload["schema"] == "pa.workshop/v1"
+                assert payload["schema"] == "pa.workshop/v2"
                 assert payload["bays"][0]["id"] == "local"
+                assert payload["work_orders"] == []
+                assert payload["counts"]["total"] == 0
                 assert payload["areas"] == {
                     "inbox": [],
                     "active": [],
