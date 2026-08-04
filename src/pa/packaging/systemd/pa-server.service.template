@@ -19,7 +19,7 @@ UnsetEnvironment=PA_PEERS PA_SUBSCRIBED_REALMS PA_SYNC_TOKEN
 {{ENV_LINES}}
 
 StandardOutput=null
-StandardError=null
+StandardError=append:{{PA_LOG_DIR}}/supervisor-bootstrap.log
 
 [Install]
 WantedBy=default.target

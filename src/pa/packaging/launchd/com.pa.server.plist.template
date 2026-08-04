@@ -41,6 +41,6 @@
     <key>StandardOutPath</key>
     <string>/dev/null</string>
     <key>StandardErrorPath</key>
-    <string>/dev/null</string>
+    <string>{{PA_LOG_DIR}}/supervisor-bootstrap.log</string>
 </dict>
 </plist>

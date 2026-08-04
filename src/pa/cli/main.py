@@ -431,9 +431,7 @@ def logs(
     follow: Annotated[
         bool, typer.Option("-f", "--follow", help="Follow log output")
     ] = False,
-    lines: Annotated[
-        int, typer.Option("-n", "--lines", help="Number of lines")
-    ] = 50,
+    lines: Annotated[int, typer.Option("-n", "--lines", help="Number of lines")] = 50,
     stdout: Annotated[
         bool, typer.Option("--stdout", help="Show the access/stdout log only")
     ] = False,
@@ -447,7 +445,7 @@ def logs(
         list[str] | None,
         typer.Option(
             "--source",
-            help="Source: stdout, stderr, structured, or journal (repeatable)",
+            help="Source: stdout, stderr, structured, supervisor, or journal (repeatable)",
         ),
     ] = None,
     since: Annotated[
@@ -479,11 +477,17 @@ def logs(
             if stdout
             else ["stderr"]
             if stderr
-            else ["stdout", "stderr", "structured"]
+            else ["stdout", "stderr", "structured", "supervisor"]
         )
         if all_sources:
-            sources = ["stdout", "stderr", "structured"]
-        invalid = set(sources) - {"stdout", "stderr", "structured", "journal"}
+            sources = ["stdout", "stderr", "structured", "supervisor"]
+        invalid = set(sources) - {
+            "stdout",
+            "stderr",
+            "structured",
+            "supervisor",
+            "journal",
+        }
         if invalid:
             raise ValueError(f"unknown log source: {', '.join(sorted(invalid))}")
         svc.tail_logs(
@@ -852,9 +856,9 @@ def serve(
 @app.command("_service-run", hidden=True)
 def service_run() -> None:
     """Run the server behind PA's bounded service-log supervisor."""
-    from pa.core.log_rotation import supervise_service_process
+    from pa.core.log_rotation import service_entrypoint
 
-    raise typer.Exit(supervise_service_process(get_settings()))
+    raise typer.Exit(service_entrypoint())
 
 
 @app.command()
