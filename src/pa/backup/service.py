@@ -859,7 +859,12 @@ class BackupService:
 
     def prune(self, *, protected_backup_ids: set[str] | None = None) -> list[str]:
         protected_backup_ids = protected_backup_ids or set()
-        records = [item for item in self.list_backups(verify=True) if item.verified]
+        # Every published archive is fully verified before it is recorded, and
+        # restore/delete paths perform their own fresh verification.  Retention
+        # only needs that durable verification record; re-extracting every
+        # retained archive here makes each scheduled backup scale with the
+        # entire backup history (and can saturate a worker for minutes).
+        records = [item for item in self.list_backups() if item.verified]
         records.sort(key=lambda item: (item.created_at, item.backup_id))
         if len(records) <= 1:
             return []
