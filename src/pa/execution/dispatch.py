@@ -865,11 +865,6 @@ class DispatchStore:
                 else capacity.observed_active,
                 global_running,
             )
-            + (
-                capacity.observed_global_queued
-                if capacity.observed_global_queued is not None
-                else capacity.observed_queued
-            )
             + max(
                 capacity.observed_global_reservations
                 if capacity.observed_global_reservations is not None
@@ -884,7 +879,6 @@ class DispatchStore:
                     capacity.observed_provider_active or 0,
                     provider_running,
                 )
-                + (capacity.observed_provider_queued or 0)
                 + max(
                     capacity.observed_provider_reservations or 0,
                     provider_reservations,
@@ -2015,8 +2009,9 @@ class DispatchCapacityExhausted(ValueError):
         self.detail = {
             "code": "capacity_exhausted",
             "message": (
-                f"Capacity is exhausted: {active} working + {queued} queued + "
-                f"{reservations} reserved of {limit} {source} slots."
+                f"Capacity is exhausted: {active} working + {reservations} "
+                f"reserved of {limit} {source} slots; {queued} prompts are "
+                "queued behind existing sessions and do not consume slots."
             ),
             "limit": limit,
             "source": source,
@@ -2024,6 +2019,7 @@ class DispatchCapacityExhausted(ValueError):
             "active_consumers": active,
             "queued_prompts": queued,
             "reservations": reservations,
+            "consumed": active + reservations,
             "observed_at": observed_at.isoformat(),
             "consumer_links": consumer_links,
             "recoverable": True,

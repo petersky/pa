@@ -20,6 +20,7 @@ from pa.fleet.capacity import (
     DispatchQueueCapacity,
     EffectiveCapacity,
     EffectiveQueueCapacity,
+    deduplicate_consumer_links,
     effective_capacity,
     effective_queue_capacity,
     workload_counts,
@@ -756,6 +757,7 @@ def _evaluate(
         "policy_reason": policy.reason,
         "rejection_codes": rejection_codes,
     }
+    detail["consumer_links"] = deduplicate_consumer_links(detail["consumer_links"])
     return reasons, scores, detail
 
 

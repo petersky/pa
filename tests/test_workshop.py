@@ -137,6 +137,7 @@ def _overview():
                                 "limit": 2,
                                 "source": "configured",
                             },
+                            "queued_prompts": 9,
                             "sessions": [
                                 {
                                     "id": "session",
@@ -175,6 +176,12 @@ def test_workshop_maps_each_session_and_card_to_canonical_state():
     assert worker["state"] == "working"
     assert worker["tool_category"] == "testing"
     assert worker["card"]["id"] == "active"
+    assert snapshot["bays"][0]["capacity"] == {
+        "consumed": 1,
+        "limit": 2,
+        "source": "configured",
+        "queued_prompts": 9,
+    }
     assert snapshot["areas"]["inbox"][0]["id"] == "inbox"
     assert snapshot["areas"]["active"][0]["id"] == "active"
     assert snapshot["areas"]["waiting"][0]["id"] == "waiting"

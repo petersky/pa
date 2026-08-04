@@ -1904,11 +1904,14 @@
     if (capacityEl) {
       var utilization = (activity.value || {}).capacity || {};
       var queueUtilization = (activity.value || {}).queue_capacity || {};
+      var promptBacklog = Number((activity.value || {}).queued_prompts || 0);
       var configured = utilization.limit || node.dispatch_capacity;
       capacityEl.innerHTML = configured
         ? "<strong>" + escapeHtml(utilization.consumed || 0) + "/" +
           escapeHtml(configured) + ' used</strong><span class="muted small">' +
           escapeHtml((utilization.source || (node.dispatch_capacity ? "configured" : "compatibility pending")).replace(/_/g, " ")) + "</span>" +
+          '<span class="muted small">' + escapeHtml(promptBacklog) + " prompt" +
+            (promptBacklog === 1 ? "" : "s") + " queued</span>" +
           (queueUtilization.limit == null ? "" : '<span class="muted small">' +
             escapeHtml(queueUtilization.consumed || 0) + "/" +
             escapeHtml(queueUtilization.limit) + " waiting</span>")
@@ -2093,10 +2096,13 @@
       "</dd><dt>Zone</dt><dd>" + escapeHtml(node.zone || "default") +
       "</dd><dt>Capacity</dt><dd>" +
       escapeHtml((function () {
-        var capacity = (fieldValue(node, "activity").value || {}).capacity || {};
+        var activityValue = fieldValue(node, "activity").value || {};
+        var capacity = activityValue.capacity || {};
+        var promptBacklog = Number(activityValue.queued_prompts || 0);
         var limit = capacity.limit || node.dispatch_capacity || "pending";
         return (capacity.consumed || 0) + "/" + limit + " used · " +
-          String(capacity.source || (node.dispatch_capacity ? "configured" : "compatibility pending")).replace(/_/g, " ");
+          String(capacity.source || (node.dispatch_capacity ? "configured" : "compatibility pending")).replace(/_/g, " ") +
+          " · " + promptBacklog + " prompt" + (promptBacklog === 1 ? "" : "s") + " queued";
       })()) + "</dd></dl>" + sections;
   }
 

@@ -166,7 +166,14 @@ def effective_queue_capacity(
 def workload_counts(
     activity: dict[str, Any], *, provider: str | None = None
 ) -> dict[str, Any]:
-    """Normalize new workload semantics with conservative old-peer fallbacks."""
+    """Normalize concurrency and backlog with conservative old-peer fallbacks.
+
+    A prompting session occupies one execution slot. Prompts serialized behind
+    that turn remain useful load/fairness telemetry, but cannot execute until
+    the same session's current turn completes and therefore consume no
+    additional concurrency. Pre-session dispatch reservations remain distinct
+    consumers because they may materialize into independent sessions.
+    """
 
     provider_key = provider.strip().lower() if provider else None
     provider_counts = (
@@ -208,6 +215,35 @@ def workload_counts(
         "active": active,
         "queued": queued,
         "reservations": reservations,
-        "consumed": active + queued + reservations,
+        "consumed": active + reservations,
         "semantic_source": semantic_source,
     }
+
+
+def deduplicate_consumer_links(links: Any) -> list[dict[str, Any]]:
+    """Return one one-slot identity for every session or pre-session dispatch."""
+
+    if not isinstance(links, list):
+        return []
+    result: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for raw in links:
+        if not isinstance(raw, dict):
+            continue
+        item = dict(raw)
+        kind = str(item.get("kind") or "work").strip().lower()
+        if kind == "session" and item.get("session_id"):
+            identity = f"session:{item['session_id']}"
+        elif kind == "dispatch" and item.get("dispatch_id"):
+            identity = f"dispatch:{item['dispatch_id']}"
+        else:
+            identity = str(item.get("consumer_id") or item.get("href") or "")
+        if not identity or identity in seen:
+            continue
+        seen.add(identity)
+        item["consumer_id"] = identity
+        # A session remains one concurrency consumer regardless of its prompt
+        # backlog. Durable pre-session dispatches likewise reserve one slot.
+        item["slots"] = 1
+        result.append(item)
+    return result

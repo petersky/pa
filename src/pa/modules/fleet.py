@@ -113,6 +113,7 @@ from pa.fleet.bootstrap import (
     discover_target,
     run_bootstrap_job,
 )
+from pa.fleet.capacity import workload_counts
 from pa.fleet.control_plane import build_control_plane_status
 from pa.fleet.convergence import MembershipConvergenceStore
 from pa.fleet.credentials import CredentialRotationStore
@@ -5588,6 +5589,17 @@ async def _placement_candidates(
                 for key, count in counts.items():
                     current[key] = max(int(current.get(key) or 0), count)
             value["provider_concurrency"] = provider_concurrency
+            if value.get("capacity"):
+                capacity = dict(value["capacity"])
+                capacity["consumed"] = workload_counts(value)["consumed"]
+                value["capacity"] = capacity
+            activity = {**activity, "value": value}
+        elif activity.get("state") == "fresh":
+            value = dict(activity.get("value") or {})
+            if value.get("capacity"):
+                capacity = dict(value["capacity"])
+                capacity["consumed"] = workload_counts(value)["consumed"]
+                value["capacity"] = capacity
             activity = {**activity, "value": value}
         return PlacementCandidate(
             instance_id=inst.instance_id,

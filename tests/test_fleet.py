@@ -1368,6 +1368,81 @@ class FleetOverviewTests(unittest.IsolatedAsyncioTestCase):
                 {"card-1", "card-2"},
             )
 
+    def test_local_activity_counts_one_backlogged_session_as_one_consumer(self) -> None:
+        from pa.domain.models import AgentSession
+        from pa.fleet.overview import local_dimension
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="local")
+            ctx = MagicMock(settings=settings)
+            session = AgentSession(
+                id="session-backlog",
+                agent_name="codex",
+                card_id="card-backlog",
+                status="working",
+                title="Backlogged session",
+            )
+            runtime = SimpleNamespace(
+                session=session,
+                session_id=session.id,
+                connected=True,
+                prompting=True,
+                _closed=False,
+                _queue=[object() for _ in range(9)],
+            )
+            manager = MagicMock()
+            manager.progress.return_value = SimpleNamespace(
+                model_dump=lambda mode: {
+                    "phase": "prompting",
+                    "active_sessions": 1,
+                    "connected_runtimes": 1,
+                    "idle_sessions": 0,
+                    "prompting_turns": 1,
+                    "active_capacity_consumers": 1,
+                    "queued_prompts": 9,
+                    "provider_concurrency": {
+                        "codex": {
+                            "connected_runtimes": 1,
+                            "idle_sessions": 0,
+                            "prompting_turns": 1,
+                            "active_capacity_consumers": 1,
+                            "queued_prompts": 9,
+                        }
+                    },
+                    "quiescing": False,
+                    "prompting": True,
+                    "message": "1 ACP session working, 9 prompts queued",
+                }
+            )
+            manager.list_runtimes.return_value = [runtime]
+            ctx.services = {"instance_agent": manager}
+            ctx.store.list_sessions_for_workshop.return_value = ([session], 1)
+
+            activity = local_dimension(ctx, "activity")
+
+            self.assertEqual(activity["active_capacity_consumers"], 1)
+            self.assertEqual(activity["queued_prompts"], 9)
+            self.assertEqual(activity["capacity"]["consumed"], 1)
+            self.assertEqual(activity["sessions"][0]["queued"], 9)
+            self.assertTrue(activity["sessions"][0]["capacity_consuming"])
+            self.assertEqual(
+                activity["capacity_consumer_links"],
+                [
+                    {
+                        "kind": "session",
+                        "session_id": "session-backlog",
+                        "href": "/agent?session=session-backlog",
+                        "state": "working",
+                        "slots": 1,
+                        "consumer_id": "session:session-backlog",
+                    }
+                ],
+            )
+            self.assertNotIn("queued_prompts", activity["capacity_policy"]["consumes"])
+            self.assertIn(
+                "queued_prompts", activity["capacity_policy"]["does_not_consume"]
+            )
+
 
 class FleetUpdateUiTests(unittest.TestCase):
     def test_update_form_uses_peer_track_and_rechecks_selected_channel(self) -> None:
@@ -1378,6 +1453,8 @@ class FleetUpdateUiTests(unittest.TestCase):
         self.assertIn("tr.dataset.updateChannel", script)
         self.assertIn("/update-check?channel=", script)
         self.assertIn("refreshFleetUpdateCheck().then", script)
+        self.assertIn("promptBacklog", script)
+        self.assertIn('" queued</span>"', script)
         self.assertIn('name="install_timeout"', template)
 
     def test_update_is_modal_and_restores_isolated_persisted_instance_jobs(self) -> None:

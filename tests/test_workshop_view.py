@@ -186,7 +186,7 @@ def _snapshot() -> dict:
                 "activity_observed_at": "2026-08-03T09:59:59Z",
                 "health": "healthy",
                 "observed_at": "2026-08-03T10:00:00Z",
-                "capacity": {"consumed": 1, "limit": 4},
+                "capacity": {"consumed": 1, "limit": 4, "queued_prompts": 9},
                 "active": 1,
                 "queued": 0,
                 "providers": [],
@@ -506,6 +506,7 @@ class WorkshopCompactViewBrowserTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("2 needing attention", accessible_names["sync"])
             self.assertIn("Connected", accessible_names["bay"])
             self.assertIn("1 of 4 slots used", accessible_names["bay"])
+            self.assertIn("9 prompts queued", accessible_names["bay"])
             for state in ("Active", "Running", "Working", "Current"):
                 self.assertIn(state, accessible_names["order"])
 

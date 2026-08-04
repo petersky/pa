@@ -366,22 +366,22 @@ def test_capacity_precedence_and_documented_default_are_explicit() -> None:
     assert "Conservative" in fallback.rationale
 
 
-def test_connected_idle_sessions_do_not_consume_capacity() -> None:
+def test_one_working_session_with_prompt_backlog_consumes_one_slot() -> None:
     counts = workload_counts(
         {
             "connected_runtimes": 6,
-            "idle_sessions": 3,
-            "prompting_turns": 3,
-            "active_capacity_consumers": 3,
-            "queued_prompts": 0,
+            "idle_sessions": 5,
+            "prompting_turns": 1,
+            "active_capacity_consumers": 1,
+            "queued_prompts": 9,
             "dispatch_reservations": 0,
         }
     )
     assert counts == {
-        "active": 3,
-        "queued": 0,
+        "active": 1,
+        "queued": 9,
         "reservations": 0,
-        "consumed": 3,
+        "consumed": 1,
         "semantic_source": "capacity_consumers",
     }
 
@@ -397,7 +397,7 @@ def test_provider_specific_limit_applies_with_global_limit() -> None:
             "provider_concurrency": {
                 "codex": {
                     "active_capacity_consumers": 1,
-                    "queued_prompts": 0,
+                    "queued_prompts": 9,
                     "dispatch_reservations": 1,
                 }
             },
@@ -411,6 +411,78 @@ def test_provider_specific_limit_applies_with_global_limit() -> None:
     assert rejected["capacity"] == 2
     assert rejected["capacity_detail"]["source"] == "configured_provider"
     assert rejected["reserved"] == 1
+
+
+def test_placement_ignores_same_session_backlog_and_deduplicates_consumers(
+    tmp_path: Path,
+) -> None:
+    candidate = _candidate("backlogged", capacity=4)
+    candidate.dispatch_capacity = 4
+    candidate.dispatch_queue_capacity = 100
+    candidate.activity = _fresh(
+        {
+            "state": "working",
+            "active_capacity_consumers": 1,
+            "queued_prompts": 9,
+            "dispatch_reservations": 0,
+            "capacity": {"limit": 4, "consumed": 10},
+            "capacity_consumer_links": [
+                {
+                    "kind": "session",
+                    "session_id": "session-1",
+                    "state": "working",
+                    "slots": 10,
+                },
+                {
+                    "kind": "session",
+                    "session_id": "session-1",
+                    "state": "working",
+                    "slots": 10,
+                },
+            ],
+        }
+    )
+
+    decision = PlacementService(RoundRobinCursorStore(tmp_path)).resolve(
+        _request(PlacementPolicy.BEST_MATCH), [candidate]
+    )
+
+    detail = decision.eligible_candidates[0]
+    assert detail["active"] == 1
+    assert detail["queued"] == 9
+    assert detail["consumed"] == 1
+    assert detail["execution_slot_available"] is True
+    assert detail["admission_disposition"] == "launchable"
+    assert detail["consumer_links"] == [
+        {
+            "kind": "session",
+            "session_id": "session-1",
+            "state": "working",
+            "slots": 1,
+            "consumer_id": "session:session-1",
+        }
+    ]
+
+
+def test_mixed_version_session_states_override_legacy_consumed_total() -> None:
+    counts = workload_counts(
+        {
+            "active_sessions": 10,
+            "queued_prompts": 9,
+            "capacity": {"limit": 4, "consumed": 10},
+            "sessions": [
+                {"id": "working", "status": "working"},
+                {"id": "idle", "status": "idle"},
+            ],
+        }
+    )
+    assert counts == {
+        "active": 1,
+        "queued": 9,
+        "reservations": 0,
+        "consumed": 1,
+        "semantic_source": "legacy_session_states",
+    }
 
 
 def _record(

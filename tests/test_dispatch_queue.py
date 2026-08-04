@@ -119,6 +119,62 @@ def test_six_dispatches_use_four_slots_and_two_durable_queue_entries() -> None:
         assert [item.queue_position for item in store.waiting()] == [1, 2]
 
 
+def test_same_session_prompt_backlog_does_not_block_admission_or_promotion() -> None:
+    observed = capacity(execution=4).model_copy(
+        update={
+            "observed_active": 1,
+            "observed_queued": 9,
+            "observed_global_active": 1,
+            "observed_global_queued": 9,
+            "observed_provider_active": 1,
+            "observed_provider_queued": 9,
+        }
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp)
+        store = DispatchStore(path)
+        admitted, duplicate = store.admit(record(20), capacity=observed)
+
+        assert duplicate is False
+        assert admitted.state == "queued"
+        assert admitted.capacity_observed_active == 1
+        assert admitted.capacity_observed_queued == 9
+        assert store.capacity_snapshot("target")["dispatch_reservations"] == 1
+
+        restarted = DispatchStore(path)
+        persisted = restarted.get(admitted.dispatch_id)
+        assert persisted is not None
+        assert persisted.capacity_observed_queued == 9
+
+    full = capacity(execution=1).model_copy(
+        update={
+            "observed_active": 1,
+            "observed_queued": 9,
+            "observed_global_active": 1,
+            "observed_global_queued": 9,
+            "observed_provider_active": 1,
+            "observed_provider_queued": 9,
+        }
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        store = DispatchStore(Path(tmp))
+        waiting, _ = store.admit(record(21), capacity=full)
+        assert waiting.state == "waiting_capacity"
+
+        available = full.model_copy(
+            update={
+                "observed_active": 0,
+                "observed_global_active": 0,
+                "observed_provider_active": 0,
+            }
+        )
+        assert store.promote_waiting(waiting, available) is True
+        promoted = store.get(waiting.dispatch_id)
+        assert promoted is not None
+        assert promoted.state == "queued"
+        assert promoted.capacity_observed_queued == 9
+
+
 def test_queue_full_boundary_and_duplicate_retry_do_not_consume_slots() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         store = DispatchStore(Path(tmp))
