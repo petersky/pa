@@ -2908,6 +2908,54 @@ class CardProjection:
                 ).fetchall()
         return [self._row_to_session(row) for row in rows]
 
+    def list_sessions_for_workshop(
+        self, *, realm_id: str, limit: int
+    ) -> tuple[list[AgentSession], int]:
+        """Return a bounded active-first session projection and its full count.
+
+        Workshop does not need closed session history. Filtering it in SQLite keeps
+        both row materialization and the fleet heartbeat bounded while the count
+        makes any omitted active rows explicit.
+        """
+        active_statuses = (
+            "working",
+            "prompting",
+            "queued",
+            "active",
+            "connected",
+            "idle",
+            "recoverable",
+            "deferred",
+        )
+        placeholders = ",".join("?" for _ in active_statuses)
+        params = (realm_id, *active_statuses)
+        with self._conn() as conn:
+            total = int(
+                conn.execute(
+                    f"""SELECT COUNT(*) FROM agent_sessions
+                        WHERE realm_id = ? AND status IN ({placeholders})""",
+                    params,
+                ).fetchone()[0]
+            )
+            rows = conn.execute(
+                f"""SELECT * FROM agent_sessions
+                    WHERE realm_id = ? AND status IN ({placeholders})
+                    ORDER BY
+                      CASE status
+                        WHEN 'working' THEN 0
+                        WHEN 'prompting' THEN 0
+                        WHEN 'queued' THEN 1
+                        WHEN 'recoverable' THEN 2
+                        WHEN 'deferred' THEN 2
+                        ELSE 3
+                      END,
+                      updated_at DESC,
+                      id ASC
+                    LIMIT ?""",
+                (*params, max(0, limit)),
+            ).fetchall()
+        return [self._row_to_session(row) for row in rows], total
+
     def list_sessions_for_cards(self, card_ids: set[str]) -> list[AgentSession]:
         """Load sessions only for cards currently rendered on a board page."""
         if not card_ids:

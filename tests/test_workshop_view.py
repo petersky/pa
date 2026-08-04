@@ -57,6 +57,7 @@ def _work_order(
         "lane_label": card["lane"].title(),
         "dispatch_state": card["dispatch_state"] if active else None,
         "dispatch_label": card["dispatch_label"],
+        "dispatch_current": card["dispatch_current"],
         "activity_state": "working" if active else None,
         "activity_label": "Working" if active else "No current session",
         "freshness": "fresh" if active else None,
@@ -64,6 +65,7 @@ def _work_order(
         "evaluated_outcome": None,
         "outcome_label": "No outcome yet",
         "session": session,
+        "reservation": None,
         "location": (
             {"id": "local", "name": "Local instance", "href": "/fleet?instance=local"}
             if active
@@ -138,7 +140,9 @@ def _snapshot() -> dict:
             "issues": [
                 {
                     "peer_name": "Remote current",
+                    "instance_id": "remote-current",
                     "condition_label": "Current condition",
+                    "observed_at": "2026-08-03T09:59:45Z",
                     "age_seconds": 15,
                     "summary": "Local view is catching up",
                     "recovery_label": "Retrying",
@@ -147,7 +151,9 @@ def _snapshot() -> dict:
                 },
                 {
                     "peer_name": "Remote history",
+                    "instance_id": "remote-history",
                     "condition_label": "Historical observation",
+                    "observed_at": "2026-08-03T09:55:00Z",
                     "age_seconds": 300,
                     "summary": "Last report was behind",
                     "recovery_label": "Recovery status unavailable",
@@ -168,9 +174,12 @@ def _snapshot() -> dict:
                 "activity_freshness": "fresh",
                 "activity_freshness_label": "Current",
                 "activity_age_seconds": 1,
+                "activity_observed_at": "2026-08-03T09:59:59Z",
                 "health": "healthy",
                 "observed_at": "2026-08-03T10:00:00Z",
                 "capacity": {"consumed": 1, "limit": 4},
+                "active": 1,
+                "queued": 0,
                 "providers": [],
                 "workers": [
                     {
@@ -458,7 +467,7 @@ class WorkshopCompactViewBrowserTests(unittest.IsolatedAsyncioTestCase):
                   var panel = document.querySelector("[data-workshop-inspector]");
                   return {text:panel.textContent,
                     links:Array.from(panel.querySelectorAll(".workshop-sync-issues a"))
-                      .map(function (link) { return link.getAttribute("href"); })};
+                      .map(function (link) { return {href:link.getAttribute("href"), text:link.textContent}; })};
                 })()"""
             )
             self.assertIn("Remote current", sync_details["text"])
@@ -467,6 +476,46 @@ class WorkshopCompactViewBrowserTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("Historical observation", sync_details["text"])
             self.assertIn("Retrying", sync_details["text"])
             self.assertEqual(len(sync_details["links"]), 2)
+            self.assertEqual(
+                [link["text"] for link in sync_details["links"]],
+                [
+                    "Open sync details for Remote current",
+                    "Open sync details for Remote history",
+                ],
+            )
+
+            accessible_names = await page.evaluate(
+                """(() => ({
+                  sync:document.querySelector('[data-workshop-kind="sync"]').getAttribute("aria-label"),
+                  bay:document.querySelector('[data-workshop-kind="bay"]').getAttribute("aria-label"),
+                  order:document.querySelector('[data-workshop-kind="card"][data-workshop-id="active"]')
+                    .getAttribute("aria-label")
+                }))()"""
+            )
+            self.assertIn("Needs attention", accessible_names["sync"])
+            self.assertIn("3 peers", accessible_names["sync"])
+            self.assertIn("2 needing attention", accessible_names["sync"])
+            self.assertIn("Connected", accessible_names["bay"])
+            self.assertIn("1 of 4 slots used", accessible_names["bay"])
+            for state in ("Active", "Running", "Working", "Current"):
+                self.assertIn(state, accessible_names["order"])
+
+            lightweight_age = await page.evaluate(
+                """(() => {
+                  var root = document.querySelector("#pa-workshop-root");
+                  var age = document.querySelector("[data-workshop-observed-at]");
+                  age.dataset.workshopObservedAt = new Date(Date.now() - 65000).toISOString();
+                  window.PAWorkshopTest.updateRelativeAges(root);
+                  var first = age.textContent;
+                  age.dataset.workshopObservedAt = new Date(Date.now() - 125000).toISOString();
+                  window.PAWorkshopTest.updateRelativeAges(root);
+                  return {sameNode:age === document.querySelector("[data-workshop-observed-at]"),
+                    first:first, second:age.textContent};
+                })()"""
+            )
+            self.assertTrue(lightweight_age["sameNode"])
+            self.assertIn("1 minutes ago", lightweight_age["first"])
+            self.assertIn("2 minutes ago", lightweight_age["second"])
 
             toggled = await page.evaluate(
                 """(async () => {
@@ -576,27 +625,132 @@ class WorkshopCompactViewBrowserTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(live["focusId"], "active")
             self.assertEqual(live["inspector"], "Build compact Workshop")
 
+            reservation_transition = await page.evaluate(
+                """(() => {
+                  var root = document.querySelector("#pa-workshop-root");
+                  var reserved = JSON.parse(JSON.stringify(window.__snapshot));
+                  reserved.generated_at = "2026-08-03T10:00:02Z";
+                  var waiting = reserved.work_orders.find(function (order) { return order.id === "waiting"; });
+                  waiting.dispatch_current = true;
+                  waiting.dispatch_state = "waiting_capacity";
+                  waiting.dispatch_label = "Waiting for capacity";
+                  waiting.live = false;
+                  waiting.attention = true;
+                  waiting.session = null;
+                  waiting.reservation = {id:"dispatch:waiting", dispatch_id:"waiting",
+                    relationship_kind:"reservation", label:"Dispatch reservation", state:"queued",
+                    state_label:"Queued", reason:"All workers are occupied", queue_position:2};
+                  window.PAWorkshopTest.acceptSnapshot(root, reserved);
+                  document.querySelector('[data-workshop-compact] [data-workshop-id="waiting"]').click();
+                  var reservationPanel = document.querySelector("[data-workshop-inspector]");
+                  var before = {pressed:document.querySelector('[data-workshop-compact] [data-workshop-id="waiting"]')
+                    .getAttribute("aria-pressed"), text:reservationPanel.textContent,
+                    sessionLink:!!reservationPanel.querySelector('[data-workshop-focus-key="session-detail"]')};
+                  var started = JSON.parse(JSON.stringify(reserved));
+                  started.generated_at = "2026-08-03T10:00:03Z";
+                  waiting = started.work_orders.find(function (order) { return order.id === "waiting"; });
+                  waiting.reservation = null;
+                  waiting.session = {id:"waiting-session", title:"Waiting follow-up",
+                    relationship_label:"Session: Waiting follow-up", href:"/agent/waiting-session",
+                    latest_progress:"Started"};
+                  waiting.activity_state = "working";
+                  waiting.activity_label = "Working";
+                  waiting.live = true;
+                  window.PAWorkshopTest.acceptSnapshot(root, started);
+                  window.__snapshot = started;
+                  var afterPanel = document.querySelector("[data-workshop-inspector]");
+                  return {before:before,
+                    afterPressed:document.querySelector('[data-workshop-compact] [data-workshop-id="waiting"]')
+                      .getAttribute("aria-pressed"), afterText:afterPanel.textContent,
+                    sessionLink:!!afterPanel.querySelector('[data-workshop-focus-key="session-detail"]')};
+                })()"""
+            )
+            self.assertEqual(reservation_transition["before"]["pressed"], "true")
+            self.assertIn(
+                "Dispatch reservation", reservation_transition["before"]["text"]
+            )
+            self.assertFalse(reservation_transition["before"]["sessionLink"])
+            self.assertEqual(reservation_transition["afterPressed"], "true")
+            self.assertIn("Waiting follow-up", reservation_transition["afterText"])
+            self.assertTrue(reservation_transition["sessionLink"])
+
+            filter_safe_refresh = await page.evaluate(
+                """(() => {
+                  var root = document.querySelector("#pa-workshop-root");
+                  document.querySelector('[data-workshop-compact] [data-workshop-id="active"]').click();
+                  var search = document.querySelector("[data-workshop-search]");
+                  search.value = "waiting card";
+                  search.dispatchEvent(new Event("input", {bubbles:true}));
+                  var before = document.querySelectorAll('[data-workshop-compact-row="work-order"]').length;
+                  var update = JSON.parse(JSON.stringify(window.__snapshot));
+                  update.generated_at = "2026-08-03T10:00:04Z";
+                  window.PAWorkshopTest.acceptSnapshot(root, update);
+                  window.__snapshot = update;
+                  var after = document.querySelectorAll('[data-workshop-compact-row="work-order"]').length;
+                  var context = document.querySelector("[data-workshop-selection-context]");
+                  search = document.querySelector("[data-workshop-search]");
+                  var searchValue = search.value;
+                  var status = document.querySelector("[data-workshop-results]").textContent;
+                  search.value = "";
+                  search.dispatchEvent(new Event("input", {bubbles:true}));
+                  return {before:before, after:after, context:context && context.textContent,
+                    searchValue:searchValue, status:status};
+                })()"""
+            )
+            self.assertEqual(filter_safe_refresh["before"], 1)
+            self.assertEqual(filter_safe_refresh["after"], 1)
+            self.assertEqual(filter_safe_refresh["searchValue"], "waiting card")
+            self.assertIn("of 1 loaded matches", filter_safe_refresh["status"])
+            self.assertIn("outside", filter_safe_refresh["context"])
+
+            focus_and_quiet_summary = await page.evaluate(
+                """(() => {
+                  var root = document.querySelector("#pa-workshop-root");
+                  document.querySelector('[data-workshop-compact] [data-workshop-id="active"]').click();
+                  var link = document.querySelector('[data-workshop-focus-key="card-detail"]');
+                  link.focus();
+                  var status = document.querySelector("[data-workshop-results]");
+                  var observer = new MutationObserver(function () {});
+                  observer.observe(status, {subtree:true, childList:true, characterData:true});
+                  var update = JSON.parse(JSON.stringify(window.__snapshot));
+                  update.generated_at = "2026-08-03T10:00:05Z";
+                  update.work_orders[0].session.latest_progress = "Focus-safe update";
+                  window.PAWorkshopTest.acceptSnapshot(root, update);
+                  window.__snapshot = update;
+                  var mutations = observer.takeRecords().length;
+                  observer.disconnect();
+                  return {focusKey:document.activeElement.dataset.workshopFocusKey,
+                    mutations:mutations,
+                    progress:document.querySelector("[data-workshop-inspector]").textContent};
+                })()"""
+            )
+            self.assertEqual(focus_and_quiet_summary["focusKey"], "card-detail")
+            self.assertEqual(focus_and_quiet_summary["mutations"], 0)
+            self.assertIn("Focus-safe update", focus_and_quiet_summary["progress"])
+
             disappeared = await page.evaluate(
                 """(() => {
                   var update = JSON.parse(JSON.stringify(window.__snapshot));
-                  update.generated_at = "2026-08-03T10:00:02Z";
+                  update.generated_at = "2026-08-03T10:00:06Z";
                   update.work_orders = update.work_orders.filter(function (order) { return order.id !== "active"; });
                   window.PAWorkshopTest.acceptSnapshot(document.querySelector("#pa-workshop-root"), update);
                   return {
                     selected:document.querySelectorAll('[data-workshop-kind][aria-pressed="true"]').length,
                     inspector:document.querySelector("[data-workshop-inspector]").textContent,
-                    announcement:document.querySelector("[data-workshop-announcer]").textContent
+                    announcement:document.querySelector("[data-workshop-announcer]").textContent,
+                    focusIsSearch:document.activeElement.hasAttribute("data-workshop-search")
                   };
                 })()"""
             )
             self.assertEqual(disappeared["selected"], 0)
             self.assertNotIn("Build compact Workshop", disappeared["inspector"])
             self.assertIn("selection cleared", disappeared["announcement"].lower())
+            self.assertTrue(disappeared["focusIsSearch"])
 
             await page.evaluate(
                 """(() => {
                   var restored = JSON.parse(JSON.stringify(window.__snapshot));
-                  restored.generated_at = "2026-08-03T10:00:03Z";
+                  restored.generated_at = "2026-08-03T10:00:07Z";
                   window.PAWorkshopTest.acceptSnapshot(document.querySelector("#pa-workshop-root"), restored);
                 })()"""
             )
@@ -623,6 +777,50 @@ class WorkshopCompactViewBrowserTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(streams["afterReplacement"], [4, 2])
             self.assertEqual(streams["view"], "compact")
             self.assertTrue(streams["compact"])
+
+            paging_focus = await page.evaluate(
+                """(() => {
+                  var filter = document.querySelector("[data-workshop-filter]");
+                  filter.value = "all";
+                  filter.dispatchEvent(new Event("change", {bubbles:true}));
+                  var guard = 0;
+                  while (guard++ < 20) {
+                    var next = document.querySelector('[data-workshop-page="next"]');
+                    if (!next || next.disabled) break;
+                    next.focus();
+                    next.click();
+                  }
+                  var result = {direction:document.activeElement.dataset.workshopPage,
+                    page:document.querySelector("[data-workshop-pagination]").textContent};
+                  filter = document.querySelector("[data-workshop-filter]");
+                  filter.value = "operational";
+                  filter.dispatchEvent(new Event("change", {bubbles:true}));
+                  result.announcement = document.querySelector("[data-workshop-announcer]").textContent;
+                  return result;
+                })()"""
+            )
+            self.assertEqual(paging_focus["direction"], "previous")
+            self.assertIn("Page 7 of 7", paging_focus["page"])
+            self.assertIn("matching work orders", paging_focus["announcement"])
+
+            await attachment.resize(800, 600)
+            await asyncio.sleep(0.05)
+            medium_inspector = await page.evaluate(
+                """(() => {
+                  window.scrollTo(0, 0);
+                  var control = document.querySelector('[data-workshop-compact] [data-workshop-id="active"]');
+                  control.click();
+                  var panel = document.querySelector("[data-workshop-inspector]");
+                  var rect = panel.getBoundingClientRect();
+                  return {focused:document.activeElement === panel,
+                    visible:rect.top < window.innerHeight && rect.bottom > 0,
+                    width:window.innerWidth, height:window.innerHeight};
+                })()"""
+            )
+            self.assertEqual(medium_inspector["width"], 800)
+            self.assertEqual(medium_inspector["height"], 600)
+            self.assertTrue(medium_inspector["focused"])
+            self.assertTrue(medium_inspector["visible"])
 
             await attachment.resize(390, 844)
             await asyncio.sleep(0.05)

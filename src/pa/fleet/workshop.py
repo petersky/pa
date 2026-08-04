@@ -27,6 +27,7 @@ PRE_SESSION_DISPATCH_STATES = {
 WORKSHOP_CARD_READ_LIMIT = 120
 WORKSHOP_PROJECTION_LIMIT = 80
 WORKSHOP_AREA_LIMIT = 12
+WORKSHOP_WORKER_LIMIT = 80
 SUPPORTED_WORKER_STATES = {
     "queued",
     "starting",
@@ -122,6 +123,13 @@ def _age_seconds(value: Any) -> int | None:
         return max(0, int((datetime.now(UTC) - observed).total_seconds()))
     except TypeError, ValueError:
         return None
+
+
+def _time_score(value: Any) -> float:
+    try:
+        return datetime.fromisoformat(str(value)).timestamp()
+    except TypeError, ValueError:
+        return 0.0
 
 
 def _label(value: Any, labels: dict[str, str], fallback: str) -> str:
@@ -233,7 +241,7 @@ def build_workshop_snapshot(
         for session in ((node.get("dimensions") or {}).get("activity") or {})
         .get("value", {})
         .get("sessions", [])
-        if session.get("id") and session.get("realm_id", realm_id) == realm_id
+        if session.get("id") and session.get("realm_id") == realm_id
     }
     if dispatch_store and hasattr(dispatch_store, "latest_by_card"):
         latest_records = dispatch_store.latest_by_card(
@@ -266,7 +274,7 @@ def build_workshop_snapshot(
         dispatches = [
             record.public_dict()
             for record in records
-            if getattr(record, "realm_id", realm_id) == realm_id
+            if getattr(record, "realm_id", None) == realm_id
         ]
         for item in dispatches:
             card_id = str(item.get("card_id") or "")
@@ -297,7 +305,24 @@ def build_workshop_snapshot(
     watches_by_card: dict[str, list[dict[str, Any]]] = {}
     supervisor = ctx.services.get("pr_supervisor_store")
     if supervisor:
-        for watch in supervisor.list_watches(include_retired=True):
+        if hasattr(supervisor, "list_watches_for_cards"):
+            watches = supervisor.list_watches_for_cards(
+                set(card_by_id),
+                realm_id=realm_id,
+                include_retired=True,
+                per_card_limit=5,
+            )
+        else:
+            try:
+                all_watches = supervisor.list_watches(
+                    realm_id=realm_id, include_retired=True
+                )
+            except TypeError:
+                all_watches = supervisor.list_watches(include_retired=True)
+            watches = [watch for watch in all_watches if watch.card_id in card_by_id][
+                : WORKSHOP_PROJECTION_LIMIT * 5
+            ]
+        for watch in watches:
             if not watch.card_id:
                 continue
             watches_by_card.setdefault(watch.card_id, []).append(
@@ -404,6 +429,13 @@ def build_workshop_snapshot(
     card_payloads = {card.id: card_payload(card) for card in cards}
     bays = []
     seen_workers: set[str] = set()
+    reported_session_total = 0
+    reported_session_omitted = 0
+    worker_projection_omitted = 0
+    unknown_realm_sessions = 0
+    unknown_realm_dispatches = 0
+    other_realm_sessions = 0
+    other_realm_dispatches = 0
     for node in overview.get("nodes", []):
         dimensions = node.get("dimensions") or {}
         reachability = dimensions.get("reachability") or {}
@@ -413,11 +445,38 @@ def build_workshop_snapshot(
         capacity = activity.get("capacity") or {}
         providers = (dimensions.get("providers") or {}).get("value") or []
         workers = []
-        for session in activity.get("sessions") or []:
-            if session.get("realm_id", realm_id) != realm_id:
+        raw_sessions = activity.get("sessions") or []
+        reported_session_total += int(
+            activity.get("session_total")
+            if activity.get("session_total") is not None
+            else len(raw_sessions)
+        )
+        reported_session_omitted += int(activity.get("session_omitted") or 0)
+        ranked_sessions = sorted(
+            raw_sessions,
+            key=lambda session: (
+                0
+                if session.get("status") in {"working", "prompting"}
+                else 1
+                if session.get("status") in {"failed", "recoverable", "deferred"}
+                else 2,
+                -_time_score(session.get("updated_at")),
+                str(session.get("id") or ""),
+            ),
+        )
+        for session in ranked_sessions:
+            session_realm = session.get("realm_id")
+            if not session_realm:
+                unknown_realm_sessions += 1
+                continue
+            if session_realm != realm_id:
+                other_realm_sessions += 1
                 continue
             session_id = str(session.get("id") or "")
             if not session_id or session_id in seen_workers:
+                continue
+            if len(seen_workers) >= WORKSHOP_WORKER_LIMIT:
+                worker_projection_omitted += 1
                 continue
             seen_workers.add(session_id)
             dispatch = dispatch_by_session.get(session_id)
@@ -446,7 +505,12 @@ def build_workshop_snapshot(
                     ).get("summary"),
                     "tool_category": _tool_category(dispatch),
                     "href": f"/agent?session={session_id}&instance={node.get('id')}",
-                    "live": activity_state == "fresh",
+                    "relationship_kind": "session",
+                    "live": activity_state == "fresh"
+                    and (
+                        state == "working"
+                        or (state == "quiet-active" and bool(session.get("connected")))
+                    ),
                     "freshness": activity_state,
                     "freshness_label": _label(
                         activity_state, FRESHNESS_LABELS, "Unknown"
@@ -454,15 +518,32 @@ def build_workshop_snapshot(
                 }
             )
         # Durable dispatch admission is visible even before a session exists.
-        for dispatch in activity.get("dispatches") or []:
+        ranked_dispatches = sorted(
+            activity.get("dispatches") or [],
+            key=lambda dispatch: (
+                0 if dispatch.get("state") == "blocked" else 1,
+                -_time_score(dispatch.get("updated_at") or dispatch.get("created_at")),
+                str(dispatch.get("dispatch_id") or ""),
+            ),
+        )
+        for dispatch in ranked_dispatches:
+            dispatch_realm = dispatch.get("realm_id")
+            if not dispatch_realm:
+                unknown_realm_dispatches += 1
+                continue
+            if dispatch_realm != realm_id:
+                other_realm_dispatches += 1
+                continue
             if (
-                dispatch.get("realm_id", realm_id) != realm_id
-                or dispatch.get("session_id")
+                dispatch.get("session_id")
                 or dispatch.get("state") not in PRE_SESSION_DISPATCH_STATES
             ):
                 continue
             worker_id = f"dispatch:{dispatch.get('dispatch_id')}"
             if worker_id in seen_workers:
+                continue
+            if len(seen_workers) >= WORKSHOP_WORKER_LIMIT:
+                worker_projection_omitted += 1
                 continue
             seen_workers.add(worker_id)
             card_id = dispatch.get("card_id")
@@ -500,8 +581,9 @@ def build_workshop_snapshot(
                     "queue_position": queue.get("position")
                     or dispatch.get("queue_position"),
                     "tool_category": None,
-                    "href": card_payloads.get(card_id, {}).get("href") or "/fleet",
-                    "live": activity_state == "fresh",
+                    "href": None,
+                    "relationship_kind": "reservation",
+                    "live": False,
                     "freshness": activity_state,
                     "freshness_label": _label(
                         activity_state, FRESHNESS_LABELS, "Unknown"
@@ -604,15 +686,41 @@ def build_workshop_snapshot(
         linked = worker_by_card.get(card.id)
         bay = linked[0] if linked else None
         worker = linked[1] if linked else None
-        activity_state = worker.get("state") if worker else None
-        freshness = worker.get("freshness") if worker else payload["progress_freshness"]
+        session_worker = (
+            worker if worker and worker.get("relationship_kind") == "session" else None
+        )
+        reservation_worker = (
+            worker
+            if worker and worker.get("relationship_kind") == "reservation"
+            else None
+        )
+        activity_state = session_worker.get("state") if session_worker else None
+        freshness = (
+            session_worker.get("freshness")
+            if session_worker
+            else payload["progress_freshness"]
+        )
         live = bool(
-            payload["dispatch_current"]
-            or (worker and worker.get("live") and activity_state != "completed")
+            session_worker
+            and session_worker.get("live")
+            and activity_state not in {"completed", "failed"}
         )
         attention_reasons = list(payload["blockers"])
         if payload["dispatch_state"] in {"blocked", "failed"}:
             attention_reasons.append(payload["dispatch_label"])
+        if not session_worker and payload["dispatch_state"] in {
+            "waiting_capacity",
+            "blocked",
+            "completion_pending",
+        }:
+            attention_reasons.append(payload["dispatch_label"])
+        reconciliation_state = str(
+            (payload.get("card_reconciliation") or {}).get("state") or ""
+        )
+        if reconciliation_state in {"pending", "running", "retrying", "blocked"}:
+            attention_reasons.append(
+                _label(reconciliation_state, {}, "Card reconciliation needs attention")
+            )
         if activity_state in {"stalled", "failed", "recovering"}:
             attention_reasons.append(
                 worker.get("state_label") or ACTIVITY_LABELS.get(activity_state)
@@ -621,13 +729,17 @@ def build_workshop_snapshot(
             attention_reasons.append("Card is waiting")
         if card.lane == CardLane.ACTIVE and not payload["dispatch_current"]:
             attention_reasons.append("Active card has no current dispatch")
+        if reservation_worker:
+            attention_reasons.append(
+                reservation_worker.get("state_label") or "Dispatch is preparing"
+            )
         relationship_label = None
-        if worker:
+        if session_worker:
             relationship_label = (
                 "Linked session"
-                if str(worker.get("title") or "").strip().casefold()
+                if str(session_worker.get("title") or "").strip().casefold()
                 == str(card.title).strip().casefold()
-                else f"Session: {worker.get('title') or worker.get('id')}"
+                else f"Session: {session_worker.get('title') or session_worker.get('id')}"
             )
         work_orders.append(
             {
@@ -638,14 +750,17 @@ def build_workshop_snapshot(
                 "lane_label": LANE_LABELS[card.lane.value],
                 "dispatch_state": payload["dispatch_state"],
                 "dispatch_label": payload["dispatch_label"],
+                "dispatch_current": payload["dispatch_current"],
                 "activity_state": activity_state,
                 "activity_label": (
-                    worker.get("state_label") if worker else "No current session"
+                    session_worker.get("state_label")
+                    if session_worker
+                    else "No current session"
                 ),
                 "freshness": freshness,
                 "freshness_label": (
-                    worker.get("freshness_label")
-                    if worker
+                    session_worker.get("freshness_label")
+                    if session_worker
                     else _label(freshness, FRESHNESS_LABELS, "No session signal")
                 ),
                 "evaluated_outcome": payload["evaluated_outcome"],
@@ -656,16 +771,31 @@ def build_workshop_snapshot(
                 "card_reconciliation": payload["card_reconciliation"],
                 "session": (
                     {
-                        "id": worker["id"],
-                        "title": worker["title"],
+                        "id": session_worker["id"],
+                        "title": session_worker["title"],
                         "relationship_label": relationship_label,
-                        "href": worker["href"],
-                        "provider": worker.get("provider"),
-                        "connected": worker.get("connected"),
-                        "latest_progress": worker.get("latest_progress"),
-                        "tool_category": worker.get("tool_category"),
+                        "href": session_worker["href"],
+                        "provider": session_worker.get("provider"),
+                        "connected": session_worker.get("connected"),
+                        "latest_progress": session_worker.get("latest_progress"),
+                        "tool_category": session_worker.get("tool_category"),
                     }
-                    if worker
+                    if session_worker
+                    else None
+                ),
+                "reservation": (
+                    {
+                        "id": reservation_worker["id"],
+                        "dispatch_id": reservation_worker.get("dispatch_id"),
+                        "relationship_kind": "reservation",
+                        "label": "Dispatch reservation",
+                        "state": reservation_worker.get("state"),
+                        "state_label": reservation_worker.get("state_label"),
+                        "reason": reservation_worker.get("queue_reason")
+                        or reservation_worker.get("latest_progress"),
+                        "queue_position": reservation_worker.get("queue_position"),
+                    }
+                    if reservation_worker
                     else None
                 ),
                 "location": (
@@ -702,7 +832,7 @@ def build_workshop_snapshot(
     for node in overview.get("nodes", []):
         sync = (node.get("dimensions") or {}).get("sync") or {}
         value = sync.get("value") or {}
-        state = sync.get("state") or "unavailable"
+        freshness = sync.get("state") or "unavailable"
         convergence = value.get("convergence") or {}
         conflicts = value.get("conflicts") or convergence.get("conflicts") or []
         offline_peers = value.get("offline_peers") or [
@@ -714,16 +844,70 @@ def build_workshop_snapshot(
         projection_head = value.get("projection_head")
         consistent = value.get("consistent")
         observed_at = sync.get("observed_at")
+        phase = str(convergence.get("phase") or "")
+        offline_names = [
+            str(
+                item.get("name")
+                or item.get("instance_name")
+                or item.get("instance_id")
+                or item.get("id")
+                or "Unknown peer"
+            )
+            if isinstance(item, dict)
+            else str(item)
+            for item in offline_peers
+        ]
+        reasons = []
+        if freshness == "stale":
+            reasons.append("Sync observation is out of date")
+        elif freshness not in {"fresh"}:
+            reasons.append("Sync status is unavailable")
+        if consistent is False:
+            reasons.append("Durable state and the local view differ")
+        if conflicts:
+            reasons.append(f"{len(conflicts)} conflict(s) need resolution")
+        if offline_names:
+            reasons.append("Unavailable peers: " + ", ".join(offline_names))
+        if phase and phase not in {"converged", "idle"}:
+            reasons.append(_label(phase, {}, "Recovery in progress"))
+        if freshness == "stale":
+            operational_state = "stale"
+        elif freshness != "fresh":
+            operational_state = "unavailable"
+        elif conflicts:
+            operational_state = "conflict"
+        elif consistent is False:
+            operational_state = "inconsistent"
+        elif offline_names:
+            operational_state = "offline"
+        elif phase and phase not in {"converged", "idle"}:
+            operational_state = "recovering"
+        else:
+            operational_state = "healthy"
+        operational_labels = {
+            "healthy": "Healthy",
+            "stale": "Last known; needs attention",
+            "unavailable": "Unavailable",
+            "conflict": "Conflicts need attention",
+            "inconsistent": "Views differ",
+            "offline": "Peer unavailable",
+            "recovering": "Recovery in progress",
+        }
         node_payload = {
             "instance_id": node.get("id"),
             "name": node.get("name") or node.get("id"),
-            "state": state,
-            "state_label": _label(state, FRESHNESS_LABELS, "Unavailable"),
+            "state": operational_state,
+            "state_label": operational_labels[operational_state],
+            "freshness": freshness,
+            "freshness_label": _label(freshness, FRESHNESS_LABELS, "Unavailable"),
+            "attention": bool(reasons),
+            "reasons": list(dict.fromkeys(reasons)),
             "consistent": consistent,
             "durable_head": durable_head,
             "projection_head": projection_head,
             "conflicts": conflicts,
             "offline_peers": offline_peers,
+            "offline_peer_names": offline_names,
             "observed_at": observed_at,
             "age_seconds": _age_seconds(observed_at),
             "recovery_phase": convergence.get("phase"),
@@ -733,30 +917,21 @@ def build_workshop_snapshot(
             "href": f"/fleet?section=sync&instance={node.get('id')}",
         }
         sync_nodes.append(node_payload)
-        reasons = []
-        if consistent is False:
-            reasons.append("Durable state and the local view differ")
-        if conflicts:
-            reasons.append(f"{len(conflicts)} conflict(s) need resolution")
-        if offline_peers:
-            reasons.append(f"{len(offline_peers)} peer connection(s) unavailable")
-        phase = str(convergence.get("phase") or "")
-        if phase and phase not in {"converged", "idle"}:
-            reasons.append(_label(phase, {}, "Recovery in progress"))
-        if state not in {"fresh", "stale"}:
-            reasons.append("Sync status is unavailable")
         if reasons:
             sync_issues.append(
                 {
                     "instance_id": node_payload["instance_id"],
                     "peer_name": node_payload["name"],
-                    "condition": "historical" if state == "stale" else "current",
+                    "condition": ("historical" if freshness == "stale" else "current"),
                     "condition_label": (
                         "Historical observation"
-                        if state == "stale"
+                        if freshness == "stale"
                         else "Current condition"
                     ),
                     "summary": "; ".join(dict.fromkeys(reasons)),
+                    "state": operational_state,
+                    "state_label": operational_labels[operational_state],
+                    "affected_peer_names": offline_names,
                     "observed_at": observed_at,
                     "age_seconds": node_payload["age_seconds"],
                     "recovery_phase": phase or None,
@@ -769,10 +944,7 @@ def build_workshop_snapshot(
                     "href": node_payload["href"],
                 }
             )
-    degraded = bool(sync_issues) or any(
-        item["state"] not in {"fresh", "stale"} or item["consistent"] is False
-        for item in sync_nodes
-    )
+    degraded = bool(sync_issues)
     control_plane = build_control_plane_status(ctx.settings)
     authority = (
         (control_plane.get("service_authorities") or {})
@@ -806,6 +978,26 @@ def build_workshop_snapshot(
         "attention": sum(1 for item in work_orders if item["attention"]),
         "lanes": lane_counts,
         "orphan_sessions": len(orphan_workers),
+        "sessions": {
+            "reported": reported_session_total,
+            "projected": sum(
+                worker.get("relationship_kind") == "session"
+                for bay in bays
+                for worker in bay["workers"]
+            ),
+            "omitted": reported_session_omitted + worker_projection_omitted,
+        },
+        "reservations": sum(
+            worker.get("relationship_kind") == "reservation"
+            for bay in bays
+            for worker in bay["workers"]
+        ),
+        "excluded_activity": {
+            "unknown_realm_sessions": unknown_realm_sessions,
+            "unknown_realm_dispatches": unknown_realm_dispatches,
+            "other_realm_sessions": other_realm_sessions,
+            "other_realm_dispatches": other_realm_dispatches,
+        },
     }
     return {
         "schema": "pa.workshop/v2",
@@ -842,6 +1034,13 @@ def build_workshop_snapshot(
             "state_label": "Needs attention" if degraded else "Healthy",
             "nodes": sync_nodes,
             "issues": sync_issues,
+            "counts": {
+                "total": len(sync_nodes),
+                "attention": len(sync_issues),
+                "historical": sum(
+                    issue["condition"] == "historical" for issue in sync_issues
+                ),
+            },
             "edges": [
                 edge for edge in overview.get("edges", []) if edge.get("kind") == "sync"
             ],

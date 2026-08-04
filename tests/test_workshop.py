@@ -12,11 +12,18 @@ from fastapi.testclient import TestClient
 
 from pa.config import Settings
 from pa.core.kernel import Kernel
-from pa.domain.models import Card, CardLane, FleetInstance, Project
+from pa.domain.models import AgentSession, Card, CardLane, FleetInstance, Project
+from pa.domain.projection import CardProjection
 from pa.domain.store import reset_store
-from pa.fleet.workshop import WORKSHOP_PROJECTION_LIMIT, build_workshop_snapshot
+from pa.fleet.workshop import (
+    WORKSHOP_PROJECTION_LIMIT,
+    WORKSHOP_WORKER_LIMIT,
+    build_workshop_snapshot,
+)
 from pa.instance.agent_session import reset_instance_agent
 from pa.modules.fleet import _refresh_workshop_dimensions, _workshop_stream_iteration
+from pa.pr_supervisor.models import PRWatch
+from pa.pr_supervisor.store import PRSupervisorStore
 
 
 class _Store:
@@ -50,6 +57,7 @@ class _Dispatch:
     def __init__(self, **changes):
         self.payload = {
             "dispatch_id": "dispatch",
+            "realm_id": "default",
             "card_id": "active",
             "session_id": "session",
             "state": "running",
@@ -67,6 +75,7 @@ class _Dispatch:
             },
         }
         self.payload.update(changes)
+        self.realm_id = self.payload["realm_id"]
 
     def public_dict(self):
         return self.payload
@@ -128,6 +137,7 @@ def _overview():
                             "sessions": [
                                 {
                                     "id": "session",
+                                    "realm_id": "default",
                                     "title": "Workshop worker",
                                     "card_id": "active",
                                     "status": "working",
@@ -231,6 +241,7 @@ def test_multi_instance_activity_can_begin_after_initial_snapshot():
         "sessions": [
             {
                 "id": "monica-session",
+                "realm_id": "default",
                 "title": "Monica worker",
                 "status": "working",
                 "connected": True,
@@ -251,6 +262,7 @@ def test_starting_dispatch_appears_only_after_durable_admission():
     overview["nodes"][0]["dimensions"]["activity"]["value"]["dispatches"] = [
         {
             "dispatch_id": "reserved",
+            "realm_id": "default",
             "card_id": "active",
             "state": "starting_session",
             "created_at": datetime.now(UTC).isoformat(),
@@ -309,6 +321,7 @@ def test_current_followup_wins_over_completed_history_without_repeating_title():
     overview["nodes"][0]["dimensions"]["activity"]["value"]["sessions"] = [
         {
             "id": "current-session",
+            "realm_id": "default",
             "title": "Same work and session title",
             "card_id": "active",
             "status": "working",
@@ -399,12 +412,14 @@ def test_waiting_capacity_and_blocked_pre_session_work_is_explicit():
     activity["dispatches"] = [
         {
             "dispatch_id": "waiting",
+            "realm_id": "default",
             "card_id": "active",
             "state": "waiting_capacity",
             "queue": {"position": 3, "reason": "All Codex slots are occupied"},
         },
         {
             "dispatch_id": "blocked",
+            "realm_id": "default",
             "card_id": "waiting",
             "state": "blocked",
             "queue": {"blocked_code": "placement_unavailable"},
@@ -446,6 +461,272 @@ def test_workshop_excludes_session_and_dispatch_joins_from_other_realms():
     snapshot = build_workshop_snapshot(_ctx(), overview)
 
     assert snapshot["bays"][0]["workers"] == []
+
+
+def test_workshop_excludes_and_counts_missing_realm_activity():
+    overview = _overview()
+    activity = overview["nodes"][0]["dimensions"]["activity"]["value"]
+    activity["sessions"] = [
+        {"id": "unknown-session", "status": "working"},
+        {"id": "other-session", "realm_id": "other", "status": "working"},
+    ]
+    activity["dispatches"] = [
+        {"dispatch_id": "unknown-dispatch", "state": "blocked"},
+        {
+            "dispatch_id": "other-dispatch",
+            "realm_id": "other",
+            "state": "blocked",
+        },
+    ]
+
+    snapshot = build_workshop_snapshot(_ctx(), overview)
+
+    assert snapshot["bays"][0]["workers"] == []
+    assert snapshot["counts"]["excluded_activity"] == {
+        "unknown_realm_sessions": 1,
+        "unknown_realm_dispatches": 1,
+        "other_realm_sessions": 1,
+        "other_realm_dispatches": 1,
+    }
+
+
+def test_pre_session_reservation_is_current_attention_but_not_live_session():
+    waiting = _Dispatch(
+        dispatch_id="waiting",
+        session_id=None,
+        state="waiting_capacity",
+        effective_state="waiting_capacity",
+    )
+
+    class WaitingStore:
+        def list(self, *, limit):
+            return [waiting]
+
+    ctx = _ctx()
+    ctx.services["dispatch_store"] = WaitingStore()
+    overview = _overview()
+    activity = overview["nodes"][0]["dimensions"]["activity"]["value"]
+    activity["sessions"] = []
+    activity["dispatches"] = [
+        {
+            "dispatch_id": "waiting",
+            "realm_id": "default",
+            "card_id": "active",
+            "state": "waiting_capacity",
+            "queue": {"position": 2, "reason": "All workers are occupied"},
+        }
+    ]
+
+    snapshot = build_workshop_snapshot(ctx, overview)
+    row = next(item for item in snapshot["work_orders"] if item["id"] == "active")
+
+    assert row["dispatch_current"] is True
+    assert row["live"] is False
+    assert row["attention"] is True
+    assert row["session"] is None
+    assert row["reservation"] == {
+        "id": "dispatch:waiting",
+        "dispatch_id": "waiting",
+        "relationship_kind": "reservation",
+        "label": "Dispatch reservation",
+        "state": "queued",
+        "state_label": "Queued",
+        "reason": "All workers are occupied",
+        "queue_position": 2,
+    }
+
+
+def test_completion_pending_without_session_is_attention_not_live():
+    pending = _Dispatch(
+        session_id=None,
+        state="completion_pending",
+        effective_state="completion_pending",
+        card_reconciliation={"state": "retrying", "reason": "Waiting for card"},
+    )
+
+    class CompletionStore:
+        def list(self, *, limit):
+            return [pending]
+
+    ctx = _ctx()
+    ctx.services["dispatch_store"] = CompletionStore()
+    overview = _overview()
+    overview["nodes"][0]["dimensions"]["activity"]["value"]["sessions"] = []
+
+    snapshot = build_workshop_snapshot(ctx, overview)
+    row = next(item for item in snapshot["work_orders"] if item["id"] == "active")
+
+    assert row["dispatch_current"] is True
+    assert row["live"] is False
+    assert row["attention"] is True
+    assert "Finishing" in row["attention_reasons"]
+    assert "Retrying" in row["attention_reasons"]
+
+
+def test_stale_sync_is_attention_even_when_last_observation_was_consistent():
+    overview = _overview()
+    overview["nodes"][0]["dimensions"]["sync"]["state"] = "stale"
+
+    snapshot = build_workshop_snapshot(_ctx(), overview)
+
+    assert snapshot["sync"]["state"] == "degraded"
+    assert snapshot["sync"]["state_label"] == "Needs attention"
+    assert snapshot["sync"]["counts"] == {
+        "total": 1,
+        "attention": 1,
+        "historical": 1,
+    }
+    issue = snapshot["sync"]["issues"][0]
+    assert issue["peer_name"] == "Mac mini"
+    assert issue["condition"] == "historical"
+    assert "out of date" in issue["summary"]
+
+
+def test_worker_projection_is_bounded_and_prioritizes_live_turns():
+    overview = _overview()
+    sessions = [
+        {
+            "id": f"quiet-{index}",
+            "realm_id": "default",
+            "status": "idle",
+            "updated_at": f"2026-08-03T12:{index % 60:02d}:00+00:00",
+        }
+        for index in range(120)
+    ]
+    sessions.append(
+        {
+            "id": "important-live-turn",
+            "realm_id": "default",
+            "status": "working",
+            "updated_at": "2026-07-01T00:00:00+00:00",
+        }
+    )
+    activity = overview["nodes"][0]["dimensions"]["activity"]["value"]
+    activity["sessions"] = sessions
+    activity["session_total"] = len(sessions)
+
+    snapshot = build_workshop_snapshot(_ctx(), overview)
+    workers = snapshot["bays"][0]["workers"]
+
+    assert len(workers) == WORKSHOP_WORKER_LIMIT
+    assert any(worker["id"] == "important-live-turn" for worker in workers)
+    assert snapshot["counts"]["sessions"] == {
+        "reported": 121,
+        "projected": 80,
+        "omitted": 41,
+    }
+
+
+def test_workshop_uses_card_scoped_pr_watch_projection():
+    class WatchStore:
+        called = None
+
+        def list_watches_for_cards(
+            self, card_ids, *, realm_id, include_retired, per_card_limit
+        ):
+            self.called = (card_ids, realm_id, include_retired, per_card_limit)
+            return []
+
+        def list_watches(self, **_kwargs):
+            raise AssertionError("Workshop must not scan the full PR watch ledger")
+
+    ctx = _ctx()
+    store = WatchStore()
+    ctx.services["pr_supervisor_store"] = store
+
+    build_workshop_snapshot(ctx, _overview())
+
+    assert store.called == (
+        {"inbox", "active", "waiting", "done"},
+        "default",
+        True,
+        5,
+    )
+
+
+def test_pr_watch_projection_is_card_scoped_and_bounded(tmp_path):
+    store = PRSupervisorStore(tmp_path / "supervisor.db")
+    for index in range(8):
+        store.upsert_watch(
+            PRWatch(
+                id=f"active-{index}",
+                realm_id="default",
+                card_id="active",
+                repository="petersky/pa",
+                pr_number=index + 1,
+                pr_url=f"https://github.com/petersky/pa/pull/{index + 1}",
+            ),
+            preserve_lease=False,
+        )
+    store.upsert_watch(
+        PRWatch(
+            id="unrelated",
+            realm_id="default",
+            card_id="other-card",
+            repository="petersky/pa",
+            pr_number=99,
+            pr_url="https://github.com/petersky/pa/pull/99",
+        ),
+        preserve_lease=False,
+    )
+
+    watches = store.list_watches_for_cards(
+        {"active"}, realm_id="default", include_retired=True, per_card_limit=5
+    )
+
+    assert len(watches) == 5
+    assert all(watch.card_id == "active" for watch in watches)
+    assert all(watch.id != "unrelated" for watch in watches)
+
+
+def test_session_projection_queries_only_bounded_active_realm_rows(tmp_path):
+    projection = CardProjection(tmp_path / "projection.db")
+    for index in range(105):
+        projection.save_session(
+            AgentSession(
+                id=f"active-{index}",
+                realm_id="default",
+                agent_name="codex",
+                status="idle",
+                updated_at=datetime(2026, 8, 3, 12, index % 60, tzinfo=UTC),
+            )
+        )
+    projection.save_session(
+        AgentSession(
+            id="important-working",
+            realm_id="default",
+            agent_name="codex",
+            status="working",
+            updated_at=datetime(2026, 7, 1, tzinfo=UTC),
+        )
+    )
+    projection.save_session(
+        AgentSession(
+            id="closed-newer",
+            realm_id="default",
+            agent_name="codex",
+            status="closed",
+            updated_at=datetime(2026, 8, 4, tzinfo=UTC),
+        )
+    )
+    projection.save_session(
+        AgentSession(
+            id="foreign-working",
+            realm_id="other",
+            agent_name="codex",
+            status="working",
+        )
+    )
+
+    sessions, total = projection.list_sessions_for_workshop(
+        realm_id="default", limit=80
+    )
+
+    assert total == 106
+    assert len(sessions) == 80
+    assert sessions[0].id == "important-working"
+    assert all(session.realm_id == "default" for session in sessions)
+    assert all(session.status != "closed" for session in sessions)
 
 
 def test_active_session_does_not_inherit_terminal_dispatch_activity_state():

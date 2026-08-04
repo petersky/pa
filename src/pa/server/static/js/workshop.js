@@ -2,6 +2,7 @@
   "use strict";
 
   var pollTimer = null;
+  var ageTimer = null;
   var activitySource = null;
   var cardSource = null;
   var refreshGeneration = 0;
@@ -11,7 +12,6 @@
   var viewPreference = "floor";
   var VIEW_STORAGE_KEY = "pa.workshop.view.v1";
   var PAGE_SIZE = 20;
-  var pinSelected = false;
   var query = { filter: "operational", search: "", group: "attention", page: 1 };
 
   function escapeHtml(value) {
@@ -52,6 +52,28 @@
     return Math.floor(seconds / 86400) + " days ago";
   }
 
+  function observedAge(observedAt, fallbackSeconds) {
+    var observed = observedAt ? Date.parse(observedAt) : NaN;
+    if (!Number.isNaN(observed)) {
+      return Math.max(0, Math.floor((Date.now() - observed) / 1000));
+    }
+    return fallbackSeconds;
+  }
+
+  function ageMarkup(observedAt, fallbackSeconds) {
+    return '<span data-workshop-observed-at="' + escapeHtml(observedAt || "") +
+      '" data-workshop-fallback-age="' + escapeHtml(fallbackSeconds == null ? "" : fallbackSeconds) +
+      '">' + escapeHtml(formatAge(observedAge(observedAt, fallbackSeconds))) + "</span>";
+  }
+
+  function updateRelativeAges(root) {
+    root.querySelectorAll("[data-workshop-observed-at]").forEach(function (item) {
+      var fallback = item.dataset.workshopFallbackAge === "" ? null :
+        Number(item.dataset.workshopFallbackAge);
+      item.textContent = formatAge(observedAge(item.dataset.workshopObservedAt, fallback));
+    });
+  }
+
   function orders(data) {
     return Array.isArray(data.work_orders) ? data.work_orders : [];
   }
@@ -61,17 +83,18 @@
       order.freshness_label, order.outcome_label,
       order.location && order.location.name,
       order.card && order.card.project && order.card.project.title,
-      order.session && order.session.title].filter(Boolean).join(" ").toLowerCase();
+      order.session && order.session.title,
+      order.reservation && order.reservation.state_label,
+      order.reservation && order.reservation.reason].filter(Boolean).join(" ").toLowerCase();
   }
 
   function matches(order) {
-    var pinned = pinSelected && selected && selected.kind === "card" && selected.id === order.id;
     var filterMatch = query.filter === "all" ||
       (query.filter === "live" && order.live) ||
       (query.filter === "attention" && order.attention) ||
       (query.filter === "operational" && (order.live || order.attention));
     var searchMatch = !query.search || orderSearchText(order).indexOf(query.search) !== -1;
-    return pinned || (filterMatch && searchMatch);
+    return filterMatch && searchMatch;
   }
 
   function compareOrders(left, right) {
@@ -99,10 +122,6 @@
   function pageSlice(data) {
     var matching = orders(data).filter(matches).sort(compareOrders);
     var pages = Math.max(1, Math.ceil(matching.length / PAGE_SIZE));
-    if (pinSelected && selected && selected.kind === "card") {
-      var selectedIndex = matching.findIndex(function (order) { return order.id === selected.id; });
-      if (selectedIndex >= 0) query.page = Math.floor(selectedIndex / PAGE_SIZE) + 1;
-    }
     query.page = Math.min(Math.max(1, query.page), pages);
     var start = (query.page - 1) * PAGE_SIZE;
     return { all: matching, page: matching.slice(start, start + PAGE_SIZE), pages: pages };
@@ -116,12 +135,17 @@
   function orderButton(order, className) {
     var relationship = order.session ? '<span class="workshop-relationship">' +
       escapeHtml(order.session.relationship_label) + "</span>" :
+      order.reservation ? '<span class="workshop-relationship">' +
+      escapeHtml(order.reservation.label + ": " + order.reservation.state_label) + "</span>" :
       '<span class="workshop-relationship">No current session</span>';
     var attention = order.attention ? '<span class="status status-blocked">Needs attention</span>' : "";
+    var accessibleState = [order.title, order.lane_label, order.dispatch_label,
+      order.activity_label, order.freshness_label, order.outcome_label,
+      order.attention ? "Needs attention" : "No attention issue"].filter(Boolean).join(", ");
     return '<button type="button" class="' + className + '" data-workshop-kind="card" ' +
       'data-workshop-id="' + escapeHtml(order.id) + '" aria-pressed="false" ' +
-      'aria-label="Inspect work order ' +
-      escapeHtml(order.title) + '"><span class="workshop-order-heading"><strong>' +
+      'aria-label="Inspect work order: ' +
+      escapeHtml(accessibleState) + '"><span class="workshop-order-heading"><strong>' +
       escapeHtml(order.title) + "</strong>" + attention + "</span>" + relationship +
       '<dl class="workshop-order-states"><div><dt>Lane</dt><dd>' +
       stateCell(order.lane_label, order.lane) + "</dd></div><div><dt>Dispatch</dt><dd>" +
@@ -131,7 +155,8 @@
       stateCell(order.outcome_label, order.evaluated_outcome) + "</dd></div></dl></button>";
   }
 
-  function renderQuery(root, data, result) {
+  function renderQuery(root, data, result, options) {
+    options = options || {};
     var loaded = orders(data).length;
     var inventory = data.inventory || { total: loaded, omitted: 0, loaded: loaded };
     var from = result.page.length ? ((query.page - 1) * PAGE_SIZE) + 1 : 0;
@@ -145,10 +170,11 @@
     if (group) group.value = query.group;
     if (status) {
       var omitted = loaded - result.all.length;
-      status.textContent = "Showing " + from + "–" + to + " of " + result.all.length +
+      var resultText = "Showing " + from + "–" + to + " of " + result.all.length +
         " loaded matches; " + omitted + " loaded work orders omitted by this view. " +
         inventory.omitted + " additional admitted cards are outside this bounded projection; " +
         inventory.total + " admitted in total.";
+      if (status.textContent !== resultText) status.textContent = resultText;
     }
     var overflow = root.querySelector("[data-workshop-overflow]");
     if (overflow) {
@@ -160,9 +186,16 @@
     if (pager) {
       pager.innerHTML = '<button type="button" class="ghost small" data-workshop-page="previous"' +
         (query.page <= 1 ? " disabled" : "") + '>Previous</button><span>Page ' + query.page +
-        " of " + result.pages + '</span><button type="button" class="ghost small" ' +
+        " of " + result.pages + '</span><span class="sr-only" tabindex="-1" ' +
+        'data-workshop-page-status>Page ' + query.page + " of " + result.pages +
+        '</span><button type="button" class="ghost small" ' +
         'data-workshop-page="next"' + (query.page >= result.pages ? " disabled" : "") +
         ">Next</button>";
+    }
+    if (options.announceResults) {
+      var announcer = root.querySelector("[data-workshop-announcer]");
+      if (announcer) announcer.textContent = result.all.length + " matching work orders, page " +
+        query.page + " of " + result.pages + ".";
     }
   }
 
@@ -170,11 +203,14 @@
     var capacity = bay.capacity.limit == null ? "Capacity unavailable" :
       String(bay.capacity.consumed == null ? "Unknown" : bay.capacity.consumed) +
       " of " + bay.capacity.limit + " slots used";
+    var bayAccessible = [bay.name, bay.connectivity_label,
+      bay.activity_freshness_label, capacity, bay.active + " active",
+      bay.queued + " queued"].join(", ");
     return '<section class="workshop-bay" data-state="' +
       escapeHtml(bay.connectivity === "connected" ? bay.activity_freshness : "disconnected") +
       '"><button type="button" class="workshop-bay-header" data-workshop-kind="bay" ' +
       'data-workshop-id="' + escapeHtml(bay.id) + '" aria-pressed="false" ' +
-      'aria-label="Inspect work bay ' + escapeHtml(bay.name) + '"><span><strong>' +
+      'aria-label="Inspect work bay: ' + escapeHtml(bayAccessible) + '"><span><strong>' +
       escapeHtml(bay.name) +
       "</strong><small>" + escapeHtml(bay.zone || "No zone") + "</small></span><span>" +
       stateCell(bay.connectivity_label || "Disconnected", bay.connectivity) +
@@ -224,12 +260,18 @@
         rows.push('<tr class="workshop-group-row"><th colspan="6" scope="rowgroup">' +
           escapeHtml(group) + "</th></tr>");
       }
+      var accessibleState = [order.title, order.lane_label, order.dispatch_label,
+        order.activity_label, order.freshness_label, order.outcome_label,
+        order.attention ? "Needs attention" : "No attention issue"].filter(Boolean).join(", ");
       rows.push('<tr data-workshop-compact-row="work-order"><td data-label="Work order">' +
         '<button class="link-button" type="button" data-workshop-kind="card" data-workshop-id="' +
-        escapeHtml(order.id) + '" aria-pressed="false"><strong>' +
+        escapeHtml(order.id) + '" aria-pressed="false" aria-label="Inspect work order: ' +
+        escapeHtml(accessibleState) + '"><strong>' +
         escapeHtml(order.title) + "</strong></button>" +
         (order.session ? '<span class="workshop-relationship">' +
-        escapeHtml(order.session.relationship_label) + "</span>" : "") +
+        escapeHtml(order.session.relationship_label) + "</span>" :
+        order.reservation ? '<span class="workshop-relationship">' +
+        escapeHtml(order.reservation.label + ": " + order.reservation.state_label) + "</span>" : "") +
         '</td><td data-label="Lane">' + stateCell(order.lane_label, order.lane) +
         '</td><td data-label="Dispatch">' + stateCell(order.dispatch_label, order.dispatch_state) +
         '</td><td data-label="Activity">' + stateCell(order.activity_label, order.activity_state) +
@@ -248,9 +290,12 @@
     var sync = root.querySelector("[data-workshop-sync]");
     var nodes = data.sync.nodes || [];
     var issues = data.sync.issues || [];
+    var accessibleState = ["Shared sync rail", data.sync.state_label || "Status unavailable",
+      nodes.length + " peers", issues.length + " needing attention"].join(", ");
     sync.dataset.state = data.sync.state;
     sync.innerHTML = '<button type="button" data-workshop-kind="sync" data-workshop-id="rail" ' +
-      'aria-pressed="false" aria-label="Inspect fleet synchronization"><span aria-hidden="true">⟷</span>' +
+      'aria-pressed="false" aria-label="' + escapeHtml(accessibleState) +
+      '"><span aria-hidden="true">⟷</span>' +
       '<strong>Shared sync rail</strong><span>' + escapeHtml(data.sync.state_label || "Status unavailable") +
       " · " + nodes.length + " peers · " + issues.length +
       " needing attention</span></button>";
@@ -265,7 +310,7 @@
   function detailRows(rows) {
     return "<dl>" + rows.filter(function (row) { return row[1] != null && row[1] !== ""; })
       .map(function (row) { return "<dt>" + escapeHtml(row[0]) + "</dt><dd>" +
-        escapeHtml(row[1]) + "</dd>"; }).join("") + "</dl>";
+        (row[2] ? row[1] : escapeHtml(row[1])) + "</dd>"; }).join("") + "</dl>";
   }
 
   function clearInspection(root, message) {
@@ -295,25 +340,33 @@
     if (kind === "bay") {
       panel.innerHTML = "<h2>Work bay</h2><h3>" + escapeHtml(item.name) + "</h3>" +
         detailRows([["Connectivity", item.connectivity_label], ["Fleet status", item.freshness_label],
-          ["Activity status", item.activity_freshness_label], ["Last activity", formatAge(item.activity_age_seconds)],
+          ["Activity status", item.activity_freshness_label],
+          ["Last activity", ageMarkup(item.activity_observed_at, item.activity_age_seconds), true],
           ["Capacity", (item.capacity.consumed == null ? "Unknown" : item.capacity.consumed) +
             " of " + (item.capacity.limit == null ? "unknown" : item.capacity.limit)]]) +
-        '<p><a href="/fleet?instance=' + escapeHtml(item.id) + '">Open Fleet details</a></p>';
+        '<p><a data-workshop-focus-key="bay-detail" href="/fleet?instance=' +
+        escapeHtml(item.id) + '">Open Fleet details</a></p>';
     } else if (kind === "card") {
       var card = item.card;
       var reasons = item.attention_reasons.length ? item.attention_reasons.join("; ") : "None";
-      var relationship = item.session ? item.session.relationship_label : "No current session";
+      var relationship = item.session ? item.session.relationship_label :
+        item.reservation ? item.reservation.label + ": " + item.reservation.state_label :
+        "No current session";
       var action = "";
       if (card.can_dispatch) {
-        action = '<p><button type="button" class="primary" data-workshop-dispatch="' +
+        action = '<p><button type="button" class="primary" data-workshop-focus-key="dispatch" data-workshop-dispatch="' +
           escapeHtml(card.id) + '">Dispatch work order</button></p>';
       } else if (card.dispatch_unavailable_reason) {
         action = '<p class="muted small">Dispatch unavailable: ' +
           escapeHtml(card.dispatch_unavailable_reason) + "</p>";
       }
       panel.innerHTML = "<h2>Work order</h2><h3>" + escapeHtml(item.title) + "</h3>" +
+        (!matches(item) ? '<p class="notice small" data-workshop-selection-context>' +
+          "Selected work is outside the current filtered results.</p>" : "") +
         detailRows([["Card lane", item.lane_label], ["Dispatch", item.dispatch_label],
           ["Session relationship", relationship], ["Session activity", item.activity_label],
+          ["Reservation reason", item.reservation && item.reservation.reason],
+          ["Queue position", item.reservation && item.reservation.queue_position],
           ["Agent turn", item.agent_turn && item.agent_turn.ended ? "Ended" : "In progress or not started"],
           ["Dispatch completion", item.dispatch_completion && item.dispatch_completion.completed ?
             "Completed" : "Not completed"],
@@ -322,19 +375,23 @@
           ["Freshness", item.freshness_label], ["Evaluated outcome", item.outcome_label],
           ["Location", item.location ? item.location.name : "Not assigned"],
           ["Needs attention", reasons], ["Latest progress", item.session && item.session.latest_progress]]) +
-        action + '<p class="workshop-inspector-links"><a href="' + escapeHtml(card.href) +
-        '">Open card detail</a>' + (item.session ? '<a href="' + escapeHtml(item.session.href) +
-        '">Open linked session</a>' : "") + "</p>";
+        action + '<p class="workshop-inspector-links"><a data-workshop-focus-key="card-detail" href="' +
+        escapeHtml(card.href) + '">Open card detail</a>' +
+        (item.session ? '<a data-workshop-focus-key="session-detail" href="' +
+          escapeHtml(item.session.href) + '">Open linked session</a>' : "") + "</p>";
     } else {
       var issues = item.issues || [];
       var issueMarkup = issues.length ? '<ul class="workshop-sync-issues">' +
         issues.map(function (issue) {
           return "<li><strong>" + escapeHtml(issue.peer_name) + "</strong><span>" +
-            escapeHtml(issue.condition_label) + " · " + escapeHtml(formatAge(issue.age_seconds)) +
+            escapeHtml(issue.condition_label) + " · " +
+            ageMarkup(issue.observed_at, issue.age_seconds) +
             "</span><span>" + escapeHtml(issue.summary) + "</span><span>Recovery: " +
             escapeHtml(issue.recovery_label) + (issue.recovery_attempt ?
             " · attempt " + escapeHtml(issue.recovery_attempt) : "") +
-            '</span><a href="' + escapeHtml(issue.href) + '">Open peer sync details</a></li>';
+            '</span><a data-workshop-focus-key="sync-' + escapeHtml(issue.instance_id) +
+            '" href="' + escapeHtml(issue.href) + '">Open sync details for ' +
+            escapeHtml(issue.peer_name) + "</a></li>";
         }).join("") + "</ul>" : '<p class="muted">No peers currently need attention.</p>';
       var raw = (item.nodes || []).map(function (node) {
         return { instance_id: node.instance_id, state: node.state,
@@ -344,7 +401,7 @@
       panel.innerHTML = "<h2>Shared sync rail</h2>" +
         detailRows([["Realm state", item.state_label], ["Peers reporting", item.nodes.length],
           ["Peers needing attention", issues.length]]) + issueMarkup +
-        '<p><a href="/fleet?section=sync">Open Realm sync</a></p>' +
+        '<p><a data-workshop-focus-key="realm-sync" href="/fleet?section=sync">Open Realm sync</a></p>' +
         '<details><summary>Raw diagnostics</summary><pre>' +
         escapeHtml(JSON.stringify(raw, null, 2)) + "</pre></details>";
     }
@@ -353,47 +410,86 @@
       if (announcer) announcer.textContent = "Inspector updated for " +
         (kind === "card" ? item.title : kind === "bay" ? item.name : "Shared sync rail") + ".";
     }
-    if (options.reveal && window.matchMedia && window.matchMedia("(max-width: 720px)").matches) {
-      panel.focus({ preventScroll: true });
-      panel.scrollIntoView({ block: "nearest" });
+    updateRelativeAges(root);
+    if (options.reveal) {
+      var rect = panel.getBoundingClientRect();
+      var stacked = window.matchMedia && window.matchMedia("(max-width: 1100px)").matches;
+      var outsideViewport = rect.top < 0 || rect.bottom > window.innerHeight;
+      if (stacked || outsideViewport) {
+        panel.focus({ preventScroll: true });
+        panel.scrollIntoView({ block: "nearest" });
+      }
     }
     return true;
   }
 
-  function render(root, data) {
-    var focused = document.activeElement && document.activeElement.closest &&
-      document.activeElement.closest("[data-workshop-kind]");
-    var focusKey = focused ? { kind: focused.dataset.workshopKind,
-      id: focused.dataset.workshopId } : null;
-    root.__workshopData = data;
-    var result = pageSlice(data);
-    renderQuery(root, data, result);
-    renderSync(root, data);
-    renderScene(root, data, result);
-    renderCompact(root, result);
-    if (selected && !inspect(root, data, selected.kind, selected.id, { announce: false })) {
-      clearInspection(root, "The selected item is no longer in the bounded Workshop view.");
-      var announcer = root.querySelector("[data-workshop-announcer]");
-      if (announcer) announcer.textContent = "Workshop selection cleared because the item is no longer available.";
+  function captureFocus(root) {
+    var active = document.activeElement;
+    if (!active || !root.contains(active)) return null;
+    var item = active.closest && active.closest("[data-workshop-kind]");
+    if (item) return { type: "item", kind: item.dataset.workshopKind,
+      id: item.dataset.workshopId };
+    if (active.dataset && active.dataset.workshopFocusKey) {
+      return { type: "inspector", key: active.dataset.workshopFocusKey };
     }
-    if (focusKey) {
+    if (active.dataset && active.dataset.workshopPage) {
+      return { type: "page", direction: active.dataset.workshopPage };
+    }
+    return null;
+  }
+
+  function restoreFocus(root, focusKey) {
+    if (!focusKey) return false;
+    var candidate = null;
+    if (focusKey.type === "item") {
       var candidates = Array.from(root.querySelectorAll("[data-workshop-kind]")).filter(function (button) {
         return button.dataset.workshopKind === focusKey.kind &&
           button.dataset.workshopId === focusKey.id;
       });
-      var candidate = candidates.find(function (button) { return !button.closest("[hidden]"); }) ||
+      candidate = candidates.find(function (button) { return !button.closest("[hidden]"); }) ||
         candidates[0];
-      if (candidate) candidate.focus({ preventScroll: true });
+    } else if (focusKey.type === "inspector") {
+      candidate = root.querySelector('[data-workshop-focus-key="' +
+        CSS.escape(focusKey.key) + '"]');
+    } else if (focusKey.type === "page") {
+      candidate = root.querySelector('[data-workshop-page="' + focusKey.direction + '"]');
+      if (candidate && candidate.disabled) candidate = null;
     }
+    if (!candidate) return false;
+    candidate.focus({ preventScroll: true });
+    return true;
+  }
+
+  function render(root, data, options) {
+    options = options || {};
+    var focusKey = captureFocus(root);
+    root.__workshopData = data;
+    var result = pageSlice(data);
+    renderQuery(root, data, result, options);
+    renderSync(root, data);
+    renderScene(root, data, result);
+    renderCompact(root, result);
+    var selectionRemoved = false;
+    if (selected && !inspect(root, data, selected.kind, selected.id, { announce: false })) {
+      selectionRemoved = true;
+      clearInspection(root, "The selected item is no longer in the bounded Workshop view.");
+      var announcer = root.querySelector("[data-workshop-announcer]");
+      if (announcer) announcer.textContent = "Workshop selection cleared because the item is no longer available.";
+    }
+    if (selectionRemoved) {
+      var nearby = root.querySelector("[data-workshop-search]");
+      if (nearby) nearby.focus({ preventScroll: true });
+    } else {
+      restoreFocus(root, focusKey);
+    }
+    updateRelativeAges(root);
   }
 
   function acceptSnapshot(root, data) {
     var observed = String((data && data.generated_at) || "");
     if (!data || !observed || (lastSnapshotAt && observed <= lastSnapshotAt)) return false;
     lastSnapshotAt = observed;
-    pinSelected = true;
-    try { render(root, data); }
-    finally { pinSelected = false; }
+    render(root, data);
     return true;
   }
 
@@ -457,6 +553,8 @@
     refreshGeneration += 1;
     if (pollTimer) window.clearInterval(pollTimer);
     pollTimer = null;
+    if (ageTimer) window.clearInterval(ageTimer);
+    ageTimer = null;
     if (activitySource) activitySource.close();
     if (cardSource) cardSource.close();
     activitySource = null;
@@ -498,6 +596,7 @@
     viewPreference = readViewPreference();
     setView(root, viewPreference, { persist: false, preserveScroll: false });
     refresh(root, false);
+    ageTimer = window.setInterval(function () { updateRelativeAges(root); }, 30000);
     if (window.EventSource) {
       activitySource = new EventSource("/api/fleet/workshop/events");
       activitySource.onopen = function () {
@@ -524,15 +623,15 @@
     }
   }
 
-  function rerender(root) {
-    if (root.__workshopData) render(root, root.__workshopData);
+  function rerender(root, options) {
+    if (root.__workshopData) render(root, root.__workshopData, options);
   }
 
   function handleRootInput(event) {
     if (!event.target.matches("[data-workshop-search]")) return;
     query.search = event.target.value.toLowerCase().trim();
     query.page = 1;
-    rerender(event.currentTarget);
+    rerender(event.currentTarget, { announceResults: true });
     var search = event.currentTarget.querySelector("[data-workshop-search]");
     if (search) {
       search.focus({ preventScroll: true });
@@ -545,7 +644,7 @@
     else if (event.target.matches("[data-workshop-group]")) query.group = event.target.value;
     else return;
     query.page = 1;
-    rerender(event.currentTarget);
+    rerender(event.currentTarget, { announceResults: true });
     var replacement = event.currentTarget.querySelector("[" +
       (event.target.matches("[data-workshop-filter]") ? "data-workshop-filter" : "data-workshop-group") + "]");
     if (replacement) replacement.focus({ preventScroll: true });
@@ -561,10 +660,17 @@
     var page = event.target.closest("[data-workshop-page]");
     if (page) {
       query.page += page.dataset.workshopPage === "next" ? 1 : -1;
-      rerender(root);
+      rerender(root, { announceResults: true });
       var replacement = root.querySelector('[data-workshop-page="' +
         page.dataset.workshopPage + '"]');
       if (replacement && !replacement.disabled) replacement.focus({ preventScroll: true });
+      else {
+        var counterpart = root.querySelector('[data-workshop-page="' +
+          (page.dataset.workshopPage === "next" ? "previous" : "next") + '"]');
+        var fallback = counterpart && !counterpart.disabled ? counterpart :
+          root.querySelector("[data-workshop-page-status]");
+        if (fallback) fallback.focus({ preventScroll: true });
+      }
       return;
     }
     var dispatch = event.target.closest("[data-workshop-dispatch]");
@@ -600,6 +706,7 @@
     reset: function () { lastSnapshotAt = ""; },
     getView: function () { return viewPreference; },
     setView: setView,
+    updateRelativeAges: updateRelativeAges,
     storageKey: VIEW_STORAGE_KEY,
     pageSize: PAGE_SIZE
   };

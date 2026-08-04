@@ -46,6 +46,28 @@ def capacity(*, execution: int = 4, queue: int = 100) -> CapacityAdmission:
     )
 
 
+def test_history_counts_use_maintained_index_without_scanning_ledger() -> None:
+    class NoScanRecords(dict):
+        def values(self):
+            raise AssertionError("history_counts must not scan dispatch history")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        store = DispatchStore(Path(tmp))
+        first = record(1)
+        first.card_id = "shared-card"
+        second = record(2)
+        second.card_id = "shared-card"
+        second.allow_concurrent = True
+        store.admit(first)
+        store.admit(second)
+        store._records = NoScanRecords(store._records)
+
+        assert store.history_counts({"shared-card", "missing"}, realm_id="default") == {
+            "shared-card": 2,
+            "missing": 0,
+        }
+
+
 def test_six_dispatches_use_four_slots_and_two_durable_queue_entries() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         store = DispatchStore(Path(tmp))
