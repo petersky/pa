@@ -69,6 +69,14 @@ from pa.sync.event_log import EventLog
 T = TypeVar("T")
 
 
+class CardVersionConflict(RuntimeError):
+    def __init__(self, card_id: str, expected: datetime, actual: datetime) -> None:
+        super().__init__(f"card {card_id} changed since version {expected.isoformat()}")
+        self.card_id = card_id
+        self.expected = expected
+        self.actual = actual
+
+
 def _coerce_datetime(value: object) -> datetime | None:
     """Parse event-payload timestamps without inventing a new wall-clock time."""
     if value is None or value == "":
@@ -97,7 +105,12 @@ class CardProjection:
         self.db_path = db_path
         self.event_log = event_log
         self._mutation_lock = threading.RLock()
+        self._legacy_integrity_upgrade_required = False
+        self._replaying_from_log = False
         self._init_db()
+        if self._legacy_integrity_upgrade_required and self.event_log:
+            for realm in {ref.realm_id for ref in self.event_log.list_refs()}:
+                self.rebuild_from_log(realm)
 
     @contextmanager
     def _conn(self) -> Iterator[sqlite3.Connection]:
@@ -260,6 +273,10 @@ class CardProjection:
                     realm_id TEXT PRIMARY KEY,
                     head_hash TEXT NOT NULL,
                     updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS projection_migrations (
+                    name TEXT PRIMARY KEY,
+                    applied_at TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS instance_groups (
                     realm_id TEXT NOT NULL,
@@ -525,6 +542,21 @@ class CardProjection:
         )
 
     def _migrate_items_to_cards(self, conn: sqlite3.Connection) -> None:
+        migration = "legacy_items_to_cards_v2_monotonic"
+        if conn.execute(
+            "SELECT 1 FROM projection_migrations WHERE name=?", (migration,)
+        ).fetchone():
+            return
+        # Once a durable realm exists it is authoritative. Replaying the old
+        # items table into an already-checkpointed projection can resurrect
+        # status=open as lane=inbox without any event or provenance.
+        if self.event_log and self.event_log.get_head("default"):
+            self._legacy_integrity_upgrade_required = True
+            conn.execute(
+                "INSERT INTO projection_migrations (name, applied_at) VALUES (?, ?)",
+                (migration, datetime.now(UTC).isoformat()),
+            )
+            return
         rows = conn.execute("SELECT * FROM items").fetchall()
         lane_map = {
             "open": "inbox",
@@ -552,6 +584,10 @@ class CardProjection:
                     row["updated_at"],
                 ),
             )
+        conn.execute(
+            "INSERT INTO projection_migrations (name, applied_at) VALUES (?, ?)",
+            (migration, datetime.now(UTC).isoformat()),
+        )
 
     def _repository_id(self, realm_id: str, url: str) -> str:
         return str(uuid5(NAMESPACE_URL, f"pa:{realm_id}:{url.strip()}"))
@@ -644,6 +680,8 @@ class CardProjection:
             apply_goal_governance_event(self, event)
         elif event.type == EventType.CARD_CREATED:
             self._apply_created(event)
+        elif event.type == EventType.CARD_UPSERTED:
+            self._apply_upserted(event)
         elif event.type == EventType.CARD_UPDATED:
             self._apply_updated(event)
         elif event.type == EventType.CARD_DELETED:
@@ -1124,6 +1162,19 @@ class CardProjection:
             )
 
     def _apply_created(self, event: CardEvent) -> None:
+        if self.event_log and event.card_id and not self._replaying_from_log:
+            record = next(
+                (
+                    item
+                    for item in self.event_log.entity_history(
+                        event.realm_id, "card", event.card_id
+                    )
+                    if item["event"]["id"] == event.id
+                ),
+                None,
+            )
+            if record and record["projection_effect"] == "ignored_duplicate_create":
+                return
         p = event.payload
         created_at = _coerce_datetime(p.get("created_at")) or datetime.now(UTC)
         updated_at = _coerce_datetime(p.get("updated_at")) or created_at
@@ -1164,6 +1215,14 @@ class CardProjection:
             created_at=created_at,
             updated_at=updated_at,
         )
+        self._upsert_card(card)
+
+    def _apply_upserted(self, event: CardEvent) -> None:
+        payload = {**event.payload, "id": event.card_id, "realm_id": event.realm_id}
+        try:
+            card = Card.model_validate(payload)
+        except ValidationError:
+            return
         self._upsert_card(card)
 
     def _apply_project_created(self, event: CardEvent) -> None:
@@ -1465,6 +1524,8 @@ class CardProjection:
                 author_principal=principal_id,
                 author_instance=instance_id,
                 payload=card.model_dump(mode="json"),
+                source_operation="card.create",
+                field_intent=sorted(card.model_dump(mode="json")),
             )
             self.commit_event(event)
         else:
@@ -1719,7 +1780,21 @@ class CardProjection:
         card = self.get_card(card_id, realm_id=realm_id)
         if not card:
             return None
-        updates = data.model_dump(exclude_unset=True)
+        if data.expected_version is not None:
+            expected = data.expected_version
+            if expected.tzinfo is None:
+                expected = expected.replace(tzinfo=UTC)
+            if expected.astimezone(UTC) != card.updated_at.astimezone(UTC):
+                raise CardVersionConflict(card_id, expected, card.updated_at)
+        updates = data.model_dump(
+            exclude_unset=True, exclude={"expected_version", "field_intent"}
+        )
+        requested_fields = set(updates)
+        if data.field_intent is not None:
+            requested_fields = set(data.field_intent)
+            updates = {
+                key: value for key, value in updates.items() if key in requested_fields
+            }
         now = datetime.now(UTC)
         payload = {}
         for key, value in updates.items():
@@ -1731,22 +1806,22 @@ class CardProjection:
                 )
             elif value is not None or key == "project_id":
                 payload[key] = value
-        if data.body is not None and data.summary is None:
+        if updates.get("body") is not None and "summary" not in updates:
             if card.summary_source == CardSummarySource.FALLBACK:
                 payload.update(
-                    summary=fallback_card_summary(data.body),
+                    summary=fallback_card_summary(updates["body"]),
                     summary_source=CardSummarySource.FALLBACK.value,
                     summary_stale=False,
                     summary_updated_at=now.isoformat(),
                 )
             else:
                 payload["summary_stale"] = True
-        if data.summary is not None:
-            supplied_summary = data.summary.strip()
+        if updates.get("summary") is not None:
+            supplied_summary = updates["summary"].strip()
             payload.update(
                 summary=supplied_summary
                 or fallback_card_summary(
-                    data.body if data.body is not None else card.body
+                    updates["body"] if "body" in updates else card.body
                 ),
                 summary_source=(
                     payload.get("summary_source") or CardSummarySource.MANUAL.value
@@ -1754,7 +1829,7 @@ class CardProjection:
                     else CardSummarySource.FALLBACK.value
                 ),
                 summary_stale=(
-                    data.summary_stale if data.summary_stale is not None else False
+                    updates["summary_stale"] if "summary_stale" in updates else False
                 ),
                 summary_updated_at=now.isoformat(),
             )
@@ -1769,6 +1844,9 @@ class CardProjection:
                 author_principal=principal_id,
                 author_instance=instance_id,
                 payload=payload,
+                source_operation="card.update",
+                causal_card_version=card.updated_at.isoformat(),
+                field_intent=sorted(requested_fields),
             )
             self.commit_event(event)
             return self.get_card(card_id, realm_id=realm_id)
@@ -1786,6 +1864,133 @@ class CardProjection:
         card.updated_at = now
         self._upsert_card(card)
         return card
+
+    @serialized_mutation
+    def repair_legacy_card_history(
+        self,
+        card_ids: list[str],
+        *,
+        realm_id: str = "default",
+        principal_id: str = "user:local",
+        instance_id: str = "local",
+    ) -> list[dict]:
+        """Append explicit canonical bases for projection-only legacy cards."""
+        if not self.event_log:
+            return []
+        results: list[dict] = []
+        for card_id in dict.fromkeys(card_ids):
+            history = self.event_log.entity_history(realm_id, "card", card_id)
+            prior_repair = next(
+                (
+                    item
+                    for item in history
+                    if item["event"]["type"] == EventType.CARD_UPSERTED.value
+                    and item["event"]["source_operation"]
+                    == "repair.legacy_card_history"
+                ),
+                None,
+            )
+            if prior_repair:
+                results.append(
+                    {
+                        "card_id": card_id,
+                        "status": "already_repaired",
+                        "commit_hash": prior_repair["commit_hash"],
+                    }
+                )
+                continue
+            canonical_base = next(
+                (
+                    item
+                    for item in history
+                    if item["projection_effect"] == "applied"
+                    and item["event"]["type"]
+                    in {
+                        EventType.CARD_CREATED.value,
+                        EventType.CARD_UPSERTED.value,
+                    }
+                ),
+                None,
+            )
+            if canonical_base:
+                results.append(
+                    {
+                        "card_id": card_id,
+                        "status": "canonical_history_present",
+                        "commit_hash": canonical_base["commit_hash"],
+                    }
+                )
+                continue
+            with self._conn() as conn:
+                row = conn.execute(
+                    "SELECT * FROM items WHERE id=?", (card_id,)
+                ).fetchone()
+            if not row:
+                results.append({"card_id": card_id, "status": "no_legacy_source"})
+                continue
+            lane = lane_from_legacy_status(row["status"])
+            candidate = Card(
+                id=card_id,
+                realm_id=realm_id,
+                kind=CardKind(row["kind"]),
+                title=row["title"],
+                body=row["body"],
+                summary=fallback_card_summary(row["body"]),
+                summary_source=CardSummarySource.FALLBACK,
+                summary_updated_at=_coerce_datetime(row["updated_at"]),
+                lane=lane,
+                parent_id=row["parent_id"],
+                tags=json.loads(row["tags"] or "[]"),
+                created_at=_coerce_datetime(row["created_at"]) or datetime.now(UTC),
+                updated_at=_coerce_datetime(row["updated_at"]) or datetime.now(UTC),
+            )
+            for item in history:
+                event = item["event"]
+                if item["projection_effect"] == "ignored_duplicate_create":
+                    continue
+                if event["type"] not in {
+                    EventType.CARD_UPDATED.value,
+                    EventType.LEASE_GRANTED.value,
+                    EventType.LEASE_RELEASED.value,
+                }:
+                    continue
+                payload = dict(event["payload"])
+                if "lane" not in payload and "status" in payload:
+                    payload["lane"] = lane_from_legacy_status(payload["status"]).value
+                for key, value in payload.items():
+                    if key == "lane":
+                        candidate.lane = CardLane(value)
+                    elif key == "kind":
+                        candidate.kind = CardKind(value)
+                    elif key == "updated_at":
+                        candidate.updated_at = (
+                            _coerce_datetime(value) or candidate.updated_at
+                        )
+                    elif value is not None and hasattr(candidate, key):
+                        setattr(candidate, key, value)
+            repair = CardEvent(
+                type=EventType.CARD_UPSERTED,
+                realm_id=realm_id,
+                card_id=card_id,
+                author_principal=principal_id,
+                author_instance=instance_id,
+                payload=candidate.model_dump(mode="json"),
+                source_operation="repair.legacy_card_history",
+                causal_card_version=(
+                    history[-1]["event"].get("causal_card_version") if history else None
+                ),
+                field_intent=sorted(candidate.model_dump(mode="json")),
+            )
+            commit = self.commit_event(repair)
+            results.append(
+                {
+                    "card_id": card_id,
+                    "status": "repaired",
+                    "lane": candidate.lane.value,
+                    "commit_hash": commit.hash,
+                }
+            )
+        return results
 
     @serialized_mutation
     def delete_card(
@@ -3075,7 +3280,28 @@ class CardProjection:
                 "DELETE FROM fleet_policy_audit_events WHERE realm_id = ?",
                 (realm_id,),
             )
-        self.event_log.apply_commit_chain(head, self.apply_event)
+        present_cards: set[tuple[str, str]] = set()
+
+        def apply_replay_event(event: CardEvent) -> None:
+            if event.card_id:
+                key = (event.realm_id, event.card_id)
+                if event.type == EventType.CARD_CREATED:
+                    if key in present_cards:
+                        return
+                    present_cards.add(key)
+                elif event.type == EventType.CARD_DELETED:
+                    present_cards.discard(key)
+                else:
+                    # Field-only legacy histories establish that this identity
+                    # already existed even when their create event is missing.
+                    present_cards.add(key)
+            self.apply_event(event)
+
+        self._replaying_from_log = True
+        try:
+            self.event_log.apply_commit_chain(head, apply_replay_event)
+        finally:
+            self._replaying_from_log = False
         self._record_projection_head(realm_id, head)
 
     def _row_to_project(self, row: sqlite3.Row) -> Project:

@@ -195,12 +195,31 @@ class EventLog:
         with self._lock:
             with self._refs_file_lock():
                 self._load_refs()
-                event_data = event.model_dump(mode="json")
-                event_hash = self.store.put_json(event_data)
-
                 realm_id = event.realm_id
                 parent = self._refs.get(self.ref_key(realm_id))
                 parent_hashes = [parent] if parent else []
+                prior = (
+                    self.entity_snapshot(parent, "card", event.card_id)
+                    if parent and event.card_id
+                    else None
+                )
+                if event.type == EventType.CARD_CREATED and prior is not None:
+                    raise DuplicateCardCreateError(event.card_id or "", parent)
+                event = event.model_copy(
+                    update={
+                        "causal_parent": event.causal_parent or parent,
+                        "causal_card_version": event.causal_card_version
+                        or (str(prior.get("updated_at")) if prior else None),
+                        "field_intent": event.field_intent
+                        or sorted(
+                            key
+                            for key in event.payload
+                            if key not in {"id", "realm_id", "updated_at"}
+                        ),
+                    }
+                )
+                event_data = event.model_dump(mode="json")
+                event_hash = self.store.put_json(event_data)
 
                 commit = SyncCommit(
                     hash="",
@@ -404,7 +423,8 @@ class EventLog:
                 }
             )
             if event.card_id
-            and event.type in {EventType.CARD_CREATED, EventType.CARD_UPDATED}
+            and event.type
+            in {EventType.CARD_CREATED, EventType.CARD_UPSERTED, EventType.CARD_UPDATED}
             and "updated_at" not in event.payload
             else event
             for event in events
@@ -614,21 +634,30 @@ class EventLog:
     def entity_snapshot(self, head: str, entity: str, entity_id: str) -> dict | None:
         """Materialize one entity at an arbitrary immutable history head."""
         state: dict | None = None
+        card_seen_since_delete = False
 
         def apply(event: CardEvent) -> None:
-            nonlocal state
+            nonlocal card_seen_since_delete, state
             event_entity, event_id = _event_entity(event)
             matches = event_entity == entity and event_id == entity_id
             if not matches:
                 return
             if event.type == EventType.GOAL_GOVERNANCE_UPSERTED:
                 state = dict(event.payload.get("entity") or {})
+            elif event.type == EventType.CARD_CREATED:
+                if card_seen_since_delete:
+                    return
+                state = dict(event.payload)
+                card_seen_since_delete = True
+                return
             elif event.type in {
-                EventType.CARD_CREATED,
+                EventType.CARD_UPSERTED,
                 EventType.PROJECT_CREATED,
                 EventType.INSTANCE_GROUP_CREATED,
             }:
                 state = dict(event.payload)
+                if entity == "card":
+                    card_seen_since_delete = True
             elif event.type in {
                 EventType.CARD_UPDATED,
                 EventType.PROJECT_UPDATED,
@@ -640,6 +669,8 @@ class EventLog:
                 EventType.PLACEMENT_DEFAULT_UPDATED,
                 EventType.NOTIFICATION_UPSERTED,
             }:
+                if entity == "card":
+                    card_seen_since_delete = True
                 if state is None:
                     state = {}
                 state.update(event.payload)
@@ -650,11 +681,70 @@ class EventLog:
                 EventType.NOTIFICATION_DELETED,
             }:
                 state = None
+                if entity == "card":
+                    card_seen_since_delete = False
             elif event.type == EventType.PROJECT_ARCHIVED and state is not None:
                 state["status"] = "archived"
 
         self.apply_commit_chain(head, apply)
         return state
+
+    def entity_history(
+        self, realm_id: str, entity: str, entity_id: str
+    ) -> list[dict[str, Any]]:
+        """Return immutable entity events with commit and causal provenance."""
+        head = self.get_head(realm_id)
+        if not head:
+            return []
+        records: list[dict[str, Any]] = []
+        seen_commits: set[str] = set()
+        entity_present = False
+        entity_seen_since_delete = False
+
+        def walk(commit_hash: str) -> None:
+            nonlocal entity_present, entity_seen_since_delete
+            if commit_hash in seen_commits:
+                return
+            commit = self.get_commit(commit_hash)
+            if not commit:
+                return
+            for parent in commit.parent_hashes:
+                walk(parent)
+            seen_commits.add(commit_hash)
+            for event_hash in commit.event_hashes:
+                event = self.get_event(event_hash)
+                if not event or _event_entity(event) != (entity, entity_id):
+                    continue
+                duplicate_create = event.type == EventType.CARD_CREATED and (
+                    entity_present or entity_seen_since_delete
+                )
+                if event.type in {EventType.CARD_CREATED, EventType.CARD_UPSERTED}:
+                    entity_present = True
+                    entity_seen_since_delete = True
+                elif event.type == EventType.CARD_DELETED:
+                    entity_present = False
+                    entity_seen_since_delete = False
+                else:
+                    entity_seen_since_delete = True
+                records.append(
+                    {
+                        "event_hash": event_hash,
+                        "event": event.model_dump(mode="json"),
+                        "commit_hash": commit_hash,
+                        "parent_hashes": list(commit.parent_hashes),
+                        "commit_instance": commit.instance_id,
+                        "commit_principal": commit.author_principal,
+                        "commit_timestamp": commit.timestamp.isoformat(),
+                        "projection_effect": (
+                            "ignored_duplicate_create"
+                            if duplicate_create
+                            else "applied"
+                        ),
+                    }
+                )
+
+        walk(head)
+        return records
 
     def merge_audit(self, realm_id: str, *, limit: int = 50) -> list[dict]:
         """Return merge decisions embedded in the immutable realm history."""
@@ -759,3 +849,13 @@ class StaleSyncHeadError(RuntimeError):
         self.realm_id = realm_id
         self.expected = expected
         self.actual = actual
+
+
+class DuplicateCardCreateError(RuntimeError):
+    def __init__(self, card_id: str, parent: str) -> None:
+        super().__init__(
+            f"card {card_id} already exists at causal parent {parent}; "
+            "use an explicit audited upsert/repair operation"
+        )
+        self.card_id = card_id
+        self.parent = parent
