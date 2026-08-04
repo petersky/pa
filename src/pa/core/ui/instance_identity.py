@@ -41,7 +41,9 @@ def canonical_instance_identities(ctx: Any) -> list[dict[str, Any]]:
                 "duplicate": duplicate,
             }
         )
-    return sorted(result, key=lambda item: (item["display_name"].casefold(), item["id"]))
+    return sorted(
+        result, key=lambda item: (item["display_name"].casefold(), item["id"])
+    )
 
 
 def resolve_instance_identity(ctx: Any, instance_id: str | None) -> dict[str, Any]:
@@ -64,6 +66,34 @@ def resolve_instance_identity(ctx: Any, instance_id: str | None) -> dict[str, An
         "duplicate": False,
         "known": False,
     }
+
+
+def current_instance_name(
+    ctx: Any, instance_id: str | None, snapshot_name: str | None = None
+) -> str:
+    """Resolve a UUID to canonical current membership, with snapshot fallback."""
+    identity = resolve_instance_identity(ctx, instance_id)
+    if identity["known"]:
+        return str(identity["name"])
+    return str(snapshot_name or identity["display_name"])
+
+
+def canonicalize_dispatch_public(ctx: Any, record: Any) -> dict[str, Any]:
+    """Present current names while retaining explicitly-labelled snapshots."""
+    public = record.public_dict()
+    for role in ("authority", "target"):
+        instance_id = getattr(record, f"{role}_instance_id", None)
+        snapshot = getattr(record, f"{role}_instance_name", None)
+        public[f"{role}_instance_name"] = current_instance_name(
+            ctx, instance_id, snapshot
+        )
+        public[f"{role}_instance_name_snapshot"] = snapshot
+        public[f"{role}_instance_name_at_dispatch"] = (
+            snapshot
+            if snapshot and snapshot != public[f"{role}_instance_name"]
+            else None
+        )
+    return public
 
 
 def present_instance_references(

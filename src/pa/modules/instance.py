@@ -833,7 +833,7 @@ def diff_configuration(request: Request, body: ConfigurationPatch) -> dict:
 
 
 @router.patch("/configuration")
-def update_configuration(request: Request, body: ConfigurationPatch) -> dict:
+async def update_configuration(request: Request, body: ConfigurationPatch) -> dict:
     """Atomically apply an idempotent, audited configuration patch."""
     require_user(request)
     _require_local_configuration_target(request, body.target)
@@ -853,9 +853,11 @@ def update_configuration(request: Request, body: ConfigurationPatch) -> dict:
                 "message": "idempotency_key is required.",
             },
         )
+    ctx = request.app.state.ctx
+    fleet = ctx.services.get("fleet_registry")
     try:
         result = apply_update(
-            request.app.state.ctx.settings,
+            ctx.settings,
             body.changes,
             body.clear,
             expected_revision=body.expected_revision,
@@ -867,6 +869,20 @@ def update_configuration(request: Request, body: ConfigurationPatch) -> dict:
         raise _configuration_error(exc, conflict=True) from exc
     except ConfigError as exc:
         raise _configuration_error(exc) from exc
+    rename_transaction = result.rename
+    if result.rename and fleet:
+        from pa.modules.fleet import _rollout_membership
+
+        fleet._reload_instances()
+        ctx.require_service("peer_table").reconcile_membership(
+            fleet.list_instances(),
+            realms=list(ctx.settings.subscribed_realms),
+            local_instance_id=ctx.settings.instance_id,
+        )
+        rename_transaction = {
+            **result.rename,
+            "rollout": await _rollout_membership(request),
+        }
     if result.changed & {
         "dispatch_capacity",
         "dispatch_provider_capacities",
@@ -918,6 +934,7 @@ def update_configuration(request: Request, body: ConfigurationPatch) -> dict:
         "settings": snapshot["settings"],
         "unknown": snapshot["unknown"],
         "deprecated": snapshot["deprecated"],
+        "rename_transaction": rename_transaction,
     }
 
 

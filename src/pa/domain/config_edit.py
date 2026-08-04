@@ -631,7 +631,39 @@ def _apply_validated(
     if op == MutateOp.UNSET:
         candidate.__pydantic_fields_set__.discard(key)
 
+    rename_registry = None
+    rename_generation = None
+    if key == "instance_name" and before != candidate.instance_name:
+        from pa.fleet.registry import FleetRegistry
+
+        registry = FleetRegistry(data_dir, config.fleet_id)
+        try:
+            FleetRegistry.normalize_name(candidate.instance_name)
+            if registry.get_instance(config.instance_id):
+                registry._validate_name_available(
+                    config.instance_id, candidate.instance_name
+                )
+        except ValueError as exc:
+            raise ConfigError(str(exc)) from exc
+        if registry.get_instance(config.instance_id):
+            rename_registry = registry
+            rename_generation = registry.generation
+
     save_instance_config(data_dir, candidate)
+    if rename_registry is not None:
+        try:
+            rename_registry.rename_instance(
+                config.instance_id,
+                candidate.instance_name,
+                actor="user:local",
+                source="configuration.legacy-cli",
+                expected_generation=rename_generation,
+            )
+        except (OSError, RuntimeError, ValueError) as exc:
+            save_instance_config(data_dir, config)
+            raise ConfigError(
+                f"Canonical rename failed; configuration was rolled back: {exc}"
+            ) from exc
     after = getattr(candidate, key)
     return MutateResult(
         config=candidate,

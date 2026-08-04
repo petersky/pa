@@ -41,6 +41,8 @@ from pa.core.context import AppContext
 from pa.core.contracts import Module
 from pa.core.ui.instance_identity import (
     canonical_instance_identities,
+    canonicalize_dispatch_public,
+    current_instance_name,
     present_instance_references,
     resolve_instance_identity,
 )
@@ -400,7 +402,7 @@ def _latest_card_progress(request: Request, card_id: str) -> dict | None:
         }
     ]
     record = max(active or records, key=lambda item: item.updated_at)
-    public = record.public_dict()
+    public = canonicalize_dispatch_public(request.app.state.ctx, record)
     progress = dict(public.get("progress") or {})
     progress.update(
         {
@@ -408,7 +410,10 @@ def _latest_card_progress(request: Request, card_id: str) -> dict | None:
             "session_id": record.session_id,
             "dispatch_state": record.state,
             "target_instance_id": record.target_instance_id,
-            "target_instance_name": record.target_instance_name,
+            "target_instance_name": public["target_instance_name"],
+            "target_instance_name_at_dispatch": public[
+                "target_instance_name_at_dispatch"
+            ],
             "updated_at": record.updated_at.isoformat(),
             "evaluated_outcome": public.get("evaluated_outcome"),
             "post_turn_evaluation": public.get("post_turn_evaluation"),
@@ -419,8 +424,8 @@ def _latest_card_progress(request: Request, card_id: str) -> dict | None:
     return progress
 
 
-def _progress_from_dispatch(record) -> dict:
-    public = record.public_dict()
+def _progress_from_dispatch(ctx: AppContext, record) -> dict:
+    public = canonicalize_dispatch_public(ctx, record)
     progress = dict(public.get("progress") or {})
     progress.update(
         {
@@ -428,7 +433,10 @@ def _progress_from_dispatch(record) -> dict:
             "session_id": record.session_id,
             "dispatch_state": record.state,
             "target_instance_id": record.target_instance_id,
-            "target_instance_name": record.target_instance_name,
+            "target_instance_name": public["target_instance_name"],
+            "target_instance_name_at_dispatch": public[
+                "target_instance_name_at_dispatch"
+            ],
             "updated_at": record.updated_at.isoformat(),
             "evaluated_outcome": public.get("evaluated_outcome"),
             "post_turn_evaluation": public.get("post_turn_evaluation"),
@@ -617,7 +625,7 @@ def _card_agent_context(request: Request, card) -> dict:
     dispatch_store = ctx.services.get("dispatch_store")
     dispatches = (
         [
-            record.public_dict()
+            canonicalize_dispatch_public(ctx, record)
             for record in dispatch_store.list(limit=100)
             if record.card_id == card.id and record.realm_id == card.realm_id
         ]
@@ -827,8 +835,11 @@ def _card_activity_context(request: Request, card) -> dict:
                         "id": f"turn-end-{snapshot.snapshot_id}",
                         "kind": "progress",
                         "label": "Agent turn ended",
-                        "actor": dispatch.target_instance_name
-                        or snapshot.originating_instance_id,
+                        "actor": current_instance_name(
+                            request.app.state.ctx,
+                            dispatch.target_instance_id,
+                            dispatch.target_instance_name,
+                        ),
                         "detail": (
                             f"stop reason {snapshot.stop_reason or 'unknown'}; "
                             f"dispatch {snapshot.dispatch_state}"
@@ -939,8 +950,11 @@ def _card_activity_context(request: Request, card) -> dict:
                         ),
                         "kind": "progress",
                         "label": progress.summary,
-                        "actor": dispatch.target_instance_name
-                        or progress.originating_instance_id,
+                        "actor": current_instance_name(
+                            request.app.state.ctx,
+                            dispatch.target_instance_id,
+                            dispatch.target_instance_name,
+                        ),
                         "detail": progress.phase.value.replace("_", " "),
                         "timestamp": progress.occurred_at,
                         "session_url": (
@@ -958,8 +972,11 @@ def _card_activity_context(request: Request, card) -> dict:
                         "id": f"progress-report-{dispatch.dispatch_id}",
                         "kind": "progress",
                         "label": dispatch.final_report.outcome,
-                        "actor": dispatch.target_instance_name
-                        or dispatch.target_instance_id,
+                        "actor": current_instance_name(
+                            request.app.state.ctx,
+                            dispatch.target_instance_id,
+                            dispatch.target_instance_name,
+                        ),
                         "detail": "completion report",
                         "timestamp": dispatch.final_report.created_at,
                         "session_url": (
@@ -1074,7 +1091,7 @@ def _cards_context(
         dispatch_store.latest_by_card(card_ids) if dispatch_store else {}
     )
     card_progress = {
-        card_id: _progress_from_dispatch(record)
+        card_id: _progress_from_dispatch(request.app.state.ctx, record)
         for card_id, record in selected_dispatches.items()
     }
     filter_params = {

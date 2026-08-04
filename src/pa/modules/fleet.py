@@ -35,6 +35,10 @@ from pa.core.context import AppContext
 from pa.core.contracts import Module
 from pa.core.io import atomic_write_json
 from pa.core.logging import redact_log_text
+from pa.core.ui.instance_identity import (
+    canonicalize_dispatch_public,
+    current_instance_name,
+)
 from pa.core.ui.pages import PageDefinition, PageRegistry
 from pa.domain.models import (
     CardAttachment,
@@ -110,6 +114,7 @@ from pa.fleet.bootstrap import (
     run_bootstrap_job,
 )
 from pa.fleet.control_plane import build_control_plane_status
+from pa.fleet.convergence import MembershipConvergenceStore
 from pa.fleet.credentials import CredentialRotationStore
 from pa.fleet.credentials import router as credential_router
 from pa.fleet.join import (
@@ -326,11 +331,7 @@ class RemoteAgentStartBody(BaseModel):
         normalized = str(value).strip()
         # Legacy form serialization emitted the Python display value. It is
         # never a stable provider/model ID, so preserve automatic selection.
-        return (
-            None
-            if not normalized or normalized.casefold() == "none"
-            else normalized
-        )
+        return None if not normalized or normalized.casefold() == "none" else normalized
 
 
 class FleetDispatchBody(RemoteAgentStartBody):
@@ -464,6 +465,11 @@ def _dispatch_store(request: Request) -> DispatchStore:
     service = DispatchStore(request.app.state.ctx.settings.data_dir)
     request.app.state.ctx.register_service("dispatch_store", service)
     return service
+
+
+def _dispatch_public(request: Request, record: DispatchRecord) -> dict[str, Any]:
+    """Resolve current membership names without mutating dispatch snapshots."""
+    return canonicalize_dispatch_public(request.app.state.ctx, record)
 
 
 def _policy_service(request: Request) -> FleetPolicyService:
@@ -2092,6 +2098,16 @@ async def _create_operator_input_notification(
     return notification.public_dict()
 
 
+def _membership_convergence_snapshot(ctx: AppContext) -> dict[str, Any]:
+    try:
+        store = ctx.require_service("membership_convergence")
+    except KeyError, RuntimeError:
+        store = MembershipConvergenceStore(
+            ctx.settings.data_dir, ctx.settings.instance_id
+        )
+    return store.snapshot()
+
+
 def _fleet_context(request: Request) -> dict:
     """Build Fleet page context from local state only (no peer probes).
 
@@ -2159,7 +2175,9 @@ def _fleet_context(request: Request) -> dict:
         "has_sync_token": bool(settings.sync_token),
         "credential_rotation": CredentialRotationStore.public(
             CredentialRotationStore(settings.data_dir).load()
-        ) or {"status": "idle", "peers": {}},
+        )
+        or {"status": "idle", "peers": {}},
+        "membership_convergence": _membership_convergence_snapshot(ctx),
         "primary_realm": primary_realm,
         "cards": ctx.store.list_cards(realm_id=primary_realm),
         "projects": ctx.store.list_projects(realm_id=primary_realm),
@@ -2221,7 +2239,9 @@ async def _refresh_workshop_dimensions(
                     _workshop_refresh_tasks.pop(key, None)
 
 
-def _build_workshop(ctx: Any, instances: list[FleetInstance], routes: list[Any]) -> dict:
+def _build_workshop(
+    ctx: Any, instances: list[FleetInstance], routes: list[Any]
+) -> dict:
     return build_workshop_snapshot(ctx, build_overview(ctx, instances, routes))
 
 
@@ -2408,6 +2428,21 @@ def fleet_membership(request: Request) -> dict[str, Any]:
     return _signed_membership(request.app.state.ctx)
 
 
+def _adopt_canonical_local_name(ctx: AppContext) -> bool:
+    """Keep runtime/config/service identity behind the canonical UUID projection."""
+    fleet: FleetRegistry = ctx.require_service("fleet_registry")
+    member = fleet.get_instance(ctx.settings.instance_id)
+    if member is None or member.name == ctx.settings.instance_name:
+        return False
+    from pa.domain.instance_config import update_instance_config
+    from pa.fleet.join import refresh_service_env
+
+    ctx.settings.instance_name = member.name
+    update_instance_config(ctx.settings.data_dir, instance_name=member.name)
+    refresh_service_env(ctx.settings)
+    return True
+
+
 @router.post("/fleet/membership/apply")
 def apply_fleet_membership(request: Request, body: dict) -> dict[str, Any]:
     """Install a signed canonical projection and derive routes from it."""
@@ -2423,6 +2458,7 @@ def apply_fleet_membership(request: Request, body: dict) -> dict[str, Any]:
             snapshot,
             actor=f"instance:{body.get('issuer_instance_id', '')}",
         )
+        result["local_name_adopted"] = _adopt_canonical_local_name(ctx)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     result["routes"] = ctx.require_service("peer_table").reconcile_membership(
@@ -2431,6 +2467,13 @@ def apply_fleet_membership(request: Request, body: dict) -> dict[str, Any]:
         local_instance_id=ctx.settings.instance_id,
     )
     return result
+
+
+@router.get("/fleet/membership/convergence")
+def fleet_membership_convergence(request: Request) -> dict[str, Any]:
+    """Expose durable per-peer generation delivery and actionable failures."""
+    require_user(request)
+    return request.app.state.ctx.require_service("membership_convergence").snapshot()
 
 
 @router.get("/fleet/membership/audit")
@@ -2596,9 +2639,7 @@ async def fleet_workshop_events(request: Request) -> StreamingResponse:
         while not await request.is_disconnected():
             instances = list(fleet.list_instances())
             await _refresh_workshop_dimensions(ctx, instances, force=False)
-            snapshot = _build_workshop(
-                ctx, instances, list(peer_table.all_routes())
-            )
+            snapshot = _build_workshop(ctx, instances, list(peer_table.all_routes()))
             stable = {**snapshot, "generated_at": None}
             digest = hashlib.sha256(
                 json.dumps(stable, sort_keys=True, default=str).encode()
@@ -2714,9 +2755,7 @@ async def fleet_join(request: Request, body: dict) -> dict:
             dispatch_capacity=dispatch_capacity,
             dispatch_provider_capacities=dispatch_provider_capacities,
             dispatch_queue_capacity=dispatch_queue_capacity,
-            dispatch_provider_queue_capacities=(
-                dispatch_provider_queue_capacities
-            ),
+            dispatch_provider_queue_capacities=(dispatch_provider_queue_capacities),
             realms=realms,
         )
     except ValueError as exc:
@@ -2801,6 +2840,80 @@ async def register_remote(request: Request, body: dict) -> dict:
     return data
 
 
+def _commit_local_canonical_name(ctx: AppContext, name: str) -> dict[str, Any]:
+    """Persist the canonical local label across config, runtime, and service env."""
+    from pa.domain.instance_config import update_instance_config
+    from pa.fleet.join import refresh_service_env
+
+    try:
+        update_instance_config(ctx.settings.data_dir, instance_name=name)
+        ctx.settings.instance_name = name
+        service_refreshed = refresh_service_env(ctx.settings)
+    except Exception as exc:  # noqa: BLE001 - every partial step needs recovery state
+        return {
+            "state": "recovery_required",
+            "error": str(exc)[:500],
+            "action": "Retry this rename after restoring write access to config/service state.",
+        }
+    return {
+        "state": "committed",
+        "service_environment_refreshed": service_refreshed,
+    }
+
+
+@router.post("/fleet/instances/{instance_id}/rename")
+async def rename_instance(request: Request, instance_id: str, body: dict) -> dict:
+    """Authorize, fence, audit, persist, and roll out a stable-UUID rename."""
+    ctx = request.app.state.ctx
+    principal = getattr(request.state, "principal_id", "")
+    if getattr(request.state, "user", None):
+        actor = principal or "user:local"
+    elif getattr(request.state, "instance_authenticated", False):
+        caller = request.headers.get("X-PA-Origin-Instance-ID", "")
+        if caller != instance_id:
+            raise HTTPException(
+                status_code=403,
+                detail="An instance may rename only its own stable UUID.",
+            )
+        actor = f"instance:{caller}"
+    else:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if isinstance(body.get("expected_generation"), bool) or not isinstance(
+        body.get("expected_generation"), int
+    ):
+        raise HTTPException(
+            status_code=428,
+            detail="expected_generation is required for a fenced rename.",
+        )
+    fleet: FleetRegistry = ctx.require_service("fleet_registry")
+    try:
+        renamed = fleet.rename_instance(
+            instance_id,
+            str(body.get("name") or ""),
+            actor=actor,
+            source=str(body.get("source") or "fleet.rename")[:120],
+            expected_generation=body["expected_generation"],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    local_state = (
+        _commit_local_canonical_name(ctx, renamed.name)
+        if instance_id == ctx.settings.instance_id
+        else {"state": "not_local"}
+    )
+    ctx.require_service("peer_table").reconcile_membership(
+        fleet.list_instances(),
+        realms=list(ctx.settings.subscribed_realms),
+        local_instance_id=ctx.settings.instance_id,
+    )
+    return {
+        "instance": renamed.model_dump(mode="json"),
+        "generation": fleet.generation,
+        "local_transaction": local_state,
+        "rollout": await _rollout_membership(request),
+    }
+
+
 @router.patch("/fleet/instances/{instance_id}")
 async def update_instance(request: Request, instance_id: str, body: dict) -> dict:
     """Update canonical metadata while preserving stable identity."""
@@ -2823,6 +2936,7 @@ async def update_instance(request: Request, instance_id: str, body: dict) -> dic
         "relay_enabled",
         "lifecycle_state",
         "credential_fingerprint",
+        "expected_generation",
     }
     unknown = set(body) - allowed
     if unknown:
@@ -2831,18 +2945,50 @@ async def update_instance(request: Request, instance_id: str, body: dict) -> dic
             detail=f"Unsupported membership fields: {sorted(unknown)}",
         )
     data = current.model_dump()
-    data.update(body)
+    renamed_member = False
+    expected_generation = body.get("expected_generation")
+    changes = {
+        key: value for key, value in body.items() if key != "expected_generation"
+    }
+    data.update(changes)
     if data.get("lifecycle_state") not in {"active", "disabled"}:
         raise HTTPException(
             status_code=422, detail="lifecycle_state must be active or disabled"
         )
     try:
-        updated = fleet.upsert_instance(
-            FleetInstance.model_validate(data),
-            actor=f"user:{get_principal_id(request)}",
+        if "name" in changes and changes["name"] != current.name:
+            if isinstance(expected_generation, bool) or not isinstance(
+                expected_generation, int
+            ):
+                raise HTTPException(
+                    status_code=428,
+                    detail="expected_generation is required for a fenced rename.",
+                )
+            current = fleet.rename_instance(
+                instance_id,
+                str(changes.pop("name")),
+                actor=f"user:{get_principal_id(request)}",
+                source="fleet.instance.patch",
+                expected_generation=expected_generation,
+            )
+            renamed_member = True
+            data = current.model_dump()
+            data.update(changes)
+        updated = (
+            fleet.upsert_instance(
+                FleetInstance.model_validate(data),
+                actor=f"user:{get_principal_id(request)}",
+            )
+            if changes
+            else current
         )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    local_transaction = (
+        _commit_local_canonical_name(ctx, updated.name)
+        if renamed_member and instance_id == ctx.settings.instance_id
+        else {"state": "not_applicable"}
+    )
     ctx.require_service("peer_table").reconcile_membership(
         fleet.list_instances(),
         realms=list(ctx.settings.subscribed_realms),
@@ -2851,6 +2997,7 @@ async def update_instance(request: Request, instance_id: str, body: dict) -> dic
     return {
         "instance": updated.model_dump(mode="json"),
         "generation": fleet.generation,
+        "local_transaction": local_transaction,
         "rollout": await _rollout_membership(request),
     }
 
@@ -3597,55 +3744,110 @@ def _dispatch_lookup_error(
     )
 
 
-def _peer_headers(request: Request) -> dict[str, str]:
-    settings = request.app.state.ctx.settings
+def _peer_headers_ctx(ctx: AppContext) -> dict[str, str]:
     headers = {
         "Accept": "application/json",
-        "X-PA-Origin-Instance-ID": settings.instance_id,
+        "X-PA-Origin-Instance-ID": ctx.settings.instance_id,
     }
-    if settings.sync_token:
-        headers["Authorization"] = f"Bearer {settings.sync_token}"
+    if ctx.settings.sync_token:
+        headers["Authorization"] = f"Bearer {ctx.settings.sync_token}"
     return headers
+
+
+def _peer_headers(request: Request) -> dict[str, str]:
+    return _peer_headers_ctx(request.app.state.ctx)
+
+
+async def _deliver_membership(
+    ctx: AppContext,
+    client: httpx.AsyncClient,
+    *,
+    members: list[FleetInstance] | None = None,
+    force: bool = False,
+) -> list[dict[str, Any]]:
+    fleet: FleetRegistry = ctx.require_service("fleet_registry")
+    roster = members if members is not None else fleet.list_instances()
+    generation = fleet.generation
+    try:
+        convergence = ctx.require_service("membership_convergence")
+    except KeyError, RuntimeError:
+        convergence = MembershipConvergenceStore(
+            ctx.settings.data_dir, ctx.settings.instance_id
+        )
+    convergence.plan(generation, roster)
+    by_id = {member.instance_id: member for member in roster}
+    targets = convergence.snapshot()["peers"] if force else convergence.due(generation)
+    if not ctx.settings.sync_token:
+        for item in targets:
+            convergence.failed(
+                item["instance_id"],
+                generation,
+                "Fleet authentication is not configured.",
+                incompatible=True,
+            )
+        return convergence.snapshot()["peers"]
+    envelope = _signed_membership(ctx)
+    for item in targets:
+        member = by_id.get(item["instance_id"])
+        if member is None:
+            continue
+        try:
+            response = await client.post(
+                f"{member.url.rstrip('/')}/api/fleet/membership/apply",
+                json=envelope,
+                headers=_peer_headers_ctx(ctx),
+                timeout=FLEET_DETAIL_TIMEOUT,
+            )
+            if response.status_code >= 400:
+                incompatible = response.status_code in {404, 405, 415, 422}
+                raise RuntimeError(
+                    f"HTTP {response.status_code}: {response.text[:200]}"
+                    + (" [incompatible]" if incompatible else "")
+                )
+            applied_generation = int(
+                (response.json() if response.content else {}).get(
+                    "after_generation", generation
+                )
+            )
+            if applied_generation < generation:
+                raise RuntimeError(
+                    f"peer acknowledged generation {applied_generation}, expected {generation}"
+                )
+            convergence.applied(member.instance_id, generation)
+        except (httpx.HTTPError, RuntimeError, ValueError, TypeError) as exc:
+            detail = str(exc)
+            convergence.failed(
+                member.instance_id,
+                generation,
+                detail,
+                incompatible=detail.endswith("[incompatible]"),
+            )
+    return convergence.snapshot()["peers"]
 
 
 async def _rollout_membership(
     request: Request,
     *,
     members: list[FleetInstance] | None = None,
-) -> list[dict[str, str]]:
-    """Push the current generation and retain explicit pending diagnostics."""
-    ctx = request.app.state.ctx
-    roster = (
-        members
-        if members is not None
-        else ctx.require_service("fleet_registry").list_instances()
-    )
-    envelope = _signed_membership(ctx)
-    results: list[dict[str, str]] = []
+) -> list[dict[str, Any]]:
+    """Push the complete signed roster and retain durable retry diagnostics."""
     async with _borrow_fleet_client(request, timeout=FLEET_DETAIL_TIMEOUT) as client:
-        for member in roster:
-            if member.instance_id == ctx.settings.instance_id or not member.url:
-                continue
-            try:
-                response = await client.post(
-                    f"{member.url.rstrip('/')}/api/fleet/membership/apply",
-                    json=envelope,
-                    headers=_peer_headers(request),
-                    timeout=FLEET_DETAIL_TIMEOUT,
-                )
-                response.raise_for_status()
-                results.append(
-                    {"instance_id": member.instance_id, "status": "converged"}
-                )
-            except httpx.HTTPError as exc:
-                results.append(
-                    {
-                        "instance_id": member.instance_id,
-                        "status": "pending",
-                        "detail": str(exc)[:200],
-                    }
-                )
-    return results
+        return await _deliver_membership(
+            request.app.state.ctx, client, members=members, force=True
+        )
+
+
+async def _membership_convergence_loop(ctx: AppContext) -> None:
+    """Retry offline/restarting/incompatible peers with persisted bounded backoff."""
+    while True:
+        try:
+            client = ctx.require_service("fleet_http_client")
+            await _deliver_membership(ctx, client)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Periodic fleet membership convergence failed")
+        await asyncio.sleep(5.0)
 
 
 def _require_instance(request: Request) -> None:
@@ -4799,8 +5001,7 @@ async def _refresh_queued_dispatch_readiness(
                 workload_profile=str(original.get("workload_profile") or "research"),
                 project_id=record.project_id,
                 dispatch_intent=DispatchIntent(
-                    original.get("dispatch_intent")
-                    or DispatchIntent.AUTOMATIC.value
+                    original.get("dispatch_intent") or DispatchIntent.AUTOMATIC.value
                 ),
                 principal_id=record.principal_id,
                 allow_concurrent=True,
@@ -5294,7 +5495,13 @@ async def _placement_candidates(
     ctx = request.app.state.ctx
 
     async def inspect(inst: FleetInstance) -> PlacementCandidate:
-        reachability, activity, providers, mcp_bootstrap, repositories = await asyncio.gather(
+        (
+            reachability,
+            activity,
+            providers,
+            mcp_bootstrap,
+            repositories,
+        ) = await asyncio.gather(
             *(
                 probe_dimension(ctx, inst, dimension, force=True)
                 for dimension in (
@@ -5745,22 +5952,16 @@ def _capacity_admission_from_decision(
         ),
         observed_global_active=int(global_workload.get("active") or 0),
         observed_global_queued=int(global_workload.get("queued") or 0),
-        observed_global_reservations=int(
-            global_workload.get("reservations") or 0
-        ),
+        observed_global_reservations=int(global_workload.get("reservations") or 0),
         observed_provider_active=int(provider_workload.get("active") or 0),
         observed_provider_queued=int(provider_workload.get("queued") or 0),
-        observed_provider_reservations=int(
-            provider_workload.get("reservations") or 0
-        ),
+        observed_provider_reservations=int(provider_workload.get("reservations") or 0),
         queue_limit=int(queue_limit),
         queue_source=str(
             (detail.get("queue_capacity_detail") or {}).get("source")
             or "documented_default"
         ),
-        queue_provider_specific=(
-            queue_capacity.get("source") == "configured_provider"
-        ),
+        queue_provider_specific=(queue_capacity.get("source") == "configured_provider"),
         observed_waiting=int(detail.get("queue_count") or 0),
         global_queue_limit=int(global_queue_limit),
         provider_queue_limit=(
@@ -5795,9 +5996,7 @@ def _placement_http_error(exc: PlacementError) -> HTTPException:
                 "current_count": current,
                 "maximum_count": maximum,
                 "active_execution_capacity": queue_full.get("capacity"),
-                "source": (
-                    queue_full.get("queue_capacity_detail") or {}
-                ).get("source"),
+                "source": (queue_full.get("queue_capacity_detail") or {}).get("source"),
                 "recoverable": True,
                 "retry_after_seconds": 5,
                 "retry_guidance": "Retry after queued work launches or is cancelled.",
@@ -5970,7 +6169,7 @@ async def dispatch_fleet_work(request: Request, body: FleetDispatchBody) -> dict
             "admission": "duplicate",
             "dispatch_id": existing.dispatch_id,
             "job_id": existing.dispatch_id,
-            "dispatch": existing.public_dict(),
+            "dispatch": _dispatch_public(request, existing),
         }
 
     store = ctx.store
@@ -6223,7 +6422,7 @@ async def _existing_named_dispatch(
         "duplicate": True,
         "dispatch_id": existing.dispatch_id,
         "job_id": existing.dispatch_id,
-        "dispatch": existing.public_dict(),
+        "dispatch": _dispatch_public(request, existing),
     }
 
 
@@ -6341,7 +6540,7 @@ async def _admit_remote_agent_work(
             "duplicate": True,
             "dispatch_id": existing.dispatch_id,
             "job_id": existing.dispatch_id,
-            "dispatch": existing.public_dict(),
+            "dispatch": _dispatch_public(request, existing),
         }
 
     collaboration_service = ctx.services.get("collaboration")
@@ -6533,7 +6732,7 @@ async def _admit_remote_agent_work(
             "admission": "duplicate",
             "dispatch_id": record.dispatch_id,
             "job_id": record.dispatch_id,
-            "dispatch": record.public_dict(),
+            "dispatch": _dispatch_public(request, record),
         }
     worker = ctx.services.get("dispatch_worker")
     if worker:
@@ -6551,7 +6750,7 @@ async def _admit_remote_agent_work(
         ),
         "dispatch_id": record.dispatch_id,
         "job_id": record.dispatch_id,
-        "dispatch": record.public_dict(),
+        "dispatch": _dispatch_public(request, record),
     }
 
 
@@ -6564,7 +6763,7 @@ def list_dispatches(
     require_user(request)
     limit = max(1, min(limit, 500))
     return [
-        record.public_dict()
+        _dispatch_public(request, record)
         for record in _dispatch_store(request).list(
             target_instance_id=target_instance_id, limit=limit
         )
@@ -6581,9 +6780,7 @@ def get_dispatch_queue(request: Request) -> dict[str, Any]:
     return {
         **snapshot,
         "capacity": settings.dispatch_queue_capacity,
-        "provider_capacities": dict(
-            settings.dispatch_provider_queue_capacities
-        ),
+        "provider_capacities": dict(settings.dispatch_provider_queue_capacities),
         "active_execution_capacity": settings.dispatch_capacity or 4,
     }
 
@@ -6623,7 +6820,7 @@ def update_dispatch_priority(
             status_code=409,
             detail={"code": "dispatch_not_waiting", "message": str(exc)},
         ) from exc
-    return updated.public_dict()
+    return _dispatch_public(request, updated)
 
 
 @router.get("/fleet/dispatch-jobs/{dispatch_id}")
@@ -6632,7 +6829,7 @@ def get_dispatch(request: Request, dispatch_id: str) -> dict[str, Any]:
     record = _dispatch_store(request).get(dispatch_id)
     if not record:
         raise HTTPException(status_code=404, detail="Dispatch not found")
-    return record.public_dict()
+    return _dispatch_public(request, record)
 
 
 @router.get("/fleet/post-turn/action-catalog")
@@ -6667,7 +6864,9 @@ def get_dispatch_turn_end(request: Request, dispatch_id: str) -> dict[str, Any]:
         "evaluations": [
             item.model_dump(mode="json") for item in record.post_turn_evaluations
         ],
-        "lifecycle_diagnostics": record.public_dict()["lifecycle_diagnostics"],
+        "lifecycle_diagnostics": _dispatch_public(request, record)[
+            "lifecycle_diagnostics"
+        ],
         "budgets": {
             "maximum_evaluator_attempts": settings.post_turn_evaluator_max_attempts,
             "maximum_automatic_followup_turns": (
@@ -6995,7 +7194,7 @@ def repair_terminal_dispatch(
         raise HTTPException(status_code=404, detail="Dispatch not found")
     key = _dispatch_control_key(request, body)
     if _repeat_dispatch_control(record, "repair_terminal", key):
-        return record.public_dict()
+        return _dispatch_public(request, record)
     acknowledged = bool(
         record.acknowledged_at or record.completion_delivery_class == "acknowledged"
     )
@@ -7027,7 +7226,7 @@ def repair_terminal_dispatch(
         "Acknowledged legacy completion normalized to terminal state.",
         detail={"previous_state": previous, "repair": True},
     )
-    return record.public_dict()
+    return _dispatch_public(request, record)
 
 
 def _require_dispatch_access(request: Request, record: DispatchRecord) -> None:
@@ -7195,7 +7394,7 @@ async def _retry_dispatch_api(
         raise HTTPException(status_code=404, detail="Dispatch not found")
     idempotency_key = _dispatch_control_key(request, body)
     if _repeat_dispatch_control(record, "retry", idempotency_key):
-        return record.public_dict()
+        return _dispatch_public(request, record)
     if record.state not in {"failed", "cancelled"} or not record.recoverable:
         raise HTTPException(
             status_code=409,
@@ -7320,7 +7519,7 @@ async def _retry_dispatch_api(
     worker = request.app.state.ctx.services.get("dispatch_worker")
     if worker:
         worker.wake()
-    return record.public_dict()
+    return _dispatch_public(request, record)
 
 
 def retry_dispatch(
@@ -7337,7 +7536,7 @@ def retry_dispatch(
         raise HTTPException(status_code=404, detail="Dispatch not found")
     idempotency_key = _dispatch_control_key(request, body)
     if _repeat_dispatch_control(record, "retry", idempotency_key):
-        return record.public_dict()
+        return _dispatch_public(request, record)
     if record.state not in {"failed", "cancelled"} or not record.recoverable:
         raise HTTPException(
             status_code=409,
@@ -7374,7 +7573,7 @@ def retry_dispatch(
     worker = request.app.state.ctx.services.get("dispatch_worker")
     if worker:
         worker.wake()
-    return record.public_dict()
+    return _dispatch_public(request, record)
 
 
 @router.post("/fleet/dispatch-jobs/{dispatch_id}/reconcile", status_code=202)
@@ -7403,7 +7602,7 @@ async def reconcile_dispatch_completion(
                 detail={"code": "completion_outbox_unavailable", "recoverable": True},
             )
         try:
-            return outbox.retry_delivery(dispatch_id).public_dict()
+            return _dispatch_public(request, outbox.retry_delivery(dispatch_id))
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
     reconciler = request.app.state.ctx.services.get("completion_reconciler")
@@ -7416,7 +7615,7 @@ async def reconcile_dispatch_completion(
         repaired = await reconciler.retry(dispatch_id)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return repaired.public_dict()
+    return _dispatch_public(request, repaired)
 
 
 @router.post("/fleet/dispatch-jobs/{dispatch_id}/cancel", status_code=202)
@@ -7432,13 +7631,11 @@ def cancel_dispatch(
         raise HTTPException(status_code=404, detail="Dispatch not found")
     idempotency_key = _dispatch_control_key(request, body)
     if _repeat_dispatch_control(record, "cancel", idempotency_key):
-        return record.public_dict()
+        return _dispatch_public(request, record)
     if record.state in {"waiting_capacity", "blocked", "queued"}:
         record.control_operations[idempotency_key] = "cancel"
-        ledger.transition(
-            record, "cancelled", "Operator cancelled queued dispatch."
-        )
-        return record.public_dict()
+        ledger.transition(record, "cancelled", "Operator cancelled queued dispatch.")
+        return _dispatch_public(request, record)
     if record.state not in {
         "checking_sync",
         "materializing",
@@ -7459,7 +7656,7 @@ def cancel_dispatch(
         record.state,
         "Cancellation requested; the worker will stop at the next safe boundary.",
     )
-    return record.public_dict()
+    return _dispatch_public(request, record)
 
 
 @router.get("/fleet/instances/{authority_instance_id}/dispatch-jobs/{dispatch_id}")
@@ -7750,7 +7947,12 @@ def _local_session_route(request: Request, session_id: str) -> dict[str, Any] | 
         "api_base": "/api/agent",
         "owner": {
             "instance_id": session.origin_instance_id or ctx.settings.instance_id,
-            "instance_name": session.origin_instance_name or ctx.settings.instance_name,
+            "instance_name": current_instance_name(
+                ctx,
+                session.origin_instance_id or ctx.settings.instance_id,
+                session.origin_instance_name or ctx.settings.instance_name,
+            ),
+            "instance_name_at_session_start": session.origin_instance_name,
         },
         "provider": {
             "id": session.agent_name,
@@ -7815,7 +8017,8 @@ async def resolve_session_route(
             "api_base": api_base,
             "owner": {
                 "instance_id": owner_id,
-                "instance_name": owner_name or owner_id,
+                "instance_name": current_instance_name(ctx, owner_id, owner_name),
+                "instance_name_at_dispatch": owner_name,
             },
             "message": "The session owner is not currently registered. Retry after it reconnects.",
         }
@@ -8168,6 +8371,14 @@ class FleetModule(Module):
         from pa.sync.infrastructure import get_membership_store, get_peer_table
 
         fleet = FleetRegistry(settings.data_dir, settings.fleet_id)
+        canonical_self = fleet.get_instance(settings.instance_id)
+        if canonical_self and canonical_self.name != settings.instance_name:
+            from pa.domain.instance_config import update_instance_config
+            from pa.fleet.join import refresh_service_env
+
+            settings.instance_name = canonical_self.name
+            update_instance_config(settings.data_dir, instance_name=canonical_self.name)
+            refresh_service_env(settings)
         self_url = owner_public_url(settings)
         fleet.register_self(
             settings.instance_id,
@@ -8184,6 +8395,11 @@ class FleetModule(Module):
             relay_enabled=settings.relay_enabled,
         )
         ctx.register_service("fleet_registry", fleet)
+        convergence = MembershipConvergenceStore(
+            settings.data_dir, settings.instance_id
+        )
+        convergence.plan(fleet.generation, fleet.list_instances())
+        ctx.register_service("membership_convergence", convergence)
         membership = get_membership_store(settings)
         for realm in settings.subscribed_realms:
             membership.ensure_realm(realm)
@@ -8240,6 +8456,11 @@ class FleetModule(Module):
             limits=httpx.Limits(max_connections=32, max_keepalive_connections=16),
         )
         ctx.register_service("fleet_http_client", fleet_http_client)
+        convergence_task = asyncio.create_task(
+            _membership_convergence_loop(ctx),
+            name="fleet-membership-convergence",
+        )
+        ctx.register_service("membership_convergence_task", convergence_task)
         recoverable = await async_runtime.run_blocking(
             "fleet.update_recovery",
             prepare_update_job_recovery,
@@ -8332,6 +8553,10 @@ class FleetModule(Module):
         outbox = ctx.services.get("completion_outbox")
         if outbox:
             await outbox.close(timeout=5.0)
+        convergence_task = ctx.services.get("membership_convergence_task")
+        if convergence_task:
+            convergence_task.cancel()
+            await asyncio.gather(convergence_task, return_exceptions=True)
         client = ctx.services.get("fleet_http_client")
         if client:
             await client.aclose()
@@ -8900,9 +9125,7 @@ class FleetModule(Module):
         @mcp.tool()
         def get_dispatch_queue() -> dict:
             """Return waiting, blocked, active, and queue-capacity state."""
-            return request_local_pa(
-                ctx.settings, "GET", "/api/fleet/dispatch-queue"
-            )
+            return request_local_pa(ctx.settings, "GET", "/api/fleet/dispatch-queue")
 
         @mcp.tool()
         def set_dispatch_priority(
