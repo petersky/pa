@@ -284,6 +284,7 @@ class ApplyResult:
     reload: frozenset[str]
     restart: frozenset[str]
     duplicate: bool = False
+    rename: dict[str, Any] | None = None
 
 
 def _read_idempotency(data_dir: Path) -> dict[str, Any]:
@@ -436,6 +437,26 @@ def _apply_update_locked(
     before = require_config(settings.data_dir)
     before_revision = config_revision(before)
     idempotency_before = _read_idempotency(settings.data_dir)
+    rename_registry = None
+    rename_generation = None
+    if (
+        "instance_name" in normalized
+        and normalized["instance_name"] != before.instance_name
+    ):
+        from pa.fleet.registry import FleetRegistry
+
+        candidate_registry = FleetRegistry(settings.data_dir, before.fleet_id)
+        try:
+            FleetRegistry.normalize_name(str(normalized["instance_name"]))
+            if candidate_registry.get_instance(before.instance_id):
+                candidate_registry._validate_name_available(
+                    before.instance_id, str(normalized["instance_name"])
+                )
+        except ValueError as exc:
+            raise ConfigError(str(exc)) from exc
+        if candidate_registry.get_instance(before.instance_id):
+            rename_registry = candidate_registry
+            rename_generation = candidate_registry.generation
     candidate, reload, restart = apply_config_changes(
         settings.data_dir,
         normalized,
@@ -476,12 +497,46 @@ def _apply_update_locked(
         raise ConfigError(
             f"Configuration audit/write failed; update rolled back: {exc}"
         ) from exc
-    # Live settings are safe to update only after config, audit, and idempotency
-    # evidence are durable. Restart/reload settings retain their observed value.
+    rename = None
+    if rename_registry is not None:
+        try:
+            renamed = rename_registry.rename_instance(
+                before.instance_id,
+                candidate.instance_name,
+                actor=principal_id,
+                source=f"configuration.{interface}",
+                expected_generation=rename_generation,
+            )
+            settings.instance_name = renamed.name
+            from pa.fleet.join import refresh_service_env
+
+            service_refreshed = refresh_service_env(settings)
+            rename = {
+                "state": "committed",
+                "stable_instance_id": renamed.instance_id,
+                "old_name": before.instance_name,
+                "new_name": renamed.name,
+                "generation": rename_registry.generation,
+                "service_environment_refreshed": service_refreshed,
+            }
+        except (OSError, RuntimeError, ValueError) as exc:
+            save_instance_config(settings.data_dir, before)
+            atomic_write_json(
+                settings.data_dir / IDEMPOTENCY_FILE,
+                idempotency_before,
+                mode=0o600,
+            )
+            raise ConfigError(
+                "Canonical rename could not complete; configuration was rolled back "
+                f"and the audit attempt was retained: {exc}"
+            ) from exc
+    # Live settings are safe to update only after config, audit, idempotency, and
+    # canonical identity evidence are durable. Other reload/restart settings retain
+    # their observed value.
     for key in changed:
         if SETTINGS[key].apply == "live":
             setattr(settings, key, getattr(candidate, key))
-    return ApplyResult(candidate, changed, reload, restart)
+    return ApplyResult(candidate, changed, reload, restart, rename=rename)
 
 
 def audit_events(data_dir: Path, *, limit: int = 100) -> list[dict[str, Any]]:

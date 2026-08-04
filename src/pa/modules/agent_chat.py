@@ -20,6 +20,7 @@ from pa.acp.sandbox_health import sandbox_health_registry
 from pa.auth.middleware import get_principal_id
 from pa.core.contracts import Module
 from pa.core.preferences import get_preferences_store
+from pa.core.ui.instance_identity import current_instance_name
 from pa.domain.models import AgentSession, TranscriptEvent
 from pa.execution.observability import (
     SESSION_OBSERVABILITY_CAPABILITY,
@@ -123,7 +124,7 @@ def _observability(
     if events is None:
         events = mgr.store.list_transcript_events_before(session.id, limit=5000)
     settings = request.app.state.ctx.settings
-    return build_session_observability(
+    result = build_session_observability(
         session,
         runtime=runtime,
         events=events,
@@ -131,6 +132,18 @@ def _observability(
         instance_name=settings.instance_name,
         reconciliation=_session_reconciliation(request, session.id),
     )
+    snapshot = session.origin_instance_name
+    current = current_instance_name(
+        request.app.state.ctx,
+        session.origin_instance_id or settings.instance_id,
+        snapshot or settings.instance_name,
+    )
+    result["instance"]["name"] = current
+    result["instance"]["name_snapshot"] = snapshot
+    result["instance"]["name_at_session_start"] = (
+        snapshot if snapshot and snapshot != current else None
+    )
+    return result
 
 
 def _require_session_traffic_ready(request: Request):
@@ -1152,6 +1165,11 @@ def _session_list_item(
 ) -> dict:
     config = session.config_json or {}
     configuration = config.get("configuration", {})
+    current_origin_name = current_instance_name(
+        request.app.state.ctx,
+        session.origin_instance_id,
+        session.origin_instance_name,
+    )
     durable = config.get("durable_runtime", {})
     queued = durable.get("queued_prompts") or []
     return {
@@ -1160,7 +1178,14 @@ def _session_list_item(
         "label": session.label,
         "agent_name": session.agent_name,
         "origin_instance_id": session.origin_instance_id,
-        "origin_instance_name": session.origin_instance_name,
+        "origin_instance_name": current_origin_name,
+        "origin_instance_name_snapshot": session.origin_instance_name,
+        "origin_instance_name_at_session_start": (
+            session.origin_instance_name
+            if session.origin_instance_name
+            and session.origin_instance_name != current_origin_name
+            else None
+        ),
         "status": session.status,
         "connected": bool(runtime and runtime.connected),
         "prompting": bool(runtime and runtime.prompting),

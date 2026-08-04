@@ -215,6 +215,23 @@
       {% endfor %}
     </tbody></table>
     {% endif %}
+    <div class="panel-header"><div><h3>Membership convergence</h3><p class="muted small">Complete canonical roster generation {{ membership_convergence.generation }} is retried automatically for offline and upgrading peers.</p></div></div>
+    {% if membership_convergence.peers %}
+    <table class="data-table"><thead><tr><th>Peer</th><th>State</th><th>Applied / target</th><th>Attempts</th><th>Actionable error</th></tr></thead><tbody>
+      {% for peer in membership_convergence.peers %}
+      <tr>
+        <td>{{ instance_identity(peer.instance_id) }}</td>
+        <td><span class="status status-{{ 'active' if peer.status == 'applied' else 'blocked' }}">{{ peer.status }}</span></td>
+        <td>{{ peer.applied_generation or 0 }} / {{ peer.target_generation or membership_convergence.generation }}</td>
+        <td>{{ peer.attempts or 0 }}{% if peer.next_attempt_at %}<span class="muted small">next {{ peer.next_attempt_at }}</span>{% endif %}</td>
+        <td>{% if peer.error %}<span class="danger">{{ peer.error_code }}: {{ peer.error }}</span>{% else %}<span class="muted">None</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody></table>
+    {% else %}
+    <p class="muted">No remote membership deliveries are pending.</p>
+    {% endif %}
+    <p class="muted small">Use the membership reconcile action to repair incomplete inventories; semantic conflicts at the same generation require an audited operator resolution.</p>
     <p class="muted small">Use <code>pa fleet rotate-credential --idempotency-key &lt;operator-key&gt;</code>, then <code>pa fleet credential-status</code>. Retry offline peers or roll back safely; revoke the old credential only after convergence or with an explicit <code>--force</code> decision.</p>
     <p class="muted small">For service diagnostics, share <code>pa service-inspect</code>. Raw service-manager environment output from legacy installs may expose credentials.</p>
   </section>
