@@ -198,6 +198,11 @@ class CardSummaryService:
         return json.loads(content)["summary"]
 
     async def migrate_legacy(self) -> int:
+        # A joined fleet member points at the legacy owner. Running this write
+        # batch on every member creates concurrent summary state and duplicate
+        # provider work during coordinated restarts.
+        if self.settings.fleet_owner_url:
+            return 0
         candidates = [
             card
             for card in self.ctx.store.list_cards()
