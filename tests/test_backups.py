@@ -243,6 +243,14 @@ class BackupTestCase(unittest.TestCase):
         self.assertEqual(self.service.prune(), [])
         self.assertEqual(self.service.list_backups()[0].backup_id, only.backup_id)
 
+    def test_prune_reuses_durable_verification_records(self) -> None:
+        self._run("verified")
+
+        with patch.object(self.service, "verify_backup") as verify:
+            self.assertEqual(self.service.prune(), [])
+
+        verify.assert_not_called()
+
     def test_age_retention_removes_oldest_verified_backup(self) -> None:
         first = self._run("age-one")
         record = self.service.inspect_backup(first.backup_id)
