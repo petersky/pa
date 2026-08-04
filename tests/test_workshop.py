@@ -408,6 +408,43 @@ def test_session_association_does_not_depend_on_truncated_dispatch_history():
     assert row["card"]["historical_dispatch_count"] == 501
 
 
+def test_empty_dispatch_indexes_are_authoritative_without_ledger_fallback():
+    calls = {"card": 0, "session": 0}
+
+    class EmptyIndexedDispatchStore:
+        def current_card_ids(self, *, realm_id, limit):
+            return []
+
+        def latest_by_card(self, card_ids, *, realm_id):
+            calls["card"] += 1
+            assert "active" in card_ids
+            return {}
+
+        def latest_by_session(self, session_ids, *, realm_id):
+            calls["session"] += 1
+            assert session_ids == {"session"}
+            return {}
+
+        def history_counts(self, card_ids, *, realm_id):
+            return {card_id: 0 for card_id in card_ids}
+
+        def list(self, **_kwargs):
+            raise AssertionError("legitimate empty indexes must not scan the ledger")
+
+    ctx = _ctx()
+    ctx.services["dispatch_store"] = EmptyIndexedDispatchStore()
+
+    snapshot = build_workshop_snapshot(ctx, _overview())
+    worker = snapshot["bays"][0]["workers"][0]
+    row = next(item for item in snapshot["work_orders"] if item["id"] == "active")
+
+    assert calls == {"card": 1, "session": 1}
+    assert worker["id"] == "session"
+    assert worker["dispatch_id"] is None
+    assert row["card"]["dispatch_id"] is None
+    assert row["card"]["historical_dispatch_count"] == 0
+
+
 def test_waiting_capacity_and_blocked_pre_session_work_is_explicit():
     overview = _overview()
     activity = overview["nodes"][0]["dimensions"]["activity"]["value"]
@@ -629,6 +666,7 @@ def test_worker_projection_ranks_live_and_blocked_work_globally_across_nodes():
             "id": f"first-idle-{index:02d}",
             "realm_id": "default",
             "status": "idle",
+            "connected": True,
             "updated_at": "2026-08-04T12:00:00+00:00",
         }
         for index in range(WORKSHOP_WORKER_LIMIT)
@@ -675,6 +713,11 @@ def test_worker_projection_ranks_live_and_blocked_work_globally_across_nodes():
         bay_id == "later-node" and worker["id"] == "dispatch:later-blocked"
         for bay_id, worker in workers
     )
+    assert all(
+        not worker["live"]
+        for _, worker in workers
+        if worker["id"].startswith("first-idle-")
+    )
     assert snapshot["counts"]["sessions"] == {
         "reported": 81,
         "projected": 79,
@@ -685,6 +728,7 @@ def test_worker_projection_ranks_live_and_blocked_work_globally_across_nodes():
         "projected": 80,
         "omitted": 2,
     }
+    assert snapshot["counts"]["reservations"] == 1
 
 
 def test_two_thousand_unlinked_sessions_remain_bounded_with_truthful_counts():

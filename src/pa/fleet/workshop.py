@@ -194,13 +194,13 @@ def _worker_rank_key(worker: dict[str, Any]) -> tuple[int, float, str]:
     state = str(worker.get("state") or "")
     return (
         0
-        if worker.get("live")
+        if state == "working"
         else 1
         if state in {"stalled", "recovering", "failed"}
         else 2
         if state in {"queued", "starting"}
         else 3
-        if state in {"working", "quiet-active"}
+        if state == "quiet-active"
         else 4,
         -_time_score(worker.get("elapsed_from")),
         str(worker.get("id") or ""),
@@ -371,7 +371,13 @@ def build_workshop_snapshot(
     session_ids = {
         str(session.get("id")) for session in operational_sessions if session.get("id")
     }
-    if dispatch_store and hasattr(dispatch_store, "latest_by_card"):
+    has_latest_by_card = bool(
+        dispatch_store and callable(getattr(dispatch_store, "latest_by_card", None))
+    )
+    has_latest_by_session = bool(
+        dispatch_store and callable(getattr(dispatch_store, "latest_by_session", None))
+    )
+    if has_latest_by_card:
         latest_records = dispatch_store.latest_by_card(
             set(card_by_id), realm_id=realm_id
         )
@@ -382,7 +388,7 @@ def build_workshop_snapshot(
         }
     else:
         latest_dispatch_by_card = {}
-    if dispatch_store and hasattr(dispatch_store, "latest_by_session"):
+    if has_latest_by_session:
         dispatch_by_session = {
             session_id: record.public_dict()
             for session_id, record in dispatch_store.latest_by_session(
@@ -393,7 +399,7 @@ def build_workshop_snapshot(
         dispatch_by_session = {}
     dispatches = []
     if dispatch_store and (
-        not latest_dispatch_by_card or (session_ids and not dispatch_by_session)
+        not has_latest_by_card or (session_ids and not has_latest_by_session)
     ):
         try:
             records = dispatch_store.list(realm_id=realm_id, limit=1000)
@@ -725,11 +731,7 @@ def build_workshop_snapshot(
                     "tool_category": _tool_category(dispatch),
                     "href": f"/agent?session={session_id}&instance={node.get('id')}",
                     "relationship_kind": "session",
-                    "live": activity_state == "fresh"
-                    and (
-                        state == "working"
-                        or (state == "quiet-active" and bool(session.get("connected")))
-                    ),
+                    "live": activity_state == "fresh" and state == "working",
                     "freshness": activity_state,
                     "freshness_label": _label(
                         activity_state, FRESHNESS_LABELS, "Unknown"
