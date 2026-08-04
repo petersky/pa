@@ -1453,8 +1453,10 @@ class FleetUpdateUiTests(unittest.TestCase):
         self.assertIn("tr.dataset.updateChannel", script)
         self.assertIn("/update-check?channel=", script)
         self.assertIn("refreshFleetUpdateCheck().then", script)
-        self.assertIn("promptBacklog", script)
-        self.assertIn('" queued</span>"', script)
+        self.assertIn('" slots used · " + promptBacklog', script)
+        self.assertIn("escapeHtml(capacityPresentation.summary)", script)
+        self.assertIn('return presentation.summary + " · " + presentation.source', script)
+        self.assertNotIn(' used</strong>', script)
         self.assertIn('name="install_timeout"', template)
 
     def test_update_is_modal_and_restores_isolated_persisted_instance_jobs(self) -> None:

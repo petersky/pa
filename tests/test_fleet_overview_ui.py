@@ -236,6 +236,20 @@ assert.strictEqual(model.providerBadgeClass("signed_out"), "badge-danger");
 """
         )
 
+    def test_capacity_copy_keeps_slots_and_prompt_backlog_adjacent(self) -> None:
+        self.run_node(
+            r"""
+const presentation = model.capacityPresentation({
+  capacity: { consumed: 1, limit: 4, source: "configured" },
+  queued_prompts: 9,
+}, 4);
+assert.strictEqual(presentation.summary, "1/4 slots used · 9 prompts queued");
+assert.strictEqual(presentation.source, "configured");
+assert.ok(!presentation.summary.includes("10/4"));
+assert.ok(!presentation.summary.includes("1/4 used"));
+"""
+        )
+
     def test_required_sync_timeout_still_marks_node_timed_out(self) -> None:
         self.run_node(
             r"""
