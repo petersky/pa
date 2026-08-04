@@ -8,6 +8,10 @@ See [Multichannel multimodal intake](MULTICHANNEL_INTAKE.md) for the implemented
 canonical web, Telegram, and Discord envelope, identity, security, retention,
 receipt, and correlated-response contracts.
 
+See [Limbic appraisal and tiered memory](LIMBIC_MEMORY.md) for the implemented
+canonical signal, conservative routing, replay, retention, provenance, and scoped
+retrieval contracts.
+
 See [Interactions and fleet notifications](INTERACTIONS_AND_NOTIFICATIONS.md)
 for the durable notification envelope, interaction lifecycle, fleet routing,
 authorization, sync, and delivery contracts.

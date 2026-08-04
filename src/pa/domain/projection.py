@@ -355,9 +355,11 @@ class CardProjection:
 
             from pa.goals.projection import init_goal_schema
             from pa.intake.projection import init_intake_schema
+            from pa.limbic.projection import init_limbic_schema
 
             init_goal_schema(conn)
             init_intake_schema(conn)
+            init_limbic_schema(conn)
 
     def _migrate_schema(self, conn: sqlite3.Connection) -> None:
         card_cols = {
@@ -687,6 +689,14 @@ class CardProjection:
             from pa.intake.projection import apply_intake_event
 
             apply_intake_event(self, event)
+        elif event.type == EventType.LIMBIC_APPRAISED:
+            from pa.limbic.projection import apply_limbic_event
+
+            apply_limbic_event(self, event)
+        elif event.type == EventType.MEMORY_RECORDED:
+            from pa.limbic.projection import apply_memory_event
+
+            apply_memory_event(self, event)
         elif event.type == EventType.CARD_CREATED:
             self._apply_created(event)
         elif event.type == EventType.CARD_UPSERTED:

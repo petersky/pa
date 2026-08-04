@@ -74,6 +74,7 @@ class ModuleRegistry:
         from pa.modules.intake import IntakeModule
         from pa.modules.integrations import IntegrationsModule
         from pa.modules.items import ItemsModule
+        from pa.modules.limbic import LimbicModule
         from pa.modules.notifications import NotificationsModule
         from pa.modules.orchestration import OrchestrationModule
         from pa.modules.pr_supervisor import PRSupervisorModule
@@ -97,6 +98,7 @@ class ModuleRegistry:
             ItemsModule(),
             GoalsModule(),
             IntakeModule(),
+            LimbicModule(),
             OrchestrationModule(),
             InstanceModule(),
             CollaborationModule(),
