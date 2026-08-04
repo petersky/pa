@@ -282,6 +282,57 @@ class ProgressStoreTests(unittest.TestCase):
 
 
 class ProgressDerivationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_repeated_tool_updates_coalesce_before_durable_writes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = DispatchStore(Path(tmp))
+            store.put(record())
+            service = ProgressService(store, instance_id=TARGET, token="")
+            update = {
+                "type": "tool_call_update",
+                "tool_call_id": "tool-1",
+                "title": "Run focused tests",
+                "kind": "execute",
+                "status": "running",
+            }
+
+            for _ in range(100):
+                await service.observe(SESSION, update)
+
+            persisted = store.get(DISPATCH)
+            assert persisted is not None
+            self.assertEqual(len(persisted.progress_events), 1)
+            self.assertEqual(
+                persisted.progress_events[0].summary, "Run focused tests · running"
+            )
+            self.assertLessEqual(persisted.progress_next_sequence, 3)
+            self.assertEqual(
+                service.snapshot()["coalesced_observations_by_session"][SESSION],
+                99,
+            )
+
+    async def test_tool_status_transition_remains_a_checkpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = DispatchStore(Path(tmp))
+            store.put(record())
+            service = ProgressService(store, instance_id=TARGET, token="")
+            base = {
+                "type": "tool_call_update",
+                "tool_call_id": "tool-1",
+                "title": "Run focused tests",
+                "kind": "execute",
+            }
+
+            await service.observe(SESSION, {**base, "status": "running"})
+            await service.observe(SESSION, {**base, "status": "running"})
+            await service.observe(SESSION, {**base, "status": "completed"})
+
+            persisted = store.get(DISPATCH)
+            assert persisted is not None
+            self.assertEqual(
+                [event.tool_details[0].status for event in persisted.progress_events],
+                ["running", "completed"],
+            )
+
     async def test_repeated_malformed_updates_log_once_and_do_not_escape(self) -> None:
         service = ProgressService(MagicMock(), instance_id=TARGET, token="")
         with (
