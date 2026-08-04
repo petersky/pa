@@ -308,22 +308,30 @@ class EventLog:
         *,
         seen: set[str] | None = None,
     ) -> None:
-        seen = seen or set()
-        if commit_hash in seen:
-            return
-        seen.add(commit_hash)
+        visited = seen if seen is not None else set()
+        stack: list[tuple[str, SyncCommit | None]] = [(commit_hash, None)]
 
-        commit = self.get_commit(commit_hash)
-        if not commit:
-            return
+        while stack:
+            current_hash, expanded_commit = stack.pop()
+            if expanded_commit is not None:
+                for event_hash in expanded_commit.event_hashes:
+                    event = self.get_event(event_hash)
+                    if event:
+                        handler(event)
+                continue
 
-        for parent in commit.parent_hashes:
-            self.apply_commit_chain(parent, handler, seen=seen)
+            if current_hash in visited:
+                continue
+            visited.add(current_hash)
 
-        for event_hash in commit.event_hashes:
-            event = self.get_event(event_hash)
-            if event:
-                handler(event)
+            commit = self.get_commit(current_hash)
+            if not commit:
+                continue
+
+            # Replay parents before this commit's events, preserving the same
+            # deterministic depth-first order as the former recursive walk.
+            stack.append((current_hash, commit))
+            stack.extend((parent, None) for parent in reversed(commit.parent_hashes))
 
     def merge_heads(
         self,
