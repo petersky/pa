@@ -2,7 +2,13 @@
 
 ## Status
 
-Proposed architecture for durable, long-running, fleet-wide goal pursuit.
+Phase 1 durable contracts and the Phase 2 supervised orchestration core are
+implemented. The canonical Goal projection now carries typed proposals,
+deterministic authorization decisions, a card-backed work-package DAG, durable
+operator-interaction links, verifier/critic roles, replacement-session history,
+and drift/no-progress state. The fenced background supervisor applies external
+card, notification, and fleet-dispatch effects with stable idempotency keys and
+then records an atomic goal.supervision_checkpointed event.
 
 This design deliberately separates a **goal** from a card, dispatch, agent
 session, or provider-native goal mode. A goal is durable organizational intent.
@@ -469,6 +475,12 @@ redacted.
 - Card/work-package graph and fleet-aware dispatch integration.
 - Independent verifier and no-progress/drift detection.
 - Durable interactions and recovery into replacement sessions.
+
+Implemented Phase 2 surfaces are POST /api/goals/{goal_id}/proposals,
+POST /api/goals/{goal_id}/supervise, and the corresponding
+propose_goal_action and supervise_goal MCP tools. Automatic cycles authorize
+only typed actions against the proposal's policy revision, preserve controller
+fencing, and leave final achievement behind Phase 1's independent audit gate.
 
 ### Phase 3: limbic and memory systems
 

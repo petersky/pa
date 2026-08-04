@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Annotated, Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, model_validator
@@ -35,6 +35,53 @@ class EvidenceKind(StrEnum):
     OBSERVATION = "observation"
     OPERATOR_ACCEPTANCE = "operator_acceptance"
     AUDIT = "audit"
+
+
+class GoalActorRole(StrEnum):
+    COORDINATOR = "coordinator"
+    EXECUTOR = "executor"
+    VERIFIER = "verifier"
+    CRITIC = "critic"
+
+
+class ProposalStatus(StrEnum):
+    PENDING = "pending"
+    AUTHORIZED = "authorized"
+    OPERATOR_REQUIRED = "operator_required"
+    REJECTED = "rejected"
+    APPLIED = "applied"
+    FAILED = "failed"
+
+
+class AuthorizationOutcome(StrEnum):
+    AUTHORIZE = "authorize"
+    REQUIRE_OPERATOR = "require_operator"
+    REJECT = "reject"
+
+
+class WorkPackageState(StrEnum):
+    PLANNED = "planned"
+    READY = "ready"
+    DISPATCHED = "dispatched"
+    RUNNING = "running"
+    AWAITING_VERIFICATION = "awaiting_verification"
+    VERIFIED = "verified"
+    BLOCKED = "blocked"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class GoalInteractionState(StrEnum):
+    PENDING = "pending"
+    ANSWERED = "answered"
+    CANCELLED = "cancelled"
+    EXPIRED = "expired"
+
+
+class GoalDriftState(StrEnum):
+    ON_TRACK = "on_track"
+    DRIFTING = "drifting"
+    STALLED = "stalled"
 
 
 class GoalCriterion(BaseModel):
@@ -158,6 +205,181 @@ class GoalAudit(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
+class CreateWorkPackageAction(BaseModel):
+    kind: Literal["create_work_package"] = "create_work_package"
+    title: str = Field(min_length=1, max_length=300)
+    objective: str = Field(min_length=1, max_length=16_000)
+    criterion_ids: list[str] = Field(min_length=1)
+    depends_on: list[str] = Field(default_factory=list)
+    role: GoalActorRole = GoalActorRole.EXECUTOR
+    card_id: str | None = None
+    preferred_instance_id: str | None = None
+    preferred_capabilities: list[str] = Field(default_factory=list)
+    max_attempts: int = Field(default=3, ge=1, le=20)
+    dispatch_when_ready: bool = True
+
+
+class DispatchWorkPackageAction(BaseModel):
+    kind: Literal["dispatch_work_package"] = "dispatch_work_package"
+    work_package_id: str
+    target_instance_id: str | None = None
+    placement_policy: str | None = "balanced"
+    group_id: str | None = None
+    message: str = ""
+    provider: str | None = None
+    model_id: str | None = None
+    mode_id: str | None = None
+    priority: int = Field(default=0, ge=-10, le=10)
+
+    @model_validator(mode="after")
+    def validate_target(self) -> DispatchWorkPackageAction:
+        if bool(self.target_instance_id) == bool(self.placement_policy):
+            raise ValueError(
+                "dispatch proposal requires exactly one target instance or placement policy"
+            )
+        return self
+
+
+class GoalOperatorChoice(BaseModel):
+    id: str = Field(min_length=1, max_length=200)
+    label: str = Field(min_length=1, max_length=300)
+    description: str | None = Field(default=None, max_length=1000)
+    value: Any = None
+
+
+class RequestOperatorAction(BaseModel):
+    kind: Literal["request_operator"] = "request_operator"
+    prompt: str = Field(min_length=1, max_length=8000)
+    response_schema: dict[str, Any] | None = None
+    choices: list[GoalOperatorChoice] = Field(default_factory=list, max_length=100)
+    allow_freeform: bool = False
+    allow_cancel: bool = True
+    deadline: datetime | None = None
+
+    @model_validator(mode="after")
+    def validate_response_contract(self) -> RequestOperatorAction:
+        if not self.response_schema and not self.choices and not self.allow_freeform:
+            raise ValueError(
+                "operator request needs a response schema, choices, or freeform input"
+            )
+        return self
+
+
+class ReviseStrategyAction(BaseModel):
+    kind: Literal["revise_strategy"] = "revise_strategy"
+    summary: str = Field(min_length=1, max_length=8000)
+    assumptions: list[str] = Field(default_factory=list)
+    risks: list[str] = Field(default_factory=list)
+
+
+class RecordEvidenceAction(BaseModel):
+    kind: Literal["record_evidence"] = "record_evidence"
+    evidence: GoalEvidence
+    criterion_verdicts: dict[str, CriterionVerdict] = Field(default_factory=dict)
+
+
+class TransitionGoalAction(BaseModel):
+    kind: Literal["transition_goal"] = "transition_goal"
+    state: GoalState
+    reason: str = Field(min_length=1)
+    progress_summary: str | None = None
+
+
+GoalProposalAction = Annotated[
+    CreateWorkPackageAction
+    | DispatchWorkPackageAction
+    | RequestOperatorAction
+    | ReviseStrategyAction
+    | RecordEvidenceAction
+    | TransitionGoalAction,
+    Field(discriminator="kind"),
+]
+
+
+class GoalAuthorizationDecision(BaseModel):
+    outcome: AuthorizationOutcome
+    policy_revision: int = Field(ge=1)
+    reason_code: str = Field(min_length=1)
+    explanation: str = Field(min_length=1)
+    decision_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    decided_by_instance_id: str
+    decided_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class GoalProposal(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    proposer_principal: str
+    proposer_role: GoalActorRole
+    action: GoalProposalAction
+    rationale: str = Field(min_length=1, max_length=8000)
+    expected_goal_version: int = Field(ge=1)
+    policy_revision: int = Field(ge=1)
+    status: ProposalStatus = ProposalStatus.PENDING
+    authorization: GoalAuthorizationDecision | None = None
+    applied_event_id: str | None = None
+    error: str | None = Field(default=None, max_length=2000)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class GoalProposalCreate(BaseModel):
+    proposer_principal: str
+    proposer_role: GoalActorRole
+    action: GoalProposalAction
+    rationale: str = Field(min_length=1, max_length=8000)
+    expected_goal_version: int = Field(ge=1)
+    policy_revision: int = Field(ge=1)
+
+
+class GoalWorkPackage(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    proposal_id: str
+    title: str
+    objective: str
+    criterion_ids: list[str] = Field(min_length=1)
+    depends_on: list[str] = Field(default_factory=list)
+    role: GoalActorRole = GoalActorRole.EXECUTOR
+    state: WorkPackageState = WorkPackageState.PLANNED
+    card_id: str | None = None
+    preferred_instance_id: str | None = None
+    preferred_capabilities: list[str] = Field(default_factory=list)
+    dispatch_when_ready: bool = True
+    dispatch_ids: list[str] = Field(default_factory=list)
+    session_id: str | None = None
+    replacement_session_ids: list[str] = Field(default_factory=list)
+    attempts: int = Field(default=0, ge=0)
+    max_attempts: int = Field(default=3, ge=1, le=20)
+    last_progress_fingerprint: str | None = None
+    last_progress_at: datetime | None = None
+    no_progress_cycles: int = Field(default=0, ge=0)
+    result_summary: str = ""
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class GoalOperatorInteraction(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    proposal_id: str
+    notification_id: str
+    state: GoalInteractionState = GoalInteractionState.PENDING
+    response_summary: str = ""
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    resolved_at: datetime | None = None
+
+
+class GoalSupervision(BaseModel):
+    cycle: int = Field(default=0, ge=0)
+    event_cursor: str = ""
+    drift_state: GoalDriftState = GoalDriftState.ON_TRACK
+    drift_reasons: list[str] = Field(default_factory=list)
+    no_progress_cycles: int = Field(default=0, ge=0)
+    last_meaningful_progress_at: datetime | None = None
+    last_cycle_at: datetime | None = None
+    next_wakeup_at: datetime | None = None
+    controller_session_id: str | None = None
+    replacement_session_ids: list[str] = Field(default_factory=list)
+
+
 class Goal(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     realm_id: str = "default"
@@ -185,6 +407,10 @@ class Goal(BaseModel):
     linked_card_ids: list[str] = Field(default_factory=list)
     linked_dispatch_ids: list[str] = Field(default_factory=list)
     audit: GoalAudit | None = None
+    proposals: list[GoalProposal] = Field(default_factory=list)
+    work_packages: list[GoalWorkPackage] = Field(default_factory=list)
+    operator_interactions: list[GoalOperatorInteraction] = Field(default_factory=list)
+    supervision: GoalSupervision = Field(default_factory=GoalSupervision)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
@@ -208,6 +434,52 @@ class Goal(BaseModel):
                 raise ValueError(
                     f"criterion references unknown evidence: {sorted(unknown)}"
                 )
+        proposal_ids = [proposal.id for proposal in self.proposals]
+        if len(proposal_ids) != len(set(proposal_ids)):
+            raise ValueError("proposal ids must be unique")
+        proposal_id_set = set(proposal_ids)
+        work_ids = [package.id for package in self.work_packages]
+        if len(work_ids) != len(set(work_ids)):
+            raise ValueError("work package ids must be unique")
+        work_id_set = set(work_ids)
+        graph: dict[str, list[str]] = {}
+        for package in self.work_packages:
+            if package.proposal_id not in proposal_id_set:
+                raise ValueError("work package references unknown proposal")
+            if unknown := set(package.criterion_ids) - known:
+                raise ValueError(
+                    f"work package references unknown criteria: {sorted(unknown)}"
+                )
+            if unknown := set(package.depends_on) - work_id_set:
+                raise ValueError(
+                    f"work package has unknown dependencies: {sorted(unknown)}"
+                )
+            if package.id in package.depends_on:
+                raise ValueError("work package cannot depend on itself")
+            graph[package.id] = package.depends_on
+        visiting: set[str] = set()
+        visited: set[str] = set()
+
+        def visit(package_id: str) -> None:
+            if package_id in visiting:
+                raise ValueError("work package graph contains a cycle")
+            if package_id in visited:
+                return
+            visiting.add(package_id)
+            for dependency in graph[package_id]:
+                visit(dependency)
+            visiting.remove(package_id)
+            visited.add(package_id)
+
+        for package_id in work_ids:
+            visit(package_id)
+        notification_ids: set[str] = set()
+        for interaction in self.operator_interactions:
+            if interaction.proposal_id not in proposal_id_set:
+                raise ValueError("operator interaction references unknown proposal")
+            if interaction.notification_id in notification_ids:
+                raise ValueError("operator notification ids must be unique")
+            notification_ids.add(interaction.notification_id)
         return self
 
 
@@ -263,6 +535,23 @@ class GoalAuditCreate(BaseModel):
     criterion_verdicts: dict[str, CriterionVerdict]
     evidence_ids: list[str] = Field(default_factory=list)
     explanation: str = Field(min_length=1)
+
+
+class GoalSupervisionCheckpoint(BaseModel):
+    criteria: list[GoalCriterion]
+    evidence: list[GoalEvidence]
+    proposals: list[GoalProposal]
+    work_packages: list[GoalWorkPackage]
+    operator_interactions: list[GoalOperatorInteraction]
+    supervision: GoalSupervision
+    linked_card_ids: list[str]
+    linked_dispatch_ids: list[str]
+    assumptions: list[str]
+    risks: list[str]
+    strategy_revision: int = Field(ge=1)
+    state: GoalState
+    progress_summary: str = ""
+    reason: str = Field(min_length=1)
 
 
 class GoalEventRecord(BaseModel):

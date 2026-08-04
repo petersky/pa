@@ -13,8 +13,11 @@ from pa.goals.models import (
     GoalCreate,
     GoalEvidenceCreate,
     GoalMutationContext,
+    GoalProposal,
+    GoalProposalCreate,
     GoalRevision,
     GoalState,
+    GoalSupervisionCheckpoint,
     GoalTransition,
     GoalWakeup,
 )
@@ -59,6 +62,10 @@ _TRANSITIONS: dict[GoalState, set[GoalState]] = {
     GoalState.ACHIEVED: set(),
     GoalState.ABANDONED: set(),
 }
+
+
+def goal_transition_allowed(current: GoalState, target: GoalState) -> bool:
+    return target in _TRANSITIONS[current]
 
 
 class GoalConflict(ValueError):
@@ -257,6 +264,82 @@ class GoalService:
             return {"wakeup": wakeup.model_dump(mode="json") if wakeup else None}
 
         return self._mutate(goal_id, context, "goal.wakeup_scheduled", mutate)
+
+    def submit_proposal(
+        self,
+        goal_id: str,
+        proposal: GoalProposalCreate,
+        context: GoalMutationContext,
+    ) -> Goal:
+        def mutate(goal: Goal) -> dict[str, Any]:
+            if proposal.proposer_principal != context.actor_principal:
+                raise GoalConflict(
+                    "proposal principal must match the authenticated mutation actor"
+                )
+            if proposal.expected_goal_version != goal.version:
+                raise GoalConflict(
+                    "proposal expected_goal_version does not match the durable goal"
+                )
+            if proposal.policy_revision != goal.policy.revision:
+                raise GoalConflict(
+                    "proposal was not authored against the active policy revision"
+                )
+            item = GoalProposal(**proposal.model_dump(mode="python"))
+            goal.proposals.append(item)
+            return {
+                "proposal_id": item.id,
+                "action": item.action.kind,
+                "proposer_role": item.proposer_role.value,
+            }
+
+        return self._mutate(goal_id, context, "goal.proposal_submitted", mutate)
+
+    def checkpoint_supervision(
+        self,
+        goal_id: str,
+        checkpoint: GoalSupervisionCheckpoint,
+        context: GoalMutationContext,
+    ) -> Goal:
+        def mutate(goal: Goal) -> dict[str, Any]:
+            target_state = checkpoint.state
+            if target_state != goal.state:
+                if target_state not in _TRANSITIONS[goal.state]:
+                    raise GoalConflict(
+                        f"invalid goal transition: {goal.state.value} -> {target_state.value}"
+                    )
+                if target_state == GoalState.ACHIEVED and (
+                    not goal.audit
+                    or goal.audit.verdict != CriterionVerdict.SATISFIED
+                    or any(
+                        item.verdict != CriterionVerdict.SATISFIED
+                        for item in checkpoint.criteria
+                    )
+                ):
+                    raise GoalConflict(
+                        "supervisor cannot achieve a goal without a satisfied independent audit"
+                    )
+            for key in checkpoint.__class__.model_fields:
+                if key not in {"reason", "state"}:
+                    setattr(
+                        goal,
+                        key,
+                        getattr(checkpoint, key),
+                    )
+            goal.state = target_state
+            Goal.model_validate(goal.model_dump(mode="python"))
+            return {
+                "reason": checkpoint.reason,
+                "cycle": checkpoint.supervision.cycle,
+                "proposal_statuses": {
+                    item.id: item.status.value for item in checkpoint.proposals
+                },
+                "work_package_states": {
+                    item.id: item.state.value for item in checkpoint.work_packages
+                },
+                "drift_state": checkpoint.supervision.drift_state.value,
+            }
+
+        return self._mutate(goal_id, context, "goal.supervision_checkpointed", mutate)
 
     def _mutate(
         self,
