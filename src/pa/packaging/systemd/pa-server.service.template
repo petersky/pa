@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart={{PA_BIN}} _service-run
+ExecStart={{PA_BIN}} serve
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=300
@@ -18,8 +18,8 @@ UnsetEnvironment=PA_PEERS PA_SUBSCRIBED_REALMS PA_SYNC_TOKEN
 
 {{ENV_LINES}}
 
-StandardOutput=null
-StandardError=null
+StandardOutput=append:{{PA_LOG_DIR}}/server.log
+StandardError=append:{{PA_LOG_DIR}}/server.err.log
 
 [Install]
 WantedBy=default.target
