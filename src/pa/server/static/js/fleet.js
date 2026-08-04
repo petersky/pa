@@ -1923,8 +1923,10 @@
       var capacityPresentation = fleetCapacityPresentation(
         activity.value || {}, node.dispatch_capacity
       );
+      capacityEl.removeAttribute("aria-label");
       capacityEl.innerHTML = configured
-        ? "<strong>" + escapeHtml(capacityPresentation.summary) +
+        ? '<strong aria-label="' + escapeHtml(capacityPresentation.summary) +
+          '">' + escapeHtml(capacityPresentation.summary) +
           '</strong><span class="muted small">' +
           escapeHtml(capacityPresentation.source) + "</span>" +
           (queueUtilization.limit == null ? "" : '<span class="muted small">' +
@@ -2734,6 +2736,7 @@
     window.__paFleetTopology = {
       layout: fleetTopologyLayout,
       render: renderFleetTopology,
+      renderRow: renderFleetRow,
       clampScale: clampFleetTopologyScale,
       viewportAfterZoom: topologyViewportAfterZoom,
       controller: function () { return fleetTopologyController; },

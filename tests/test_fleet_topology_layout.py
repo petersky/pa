@@ -36,6 +36,103 @@ CHROME = next(
 
 @unittest.skipUnless(CHROME, "Chrome or Chromium is required for browser layout coverage")
 class FleetTopologyBrowserLayoutTests(unittest.TestCase):
+    def test_live_capacity_refresh_preserves_exact_accessible_summary(self) -> None:
+        fleet_script = (ROOT / "src/pa/server/static/js/fleet.js").as_uri()
+        fixture = f"""<!doctype html>
+<html><head><meta charset="utf-8"></head><body>
+<div id="pa-fleet-root">
+  <script type="application/json" id="pa-fleet-overview-data">{{"nodes":[],"edges":[]}}</script>
+  <table id="pa-fleet-instances"><tbody>
+    <tr data-fleet-instance="monica" aria-label="Monica">
+      <td data-fleet-capacity aria-label="stale cell label">
+        <strong aria-label="stale strong label">stale capacity</strong>
+      </td>
+    </tr>
+  </tbody></table>
+</div>
+<script>window.PA_TEST = true;</script>
+<script src="{fleet_script}"></script>
+<script>
+  window.addEventListener("DOMContentLoaded", function () {{
+    var row = document.querySelector('[data-fleet-instance="monica"]');
+    var node = {{
+      id: "monica",
+      dispatch_capacity: 4,
+      dimensions: {{
+        activity: {{
+          state: "fresh",
+          value: {{
+            capacity: {{ consumed: 1, limit: 4, source: "configured" }},
+            queued_prompts: 9
+          }}
+        }}
+      }}
+    }};
+    var nodeState = {{
+      node: node,
+      freshness: "fresh",
+      refreshing: false,
+      accessibleLabel: "Monica, freshness fresh"
+    }};
+    window.__paFleetTopology.renderRow(nodeState);
+    var cell = row.querySelector("[data-fleet-capacity]");
+    var strong = cell.querySelector("strong");
+    var refreshed = {{
+      visible: strong.textContent,
+      accessible: strong.getAttribute("aria-label"),
+      cellLabel: cell.getAttribute("aria-label")
+    }};
+
+    node.dispatch_capacity = null;
+    node.dimensions.activity = {{ state: "unavailable", value: null }};
+    window.__paFleetTopology.renderRow(nodeState);
+    strong = cell.querySelector("strong");
+    var unavailable = {{
+      visible: cell.textContent,
+      strongLabel: strong.getAttribute("aria-label"),
+      cellLabel: cell.getAttribute("aria-label")
+    }};
+
+    var output = document.createElement("pre");
+    output.id = "result";
+    output.textContent = JSON.stringify({{ refreshed: refreshed, unavailable: unavailable }});
+    document.body.append(output);
+  }});
+</script>
+</body></html>"""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture_path = Path(tmp) / "fleet-capacity-accessibility.html"
+            fixture_path.write_text(fixture)
+            completed = subprocess.run(
+                [
+                    CHROME,
+                    "--headless=new",
+                    "--no-sandbox",
+                    "--disable-gpu",
+                    "--disable-dev-shm-usage",
+                    "--allow-file-access-from-files",
+                    "--dump-dom",
+                    fixture_path.as_uri(),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
+        match = re.search(r'<pre id="result">(.*?)</pre>', completed.stdout, re.S)
+        self.assertIsNotNone(match, completed.stderr or completed.stdout)
+        result = json.loads(html.unescape(match.group(1)))
+        expected = "1/4 slots used · 9 prompts queued"
+        self.assertEqual(result["refreshed"]["visible"], expected)
+        self.assertEqual(result["refreshed"]["accessible"], expected)
+        self.assertIsNone(result["refreshed"]["cellLabel"])
+        self.assertIn("pending", result["unavailable"]["visible"])
+        self.assertIn("capacity probe unavailable", result["unavailable"]["visible"])
+        self.assertIsNone(result["unavailable"]["strongLabel"])
+        self.assertIsNone(result["unavailable"]["cellLabel"])
+
     def test_phone_tablet_and_desktop_layouts_keep_every_node_operable(self) -> None:
         fleet_script = (ROOT / "src/pa/server/static/js/fleet.js").as_uri()
         stylesheet = (ROOT / "src/pa/server/static/style.css").as_uri()
