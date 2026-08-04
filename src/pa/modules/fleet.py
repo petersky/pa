@@ -7794,7 +7794,8 @@ async def fleet_agent_proxy(
     response_headers = {
         name: value
         for name, value in upstream.headers.items()
-        if name.lower() in {"content-type", "cache-control", "content-disposition"}
+        if name.lower()
+        in {"content-type", "cache-control", "content-disposition", "retry-after"}
     }
     content_type = upstream.headers.get("content-type", "")
     if content_type.startswith("text/event-stream"):

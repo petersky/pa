@@ -1985,6 +1985,63 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(seen["authorization"], "Bearer fleet-secret")
             self.assertEqual(client_factory.call_args.kwargs["timeout"].read, 120.0)
 
+    async def test_agent_proxy_preserves_structured_recovery_and_retry_after(
+        self,
+    ) -> None:
+        from pa.modules.fleet import fleet_agent_proxy
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), sync_token="fleet-secret")
+            fleet = FleetRegistry(settings.data_dir, settings.fleet_id)
+            fleet.upsert_instance(
+                FleetInstance(
+                    instance_id="mini-1",
+                    name="macmini",
+                    url="http://mini:8080",
+                )
+            )
+            ctx = MagicMock(settings=settings)
+            ctx.require_service.return_value = fleet
+            request = MagicMock()
+            request.app.state.ctx = ctx
+            request.method = "GET"
+            request.query_params.multi_items.return_value = []
+            request.headers.get.return_value = "application/json"
+            request.body = AsyncMock(return_value=b"")
+            detail = {
+                "code": "agent_recovery_in_progress",
+                "message": "PA is restoring durable agent sessions.",
+                "recoverable": True,
+                "retry_after_ms": 250,
+            }
+
+            async def upstream_handler(_request: httpx.Request) -> httpx.Response:
+                return httpx.Response(
+                    503,
+                    json={"detail": detail},
+                    headers={"Retry-After": "2"},
+                )
+
+            upstream_client = httpx.AsyncClient(
+                transport=httpx.MockTransport(upstream_handler)
+            )
+            with (
+                patch("pa.modules.fleet.require_user", return_value=object()),
+                patch(
+                    "pa.modules.fleet.httpx.AsyncClient",
+                    return_value=upstream_client,
+                ),
+            ):
+                response = await fleet_agent_proxy(
+                    request,
+                    "mini-1",
+                    "sessions",
+                )
+
+            self.assertEqual(response.status_code, 503)
+            self.assertEqual(response.headers["retry-after"], "2")
+            self.assertEqual(json.loads(response.body)["detail"], detail)
+
     async def test_agent_proxy_invalidates_cached_activity_after_mutation(self) -> None:
         from pa.fleet.overview import cache_for, field
         from pa.modules.fleet import fleet_agent_proxy

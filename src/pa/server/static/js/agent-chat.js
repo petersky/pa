@@ -272,6 +272,7 @@
     this.commandError = "";
 
     this.startupRetryId = null;
+    this.startupRetryCount = 0;
     this.liveStateRetryId = null;
     this._bind();
     this.drafts = window.PAAgentDrafts && window.PAAgentDrafts.installWidget
@@ -461,6 +462,11 @@
           const error = new Error(apiErrorMessage(body, res.statusText || "Request failed"));
           error.status = res.status;
           error.detail = body.detail;
+          if (window.PASessionRecovery) {
+            error.retryAfterMs = window.PASessionRecovery.responseRetryAfterMs(
+              res, error.detail
+            );
+          }
           throw error;
         });
       }
@@ -484,14 +490,25 @@
   AgentChatWidget.prototype.retryAfterStartupRecovery = function (error) {
     const code = apiErrorCode(error);
     if (code !== "agent_recovery_in_progress") return false;
+    if (this.destroyed || !this.root.isConnected) return true;
     const detail = error.detail || {};
-    const delay = Math.max(100, Number(detail.retry_after_ms || 250));
+    const delay = window.PASessionRecovery
+      ? window.PASessionRecovery.retryDelayMs(error, this.startupRetryCount++, {
+          minimumMs: 250,
+          maximumMs: 30000,
+        })
+      : Math.min(
+          30000,
+          Math.max(250, Number(detail.retry_after_ms || 250)) *
+            Math.pow(2, Math.min(8, this.startupRetryCount++))
+        );
     this.setPlaceholder("Restoring durable agent sessions…");
     this.setStatus("starting");
     if (this.startupRetryId) clearTimeout(this.startupRetryId);
     const self = this;
     this.startupRetryId = setTimeout(function () {
       self.startupRetryId = null;
+      if (self.destroyed || !self.root.isConnected) return;
       self.init();
     }, delay);
     return true;
@@ -590,6 +607,7 @@
 
   AgentChatWidget.prototype.init = function () {
     const self = this;
+    if (this.destroyed || !this.root.isConnected) return;
     if (this.sessionId) {
       this.openSession(this.sessionId, this.ownerInstanceId, { replace: true }).catch(function () {});
       return;
@@ -609,6 +627,7 @@
 
     boot
       .then(function (snap) {
+        self.startupRetryCount = 0;
         const sid = (snap.session && snap.session.id) || (snap.id) || self.sessionId;
         if (self.drafts) self.drafts.promoteSession(sid);
         self.sessionId = sid;
@@ -616,6 +635,7 @@
         return self.openSession(sid, "", { replace: true });
       })
       .catch(function (err) {
+        if (self.destroyed) return;
         if (self.retryAfterStartupRecovery(err)) return;
         const code = apiErrorCode(err);
         if (code === "session_not_live" || code === "session_deleted") {
@@ -799,6 +819,7 @@
           }).then(function () {
             if (self.startupRetryId) clearTimeout(self.startupRetryId);
             self.startupRetryId = null;
+            self.startupRetryCount = 0;
             return self._loadLiveSnapshot(sessionId, generation);
           });
         }
@@ -2844,78 +2865,160 @@
     }, opts)).then(function (res) {
       if (!res.ok) {
         return res.json().catch(function () { return {}; }).then(function (body) {
-          throw new Error(body.detail || res.statusText || "Request failed");
+          const error = new Error(apiErrorMessage(body, res.statusText || "Request failed"));
+          error.status = res.status;
+          error.detail = body.detail;
+          if (window.PASessionRecovery) {
+            error.retryAfterMs = window.PASessionRecovery.responseRetryAfterMs(
+              res, error.detail
+            );
+          }
+          throw error;
         });
       }
       return res.json();
     });
   }
 
+  let sessionListRecovery = null;
+
+  function renderSessionListState(list, message, blocked) {
+    if (!list || !list.isConnected) return;
+    list.innerHTML = "";
+    const item = document.createElement("li");
+    item.className = blocked ? "status status-blocked" : "muted";
+    item.dataset.agentSessionState = blocked ? "error" : "restoring";
+    item.setAttribute("role", blocked ? "alert" : "status");
+    item.textContent = message;
+    list.appendChild(item);
+    list.setAttribute("aria-busy", blocked ? "false" : "true");
+  }
+
+  function renderSessionList(list, sessions, includeClosed, activeId) {
+    if (!list || !list.isConnected) return;
+    list.innerHTML = "";
+    list.setAttribute("aria-busy", "false");
+    if (!sessions || !sessions.length) {
+      const empty = document.createElement("li");
+      empty.className = "muted";
+      empty.dataset.agentSessionEmpty = "1";
+      empty.textContent = includeClosed
+        ? "No matching session history."
+        : "No live agent sessions yet.";
+      list.appendChild(empty);
+      return;
+    }
+    sessions.forEach(function (s) {
+      const li = document.createElement("li");
+      li.dataset.sessionId = s.id;
+      li.dataset.sessionInstance = s.origin_instance_id || s.instance_id || "";
+      li.dataset.sessionLive = s.live === false || s.status === "closed"
+        ? "false"
+        : "true";
+      li.dataset.sessionRecoverable = s.recovery && s.recovery.recoverable ? "true" : "false";
+      li.setAttribute("role", "button");
+      li.tabIndex = 0;
+      if (activeId && s.id === activeId) li.classList.add("active");
+      const sessionInstanceId = s.origin_instance_id || s.instance_id || "";
+      const sessionIdentity = sessionInstanceId && window.PAInstanceIdentity
+        ? window.PAInstanceIdentity.html(sessionInstanceId)
+        : "";
+      const title = s.title || s.label || "Agent";
+      li.innerHTML =
+        '<strong class="agent-session-title" data-agent-session-title data-full-title="' +
+        escapeHtml(title) + '">' + escapeHtml(title) + "</strong>" +
+        '<span class="agent-session-title-tooltip" role="tooltip">' + escapeHtml(title) + "</span>" +
+        '<dl class="agent-session-metadata">' +
+        metadataField("Instance", sessionIdentity || "Local instance", !!sessionIdentity) +
+        metadataField("Provider", s.agent_name || "Default provider") +
+        metadataField("Model", s.model_id || "Default model") +
+        (s.mode_id ? metadataField("Mode", s.mode_id) : "") +
+        metadataField("Status", s.status || "unknown") +
+        "</dl>" + sessionConfigSummary(s.config_json);
+      if (s.status !== "closed") {
+        const close = document.createElement("button");
+        close.type = "button";
+        close.className = "ghost small danger agent-session-close";
+        close.dataset.agentSessionClose = "1";
+        close.textContent = s.live === false ? "Forget" : "Close";
+        close.title = s.live === false
+          ? "Forget this orphan so it is not retried"
+          : "Close the live session";
+        const actions = document.createElement("span");
+        actions.className = "agent-session-actions";
+        actions.appendChild(close);
+        li.appendChild(actions);
+      }
+      list.appendChild(li);
+    });
+    updateSessionTitleTooltips(list);
+    filterSessionList();
+  }
+
+  function cancelSessionListRecovery(scope, reason) {
+    if (!sessionListRecovery) return;
+    const list = sessionListRecovery.list;
+    const containsList = scope === document || scope === list ||
+      (scope && typeof scope.contains === "function" && scope.contains(list));
+    if (!containsList) return;
+    sessionListRecovery.controller.cancel(reason || "session-list-removed");
+    sessionListRecovery = null;
+  }
+
   function refreshSessionList(activeId) {
     const list = document.querySelector("[data-agent-session-list]");
-    if (!list) return;
+    if (!list) return Promise.resolve(null);
     const toggle = document.querySelector("[data-agent-history-toggle]");
     const includeClosed = !!(toggle && toggle.getAttribute("aria-checked") === "true");
-    csrfFetch(includeClosed ? "/history?limit=500" : "/sessions")
-      .then(function (sessions) {
-        list.innerHTML = "";
-        if (!sessions || !sessions.length) {
-          const empty = document.createElement("li");
-          empty.className = "muted";
-          empty.dataset.agentSessionEmpty = "1";
-          empty.textContent = includeClosed
-            ? "No matching session history."
-            : "No live agent sessions yet.";
-          list.appendChild(empty);
-          return;
-        }
-        sessions.forEach(function (s) {
-          const li = document.createElement("li");
-          li.dataset.sessionId = s.id;
-          li.dataset.sessionInstance = s.origin_instance_id || s.instance_id || "";
-          li.dataset.sessionLive = s.live === false || s.status === "closed"
-            ? "false"
-            : "true";
-          li.dataset.sessionRecoverable = s.recovery && s.recovery.recoverable ? "true" : "false";
-          li.setAttribute("role", "button");
-          li.tabIndex = 0;
-          if (activeId && s.id === activeId) li.classList.add("active");
-          const sessionInstanceId = s.origin_instance_id || s.instance_id || "";
-          const sessionIdentity = sessionInstanceId && window.PAInstanceIdentity
-            ? window.PAInstanceIdentity.html(sessionInstanceId)
-            : "";
-          const title = s.title || s.label || "Agent";
-          li.innerHTML =
-            '<strong class="agent-session-title" data-agent-session-title data-full-title="' +
-            escapeHtml(title) + '">' + escapeHtml(title) + "</strong>" +
-            '<span class="agent-session-title-tooltip" role="tooltip">' + escapeHtml(title) + "</span>" +
-            '<dl class="agent-session-metadata">' +
-            metadataField("Instance", sessionIdentity || "Local instance", !!sessionIdentity) +
-            metadataField("Provider", s.agent_name || "Default provider") +
-            metadataField("Model", s.model_id || "Default model") +
-            (s.mode_id ? metadataField("Mode", s.mode_id) : "") +
-            metadataField("Status", s.status || "unknown") +
-            "</dl>" + sessionConfigSummary(s.config_json);
-          if (s.status !== "closed") {
-            const close = document.createElement("button");
-            close.type = "button";
-            close.className = "ghost small danger agent-session-close";
-            close.dataset.agentSessionClose = "1";
-            close.textContent = s.live === false ? "Forget" : "Close";
-            close.title = s.live === false
-              ? "Forget this orphan so it is not retried"
-              : "Close the live session";
-            const actions = document.createElement("span");
-            actions.className = "agent-session-actions";
-            actions.appendChild(close);
-            li.appendChild(actions);
-          }
-          list.appendChild(li);
-        });
-        updateSessionTitleTooltips(list);
-        filterSessionList();
-      })
-      .catch(function () { /* ignore */ });
+    const path = includeClosed ? "/history?limit=500" : "/sessions";
+    if (sessionListRecovery &&
+        (sessionListRecovery.list !== list || sessionListRecovery.path !== path)) {
+      sessionListRecovery.controller.cancel("session-list-context-changed");
+      sessionListRecovery = null;
+    }
+    if (!sessionListRecovery) {
+      const state = {
+        list: list,
+        path: path,
+        includeClosed: includeClosed,
+        activeId: activeId || "",
+        controller: null,
+      };
+      state.controller = new window.PASessionRecovery.Controller({
+        minimumMs: 250,
+        maximumMs: 30000,
+        operation: function (signal) {
+          return csrfFetch(state.path, { signal: signal });
+        },
+        isActive: function () {
+          return state.list.isConnected;
+        },
+        onSuccess: function (sessions) {
+          renderSessionList(
+            state.list, sessions, state.includeClosed, state.activeId
+          );
+        },
+        onRecovery: function (error) {
+          const detail = error.detail || {};
+          renderSessionListState(
+            state.list,
+            detail.message || "Restoring sessions…",
+            false
+          );
+        },
+        onError: function (error) {
+          renderSessionListState(
+            state.list,
+            error.message || "Could not load agent sessions.",
+            true
+          );
+        },
+      });
+      sessionListRecovery = state;
+    } else {
+      sessionListRecovery.activeId = activeId || "";
+    }
+    return sessionListRecovery.controller.start(false);
   }
 
   function metadataField(label, value, trustedHtml) {
@@ -3363,6 +3466,7 @@
 
   function destroyAll(scope, reason) {
     const target = scope || document;
+    cancelSessionListRecovery(target, reason || "subtree-removed");
     const roots = [];
     if (target.matches && target.matches("[data-agent-chat]")) roots.push(target);
     if (target.querySelectorAll) {
