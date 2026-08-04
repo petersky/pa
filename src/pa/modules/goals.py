@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
@@ -26,6 +28,7 @@ from pa.goals.models import (
     GoalCreate,
     GoalEvidenceCreate,
     GoalMutationContext,
+    GoalProposalCreate,
     GoalRevision,
     GoalState,
     GoalTransition,
@@ -33,8 +36,10 @@ from pa.goals.models import (
 )
 from pa.goals.providers import list_goal_adapter_capabilities
 from pa.goals.service import GoalConflict, GoalService
+from pa.goals.supervisor import GoalSupervisor
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def _service(request: Request) -> GoalService:
@@ -100,6 +105,14 @@ def _run(operation):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+def _wake_supervisor(request: Request) -> None:
+    supervisor: GoalSupervisor | None = request.app.state.ctx.services.get(
+        "goal_supervisor"
+    )
+    if supervisor:
+        supervisor.wake()
+
+
 @router.get("/goals")
 def list_goals(
     request: Request, realm: str | None = None, state: GoalState | None = None
@@ -127,7 +140,9 @@ def create_goal_explicit(
         expected_version=expected_version,
         policy_revision=policy_revision,
     )
-    return _run(lambda: _service(request).create(body, ctx)).model_dump(mode="json")
+    result = _run(lambda: _service(request).create(body, ctx))
+    _wake_supervisor(request)
+    return result.model_dump(mode="json")
 
 
 @router.get("/goals/{goal_id}")
@@ -139,6 +154,51 @@ def get_goal(request: Request, goal_id: str, realm: str | None = None):
         "goal": goal.model_dump(mode="json"),
         "events": _service(request).events(goal_id),
     }
+
+
+@router.post("/goals/{goal_id}/proposals", status_code=202)
+def submit_goal_proposal(
+    request: Request,
+    goal_id: str,
+    body: GoalProposalCreate,
+    expected_version: int,
+    policy_revision: int,
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+    actor: Annotated[str, Header(alias="X-PA-Actor")] = "user:local",
+    authority: Annotated[str | None, Header(alias="X-PA-Authority-Instance")] = None,
+    fencing_token: Annotated[
+        int | None, Header(alias="X-PA-Goal-Fencing-Token")
+    ] = None,
+):
+    ctx = _ctx(
+        request,
+        expected_version,
+        policy_revision,
+        idempotency_key,
+        actor,
+        authority,
+        fencing_token,
+    )
+    result = _run(lambda: _service(request).submit_proposal(goal_id, body, ctx))
+    _wake_supervisor(request)
+    return result.model_dump(mode="json")
+
+
+@router.post("/goals/{goal_id}/supervise")
+async def supervise_goal(request: Request, goal_id: str):
+    supervisor: GoalSupervisor = request.app.state.ctx.require_service(
+        "goal_supervisor"
+    )
+    runtime = request.app.state.ctx.require_service("async_runtime")
+    goals = await runtime.run_blocking(
+        "goal_supervisor.manual_cycle", supervisor.run_once, goal_id
+    )
+    if goals:
+        return goals[0].model_dump(mode="json")
+    goal = _service(request).get(goal_id)
+    if not goal:
+        raise HTTPException(status_code=404, detail="goal not found")
+    return goal.model_dump(mode="json")
 
 
 def _ctx(
@@ -203,9 +263,9 @@ def transition_goal(
         authority,
         fencing_token,
     )
-    return _run(lambda: _service(request).transition(goal_id, body, ctx)).model_dump(
-        mode="json"
-    )
+    result = _run(lambda: _service(request).transition(goal_id, body, ctx))
+    _wake_supervisor(request)
+    return result.model_dump(mode="json")
 
 
 @router.post("/goals/{goal_id}/revisions")
@@ -557,6 +617,28 @@ class GoalsModule(Module):
                 service,
             ),
         )
+        from pa.mcp.local_api import request_local_pa
+
+        def dispatch(payload: dict) -> dict:
+            return request_local_pa(
+                ctx.settings,
+                "POST",
+                "/api/fleet/dispatch",
+                json=payload,
+                timeout_seconds=30.0,
+            )
+
+        supervisor = GoalSupervisor(
+            service,
+            ctx.store,
+            ctx.settings.instance_id,
+            notification_service=ctx.services.get("notifications"),
+            dispatch_store=ctx.services.get("dispatch_store"),
+            dispatch=dispatch,
+        )
+        ctx.register_service("goal_supervisor", supervisor)
+        self._supervisor_stop: asyncio.Event | None = None
+        self._supervisor_task: asyncio.Task[None] | None = None
         ctx.require_service("pages").register(
             PageDefinition(
                 id="goals",
@@ -568,6 +650,35 @@ class GoalsModule(Module):
                 context_builder=_goals_context,
             )
         )
+
+    async def on_startup(self, app, ctx: AppContext) -> None:
+        supervisor: GoalSupervisor = ctx.require_service("goal_supervisor")
+        self._supervisor_stop = asyncio.Event()
+
+        async def supervise() -> None:
+            while self._supervisor_stop and not self._supervisor_stop.is_set():
+                try:
+                    await asyncio.to_thread(supervisor.run_once)
+                except Exception:
+                    logger.exception("Durable goal supervision cycle failed")
+                woke = await asyncio.to_thread(supervisor.wait_for_wakeup, 30)
+                if not woke:
+                    continue
+                if self._supervisor_stop.is_set():
+                    break
+
+        self._supervisor_task = asyncio.create_task(supervise(), name="goal-supervisor")
+
+    async def on_shutdown(self, app, ctx: AppContext) -> None:
+        if self._supervisor_stop:
+            self._supervisor_stop.set()
+            ctx.require_service("goal_supervisor").wake()
+        if self._supervisor_task:
+            try:
+                await asyncio.wait_for(self._supervisor_task, timeout=5)
+            except TimeoutError:
+                self._supervisor_task.cancel()
+                await asyncio.gather(self._supervisor_task, return_exceptions=True)
 
     def api_routers(self):
         return [("/api", router, ["goals"])]
@@ -897,4 +1008,45 @@ class GoalsModule(Module):
                     "X-PA-Authority-Instance": authority_instance_id,
                 },
                 json=policy.model_dump(mode="json"),
+            )
+
+        @mcp.tool()
+        def propose_goal_action(
+            goal_id: str,
+            proposal: GoalProposalCreate,
+            expected_version: int,
+            policy_revision: int,
+            idempotency_key: str,
+            authority_instance_id: str,
+            fencing_token: int | None = None,
+            actor_principal: str = "user:local",
+        ) -> dict:
+            """Submit a typed proposal for deterministic goal authorization."""
+            headers = {
+                "Idempotency-Key": idempotency_key,
+                "X-PA-Actor": actor_principal,
+                "X-PA-Authority-Instance": authority_instance_id,
+            }
+            if fencing_token is not None:
+                headers["X-PA-Goal-Fencing-Token"] = str(fencing_token)
+            return request_local_pa(
+                ctx.settings,
+                "POST",
+                f"/api/goals/{goal_id}/proposals",
+                params={
+                    "expected_version": expected_version,
+                    "policy_revision": policy_revision,
+                },
+                headers=headers,
+                json=proposal.model_dump(mode="json"),
+            )
+
+        @mcp.tool()
+        def supervise_goal(goal_id: str) -> dict:
+            """Run one fenced event-driven supervision cycle for a goal."""
+            return request_local_pa(
+                ctx.settings,
+                "POST",
+                f"/api/goals/{goal_id}/supervise",
+                timeout_seconds=60.0,
             )
