@@ -1917,22 +1917,34 @@
     }
     var capacityEl = $("[data-fleet-capacity]", tr);
     if (capacityEl) {
-      var utilization = (activity.value || {}).capacity || {};
-      var queueUtilization = (activity.value || {}).queue_capacity || {};
+      var observedActivity = activity.value;
+      var utilization = observedActivity && observedActivity.capacity || {};
+      var queueUtilization = observedActivity && observedActivity.queue_capacity || {};
       var configured = utilization.limit || node.dispatch_capacity;
-      var capacityPresentation = fleetCapacityPresentation(
-        activity.value || {}, node.dispatch_capacity
-      );
+      var hasUtilization = !!observedActivity &&
+        utilization.consumed != null && observedActivity.queued_prompts != null;
       capacityEl.removeAttribute("aria-label");
-      capacityEl.innerHTML = configured
-        ? '<strong aria-label="' + escapeHtml(capacityPresentation.summary) +
+      if (configured && hasUtilization) {
+        var capacityPresentation = fleetCapacityPresentation(
+          observedActivity, node.dispatch_capacity
+        );
+        capacityEl.innerHTML = '<strong aria-label="' +
+          escapeHtml(capacityPresentation.summary) +
           '">' + escapeHtml(capacityPresentation.summary) +
           '</strong><span class="muted small">' +
           escapeHtml(capacityPresentation.source) + "</span>" +
-          (queueUtilization.limit == null ? "" : '<span class="muted small">' +
-            escapeHtml(queueUtilization.consumed || 0) + "/" +
-            escapeHtml(queueUtilization.limit) + " waiting</span>")
-        : '<strong>pending</strong><span class="muted small">capacity probe unavailable</span>';
+          (queueUtilization.limit == null || queueUtilization.consumed == null
+            ? "" : '<span class="muted small">' +
+              escapeHtml(queueUtilization.consumed) + "/" +
+              escapeHtml(queueUtilization.limit) + " waiting</span>");
+      } else if (configured) {
+        capacityEl.innerHTML = '<strong>' + escapeHtml(configured) +
+          ' slots configured</strong><span class="muted small">capacity utilization ' +
+          escapeHtml(activity.state || "pending") + "</span>";
+      } else {
+        capacityEl.innerHTML =
+          '<strong>pending</strong><span class="muted small">capacity probe unavailable</span>';
+      }
       setFieldState(capacityEl, activity.state);
     }
     var freshnessEl = $("[data-fleet-freshness]", tr);

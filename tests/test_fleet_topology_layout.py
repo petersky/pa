@@ -83,7 +83,6 @@ class FleetTopologyBrowserLayoutTests(unittest.TestCase):
       cellLabel: cell.getAttribute("aria-label")
     }};
 
-    node.dispatch_capacity = null;
     node.dimensions.activity = {{ state: "unavailable", value: null }};
     window.__paFleetTopology.renderRow(nodeState);
     strong = cell.querySelector("strong");
@@ -128,8 +127,12 @@ class FleetTopologyBrowserLayoutTests(unittest.TestCase):
         self.assertEqual(result["refreshed"]["visible"], expected)
         self.assertEqual(result["refreshed"]["accessible"], expected)
         self.assertIsNone(result["refreshed"]["cellLabel"])
-        self.assertIn("pending", result["unavailable"]["visible"])
-        self.assertIn("capacity probe unavailable", result["unavailable"]["visible"])
+        unavailable = result["unavailable"]["visible"]
+        self.assertIn("4 slots configured", unavailable)
+        self.assertIn("capacity utilization unavailable", unavailable)
+        self.assertNotIn("0/4 slots used", unavailable)
+        self.assertNotIn("0 prompts queued", unavailable)
+        self.assertNotIn(expected, unavailable)
         self.assertIsNone(result["unavailable"]["strongLabel"])
         self.assertIsNone(result["unavailable"]["cellLabel"])
 
