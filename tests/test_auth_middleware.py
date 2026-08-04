@@ -45,6 +45,9 @@ class SyncTokenAuthSeparationTests(unittest.TestCase):
                 Route("/api/agent/quiesce", _ok, methods=["GET", "POST"]),
                 Route("/api/fleet/peer-update-check", _ok, methods=["GET"]),
                 Route("/api/fleet/peer-update", _ok, methods=["POST"]),
+                Route(
+                    "/api/cards/repair-legacy-history", _ok, methods=["POST"]
+                ),
                 Route("/api/fleet/dispatch-jobs", _ok, methods=["GET"]),
                 Route("/api/fleet/peer-update/{operation_id}", _ok, methods=["GET"]),
                 Route("/api/config", _ok, methods=["GET"]),
@@ -142,6 +145,7 @@ class SyncTokenAuthSeparationTests(unittest.TestCase):
             ("POST", "/api/agent/quiesce"),
             ("GET", "/api/fleet/peer-update-check"),
             ("POST", "/api/fleet/peer-update"),
+            ("POST", "/api/cards/repair-legacy-history"),
             ("GET", "/api/fleet/dispatch-jobs"),
             ("GET", "/api/fleet/peer-update/job-123"),
         ]
