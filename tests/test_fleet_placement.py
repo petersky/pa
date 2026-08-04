@@ -550,6 +550,155 @@ def test_consumer_link_omission_counts_unprojectable_active_identity() -> None:
     assert activity["capacity_consumer_links_omitted"] == 1
 
 
+@pytest.mark.parametrize(
+    "state",
+    [
+        "completed",
+        "cancelled",
+        "failed",
+        "running",
+        "waiting_capacity",
+        "blocked",
+    ],
+)
+def test_terminal_and_nonreservation_legacy_dispatch_links_are_omitted(
+    state: str,
+) -> None:
+    activity = normalize_activity_capacity(
+        {
+            "active_capacity_consumers": 0,
+            "dispatch_reservations": 1,
+            "capacity_consumer_links": [
+                {
+                    "kind": "dispatch",
+                    "dispatch_id": f"legacy-{state}",
+                    "state": state,
+                    "slots": 10,
+                }
+            ],
+        },
+        authority_snapshot={
+            "dispatch_reservations": 0,
+            "dispatch_waiting": 0,
+            "reservation_links": [],
+        },
+    )
+
+    assert activity["capacity_consumer_links"] == []
+    assert activity["capacity_consumer_link_count"] == 0
+    assert activity["capacity_consumer_links_omitted"] == 1
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        "queued",
+        "checking_sync",
+        "materializing",
+        "provisioning",
+        "starting_session",
+        "delivering_prompt",
+    ],
+)
+def test_active_legacy_reservation_link_projects_one_slot(state: str) -> None:
+    activity = normalize_activity_capacity(
+        {
+            "active_capacity_consumers": 0,
+            "dispatch_reservations": 1,
+            "capacity_consumer_links": [
+                {
+                    "kind": "dispatch",
+                    "dispatch_id": "legacy-reservation",
+                    "state": state,
+                    "slots": 10,
+                }
+            ],
+        }
+    )
+
+    assert activity["capacity_consumer_links"] == [
+        {
+            "kind": "dispatch",
+            "dispatch_id": "legacy-reservation",
+            "state": state,
+            "slots": 1,
+            "consumer_id": "dispatch:legacy-reservation",
+        }
+    ]
+    assert activity["capacity_consumer_links_omitted"] == 0
+
+
+def test_authoritative_reservation_link_precedes_legacy_projection() -> None:
+    activity = normalize_activity_capacity(
+        {
+            "active_capacity_consumers": 0,
+            "dispatch_reservations": 1,
+            "capacity_consumer_links": [
+                {
+                    "kind": "dispatch",
+                    "dispatch_id": "reservation-1",
+                    "href": "/legacy/reservation-1",
+                    "state": "queued",
+                    "slots": 10,
+                }
+            ],
+        },
+        authority_snapshot={
+            "dispatch_reservations": 1,
+            "dispatch_waiting": 0,
+            "reservation_links": [
+                {
+                    "kind": "dispatch",
+                    "dispatch_id": "reservation-1",
+                    "href": "/authority/reservation-1",
+                    "state": "materializing",
+                    "slots": 1,
+                }
+            ],
+        },
+    )
+
+    assert activity["capacity_consumer_links"] == [
+        {
+            "kind": "dispatch",
+            "dispatch_id": "reservation-1",
+            "href": "/authority/reservation-1",
+            "state": "materializing",
+            "slots": 1,
+            "consumer_id": "dispatch:reservation-1",
+        }
+    ]
+    assert activity["capacity_consumer_links_omitted"] == 0
+
+
+def test_reservation_link_omission_counts_unverifiable_identity() -> None:
+    activity = normalize_activity_capacity(
+        {
+            "active_capacity_consumers": 0,
+            "dispatch_reservations": 2,
+            "capacity_consumer_links": [
+                {
+                    "kind": "dispatch",
+                    "dispatch_id": "known-reservation",
+                    "state": "starting_session",
+                },
+                {
+                    "kind": "dispatch",
+                    "dispatch_id": "terminal-dispatch",
+                    "state": "completed",
+                },
+                {"kind": "dispatch", "dispatch_id": "missing-state"},
+            ],
+        }
+    )
+
+    assert [item["consumer_id"] for item in activity["capacity_consumer_links"]] == [
+        "dispatch:known-reservation"
+    ]
+    assert activity["capacity_consumer_link_count"] == 1
+    assert activity["capacity_consumer_links_omitted"] == 1
+
+
 def test_authority_overlay_normalizes_session_and_reservation_identities(
     tmp_path: Path,
 ) -> None:

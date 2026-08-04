@@ -21,6 +21,19 @@ DispatchQueueCapacity = Annotated[
     int, Field(ge=0, le=MAX_DISPATCH_QUEUE_CAPACITY, strict=True)
 ]
 
+# Mixed-version peers can only backfill a durable reservation identity when its
+# projected dispatch state canonically holds a pre-session execution slot.
+LEGACY_RESERVATION_CONSUMER_STATES = frozenset(
+    {
+        "queued",
+        "checking_sync",
+        "materializing",
+        "provisioning",
+        "starting_session",
+        "delivering_prompt",
+    }
+)
+
 
 class EffectiveCapacity(BaseModel):
     """Effective global/provider limit and where the value came from."""
@@ -302,7 +315,11 @@ def normalize_capacity_consumer_links(
     )[: min(counts["active"], limit)]
     authoritative_reservations = deduplicate_consumer_links(reservation_links or [])
     existing_reservations = [
-        item for item in existing if item.get("kind") == "dispatch"
+        item
+        for item in existing
+        if item.get("kind") == "dispatch"
+        and str(item.get("state") or item.get("status") or "").strip().lower()
+        in LEGACY_RESERVATION_CONSUMER_STATES
     ]
     remaining = max(0, limit - len(normalized_sessions))
     normalized_reservations = deduplicate_consumer_links(
