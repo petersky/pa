@@ -196,7 +196,17 @@
     return body;
   }
 
-  function lineSegments(points, width, height, min, max, bucketSeconds, domainStart, domainEnd) {
+  function gapInterrupts(gaps, previousTime, currentTime) {
+    if (previousTime === null) return false;
+    return (gaps || []).some(function (gap) {
+      if (gap.partial) return false;
+      const start = Date.parse(gap.start); const end = Date.parse(gap.end);
+      return Number.isFinite(start) && Number.isFinite(end) &&
+        start <= currentTime && end > previousTime;
+    });
+  }
+
+  function lineSegments(points, width, height, min, max, bucketSeconds, domainStart, domainEnd, gaps) {
     const seen = new Set();
     const observations = (points || []).map(normalizeObservation).filter(function (item) {
       if (!inDomainTimestamp(item.timestamp, domainStart, domainEnd) ||
@@ -206,6 +216,7 @@
     const segments = []; let current = []; let previousTime = null;
     observations.forEach(function (observation) {
       const interrupted = observation.reason ||
+        gapInterrupts(gaps, previousTime, observation.timestamp) ||
         (previousTime !== null && observation.timestamp - previousTime > bucketSeconds * 2500) ||
         (observation.point && observation.point.restart);
       if (interrupted && current.length) { segments.push(current); current = []; }
@@ -499,8 +510,10 @@
       const pathBudget = Math.max(1, Math.floor(MAX_CHART_PATH_POINTS / selected.length));
       const markerBudget = Math.floor(MAX_CHART_MARKERS / selected.length);
       selected.forEach(function (series) {
+        const seriesBucketSeconds = Number(series.bucket_seconds || data.bucket_seconds);
         const rawSegments = lineSegments(
-          series.points, 800, 220, min, max, data.bucket_seconds, domainStart, domainEnd
+          series.points, 800, 220, min, max, seriesBucketSeconds,
+          domainStart, domainEnd, series.gaps
         );
         const segments = boundedSegments(rawSegments, pathBudget);
         chart._cursorTimestamps.push.apply(chart._cursorTimestamps,
@@ -686,6 +699,7 @@
       gapLabel: gapLabel,
       inDomainTimestamp: inDomainTimestamp,
       timeX: timeX,
+      gapInterrupts: gapInterrupts,
       lineSegments: lineSegments,
       downsamplePoints: downsamplePoints,
       boundedSegments: boundedSegments,

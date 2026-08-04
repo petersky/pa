@@ -410,6 +410,8 @@ async def fleet_query(request: Request, body: QueryBody) -> dict:
     body.card_ids = []
     local_query = _make_query(request, body, force_instance=True)
     combined = _service(request).storage.query(local_query)
+    for series in combined.get("series") or []:
+        series.setdefault("bucket_seconds", combined["bucket_seconds"])
     failures = []
     ctx = request.app.state.ctx
     client = ctx.services.get("fleet_http_client")
@@ -453,7 +455,21 @@ async def fleet_query(request: Request, body: QueryBody) -> dict:
                     }
                 )
             else:
-                combined["series"].extend(response.get("series") or [])
+                peer_bucket = (
+                    response.get("bucket_seconds") or local_query.bucket_seconds
+                )
+                for series in response.get("series") or []:
+                    series.setdefault("bucket_seconds", peer_bucket)
+                    combined["series"].append(series)
+    bucket_seconds_values = sorted(
+        {
+            int(series.get("bucket_seconds") or combined["bucket_seconds"])
+            for series in combined["series"]
+        }
+        or {combined["bucket_seconds"]}
+    )
+    combined["bucket_seconds_values"] = bucket_seconds_values
+    combined["mixed_bucket_seconds"] = len(bucket_seconds_values) > 1
     combined["failures"] = failures
     return combined
 

@@ -606,9 +606,9 @@ class StorageTests(unittest.TestCase):
     def test_restart_and_missing_semantics_survive_rollup_queries(self) -> None:
         timestamp = (self.now - timedelta(days=10)).replace(second=0, microsecond=0)
         timestamp -= timedelta(minutes=timestamp.minute % 5)
-        timestamp += timedelta(minutes=4, seconds=50)
+        timestamp += timedelta(minutes=4, seconds=59)
         samples = []
-        for offset, restart_id in ((0, "before"), (20, "after")):
+        for offset, restart_id in ((0, "before"), (2, "after")):
             item = TelemetrySample(
                 timestamp=timestamp + timedelta(seconds=offset),
                 instance_id="instance-a",
@@ -962,6 +962,29 @@ assert.strictEqual(segments.length, 2);
 assert.deepStrictEqual(segments.map(function (segment) {
   return segment.map(function (point) { return point.observation.value; });
 }), [[0], [5]]);
+const absentBucketPoints = [
+  {timestamp: "2026-01-01T00:01:00Z", avg: 1, value_count: 1, quality: "measured"},
+  {timestamp: "2026-01-01T00:03:00Z", avg: 3, value_count: 1, quality: "measured"}
+];
+const absentBucketGap = [{
+  reason: "no_sample", start: "2026-01-01T00:02:00Z", end: "2026-01-01T00:03:00Z"
+}];
+assert.strictEqual(
+  model.lineSegments(absentBucketPoints, 800, 220, 0, 3, 60, start, end).length, 1
+);
+assert.strictEqual(
+  model.lineSegments(absentBucketPoints, 800, 220, 0, 3, 60, start, end, absentBucketGap).length, 2
+);
+assert.strictEqual(
+  model.lineSegments(absentBucketPoints, 800, 220, 0, 3, 60, start, end, [
+    {...absentBucketGap[0], partial: true}
+  ]).length, 1
+);
+const differentlyBucketed = [absentBucketPoints[0], {
+  timestamp: "2026-01-01T00:05:00Z", avg: 5, value_count: 1, quality: "measured"
+}];
+assert.strictEqual(model.lineSegments(differentlyBucketed, 800, 220, 0, 5, 60, start, end).length, 2);
+assert.strictEqual(model.lineSegments(differentlyBucketed, 800, 220, 0, 5, 300, start, end).length, 1);
 const sameTimeA = model.lineSegments([zero], 800, 220, 0, 5, 60, start, end)[0][0].x;
 const sameTimeB = model.lineSegments([
   {timestamp: zero.timestamp, avg: 4, value_count: 1, quality: "measured"}
@@ -1134,6 +1157,7 @@ assert.ok(markers <= model.MAX_CHART_MARKERS);
         self.assertIn("Value or gap reason", template)
         self.assertIn("series.unit === unit", script)
         self.assertIn("genuine measured zero", script)
+        self.assertIn("series.bucket_seconds || data.bucket_seconds", script)
         self.assertIn("drawAccessibleTable(report, data, 0)", script)
 
 
@@ -1190,6 +1214,80 @@ class TelemetryAPITests(unittest.TestCase):
             remote_body = peer_query.await_args.kwargs["body"]
             self.assertEqual(remote_body["start"], start.isoformat())
             self.assertEqual(remote_body["end"], end.isoformat())
+
+    def test_fleet_query_preserves_each_peer_effective_bucket_seconds(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            storage = TelemetryStorage(Path(tmp) / "telemetry.db")
+            start = datetime(2026, 1, 1, tzinfo=UTC)
+            end = start + timedelta(hours=1)
+            storage.insert_samples([sample(start + timedelta(minutes=1))])
+            telemetry = SimpleNamespace(storage=storage)
+            services = {
+                "fleet_http_client": object(),
+                "fleet_registry": SimpleNamespace(
+                    list_instances=lambda: [
+                        SimpleNamespace(instance_id="peer-a", url="http://peer-a")
+                    ]
+                ),
+            }
+            ctx = SimpleNamespace(
+                settings=SimpleNamespace(instance_id="instance-a", sync_token=""),
+                services=services,
+                require_service=lambda name: (
+                    telemetry if name == "telemetry" else services[name]
+                ),
+            )
+            request = SimpleNamespace(
+                app=SimpleNamespace(state=SimpleNamespace(ctx=ctx)),
+                state=SimpleNamespace(
+                    instance_authenticated=False,
+                    user_authenticated=True,
+                ),
+            )
+            peer_response = {
+                "start": start.isoformat(),
+                "end": end.isoformat(),
+                "bucket_seconds": 300,
+                "series": [
+                    {
+                        "instance_id": "peer-a",
+                        "instance_name": "Peer A",
+                        "scope_type": "instance",
+                        "scope_id": "peer-a",
+                        "provider_id": None,
+                        "card_id": None,
+                        "project_id": None,
+                        "realm_id": None,
+                        "metric": "cpu.utilization",
+                        "unit": "percent",
+                        "points": [
+                            {
+                                "timestamp": (start + timedelta(minutes=5)).isoformat(),
+                                "avg": 50,
+                                "value_count": 1,
+                                "sample_count": 1,
+                                "quality": "measured",
+                            }
+                        ],
+                        "gaps": [],
+                    }
+                ],
+            }
+            with patch("pa.modules.telemetry._peer_json", return_value=peer_response):
+                response = asyncio.run(
+                    fleet_query(
+                        request,
+                        QueryBody(start=start, end=end, bucket_seconds=60),
+                    )
+                )
+
+            by_instance = {
+                series["instance_id"]: series for series in response["series"]
+            }
+            self.assertEqual(by_instance["instance-a"]["bucket_seconds"], 60)
+            self.assertEqual(by_instance["peer-a"]["bucket_seconds"], 300)
+            self.assertEqual(response["bucket_seconds_values"], [60, 300])
+            self.assertTrue(response["mixed_bucket_seconds"])
 
     def test_endpoints_enforce_principal_visibility_and_bounded_ranges(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

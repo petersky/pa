@@ -551,6 +551,7 @@ class TelemetryStorage:
                     "realm_id": key[7] or None,
                     "metric": key[8],
                     "unit": key[9],
+                    "bucket_seconds": bucket,
                     "points": self._typed_points(points),
                     "gaps": self._series_gaps(
                         points,
