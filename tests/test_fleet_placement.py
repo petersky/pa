@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import inspect
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
@@ -462,6 +463,174 @@ def test_placement_ignores_same_session_backlog_and_deduplicates_consumers(
             "consumer_id": "session:session-1",
         }
     ]
+
+
+def test_authority_overlay_normalizes_session_and_reservation_identities(
+    tmp_path: Path,
+) -> None:
+    from pa.fleet.overview import build_overview
+    from pa.fleet.workshop import build_workshop_snapshot
+    from pa.modules.fleet import _placement_candidates
+
+    target = FleetInstance(
+        instance_id="remote",
+        name="Remote",
+        url="http://remote.test:8080",
+        capabilities=["capacity:2"],
+        dispatch_capacity=2,
+    )
+    legacy_activity = {
+        "state": "working",
+        "active_capacity_consumers": 1,
+        "queued_prompts": 9,
+        "dispatch_reservations": 0,
+        "capacity": {"limit": 2, "consumed": 10},
+        "provider_concurrency": {
+            "codex": {
+                "active_capacity_consumers": 1,
+                "queued_prompts": 9,
+                "dispatch_reservations": 0,
+            }
+        },
+        "capacity_consumer_links": [
+            {
+                "kind": "session",
+                "session_id": "session-1",
+                "href": "/agent?session=session-1",
+                "state": "working",
+                "slots": 10,
+            },
+            {
+                "kind": "session",
+                "session_id": "session-1",
+                "href": "/agent?session=session-1",
+                "state": "working",
+                "slots": 10,
+            },
+        ],
+        "sessions": [
+            {
+                "id": "session-1",
+                "realm_id": "default",
+                "status": "working",
+                "provider": "codex",
+            }
+        ],
+        "dispatches": [],
+    }
+    ledger = DispatchStore(tmp_path)
+    reservation = _record(
+        key="authority-reservation",
+        fingerprint="authority-reservation",
+        target="remote",
+        card_id="card-reserved",
+    )
+    reservation.dispatch_id = "dispatch-reserved"
+    reservation.capacity_provider = "codex"
+    ledger.put(reservation)
+
+    class IndexedReadSentinel(dict):
+        def values(self):
+            raise AssertionError("capacity snapshot scanned the full dispatch ledger")
+
+    original_records = ledger._records
+    ledger._records = IndexedReadSentinel(original_records)
+    indexed_snapshot = ledger.capacity_snapshot("remote")
+    ledger._records = original_records
+    assert indexed_snapshot["dispatch_reservations"] == 1
+    assert [item["dispatch_id"] for item in indexed_snapshot["reservation_links"]] == [
+        "dispatch-reserved"
+    ]
+
+    settings = Settings(
+        data_dir=tmp_path,
+        instance_id="authority",
+        instance_name="Authority",
+        instance_url="http://authority.test:8080",
+    )
+    ctx = MagicMock(settings=settings)
+    ctx.services = {"dispatch_store": ledger}
+    ctx.store.list_sessions.return_value = []
+    ctx.store.list_repositories.return_value = []
+    ctx.store.get_projection_head.return_value = "head"
+    ctx.store.list_cards.return_value = []
+    ctx.store.list_projects.return_value = []
+    ctx.store.get_card.return_value = None
+    ctx.store.count_cards.return_value = 0
+
+    def cached_dimension(_cache, _instance, dimension):
+        values = {
+            "reachability": {"health": "up"},
+            "activity": legacy_activity,
+            "providers": [
+                {
+                    "id": "codex",
+                    "available": True,
+                    "auth_state": "authenticated",
+                    "models": ["gpt-5"],
+                }
+            ],
+            "mcp_bootstrap": {"classification": "ready"},
+            "repositories": {"observations": [], "workspaces": []},
+            "sync": {"consistent": True},
+        }
+        return _fresh(values.get(dimension, {}))
+
+    with patch(
+        "pa.fleet.overview._cached_or_default",
+        side_effect=cached_dimension,
+    ):
+        overview = build_overview(ctx, [target], [])
+
+    overview_activity = overview["nodes"][0]["dimensions"]["activity"]["value"]
+    expected_links = [
+        {
+            "kind": "session",
+            "session_id": "session-1",
+            "href": "/agent?session=session-1",
+            "state": "working",
+            "slots": 1,
+            "consumer_id": "session:session-1",
+        },
+        {
+            "kind": "dispatch",
+            "dispatch_id": "dispatch-reserved",
+            "card_id": "card-reserved",
+            "href": "/?card=card-reserved",
+            "state": "queued",
+            "slots": 1,
+            "consumer_id": "dispatch:dispatch-reserved",
+        },
+    ]
+    assert overview_activity["capacity"]["consumed"] == 2
+    assert overview_activity["queued_prompts"] == 9
+    assert overview_activity["capacity_consumer_links"] == expected_links
+    assert overview_activity["capacity_consumer_links_omitted"] == 0
+
+    workshop = build_workshop_snapshot(ctx, overview)
+    assert workshop["bays"][0]["capacity"]["consumer_links"] == expected_links
+
+    async def probe(_ctx, _instance, dimension, *, force=False):
+        return cached_dimension(None, _instance, dimension)
+
+    request = MagicMock()
+    request.app.state.ctx = ctx
+    with patch("pa.modules.fleet.probe_dimension", side_effect=probe):
+        candidates = asyncio.run(_placement_candidates(request, [target]))
+
+    candidate_activity = candidates[0].activity["value"]
+    assert candidate_activity["capacity"]["consumed"] == 2
+    assert candidate_activity["capacity_consumer_links"] == expected_links
+    with pytest.raises(PlacementError) as raised:
+        PlacementService(RoundRobinCursorStore(tmp_path)).resolve(
+            _request(PlacementPolicy.BEST_MATCH), candidates
+        )
+    rejected = raised.value.rejected_candidates[0]
+    assert rejected["consumed"] == 2
+    assert rejected["reserved"] == 1
+    assert rejected["queued"] == 9
+    assert rejected["consumer_links"] == expected_links
+    assert rejected["consumer_links_omitted"] == 0
 
 
 def test_mixed_version_session_states_override_legacy_consumed_total() -> None:

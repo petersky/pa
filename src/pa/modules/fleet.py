@@ -113,7 +113,7 @@ from pa.fleet.bootstrap import (
     discover_target,
     run_bootstrap_job,
 )
-from pa.fleet.capacity import workload_counts
+from pa.fleet.capacity import normalize_activity_capacity
 from pa.fleet.control_plane import build_control_plane_status
 from pa.fleet.convergence import MembershipConvergenceStore
 from pa.fleet.credentials import CredentialRotationStore
@@ -5559,47 +5559,16 @@ async def _placement_candidates(
             )
         )
         dispatch_store = ctx.services.get("dispatch_store")
-        if (
-            isinstance(dispatch_store, DispatchStore)
-            and activity.get("state") == "fresh"
-        ):
-            authority_counts = dispatch_store.capacity_snapshot(inst.instance_id)
-            value = dict(activity.get("value") or {})
-            value["dispatch_reservations"] = max(
-                int(value.get("dispatch_reservations") or 0),
-                authority_counts["dispatch_reservations"],
+        if activity.get("state") == "fresh":
+            authority_snapshot = (
+                dispatch_store.capacity_snapshot(inst.instance_id)
+                if isinstance(dispatch_store, DispatchStore)
+                else None
             )
-            value["dispatch_waiting"] = max(
-                int(value.get("dispatch_waiting") or 0),
-                authority_counts["dispatch_waiting"],
+            value = normalize_activity_capacity(
+                dict(activity.get("value") or {}),
+                authority_snapshot=authority_snapshot,
             )
-            if value.get("queue_capacity"):
-                queue_capacity = dict(value["queue_capacity"])
-                queue_capacity["consumed"] = max(
-                    int(queue_capacity.get("consumed") or 0),
-                    authority_counts["dispatch_waiting"],
-                )
-                value["queue_capacity"] = queue_capacity
-            provider_concurrency = {
-                key: dict(counts)
-                for key, counts in (value.get("provider_concurrency") or {}).items()
-            }
-            for provider, counts in authority_counts["provider_concurrency"].items():
-                current = provider_concurrency.setdefault(provider, {})
-                for key, count in counts.items():
-                    current[key] = max(int(current.get(key) or 0), count)
-            value["provider_concurrency"] = provider_concurrency
-            if value.get("capacity"):
-                capacity = dict(value["capacity"])
-                capacity["consumed"] = workload_counts(value)["consumed"]
-                value["capacity"] = capacity
-            activity = {**activity, "value": value}
-        elif activity.get("state") == "fresh":
-            value = dict(activity.get("value") or {})
-            if value.get("capacity"):
-                capacity = dict(value["capacity"])
-                capacity["consumed"] = workload_counts(value)["consumed"]
-                value["capacity"] = capacity
             activity = {**activity, "value": value}
         return PlacementCandidate(
             instance_id=inst.instance_id,

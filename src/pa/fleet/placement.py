@@ -20,9 +20,9 @@ from pa.fleet.capacity import (
     DispatchQueueCapacity,
     EffectiveCapacity,
     EffectiveQueueCapacity,
-    deduplicate_consumer_links,
     effective_capacity,
     effective_queue_capacity,
+    normalize_capacity_consumer_links,
     workload_counts,
 )
 from pa.fleet.policy import (
@@ -714,6 +714,7 @@ def _evaluate(
         "available_capacity": max(0.0, 1.0 - normalized),
         "normalized_workload": normalized,
     }
+    consumer_links = normalize_capacity_consumer_links(activity_value)
     detail = {
         "instance_id": candidate.instance_id,
         "name": candidate.name,
@@ -740,8 +741,10 @@ def _evaluate(
         "provider_workload": provider_counts,
         "global_queue_count": global_waiting_count,
         "provider_queue_count": provider_waiting_count,
-        "consumer_links": (_envelope(candidate, "activity").get("value") or {}).get(
-            "capacity_consumer_links", []
+        "consumer_links": consumer_links,
+        "consumer_link_count": len(consumer_links),
+        "consumer_links_omitted": max(
+            0, global_counts["consumed"] - len(consumer_links)
         ),
         "cached_repository_ids": cached_repositories,
         "freshness": _freshness(candidate),
@@ -757,7 +760,6 @@ def _evaluate(
         "policy_reason": policy.reason,
         "rejection_codes": rejection_codes,
     }
-    detail["consumer_links"] = deduplicate_consumer_links(detail["consumer_links"])
     return reasons, scores, detail
 
 

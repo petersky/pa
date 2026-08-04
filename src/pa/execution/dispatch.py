@@ -66,6 +66,7 @@ CAPACITY_RESERVATION_STATES = {
 }
 QUEUE_CONSUMING_STATES = {"waiting_capacity", "blocked"}
 CAPACITY_RESERVATION_TTL = timedelta(hours=1)
+CAPACITY_CONSUMER_LINK_LIMIT = 256
 RECOVERABLE_DISPATCH_STATES = {
     "checking_sync",
     "materializing",
@@ -456,6 +457,9 @@ class DispatchStore:
         self._latest_card_records: dict[str, DispatchRecord] = {}
         self._latest_session_records: dict[tuple[str, str], DispatchRecord] = {}
         self._history_counts: dict[tuple[str, str], int] = {}
+        self._capacity_records_by_target: dict[
+            str, tuple[DispatchRecord, ...]
+        ] = {}
         self._lock = RLock()
         try:
             metrics = json.loads(self.metrics_path.read_text())
@@ -517,6 +521,20 @@ class DispatchStore:
                 key = (record.realm_id, record.card_id)
                 counts[key] = counts.get(key, 0) + 1
         self._history_counts = counts
+
+    def _rebuild_capacity_records_locked(self) -> None:
+        indexed: dict[str, list[DispatchRecord]] = {}
+        capacity_states = CAPACITY_RESERVATION_STATES | QUEUE_CONSUMING_STATES
+        for record in self._records.values():
+            if record.state not in capacity_states:
+                continue
+            indexed.setdefault(record.target_instance_id, []).append(record)
+        self._capacity_records_by_target = {
+            target: tuple(
+                sorted(records, key=lambda item: item.updated_at, reverse=True)
+            )
+            for target, records in indexed.items()
+        }
 
     def _update_history_count_locked(
         self,
@@ -614,6 +632,7 @@ class DispatchStore:
         self._rebuild_latest_card_records_locked()
         self._rebuild_latest_session_records_locked()
         self._rebuild_history_counts_locked()
+        self._rebuild_capacity_records_locked()
         for record in self._records.values():
             if (
                 record.card_id
@@ -632,6 +651,7 @@ class DispatchStore:
     def _save(self) -> None:
         self._rebuild_latest_card_records_locked()
         self._rebuild_latest_session_records_locked()
+        self._rebuild_capacity_records_locked()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         atomic_write_json(
             self.path,
@@ -719,14 +739,18 @@ class DispatchStore:
         return [record.card_id for record in records[:limit] if record.card_id]
 
     def capacity_snapshot(self, target_instance_id: str) -> dict[str, Any]:
-        """Return authority-local reservations and waiting work for one target."""
+        """Return indexed authority reservations and waiting work for one target."""
 
-        self.expire_capacity_reservations()
+        self.expire_capacity_reservations(target_instance_id=target_instance_id)
         with self._lock:
-            records = [
+            records = self._capacity_records_by_target.get(target_instance_id, ())
+            reservations = [
                 record
-                for record in self._records.values()
-                if record.target_instance_id == target_instance_id
+                for record in records
+                if record.state in CAPACITY_RESERVATION_STATES
+            ]
+            waiting = [
+                record for record in records if record.state in QUEUE_CONSUMING_STATES
             ]
             providers: dict[str, dict[str, int]] = {}
             for record in records:
@@ -738,14 +762,27 @@ class DispatchStore:
                     counts["dispatch_reservations"] += 1
                 if record.state in QUEUE_CONSUMING_STATES:
                     counts["dispatch_waiting"] += 1
+            projected = reservations[:CAPACITY_CONSUMER_LINK_LIMIT]
             return {
-                "dispatch_reservations": sum(
-                    record.state in CAPACITY_RESERVATION_STATES for record in records
-                ),
-                "dispatch_waiting": sum(
-                    record.state in QUEUE_CONSUMING_STATES for record in records
-                ),
+                "dispatch_reservations": len(reservations),
+                "dispatch_waiting": len(waiting),
                 "provider_concurrency": providers,
+                "reservation_links": [
+                    {
+                        "kind": "dispatch",
+                        "dispatch_id": record.dispatch_id,
+                        "card_id": record.card_id,
+                        "href": (
+                            f"/?card={record.card_id}" if record.card_id else "/fleet"
+                        ),
+                        "state": record.state,
+                        "slots": 1,
+                    }
+                    for record in projected
+                ],
+                "reservation_links_omitted": max(
+                    0, len(reservations) - len(projected)
+                ),
             }
 
     def by_session(self, session_id: str) -> DispatchRecord | None:
@@ -1698,14 +1735,26 @@ class DispatchStore:
         return self.transition(record, "failed", message, detail=detail)
 
     def expire_capacity_reservations(
-        self, *, now: datetime | None = None
+        self,
+        *,
+        now: datetime | None = None,
+        target_instance_id: str | None = None,
     ) -> list[DispatchRecord]:
         """Fail timed-out pre-start work and durably release its slot."""
 
         checked_at = now or datetime.now(UTC)
         expired: list[DispatchRecord] = []
         with self._lock:
-            for record in self._records.values():
+            candidates = (
+                self._capacity_records_by_target.get(target_instance_id, ())
+                if target_instance_id
+                else tuple(
+                    record
+                    for records in self._capacity_records_by_target.values()
+                    for record in records
+                )
+            )
+            for record in candidates:
                 if (
                     record.state not in CAPACITY_RESERVATION_STATES
                     or record.capacity_reservation_expires_at is None

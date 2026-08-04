@@ -138,6 +138,15 @@ def _overview():
                                 "source": "configured",
                             },
                             "queued_prompts": 9,
+                            "capacity_consumer_links": [
+                                {
+                                    "kind": "session",
+                                    "session_id": "session",
+                                    "slots": 1,
+                                    "consumer_id": "session:session",
+                                }
+                            ],
+                            "capacity_consumer_links_omitted": 0,
                             "sessions": [
                                 {
                                     "id": "session",
@@ -181,6 +190,15 @@ def test_workshop_maps_each_session_and_card_to_canonical_state():
         "limit": 2,
         "source": "configured",
         "queued_prompts": 9,
+        "consumer_links": [
+            {
+                "kind": "session",
+                "session_id": "session",
+                "slots": 1,
+                "consumer_id": "session:session",
+            }
+        ],
+        "consumer_links_omitted": 0,
     }
     assert snapshot["areas"]["inbox"][0]["id"] == "inbox"
     assert snapshot["areas"]["active"][0]["id"] == "active"

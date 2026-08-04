@@ -24,7 +24,7 @@ from pa.fleet.capacity import (
     deduplicate_consumer_links,
     effective_capacity,
     effective_queue_capacity,
-    workload_counts,
+    normalize_activity_capacity,
 )
 from pa.fleet.update import TERMINAL_PHASES
 from pa.pr_supervisor.models import (
@@ -1130,44 +1130,16 @@ def build_overview(
                 ) as exc:
                     dimensions[dimension] = field("error", None, error=str(exc))
         activity = dimensions.get("activity") or {}
-        if dispatch_store and activity.get("state") == "fresh":
-            authority_counts = dispatch_store.capacity_snapshot(inst.instance_id)
-            value = dict(activity.get("value") or {})
-            value["dispatch_reservations"] = max(
-                int(value.get("dispatch_reservations") or 0),
-                authority_counts["dispatch_reservations"],
+        if activity.get("state") == "fresh":
+            authority_snapshot = (
+                dispatch_store.capacity_snapshot(inst.instance_id)
+                if dispatch_store
+                else None
             )
-            value["dispatch_waiting"] = max(
-                int(value.get("dispatch_waiting") or 0),
-                authority_counts["dispatch_waiting"],
+            value = normalize_activity_capacity(
+                dict(activity.get("value") or {}),
+                authority_snapshot=authority_snapshot,
             )
-            if value.get("queue_capacity"):
-                queue_capacity = dict(value["queue_capacity"])
-                queue_capacity["consumed"] = max(
-                    int(queue_capacity.get("consumed") or 0),
-                    authority_counts["dispatch_waiting"],
-                )
-                value["queue_capacity"] = queue_capacity
-            provider_concurrency = {
-                key: dict(counts)
-                for key, counts in (value.get("provider_concurrency") or {}).items()
-            }
-            for provider, counts in authority_counts["provider_concurrency"].items():
-                current = provider_concurrency.setdefault(provider, {})
-                for key, count in counts.items():
-                    current[key] = max(int(current.get(key) or 0), count)
-            value["provider_concurrency"] = provider_concurrency
-            if value.get("capacity"):
-                capacity = dict(value["capacity"])
-                capacity["consumed"] = workload_counts(value)["consumed"]
-                value["capacity"] = capacity
-            dimensions["activity"] = {**activity, "value": value}
-        elif activity.get("state") == "fresh":
-            value = dict(activity.get("value") or {})
-            if value.get("capacity"):
-                capacity = dict(value["capacity"])
-                capacity["consumed"] = workload_counts(value)["consumed"]
-                value["capacity"] = capacity
             dimensions["activity"] = {**activity, "value": value}
         node = {
             "id": inst.instance_id,
