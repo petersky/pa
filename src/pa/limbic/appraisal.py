@@ -164,6 +164,7 @@ class LimbicService:
         self._provider_probe: _ProviderProbe | None = None
         self._provider_tasks: queue.Queue[_ProviderTask] = queue.Queue(maxsize=1)
         self._provider_worker: threading.Thread | None = None
+        self._provider_thread_name = f"pa-limbic-provider-{id(self):x}"
 
     def appraise(
         self,
@@ -176,14 +177,8 @@ class LimbicService:
         caller_claimed_trust = bool(
             signal.trusted_control or signal.control_provenance != "untrusted"
         )
-        provenance_supplied = control_provenance is not None
-        provenance_issued = bool(
-            control_provenance and control_provenance._issued_by(self._control_issuer)
-        )
-        provenance = (
+        provenance, provenance_rejected = self._validated_control_provenance(
             control_provenance
-            if provenance_issued and control_provenance is not None
-            else VerifiedControlProvenance()
         )
         emergency_rule = self._emergency_rule(signal, provenance)
 
@@ -213,9 +208,7 @@ class LimbicService:
             signal.event_class in _PRIVILEGED_EVENT_ALIASES and not emergency_rule
         ):
             diagnostics.append(_diagnostic("control_provenance_spoof", "security"))
-        if (provenance_supplied and not provenance_issued) or (
-            provenance.control_event and not emergency_rule
-        ):
+        if provenance_rejected or (provenance.control_event and not emergency_rule):
             diagnostics.append(_diagnostic("control_provenance_rejected", "security"))
 
         baseline = self._deterministic_appraisal(signal, emergency_rule, diagnostics)
@@ -249,6 +242,33 @@ class LimbicService:
                 )
             )
         return result
+
+    def _validated_control_provenance(
+        self,
+        provenance: VerifiedControlProvenance | None,
+    ) -> tuple[VerifiedControlProvenance, bool]:
+        if provenance is None:
+            return VerifiedControlProvenance(), False
+        try:
+            # model_copy/model_construct do not validate updates. Round-trip
+            # through ordinary data so this service boundary always enforces
+            # authority, identity, and transport binding before policy use.
+            validated = VerifiedControlProvenance.model_validate(
+                provenance.model_dump(mode="python")
+            )
+        except Exception:  # noqa: BLE001 - reject malformed proof without details
+            return VerifiedControlProvenance(), True
+        if not validated.trusted:
+            return validated, False
+        if not provenance._issued_by(self._control_issuer):
+            return VerifiedControlProvenance(), True
+        return (
+            VerifiedControlProvenance._issue(
+                self._control_issuer,
+                **validated.model_dump(mode="python"),
+            ),
+            False,
+        )
 
     def _emergency_rule(
         self,
@@ -562,7 +582,7 @@ class LimbicService:
             return self._provider_worker.is_alive()
         worker = threading.Thread(
             target=self._provider_worker_loop,
-            name=f"pa-limbic-provider-{id(self):x}",
+            name=self._provider_thread_name,
             daemon=True,
         )
         try:
@@ -575,7 +595,7 @@ class LimbicService:
     def _provider_worker_loop(self) -> None:
         while True:
             try:
-                task = self._provider_tasks.get(timeout=1.0)
+                task = self._provider_tasks.get(timeout=0.1)
             except queue.Empty:
                 with self._provider_lock:
                     if self._provider_probe is None and self._provider_tasks.empty():

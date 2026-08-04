@@ -12,9 +12,13 @@ bypass only when the server supplies verified provenance from an authenticated
 operator, integration, or authority boundary. Signal-body trust flags, event-class
 lookalikes, hashes, and dedupe keys are never authoritative. The service records a
 content-free spoof diagnostic and routes unverified control lookalikes to slow
-deliberation. Content hashes and dedupe keys are recomputed from normalized content
-and a fingerprint of the verified provenance, so trusted and untrusted copies do
-not collide.
+deliberation. The general `/api/limbic/appraise` and MCP entry point never infer
+trusted provenance from request fields or headers; authenticated adapters must
+construct it server-side. The service revalidates proof objects at use time,
+including objects produced through unchecked model-copy/construct helpers.
+Content hashes and dedupe keys are recomputed from normalized content and an
+authority-specific identity fingerprint, so trusted and untrusted copies do not
+collide and separate integrations cannot share a dedupe scope.
 
 Known bounded status requests can use the preliminary fast path. Unknown,
 consequential, repeated-failure, or prompt-injection inputs route to slow
@@ -23,6 +27,8 @@ schema-allowlisted and can only escalate the baseline. Model-proposed bypasses,
 wake targets, actions, and unknown fields are rejected. Provider calls have a
 strict deadline and circuit breaker; timeouts, provider/network errors, and
 malformed output return the deterministic baseline with code-only diagnostics.
+One provider invocation remains admitted after a timeout until its worker actually
+exits, preventing a hung provider from accumulating threads on circuit retries.
 Shadow mode records a policy-validated proposal without changing the effective
 route.
 
