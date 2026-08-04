@@ -454,6 +454,7 @@ class DispatchStore:
         self.metrics_path = data_dir / "dispatch_queue_metrics.json"
         self._records: dict[str, DispatchRecord] = {}
         self._latest_card_records: dict[str, DispatchRecord] = {}
+        self._latest_session_records: dict[tuple[str, str], DispatchRecord] = {}
         self._history_counts: dict[tuple[str, str], int] = {}
         self._lock = RLock()
         try:
@@ -497,6 +498,17 @@ class DispatchStore:
             if current is None or self._prefer_card_record(record, current):
                 selected[record.card_id] = record
         self._latest_card_records = selected
+
+    def _rebuild_latest_session_records_locked(self) -> None:
+        selected: dict[tuple[str, str], DispatchRecord] = {}
+        for record in self._records.values():
+            if not record.session_id:
+                continue
+            key = (record.realm_id, record.session_id)
+            current = selected.get(key)
+            if current is None or self._prefer_card_record(record, current):
+                selected[key] = record
+        self._latest_session_records = selected
 
     def _rebuild_history_counts_locked(self) -> None:
         counts: dict[tuple[str, str], int] = {}
@@ -600,6 +612,7 @@ class DispatchStore:
                 migrated = True
         self._records = records
         self._rebuild_latest_card_records_locked()
+        self._rebuild_latest_session_records_locked()
         self._rebuild_history_counts_locked()
         for record in self._records.values():
             if (
@@ -618,6 +631,7 @@ class DispatchStore:
 
     def _save(self) -> None:
         self._rebuild_latest_card_records_locked()
+        self._rebuild_latest_session_records_locked()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         atomic_write_json(
             self.path,
@@ -685,14 +699,11 @@ class DispatchStore:
         if not session_ids:
             return {}
         with self._lock:
-            selected: dict[str, DispatchRecord] = {}
-            for record in self._records.values():
-                if record.realm_id != realm_id or record.session_id not in session_ids:
-                    continue
-                current = selected.get(record.session_id)
-                if current is None or self._prefer_card_record(record, current):
-                    selected[record.session_id] = record
-            return selected
+            return {
+                session_id: self._latest_session_records[(realm_id, session_id)]
+                for session_id in session_ids
+                if (realm_id, session_id) in self._latest_session_records
+            }
 
     def current_card_ids(self, *, realm_id: str, limit: int) -> list[str]:
         """Return bounded card ids with current dispatch work in one realm."""

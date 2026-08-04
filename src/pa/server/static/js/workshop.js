@@ -485,6 +485,25 @@
     return true;
   }
 
+  function restoreFocusContext(root, focusKey) {
+    if (!focusKey) return false;
+    var candidate = null;
+    if (focusKey.type === "inspector" && selected) {
+      candidate = root.querySelector('[data-workshop-focus-key="card-detail"]') ||
+        root.querySelector("[data-workshop-inspector]");
+    }
+    if (!candidate && selected) {
+      candidate = Array.from(root.querySelectorAll("[data-workshop-kind]")).find(function (item) {
+        return item.dataset.workshopKind === selected.kind &&
+          item.dataset.workshopId === selected.id && !item.closest("[hidden]");
+      });
+    }
+    if (!candidate) candidate = root.querySelector("[data-workshop-search]");
+    if (!candidate) return false;
+    candidate.focus({ preventScroll: true });
+    return true;
+  }
+
   function render(root, data, options) {
     options = options || {};
     var focusKey = captureFocus(root);
@@ -505,7 +524,7 @@
       var nearby = root.querySelector("[data-workshop-search]");
       if (nearby) nearby.focus({ preventScroll: true });
     } else {
-      restoreFocus(root, focusKey);
+      if (!restoreFocus(root, focusKey)) restoreFocusContext(root, focusKey);
     }
     updateRelativeAges(root);
   }

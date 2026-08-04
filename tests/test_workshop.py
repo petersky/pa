@@ -620,6 +620,73 @@ def test_worker_projection_is_bounded_and_prioritizes_live_turns():
     }
 
 
+def test_worker_projection_ranks_live_and_blocked_work_globally_across_nodes():
+    overview = _overview()
+    first = overview["nodes"][0]
+    first_activity = first["dimensions"]["activity"]["value"]
+    first_activity["sessions"] = [
+        {
+            "id": f"first-idle-{index:02d}",
+            "realm_id": "default",
+            "status": "idle",
+            "updated_at": "2026-08-04T12:00:00+00:00",
+        }
+        for index in range(WORKSHOP_WORKER_LIMIT)
+    ]
+    first_activity["session_total"] = WORKSHOP_WORKER_LIMIT
+    first_activity["dispatches"] = []
+
+    second = deepcopy(first)
+    second["id"] = "later-node"
+    second["name"] = "Later node"
+    second_activity = second["dimensions"]["activity"]["value"]
+    second_activity["sessions"] = [
+        {
+            "id": "later-working",
+            "realm_id": "default",
+            "status": "working",
+            "connected": True,
+            "updated_at": "2026-07-01T00:00:00+00:00",
+        }
+    ]
+    second_activity["session_total"] = 1
+    second_activity["dispatches"] = [
+        {
+            "dispatch_id": "later-blocked",
+            "realm_id": "default",
+            "state": "blocked",
+            "last_error": "Target workspace is unavailable",
+            "updated_at": "2026-07-01T00:00:00+00:00",
+        }
+    ]
+    overview["nodes"].append(second)
+
+    snapshot = build_workshop_snapshot(_ctx(), overview)
+    workers = [
+        (bay["id"], worker) for bay in snapshot["bays"] for worker in bay["workers"]
+    ]
+
+    assert len(workers) == WORKSHOP_WORKER_LIMIT
+    assert any(
+        bay_id == "later-node" and worker["id"] == "later-working"
+        for bay_id, worker in workers
+    )
+    assert any(
+        bay_id == "later-node" and worker["id"] == "dispatch:later-blocked"
+        for bay_id, worker in workers
+    )
+    assert snapshot["counts"]["sessions"] == {
+        "reported": 81,
+        "projected": 79,
+        "omitted": 2,
+    }
+    assert snapshot["counts"]["workers"] == {
+        "reported": 82,
+        "projected": 80,
+        "omitted": 2,
+    }
+
+
 def test_two_thousand_unlinked_sessions_remain_bounded_with_truthful_counts():
     overview = _overview()
     activity = overview["nodes"][0]["dimensions"]["activity"]["value"]

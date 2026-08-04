@@ -776,10 +776,44 @@ class WorkshopCompactViewBrowserTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(focus_and_quiet_summary["mutations"], 0)
             self.assertIn("Focus-safe update", focus_and_quiet_summary["progress"])
 
+            disappearing_inspector_link = await page.evaluate(
+                """(() => {
+                  var root = document.querySelector("#pa-workshop-root");
+                  document.querySelector('[data-workshop-compact] [data-workshop-id="active"]').click();
+                  var link = document.querySelector('[data-workshop-focus-key="session-detail"]');
+                  link.focus();
+                  var update = JSON.parse(JSON.stringify(window.__snapshot));
+                  update.generated_at = "2026-08-03T10:00:06Z";
+                  var active = update.work_orders.find(function (order) { return order.id === "active"; });
+                  active.session = null;
+                  window.PAWorkshopTest.acceptSnapshot(root, update);
+                  window.__snapshot = update;
+                  var selectedControl = document.querySelector(
+                    '[data-workshop-compact] [data-workshop-id="active"]');
+                  return {
+                    selected:selectedControl.getAttribute("aria-pressed"),
+                    inspector:document.querySelector("[data-workshop-inspector] h3").textContent,
+                    focusKey:document.activeElement.dataset.workshopFocusKey || null,
+                    focusIsInspector:document.activeElement ===
+                      document.querySelector("[data-workshop-inspector]"),
+                    focusIsBody:document.activeElement === document.body
+                  };
+                })()"""
+            )
+            self.assertEqual(disappearing_inspector_link["selected"], "true")
+            self.assertEqual(
+                disappearing_inspector_link["inspector"], "Build compact Workshop"
+            )
+            self.assertTrue(
+                disappearing_inspector_link["focusKey"] == "card-detail"
+                or disappearing_inspector_link["focusIsInspector"]
+            )
+            self.assertFalse(disappearing_inspector_link["focusIsBody"])
+
             disappeared = await page.evaluate(
                 """(() => {
                   var update = JSON.parse(JSON.stringify(window.__snapshot));
-                  update.generated_at = "2026-08-03T10:00:06Z";
+                  update.generated_at = "2026-08-03T10:00:07Z";
                   update.work_orders = update.work_orders.filter(function (order) { return order.id !== "active"; });
                   window.PAWorkshopTest.acceptSnapshot(document.querySelector("#pa-workshop-root"), update);
                   return {
@@ -798,7 +832,7 @@ class WorkshopCompactViewBrowserTests(unittest.IsolatedAsyncioTestCase):
             await page.evaluate(
                 """(() => {
                   var restored = JSON.parse(JSON.stringify(window.__snapshot));
-                  restored.generated_at = "2026-08-03T10:00:07Z";
+                  restored.generated_at = "2026-08-03T10:00:08Z";
                   window.PAWorkshopTest.acceptSnapshot(document.querySelector("#pa-workshop-root"), restored);
                 })()"""
             )

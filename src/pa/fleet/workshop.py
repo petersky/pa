@@ -181,6 +181,32 @@ def _session_rank_key(session: dict[str, Any]) -> tuple[int, float, str]:
     )
 
 
+def _reservation_rank_key(dispatch: dict[str, Any]) -> tuple[int, float, str]:
+    state = str(dispatch.get("state") or "")
+    return (
+        0 if state == "blocked" else 1,
+        -_time_score(dispatch.get("updated_at") or dispatch.get("created_at")),
+        str(dispatch.get("dispatch_id") or ""),
+    )
+
+
+def _worker_rank_key(worker: dict[str, Any]) -> tuple[int, float, str]:
+    state = str(worker.get("state") or "")
+    return (
+        0
+        if worker.get("live")
+        else 1
+        if state in {"stalled", "recovering", "failed"}
+        else 2
+        if state in {"queued", "starting"}
+        else 3
+        if state in {"working", "quiet-active"}
+        else 4,
+        -_time_score(worker.get("elapsed_from")),
+        str(worker.get("id") or ""),
+    )
+
+
 def _evidence_text(value: Any) -> str | None:
     if isinstance(value, dict):
         value = next(
@@ -219,6 +245,26 @@ def _sessions_for_realm(
             continue
         counts["eligible"] += 1
         yield session
+
+
+def _reservations_for_realm(
+    dispatches: list[dict[str, Any]], realm_id: str, counts: dict[str, int]
+) -> Iterator[dict[str, Any]]:
+    for dispatch in dispatches:
+        dispatch_realm = dispatch.get("realm_id")
+        if not dispatch_realm:
+            counts["unknown"] += 1
+            continue
+        if dispatch_realm != realm_id:
+            counts["other"] += 1
+            continue
+        if (
+            dispatch.get("session_id")
+            or dispatch.get("state") not in PRE_SESSION_DISPATCH_STATES
+        ):
+            continue
+        counts["eligible"] += 1
+        yield dispatch
 
 
 def _worker_state(session: dict[str, Any], dispatch: dict[str, Any] | None) -> str:
@@ -602,10 +648,9 @@ def build_workshop_snapshot(
 
     card_payloads = {card.id: card_payload(card) for card in cards}
     bays = []
-    seen_workers: set[str] = set()
     reported_session_total = 0
     reported_session_omitted = 0
-    worker_projection_omitted = 0
+    eligible_reservation_total = 0
     unknown_realm_sessions = 0
     unknown_realm_dispatches = 0
     other_realm_sessions = 0
@@ -634,17 +679,10 @@ def build_workshop_snapshot(
         )
         unknown_realm_sessions += session_counts["unknown"]
         other_realm_sessions += session_counts["other"]
-        worker_projection_omitted += max(
-            0, session_counts["eligible"] - len(ranked_sessions)
-        )
         for session in ranked_sessions:
             session_id = str(session.get("id") or "")
-            if not session_id or session_id in seen_workers:
+            if not session_id:
                 continue
-            if len(seen_workers) >= WORKSHOP_WORKER_LIMIT:
-                worker_projection_omitted += 1
-                continue
-            seen_workers.add(session_id)
             dispatch = dispatch_by_session.get(session_id)
             card_id = session.get("card_id") or (dispatch or {}).get("card_id")
             state = _worker_state(session, dispatch)
@@ -699,34 +737,19 @@ def build_workshop_snapshot(
                 }
             )
         # Durable dispatch admission is visible even before a session exists.
-        ranked_dispatches = sorted(
-            activity.get("dispatches") or [],
-            key=lambda dispatch: (
-                0 if dispatch.get("state") == "blocked" else 1,
-                -_time_score(dispatch.get("updated_at") or dispatch.get("created_at")),
-                str(dispatch.get("dispatch_id") or ""),
+        dispatch_counts = {"eligible": 0, "unknown": 0, "other": 0}
+        ranked_dispatches = nsmallest(
+            WORKSHOP_WORKER_LIMIT,
+            _reservations_for_realm(
+                activity.get("dispatches") or [], realm_id, dispatch_counts
             ),
+            key=_reservation_rank_key,
         )
+        eligible_reservation_total += dispatch_counts["eligible"]
+        unknown_realm_dispatches += dispatch_counts["unknown"]
+        other_realm_dispatches += dispatch_counts["other"]
         for dispatch in ranked_dispatches:
-            dispatch_realm = dispatch.get("realm_id")
-            if not dispatch_realm:
-                unknown_realm_dispatches += 1
-                continue
-            if dispatch_realm != realm_id:
-                other_realm_dispatches += 1
-                continue
-            if (
-                dispatch.get("session_id")
-                or dispatch.get("state") not in PRE_SESSION_DISPATCH_STATES
-            ):
-                continue
             worker_id = f"dispatch:{dispatch.get('dispatch_id')}"
-            if worker_id in seen_workers:
-                continue
-            if len(seen_workers) >= WORKSHOP_WORKER_LIMIT:
-                worker_projection_omitted += 1
-                continue
-            seen_workers.add(worker_id)
             card_id = dispatch.get("card_id")
             dispatch_state = str(dispatch.get("state") or "")
             queue = dispatch.get("queue") or {}
@@ -829,6 +852,29 @@ def build_workshop_snapshot(
                 ],
                 "workers": workers,
             }
+        )
+
+    worker_refs: dict[str, tuple[dict[str, Any], dict[str, Any]]] = {}
+    for bay in bays:
+        for worker in bay["workers"]:
+            current = worker_refs.get(worker["id"])
+            if current is None or _worker_rank_key(worker) < _worker_rank_key(
+                current[1]
+            ):
+                worker_refs[worker["id"]] = (bay, worker)
+    ranked_worker_refs = nsmallest(
+        WORKSHOP_WORKER_LIMIT,
+        worker_refs.values(),
+        key=lambda pair: _worker_rank_key(pair[1]),
+    )
+    selected_workers = {id(worker) for _, worker in ranked_worker_refs}
+    for bay in bays:
+        bay["workers"] = [
+            worker for worker in bay["workers"] if id(worker) in selected_workers
+        ]
+        bay["active"] = sum(worker["state"] == "working" for worker in bay["workers"])
+        bay["queued"] = sum(
+            worker["state"] in {"queued", "starting"} for worker in bay["workers"]
         )
 
     worker_by_card: dict[str, tuple[dict[str, Any], dict[str, Any]]] = {}
@@ -1211,6 +1257,21 @@ def build_workshop_snapshot(
             for lane in CardLane
         }
     total_cards = sum(lane_counts.values())
+    projected_sessions = sum(
+        worker.get("relationship_kind") == "session"
+        for bay in bays
+        for worker in bay["workers"]
+    )
+    projected_reservations = sum(
+        worker.get("relationship_kind") == "reservation"
+        for bay in bays
+        for worker in bay["workers"]
+    )
+    omitted_sessions = max(
+        reported_session_omitted,
+        max(0, reported_session_total - projected_sessions),
+    )
+    omitted_reservations = max(0, eligible_reservation_total - projected_reservations)
     counts = {
         "total": total_cards,
         "projected": len(work_orders),
@@ -1220,18 +1281,15 @@ def build_workshop_snapshot(
         "orphan_sessions": len(orphan_workers),
         "sessions": {
             "reported": reported_session_total,
-            "projected": sum(
-                worker.get("relationship_kind") == "session"
-                for bay in bays
-                for worker in bay["workers"]
-            ),
-            "omitted": reported_session_omitted + worker_projection_omitted,
+            "projected": projected_sessions,
+            "omitted": omitted_sessions,
         },
-        "reservations": sum(
-            worker.get("relationship_kind") == "reservation"
-            for bay in bays
-            for worker in bay["workers"]
-        ),
+        "reservations": projected_reservations,
+        "workers": {
+            "reported": reported_session_total + eligible_reservation_total,
+            "projected": projected_sessions + projected_reservations,
+            "omitted": omitted_sessions + omitted_reservations,
+        },
         "excluded_activity": {
             "unknown_realm_sessions": unknown_realm_sessions,
             "unknown_realm_dispatches": unknown_realm_dispatches,
