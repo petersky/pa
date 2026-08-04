@@ -4,7 +4,7 @@ import queue
 import re
 import threading
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -45,6 +45,12 @@ class _EmergencyRule:
         "apply_pre_authorized_emergency_policy",
         "notify",
     )
+
+
+@dataclass
+class _ProviderProbe:
+    abandoned: bool = False
+    finished: bool = False
 
 
 _EMERGENCY_RULES = {
@@ -128,6 +134,8 @@ class LimbicService:
         provider_timeout_seconds: float = 0.25,
         circuit_failure_threshold: int = 1,
         circuit_open_seconds: float = 1.0,
+        integration_control_allowlist: Mapping[str, Iterable[ControlEvent]]
+        | None = None,
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         self.store = store
@@ -136,11 +144,16 @@ class LimbicService:
         self.provider_timeout_seconds = max(0.001, provider_timeout_seconds)
         self.circuit_failure_threshold = max(1, circuit_failure_threshold)
         self.circuit_open_seconds = max(0.001, circuit_open_seconds)
+        self.integration_control_allowlist = {
+            integration_id: frozenset(ControlEvent(event) for event in events)
+            for integration_id, events in (integration_control_allowlist or {}).items()
+            if integration_id
+        }
         self._monotonic = monotonic
         self._provider_lock = threading.Lock()
         self._provider_failures = 0
         self._provider_open_until = 0.0
-        self._provider_probe_active = False
+        self._provider_probe: _ProviderProbe | None = None
 
     def appraise(
         self,
@@ -154,7 +167,7 @@ class LimbicService:
             signal.trusted_control or signal.control_provenance != "untrusted"
         )
         provenance = control_provenance or VerifiedControlProvenance()
-        emergency_rule = self._emergency_rule(provenance)
+        emergency_rule = self._emergency_rule(signal, provenance)
 
         # The canonical event class for a verified control is selected from the
         # server-created provenance object, never from the signal body.
@@ -217,14 +230,26 @@ class LimbicService:
             )
         return result
 
-    @staticmethod
     def _emergency_rule(
+        self,
+        signal: SignalEnvelope,
         provenance: VerifiedControlProvenance,
     ) -> _EmergencyRule | None:
         if not provenance.control_event:
             return None
         rule = _EMERGENCY_RULES.get(provenance.control_event)
-        if not rule or provenance.authority not in rule.authorities:
+        if (
+            not rule
+            or provenance.authority not in rule.authorities
+            or signal.source != provenance.expected_source
+        ):
+            return None
+        if provenance.authority == ControlAuthority.INTEGRATION and (
+            provenance.control_event
+            not in self.integration_control_allowlist.get(
+                provenance.integration_id or "", frozenset()
+            )
+        ):
             return None
         return rule
 
@@ -452,9 +477,10 @@ class LimbicService:
     ) -> tuple[dict[str, Any] | None, str | None]:
         with self._provider_lock:
             now = self._monotonic()
-            if now < self._provider_open_until or self._provider_probe_active:
+            if now < self._provider_open_until or self._provider_probe is not None:
                 return None, "provider_circuit_open"
-            self._provider_probe_active = True
+            probe = _ProviderProbe()
+            self._provider_probe = probe
 
         outcomes: queue.Queue[tuple[bool, Any]] = queue.Queue(maxsize=1)
 
@@ -464,34 +490,53 @@ class LimbicService:
                 outcomes.put((True, self.provider(features)), block=False)  # type: ignore[misc]
             except Exception:  # noqa: BLE001
                 outcomes.put((False, None), block=False)
+            finally:
+                with self._provider_lock:
+                    probe.finished = True
+                    if probe.abandoned and self._provider_probe is probe:
+                        self._provider_probe = None
 
-        threading.Thread(
+        worker = threading.Thread(
             target=invoke,
             name="pa-limbic-provider",
             daemon=True,
-        ).start()
+        )
+        try:
+            worker.start()
+        except Exception:  # noqa: BLE001 - resource exhaustion is provider unavailability
+            self._record_provider_failure(probe)
+            return None, "provider_error"
         try:
             ok, value = outcomes.get(timeout=self.provider_timeout_seconds)
         except queue.Empty:
-            self._record_provider_failure()
+            self._record_provider_failure(probe, await_worker=True)
             return None, "provider_timeout"
         if not ok:
-            self._record_provider_failure()
+            self._record_provider_failure(probe)
             return None, "provider_error"
         with self._provider_lock:
             self._provider_failures = 0
             self._provider_open_until = 0.0
-            self._provider_probe_active = False
+            if self._provider_probe is probe:
+                self._provider_probe = None
         return value, None
 
-    def _record_provider_failure(self) -> None:
+    def _record_provider_failure(
+        self,
+        probe: _ProviderProbe | None = None,
+        *,
+        await_worker: bool = False,
+    ) -> None:
         with self._provider_lock:
             self._provider_failures += 1
             if self._provider_failures >= self.circuit_failure_threshold:
                 self._provider_open_until = (
                     self._monotonic() + self.circuit_open_seconds
                 )
-            self._provider_probe_active = False
+            if probe is not None and self._provider_probe is probe:
+                probe.abandoned = await_worker
+                if not await_worker or probe.finished:
+                    self._provider_probe = None
 
     @staticmethod
     def _conservative_merge(baseline: Appraisal, model: Appraisal) -> Appraisal:

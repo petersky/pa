@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Header, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from pa.core.context import AppContext
 from pa.core.contracts import Module
@@ -27,6 +27,8 @@ router = APIRouter()
 
 
 class AppraiseRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     signal: SignalEnvelope
     shadow_mode: bool = False
 

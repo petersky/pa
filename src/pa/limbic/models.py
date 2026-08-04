@@ -96,6 +96,37 @@ class ControlEvent(StrEnum):
     HARD_RESOURCE_LIMIT = "hard_resource_limit"
 
 
+class ControlTransport(StrEnum):
+    UNTRUSTED = "untrusted"
+    AUTHENTICATED_SESSION = "authenticated_session"
+    VERIFIED_WEBHOOK = "verified_webhook"
+    AUTHENTICATED_INSTANCE = "authenticated_instance"
+    INTERNAL_AUTHORITY = "internal_authority"
+
+
+_AUTHORITY_IDENTITY_FIELDS = {
+    ControlAuthority.OPERATOR: "principal_id",
+    ControlAuthority.INTEGRATION: "integration_id",
+    ControlAuthority.AUTHORITY: "authority_instance_id",
+}
+_AUTHORITY_TRANSPORTS = {
+    ControlAuthority.UNTRUSTED: frozenset({ControlTransport.UNTRUSTED}),
+    ControlAuthority.OPERATOR: frozenset({ControlTransport.AUTHENTICATED_SESSION}),
+    ControlAuthority.INTEGRATION: frozenset({ControlTransport.VERIFIED_WEBHOOK}),
+    ControlAuthority.AUTHORITY: frozenset(
+        {
+            ControlTransport.AUTHENTICATED_INSTANCE,
+            ControlTransport.INTERNAL_AUTHORITY,
+        }
+    ),
+}
+_AUTHORITY_SOURCES = {
+    ControlAuthority.OPERATOR: SignalSource.OPERATOR,
+    ControlAuthority.INTEGRATION: SignalSource.INTEGRATION,
+    ControlAuthority.AUTHORITY: SignalSource.SYSTEM,
+}
+
+
 class VerifiedControlProvenance(BaseModel):
     """Server-created proof that a control event crossed an authenticated boundary."""
 
@@ -106,41 +137,51 @@ class VerifiedControlProvenance(BaseModel):
     principal_id: str | None = None
     integration_id: str | None = None
     authority_instance_id: str | None = None
-    transport: str = Field(default="untrusted", min_length=1, max_length=80)
+    transport: ControlTransport = ControlTransport.UNTRUSTED
 
     @model_validator(mode="after")
     def validate_proof(self) -> VerifiedControlProvenance:
-        identifiers = {
-            ControlAuthority.OPERATOR: self.principal_id,
-            ControlAuthority.INTEGRATION: self.integration_id,
-            ControlAuthority.AUTHORITY: self.authority_instance_id,
+        identities = {
+            "principal_id": self.principal_id,
+            "integration_id": self.integration_id,
+            "authority_instance_id": self.authority_instance_id,
         }
+        supplied_fields = {field for field, value in identities.items() if value}
         if self.authority == ControlAuthority.UNTRUSTED:
-            if self.control_event is not None:
-                raise ValueError("untrusted provenance cannot assert a control event")
+            if self.control_event is not None or supplied_fields:
+                raise ValueError(
+                    "untrusted provenance cannot assert a control event or identity"
+                )
+            if self.transport not in _AUTHORITY_TRANSPORTS[self.authority]:
+                raise ValueError("untrusted provenance requires untrusted transport")
             return self
-        if self.control_event is None or not identifiers[self.authority]:
+
+        identity_field = _AUTHORITY_IDENTITY_FIELDS[self.authority]
+        if self.control_event is None or supplied_fields != {identity_field}:
             raise ValueError(
-                "verified control provenance requires an authenticated identity and event"
+                "verified control provenance requires only the authority identity and event"
             )
+        if self.transport not in _AUTHORITY_TRANSPORTS[self.authority]:
+            raise ValueError("control transport does not authenticate this authority")
         return self
 
     @property
     def trusted(self) -> bool:
         return self.authority != ControlAuthority.UNTRUSTED
 
+    @property
+    def expected_source(self) -> SignalSource | None:
+        return _AUTHORITY_SOURCES.get(self.authority)
+
     def canonical_scope(self) -> str:
-        identity = (
-            self.principal_id
-            or self.integration_id
-            or self.authority_instance_id
-            or "untrusted"
-        )
+        identity_field = _AUTHORITY_IDENTITY_FIELDS.get(self.authority)
+        identity = getattr(self, identity_field) if identity_field else "untrusted"
         fingerprint = _canonical_hash(
             {
                 "authority": self.authority,
                 "identity": identity,
-                "transport": _normalized_name(self.transport),
+                "transport": self.transport,
+                "event": self.control_event,
             }
         )[:20]
         return f"{self.authority.value}:{fingerprint}"

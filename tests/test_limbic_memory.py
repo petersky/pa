@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import threading
+import time
 import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -12,6 +13,7 @@ from pa.limbic.memory import MemoryService
 from pa.limbic.models import (
     ControlAuthority,
     ControlEvent,
+    ControlTransport,
     MemoryMutationContext,
     MemoryProvenance,
     MemoryQuery,
@@ -27,6 +29,7 @@ from pa.limbic.models import (
     Valence,
     VerifiedControlProvenance,
 )
+from pa.modules.limbic import AppraiseRequest
 from pa.sync.event_log import EventLog
 from pa.sync.object_store import ObjectStore
 
@@ -250,7 +253,14 @@ class LimbicMemoryTests(unittest.TestCase):
 
     def test_verified_operator_and_integration_controls_bypass(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            limbic, _, _ = self._services(tmp)
+            _, _, replica = self._services(tmp)
+            limbic = LimbicService(
+                replica,
+                "instance-a",
+                integration_control_allowlist={
+                    "integration:identity-provider": {ControlEvent.SECURITY_REVOCATION}
+                },
+            )
             operator = limbic.appraise(
                 self._signal("status_query", source=SignalSource.OPERATOR),
                 persist=False,
@@ -291,6 +301,87 @@ class LimbicMemoryTests(unittest.TestCase):
                 rejected.appraisal.diagnostics[0].code,
                 "control_provenance_rejected",
             )
+
+    def test_provenance_authority_transport_and_identity_are_bound(self) -> None:
+        invalid = [
+            {
+                "authority": ControlAuthority.INTEGRATION,
+                "control_event": ControlEvent.SECURITY_REVOCATION,
+                "integration_id": "integration:one",
+                "principal_id": "user:shared",
+                "transport": ControlTransport.VERIFIED_WEBHOOK,
+            },
+            {
+                "authority": ControlAuthority.OPERATOR,
+                "control_event": ControlEvent.OPERATOR_STOP,
+                "principal_id": "user:operator",
+                "transport": ControlTransport.VERIFIED_WEBHOOK,
+            },
+            {
+                "principal_id": "user:forged",
+                "transport": ControlTransport.UNTRUSTED,
+            },
+        ]
+        for values in invalid:
+            with self.assertRaises(ValueError):
+                VerifiedControlProvenance(**values)
+
+        with self.assertRaises(ValueError):
+            AppraiseRequest.model_validate(
+                {
+                    "signal": self._signal("status_query").model_dump(mode="json"),
+                    "control_provenance": self._operator_stop().model_dump(mode="json"),
+                }
+            )
+
+    def test_source_authority_and_integration_event_allowlist_gate_bypass(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            log = EventLog(ObjectStore(root / "objects"), root, "instance-a")
+            projection = CardProjection(root / "pa.db", log)
+            service = LimbicService(
+                projection,
+                "instance-a",
+                integration_control_allowlist={
+                    "integration:identity-provider": {ControlEvent.SECURITY_REVOCATION}
+                },
+            )
+            integration = VerifiedControlProvenance(
+                authority=ControlAuthority.INTEGRATION,
+                control_event=ControlEvent.SECURITY_REVOCATION,
+                integration_id="integration:identity-provider",
+                transport=ControlTransport.VERIFIED_WEBHOOK,
+            )
+            mismatched_source = service.appraise(
+                self._signal("status_query", source=SignalSource.CHANNEL),
+                persist=False,
+                control_provenance=integration,
+            )
+            self.assertEqual(mismatched_source.route.path, ProcessingPath.SLOW)
+            self.assertEqual(
+                mismatched_source.appraisal.diagnostics[0].code,
+                "control_provenance_rejected",
+            )
+
+            disallowed_integration = service.appraise(
+                self._signal("status_query", source=SignalSource.INTEGRATION),
+                persist=False,
+                control_provenance=integration.model_copy(
+                    update={"integration_id": "integration:other"}
+                ),
+            )
+            self.assertEqual(disallowed_integration.route.path, ProcessingPath.SLOW)
+            self.assertIsNone(disallowed_integration.appraisal.deterministic_bypass)
+
+            disallowed_event = service.appraise(
+                self._signal("status_query", source=SignalSource.INTEGRATION),
+                persist=False,
+                control_provenance=integration.model_copy(
+                    update={"control_event": ControlEvent.DATA_INTEGRITY_ALARM}
+                ),
+            )
+            self.assertEqual(disallowed_event.route.path, ProcessingPath.SLOW)
+            self.assertIsNone(disallowed_event.appraisal.deterministic_bypass)
 
     def test_model_cannot_select_bypass_wake_or_privileged_actions(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -351,6 +442,41 @@ class LimbicMemoryTests(unittest.TestCase):
             self.assertNotEqual(untrusted.signal.dedupe_key, trusted.signal.dedupe_key)
             self.assertFalse(trusted.deduplicated)
 
+    def test_cross_integration_signals_never_cross_dedupe(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            log = EventLog(ObjectStore(root / "objects"), root, "instance-a")
+            projection = CardProjection(root / "pa.db", log)
+            service = LimbicService(
+                projection,
+                "instance-a",
+                integration_control_allowlist={
+                    "integration:one": {ControlEvent.SECURITY_REVOCATION},
+                    "integration:two": {ControlEvent.SECURITY_REVOCATION},
+                },
+            )
+            signal = self._signal(
+                "status_query",
+                source=SignalSource.INTEGRATION,
+                content="same normalized content",
+                content_hash="caller-collision",
+                dedupe_key="caller-collision",
+            )
+            provenances = [
+                VerifiedControlProvenance(
+                    authority=ControlAuthority.INTEGRATION,
+                    control_event=ControlEvent.SECURITY_REVOCATION,
+                    integration_id=integration_id,
+                    transport=ControlTransport.VERIFIED_WEBHOOK,
+                )
+                for integration_id in ("integration:one", "integration:two")
+            ]
+            first = service.appraise(signal, control_provenance=provenances[0])
+            second = service.appraise(signal, control_provenance=provenances[1])
+            self.assertNotEqual(first.signal.content_hash, second.signal.content_hash)
+            self.assertNotEqual(first.signal.dedupe_key, second.signal.dedupe_key)
+            self.assertFalse(second.deduplicated)
+
     def test_provider_failures_timeout_and_circuit_recover_to_baseline(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -399,11 +525,24 @@ class LimbicMemoryTests(unittest.TestCase):
             self.assertNotIn("must-not-leak", str(network.model_dump(mode="json")))
 
             blocker = threading.Event()
+            provider_finished = threading.Event()
+            timeout_calls = 0
+
+            def slow_provider(_: dict) -> dict:
+                nonlocal timeout_calls
+                timeout_calls += 1
+                blocker.wait()
+                provider_finished.set()
+                return self._model_payload()
+
+            timeout_now = [0.0]
             timeout_service = LimbicService(
                 projection,
                 "instance-a",
-                provider=lambda _: blocker.wait(0.2) or self._model_payload(),
+                provider=slow_provider,
                 provider_timeout_seconds=0.005,
+                circuit_open_seconds=1,
+                monotonic=lambda: timeout_now[0],
             )
             timed_out = timeout_service.appraise(
                 self._signal("status_query"), persist=False
@@ -412,6 +551,27 @@ class LimbicMemoryTests(unittest.TestCase):
             self.assertEqual(
                 timed_out.appraisal.diagnostics[0].code, "provider_timeout"
             )
+            timeout_now[0] = 2
+            still_bounded = timeout_service.appraise(
+                self._signal("status_query"), persist=False
+            )
+            self.assertEqual(
+                still_bounded.appraisal.diagnostics[0].code,
+                "provider_circuit_open",
+            )
+            self.assertEqual(timeout_calls, 1)
+            blocker.set()
+            self.assertTrue(provider_finished.wait(0.2))
+            for _ in range(100):
+                if timeout_service._provider_probe is None:
+                    break
+                time.sleep(0.001)
+            self.assertIsNone(timeout_service._provider_probe)
+            recovered_after_timeout = timeout_service.appraise(
+                self._signal("status_query"), persist=False
+            )
+            self.assertTrue(recovered_after_timeout.appraisal.model_used)
+            self.assertEqual(timeout_calls, 2)
 
     def test_malformed_provider_and_prompt_injection_fall_back_safely(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
