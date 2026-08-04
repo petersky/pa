@@ -24,7 +24,11 @@ from pa.execution.dispatch import (
     DispatchRecord,
     DispatchStore,
 )
-from pa.fleet.capacity import effective_capacity, workload_counts
+from pa.fleet.capacity import (
+    effective_capacity,
+    normalize_activity_capacity,
+    workload_counts,
+)
 from pa.fleet.placement import (
     PlacementCandidate,
     PlacementError,
@@ -469,6 +473,81 @@ def test_placement_ignores_same_session_backlog_and_deduplicates_consumers(
             "consumer_id": "session:session-1",
         }
     ]
+
+
+def test_consumer_links_prefer_current_working_session_over_stale_legacy() -> None:
+    activity = normalize_activity_capacity(
+        {
+            "active_capacity_consumers": 1,
+            "capacity_consumer_links": [
+                {
+                    "kind": "session",
+                    "session_id": "stale-idle",
+                    "state": "idle",
+                    "slots": 10,
+                }
+            ],
+            "sessions": [{"id": "current-working", "status": "working"}],
+        }
+    )
+
+    assert activity["capacity_consumer_links"] == [
+        {
+            "kind": "session",
+            "session_id": "current-working",
+            "href": "/agent?session=current-working",
+            "state": "working",
+            "slots": 1,
+            "consumer_id": "session:current-working",
+        }
+    ]
+    assert activity["capacity_consumer_links_omitted"] == 0
+
+
+def test_consumer_links_keep_stateless_legacy_identity_without_sessions_list() -> None:
+    activity = normalize_activity_capacity(
+        {
+            "active_capacity_consumers": 1,
+            "capacity_consumer_links": [
+                {"kind": "session", "session_id": "legacy-active", "slots": 10}
+            ],
+        }
+    )
+
+    assert activity["capacity_consumer_links"] == [
+        {
+            "kind": "session",
+            "session_id": "legacy-active",
+            "slots": 1,
+            "consumer_id": "session:legacy-active",
+        }
+    ]
+    assert activity["capacity_consumer_links_omitted"] == 0
+
+
+def test_consumer_link_omission_counts_unprojectable_active_identity() -> None:
+    activity = normalize_activity_capacity(
+        {
+            "active_capacity_consumers": 2,
+            "capacity_consumer_links": [
+                {
+                    "kind": "session",
+                    "session_id": "stale-idle",
+                    "state": "idle",
+                }
+            ],
+            "sessions": [
+                {"id": "known-working", "status": "working"},
+                {"status": "working"},
+            ],
+        }
+    )
+
+    assert [item["consumer_id"] for item in activity["capacity_consumer_links"]] == [
+        "session:known-working"
+    ]
+    assert activity["capacity_consumer_link_count"] == 1
+    assert activity["capacity_consumer_links_omitted"] == 1
 
 
 def test_authority_overlay_normalizes_session_and_reservation_identities(

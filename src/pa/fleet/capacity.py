@@ -261,8 +261,8 @@ def normalize_capacity_consumer_links(
     existing = deduplicate_consumer_links(
         activity.get("capacity_consumer_links") or []
     )
-    session_links = [item for item in existing if item.get("kind") == "session"]
-    session_links.extend(
+    sessions = activity.get("sessions")
+    current_session_links = [
         {
             "kind": "session",
             "session_id": item.get("session_id") or item.get("id"),
@@ -271,7 +271,7 @@ def normalize_capacity_consumer_links(
             "state": item.get("status") or item.get("state"),
             "slots": 1,
         }
-        for item in (activity.get("sessions") or [])
+        for item in (sessions or [])
         if isinstance(item, dict)
         and (item.get("session_id") or item.get("id"))
         and (
@@ -279,10 +279,27 @@ def normalize_capacity_consumer_links(
             or str(item.get("status") or item.get("state") or "").lower()
             in {"working", "prompting"}
         )
-    )
-    normalized_sessions = deduplicate_consumer_links(session_links)[
-        : min(counts["active"], limit)
     ]
+    allow_stateless_legacy = not isinstance(sessions, list) and counts["active"] > 0
+    legacy_session_links = [
+        item
+        for item in existing
+        if item.get("kind") == "session"
+        and item.get("capacity_consuming") is not False
+        and str(item.get("status") or item.get("state") or "").lower()
+        not in {"idle", "deferred", "non_consuming", "non-consuming"}
+        and (
+            item.get("capacity_consuming") is True
+            or str(item.get("status") or item.get("state") or "").lower()
+            in {"working", "prompting"}
+            or (
+                allow_stateless_legacy and not (item.get("status") or item.get("state"))
+            )
+        )
+    ]
+    normalized_sessions = deduplicate_consumer_links(
+        current_session_links + legacy_session_links
+    )[: min(counts["active"], limit)]
     authoritative_reservations = deduplicate_consumer_links(reservation_links or [])
     existing_reservations = [
         item for item in existing if item.get("kind") == "dispatch"
