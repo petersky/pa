@@ -178,6 +178,19 @@ class FleetMcpTests(unittest.TestCase):
             "session-live",
         )
 
+    def test_preview_preserves_legacy_and_invalid_profiles_for_typed_api_handling(
+        self,
+    ) -> None:
+        preview = self.mcp.functions["preview_fleet_placement"]
+
+        preview(PlacementPolicy.BEST_MATCH, workload_profile="code")
+        legacy_payload = self.local_api.call_args.kwargs["json"]
+        self.assertEqual(legacy_payload["execution_contract"]["profile"], "code")
+
+        preview(PlacementPolicy.BEST_MATCH, workload_profile="invalid")
+        invalid_payload = self.local_api.call_args.kwargs["json"]
+        self.assertEqual(invalid_payload["execution_contract"]["profile"], "invalid")
+
     def test_lifecycle_tools_preserve_normalized_dispatch_state(self) -> None:
         normalized = {
             "dispatch_id": "dispatch-1",
