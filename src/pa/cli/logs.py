@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import gzip
 import json
 import os
 import re
@@ -16,7 +15,6 @@ from pathlib import Path
 from typing import TextIO
 
 from pa.config import Settings
-from pa.core.log_rotation import read_log_status
 from pa.core.logging import redact_log_text
 
 _LEVELS = {
@@ -122,33 +120,8 @@ def parse_line(line: str, source: str, fallback: datetime) -> LogRecord:
 
 def file_records(path: Path, source: str) -> list[LogRecord]:
     fallback = datetime.fromtimestamp(path.stat().st_mtime, UTC)
-    opener = gzip.open if path.suffix == ".gz" else Path.open
-    with opener(path, "rt", encoding="utf-8", errors="replace") as handle:
+    with path.open("r", encoding="utf-8", errors="replace") as handle:
         return [parse_line(line, source, fallback) for line in handle if line.strip()]
-
-
-def source_log_paths(active: Path) -> list[Path]:
-    """Return completed archives oldest-first followed by the active file."""
-
-    def archive_order(path: Path) -> tuple[int, object]:
-        suffix = path.name.removeprefix(f"{active.name}.").removesuffix(".gz")
-        # logging.handlers.RotatingFileHandler numbers newest as .1, while
-        # PA's service supervisor uses naturally sortable UTC timestamps.
-        return (0, -int(suffix)) if suffix.isdigit() else (1, suffix)
-
-    archives = sorted(
-        (
-            path
-            for path in active.parent.glob(f"{active.name}.*")
-            if path.is_file()
-            and not path.name.endswith(".tmp")
-            and not (
-                path.suffix != ".gz" and path.with_name(path.name + ".gz").exists()
-            )
-        ),
-        key=archive_order,
-    )
-    return [*archives, active]
 
 
 def journal_records(lines: int) -> list[LogRecord]:
@@ -325,12 +298,7 @@ def show_logs(
                 f"Cannot read {source} log: {path}; check file ownership and permissions"
             )
         selected.append((source, path))
-        for source_path in source_log_paths(path):
-            try:
-                records.extend(file_records(source_path, source))
-            except FileNotFoundError:
-                # Compression atomically replaces a plain archive with .gz.
-                continue
+        records.extend(file_records(path, source))
     source_text = ", ".join(f"{name}={path}" for name, path in selected)
     if "journal" in sources:
         source_text += (", " if source_text else "") + "journal=pa-server.service"
@@ -347,25 +315,6 @@ def show_logs(
         file=diagnostics,
         flush=True,
     )
-    storage = read_log_status(settings.data_dir)
-    if storage:
-        pressure = storage.get("disk_pressure")
-        pressure_state = (
-            pressure.get("state", "unknown")
-            if isinstance(pressure, dict)
-            else "unknown"
-        )
-        print(
-            "Log storage: "
-            f"current_bytes={storage.get('current_bytes', 0)} "
-            f"total_bytes={storage.get('total_bytes', 0)} "
-            f"oldest_age_seconds={storage.get('oldest_age_seconds', 0)} "
-            f"rotation_failures={storage.get('rotation_failures', 0)} "
-            f"prune_failures={storage.get('prune_failures', 0)} "
-            f"disk_pressure={pressure_state}",
-            file=diagnostics,
-            flush=True,
-        )
     if not selected and "journal" not in sources:
         raise RuntimeError(
             "No readable log sources selected; run `pa status` and verify the PA data directory"
@@ -379,11 +328,10 @@ def show_logs(
         emit(record, settings, json_output=json_output, output=output)
     if not follow:
         return
-    handles: dict[Path, tuple[int, TextIO]] = {}
+    offsets: dict[Path, tuple[int, int]] = {}
     for _, path in selected:
-        handle = path.open("r", encoding="utf-8", errors="replace")
-        handle.seek(0, os.SEEK_END)
-        handles[path] = (os.fstat(handle.fileno()).st_ino, handle)
+        stat = path.stat()
+        offsets[path] = (stat.st_ino, stat.st_size)
     emitted = {
         (
             record.level,
@@ -399,79 +347,38 @@ def show_logs(
     try:
         while True:
             for source, path in selected:
-                inode, handle = handles[path]
                 try:
                     stat = path.stat()
                 except FileNotFoundError:
-                    # A rename/create rotation has a short pathless window. The
-                    # open descriptor still lets us drain every old-file byte.
-                    for line in handle:
-                        record = parse_line(line, source, datetime.now(UTC))
-                        key = (
-                            record.level,
-                            re.sub(r"\s+", " ", record.message).strip(),
-                            int(record.timestamp.timestamp()),
-                        )
-                        if key not in emitted and _matches(
-                            record,
-                            since=threshold,
-                            severity=severity,
-                            component=component,
-                        ):
-                            emit(
-                                record,
-                                settings,
-                                json_output=json_output,
-                                output=output,
-                            )
-                            emitted.add(key)
                     continue
-                if os.fstat(handle.fileno()).st_size < handle.tell():
-                    handle.seek(0)
-                for line in handle:
-                    record = parse_line(line, source, datetime.now(UTC))
-                    key = (
-                        record.level,
-                        re.sub(r"\s+", " ", record.message).strip(),
-                        int(record.timestamp.timestamp()),
-                    )
-                    if key not in emitted and _matches(
-                        record,
-                        since=threshold,
-                        severity=severity,
-                        component=component,
-                    ):
-                        emit(
-                            record,
-                            settings,
-                            json_output=json_output,
-                            output=output,
-                        )
-                        emitted.add(key)
-                if stat.st_ino != inode:
-                    handle.close()
-                    handle = path.open("r", encoding="utf-8", errors="replace")
-                    handles[path] = (stat.st_ino, handle)
-                    for line in handle:
-                        record = parse_line(line, source, datetime.now(UTC))
-                        key = (
-                            record.level,
-                            re.sub(r"\s+", " ", record.message).strip(),
-                            int(record.timestamp.timestamp()),
-                        )
-                        if key not in emitted and _matches(
-                            record,
-                            since=threshold,
-                            severity=severity,
-                            component=component,
-                        ):
-                            emit(
-                                record,
-                                settings,
-                                json_output=json_output,
-                                output=output,
+                inode, offset = offsets.get(path, (stat.st_ino, 0))
+                if stat.st_ino != inode or stat.st_size < offset:
+                    offset = 0
+                if stat.st_size > offset:
+                    with path.open("r", encoding="utf-8", errors="replace") as handle:
+                        handle.seek(offset)
+                        for line in handle:
+                            record = parse_line(line, source, datetime.now(UTC))
+                            key = (
+                                record.level,
+                                re.sub(r"\s+", " ", record.message).strip(),
+                                int(record.timestamp.timestamp()),
                             )
-                            emitted.add(key)
+                            if key not in emitted and _matches(
+                                record,
+                                since=threshold,
+                                severity=severity,
+                                component=component,
+                            ):
+                                emit(
+                                    record,
+                                    settings,
+                                    json_output=json_output,
+                                    output=output,
+                                )
+                                emitted.add(key)
+                        offset = handle.tell()
+                offsets[path] = (stat.st_ino, offset)
             if "journal" in sources:
                 for record in journal_records(max(lines, 100)):
                     key = (
@@ -495,6 +402,3 @@ def show_logs(
             time.sleep(0.2)
     except KeyboardInterrupt:
         return
-    finally:
-        for _, handle in handles.values():
-            handle.close()
