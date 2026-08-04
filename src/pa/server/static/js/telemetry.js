@@ -581,7 +581,7 @@
     return gapLabel(gap && gap.reason);
   }
 
-  function inspectChart(report, direction) {
+  function inspectChart(report, direction, activeStage) {
     const timestamps = Array.from(new Set(Array.from(report.querySelectorAll("[data-chart-group]")).flatMap(function (chart) {
       return chart._cursorTimestamps || [];
     }))).sort(function (a, b) { return a - b; });
@@ -589,6 +589,8 @@
     reportCursor = reportCursor === null ? timestamps.length - 1 :
       Math.max(0, Math.min(timestamps.length - 1, reportCursor + direction));
     const time = timestamps[reportCursor];
+    const activeChart = activeStage && activeStage.closest("[data-chart-group]");
+    const liveOutput = report.querySelector("[data-chart-live-output]");
     report.querySelectorAll("[data-chart-group]").forEach(function (candidate) {
       const stage = candidate.querySelector(".telemetry-chart-stage");
       const cursor = candidate.querySelector("[data-chart-cursor]");
@@ -603,6 +605,9 @@
       tooltip.hidden = false;
       tooltip.style.left = Math.min(75, Math.max(5, x / 8)) + "%";
       stage.setAttribute("aria-label", tooltip.textContent);
+      if (liveOutput && candidate === activeChart) {
+        liveOutput.textContent = tooltip.textContent;
+      }
     });
   }
 
@@ -616,10 +621,10 @@
     report.querySelectorAll(".telemetry-chart-stage").forEach(function (stage) {
       stage.addEventListener("keydown", function (event) {
         if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-          event.preventDefault(); inspectChart(report, event.key === "ArrowLeft" ? -1 : 1);
+          event.preventDefault(); inspectChart(report, event.key === "ArrowLeft" ? -1 : 1, stage);
         }
       });
-      stage.addEventListener("click", function () { inspectChart(report, 0); });
+      stage.addEventListener("click", function () { inspectChart(report, 0, stage); });
     });
     const previousPage = report.querySelector("[data-telemetry-table-prev]");
     const nextPage = report.querySelector("[data-telemetry-table-next]");

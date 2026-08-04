@@ -33,6 +33,7 @@
   </header>
   <div class="telemetry-gap-banner" data-telemetry-gaps role="status" hidden></div>
   <div class="telemetry-report-diagnostics muted small" data-report-diagnostics aria-live="polite">Preparing report…</div>
+  <p class="sr-only" data-chart-live-output role="status" aria-live="polite" aria-atomic="true"></p>
   <div class="telemetry-chart-grid">
     {% for group, title, unit, metrics in [
       ('cpu-percent', 'Host and PA CPU', 'percent', 'cpu.utilization,pa.cpu'),
@@ -59,7 +60,7 @@
         <svg viewBox="0 0 800 220" preserveAspectRatio="none" aria-hidden="true">
           <g data-chart-grid></g><g data-chart-axes></g><g data-chart-lines></g><g data-chart-points></g><line data-chart-cursor x1="0" x2="0" y1="12" y2="196" hidden></line>
         </svg>
-        <div class="telemetry-tooltip" data-chart-tooltip role="status" aria-live="polite" hidden></div>
+        <div class="telemetry-tooltip" data-chart-tooltip hidden></div>
         <p class="telemetry-chart-empty muted" data-chart-empty>Loading…</p>
       </div>
       <div class="telemetry-dimension-status" data-chart-status></div>

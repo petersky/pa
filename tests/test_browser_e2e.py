@@ -138,12 +138,13 @@ class ManagedBrowserInteractionTests(unittest.IsolatedAsyncioTestCase):
           <div data-telemetry-legend></div>
           <div data-telemetry-gaps hidden></div>
           <div data-report-diagnostics></div>
+          <p class="sr-only" data-chart-live-output role="status" aria-live="polite" aria-atomic="true"></p>
           <section data-chart-group="count" data-unit="count" data-metrics="metric.one">
             <span data-chart-unit></span>
             <div class="telemetry-chart-stage" tabindex="0" role="img" aria-label="Count chart">
-              <svg><g data-chart-grid></g><g data-chart-axes></g><g data-chart-lines></g>
+              <svg aria-hidden="true"><g data-chart-grid></g><g data-chart-axes></g><g data-chart-lines></g>
                 <g data-chart-points></g><line data-chart-cursor hidden></line></svg>
-              <div data-chart-tooltip role="status" aria-live="polite" hidden></div>
+              <div data-chart-tooltip hidden></div>
               <p data-chart-empty></p>
             </div>
             <div data-chart-status></div>
@@ -233,6 +234,25 @@ class ManagedBrowserInteractionTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn("Instance 0", chart_label)
         self.assertIn("metric.one", chart_label)
+        accessibility = await session.page.evaluate(
+            """({
+              stageLabel: document.querySelector(".telemetry-chart-stage").getAttribute("aria-label"),
+              svgHidden: document.querySelector(".telemetry-chart-stage svg").getAttribute("aria-hidden"),
+              svgLabel: document.querySelector(".telemetry-chart-stage svg").getAttribute("aria-label"),
+              liveRole: document.querySelector("[data-chart-live-output]").getAttribute("role"),
+              livePoliteness: document.querySelector("[data-chart-live-output]").getAttribute("aria-live"),
+              liveAtomic: document.querySelector("[data-chart-live-output]").getAttribute("aria-atomic"),
+              liveText: document.querySelector("[data-chart-live-output]").textContent,
+              tooltipRole: document.querySelector("[data-chart-tooltip]").getAttribute("role")
+            })"""
+        )
+        self.assertEqual(accessibility["svgHidden"], "true")
+        self.assertIsNone(accessibility["svgLabel"])
+        self.assertEqual(accessibility["liveRole"], "status")
+        self.assertEqual(accessibility["livePoliteness"], "polite")
+        self.assertEqual(accessibility["liveAtomic"], "true")
+        self.assertEqual(accessibility["liveText"], accessibility["stageLabel"])
+        self.assertIsNone(accessibility["tooltipRole"])
         cursor_matches_path = await session.page.evaluate(
             """(() => {
               const cursorX = Number(document.querySelector("[data-chart-cursor]").getAttribute("x1"));
