@@ -807,6 +807,14 @@ def serve(
         close_sockets(all_sockets, owner_path)
 
 
+@app.command("_service-run", hidden=True)
+def service_run() -> None:
+    """Run the server behind PA's bounded service-log supervisor."""
+    from pa.core.log_rotation import supervise_service_process
+
+    raise typer.Exit(supervise_service_process(get_settings()))
+
+
 @app.command()
 def mcp() -> None:
     """Run PA's MCP server over stdio (for agent sessions)."""
