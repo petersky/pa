@@ -561,7 +561,36 @@ class StorageTests(unittest.TestCase):
         self.assertEqual(result["series"][0]["unit"], "percent")
         self.assertEqual(result["series"][0]["points"][0]["avg"], 1)
 
-    def test_interrupted_unit_migration_recovers_once_and_accepts_second_unit(
+        second_unit = sample(bucket_start + timedelta(seconds=20), value=100)
+        second_unit.metrics = {
+            "drift.metric": Metric(
+                value=100,
+                unit="bytes",
+                quality=MetricQuality.MEASURED,
+                source="test",
+            )
+        }
+        migrated.insert_samples([second_unit])
+        migrated.prune(
+            raw_retention_hours=24,
+            rollup_retention_hours=24 * 30,
+            max_database_bytes=16 * 1024 * 1024,
+            now=self.now,
+        )
+        result = migrated.query(
+            TelemetryQuery(
+                start=bucket_start,
+                end=bucket_start + timedelta(minutes=5),
+                metrics=["drift.metric"],
+                bucket_seconds=300,
+            )
+        )
+        self.assertEqual(
+            {series["unit"]: series["points"][0]["avg"] for series in result["series"]},
+            {"percent": 1, "bytes": 100},
+        )
+
+    def test_interrupted_unit_migration_recovers_idempotently(
         self,
     ) -> None:
         interrupted_path = self.path.parent / "interrupted-rollup.db"
@@ -635,35 +664,22 @@ class StorageTests(unittest.TestCase):
             ).fetchall()
         self.assertNotIn("rollup_metrics_unitless", tables)
         self.assertEqual(rows, [("percent", 1.0, 1.0)])
-
-        second_unit = sample(bucket_start + timedelta(seconds=20), value=100)
-        second_unit.metrics = {
-            "drift.metric": Metric(
-                value=100,
-                unit="bytes",
-                quality=MetricQuality.MEASURED,
-                source="test",
+        for storage in (recovered, reopened):
+            result = storage.query(
+                TelemetryQuery(
+                    start=bucket_start,
+                    end=bucket_start + timedelta(minutes=5),
+                    metrics=["drift.metric"],
+                    bucket_seconds=300,
+                )
             )
-        }
-        reopened.insert_samples([second_unit])
-        reopened.prune(
-            raw_retention_hours=24,
-            rollup_retention_hours=24 * 30,
-            max_database_bytes=16 * 1024 * 1024,
-            now=self.now,
-        )
-        result = recovered.query(
-            TelemetryQuery(
-                start=bucket_start,
-                end=bucket_start + timedelta(minutes=5),
-                metrics=["drift.metric"],
-                bucket_seconds=300,
+            self.assertEqual(
+                [
+                    (series["unit"], series["points"][0]["avg"])
+                    for series in result["series"]
+                ],
+                [("percent", 1)],
             )
-        )
-        self.assertEqual(
-            {series["unit"]: series["points"][0]["avg"] for series in result["series"]},
-            {"percent": 1, "bytes": 100},
-        )
 
     def test_rollup_value_last_isolated_by_every_identity_dimension(self) -> None:
         bucket_start = (self.now - timedelta(days=10)).replace(second=0, microsecond=0)
