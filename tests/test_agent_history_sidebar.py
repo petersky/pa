@@ -39,6 +39,11 @@ def test_agent_sidebar_loads_and_selects_durable_history() -> None:
     assert '"/api/fleet/session-route/" + encodeURIComponent(sessionId)' in script
     assert "this.openSession(sessionId, ownerInstanceId" in script
     assert "retryAfterStartupRecovery" in script
+    assert "sessionListRecovery" in script
+    assert "PASessionRecovery.Controller" in script
+    assert "renderSessionListState" in script
+    assert "cancelSessionListRecovery" in script
+    assert 'detail.message || "Restoring sessions…"' in script
     assert "resolveSessionNotLive" in script
     assert "clearSelectedSession" in script
     assert '"/sessions/" + encodeURIComponent(targetSessionId) + "/recover"' in script
@@ -47,6 +52,25 @@ def test_agent_sidebar_loads_and_selects_durable_history() -> None:
     assert "updateSessionTitleTooltips" in script
     assert 'item.setAttribute("aria-label"' in script
     assert 'metadataField("Instance"' in script
+
+
+def test_fleet_session_panel_recovery_is_decoupled_and_teardown_safe() -> None:
+    script = (ROOT / "static" / "js" / "fleet.js").read_text()
+    shell = (ROOT / "templates" / "shell.html").read_text()
+
+    assert "js/session-recovery.js" in shell
+    assert shell.index("js/session-recovery.js") < shell.index("js/agent-chat.js")
+    assert "startRemoteSessionLoad" in script
+    assert "PASessionRecovery.Controller" in script
+    assert "agent_recovery_failed" in script
+    assert "Authentication failed while loading" in script
+    assert "The selected peer is unreachable" in script
+    assert "Other Fleet status and controls remain available" in script
+    assert 'loadRemoteHistory(instanceId, generation);' in script
+    assert "return startRemoteSessionLoad(instanceId, !!forceSessions)" in script
+    assert 'cancelRemoteSessionLoad("pagehide")' in script
+    assert 'cancelRemoteSessionLoad("history-reload")' in script
+    assert 'cancelRemoteSessionLoad("fleet-navigation")' in script
 
 
 def test_agent_session_layout_regression_contracts_cover_density_and_viewports() -> None:

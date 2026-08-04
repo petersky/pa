@@ -43,6 +43,11 @@
       var error = new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
       error.detail = detail;
       error.status = resp.status;
+      if (window.PASessionRecovery) {
+        error.retryAfterMs = window.PASessionRecovery.responseRetryAfterMs(
+          resp, detail
+        );
+      }
       throw error;
     }
     return data;
@@ -263,6 +268,9 @@
     }
   } catch (e) {}
   var remoteLoadGeneration = 0;
+  var remoteSessionRecovery = null;
+  var remoteSessionSnapshot = [];
+  var remoteHistorySnapshot = [];
   var remoteAuditGeneration = 0;
   var remoteAuditSessionId = "";
   var remoteAuditEvents = [];
@@ -586,6 +594,17 @@
     remoteDispatchTimer = null;
   }
 
+  function cancelRemoteSessionLoad(reason) {
+    if (remoteSessionRecovery) {
+      remoteSessionRecovery.controller.cancel(
+        reason || "remote-session-context-changed"
+      );
+    }
+    remoteSessionRecovery = null;
+    remoteSessionSnapshot = [];
+    remoteHistorySnapshot = [];
+  }
+
   function remoteActivityWanted() {
     return !!remoteInstanceId &&
       (remoteOperationsSectionActive || remoteNotificationsActive()) &&
@@ -595,6 +614,7 @@
   function handleRemoteOperationsHidden() {
     remoteLoadGeneration += 1;
     remoteAuditGeneration += 1;
+    cancelRemoteSessionLoad("remote-operations-hidden");
     if (remoteNotificationsActive()) {
       if (remoteInstanceId) remoteActivityTick();
       return;
@@ -844,6 +864,96 @@
         encodeURIComponent(session.id) + '&instance=' + encodeURIComponent(remoteInstanceId) +
         '">Open in Agent</a></li>';
     }).join("");
+  }
+
+  function renderRemoteSessionState(message, blocked) {
+    var list = $("#pa-remote-session-list");
+    if (!list) return;
+    list.setAttribute("aria-busy", blocked ? "false" : "true");
+    list.innerHTML = '<li class="' + (blocked ? "status status-blocked" : "muted") +
+      '" role="' + (blocked ? "alert" : "status") + '">' +
+      escapeHtml(message) + "</li>";
+  }
+
+  function remoteSessionFailureMessage(error) {
+    var detail = error && error.detail && typeof error.detail === "object"
+      ? error.detail : {};
+    if (detail.code === "agent_recovery_failed") {
+      return detail.message ||
+        "Durable session recovery failed. Audit history remains available.";
+    }
+    if (error && (error.status === 401 || error.status === 403)) {
+      return "Authentication failed while loading this peer's sessions.";
+    }
+    if (error && error.status === 502) {
+      return error.message || "The selected peer is unreachable.";
+    }
+    return error && error.message || "Could not load sessions from this peer.";
+  }
+
+  function startRemoteSessionLoad(instanceId, force) {
+    if (!instanceId || instanceId !== remoteInstanceId) return Promise.resolve(null);
+    if (remoteSessionRecovery && remoteSessionRecovery.instanceId !== instanceId) {
+      cancelRemoteSessionLoad("remote-instance-changed");
+    }
+    if (!remoteSessionRecovery) {
+      var state = {
+        instanceId: instanceId,
+        controller: null,
+      };
+      state.controller = new window.PASessionRecovery.Controller({
+        minimumMs: 250,
+        maximumMs: 30000,
+        operation: function (signal) {
+          return api(remoteApiBase(state.instanceId) + "/sessions", {
+            signal: signal,
+          });
+        },
+        isActive: function () {
+          var select = $("#pa-remote-instance");
+          return state.instanceId === remoteInstanceId &&
+            remoteOperationsSectionActive &&
+            document.visibilityState !== "hidden" &&
+            !!(select && select.isConnected);
+        },
+        onSuccess: function (sessions) {
+          remoteSessionSnapshot = sessions || [];
+          renderRemoteSessions(remoteSessionSnapshot);
+          var list = $("#pa-remote-session-list");
+          if (list) list.setAttribute("aria-busy", "false");
+          renderRemoteHistory(remoteHistorySnapshot, remoteSessionSnapshot);
+          watchRemoteSessions(state.instanceId, remoteSessionSnapshot);
+          var status = $("#pa-remote-status");
+          if (status) {
+            status.textContent = remoteSessionSnapshot.length + " live session" +
+              (remoteSessionSnapshot.length === 1 ? "" : "s") +
+              " on the selected instance.";
+          }
+        },
+        onRecovery: function (error) {
+          stopRemoteActivity("agent-recovery", true);
+          var detail = error.detail || {};
+          renderRemoteSessionState(
+            detail.message || "Restoring sessions…",
+            false
+          );
+          var status = $("#pa-remote-status");
+          if (status) {
+            status.textContent =
+              "Restoring sessions… Other Fleet status and controls remain available.";
+          }
+        },
+        onError: function (error) {
+          stopRemoteActivity("session-load-failed", true);
+          var message = remoteSessionFailureMessage(error);
+          renderRemoteSessionState(message, true);
+          var status = $("#pa-remote-status");
+          if (status) status.textContent = message;
+        },
+      });
+      remoteSessionRecovery = state;
+    }
+    return remoteSessionRecovery.controller.start(!!force);
   }
 
   function loadRemoteStreamDiagnostics() {
@@ -1130,7 +1240,30 @@
     })) select.value = selectedProvider;
   }
 
-  async function loadRemoteOperations() {
+  function loadRemoteHistory(instanceId, generation) {
+    return api(remoteApiBase(instanceId) + "/history").then(function (history) {
+      if (
+        generation !== remoteLoadGeneration ||
+        instanceId !== remoteInstanceId ||
+        !$("#pa-remote-history-list")
+      ) return;
+      remoteHistorySnapshot = history || [];
+      renderRemoteHistory(remoteHistorySnapshot, remoteSessionSnapshot);
+    }).catch(function (error) {
+      if (
+        generation !== remoteLoadGeneration ||
+        instanceId !== remoteInstanceId ||
+        !$("#pa-remote-history-list")
+      ) return;
+      var list = $("#pa-remote-history-list");
+      if (list) {
+        list.innerHTML = '<li class="status status-blocked">' +
+          escapeHtml(error.message || "Audit history is unavailable.") + "</li>";
+      }
+    });
+  }
+
+  async function loadRemoteOperations(forceSessions) {
     var instanceSelect = $("#pa-remote-instance");
     if (!instanceSelect) {
       handleRemoteOperationsHidden();
@@ -1141,49 +1274,25 @@
     var generation = ++remoteLoadGeneration;
     if (!instanceId) {
       if (status) status.textContent = "Choose an instance to load its sessions.";
+      cancelRemoteSessionLoad("no-remote-instance");
       clearRemoteWatchers();
       loadRemoteStreamDiagnostics();
       return;
     }
-    if (status) status.textContent = "Loading remote sessions…";
+    if (status && !remoteSessionRecovery) status.textContent = "Loading remote sessions…";
     loadRemoteDispatches(instanceId).catch(function () {});
-    try {
-      var base = remoteApiBase(instanceId);
-      var warnings = [];
-      var results = await Promise.all([
-        api(base + "/sessions"),
-        api(base + "/history").catch(function () {
-          warnings.push("Audit history requires a newer PA on the peer.");
-          return [];
-        }),
-        loadRemoteProviders(instanceId, generation).catch(function () {
-          warnings.push("Provider discovery is unavailable.");
-          return null;
-        }),
-      ]);
+    loadRemoteHistory(instanceId, generation);
+    loadRemoteProviders(instanceId, generation).catch(function () {
       if (
         generation !== remoteLoadGeneration ||
         instanceId !== remoteInstanceId ||
         !instanceSelect.isConnected
       ) return;
-      var sessions = results[0] || [];
-      renderRemoteSessions(sessions);
-      renderRemoteHistory(results[1] || [], sessions);
-      watchRemoteSessions(instanceId, sessions);
-      loadRemoteStreamDiagnostics();
-      if (status) {
-        status.textContent = sessions.length + " live session" + (sessions.length === 1 ? "" : "s") +
-          " on the selected instance." + (warnings.length ? " " + warnings.join(" ") : "");
-      }
-    } catch (err) {
-      if (
-        generation !== remoteLoadGeneration ||
-        instanceId !== remoteInstanceId ||
-        !instanceSelect.isConnected
-      ) return;
-      clearRemoteWatchers();
-      if (status) status.textContent = err.message;
-    }
+      var select = $("[data-remote-provider]");
+      if (select) select.title = "Provider discovery is unavailable.";
+    });
+    loadRemoteStreamDiagnostics();
+    return startRemoteSessionLoad(instanceId, !!forceSessions);
   }
 
   function selectRemoteSession(sessionId) {
@@ -1329,6 +1438,7 @@
     var nextInstanceId = select.value || "";
     if (nextInstanceId !== remoteInstanceId) {
       remoteAuditGeneration += 1;
+      cancelRemoteSessionLoad("remote-instance-changed");
       clearRemoteWatchers();
       remoteActivitySessions = {};
       remoteActivityCursors = {};
@@ -3064,6 +3174,7 @@
         (fleetOverviewRoot && target.contains && target.contains(fleetOverviewRoot)))
     ) {
       remoteOperationsSectionActive = false;
+      cancelRemoteSessionLoad("fleet-swap");
       if (!remoteNotificationsActive()) clearRemoteWatchers();
       else remoteActivityTick();
       teardownFleetOverview();
@@ -3077,6 +3188,7 @@
     var root = $("#pa-fleet-root");
     if (!root || !detail.layout || !detail.layout.contains(root)) return;
     remoteOperationsSectionActive = false;
+    cancelRemoteSessionLoad("fleet-section-changed");
     if (!remoteNotificationsActive()) clearRemoteWatchers();
     else remoteActivityTick();
   });
@@ -3100,6 +3212,7 @@
     }
     if (!leavesFleet) return;
     remoteOperationsSectionActive = false;
+    cancelRemoteSessionLoad("fleet-navigation");
     if (!remoteNotificationsActive()) clearRemoteWatchers();
     else remoteActivityTick();
   });
@@ -3107,6 +3220,7 @@
   document.body.addEventListener("htmx:beforeSwap", beforeFleetSwap);
   document.addEventListener("htmx:historyRestore", function () {
     remoteOperationsSectionActive = false;
+    cancelRemoteSessionLoad("fleet-history-restore");
     if (!remoteNotificationsActive()) clearRemoteWatchers();
     setTimeout(initializeFleetPage, 0);
   });
@@ -3115,6 +3229,7 @@
   });
   window.addEventListener("popstate", function () {
     remoteOperationsSectionActive = false;
+    cancelRemoteSessionLoad("fleet-popstate");
     if (!remoteNotificationsActive()) clearRemoteWatchers();
     setTimeout(initializeFleetPage, 0);
   });
@@ -3123,6 +3238,7 @@
     if ($("#pa-fleet-root") && !liveStatusRequest) loadLiveStatus(false);
   });
   window.addEventListener("pagehide", function () {
+    cancelRemoteSessionLoad("pagehide");
     stopRemoteActivity("pagehide", true);
     abortFleetPageRefresh();
     teardownFleetOverview();
@@ -3132,9 +3248,13 @@
       stopRemoteActivity("page-suspended", true);
       return;
     }
+    if (remoteSessionRecovery && remoteOperationsSectionActive) {
+      remoteSessionRecovery.controller.start(false);
+    }
     if (remoteActivityWanted()) remoteActivityTick();
   });
   document.addEventListener("pa:historyWillReload", function () {
+    cancelRemoteSessionLoad("history-reload");
     stopRemoteActivity("history-reload", true);
     abortFleetPageRefresh();
     teardownFleetOverview();
@@ -3173,6 +3293,7 @@
       return;
     }
     if (!e.target || e.target.id !== "pa-remote-instance") return;
+    cancelRemoteSessionLoad("remote-instance-changed");
     remoteInstanceId = e.target.value || "";
     remoteAuditGeneration += 1;
     try { localStorage.setItem("pa-remote-instance", remoteInstanceId); } catch (err) {}
@@ -3457,7 +3578,7 @@
     }
     if (e.target.closest("#pa-remote-refresh")) {
       e.preventDefault();
-      loadRemoteOperations();
+      loadRemoteOperations(true);
       return;
     }
 
