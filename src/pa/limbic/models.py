@@ -3,12 +3,13 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import unicodedata
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 def _canonical_hash(value: Any) -> str:
@@ -25,6 +26,22 @@ def _normalized_name(value: str) -> str:
     return value
 
 
+def _normalized_content(value: str) -> str:
+    return (
+        unicodedata.normalize("NFKC", value).replace("\r\n", "\n").replace("\r", "\n")
+    )
+
+
+_SECRET_VALUE = re.compile(
+    r"(?i)(?:bearer\s+[a-z0-9._~+/-]+|"
+    r"(?:secret|token|password|credential|authorization)\s*[:=]\s*\S+)"
+)
+
+
+def _redact_text(value: str) -> str:
+    return _SECRET_VALUE.sub("[redacted]", value)
+
+
 def _minimize_secrets(value: Any) -> Any:
     markers = ("secret", "token", "password", "credential", "authorization")
     if isinstance(value, dict):
@@ -35,6 +52,8 @@ def _minimize_secrets(value: Any) -> Any:
         }
     if isinstance(value, list):
         return [_minimize_secrets(item) for item in value]
+    if isinstance(value, str):
+        return _redact_text(value)
     return value
 
 
@@ -62,6 +81,71 @@ class SignalSource(StrEnum):
     TIMER = "timer"
 
 
+class ControlAuthority(StrEnum):
+    UNTRUSTED = "untrusted"
+    OPERATOR = "authenticated_operator"
+    INTEGRATION = "authenticated_integration"
+    AUTHORITY = "authenticated_authority"
+
+
+class ControlEvent(StrEnum):
+    OPERATOR_STOP = "operator_stop"
+    SECURITY_REVOCATION = "security_revocation"
+    DATA_INTEGRITY_ALARM = "data_integrity_alarm"
+    LEASE_FENCING = "lease_fencing"
+    HARD_RESOURCE_LIMIT = "hard_resource_limit"
+
+
+class VerifiedControlProvenance(BaseModel):
+    """Server-created proof that a control event crossed an authenticated boundary."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    authority: ControlAuthority = ControlAuthority.UNTRUSTED
+    control_event: ControlEvent | None = None
+    principal_id: str | None = None
+    integration_id: str | None = None
+    authority_instance_id: str | None = None
+    transport: str = Field(default="untrusted", min_length=1, max_length=80)
+
+    @model_validator(mode="after")
+    def validate_proof(self) -> VerifiedControlProvenance:
+        identifiers = {
+            ControlAuthority.OPERATOR: self.principal_id,
+            ControlAuthority.INTEGRATION: self.integration_id,
+            ControlAuthority.AUTHORITY: self.authority_instance_id,
+        }
+        if self.authority == ControlAuthority.UNTRUSTED:
+            if self.control_event is not None:
+                raise ValueError("untrusted provenance cannot assert a control event")
+            return self
+        if self.control_event is None or not identifiers[self.authority]:
+            raise ValueError(
+                "verified control provenance requires an authenticated identity and event"
+            )
+        return self
+
+    @property
+    def trusted(self) -> bool:
+        return self.authority != ControlAuthority.UNTRUSTED
+
+    def canonical_scope(self) -> str:
+        identity = (
+            self.principal_id
+            or self.integration_id
+            or self.authority_instance_id
+            or "untrusted"
+        )
+        fingerprint = _canonical_hash(
+            {
+                "authority": self.authority,
+                "identity": identity,
+                "transport": _normalized_name(self.transport),
+            }
+        )[:20]
+        return f"{self.authority.value}:{fingerprint}"
+
+
 class SignalEnvelope(BaseModel):
     """Channel-neutral, immutable input to appraisal."""
 
@@ -79,36 +163,94 @@ class SignalEnvelope(BaseModel):
     occurred_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     received_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     sensitivity: Sensitivity = Sensitivity.INTERNAL
+    # Deprecated caller claim. LimbicService always overwrites it from verified
+    # transport context before appraisal and persistence.
     trusted_control: bool = False
+    control_provenance: str = "untrusted"
     content: str = ""
     metadata: dict[str, Any] = Field(default_factory=dict)
     content_hash: str = ""
     dedupe_key: str = ""
+    hash_version: str = "input"
 
     @model_validator(mode="after")
     def canonicalize(self) -> SignalEnvelope:
         self.event_class = _normalized_name(self.event_class)
         self.subject_type = _normalized_name(self.subject_type)
         self.goal_refs = sorted(set(self.goal_refs))
-        if not self.content_hash:
-            self.content_hash = _canonical_hash(
-                {"content": self.content, "metadata": self.metadata}
-            )
-        if not self.dedupe_key:
-            self.dedupe_key = _canonical_hash(
-                {
-                    "realm": self.realm_id,
-                    "source": self.source,
-                    "class": self.event_class,
-                    "subject": [self.subject_type, self.subject_id],
-                    "correlation": self.correlation_id,
-                    "content_hash": self.content_hash,
-                }
-            )
+        # Caller hash values are treated as input only. Server-canonical records
+        # retain their original digest when their raw content is redacted for
+        # persistence and replay.
+        if self.hash_version != "limbic-v2" or not (
+            self.content_hash and self.dedupe_key
+        ):
+            self._set_server_hashes(self.control_provenance)
         return self
 
+    def canonicalized_for(
+        self, provenance: VerifiedControlProvenance | None = None
+    ) -> SignalEnvelope:
+        """Return a server-canonical copy; caller hashes and trust flags are ignored."""
+
+        verified = provenance or VerifiedControlProvenance()
+        canonical = self.model_copy(
+            deep=True,
+            update={
+                "trusted_control": verified.trusted,
+                "control_provenance": verified.canonical_scope(),
+                "content_hash": "",
+                "dedupe_key": "",
+                "hash_version": "limbic-v2",
+            },
+        )
+        canonical._set_server_hashes(verified.canonical_scope())
+        return canonical
+
+    def _set_server_hashes(self, provenance_scope: str) -> None:
+        self.content_hash = _canonical_hash(
+            {
+                "content": _normalized_content(self.content),
+                "metadata": self.metadata,
+                "trusted_provenance": provenance_scope,
+            }
+        )
+        self.dedupe_key = _canonical_hash(
+            {
+                "realm": self.realm_id,
+                "source": self.source,
+                "class": self.event_class,
+                "subject": [self.subject_type, self.subject_id],
+                "correlation": self.correlation_id,
+                "content_hash": self.content_hash,
+                "trusted_provenance": provenance_scope,
+            }
+        )
+
     def appraisal_features(self) -> dict[str, Any]:
-        """Return minimized, secret-resistant features for an optional model."""
+        """Return content-free, secret-resistant features safe for durable audit."""
+
+        safe_metadata = {
+            key: value
+            for key, value in self.metadata.items()
+            if key in {"deep_review", "failure_count"}
+            and isinstance(value, (bool, int, float))
+        }
+        return {
+            "schema_version": self.schema_version,
+            "source": self.source.value,
+            "event_class": self.event_class,
+            "subject_type": self.subject_type,
+            "goal_count": len(self.goal_refs),
+            "trusted_control": self.trusted_control,
+            "control_provenance": self.control_provenance,
+            "sensitivity": self.sensitivity.value,
+            "content": "[redacted]",
+            "metadata": safe_metadata,
+            "content_hash": self.content_hash,
+        }
+
+    def provider_features(self) -> dict[str, Any]:
+        """Return minimized features for the optional, untrusted model provider."""
 
         include_content = self.sensitivity in {
             Sensitivity.PUBLIC,
@@ -120,9 +262,12 @@ class SignalEnvelope(BaseModel):
             "event_class": self.event_class,
             "subject_type": self.subject_type,
             "goal_count": len(self.goal_refs),
-            "trusted_control": self.trusted_control,
             "sensitivity": self.sensitivity.value,
-            "content": self.content[:1000] if include_content else "[redacted]",
+            "content": (
+                _redact_text(_normalized_content(self.content)[:1000])
+                if include_content
+                else "[redacted]"
+            ),
             "metadata": _minimize_secrets(self.metadata),
             "content_hash": self.content_hash,
         }
@@ -163,6 +308,12 @@ class ProcessingPath(StrEnum):
     BYPASS = "deterministic_bypass"
 
 
+class AppraisalDiagnostic(BaseModel):
+    code: str
+    category: str
+    redacted: bool = True
+
+
 class Appraisal(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     signal_id: str
@@ -184,6 +335,7 @@ class Appraisal(BaseModel):
     model_used: bool = False
     shadow: Appraisal | None = None
     input_features: dict[str, Any] = Field(default_factory=dict)
+    diagnostics: list[AppraisalDiagnostic] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
@@ -217,19 +369,30 @@ class ReplayCase(BaseModel):
 
 class ReplayCaseResult(BaseModel):
     name: str
-    expected_path: ProcessingPath
-    actual_path: ProcessingPath
+    expected_path: ProcessingPath | None = None
+    actual_path: ProcessingPath | None = None
+    expected_bypass: str | None = None
+    actual_bypass: str | None = None
+    expected_urgency: Urgency | None = None
+    actual_urgency: Urgency | None = None
     matched: bool
+    escalation_outcome: str | None = None
     reasons: list[str] = Field(default_factory=list)
 
 
 class ReplayReport(BaseModel):
     evaluator_version: str
+    status: str
     total: int
     matched: int
-    accuracy: float
+    accuracy: float | None
+    true_positives: int
+    true_negatives: int
+    false_positives: int
+    false_negatives: int
     missed_escalations: int
     false_escalations: int
+    invalid_cases: int = 0
     cases: list[ReplayCaseResult]
 
 
