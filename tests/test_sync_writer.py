@@ -13,7 +13,14 @@ from pa.auth.users import UserDirectory
 from pa.config import Settings, reset_settings
 from pa.core.kernel import Kernel
 from pa.core.writer_lock import DataDirAlreadyOwnedError, DataDirWriterLock
-from pa.domain.models import CardCreate, CardEvent, CardLane, EventType, ItemKind
+from pa.domain.models import (
+    CardCreate,
+    CardEvent,
+    CardLane,
+    EventType,
+    ItemKind,
+    SyncCommit,
+)
 from pa.domain.projection import CardProjection
 from pa.domain.store import reset_store
 from pa.execution.lease import LeaseManager
@@ -41,6 +48,41 @@ def _event(title: str) -> CardEvent:
 
 
 class EventLogWriterSafetyTests(unittest.TestCase):
+    def test_commit_replay_handles_history_deeper_than_recursion_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp)
+            objects = ObjectStore(data_dir / "objects")
+            log = EventLog(objects, data_dir, "instance")
+            parent: str | None = None
+            expected: list[str] = []
+
+            for index in range(1_200):
+                title = f"event-{index}"
+                event = _event(title)
+                event_hash = objects.put_json(event.model_dump(mode="json"))
+                commit = SyncCommit(
+                    hash="",
+                    realm_id="default",
+                    instance_id="instance",
+                    parent_hashes=[parent] if parent else [],
+                    event_hashes=[event_hash],
+                    author_principal="user:test",
+                )
+                commit.hash = objects.put_json(commit.model_dump(mode="json"))
+                parent = commit.hash
+                expected.append(title)
+
+            replayed: list[str] = []
+            seen: set[str] = set()
+            log.apply_commit_chain(
+                parent or "",
+                lambda event: replayed.append(event.card_id),
+                seen=seen,
+            )
+
+            self.assertEqual(replayed, expected)
+            self.assertEqual(len(seen), 1_200)
+
     def test_multiple_event_log_objects_refresh_and_preserve_parent_chain(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             data_dir = Path(tmp)
