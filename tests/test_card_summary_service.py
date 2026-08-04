@@ -116,3 +116,26 @@ def test_contract_rejects_enumeration_and_overlong_output() -> None:
         sanitize_summary("One. Two. Three. Four.")
     with pytest.raises(ValueError):
         sanitize_summary("x" * 601)
+
+
+async def _fleet_member_does_not_run_legacy_migration() -> None:
+    async def provider(title, body):
+        raise AssertionError("fleet member must not schedule migration summaries")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx, call = context(tmp, provider)
+        ctx.settings.fleet_owner_url = "http://fleet-owner.example"
+        card = ctx.store.create_card(CardCreate(title="Legacy", body="details"))
+        service = CardSummaryService(ctx, provider_call=call)
+
+        migrated = await service.migrate_legacy()
+
+        current = ctx.store.get_card(card.id)
+        assert migrated == 0
+        assert current is not None
+        assert current.summary_source.value == "fallback"
+        assert not service._tasks
+
+
+def test_fleet_member_does_not_run_legacy_migration() -> None:
+    asyncio.run(_fleet_member_does_not_run_legacy_migration())
