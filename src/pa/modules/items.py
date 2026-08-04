@@ -1347,10 +1347,15 @@ def card_history_api(request: Request, card_id: str, realm: str | None = None) -
 
 @router.post("/cards/repair-legacy-history")
 def repair_legacy_card_history_api(request: Request, body: CardRepairRequest) -> dict:
+    principal_id = (
+        "instance:fleet"
+        if getattr(request.state, "instance_authenticated", False)
+        else get_principal_id(request)
+    )
     results = get_store().repair_legacy_card_history(
         body.card_ids,
         realm_id=body.realm_id,
-        principal_id=get_principal_id(request),
+        principal_id=principal_id,
         instance_id=request.app.state.ctx.settings.instance_id,
     )
     return {

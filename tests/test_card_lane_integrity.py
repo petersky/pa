@@ -501,6 +501,52 @@ class CardLaneIntegrityHttpTests(unittest.TestCase):
                     final_event["event"]["source_operation"], "card.update"
                 )
 
+    def test_fleet_principal_can_run_bounded_legacy_repair(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                data_dir=Path(tmp),
+                agent_enabled=False,
+                auth_required=True,
+                sync_token="shared-secret",
+            )
+            user_token = UserDirectory(settings.data_dir).ensure_default_user().cli_token
+            with TestClient(Kernel.boot(settings=settings).build_app()) as client:
+                stamp = datetime.now(UTC).isoformat()
+                with sqlite3.connect(settings.db_path) as conn:
+                    conn.execute(
+                        "INSERT INTO items (id, kind, title, body, status, parent_id, tags, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            CARD_ID,
+                            "goal",
+                            "Get agents working",
+                            "",
+                            "done",
+                            None,
+                            "[]",
+                            stamp,
+                            stamp,
+                        ),
+                    )
+
+                repaired = client.post(
+                    "/api/cards/repair-legacy-history",
+                    json={"card_ids": [CARD_ID], "realm_id": "default"},
+                    headers={"Authorization": "Bearer shared-secret"},
+                )
+                self.assertEqual(repaired.status_code, 200, repaired.text)
+                self.assertEqual(repaired.json()["results"][0]["status"], "repaired")
+                self.assertEqual(repaired.json()["results"][0]["lane"], "done")
+
+                history = client.get(
+                    f"/api/cards/{CARD_ID}/history",
+                    headers={"Authorization": f"Bearer {user_token}"},
+                )
+                self.assertEqual(history.status_code, 200, history.text)
+                event = history.json()["events"][-1]["event"]
+                self.assertEqual(event["author_principal"], "instance:fleet")
+                self.assertEqual(event["author_instance"], settings.instance_id)
+                self.assertEqual(event["source_operation"], "repair.legacy_card_history")
+
 
 if __name__ == "__main__":
     unittest.main()
