@@ -7,7 +7,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>{{PA_BIN}}</string>
-        <string>serve</string>
+        <string>_service-run</string>
     </array>
     <key>EnvironmentVariables</key>
     <dict>
@@ -34,8 +34,8 @@
         <integer>8192</integer>
     </dict>
     <key>StandardOutPath</key>
-    <string>{{PA_LOG_DIR}}/server.log</string>
+    <string>/dev/null</string>
     <key>StandardErrorPath</key>
-    <string>{{PA_LOG_DIR}}/server.err.log</string>
+    <string>/dev/null</string>
 </dict>
 </plist>

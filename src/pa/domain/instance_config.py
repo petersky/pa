@@ -98,6 +98,22 @@ class InstanceConfig(BaseModel):
     debug: bool = False
     dev_tools: bool = False
     log_level: str = "INFO"
+    log_rotation_max_bytes: int = Field(
+        default=25 * 1024 * 1024, ge=1024, le=16 * 1024 * 1024 * 1024
+    )
+    log_rotation_interval_seconds: float = Field(
+        default=24 * 60 * 60, ge=1, le=31 * 24 * 60 * 60
+    )
+    log_retention_count: int = Field(default=7, ge=1, le=10_000)
+    log_retention_max_age_seconds: float = Field(
+        default=14 * 24 * 60 * 60, ge=1, le=10 * 365 * 24 * 60 * 60
+    )
+    log_retention_max_total_bytes: int = Field(
+        default=256 * 1024 * 1024, ge=1024, le=64 * 1024 * 1024 * 1024
+    )
+    log_disk_pressure_free_bytes: int = Field(
+        default=512 * 1024 * 1024, ge=0, le=64 * 1024 * 1024 * 1024
+    )
     blocking_workers: int = Field(default=8, ge=1, le=64)
     blocking_queue_limit: int = Field(default=64, ge=0, le=4096)
     blocking_default_timeout: float = Field(default=30.0, gt=0, le=3600)
