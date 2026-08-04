@@ -80,8 +80,30 @@ uv run pa serve
 | `pa serve` | Start the FastAPI + HTMX server (foreground) |
 | `pa status` | Show instance status |
 | `pa mcp` | Run PA's MCP server (stdio, for agent sessions) |
+| `pa card dispatch-wait <dispatch-id>...` | Wait for durable dispatches, optionally keeping a Mac awake |
 | `pa plugins list` | List loaded modules and entry points |
 | `pa version` | Show version |
+
+### Waiting for durable dispatches
+
+`pa card dispatch-wait` observes the public PA API; it does not consume an agent
+slot or mutate dispatch state. It follows queued and running work until every
+dispatch is terminal, prints state transitions and a final summary, and tolerates
+temporary server or network loss until the configured deadline.
+
+```bash
+pa card dispatch-wait <dispatch-id> [<dispatch-id> ...]
+pa card dispatch-wait <dispatch-id> --timeout 7200 --json
+pa card dispatch <card-id> --instance macmini --wait --keep-awake
+```
+
+`--keep-awake` uses macOS `caffeinate` only for the lifetime of the wait and
+releases it on success, failure, timeout, Ctrl-C, or SIGTERM. It is intentionally
+rejected on other platforms; omit it there. Use `--quiet` for no output or
+`--json` for one machine-readable result. Exit status is `0` only when every
+dispatch succeeds, `1` for failed/cancelled/unavailable work, `124` for a wait
+deadline, `130` for Ctrl-C, and `128 + signal` for other handled termination
+signals. Queued dispatches remain watched without occupying execution capacity.
 
 ## Configuration
 

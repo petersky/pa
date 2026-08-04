@@ -241,3 +241,135 @@ def test_dispatch_list_get_retry_and_cancel(tmp_path: Path) -> None:
         )
         if args[1] in {"dispatch-retry", "dispatch-cancel"}:
             assert request.call_args.args[0] == "POST"
+
+
+def test_dispatch_wait_json_and_quiet_modes(tmp_path: Path) -> None:
+    from pa.cli.main import app
+
+    settings = _settings(tmp_path)
+    completed = {
+        "dispatch_id": "dispatch-1",
+        "state": "completed",
+        "effective_state": "completed",
+        "target_instance_name": "worker",
+    }
+    for mode in ("--json", "--quiet"):
+        with (
+            patch("pa.cli.card.get_settings", return_value=settings),
+            patch(
+                "pa.cli.card.httpx.request",
+                return_value=_response(200, completed),
+            ),
+        ):
+            result = CliRunner().invoke(
+                app, ["card", "dispatch-wait", "dispatch-1", mode]
+            )
+        assert result.exit_code == 0, result.output
+        if mode == "--json":
+            payload = json.loads(result.output)
+            assert payload["status"] == "succeeded"
+            assert payload["dispatches"][0]["outcome"] == "succeeded"
+        else:
+            assert result.output == ""
+
+
+def test_dispatch_wait_uses_public_api_and_missing_is_nonzero(tmp_path: Path) -> None:
+    from pa.cli.main import app
+
+    settings = _settings(tmp_path)
+    with (
+        patch("pa.cli.card.get_settings", return_value=settings),
+        patch(
+            "pa.cli.card.httpx.request",
+            return_value=_response(404, {"detail": "Dispatch not found"}),
+        ) as request,
+    ):
+        result = CliRunner().invoke(
+            app, ["card", "dispatch-wait", "missing", "--poll-interval", "0.05"]
+        )
+
+    assert result.exit_code == 1
+    assert "missing: unavailable" in result.output
+    assert "Dispatch summary:" in result.output
+    assert request.call_args.args[:2] == (
+        "GET",
+        "http://127.0.0.1:8123/api/fleet/dispatch-jobs/missing",
+    )
+
+
+def test_dispatch_wait_recovers_after_http_transport_loss(tmp_path: Path) -> None:
+    from pa.cli.main import app
+
+    settings = _settings(tmp_path)
+    responses = [
+        httpx.ConnectError("server restarting"),
+        _response(200, {"dispatch_id": "dispatch-1", "state": "running"}),
+        _response(200, {"dispatch_id": "dispatch-1", "state": "completed"}),
+    ]
+    with (
+        patch("pa.cli.card.get_settings", return_value=settings),
+        patch("pa.cli.card.httpx.request", side_effect=responses),
+        patch("pa.cli.dispatch_wait.time.sleep"),
+    ):
+        result = CliRunner().invoke(
+            app, ["card", "dispatch-wait", "dispatch-1", "--poll-interval", "0.05"]
+        )
+
+    assert result.exit_code == 0, result.output
+    assert "api-unavailable" in result.output
+    assert "dispatch-1: running" in result.output
+    assert "dispatch-1: completed" in result.output
+
+
+def test_dispatch_can_admit_and_wait_in_one_workflow(tmp_path: Path) -> None:
+    from pa.cli.main import app
+
+    settings = _settings(tmp_path)
+    responses = [
+        _response(200, {"id": "card-1", "project_id": "project-1"}),
+        _response(
+            200,
+            [{"instance_id": "instance-1", "name": "worker", "url": "https://w"}],
+        ),
+        _response(
+            202,
+            {
+                "duplicate": False,
+                "dispatch": {
+                    "dispatch_id": "dispatch-1",
+                    "state": "queued",
+                    "target_instance_name": "worker",
+                },
+            },
+        ),
+        _response(
+            200,
+            {
+                "dispatch_id": "dispatch-1",
+                "state": "completed",
+                "target_instance_name": "worker",
+            },
+        ),
+    ]
+    with (
+        patch("pa.cli.card.get_settings", return_value=settings),
+        patch("pa.cli.card.httpx.request", side_effect=responses),
+    ):
+        result = CliRunner().invoke(
+            app,
+            [
+                "card",
+                "dispatch",
+                "card-1",
+                "--instance",
+                "worker",
+                "--wait",
+                "--timeout",
+                "10",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert "Queued durable card dispatch" in result.output
+    assert "dispatch-1: completed" in result.output
+    assert "Dispatch summary:" in result.output
