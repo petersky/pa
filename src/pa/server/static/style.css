@@ -277,6 +277,15 @@
   margin: 0;
 }
 
+.telemetry-table-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  color: var(--pa-text-muted);
+  font-size: 0.78rem;
+}
+
 .telemetry-table-wrap {
   max-height: 28rem;
   overflow: auto;

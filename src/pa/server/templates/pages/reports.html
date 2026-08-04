@@ -59,7 +59,7 @@
         <svg viewBox="0 0 800 220" preserveAspectRatio="none" aria-hidden="true">
           <g data-chart-grid></g><g data-chart-axes></g><g data-chart-lines></g><g data-chart-points></g><line data-chart-cursor x1="0" x2="0" y1="12" y2="196" hidden></line>
         </svg>
-        <div class="telemetry-tooltip" data-chart-tooltip hidden></div>
+        <div class="telemetry-tooltip" data-chart-tooltip role="status" aria-live="polite" hidden></div>
         <p class="telemetry-chart-empty muted" data-chart-empty>Loading…</p>
       </div>
       <div class="telemetry-dimension-status" data-chart-status></div>
@@ -72,9 +72,14 @@
         <h2 id="telemetry-data-title">Report values and gaps</h2>
         <p class="muted small" data-telemetry-summary aria-live="polite">Preparing accessible report data…</p>
       </div>
+      <nav class="telemetry-table-controls" aria-label="Report value pages">
+        <button type="button" data-telemetry-table-prev aria-controls="telemetry-report-values" disabled>Previous values</button>
+        <span data-telemetry-table-page role="status" aria-live="polite">Page 1 of 1.</span>
+        <button type="button" data-telemetry-table-next aria-controls="telemetry-report-values" disabled>Next values</button>
+      </nav>
     </header>
     <div class="telemetry-table-wrap">
-      <table class="data-table">
+      <table class="data-table" id="telemetry-report-values">
         <thead><tr><th>Time or range</th><th>Series and metric</th><th>Unit</th><th>Value or gap reason</th><th>Quality</th></tr></thead>
         <tbody data-telemetry-table-body></tbody>
       </table>

@@ -11,7 +11,7 @@ from pathlib import Path
 
 from pa.telemetry.models import MetricQuality, TelemetryQuery, TelemetrySample
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 ROLLUP_BUCKET_SECONDS = 300
 _QUALITY_RANK = {
     MetricQuality.MEASURED.value: 0,
@@ -134,7 +134,8 @@ class TelemetryStorage:
                 restart_ids TEXT NOT NULL DEFAULT '',
                 PRIMARY KEY(
                     bucket_start, bucket_seconds, instance_id, scope_type, scope_id,
-                    provider_id, card_id, project_id, realm_id, principal_id, metric
+                    provider_id, card_id, project_id, realm_id, principal_id, metric,
+                    unit
                 )
             );
             CREATE INDEX IF NOT EXISTS rollups_time_idx
@@ -150,6 +151,79 @@ class TelemetryStorage:
             conn.execute(
                 "ALTER TABLE rollup_metrics "
                 "ADD COLUMN restart_ids TEXT NOT NULL DEFAULT ''"
+            )
+        primary_key = [
+            row[1]
+            for row in sorted(
+                conn.execute("PRAGMA table_info(rollup_metrics)"),
+                key=lambda row: row[5] or 10_000,
+            )
+            if row[5]
+        ]
+        expected_primary_key = [
+            "bucket_start",
+            "bucket_seconds",
+            "instance_id",
+            "scope_type",
+            "scope_id",
+            "provider_id",
+            "card_id",
+            "project_id",
+            "realm_id",
+            "principal_id",
+            "metric",
+            "unit",
+        ]
+        if primary_key != expected_primary_key:
+            conn.executescript(
+                """
+                DROP INDEX IF EXISTS rollups_time_idx;
+                DROP INDEX IF EXISTS rollups_scope_idx;
+                ALTER TABLE rollup_metrics RENAME TO rollup_metrics_unitless;
+                CREATE TABLE rollup_metrics (
+                    bucket_start REAL NOT NULL,
+                    bucket_seconds INTEGER NOT NULL,
+                    instance_id TEXT NOT NULL,
+                    instance_name TEXT NOT NULL,
+                    scope_type TEXT NOT NULL,
+                    scope_id TEXT NOT NULL,
+                    provider_id TEXT NOT NULL DEFAULT '',
+                    card_id TEXT NOT NULL DEFAULT '',
+                    project_id TEXT NOT NULL DEFAULT '',
+                    realm_id TEXT NOT NULL DEFAULT '',
+                    principal_id TEXT NOT NULL DEFAULT '',
+                    metric TEXT NOT NULL,
+                    unit TEXT NOT NULL,
+                    quality_rank INTEGER NOT NULL,
+                    value_sum REAL,
+                    value_min REAL,
+                    value_max REAL,
+                    value_last REAL,
+                    value_count INTEGER NOT NULL,
+                    sample_count INTEGER NOT NULL,
+                    restart_ids TEXT NOT NULL DEFAULT '',
+                    PRIMARY KEY(
+                        bucket_start, bucket_seconds, instance_id, scope_type,
+                        scope_id, provider_id, card_id, project_id, realm_id,
+                        principal_id, metric, unit
+                    )
+                );
+                INSERT INTO rollup_metrics(
+                    bucket_start,bucket_seconds,instance_id,instance_name,
+                    scope_type,scope_id,provider_id,card_id,project_id,realm_id,
+                    principal_id,metric,unit,quality_rank,value_sum,value_min,
+                    value_max,value_last,value_count,sample_count,restart_ids
+                )
+                SELECT bucket_start,bucket_seconds,instance_id,instance_name,
+                       scope_type,scope_id,provider_id,card_id,project_id,realm_id,
+                       principal_id,metric,unit,quality_rank,value_sum,value_min,
+                       value_max,value_last,value_count,sample_count,restart_ids
+                FROM rollup_metrics_unitless;
+                DROP TABLE rollup_metrics_unitless;
+                CREATE INDEX rollups_time_idx ON rollup_metrics(bucket_start);
+                CREATE INDEX rollups_scope_idx
+                    ON rollup_metrics(scope_type, scope_id, metric, bucket_start);
+                """
             )
         conn.execute(
             "INSERT INTO telemetry_meta(key,value) VALUES('schema_version',?) "
@@ -411,6 +485,16 @@ class TelemetryStorage:
             ):
                 dropped_invalid_samples += 1
                 continue
+            bucket_start = datetime.fromtimestamp(row["bucket_start"], UTC)
+            bucket_end = bucket_start + timedelta(seconds=bucket)
+            interval_start = max(query.start, bucket_start)
+            interval_end = min(query.end, bucket_end)
+            if interval_start > query.end or interval_end < query.start:
+                continue
+            first_timestamp = max(
+                query.start, datetime.fromtimestamp(row["first_ts"], UTC)
+            )
+            last_timestamp = min(query.end, datetime.fromtimestamp(row["last_ts"], UTC))
             series[
                 (
                     row["instance_id"],
@@ -426,9 +510,11 @@ class TelemetryStorage:
                 )
             ].append(
                 {
-                    "timestamp": datetime.fromtimestamp(
-                        row["bucket_start"], UTC
-                    ).isoformat(),
+                    "timestamp": interval_start.isoformat(),
+                    "interval_start": interval_start.isoformat(),
+                    "interval_end": interval_end.isoformat(),
+                    "partial_bucket": interval_start != bucket_start
+                    or interval_end != bucket_end,
                     "avg": row["value_avg"],
                     "min": row["value_min"],
                     "max": row["value_max"],
@@ -437,20 +523,16 @@ class TelemetryStorage:
                     "quality": _RANK_QUALITY.get(
                         row["quality_rank"], MetricQuality.UNAVAILABLE.value
                     ),
-                    "restart": len(
+                    "restart_ids": sorted(
                         {
                             value
                             for value in (row["restart_ids"] or "").split(",")
                             if value
                         }
-                    )
-                    > 1,
-                    "first_timestamp": datetime.fromtimestamp(
-                        row["first_ts"], UTC
-                    ).isoformat(),
-                    "last_timestamp": datetime.fromtimestamp(
-                        row["last_ts"], UTC
-                    ).isoformat(),
+                    ),
+                    "restart": False,
+                    "first_timestamp": first_timestamp.isoformat(),
+                    "last_timestamp": last_timestamp.isoformat(),
                 }
             )
         return {
@@ -503,6 +585,8 @@ class TelemetryStorage:
 
     @staticmethod
     def _missing_reason(point: dict) -> str | None:
+        if point["value_count"] > 0 and point["avg"] is not None:
+            return None
         if point["quality"] == MetricQuality.UNSUPPORTED.value:
             return "unsupported"
         if point["quality"] == MetricQuality.UNAVAILABLE.value:
@@ -511,11 +595,36 @@ class TelemetryStorage:
             return "no_sample"
         return None
 
+    @staticmethod
+    def _partial_reason(point: dict) -> str | None:
+        if point["value_count"] <= 0 or point["avg"] is None:
+            return None
+        if point["quality"] == MetricQuality.UNSUPPORTED.value:
+            return "unsupported"
+        if point["quality"] == MetricQuality.UNAVAILABLE.value:
+            return "temporarily_unavailable"
+        if point["value_count"] < point["sample_count"]:
+            return "no_sample"
+        return None
+
     @classmethod
     def _typed_points(cls, points: list[dict]) -> list[dict]:
+        previous_restart_ids: set[str] = set()
         for point in points:
             reason = cls._missing_reason(point)
+            restart_ids = set(point.get("restart_ids") or [])
+            point["restart"] = len(restart_ids) > 1 or bool(
+                previous_restart_ids
+                and restart_ids
+                and not restart_ids.issubset(previous_restart_ids)
+            )
+            if restart_ids:
+                previous_restart_ids = restart_ids
             point["missing_reason"] = reason
+            point["missing_count"] = max(
+                0, point["sample_count"] - point["value_count"]
+            )
+            point["partial_reason"] = cls._partial_reason(point)
             point["observation"] = (
                 "missing"
                 if reason
@@ -538,9 +647,15 @@ class TelemetryStorage:
         cursor = start
         ordered = sorted(points, key=lambda point: point["timestamp"])
         for point in ordered:
-            point_start = datetime.fromisoformat(point["timestamp"])
+            point_start = datetime.fromisoformat(
+                point.get("interval_start") or point["timestamp"]
+            )
+            point_end = datetime.fromisoformat(
+                point.get("interval_end")
+                or (point_start + timedelta(seconds=bucket_seconds)).isoformat()
+            )
             bucket_start = max(start, point_start)
-            bucket_end = min(end, point_start + timedelta(seconds=bucket_seconds))
+            bucket_end = min(end, point_end)
             if bucket_end <= start or bucket_start >= end:
                 continue
             if cursor < bucket_start:
@@ -558,6 +673,16 @@ class TelemetryStorage:
                         "reason": reason,
                         "start": bucket_start.isoformat(),
                         "end": bucket_end.isoformat(),
+                    }
+                )
+            partial_reason = cls._partial_reason(point)
+            if partial_reason:
+                gaps.append(
+                    {
+                        "reason": partial_reason,
+                        "start": bucket_start.isoformat(),
+                        "end": bucket_end.isoformat(),
+                        "partial": True,
                     }
                 )
             if point["restart"]:
@@ -603,6 +728,7 @@ class TelemetryStorage:
                      JOIN samples s2 ON s2.id=sm2.sample_id
                      WHERE sm2.metric=m.metric
                        AND s2.scope_id=s.scope_id
+                       AND sm2.unit=m.unit
                        AND CAST(s2.ts / ? AS INTEGER)=CAST(s.ts / ? AS INTEGER)
                        AND s2.id IN ({placeholders})
                      ORDER BY s2.ts DESC LIMIT 1) value_last,
@@ -634,7 +760,7 @@ class TelemetryStorage:
                 ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(
                     bucket_start,bucket_seconds,instance_id,scope_type,scope_id,
-                    provider_id,card_id,project_id,realm_id,principal_id,metric
+                    provider_id,card_id,project_id,realm_id,principal_id,metric,unit
                 ) DO UPDATE SET
                     quality_rank=MAX(quality_rank,excluded.quality_rank),
                     value_sum=COALESCE(value_sum,0)+COALESCE(excluded.value_sum,0),

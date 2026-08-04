@@ -2,6 +2,9 @@
   "use strict";
 
   const COLORS = ["#4f7cff", "#e96f92", "#23a896", "#d18a22", "#8e6ee8", "#5d9d3b", "#d75b48", "#607d8b"];
+  const ACCESSIBLE_PAGE_SIZE = 100;
+  const MAX_CHART_PATH_POINTS = 720;
+  const MAX_CHART_MARKERS = 160;
   const GAP_LABELS = {
     no_sample: "No sample",
     unsupported: "Unsupported",
@@ -40,11 +43,22 @@
 
   function missingReason(point) {
     if (!point) return "no_sample";
+    const valueCount = Number(point.value_count || 0);
+    if (valueCount > 0 && finiteValue(point.avg) !== null) return null;
     if (point.quality === "unsupported") return "unsupported";
     if (point.quality === "unavailable") return "temporarily_unavailable";
-    if (point.value_count === 0 || point.value_count === "0") return point.missing_reason || "no_sample";
+    if (valueCount === 0) return point.missing_reason || "no_sample";
     if (point.avg === null || point.avg === undefined) return point.missing_reason || "no_sample";
     return point.missing_reason || null;
+  }
+
+  function partialReason(point) {
+    if (!point || missingReason(point)) return null;
+    if (point.partial_reason) return point.partial_reason;
+    if (point.quality === "unsupported") return "unsupported";
+    if (point.quality === "unavailable") return "temporarily_unavailable";
+    if (Number(point.value_count) < Number(point.sample_count)) return "no_sample";
+    return null;
   }
 
   function normalizeObservation(point) {
@@ -59,6 +73,7 @@
       timestamp: timestamp,
       value: value,
       reason: value === null ? "no_sample" : null,
+      partialReason: partialReason(point),
       point: point,
       state: value === 0 ? "genuine_zero" : "observed"
     };
@@ -68,9 +83,17 @@
     return GAP_LABELS[reason] || GAP_LABELS.no_sample;
   }
 
+  function inDomainTimestamp(timestamp, domainStart, domainEnd) {
+    const start = Date.parse(domainStart);
+    const end = Date.parse(domainEnd);
+    return Number.isFinite(timestamp) && Number.isFinite(start) && Number.isFinite(end) &&
+      timestamp >= start && timestamp <= end;
+  }
+
   function timeX(timestamp, domainStart, domainEnd, width) {
     const start = Date.parse(domainStart);
     const end = Date.parse(domainEnd);
+    if (!inDomainTimestamp(timestamp, domainStart, domainEnd)) return null;
     const span = end - start || 1;
     return 42 + (timestamp - start) / span * ((width || 800) - 58);
   }
@@ -176,7 +199,8 @@
   function lineSegments(points, width, height, min, max, bucketSeconds, domainStart, domainEnd) {
     const seen = new Set();
     const observations = (points || []).map(normalizeObservation).filter(function (item) {
-      if (!Number.isFinite(item.timestamp) || seen.has(item.timestamp)) return false;
+      if (!inDomainTimestamp(item.timestamp, domainStart, domainEnd) ||
+          seen.has(item.timestamp)) return false;
       seen.add(item.timestamp); return true;
     }).sort(function (a, b) { return a.timestamp - b.timestamp; });
     const segments = []; let current = []; let previousTime = null;
@@ -199,6 +223,57 @@
     return segments;
   }
 
+  function evenlySample(items, limit) {
+    if (limit <= 0) return [];
+    if (items.length <= limit) return items.slice();
+    if (limit === 1) return [items[0]];
+    const sampled = [];
+    for (let index = 0; index < limit; index += 1) {
+      sampled.push(items[Math.round(index * (items.length - 1) / (limit - 1))]);
+    }
+    return sampled;
+  }
+
+  function downsamplePoints(points, limit) {
+    if (limit <= 0) return [];
+    if (points.length <= limit) return points.slice();
+    if (limit <= 2) return evenlySample(points, limit);
+    const interior = points.slice(1, -1);
+    const bucketCount = Math.max(1, Math.floor((limit - 2) / 2));
+    const selected = [points[0]];
+    for (let bucket = 0; bucket < bucketCount; bucket += 1) {
+      const from = Math.floor(bucket * interior.length / bucketCount);
+      const to = Math.max(from + 1, Math.floor((bucket + 1) * interior.length / bucketCount));
+      const candidates = interior.slice(from, to);
+      let minimum = 0; let maximum = 0;
+      candidates.forEach(function (point, index) {
+        if (point.y < candidates[minimum].y) minimum = index;
+        if (point.y > candidates[maximum].y) maximum = index;
+      });
+      [minimum, maximum].sort(function (a, b) { return a - b; }).forEach(function (index, order) {
+        if (order === 0 || index !== minimum) selected.push(candidates[index]);
+      });
+    }
+    selected.push(points[points.length - 1]);
+    return selected.length > limit ? evenlySample(selected, limit) : selected;
+  }
+
+  function boundedSegments(segments, limit) {
+    if (limit <= 0 || !segments.length) return [];
+    const total = segments.reduce(function (count, segment) { return count + segment.length; }, 0);
+    if (total <= limit) return segments.map(function (segment) { return segment.slice(); });
+    if (segments.length >= limit) {
+      return evenlySample(segments, limit).map(function (segment) { return [segment[0]]; });
+    }
+    let remaining = limit;
+    let remainingSegments = segments.length;
+    return segments.map(function (segment) {
+      const allocation = Math.max(1, Math.floor(remaining / remainingSegments));
+      remaining -= allocation; remainingSegments -= 1;
+      return downsamplePoints(segment, allocation);
+    });
+  }
+
   function addAxisText(axes, x, y, value, anchor) {
     const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
     label.setAttribute("x", x); label.setAttribute("y", y);
@@ -216,71 +291,148 @@
     }) || null;
   }
 
-  function drawAccessibleTable(report, data) {
-    const body = report.querySelector("[data-telemetry-table-body]");
-    const summary = report.querySelector("[data-telemetry-summary]");
-    if (!body || !summary) return;
-    body.replaceChildren();
+  function clippedRange(start, end, domainStart, domainEnd) {
+    const clippedStart = Math.max(Date.parse(start), Date.parse(domainStart));
+    const clippedEnd = Math.min(Date.parse(end), Date.parse(domainEnd));
+    if (!Number.isFinite(clippedStart) || !Number.isFinite(clippedEnd) ||
+        clippedEnd <= clippedStart) return null;
+    return {start: clippedStart, end: clippedEnd};
+  }
+
+  function accessibleCounts(data) {
     let observationCount = 0; let gapCount = 0;
     (data.series || []).forEach(function (series) {
       (series.points || []).forEach(function (point) {
+        if (inDomainTimestamp(Date.parse(point.timestamp), data.start, data.end)) {
+          observationCount += 1;
+        }
+      });
+      (series.gaps || []).forEach(function (gap) {
+        if (clippedRange(gap.start, gap.end, data.start, data.end)) gapCount += 1;
+      });
+    });
+    (data.failures || []).forEach(function (failure) {
+      if (clippedRange(
+        failure.start || data.start, failure.end || data.end, data.start, data.end
+      )) gapCount += 1;
+    });
+    return {
+      observations: observationCount,
+      gaps: gapCount,
+      total: observationCount + gapCount
+    };
+  }
+
+  function accessiblePage(data, page, pageSize) {
+    const counts = accessibleCounts(data);
+    const size = Math.max(1, pageSize || ACCESSIBLE_PAGE_SIZE);
+    const pageCount = Math.max(1, Math.ceil(counts.total / size));
+    const currentPage = Math.max(0, Math.min(pageCount - 1, page || 0));
+    const offset = currentPage * size;
+    const rows = []; let index = 0;
+    function take() {
+      const materialize = index >= offset && index < offset + size;
+      index += 1;
+      return materialize;
+    }
+    function add(values, gapReason) {
+      rows.push({values: values, gapReason: gapReason || null});
+    }
+    (data.series || []).forEach(function (series) {
+      (series.points || []).forEach(function (point) {
+        const timestamp = Date.parse(point.timestamp);
+        if (!inDomainTimestamp(timestamp, data.start, data.end) || !take()) return;
         const observation = normalizeObservation(point);
-        const row = document.createElement("tr");
-        const status = observation.reason ? gapLabel(observation.reason) :
+        let status = observation.reason ? gapLabel(observation.reason) :
           human(observation.value, series.unit) +
           (observation.state === "genuine_zero" ? " (genuine measured zero)" : "");
-        [
+        if (observation.partialReason) {
+          status += " (partial: " + gapLabel(observation.partialReason).toLowerCase() + ")";
+        }
+        add([
           new Date(observation.timestamp).toLocaleString(),
           seriesName(series),
           series.unit,
           status,
-          point.quality || "no sample"
-        ].forEach(function (value) {
-          const cell = document.createElement("td"); cell.textContent = value; row.appendChild(cell);
-        });
-        body.appendChild(row); observationCount += 1;
+          (point.quality || "no sample") +
+            (observation.partialReason ? " · partial" : "")
+        ], observation.reason);
       });
       (series.gaps || []).forEach(function (gap) {
-        const row = document.createElement("tr");
-        row.dataset.gapReason = gap.reason;
-        [
-          new Date(gap.start).toLocaleString() + " – " + new Date(gap.end).toLocaleString(),
+        const range = clippedRange(gap.start, gap.end, data.start, data.end);
+        if (!range || !take()) return;
+        add([
+          new Date(range.start).toLocaleString() + " – " + new Date(range.end).toLocaleString(),
           seriesName(series),
           series.unit,
-          gapLabel(gap.reason),
-          "gap"
-        ].forEach(function (value) {
-          const cell = document.createElement("td"); cell.textContent = value; row.appendChild(cell);
-        });
-        body.appendChild(row); gapCount += 1;
+          gapLabel(gap.reason) + (gap.partial ? " (partial interval)" : ""),
+          gap.partial ? "partial gap" : "gap"
+        ], gap.reason);
       });
     });
     (data.failures || []).forEach(function (failure) {
-      const row = document.createElement("tr");
-      row.dataset.gapReason = failure.reason || "peer_failure";
-      [
-        new Date(failure.start || data.start).toLocaleString() + " – " +
-          new Date(failure.end || data.end).toLocaleString(),
+      const range = clippedRange(
+        failure.start || data.start, failure.end || data.end, data.start, data.end
+      );
+      if (!range || !take()) return;
+      add([
+        new Date(range.start).toLocaleString() + " – " + new Date(range.end).toLocaleString(),
         failure.instance_id,
         "—",
         gapLabel(failure.reason || "peer_failure"),
         "gap"
-      ].forEach(function (value) {
+      ], failure.reason || "peer_failure");
+    });
+    return {
+      rows: rows,
+      counts: counts,
+      page: currentPage,
+      pageCount: pageCount,
+      first: counts.total ? offset + 1 : 0,
+      last: Math.min(counts.total, offset + rows.length)
+    };
+  }
+
+  function drawAccessibleTable(report, data, page) {
+    const body = report.querySelector("[data-telemetry-table-body]");
+    const summary = report.querySelector("[data-telemetry-summary]");
+    const previous = report.querySelector("[data-telemetry-table-prev]");
+    const next = report.querySelector("[data-telemetry-table-next]");
+    const pageStatus = report.querySelector("[data-telemetry-table-page]");
+    if (!body || !summary) return;
+    const windowed = accessiblePage(data, page, ACCESSIBLE_PAGE_SIZE);
+    body.replaceChildren();
+    windowed.rows.forEach(function (descriptor) {
+      const row = document.createElement("tr");
+      if (descriptor.gapReason) row.dataset.gapReason = descriptor.gapReason;
+      descriptor.values.forEach(function (value) {
         const cell = document.createElement("td"); cell.textContent = value; row.appendChild(cell);
       });
-      body.appendChild(row); gapCount += 1;
+      body.appendChild(row);
     });
-    summary.textContent = observationCount + " observations and " + gapCount +
-      " typed gaps across " + (data.series || []).length + " series.";
+    report._accessiblePage = windowed.page;
+    summary.textContent = windowed.counts.observations + " observations and " +
+      windowed.counts.gaps + " typed gaps across " + (data.series || []).length +
+      " series. Showing rows " + windowed.first + "–" + windowed.last +
+      " of " + windowed.counts.total + ".";
+    if (previous) previous.disabled = windowed.page === 0;
+    if (next) next.disabled = windowed.page >= windowed.pageCount - 1;
+    if (pageStatus) pageStatus.textContent = "Page " + (windowed.page + 1) +
+      " of " + windowed.pageCount + ".";
   }
 
   function drawReport(report, data) {
     const allSeries = data.series || [];
     const domainStart = data.start, domainEnd = data.end;
     const diagnostics = report.querySelector("[data-report-diagnostics]");
-    const pointCount = allSeries.reduce(function (count, series) { return count + (series.points || []).length; }, 0);
-    const bucketCount = new Set(allSeries.flatMap(function (series) { return (series.points || []).map(function (point) { return point.timestamp; }); })).size;
-    const newest = allSeries.flatMap(function (series) { return series.points || []; }).sort(function (a, b) { return Date.parse(b.timestamp) - Date.parse(a.timestamp); })[0];
+    const domainPoints = allSeries.flatMap(function (series) { return series.points || []; }).filter(function (point) {
+      return inDomainTimestamp(Date.parse(point.timestamp), domainStart, domainEnd);
+    });
+    const pointCount = domainPoints.length;
+    const bucketCount = new Set(domainPoints.map(function (point) { return point.timestamp; })).size;
+    const newest = domainPoints.slice().sort(function (a, b) {
+      return Date.parse(b.timestamp) - Date.parse(a.timestamp);
+    })[0];
     if (diagnostics) diagnostics.textContent = "Range " + new Date(domainStart).toLocaleString() + " – " + new Date(domainEnd).toLocaleString() + " · " + bucketCount + " buckets · " + allSeries.length + " series · " + pointCount + " points" + (newest ? " · newest " + new Date(newest.timestamp).toLocaleString() : " · no collected samples");
     const legend = report.querySelector("[data-telemetry-legend]");
     legend.replaceChildren();
@@ -310,7 +462,8 @@
         line.setAttribute("y1", y); line.setAttribute("y2", y); grid.appendChild(line);
       });
       lines.replaceChildren(); pointsLayer.replaceChildren(); status.replaceChildren();
-      chart._series = selected; chart._domain = [domainStart, domainEnd]; chart._renderedTimestamps = [];
+      chart._series = selected; chart._domain = [domainStart, domainEnd];
+      chart._cursorTimestamps = [];
       chart.querySelector("[data-chart-unit]").textContent = unit;
       addAxisText(axes, "42", "216", new Date(domainStart).toLocaleString(), "start");
       addAxisText(axes, "784", "216", new Date(domainEnd).toLocaleString(), "end");
@@ -321,7 +474,8 @@
       }
       const values = selected.flatMap(function (series) {
         return (series.points || []).map(normalizeObservation).filter(function (item) {
-          return !item.reason;
+          return !item.reason &&
+            inDomainTimestamp(item.timestamp, domainStart, domainEnd);
         }).map(function (item) { return item.value; });
       });
       if (!values.length) {
@@ -342,30 +496,35 @@
         addAxisText(axes, "38", "16", human(max, unit), "end");
         addAxisText(axes, "38", "198", human(min, unit), "end");
       }
-      selected.forEach(function (series, index) {
-        const segments = lineSegments(
+      const pathBudget = Math.max(1, Math.floor(MAX_CHART_PATH_POINTS / selected.length));
+      const markerBudget = Math.floor(MAX_CHART_MARKERS / selected.length);
+      selected.forEach(function (series) {
+        const rawSegments = lineSegments(
           series.points, 800, 220, min, max, data.bucket_seconds, domainStart, domainEnd
         );
+        const segments = boundedSegments(rawSegments, pathBudget);
+        chart._cursorTimestamps.push.apply(chart._cursorTimestamps,
+          segments.flat().map(function (item) { return item.observation.timestamp; }));
         const seriesGaps = series.gaps || [];
-        if (seriesGaps.length || segments.length > 1) hasGaps = true;
+        const color = COLORS[allSeries.indexOf(series) % COLORS.length];
+        if (seriesGaps.length || rawSegments.length > 1) hasGaps = true;
         segments.forEach(function (segment) {
-          segment.forEach(function (item) {
-            const point = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-            point.setAttribute("cx", item.x.toFixed(1)); point.setAttribute("cy", item.y.toFixed(1));
-            point.setAttribute("r", segment.length === 1 ? "4" : "2.5");
-            point.setAttribute("fill", COLORS[allSeries.indexOf(series) % COLORS.length]);
-            point.dataset.seriesIndex = String(allSeries.indexOf(series));
-            point.dataset.timestamp = item.point.timestamp;
-            pointsLayer.appendChild(point);
-            chart._renderedTimestamps.push(item.observation.timestamp);
-          });
           const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
           path.setAttribute("d", segment.map(function (point, i) {
             return (i ? "L" : "M") + point.x.toFixed(1) + "," + point.y.toFixed(1);
           }).join(" "));
-          path.setAttribute("stroke", COLORS[allSeries.indexOf(series) % COLORS.length]);
+          path.setAttribute("stroke", color);
           path.dataset.seriesIndex = String(allSeries.indexOf(series));
           lines.appendChild(path);
+        });
+        downsamplePoints(segments.flat(), markerBudget).forEach(function (item) {
+          const point = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+          point.setAttribute("cx", item.x.toFixed(1)); point.setAttribute("cy", item.y.toFixed(1));
+          point.setAttribute("r", rawSegments.length === 1 && rawSegments[0].length === 1 ? "4" : "2.5");
+          point.setAttribute("fill", color);
+          point.dataset.seriesIndex = String(allSeries.indexOf(series));
+          point.dataset.timestamp = item.point.timestamp;
+          pointsLayer.appendChild(point);
         });
         const counts = {};
         seriesGaps.forEach(function (gap) { counts[gap.reason] = (counts[gap.reason] || 0) + 1; });
@@ -387,9 +546,8 @@
     const banner = report.querySelector("[data-telemetry-gaps]");
     banner.hidden = !hasGaps;
     banner.textContent = hasGaps
-      ? "The requested interval contains typed sampling gaps. Lines are intentionally broken; each affected range and reason is listed in the accessible table."
+      ? "The requested interval contains typed sampling gaps. Complete gaps break lines; partial degradation preserves measured aggregates. Each affected range and reason is listed in the accessible table."
       : "";
-    drawAccessibleTable(report, data);
   }
 
   function cursorValue(series, time) {
@@ -397,10 +555,14 @@
       return item.timestamp === time;
     });
     if (exact && !exact.reason) {
-      return human(exact.value, series.unit) +
+      let value = human(exact.value, series.unit) +
         (exact.state === "genuine_zero"
           ? " (genuine measured zero)"
           : " (" + exact.point.quality + ")");
+      if (exact.partialReason) {
+        value += " (partial: " + gapLabel(exact.partialReason).toLowerCase() + ")";
+      }
+      return value;
     }
     const gap = exact && exact.reason ? {reason: exact.reason} : matchingGap(series, time);
     return gapLabel(gap && gap.reason);
@@ -408,17 +570,18 @@
 
   function inspectChart(report, direction) {
     const timestamps = Array.from(new Set(Array.from(report.querySelectorAll("[data-chart-group]")).flatMap(function (chart) {
-      return chart._renderedTimestamps || [];
+      return chart._cursorTimestamps || [];
     }))).sort(function (a, b) { return a - b; });
     if (!timestamps.length) return;
     reportCursor = reportCursor === null ? timestamps.length - 1 :
       Math.max(0, Math.min(timestamps.length - 1, reportCursor + direction));
     const time = timestamps[reportCursor];
     report.querySelectorAll("[data-chart-group]").forEach(function (candidate) {
-      const svg = candidate.querySelector("svg");
+      const stage = candidate.querySelector(".telemetry-chart-stage");
       const cursor = candidate.querySelector("[data-chart-cursor]");
       const tooltip = candidate.querySelector("[data-chart-tooltip]");
       const x = timeX(time, candidate._domain[0], candidate._domain[1], 800);
+      if (x === null) return;
       cursor.setAttribute("x1", x); cursor.setAttribute("x2", x); cursor.hidden = false;
       const rows = (candidate._series || []).map(function (series) {
         return seriesName(series) + ": " + cursorValue(series, time);
@@ -426,7 +589,7 @@
       tooltip.textContent = new Date(time).toLocaleString() + " — " + rows.join(" | ");
       tooltip.hidden = false;
       tooltip.style.left = Math.min(75, Math.max(5, x / 8)) + "%";
-      svg.setAttribute("aria-label", tooltip.textContent);
+      stage.setAttribute("aria-label", tooltip.textContent);
     });
   }
 
@@ -445,13 +608,22 @@
       });
       stage.addEventListener("click", function () { inspectChart(report, 0); });
     });
-    const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(function () {
-      if (report.isConnected && report._lastData && report.getBoundingClientRect().width > 0) drawReport(report, report._lastData);
+    const previousPage = report.querySelector("[data-telemetry-table-prev]");
+    const nextPage = report.querySelector("[data-telemetry-table-next]");
+    function changeAccessiblePage(direction) {
+      if (!report._lastData) return;
+      drawAccessibleTable(
+        report, report._lastData, (report._accessiblePage || 0) + direction
+      );
+    }
+    if (previousPage) previousPage.addEventListener("click", function () {
+      changeAccessiblePage(-1);
     });
-    if (resizeObserver) resizeObserver.observe(report);
+    if (nextPage) nextPage.addEventListener("click", function () {
+      changeAccessiblePage(1);
+    });
     report._cleanup = function () {
       if (report._request) report._request.abort();
-      if (resizeObserver) resizeObserver.disconnect();
       report._lastData = null;
     };
     function load() {
@@ -471,7 +643,8 @@
         return response.json();
       }).then(function (data) {
         report._lastData = data;
-        if (report.getBoundingClientRect().width > 0) drawReport(report, data);
+        drawReport(report, data);
+        drawAccessibleTable(report, data, 0);
         const health = document.querySelector("[data-report-health]");
         if (health) health.textContent = "Updated " + new Date().toLocaleTimeString() +
           " · " + (data.series || []).length + " series · " + data.bucket_seconds + "s aggregation";
@@ -503,12 +676,21 @@
 
   if (typeof module !== "undefined" && module.exports) {
     module.exports = {
+      ACCESSIBLE_PAGE_SIZE: ACCESSIBLE_PAGE_SIZE,
+      MAX_CHART_PATH_POINTS: MAX_CHART_PATH_POINTS,
+      MAX_CHART_MARKERS: MAX_CHART_MARKERS,
       finiteValue: finiteValue,
       missingReason: missingReason,
+      partialReason: partialReason,
       normalizeObservation: normalizeObservation,
       gapLabel: gapLabel,
+      inDomainTimestamp: inDomainTimestamp,
       timeX: timeX,
       lineSegments: lineSegments,
+      downsamplePoints: downsamplePoints,
+      boundedSegments: boundedSegments,
+      accessibleCounts: accessibleCounts,
+      accessiblePage: accessiblePage,
       cursorValue: cursorValue
     };
   }
