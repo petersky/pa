@@ -86,7 +86,6 @@ from pa.execution.post_turn import (
 )
 from pa.execution.profiles import (
     ExecutionContract,
-    ExecutionContractError,
     MaterializationPlan,
     resolve_materialization_plan,
 )
@@ -166,12 +165,6 @@ from pa.fleet.update import (
 )
 from pa.fleet.workshop import build_workshop_snapshot
 from pa.network.peer_table import PeerTable
-from pa.workloads import (
-    PLACEMENT_WORKLOAD_PROFILES,
-    WorkloadProfile,
-    WorkloadProfileError,
-    WorkloadProfileInput,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -327,7 +320,7 @@ class RemoteAgentStartBody(BaseModel):
     capacity_override_reason: str | None = Field(default=None, max_length=500)
     participation_override: bool = False
     participation_override_reason: str | None = Field(default=None, max_length=500)
-    execution_contract: ExecutionContract | None = None
+    execution_contract: dict[str, Any] | None = None
     priority: int = Field(default=0, ge=-10, le=10)
 
     @field_validator("provider", "model_id", mode="before")
@@ -355,7 +348,7 @@ class FleetDispatchBody(RemoteAgentStartBody):
 class PlacementDefaultBody(BaseModel):
     realm_id: str | None = None
     project_id: str | None = None
-    workload_profile: WorkloadProfile | None = None
+    workload_profile: str | None = None
     group_id: str
 
 
@@ -927,7 +920,7 @@ def delete_placement_default(
     request: Request,
     realm: str | None = None,
     project_id: str | None = None,
-    workload_profile: WorkloadProfile | None = None,
+    workload_profile: str | None = None,
 ) -> Response:
     _require_policy_admin(request, "fleet.placement_defaults.edit")
     ctx = request.app.state.ctx
@@ -2196,7 +2189,6 @@ def _fleet_context(request: Request) -> dict:
         "fleet_policy_audit": ctx.store.list_fleet_policy_audit(
             primary_realm, limit=50
         ),
-        "workload_profiles": PLACEMENT_WORKLOAD_PROFILES,
     }
 
 
@@ -5601,7 +5593,11 @@ def _placement_materialization_plan(
         if project_id
         else []
     )
-    requested_contract = body.execution_contract
+    requested_contract = (
+        ExecutionContract.model_validate(body.execution_contract)
+        if body.execution_contract
+        else None
+    )
     explicit_ids = [
         item.repository_id
         for item in (
@@ -5614,22 +5610,14 @@ def _placement_materialization_plan(
         repository = store.get_repository(repository_id, realm_id)
         if repository:
             explicit_repositories.append(repository)
-    try:
-        plan = resolve_materialization_plan(
-            requested=requested_contract,
-            card=card,
-            project=project,
-            project_repositories=project_repositories,
-            explicit_repositories=explicit_repositories,
-            target_instance_id=target_instance_id,
-        )
-    except (WorkloadProfileError, ExecutionContractError) as exc:
-        raise PlacementError(
-            exc.code,
-            exc.message,
-            recoverable=True,
-            detail=exc.detail(),
-        ) from exc
+    plan = resolve_materialization_plan(
+        requested=requested_contract,
+        card=card,
+        project=project,
+        project_repositories=project_repositories,
+        explicit_repositories=explicit_repositories,
+        target_instance_id=target_instance_id,
+    )
     repository_ids = [item.repository_id for item in plan.requirements.repositories]
     return plan, repository_ids
 
@@ -5681,7 +5669,7 @@ async def _resolve_policy_placement(
         group = policies.resolve_group(
             realm_id=realm_id,
             project_id=project_id,
-            workload_profile=plan.profile,
+            workload_profile=plan.profile.value,
             requested_group_id=(
                 "all-active" if body.target_instance_id else requested_group_id
             ),
@@ -5749,7 +5737,6 @@ async def _resolve_policy_placement(
             required_capabilities=required_capabilities,
             repository_ids=repository_ids,
             workload_profile=plan.profile.value,
-            profile_normalization_reason=plan.profile_normalization_reason,
             project_id=project_id,
             dispatch_intent=(
                 DispatchIntent.PRIVILEGED_OVERRIDE
@@ -5898,20 +5885,17 @@ async def preview_fleet_placement(
 async def preview_instance_group(
     request: Request,
     group_id: str,
-    workload_profile: WorkloadProfile = WorkloadProfile.RESEARCH,
+    workload_profile: str = "research",
     project_id: str | None = None,
     policy: PlacementPolicy = PlacementPolicy.BEST_MATCH,
 ) -> dict[str, Any]:
-    requested_profile = (
-        request.query_params.get("workload_profile") or workload_profile.value
-    )
     body = FleetDispatchBody(
         placement_policy=policy,
         group_id=group_id,
         project_id=project_id,
         execution_contract={
             "version": 1,
-            "profile": requested_profile,
+            "profile": workload_profile,
             "confirmed": True,
             "requirements": {},
         },
@@ -6025,13 +6009,7 @@ def _placement_http_error(exc: PlacementError) -> HTTPException:
                 "recovery_url": "/fleet?section=operations",
             },
         )
-    status = (
-        404
-        if exc.code == "instance_not_found"
-        else 422
-        if exc.code in {"invalid_workload_profile", "invalid_execution_contract"}
-        else 409
-    )
+    status = 404 if exc.code == "instance_not_found" else 409
     recovery: dict[str, Any] = {}
     if exc.code in {"provider_unavailable", "mcp_bootstrap_unavailable"}:
         recovery = {
@@ -6066,7 +6044,6 @@ def _placement_http_error(exc: PlacementError) -> HTTPException:
             "code": exc.code,
             "message": exc.message,
             "recoverable": exc.recoverable,
-            **exc.detail,
             **recovery,
             "rejected_candidates": exc.rejected_candidates,
             "recovery_url": "/fleet?section=overview",
@@ -6619,7 +6596,11 @@ async def _admit_remote_agent_work(
         if project_id
         else []
     )
-    requested_contract = body.execution_contract
+    requested_contract = (
+        ExecutionContract.model_validate(body.execution_contract)
+        if body.execution_contract
+        else None
+    )
     explicit_ids = [
         item.repository_id
         for item in (
@@ -6631,17 +6612,14 @@ async def _admit_remote_agent_work(
         repository = store.get_repository(repository_id, realm_id)
         if repository:
             explicit_repositories.append(repository)
-    try:
-        plan = resolve_materialization_plan(
-            requested=requested_contract,
-            card=card,
-            project=project,
-            project_repositories=project_repositories,
-            explicit_repositories=explicit_repositories,
-            target_instance_id=instance_id,
-        )
-    except (WorkloadProfileError, ExecutionContractError) as exc:
-        raise HTTPException(status_code=422, detail=exc.detail()) from exc
+    plan = resolve_materialization_plan(
+        requested=requested_contract,
+        card=card,
+        project=project,
+        project_repositories=project_repositories,
+        explicit_repositories=explicit_repositories,
+        target_instance_id=instance_id,
+    )
     if not plan.admissible:
         raise HTTPException(
             status_code=409,
@@ -7008,16 +6986,12 @@ async def execute_post_turn_action(
             status_code=409,
             detail={"code": "action_not_executable", "status": action.status.value},
         )
-    if (
-        action.name == FollowupActionName.PROMPT_SAME_SESSION
-        and not action.human_approval_required
-    ):
+    if action.name == FollowupActionName.PROMPT_SAME_SESSION and not action.human_approval_required:
         inherited = is_authorized_same_session_continuation(
             action, decision=evaluation.decision, session_id=record.session_id
         )
         automatic_used = sum(
-            1
-            for prior_evaluation in record.post_turn_evaluations
+            1 for prior_evaluation in record.post_turn_evaluations
             for prior_action in prior_evaluation.recommended_actions
             if prior_action.name == FollowupActionName.PROMPT_SAME_SESSION
             and any(event.get("automatic") for event in prior_action.audit)
@@ -7031,17 +7005,12 @@ async def execute_post_turn_action(
                 "to continue."
             )
         else:
-            action.audit.append(
-                {
-                    "event": "authorized",
-                    "at": datetime.now(UTC).isoformat(),
-                    "executor": "pa.post-turn",
-                    "automatic": True,
-                    "authorization_basis": "original_implementation_dispatch",
-                    "budget_used": automatic_used + 1,
-                    "budget_maximum": budget,
-                }
-            )
+            action.audit.append({
+                "event": "authorized", "at": datetime.now(UTC).isoformat(),
+                "executor": "pa.post-turn", "automatic": True,
+                "authorization_basis": "original_implementation_dispatch",
+                "budget_used": automatic_used + 1, "budget_maximum": budget,
+            })
     if action.human_approval_required and not body.approve:
         raise HTTPException(
             status_code=403,
@@ -8839,7 +8808,7 @@ class FleetModule(Module):
         @mcp.tool()
         def preview_instance_group(
             group_id: str,
-            workload_profile: WorkloadProfileInput = "research",
+            workload_profile: str = "research",
             project_id: str | None = None,
             policy: PlacementPolicy = PlacementPolicy.BEST_MATCH,
         ) -> dict:
@@ -8887,7 +8856,7 @@ class FleetModule(Module):
             group_id: str,
             realm_id: str | None = None,
             project_id: str | None = None,
-            workload_profile: WorkloadProfileInput | None = None,
+            workload_profile: str | None = None,
         ) -> dict:
             """Set a realm/project/profile default without all-instance fallback."""
             return request_local_pa(
@@ -8918,7 +8887,7 @@ class FleetModule(Module):
         def delete_placement_default_group(
             realm_id: str | None = None,
             project_id: str | None = None,
-            workload_profile: WorkloadProfileInput | None = None,
+            workload_profile: str | None = None,
         ) -> None:
             """Delete one exact default scope without silently selecting all peers."""
             request_local_pa(
@@ -8951,7 +8920,7 @@ class FleetModule(Module):
             group_id: str | None = None,
             instance_id: str | None = None,
             project_id: str | None = None,
-            workload_profile: WorkloadProfileInput = "research",
+            workload_profile: str = "research",
             provider: str | None = None,
             model_id: str | None = None,
             required_capabilities: list[str] | None = None,
@@ -9023,7 +8992,7 @@ class FleetModule(Module):
             capacity_override_reason: str | None = None,
             participation_override: bool = False,
             participation_override_reason: str | None = None,
-            execution_contract: ExecutionContract | None = None,
+            execution_contract: dict[str, Any] | None = None,
             priority: int = 0,
         ) -> dict:
             """Resolve a concrete target or policy and durably dispatch a card."""
@@ -9062,11 +9031,7 @@ class FleetModule(Module):
                     "capacity_override_reason": capacity_override_reason,
                     "participation_override": participation_override,
                     "participation_override_reason": (participation_override_reason),
-                    "execution_contract": (
-                        execution_contract.model_dump(mode="json")
-                        if isinstance(execution_contract, ExecutionContract)
-                        else execution_contract
-                    ),
+                    "execution_contract": execution_contract,
                     "priority": priority,
                     "idempotency_key": key,
                 },
@@ -9095,7 +9060,7 @@ class FleetModule(Module):
             capacity_override_reason: str | None = None,
             participation_override: bool = False,
             participation_override_reason: str | None = None,
-            execution_contract: ExecutionContract | None = None,
+            execution_contract: dict[str, Any] | None = None,
             priority: int = 0,
         ) -> dict:
             """Durably and idempotently dispatch an authoritative card to a fleet instance."""
@@ -9125,11 +9090,7 @@ class FleetModule(Module):
             if priority:
                 payload["priority"] = priority
             if execution_contract is not None:
-                payload["execution_contract"] = (
-                    execution_contract.model_dump(mode="json")
-                    if isinstance(execution_contract, ExecutionContract)
-                    else execution_contract
-                )
+                payload["execution_contract"] = execution_contract
             if allow_concurrent:
                 payload["allow_concurrent"] = True
             if capacity_override:

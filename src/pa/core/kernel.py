@@ -114,12 +114,10 @@ class Kernel:
         from pa.instance.quiesce import consume_skip_resume
 
         resume_env = os.environ.get("PA_ACP_RESUME", "1").strip().lower()
-        resume = resume_env not in {
-            "0",
-            "false",
-            "no",
-            "off",
-        } and not consume_skip_resume(self.ctx.settings.data_dir)
+        resume = (
+            resume_env not in {"0", "false", "no", "off"}
+            and not consume_skip_resume(self.ctx.settings.data_dir)
+        )
         agent._accepting = False
         begin_startup = getattr(agent, "begin_startup", None)
         if callable(begin_startup):
@@ -147,7 +145,9 @@ class Kernel:
 
         import asyncio
 
-        agent_start_task = asyncio.create_task(start_agent(), name="pa-agent-startup")
+        agent_start_task = asyncio.create_task(
+            start_agent(), name="pa-agent-startup"
+        )
         self.ctx.register_service("agent_start_task", agent_start_task)
         self.ctx.register_service("peer_registry", PeerRegistry(self.ctx.settings))
 
@@ -200,7 +200,7 @@ class Kernel:
             agent_start_task.cancel()
             try:
                 await asyncio.wait_for(agent_start_task, timeout=5.0)
-            except asyncio.CancelledError, asyncio.TimeoutError:
+            except (asyncio.CancelledError, asyncio.TimeoutError):
                 pass
 
         for entry in reversed(self.registry.modules):
@@ -297,8 +297,8 @@ class Kernel:
             resolve_instance_identity,
         )
 
-        app.state.templates.env.globals["instance_identity_directory"] = lambda: (
-            canonical_instance_identities(self.ctx)
+        app.state.templates.env.globals["instance_identity_directory"] = (
+            lambda: canonical_instance_identities(self.ctx)
         )
         app.state.templates.env.globals["resolve_instance_identity"] = (
             lambda instance_id: resolve_instance_identity(self.ctx, instance_id)
@@ -352,17 +352,13 @@ class Kernel:
         return app
 
     def _install_runtime_error_handlers(self, app: FastAPI) -> None:
-        from fastapi.exception_handlers import request_validation_exception_handler
-        from fastapi.exceptions import RequestValidationError
-        from starlette.requests import Request
-        from starlette.responses import JSONResponse
-
         from pa.core.async_runtime import (
             AsyncRuntimeClosed,
             BlockingOperationTimeout,
             BlockingQueueFull,
         )
-        from pa.workloads import WorkloadProfileError
+        from starlette.requests import Request
+        from starlette.responses import JSONResponse
 
         async def overloaded(
             _request: Request, exc: BlockingQueueFull | AsyncRuntimeClosed
@@ -381,38 +377,9 @@ class Kernel:
                 content={"detail": str(exc), "code": "blocking_operation_timeout"},
             )
 
-        async def invalid_request(
-            request: Request, exc: RequestValidationError
-        ) -> JSONResponse:
-            profile_fields = {
-                "profile",
-                "workload_profile",
-                "allowed_profiles",
-                "denied_profiles",
-                "hard_denied_profiles",
-                "max_concurrent_by_profile",
-                "max_queued_by_profile",
-                "hard_max_concurrent_by_profile",
-            }
-            for error in exc.errors():
-                cause = (error.get("ctx") or {}).get("error")
-                if isinstance(cause, WorkloadProfileError):
-                    return JSONResponse(
-                        status_code=422, content={"detail": cause.detail()}
-                    )
-                if error.get("type") == "enum" and profile_fields.intersection(
-                    str(part) for part in error.get("loc", ())
-                ):
-                    profile_error = WorkloadProfileError(error.get("input"))
-                    return JSONResponse(
-                        status_code=422, content={"detail": profile_error.detail()}
-                    )
-            return await request_validation_exception_handler(request, exc)
-
         app.add_exception_handler(BlockingQueueFull, overloaded)
         app.add_exception_handler(AsyncRuntimeClosed, overloaded)
         app.add_exception_handler(BlockingOperationTimeout, timed_out)
-        app.add_exception_handler(RequestValidationError, invalid_request)
 
     def _install_identity_middleware(self, app: FastAPI) -> None:
         from uuid import uuid4

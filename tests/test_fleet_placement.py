@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import inspect
-import json
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -14,7 +13,7 @@ from fastapi.testclient import TestClient
 from pa.config import Settings, reset_settings
 from pa.core.kernel import Kernel
 from pa.domain.instance_config import InstanceConfig, save_instance_config
-from pa.domain.models import CardCreate, FleetInstance, ProjectCreate, RepositoryCreate
+from pa.domain.models import CardCreate, FleetInstance
 from pa.domain.store import reset_store
 from pa.execution.dispatch import (
     CapacityAdmission,
@@ -35,7 +34,6 @@ from pa.fleet.placement import (
 )
 from pa.instance.agent_session import reset_instance_agent
 from pa.modules.fleet import FleetModule
-from pa.workloads import CANONICAL_WORKLOAD_PROFILES, LEGACY_CODE_PROFILE_REASON
 
 
 @pytest.fixture(autouse=True)
@@ -350,262 +348,6 @@ def test_named_dispatch_queue_full_returns_structured_actionable_details() -> No
         assert detail["maximum_count"] == 0
         assert detail["retry_after_seconds"] == 5
         assert "increase dispatch_queue_capacity" in detail["remediation_options"]
-
-
-def test_preview_routes_dispatch_and_audit_normalize_legacy_code(monkeypatch) -> None:
-    with tempfile.TemporaryDirectory() as tmp:
-        settings = Settings(
-            data_dir=Path(tmp),
-            instance_id="local",
-            instance_name="Local",
-            instance_url="http://pa.test:8080",
-            agent_enabled=False,
-            subscribed_realms=["default"],
-            peers=[],
-        )
-        app = Kernel.boot(settings=settings).build_app()
-        with TestClient(app) as client:
-            store = app.state.ctx.store
-            project = store.create_project(ProjectCreate(title="Legacy profile"))
-            repository = store.create_repository(
-                RepositoryCreate(url="https://example.test/owner/repository.git")
-            )
-            assert store.link_project_repository(project.id, repository.id)
-            candidate = _candidate("local", local=True, repositories=[repository.id])
-            monkeypatch.setattr(
-                "pa.modules.fleet._placement_candidates",
-                AsyncMock(return_value=[candidate]),
-            )
-            assert client.get("/").status_code == 200
-            headers = {"X-CSRF-Token": client.cookies.get("pa_csrf")}
-            preview_card = store.create_card(
-                CardCreate(title="Preview legacy", project_id=project.id)
-            )
-            for profile in (*CANONICAL_WORKLOAD_PROFILES, "code"):
-                placement_preview = client.post(
-                    "/api/fleet/placement/preview",
-                    headers=headers,
-                    json={
-                        "card_id": preview_card.id,
-                        "placement_policy": "best_match",
-                        "execution_contract": {
-                            "version": 1,
-                            "profile": profile,
-                            "confirmed": True,
-                            "requirements": {},
-                        },
-                    },
-                )
-                group_preview = client.get(
-                    "/api/fleet/instance-groups/all-active/preview",
-                    params={
-                        "project_id": project.id,
-                        "workload_profile": profile,
-                    },
-                )
-                assert placement_preview.status_code == 200, placement_preview.text
-                assert group_preview.status_code == 200, group_preview.text
-                expected = (
-                    "repository"
-                    if profile in {"automatic", "repository", "code"}
-                    else profile
-                )
-                for response in (placement_preview, group_preview):
-                    payload = response.json()
-                    assert payload["decision"]["workload_profile"] == expected
-                    assert payload["materialization_plan"]["profile"] == expected
-                    if profile == "code":
-                        assert (
-                            payload["decision"]["profile_normalization_reason"]
-                            == LEGACY_CODE_PROFILE_REASON
-                        )
-
-            for index, profile in enumerate(
-                ["automatic", "repository", "research", "operations", "code"]
-            ):
-                card = store.create_card(
-                    CardCreate(title=f"Dispatch {profile}", project_id=project.id)
-                )
-                response = client.post(
-                    "/api/fleet/dispatch",
-                    headers=headers,
-                    json={
-                        "card_id": card.id,
-                        "placement_policy": "best_match",
-                        "provider": "codex",
-                        "idempotency_key": f"profile-{index}",
-                        "execution_contract": {
-                            "version": 1,
-                            "profile": profile,
-                            "confirmed": True,
-                            "requirements": {},
-                        },
-                    },
-                )
-                assert response.status_code == 202, response.text
-                decision = response.json()["dispatch"]["placement_decision"]
-                expected = (
-                    "repository"
-                    if profile in {"automatic", "repository", "code"}
-                    else profile
-                )
-                assert decision["workload_profile"] == expected
-                if profile == "code":
-                    assert (
-                        decision["profile_normalization_reason"]
-                        == LEGACY_CODE_PROFILE_REASON
-                    )
-                    legacy_dispatch_id = response.json()["dispatch_id"]
-
-            persisted_legacy = DispatchStore(Path(tmp)).get(legacy_dispatch_id)
-            assert persisted_legacy is not None
-            persisted_contract = persisted_legacy.request_payload["execution_contract"]
-            assert persisted_contract["profile"] == "repository"
-            assert (
-                persisted_contract["profile_normalization_reason"]
-                == LEGACY_CODE_PROFILE_REASON
-            )
-
-            named_card = store.create_card(
-                CardCreate(title="Named legacy dispatch", project_id=project.id)
-            )
-            named = client.post(
-                "/api/fleet/instances/local/agent/start",
-                headers=headers,
-                json={
-                    "card_id": named_card.id,
-                    "provider": "codex",
-                    "idempotency_key": "named-legacy-code",
-                    "execution_contract": {
-                        "version": 1,
-                        "profile": "code",
-                        "confirmed": True,
-                        "requirements": {},
-                    },
-                },
-            )
-            assert named.status_code == 202, named.text
-            named_decision = named.json()["dispatch"]["placement_decision"]
-            assert named_decision["workload_profile"] == "repository"
-            assert (
-                named_decision["profile_normalization_reason"]
-                == LEGACY_CODE_PROFILE_REASON
-            )
-
-            audit = client.get(
-                "/api/fleet/policy-audit",
-                params={"entity_type": "placement_decision"},
-            )
-            assert audit.status_code == 200, audit.text
-            legacy_audit = next(
-                item
-                for item in audit.json()
-                if item["entity_id"] == named.json()["dispatch_id"]
-            )
-            assert legacy_audit["payload"]["workload_profile"] == "repository"
-            assert (
-                legacy_audit["payload"]["profile_normalization_reason"]
-                == LEGACY_CODE_PROFILE_REASON
-            )
-
-
-def test_preview_routes_return_identical_typed_422_for_unknown_profile() -> None:
-    with tempfile.TemporaryDirectory() as tmp:
-        app = Kernel.boot(
-            settings=Settings(
-                data_dir=Path(tmp),
-                instance_id="local",
-                instance_name="Local",
-                instance_url="http://pa.test:8080",
-                agent_enabled=False,
-                subscribed_realms=["default"],
-                peers=[],
-            )
-        ).build_app()
-        with TestClient(app) as client:
-            assert client.get("/").status_code == 200
-            headers = {"X-CSRF-Token": client.cookies.get("pa_csrf")}
-            ui_card = app.state.ctx.store.create_card(CardCreate(title="UI profiles"))
-            with patch("pa.fleet.overview.build_overview", return_value={"nodes": []}):
-                dispatch_form = client.get(f"/partials/cards/{ui_card.id}/dispatch")
-            placement = client.post(
-                "/api/fleet/placement/preview",
-                headers=headers,
-                json={
-                    "placement_policy": "best_match",
-                    "execution_contract": {
-                        "version": 1,
-                        "profile": "invalid",
-                        "confirmed": True,
-                        "requirements": {},
-                    },
-                },
-            )
-            group = client.get(
-                "/api/fleet/instance-groups/all-active/preview",
-                params={"workload_profile": "invalid"},
-            )
-            dispatch = client.post(
-                "/api/fleet/dispatch",
-                headers=headers,
-                json={
-                    "placement_policy": "best_match",
-                    "execution_contract": {
-                        "version": 1,
-                        "profile": "invalid",
-                        "confirmed": True,
-                        "requirements": {},
-                    },
-                },
-            )
-            named_dispatch = client.post(
-                "/api/fleet/instances/local/agent/start",
-                headers=headers,
-                json={
-                    "execution_contract": {
-                        "version": 1,
-                        "profile": "invalid",
-                        "confirmed": True,
-                        "requirements": {},
-                    },
-                },
-            )
-            placement_default = client.put(
-                "/api/fleet/placement-defaults",
-                headers=headers,
-                json={
-                    "group_id": "all-active",
-                    "workload_profile": "invalid",
-                },
-            )
-
-        responses = (
-            placement,
-            group,
-            dispatch,
-            named_dispatch,
-            placement_default,
-        )
-        assert {response.status_code for response in responses} == {422}
-        assert {json.dumps(response.json(), sort_keys=True) for response in responses} == {
-            json.dumps(placement.json(), sort_keys=True)
-        }
-        detail = placement.json()["detail"]
-        assert detail["code"] == "invalid_workload_profile"
-        assert detail["supported_profiles"] == [
-            "automatic",
-            "repository",
-            "research",
-            "operations",
-        ]
-        assert detail["legacy_aliases"] == {"code": "repository"}
-        assert dispatch_form.status_code == 200, dispatch_form.text
-        selector = dispatch_form.text.split('name="execution_profile"', 1)[1].split(
-            "</select>", 1
-        )[0]
-        for profile in CANONICAL_WORKLOAD_PROFILES:
-            assert f'value="{profile}"' in selector
-        assert 'value="code"' not in selector
 
 
 def test_capacity_precedence_and_documented_default_are_explicit() -> None:

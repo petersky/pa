@@ -65,7 +65,6 @@ from pa.fleet.policy import (
     default_scope_key,
 )
 from pa.sync.event_log import EventLog
-from pa.workloads import WorkloadProfile
 
 T = TypeVar("T")
 
@@ -2628,7 +2627,7 @@ class CardProjection:
         *,
         realm_id: str = "default",
         project_id: str | None = None,
-        workload_profile: WorkloadProfile | None = None,
+        workload_profile: str | None = None,
         principal_id: str = "user:local",
         instance_id: str = "local",
     ) -> bool:
