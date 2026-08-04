@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
@@ -95,20 +97,59 @@ def _projects_context(request: Request) -> dict:
                     ),
                 }
             )
-    card_sessions = preferred_sessions_by_card(store.list_sessions())
+    sessions_available = True
+    sessions_error = ""
+    try:
+        all_sessions = store.list_sessions()
+    except Exception:
+        # Card and repository state remains useful during a session projection failure.
+        all_sessions = []
+        sessions_available = False
+        sessions_error = (
+            "Agent session counts are temporarily unavailable. "
+            "Card counts are current."
+        )
+    card_sessions = preferred_sessions_by_card(all_sessions)
     project_sessions = [
         session
-        for session in store.list_sessions()
+        for session in all_sessions
         if project
         and (
             session.project_id == project.id
             or session.card_id in {card.id for card in cards}
         )
     ]
+    live_project_sessions = [
+        session
+        for session in project_sessions
+        if session.status not in {"closed", "quiesced"}
+    ]
+    historical_project_sessions = [
+        session
+        for session in project_sessions
+        if session.status in {"closed", "quiesced"}
+    ]
     active_cards = [card for card in cards if card.lane == CardLane.ACTIVE]
     blocked_cards = [card for card in cards if card.lane == CardLane.WAITING]
     recent_cards = sorted(cards, key=lambda card: card.updated_at, reverse=True)[:6]
     done_count = sum(card.lane == CardLane.DONE for card in cards)
+    lane_counts = {
+        lane.value: sum(card.lane == lane for card in cards) for lane in CardLane
+    }
+    card_ids = {card.id for card in cards}
+    dispatch_store = request.app.state.ctx.services.get("dispatch_store")
+    selected_dispatches = (
+        dispatch_store.latest_by_card(card_ids) if dispatch_store else {}
+    )
+    if selected_dispatches:
+        from pa.modules.items import _progress_from_dispatch
+
+        card_progress = {
+            card_id: _progress_from_dispatch(request.app.state.ctx, record)
+            for card_id, record in selected_dispatches.items()
+        }
+    else:
+        card_progress = {}
     pr_watches = []
     supervisor_store = request.app.state.ctx.services.get("pr_supervisor_store")
     if project and supervisor_store:
@@ -147,12 +188,19 @@ def _projects_context(request: Request) -> dict:
         "cards": cards,
         "card_projects": {card.id: project for card in cards},
         "card_sessions": card_sessions,
+        "card_progress": card_progress,
         "project_sessions": project_sessions,
+        "live_project_sessions": live_project_sessions,
+        "historical_project_sessions": historical_project_sessions,
+        "sessions_available": sessions_available,
+        "sessions_error": sessions_error,
         "active_cards": active_cards,
         "blocked_cards": blocked_cards,
         "recent_cards": recent_cards,
         "done_count": done_count,
+        "lane_counts": lane_counts,
         "progress_percent": round(done_count * 100 / len(cards)) if cards else 0,
+        "health_refreshed_at": datetime.now(UTC),
         "pr_watches": pr_watches,
         "lanes": list(CardLane),
         "active_realm": realm,
@@ -490,7 +538,7 @@ def create_project_ui(
     from pa.modules.ui_shell import render_page
 
     realm_id = realm or _active_realm(request)
-    get_store().create_project(
+    project = get_store().create_project(
         ProjectCreate(realm_id=realm_id, title=title, description=description),
         principal_id=get_principal_id(request),
         instance_id=request.app.state.ctx.settings.instance_id,
@@ -498,7 +546,15 @@ def create_project_ui(
     page = request.app.state.ctx.require_service("pages").get_by_path("/projects")
     if not page:
         raise HTTPException(status_code=404)
-    return render_page(request, page)
+    query = urlencode(
+        {"realm": realm_id, "view": "projects", "project": project.id}
+    )
+    selected_scope = dict(request.scope)
+    selected_scope["query_string"] = query.encode()
+    selected_request = Request(selected_scope, request.receive)
+    response = render_page(selected_request, page)
+    response.headers["HX-Push-Url"] = f"/projects?{query}"
+    return response
 
 
 @ui_router.post("/projects/repositories")
@@ -756,9 +812,9 @@ def update_project_ui(
     project = get_store().update_project(
         project_id,
         ProjectUpdate(
-            title=title.strip(),
-            description=description.strip(),
-            agent_prompt=agent_prompt.strip(),
+            title=title,
+            description=description,
+            agent_prompt=agent_prompt,
             tags=[tag.strip() for tag in tags.split(",") if tag.strip()],
             status=status,
         ),

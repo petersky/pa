@@ -1179,6 +1179,9 @@ def _work_context(request: Request) -> dict:
     cards = store.list_cards(realm_id=realm)
     projects = store.list_projects(realm_id=realm)
     project_id = _active_project(request)
+    selected_lane = request.query_params.get("lane", CardLane.ACTIVE.value)
+    if selected_lane not in {lane.value for lane in CardLane}:
+        selected_lane = CardLane.ACTIVE.value
     filters = {
         key: request.query_params.get(key, "").strip()
         for key in ("q", "owner", "instance", "blocked", "tag", "updated")
@@ -1207,6 +1210,7 @@ def _work_context(request: Request) -> dict:
         "filter_query": urlencode(
             {key: value for key, value in filter_params.items() if value}
         ),
+        "selected_lane": selected_lane,
         "active_realm": realm,
     }
 
