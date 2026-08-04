@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from pa.pr_supervisor.models import (
     GITHUB_TERMINAL_PR_WATCH_STATUSES,
@@ -210,14 +211,13 @@ class PRSupervisorStore:
                         watch.lease_expires_at = replica_expiry
                 watch.id = existing.id
                 watch.created_at = existing.created_at
-                if preserve_lease:
+                if preserve_lease and existing.fence_token >= watch.fence_token:
                     # Replicas form the next authority's durable fence baseline.
                     # Never decrease a token; carry owner/expiry from whichever
                     # record owns the greatest observed fencing generation.
-                    if existing.fence_token >= watch.fence_token:
-                        watch.owner_instance_id = existing.owner_instance_id
-                        watch.fence_token = existing.fence_token
-                        watch.lease_expires_at = existing.lease_expires_at
+                    watch.owner_instance_id = existing.owner_instance_id
+                    watch.fence_token = existing.fence_token
+                    watch.lease_expires_at = existing.lease_expires_at
                 if not watch.head_sha:
                     watch.head_sha = existing.head_sha
                 if not watch.state:
@@ -412,6 +412,7 @@ class PRSupervisorStore:
         instance_id: str,
         *,
         ttl_seconds: int = 45,
+        renewal_window_seconds: int = 12,
         now: datetime | None = None,
         capability: GitHubCapability | None = None,
     ) -> LeaseGrant:
@@ -424,6 +425,13 @@ class PRSupervisorStore:
             if not row:
                 return LeaseGrant(acquired=False, reason="watch_not_found")
             watch = self._row_to_watch(row)
+            if watch.terminal or watch.retired_at is not None:
+                return LeaseGrant(
+                    acquired=False,
+                    fence_token=watch.fence_token,
+                    reason="watch_terminal",
+                    terminal_status=watch.status,
+                )
             if watch.status not in {PRWatchStatus.ACTIVE, PRWatchStatus.BLOCKED}:
                 return LeaseGrant(acquired=False, reason="watch_inactive")
             if capability and not capability.supports(watch.repository):
@@ -433,6 +441,11 @@ class PRSupervisorStore:
                 and watch.lease_expires_at
                 and watch.lease_expires_at > now
             )
+            remaining = (
+                max(0.0, (watch.lease_expires_at - now).total_seconds())
+                if lease_active and watch.lease_expires_at
+                else 0.0
+            )
             if lease_active and watch.owner_instance_id != instance_id:
                 return LeaseGrant(
                     acquired=False,
@@ -440,6 +453,22 @@ class PRSupervisorStore:
                     fence_token=watch.fence_token,
                     expires_at=watch.lease_expires_at,
                     reason="owned",
+                    lease_seconds_remaining=remaining,
+                )
+            if (
+                lease_active
+                and watch.owner_instance_id == instance_id
+                and remaining > max(0, renewal_window_seconds)
+            ):
+                # Concurrent or eager same-owner requests are reads while the
+                # authority still has enough time to survive one renewal delay.
+                return LeaseGrant(
+                    acquired=True,
+                    owner_instance_id=instance_id,
+                    fence_token=watch.fence_token,
+                    expires_at=watch.lease_expires_at,
+                    reason="lease_valid",
+                    lease_seconds_remaining=remaining,
                 )
             fence = watch.fence_token
             if watch.owner_instance_id != instance_id or not lease_active:
@@ -465,6 +494,8 @@ class PRSupervisorStore:
             owner_instance_id=instance_id,
             fence_token=fence,
             expires_at=expires,
+            reason="renewed" if lease_active else "acquired",
+            lease_seconds_remaining=float(ttl_seconds),
         )
 
     def release_lease(self, watch_id: str, instance_id: str, fence_token: int) -> bool:
@@ -570,6 +601,8 @@ class PRSupervisorStore:
             if not row:
                 return None
             watch = self._row_to_watch(row)
+            if watch.terminal or watch.retired_at is not None:
+                return watch
             if owner_instance_id is not None and (
                 watch.owner_instance_id != owner_instance_id
                 or watch.fence_token != fence_token
@@ -605,6 +638,7 @@ class PRSupervisorStore:
         state: dict[str, Any] | None = None,
         owner_instance_id: str | None = None,
         fence_token: int | None = None,
+        fence_token_baseline: int | None = None,
         retirement_reason: str | None = None,
         retired_at: datetime | None = None,
     ) -> PRWatch | None:
@@ -648,24 +682,28 @@ class PRSupervisorStore:
                     "retired_at": retirement_at.isoformat(),
                     "terminal_status": effective_status.value,
                 }
+            effective_fence = max(watch.fence_token, fence_token_baseline or 0)
             if (
                 effective_status == watch.status
                 and merged_state == watch.state
                 and watch.retired_at == retirement_at
                 and watch.owner_instance_id is None
                 and watch.lease_expires_at is None
+                and watch.fence_token == effective_fence
             ):
                 return watch
             conn.execute(
                 """
                 UPDATE pr_watches
                 SET status = ?, state_json = ?, owner_instance_id = NULL,
-                    lease_expires_at = NULL, retired_at = ?, updated_at = ?
+                    fence_token = ?, lease_expires_at = NULL, retired_at = ?,
+                    updated_at = ?
                 WHERE id = ?
                 """,
                 (
                     effective_status.value,
                     json.dumps(merged_state),
+                    effective_fence,
                     retirement_at.isoformat(),
                     now.isoformat(),
                     watch_id,
