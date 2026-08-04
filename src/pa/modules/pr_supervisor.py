@@ -432,7 +432,6 @@ async def ingest_replica(request: Request, body: dict[str, Any]) -> dict[str, An
     except ProvenanceValidationError as exc:
         raise _provenance_http_error(exc) from exc
     stored = _store(request).upsert_watch(watch, preserve_lease=True)
-    _service(request).watch_state_changed(stored)
     return stored.model_dump(mode="json")
 
 
@@ -499,7 +498,6 @@ async def ingest_retirement(request: Request, body: dict[str, Any]) -> dict[str,
             source="fleet_transition",
         )
     )
-    _service(request).watch_state_changed(retired)
     return retired.model_dump(mode="json")
 
 
@@ -514,32 +512,16 @@ async def acquire_lease(
             incoming = await _service(request).validate_replica_provenance(incoming)
         except ProvenanceValidationError as exc:
             raise _provenance_http_error(exc) from exc
-        store = _store(request)
-        existing = store.find_watch(
-            incoming.realm_id, incoming.repository, incoming.pr_number
-        )
-        if (
-            existing is None
-            or incoming.fence_token > existing.fence_token
-            or (incoming.terminal and not existing.terminal)
-        ):
-            stored = store.upsert_watch(incoming, preserve_lease=True)
-        else:
-            stored = existing
-        _service(request).watch_state_changed(stored)
+        stored = _store(request).upsert_watch(incoming, preserve_lease=True)
         canonical_id = stored.id
     capability = GitHubCapability.model_validate(body.get("capability") or {})
+    _store(request).save_capability(capability)
     grant = _store(request).try_acquire_lease(
         canonical_id,
         str(body.get("instance_id") or ""),
         ttl_seconds=min(max(int(body.get("ttl_seconds") or 45), 10), 300),
-        renewal_window_seconds=min(
-            max(int(body.get("renewal_window_seconds") or 12), 1), 60
-        ),
         capability=capability,
     )
-    if grant.reason != "lease_valid":
-        _store(request).save_capability(capability)
     return grant.model_dump(mode="json")
 
 
