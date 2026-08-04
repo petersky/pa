@@ -561,6 +561,218 @@ class StorageTests(unittest.TestCase):
         self.assertEqual(result["series"][0]["unit"], "percent")
         self.assertEqual(result["series"][0]["points"][0]["avg"], 1)
 
+    def test_interrupted_unit_migration_recovers_once_and_accepts_second_unit(
+        self,
+    ) -> None:
+        interrupted_path = self.path.parent / "interrupted-rollup.db"
+        bucket_start = (self.now - timedelta(days=10)).replace(second=0, microsecond=0)
+        bucket_start -= timedelta(minutes=bucket_start.minute % 5)
+        with sqlite3.connect(interrupted_path) as conn:
+            conn.executescript(
+                """
+                CREATE TABLE rollup_metrics_unitless (
+                    bucket_start REAL NOT NULL, bucket_seconds INTEGER NOT NULL,
+                    instance_id TEXT NOT NULL, instance_name TEXT NOT NULL,
+                    scope_type TEXT NOT NULL, scope_id TEXT NOT NULL,
+                    provider_id TEXT NOT NULL DEFAULT '',
+                    card_id TEXT NOT NULL DEFAULT '',
+                    project_id TEXT NOT NULL DEFAULT '',
+                    realm_id TEXT NOT NULL DEFAULT '',
+                    principal_id TEXT NOT NULL DEFAULT '',
+                    metric TEXT NOT NULL, unit TEXT NOT NULL,
+                    quality_rank INTEGER NOT NULL, value_sum REAL,
+                    value_min REAL, value_max REAL, value_last REAL,
+                    value_count INTEGER NOT NULL, sample_count INTEGER NOT NULL,
+                    restart_ids TEXT NOT NULL DEFAULT '',
+                    PRIMARY KEY(
+                        bucket_start,bucket_seconds,instance_id,scope_type,scope_id,
+                        provider_id,card_id,project_id,realm_id,principal_id,metric
+                    )
+                );
+                """
+            )
+            conn.execute(
+                """
+                INSERT INTO rollup_metrics_unitless VALUES(
+                    ?,300,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+                )
+                """,
+                (
+                    bucket_start.timestamp(),
+                    "instance-a",
+                    "Alpha",
+                    "instance",
+                    "instance-a",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "drift.metric",
+                    "percent",
+                    0,
+                    1,
+                    1,
+                    1,
+                    1,
+                    1,
+                    1,
+                    "restart-a",
+                ),
+            )
+
+        recovered = TelemetryStorage(interrupted_path)
+        reopened = TelemetryStorage(interrupted_path)
+        with sqlite3.connect(interrupted_path) as conn:
+            tables = {
+                row[0]
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )
+            }
+            rows = conn.execute(
+                "SELECT unit,value_sum,value_last FROM rollup_metrics"
+            ).fetchall()
+        self.assertNotIn("rollup_metrics_unitless", tables)
+        self.assertEqual(rows, [("percent", 1.0, 1.0)])
+
+        second_unit = sample(bucket_start + timedelta(seconds=20), value=100)
+        second_unit.metrics = {
+            "drift.metric": Metric(
+                value=100,
+                unit="bytes",
+                quality=MetricQuality.MEASURED,
+                source="test",
+            )
+        }
+        reopened.insert_samples([second_unit])
+        reopened.prune(
+            raw_retention_hours=24,
+            rollup_retention_hours=24 * 30,
+            max_database_bytes=16 * 1024 * 1024,
+            now=self.now,
+        )
+        result = recovered.query(
+            TelemetryQuery(
+                start=bucket_start,
+                end=bucket_start + timedelta(minutes=5),
+                metrics=["drift.metric"],
+                bucket_seconds=300,
+            )
+        )
+        self.assertEqual(
+            {series["unit"]: series["points"][0]["avg"] for series in result["series"]},
+            {"percent": 1, "bytes": 100},
+        )
+
+    def test_rollup_value_last_isolated_by_every_identity_dimension(self) -> None:
+        bucket_start = (self.now - timedelta(days=10)).replace(second=0, microsecond=0)
+        bucket_start -= timedelta(minutes=bucket_start.minute % 5)
+        cases = {
+            "instance_id": {"instance_id": "instance-b"},
+            "scope_type": {"scope_type": "session"},
+            "scope_id": {"scope_id": "scope-b"},
+            "provider_id": {"provider_id": "provider-b"},
+            "card_id": {"card_id": "card-b"},
+            "project_id": {"project_id": "project-b"},
+            "realm_id": {"realm_id": "realm-b"},
+            "principal_id": {"principal_id": "principal-b"},
+        }
+        samples = []
+        for index, (dimension, second_override) in enumerate(cases.items()):
+            metric = f"value_last.{dimension}"
+            scope_id = f"collision-{dimension}"
+            base_fields = {
+                "instance_id": "instance-a",
+                "instance_name": "Alpha",
+                "scope_type": "instance",
+                "scope_id": scope_id,
+                "restart_id": "restart-a",
+                "provider_id": None,
+                "card_id": None,
+                "project_id": None,
+                "realm_id": None,
+                "principal_id": None,
+            }
+            for offset, value, overrides in (
+                (10, 1, {}),
+                (11, 100, second_override),
+            ):
+                fields = dict(base_fields)
+                fields.update(overrides)
+                samples.append(
+                    TelemetrySample(
+                        timestamp=bucket_start + timedelta(seconds=index * 2 + offset),
+                        metrics={
+                            metric: Metric(
+                                value=value,
+                                unit="count",
+                                quality=MetricQuality.MEASURED,
+                                source="test",
+                            )
+                        },
+                        **fields,
+                    )
+                )
+        self.storage.insert_samples(samples)
+        self.storage.prune(
+            raw_retention_hours=24,
+            rollup_retention_hours=24 * 30,
+            max_database_bytes=16 * 1024 * 1024,
+            now=self.now,
+        )
+        with sqlite3.connect(self.path) as conn:
+            rows = conn.execute(
+                """
+                SELECT metric,value_sum,value_last
+                FROM rollup_metrics
+                WHERE metric LIKE 'value_last.%'
+                ORDER BY metric,value_sum
+                """
+            ).fetchall()
+        self.assertEqual(len(rows), len(cases) * 2)
+        for metric, value_sum, value_last in rows:
+            with self.subTest(metric=metric, value_sum=value_sum):
+                self.assertEqual(value_last, value_sum)
+
+    def test_raw_and_rollup_queries_use_half_open_bounds(self) -> None:
+        first_bucket = (self.now - timedelta(days=10)).replace(second=0, microsecond=0)
+        first_bucket -= timedelta(minutes=first_bucket.minute % 5)
+        start = first_bucket + timedelta(minutes=5)
+        end = start + timedelta(minutes=5)
+        self.storage.insert_samples(
+            [
+                sample(first_bucket + timedelta(seconds=1), value=10),
+                sample(start, value=20),
+                sample(end, value=30),
+            ]
+        )
+        query = TelemetryQuery(start=start, end=end, bucket_seconds=300)
+        raw = self.storage.query(query)
+        self.storage.prune(
+            raw_retention_hours=24,
+            rollup_retention_hours=24 * 30,
+            max_database_bytes=16 * 1024 * 1024,
+            now=self.now,
+        )
+        rolled = self.storage.query(query)
+
+        for result in (raw, rolled):
+            points = result["series"][0]["points"]
+            self.assertEqual([point["avg"] for point in points], [20])
+            self.assertEqual(
+                [point["timestamp"] for point in points], [start.isoformat()]
+            )
+            self.assertEqual(points[0]["interval_start"], start.isoformat())
+            self.assertEqual(points[0]["interval_end"], end.isoformat())
+            self.assertTrue(
+                all(
+                    point["interval_start"] < point["interval_end"]
+                    for series in result["series"]
+                    for point in series["points"]
+                )
+            )
+
     def test_partial_first_and_last_buckets_stay_inside_requested_domain(self) -> None:
         bucket_start = (self.now - timedelta(days=10)).replace(second=0, microsecond=0)
         bucket_start -= timedelta(minutes=bucket_start.minute % 5)

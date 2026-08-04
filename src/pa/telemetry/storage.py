@@ -46,6 +46,132 @@ class TelemetryStorage:
         conn.execute("PRAGMA busy_timeout=5000")
         return conn
 
+    @staticmethod
+    def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
+        return (
+            conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                (name,),
+            ).fetchone()
+            is not None
+        )
+
+    @staticmethod
+    def _rollup_primary_key(conn: sqlite3.Connection, table: str) -> list[str]:
+        return [
+            row[1]
+            for row in sorted(
+                conn.execute(f"PRAGMA table_info({table})"),
+                key=lambda row: row[5] or 10_000,
+            )
+            if row[5]
+        ]
+
+    @staticmethod
+    def _finish_rollup_unit_migration(conn: sqlite3.Connection) -> None:
+        expected_primary_key = [
+            "bucket_start",
+            "bucket_seconds",
+            "instance_id",
+            "scope_type",
+            "scope_id",
+            "provider_id",
+            "card_id",
+            "project_id",
+            "realm_id",
+            "principal_id",
+            "metric",
+            "unit",
+        ]
+        migration_table = "rollup_metrics_unitless"
+        current_primary_key = TelemetryStorage._rollup_primary_key(
+            conn, "rollup_metrics"
+        )
+        migration_interrupted = TelemetryStorage._table_exists(conn, migration_table)
+        if current_primary_key == expected_primary_key and not migration_interrupted:
+            return
+
+        columns = (
+            "bucket_start,bucket_seconds,instance_id,instance_name,"
+            "scope_type,scope_id,provider_id,card_id,project_id,realm_id,"
+            "principal_id,metric,unit,quality_rank,value_sum,value_min,"
+            "value_max,value_last,value_count,sample_count,restart_ids"
+        )
+        conn.execute("SAVEPOINT rollup_unit_migration")
+        try:
+            sources = ["rollup_metrics"]
+            if migration_interrupted:
+                # Copy the stranded historical table first. If a previous attempt
+                # already copied any row into the current table, the current row
+                # replaces that duplicate instead of double-counting it.
+                sources.insert(0, migration_table)
+            for table in sources:
+                rollup_columns = {
+                    row[1] for row in conn.execute(f"PRAGMA table_info({table})")
+                }
+                if "restart_ids" not in rollup_columns:
+                    conn.execute(
+                        f"ALTER TABLE {table} "
+                        "ADD COLUMN restart_ids TEXT NOT NULL DEFAULT ''"
+                    )
+
+            conn.execute("DROP TABLE IF EXISTS rollup_metrics_rebuild")
+            conn.execute(
+                """
+                CREATE TABLE rollup_metrics_rebuild (
+                    bucket_start REAL NOT NULL,
+                    bucket_seconds INTEGER NOT NULL,
+                    instance_id TEXT NOT NULL,
+                    instance_name TEXT NOT NULL,
+                    scope_type TEXT NOT NULL,
+                    scope_id TEXT NOT NULL,
+                    provider_id TEXT NOT NULL DEFAULT '',
+                    card_id TEXT NOT NULL DEFAULT '',
+                    project_id TEXT NOT NULL DEFAULT '',
+                    realm_id TEXT NOT NULL DEFAULT '',
+                    principal_id TEXT NOT NULL DEFAULT '',
+                    metric TEXT NOT NULL,
+                    unit TEXT NOT NULL,
+                    quality_rank INTEGER NOT NULL,
+                    value_sum REAL,
+                    value_min REAL,
+                    value_max REAL,
+                    value_last REAL,
+                    value_count INTEGER NOT NULL,
+                    sample_count INTEGER NOT NULL,
+                    restart_ids TEXT NOT NULL DEFAULT '',
+                    PRIMARY KEY(
+                        bucket_start, bucket_seconds, instance_id, scope_type,
+                        scope_id, provider_id, card_id, project_id, realm_id,
+                        principal_id, metric, unit
+                    )
+                )
+                """
+            )
+            for table in sources:
+                conn.execute(
+                    f"INSERT OR REPLACE INTO rollup_metrics_rebuild({columns}) "
+                    f"SELECT {columns} FROM {table}"
+                )
+            conn.execute("DROP INDEX IF EXISTS rollups_time_idx")
+            conn.execute("DROP INDEX IF EXISTS rollups_scope_idx")
+            conn.execute("DROP TABLE rollup_metrics")
+            if migration_interrupted:
+                conn.execute(f"DROP TABLE {migration_table}")
+            conn.execute("ALTER TABLE rollup_metrics_rebuild RENAME TO rollup_metrics")
+            conn.execute(
+                "CREATE INDEX rollups_time_idx ON rollup_metrics(bucket_start)"
+            )
+            conn.execute(
+                "CREATE INDEX rollups_scope_idx "
+                "ON rollup_metrics(scope_type, scope_id, metric, bucket_start)"
+            )
+            conn.execute("RELEASE SAVEPOINT rollup_unit_migration")
+        except Exception:
+            conn.execute("ROLLBACK TO SAVEPOINT rollup_unit_migration")
+            conn.execute("RELEASE SAVEPOINT rollup_unit_migration")
+            raise
+
     def _open_or_recover(self) -> None:
         try:
             with self._connect() as conn:
@@ -144,87 +270,7 @@ class TelemetryStorage:
                 ON rollup_metrics(scope_type, scope_id, metric, bucket_start);
             """
         )
-        rollup_columns = {
-            row[1] for row in conn.execute("PRAGMA table_info(rollup_metrics)")
-        }
-        if "restart_ids" not in rollup_columns:
-            conn.execute(
-                "ALTER TABLE rollup_metrics "
-                "ADD COLUMN restart_ids TEXT NOT NULL DEFAULT ''"
-            )
-        primary_key = [
-            row[1]
-            for row in sorted(
-                conn.execute("PRAGMA table_info(rollup_metrics)"),
-                key=lambda row: row[5] or 10_000,
-            )
-            if row[5]
-        ]
-        expected_primary_key = [
-            "bucket_start",
-            "bucket_seconds",
-            "instance_id",
-            "scope_type",
-            "scope_id",
-            "provider_id",
-            "card_id",
-            "project_id",
-            "realm_id",
-            "principal_id",
-            "metric",
-            "unit",
-        ]
-        if primary_key != expected_primary_key:
-            conn.executescript(
-                """
-                DROP INDEX IF EXISTS rollups_time_idx;
-                DROP INDEX IF EXISTS rollups_scope_idx;
-                ALTER TABLE rollup_metrics RENAME TO rollup_metrics_unitless;
-                CREATE TABLE rollup_metrics (
-                    bucket_start REAL NOT NULL,
-                    bucket_seconds INTEGER NOT NULL,
-                    instance_id TEXT NOT NULL,
-                    instance_name TEXT NOT NULL,
-                    scope_type TEXT NOT NULL,
-                    scope_id TEXT NOT NULL,
-                    provider_id TEXT NOT NULL DEFAULT '',
-                    card_id TEXT NOT NULL DEFAULT '',
-                    project_id TEXT NOT NULL DEFAULT '',
-                    realm_id TEXT NOT NULL DEFAULT '',
-                    principal_id TEXT NOT NULL DEFAULT '',
-                    metric TEXT NOT NULL,
-                    unit TEXT NOT NULL,
-                    quality_rank INTEGER NOT NULL,
-                    value_sum REAL,
-                    value_min REAL,
-                    value_max REAL,
-                    value_last REAL,
-                    value_count INTEGER NOT NULL,
-                    sample_count INTEGER NOT NULL,
-                    restart_ids TEXT NOT NULL DEFAULT '',
-                    PRIMARY KEY(
-                        bucket_start, bucket_seconds, instance_id, scope_type,
-                        scope_id, provider_id, card_id, project_id, realm_id,
-                        principal_id, metric, unit
-                    )
-                );
-                INSERT INTO rollup_metrics(
-                    bucket_start,bucket_seconds,instance_id,instance_name,
-                    scope_type,scope_id,provider_id,card_id,project_id,realm_id,
-                    principal_id,metric,unit,quality_rank,value_sum,value_min,
-                    value_max,value_last,value_count,sample_count,restart_ids
-                )
-                SELECT bucket_start,bucket_seconds,instance_id,instance_name,
-                       scope_type,scope_id,provider_id,card_id,project_id,realm_id,
-                       principal_id,metric,unit,quality_rank,value_sum,value_min,
-                       value_max,value_last,value_count,sample_count,restart_ids
-                FROM rollup_metrics_unitless;
-                DROP TABLE rollup_metrics_unitless;
-                CREATE INDEX rollups_time_idx ON rollup_metrics(bucket_start);
-                CREATE INDEX rollups_scope_idx
-                    ON rollup_metrics(scope_type, scope_id, metric, bucket_start);
-                """
-            )
+        TelemetryStorage._finish_rollup_unit_migration(conn)
         conn.execute(
             "INSERT INTO telemetry_meta(key,value) VALUES('schema_version',?) "
             "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
@@ -299,7 +345,7 @@ class TelemetryStorage:
     ) -> tuple[str, list]:
         clauses = [
             f"{alias}.{time_column} >= ?",
-            f"{alias}.{time_column} <= ?",
+            f"{alias}.{time_column} < ?",
         ]
         values: list = [
             query.start.timestamp() - start_offset_seconds,
@@ -340,10 +386,10 @@ class TelemetryStorage:
         where, values = self._where(query)
         with self._lock, self._connect() as conn:
             has_rollups = conn.execute(
-                "SELECT 1 FROM rollup_metrics WHERE bucket_start>=? "
-                "AND bucket_start<=? LIMIT 1",
+                "SELECT 1 FROM rollup_metrics "
+                "WHERE bucket_start+bucket_seconds>? AND bucket_start<? LIMIT 1",
                 (
-                    query.start.timestamp() - ROLLUP_BUCKET_SECONDS,
+                    query.start.timestamp(),
                     query.end.timestamp(),
                 ),
             ).fetchone()
@@ -489,7 +535,7 @@ class TelemetryStorage:
             bucket_end = bucket_start + timedelta(seconds=bucket)
             interval_start = max(query.start, bucket_start)
             interval_end = min(query.end, bucket_end)
-            if interval_start > query.end or interval_end < query.start:
+            if interval_start >= interval_end:
                 continue
             first_timestamp = max(
                 query.start, datetime.fromtimestamp(row["first_ts"], UTC)
@@ -728,11 +774,20 @@ class TelemetryStorage:
                    (SELECT sm2.value FROM sample_metrics sm2
                      JOIN samples s2 ON s2.id=sm2.sample_id
                      WHERE sm2.metric=m.metric
+                       AND s2.instance_id=s.instance_id
+                       AND s2.scope_type=s.scope_type
                        AND s2.scope_id=s.scope_id
+                       AND COALESCE(s2.provider_id,'')=
+                           COALESCE(s.provider_id,'')
+                       AND COALESCE(s2.card_id,'')=COALESCE(s.card_id,'')
+                       AND COALESCE(s2.project_id,'')=COALESCE(s.project_id,'')
+                       AND COALESCE(s2.realm_id,'')=COALESCE(s.realm_id,'')
+                       AND COALESCE(s2.principal_id,'')=
+                           COALESCE(s.principal_id,'')
                        AND sm2.unit=m.unit
                        AND CAST(s2.ts / ? AS INTEGER)=CAST(s.ts / ? AS INTEGER)
                        AND s2.id IN ({placeholders})
-                     ORDER BY s2.ts DESC LIMIT 1) value_last,
+                     ORDER BY s2.ts DESC,s2.id DESC LIMIT 1) value_last,
                    COUNT(m.value) value_count,COUNT(*) sample_count,
                    GROUP_CONCAT(DISTINCT s.restart_id) restart_ids
             FROM samples s JOIN sample_metrics m ON m.sample_id=s.id
