@@ -447,7 +447,7 @@ async def resolve_sync_conflicts(request: Request, body: dict) -> dict:
                 )
             event_type = {
                 "delete": EventType.CARD_DELETED,
-                "upsert": EventType.CARD_CREATED,
+                "upsert": EventType.CARD_UPSERTED,
             }.get(action, EventType.CARD_UPDATED)
             events.append(
                 CardEvent(
@@ -459,6 +459,12 @@ async def resolve_sync_conflicts(request: Request, body: dict) -> dict:
                     payload={"id": entity_id, **fields}
                     if action == "upsert"
                     else fields,
+                    source_operation="sync.resolve_conflict",
+                    causal_parent=local_head,
+                    causal_card_version=(
+                        current.updated_at.isoformat() if current else None
+                    ),
+                    field_intent=sorted(fields),
                 )
             )
         else:

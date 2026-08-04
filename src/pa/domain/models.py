@@ -465,11 +465,20 @@ class CardUpdate(BaseModel):
     tags: list[str] | None = None
     preferred_instance: str | None = None
     preferred_capabilities: list[str] | None = None
+    # Full-card clients naturally echo ``updated_at``. Treat that value as a
+    # causal precondition instead of silently discarding it, so an old snapshot
+    # cannot become a fresh authoritative mutation.
+    expected_version: datetime | None = Field(default=None, exclude=True)
+    field_intent: list[str] | None = Field(default=None, exclude=True)
 
     @model_validator(mode="before")
     @classmethod
     def accept_legacy_status(cls, data):
-        return _adapt_legacy_lifecycle(data)
+        adapted = _adapt_legacy_lifecycle(data)
+        if isinstance(adapted, dict) and "updated_at" in adapted:
+            adapted = dict(adapted)
+            adapted.setdefault("expected_version", adapted.pop("updated_at"))
+        return adapted
 
 
 # --- Sync objects ---
@@ -479,6 +488,7 @@ class EventType(StrEnum):
     GOAL_UPSERTED = "goal_upserted"
     GOAL_GOVERNANCE_UPSERTED = "goal_governance_upserted"
     CARD_CREATED = "card_created"
+    CARD_UPSERTED = "card_upserted"
     CARD_UPDATED = "card_updated"
     CARD_DELETED = "card_deleted"
     ATTACHMENT_CREATED = "attachment_created"
@@ -519,6 +529,10 @@ class CardEvent(BaseModel):
     author_principal: str
     author_instance: str
     payload: dict = Field(default_factory=dict)
+    source_operation: str = "legacy:unspecified"
+    causal_parent: str | None = None
+    causal_card_version: str | None = None
+    field_intent: list[str] = Field(default_factory=list)
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 

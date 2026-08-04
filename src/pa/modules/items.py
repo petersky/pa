@@ -66,6 +66,7 @@ from pa.domain.models import (
     KnowledgeStatus,
     KnowledgeUpdate,
 )
+from pa.domain.projection import CardVersionConflict
 from pa.domain.session_selection import preferred_sessions_by_card
 from pa.domain.store import get_store
 from pa.knowledge.capture import (
@@ -115,6 +116,11 @@ class KnowledgeBulkRequest(BaseModel):
 class CardProjectChangeRequest(BaseModel):
     project_id: str | None = None
     decision: Literal["preserve", "migrate", "cancel"] | None = None
+
+
+class CardRepairRequest(BaseModel):
+    card_ids: list[str] = Field(min_length=1, max_length=100)
+    realm_id: str = "default"
 
 
 def _require_memory_editor(request: Request) -> str:
@@ -1327,19 +1333,60 @@ def get_card_api(request: Request, card_id: str, realm: str | None = None) -> di
     return card.model_dump(mode="json")
 
 
+@router.get("/cards/{card_id}/history")
+def card_history_api(request: Request, card_id: str, realm: str | None = None) -> dict:
+    realm_id = realm or request.app.state.ctx.settings.primary_realm
+    log = request.app.state.ctx.require_service("event_log")
+    return {
+        "card_id": card_id,
+        "realm_id": realm_id,
+        "head": log.get_head(realm_id),
+        "events": log.entity_history(realm_id, "card", card_id),
+    }
+
+
+@router.post("/cards/repair-legacy-history")
+def repair_legacy_card_history_api(request: Request, body: CardRepairRequest) -> dict:
+    results = get_store().repair_legacy_card_history(
+        body.card_ids,
+        realm_id=body.realm_id,
+        principal_id=get_principal_id(request),
+        instance_id=request.app.state.ctx.settings.instance_id,
+    )
+    return {
+        "realm_id": body.realm_id,
+        "results": results,
+        "head": request.app.state.ctx.require_service("event_log").get_head(
+            body.realm_id
+        ),
+    }
+
+
 @router.patch("/cards/{card_id}")
 def update_card_api(
     request: Request, card_id: str, data: CardUpdate, realm: str | None = None
 ) -> dict:
     settings = request.app.state.ctx.settings
     realm_id = realm or settings.primary_realm
-    card = get_store().update_card(
-        card_id,
-        data,
-        realm_id=realm_id,
-        principal_id=get_principal_id(request),
-        instance_id=settings.instance_id,
-    )
+    try:
+        card = get_store().update_card(
+            card_id,
+            data,
+            realm_id=realm_id,
+            principal_id=get_principal_id(request),
+            instance_id=settings.instance_id,
+        )
+    except CardVersionConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "stale_card_version",
+                "card_id": exc.card_id,
+                "expected_version": exc.expected.isoformat(),
+                "actual_version": exc.actual.isoformat(),
+                "message": "The card changed after this snapshot was read. Retry with field_intent or the current updated_at.",
+            },
+        ) from exc
     if not card:
         raise HTTPException(status_code=404, detail="Card not found")
     return card.model_dump(mode="json")
@@ -2603,6 +2650,8 @@ class ItemsModule(Module):
             lane: CardLane | None = None,
             realm: str = "default",
             tags: list[str] | None = None,
+            expected_version: str | None = None,
+            field_intent: list[str] | None = None,
         ) -> dict | None:
             """Update a canonical card. Omitted fields remain unchanged."""
             changes = {
@@ -2615,6 +2664,10 @@ class ItemsModule(Module):
                 }.items()
                 if value is not None
             }
+            if expected_version is not None:
+                changes["updated_at"] = expected_version
+            if field_intent is not None:
+                changes["field_intent"] = field_intent
             return request_local_pa(
                 ctx.settings,
                 "PATCH",
@@ -2622,6 +2675,28 @@ class ItemsModule(Module):
                 params={"realm": realm},
                 json=changes,
                 allow_not_found=True,
+            )
+
+        @mcp.tool()
+        def get_card_history(card_id: str, realm: str = "default") -> dict:
+            """Inspect immutable card mutations with actor, instance, parents, intent, and timestamps."""
+            return request_local_pa(
+                ctx.settings,
+                "GET",
+                f"/api/cards/{card_id}/history",
+                params={"realm": realm},
+            )
+
+        @mcp.tool()
+        def repair_legacy_card_history(
+            card_ids: list[str], realm: str = "default"
+        ) -> dict:
+            """Idempotently append canonical bases for projection-only legacy cards."""
+            return request_local_pa(
+                ctx.settings,
+                "POST",
+                "/api/cards/repair-legacy-history",
+                json={"card_ids": card_ids, "realm_id": realm},
             )
 
         @mcp.tool()
@@ -2767,24 +2842,33 @@ class ItemsModule(Module):
             parent_id: str | None = None,
             project_id: str | None = None,
             realm: str = "default",
+            tags: list[str] | None = None,
+            expected_version: str | None = None,
+            field_intent: list[str] | None = None,
         ) -> dict | None:
             """Update a card's mutable fields."""
+            changes = {
+                key: value
+                for key, value in {
+                    "title": title,
+                    "body": body,
+                    "lane": lane,
+                    "parent_id": parent_id,
+                    "project_id": project_id,
+                    "tags": tags,
+                }.items()
+                if value is not None
+            }
+            if expected_version is not None:
+                changes["updated_at"] = expected_version
+            if field_intent is not None:
+                changes["field_intent"] = field_intent
             return request_local_pa(
                 ctx.settings,
                 "PATCH",
                 f"/api/cards/{card_id}",
                 params={"realm": realm},
-                json={
-                    key: value
-                    for key, value in {
-                        "title": title,
-                        "body": body,
-                        "lane": lane,
-                        "parent_id": parent_id,
-                        "project_id": project_id,
-                    }.items()
-                    if value is not None
-                },
+                json=changes,
                 allow_not_found=True,
             )
 
