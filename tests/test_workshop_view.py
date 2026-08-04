@@ -197,6 +197,12 @@ def _snapshot() -> dict:
             "done": [_card("done", "Completed card", "done")],
         },
         "work_orders": inventory,
+        "inventory": {
+            "loaded": len(inventory),
+            "total": len(inventory),
+            "omitted": 0,
+            "overflow_href": "/cards",
+        },
         "counts": {
             "total": len(inventory),
             "live": 1,
@@ -225,7 +231,10 @@ def _workshop_markup() -> str:
           <h1 data-workshop-view-heading>Floor view</h1>
           <p data-workshop-view-description>Current work, where it is running, and what needs attention.</p>
         </div>
-        <div class="workshop-live"><span data-workshop-live>Loading</span></div>
+        <div class="workshop-live-controls">
+          <div class="workshop-live" role="status" aria-live="polite"><span data-workshop-live>Loading</span></div>
+          <button type="button" data-workshop-refresh>Refresh</button>
+        </div>
       </header>
       <div class="notice workshop-alert" data-workshop-alert hidden></div>
       <section class="workshop-sync" data-workshop-sync></section>
@@ -234,19 +243,21 @@ def _workshop_markup() -> str:
         <label>Show<select data-workshop-filter>
           <option value="operational">Live + needs attention</option>
           <option value="live">Live only</option><option value="attention">Needs attention only</option>
-          <option value="all">All admitted cards</option>
+          <option value="all">Loaded inventory</option>
         </select></label>
         <label>Group<select data-workshop-group><option value="attention">Attention first</option>
           <option value="location">Group by location</option><option value="lane">Group by card lane</option></select></label>
         <p data-workshop-results aria-live="polite"></p>
+        <a data-workshop-overflow href="/cards">Open full Cards inventory</a>
       </form>
       <div class="workshop-layout">
         <div class="workshop-scene" data-workshop-scene></div>
         <div class="workshop-compact" data-workshop-compact hidden></div>
-        <aside class="panel workshop-inspector" data-workshop-inspector>
+        <aside class="panel workshop-inspector" data-workshop-inspector tabindex="-1">
           <h2>Inspector</h2><p>Select an item.</p>
         </aside>
       </div>
+      <p class="sr-only" data-workshop-announcer aria-live="polite"></p>
       <nav data-workshop-pagination></nav>
     </div>
   </main>
@@ -378,6 +389,8 @@ class WorkshopCompactViewBrowserTests(unittest.IsolatedAsyncioTestCase):
                   operationHeight: document.querySelector(".workshop-operation-card").getBoundingClientRect().height,
                   renderedRows: document.querySelectorAll('[data-workshop-compact-row="work-order"]').length,
                   results: document.querySelector("[data-workshop-results]").textContent,
+                  refreshInsideStatus: !!document.querySelector('[role="status"] [data-workshop-refresh]'),
+                  inspectorLive: document.querySelector("[data-workshop-inspector]").hasAttribute("aria-live"),
                   firstViewport: document.elementFromPoint(195, 690) !== null
                 })"""
             )
@@ -386,7 +399,9 @@ class WorkshopCompactViewBrowserTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(initial["compactHidden"])
             self.assertEqual(initial["sources"], 2)
             self.assertEqual(initial["renderedRows"], 2)
-            self.assertIn("127 omitted", initial["results"])
+            self.assertIn("127 loaded work orders omitted", initial["results"])
+            self.assertFalse(initial["refreshInsideStatus"])
+            self.assertFalse(initial["inspectorLive"])
 
             performance_budget = await page.evaluate(
                 """(() => {
@@ -537,7 +552,7 @@ class WorkshopCompactViewBrowserTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(bounded["firstPage"], 20)
             self.assertEqual(bounded["secondPage"], 20)
             self.assertIn("Needs attention", bounded["groups"])
-            self.assertIn("129 matching", bounded["status"])
+            self.assertIn("129 loaded matches", bounded["status"])
             self.assertLess(bounded["domItems"], 50)
 
             live = await page.evaluate(
@@ -560,6 +575,31 @@ class WorkshopCompactViewBrowserTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(live["selected"])
             self.assertEqual(live["focusId"], "active")
             self.assertEqual(live["inspector"], "Build compact Workshop")
+
+            disappeared = await page.evaluate(
+                """(() => {
+                  var update = JSON.parse(JSON.stringify(window.__snapshot));
+                  update.generated_at = "2026-08-03T10:00:02Z";
+                  update.work_orders = update.work_orders.filter(function (order) { return order.id !== "active"; });
+                  window.PAWorkshopTest.acceptSnapshot(document.querySelector("#pa-workshop-root"), update);
+                  return {
+                    selected:document.querySelectorAll('[data-workshop-kind][aria-pressed="true"]').length,
+                    inspector:document.querySelector("[data-workshop-inspector]").textContent,
+                    announcement:document.querySelector("[data-workshop-announcer]").textContent
+                  };
+                })()"""
+            )
+            self.assertEqual(disappeared["selected"], 0)
+            self.assertNotIn("Build compact Workshop", disappeared["inspector"])
+            self.assertIn("selection cleared", disappeared["announcement"].lower())
+
+            await page.evaluate(
+                """(() => {
+                  var restored = JSON.parse(JSON.stringify(window.__snapshot));
+                  restored.generated_at = "2026-08-03T10:00:03Z";
+                  window.PAWorkshopTest.acceptSnapshot(document.querySelector("#pa-workshop-root"), restored);
+                })()"""
+            )
 
             streams = await page.evaluate(
                 """(() => {
@@ -602,6 +642,48 @@ class WorkshopCompactViewBrowserTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(narrow["compactVisible"])
             self.assertEqual(narrow["pressed"], "true")
             self.assertTrue(narrow["stateLabels"])
+
+            inspector_reachability = await page.evaluate(
+                """(() => {
+                  var control = document.querySelector('[data-workshop-compact] [data-workshop-id="active"]');
+                  control.click();
+                  var panel = document.querySelector("[data-workshop-inspector]");
+                  var rect = panel.getBoundingClientRect();
+                  return {
+                    focused:document.activeElement === panel,
+                    selected:control.getAttribute("aria-pressed"),
+                    visible:rect.top < window.innerHeight && rect.bottom > 0,
+                    panelAfterControl:control.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING,
+                    firstLink:panel.querySelector("a") && panel.querySelector("a").textContent
+                  };
+                })()"""
+            )
+            self.assertTrue(inspector_reachability["focused"])
+            self.assertEqual(inspector_reachability["selected"], "true")
+            self.assertTrue(inspector_reachability["visible"])
+            self.assertTrue(inspector_reachability["panelAfterControl"])
+            self.assertEqual(inspector_reachability["firstLink"], "Open card detail")
+
+            await page.command(
+                "Input.dispatchKeyEvent",
+                {
+                    "type": "keyDown",
+                    "key": "Tab",
+                    "code": "Tab",
+                    "windowsVirtualKeyCode": 9,
+                },
+            )
+            await page.command(
+                "Input.dispatchKeyEvent",
+                {
+                    "type": "keyUp",
+                    "key": "Tab",
+                    "code": "Tab",
+                    "windowsVirtualKeyCode": 9,
+                },
+            )
+            tab_order = await page.evaluate("document.activeElement.textContent")
+            self.assertEqual(tab_order, "Open card detail")
 
             narrow_floor = await page.evaluate(
                 """(() => {

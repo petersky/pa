@@ -421,6 +421,7 @@ def _local_activity(ctx: Any) -> dict[str, Any]:
         sessions.append(
             {
                 "id": session.id,
+                "realm_id": session.realm_id,
                 "title": session.title or session.label or session.id,
                 "card_id": session.card_id or session.item_id,
                 "project_id": session.project_id,
@@ -440,7 +441,9 @@ def _local_activity(ctx: Any) -> dict[str, Any]:
         dispatch_store.expire_capacity_reservations()
         dispatches = [
             item.public_dict()
-            for item in dispatch_store.list(limit=100)
+            for item in dispatch_store.list(
+                realm_id=ctx.settings.primary_realm, limit=100
+            )
             if item.state not in TERMINAL_DISPATCH_STATES
             and (
                 item.target_instance_id == ctx.settings.instance_id

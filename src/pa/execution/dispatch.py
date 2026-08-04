@@ -465,8 +465,19 @@ class DispatchStore:
     @staticmethod
     def _prefer_card_record(candidate: DispatchRecord, current: DispatchRecord) -> bool:
         active_states = {
-            "queued", "checking_sync", "materializing", "provisioning",
-            "starting_session", "delivering_prompt", "running",
+            "waiting_capacity",
+            "blocked",
+            "queued",
+            "checking_sync",
+            "materializing",
+            "provisioning",
+            "starting_session",
+            "delivering_prompt",
+            "dispatching",
+            "dispatched",
+            "materialized",
+            "running",
+            "completion_pending",
         }
         return (
             (candidate.state in active_states) > (current.state in active_states)
@@ -589,7 +600,11 @@ class DispatchStore:
             return self._records.get(dispatch_id)
 
     def list(
-        self, *, target_instance_id: str | None = None, limit: int = 100
+        self,
+        *,
+        target_instance_id: str | None = None,
+        realm_id: str | None = None,
+        limit: int = 100,
     ) -> list[DispatchRecord]:
         with self._lock:
             self._refresh_queue_positions_locked()
@@ -600,11 +615,15 @@ class DispatchStore:
                 for record in records
                 if record.target_instance_id == target_instance_id
             ]
+        if realm_id:
+            records = [record for record in records if record.realm_id == realm_id]
         return sorted(records, key=lambda record: record.updated_at, reverse=True)[
             :limit
         ]
 
-    def latest_by_card(self, card_ids: set[str]) -> dict[str, DispatchRecord]:
+    def latest_by_card(
+        self, card_ids: set[str], *, realm_id: str | None = None
+    ) -> dict[str, DispatchRecord]:
         """Return one useful dispatch per requested card without copying history."""
         if not card_ids:
             return {}
@@ -613,7 +632,49 @@ class DispatchStore:
                 card_id: self._latest_card_records[card_id]
                 for card_id in card_ids
                 if card_id in self._latest_card_records
+                and (
+                    realm_id is None
+                    or self._latest_card_records[card_id].realm_id == realm_id
+                )
             }
+
+    def history_counts(self, card_ids: set[str], *, realm_id: str) -> dict[str, int]:
+        """Count dispatch history for bounded card ids without copying records."""
+        counts = {card_id: 0 for card_id in card_ids}
+        with self._lock:
+            for record in self._records.values():
+                if record.realm_id == realm_id and record.card_id in counts:
+                    counts[record.card_id] += 1
+        return counts
+
+    def latest_by_session(
+        self, session_ids: set[str], *, realm_id: str
+    ) -> dict[str, DispatchRecord]:
+        """Return the active-preferred newest dispatch for each requested session."""
+        if not session_ids:
+            return {}
+        with self._lock:
+            selected: dict[str, DispatchRecord] = {}
+            for record in self._records.values():
+                if record.realm_id != realm_id or record.session_id not in session_ids:
+                    continue
+                current = selected.get(record.session_id)
+                if current is None or self._prefer_card_record(record, current):
+                    selected[record.session_id] = record
+            return selected
+
+    def current_card_ids(self, *, realm_id: str, limit: int) -> list[str]:
+        """Return bounded card ids with current dispatch work in one realm."""
+        with self._lock:
+            records = [
+                record
+                for record in self._latest_card_records.values()
+                if record.realm_id == realm_id
+                and record.state
+                not in {"completed", "acknowledged", "failed", "cancelled"}
+            ]
+        records.sort(key=lambda record: record.updated_at, reverse=True)
+        return [record.card_id for record in records[:limit] if record.card_id]
 
     def capacity_snapshot(self, target_instance_id: str) -> dict[str, Any]:
         """Return authority-local reservations and waiting work for one target."""

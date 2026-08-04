@@ -21,9 +21,11 @@
       <h1 data-workshop-view-heading>Floor view</h1>
       <p class="muted" data-workshop-view-description>Current work, where it is running, and what needs attention.</p>
     </div>
-    <div class="workshop-live" role="status" aria-live="polite">
-      <span class="workshop-live-mark" aria-hidden="true"></span>
-      <span data-workshop-live>Loading canonical state…</span>
+    <div class="workshop-live-controls">
+      <div class="workshop-live" role="status" aria-live="polite">
+        <span class="workshop-live-mark" aria-hidden="true"></span>
+        <span data-workshop-live>Loading canonical state…</span>
+      </div>
       <button type="button" class="ghost small" data-workshop-refresh>Refresh</button>
     </div>
   </header>
@@ -40,7 +42,7 @@
         <option value="operational">Live + needs attention</option>
         <option value="live">Live only</option>
         <option value="attention">Needs attention only</option>
-        <option value="all">All admitted cards</option>
+        <option value="all">Loaded inventory</option>
       </select>
     </label>
     <label>Group and sort
@@ -51,16 +53,18 @@
       </select>
     </label>
     <p class="small muted workshop-results" data-workshop-results aria-live="polite"></p>
+    <a class="small" data-workshop-overflow href="/">Open full Cards inventory</a>
   </form>
 
   <div class="workshop-layout">
     <div class="workshop-scene" data-workshop-scene aria-label="Workshop floor view"></div>
     <div class="workshop-compact" data-workshop-compact hidden aria-label="Accessible compact Workshop list"></div>
-    <aside class="panel workshop-inspector" data-workshop-inspector aria-live="polite">
+    <aside class="panel workshop-inspector" data-workshop-inspector tabindex="-1">
       <h2>Inspector</h2>
       <p class="muted">Select an item on the floor for operational detail and safe links.</p>
     </aside>
   </div>
+  <p class="sr-only" data-workshop-announcer aria-live="polite"></p>
   <nav class="workshop-pagination" data-workshop-pagination aria-label="Workshop result pages"></nav>
 </div>
 {% endset %}

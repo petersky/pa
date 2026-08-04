@@ -119,7 +119,8 @@
       '<span class="workshop-relationship">No current session</span>';
     var attention = order.attention ? '<span class="status status-blocked">Needs attention</span>' : "";
     return '<button type="button" class="' + className + '" data-workshop-kind="card" ' +
-      'data-workshop-id="' + escapeHtml(order.id) + '" aria-label="Inspect work order ' +
+      'data-workshop-id="' + escapeHtml(order.id) + '" aria-pressed="false" ' +
+      'aria-label="Inspect work order ' +
       escapeHtml(order.title) + '"><span class="workshop-order-heading"><strong>' +
       escapeHtml(order.title) + "</strong>" + attention + "</span>" + relationship +
       '<dl class="workshop-order-states"><div><dt>Lane</dt><dd>' +
@@ -131,7 +132,8 @@
   }
 
   function renderQuery(root, data, result) {
-    var total = orders(data).length;
+    var loaded = orders(data).length;
+    var inventory = data.inventory || { total: loaded, omitted: 0, loaded: loaded };
     var from = result.page.length ? ((query.page - 1) * PAGE_SIZE) + 1 : 0;
     var to = ((query.page - 1) * PAGE_SIZE) + result.page.length;
     var status = root.querySelector("[data-workshop-results]");
@@ -142,10 +144,17 @@
     if (search && search.value.toLowerCase().trim() !== query.search) search.value = query.search;
     if (group) group.value = query.group;
     if (status) {
-      var omitted = total - result.all.length;
+      var omitted = loaded - result.all.length;
       status.textContent = "Showing " + from + "–" + to + " of " + result.all.length +
-        " matching work orders; " + omitted + " omitted by the current view. " +
-        total + " admitted in total.";
+        " loaded matches; " + omitted + " loaded work orders omitted by this view. " +
+        inventory.omitted + " additional admitted cards are outside this bounded projection; " +
+        inventory.total + " admitted in total.";
+    }
+    var overflow = root.querySelector("[data-workshop-overflow]");
+    if (overflow) {
+      overflow.href = inventory.overflow_href || "/";
+      overflow.hidden = !inventory.omitted;
+      overflow.textContent = "Open " + inventory.omitted + " additional cards in Cards";
     }
     var pager = root.querySelector("[data-workshop-pagination]");
     if (pager) {
@@ -164,8 +173,9 @@
     return '<section class="workshop-bay" data-state="' +
       escapeHtml(bay.connectivity === "connected" ? bay.activity_freshness : "disconnected") +
       '"><button type="button" class="workshop-bay-header" data-workshop-kind="bay" ' +
-      'data-workshop-id="' + escapeHtml(bay.id) + '" aria-label="Inspect work bay ' +
-      escapeHtml(bay.name) + '"><span><strong>' + escapeHtml(bay.name) +
+      'data-workshop-id="' + escapeHtml(bay.id) + '" aria-pressed="false" ' +
+      'aria-label="Inspect work bay ' + escapeHtml(bay.name) + '"><span><strong>' +
+      escapeHtml(bay.name) +
       "</strong><small>" + escapeHtml(bay.zone || "No zone") + "</small></span><span>" +
       stateCell(bay.connectivity_label || "Disconnected", bay.connectivity) +
       "</span><span class=\"workshop-capacity\">" + escapeHtml(capacity) +
@@ -216,7 +226,8 @@
       }
       rows.push('<tr data-workshop-compact-row="work-order"><td data-label="Work order">' +
         '<button class="link-button" type="button" data-workshop-kind="card" data-workshop-id="' +
-        escapeHtml(order.id) + '"><strong>' + escapeHtml(order.title) + "</strong></button>" +
+        escapeHtml(order.id) + '" aria-pressed="false"><strong>' +
+        escapeHtml(order.title) + "</strong></button>" +
         (order.session ? '<span class="workshop-relationship">' +
         escapeHtml(order.session.relationship_label) + "</span>" : "") +
         '</td><td data-label="Lane">' + stateCell(order.lane_label, order.lane) +
@@ -239,7 +250,7 @@
     var issues = data.sync.issues || [];
     sync.dataset.state = data.sync.state;
     sync.innerHTML = '<button type="button" data-workshop-kind="sync" data-workshop-id="rail" ' +
-      'aria-label="Inspect fleet synchronization"><span aria-hidden="true">⟷</span>' +
+      'aria-pressed="false" aria-label="Inspect fleet synchronization"><span aria-hidden="true">⟷</span>' +
       '<strong>Shared sync rail</strong><span>' + escapeHtml(data.sync.state_label || "Status unavailable") +
       " · " + nodes.length + " peers · " + issues.length +
       " needing attention</span></button>";
@@ -257,13 +268,28 @@
         escapeHtml(row[1]) + "</dd>"; }).join("") + "</dl>";
   }
 
-  function inspect(root, data, kind, id) {
+  function clearInspection(root, message) {
+    selected = null;
+    root.removeAttribute("data-workshop-has-selection");
+    root.querySelectorAll("[data-workshop-kind]").forEach(function (button) {
+      button.classList.remove("selected");
+      button.setAttribute("aria-pressed", "false");
+    });
+    var panel = root.querySelector("[data-workshop-inspector]");
+    panel.innerHTML = "<h2>Inspector</h2><p class=\"muted\">" +
+      escapeHtml(message || "Select an item on the floor for operational detail and safe links.") + "</p>";
+  }
+
+  function inspect(root, data, kind, id, options) {
+    options = options || {};
     var item = findItem(data, kind, id);
     if (!item) return false;
     selected = { kind: kind, id: id };
+    root.dataset.workshopHasSelection = "true";
     root.querySelectorAll("[data-workshop-kind]").forEach(function (button) {
-      button.classList.toggle("selected", button.dataset.workshopKind === kind &&
-        button.dataset.workshopId === id);
+      var active = button.dataset.workshopKind === kind && button.dataset.workshopId === id;
+      button.classList.toggle("selected", active);
+      button.setAttribute("aria-pressed", String(active));
     });
     var panel = root.querySelector("[data-workshop-inspector]");
     if (kind === "bay") {
@@ -288,6 +314,11 @@
       panel.innerHTML = "<h2>Work order</h2><h3>" + escapeHtml(item.title) + "</h3>" +
         detailRows([["Card lane", item.lane_label], ["Dispatch", item.dispatch_label],
           ["Session relationship", relationship], ["Session activity", item.activity_label],
+          ["Agent turn", item.agent_turn && item.agent_turn.ended ? "Ended" : "In progress or not started"],
+          ["Dispatch completion", item.dispatch_completion && item.dispatch_completion.completed ?
+            "Completed" : "Not completed"],
+          ["Card disposition", item.card_completion && item.card_completion.status],
+          ["Reconciliation", item.card_reconciliation && item.card_reconciliation.state],
           ["Freshness", item.freshness_label], ["Evaluated outcome", item.outcome_label],
           ["Location", item.location ? item.location.name : "Not assigned"],
           ["Needs attention", reasons], ["Latest progress", item.session && item.session.latest_progress]]) +
@@ -317,6 +348,15 @@
         '<details><summary>Raw diagnostics</summary><pre>' +
         escapeHtml(JSON.stringify(raw, null, 2)) + "</pre></details>";
     }
+    if (options.announce !== false) {
+      var announcer = root.querySelector("[data-workshop-announcer]");
+      if (announcer) announcer.textContent = "Inspector updated for " +
+        (kind === "card" ? item.title : kind === "bay" ? item.name : "Shared sync rail") + ".";
+    }
+    if (options.reveal && window.matchMedia && window.matchMedia("(max-width: 720px)").matches) {
+      panel.focus({ preventScroll: true });
+      panel.scrollIntoView({ block: "nearest" });
+    }
     return true;
   }
 
@@ -331,7 +371,11 @@
     renderSync(root, data);
     renderScene(root, data, result);
     renderCompact(root, result);
-    if (selected && !inspect(root, data, selected.kind, selected.id)) selected = null;
+    if (selected && !inspect(root, data, selected.kind, selected.id, { announce: false })) {
+      clearInspection(root, "The selected item is no longer in the bounded Workshop view.");
+      var announcer = root.querySelector("[data-workshop-announcer]");
+      if (announcer) announcer.textContent = "Workshop selection cleared because the item is no longer available.";
+    }
     if (focusKey) {
       var candidates = Array.from(root.querySelectorAll("[data-workshop-kind]")).filter(function (button) {
         return button.dataset.workshopKind === focusKey.kind &&
@@ -530,7 +574,7 @@
     }
     var target = event.target.closest("[data-workshop-kind]");
     if (target) inspect(root, root.__workshopData, target.dataset.workshopKind,
-      target.dataset.workshopId);
+      target.dataset.workshopId, { reveal: true });
   }
 
   document.addEventListener("click", function (event) {

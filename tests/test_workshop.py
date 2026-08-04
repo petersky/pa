@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import subprocess
 import tempfile
+from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -10,10 +12,11 @@ from fastapi.testclient import TestClient
 
 from pa.config import Settings
 from pa.core.kernel import Kernel
-from pa.domain.models import Card, CardLane, Project
+from pa.domain.models import Card, CardLane, FleetInstance, Project
 from pa.domain.store import reset_store
-from pa.fleet.workshop import build_workshop_snapshot
+from pa.fleet.workshop import WORKSHOP_PROJECTION_LIMIT, build_workshop_snapshot
 from pa.instance.agent_session import reset_instance_agent
+from pa.modules.fleet import _refresh_workshop_dimensions, _workshop_stream_iteration
 
 
 class _Store:
@@ -30,9 +33,14 @@ class _Store:
             Card(id="done", title="Shipped", lane=CardLane.DONE),
         ]
         self.projects = [Project(id="project", title="PA Core")]
+        self.card_read_limits = []
 
-    def list_cards(self, *, realm_id):
-        return self.cards
+    def list_cards(self, *, realm_id, limit=None):
+        self.card_read_limits.append(limit)
+        return self.cards[:limit] if limit is not None else self.cards
+
+    def count_cards(self, *, realm_id, lane):
+        return sum(card.lane == lane for card in self.cards)
 
     def list_projects(self, *, realm_id):
         return self.projects
@@ -257,7 +265,7 @@ def test_starting_dispatch_appears_only_after_durable_admission():
     assert worker["card"]["lane"] == "active"
 
 
-def test_unsupported_progress_is_explicit():
+def test_session_activity_remains_truthful_when_dispatch_progress_is_unsupported():
     overview = _overview()
     dispatch = _Dispatch().public_dict()
     dispatch["progress"] = {"schema_version": None, "latest": None}
@@ -270,7 +278,7 @@ def test_unsupported_progress_is_explicit():
     ctx.services["dispatch_store"] = UnsupportedDispatchStore()
     snapshot = build_workshop_snapshot(ctx, overview)
 
-    assert snapshot["bays"][0]["workers"][0]["state"] == "unsupported"
+    assert snapshot["bays"][0]["workers"][0]["state"] == "working"
 
 
 def test_current_followup_wins_over_completed_history_without_repeating_title():
@@ -320,6 +328,161 @@ def test_current_followup_wins_over_completed_history_without_repeating_title():
     assert row["outcome_label"] == "Not evaluated"
 
 
+def test_active_dispatch_wins_for_same_session_even_when_older_history_lists_last():
+    running = _Dispatch(
+        dispatch_id="running",
+        session_id="session",
+        state="running",
+        updated_at="2026-07-28T20:02:00+00:00",
+    )
+    completed = _Dispatch(
+        dispatch_id="completed",
+        session_id="session",
+        state="completed",
+        effective_state="completed",
+        updated_at="2026-07-28T20:01:00+00:00",
+    )
+
+    class SameSessionHistory:
+        def list(self, *, limit):
+            return [running, completed]
+
+    ctx = _ctx()
+    ctx.services["dispatch_store"] = SameSessionHistory()
+    snapshot = build_workshop_snapshot(ctx, _overview())
+
+    worker = snapshot["bays"][0]["workers"][0]
+    assert worker["dispatch_id"] == "running"
+    assert worker["state"] == "working"
+
+
+def test_session_association_does_not_depend_on_truncated_dispatch_history():
+    running = _Dispatch(
+        dispatch_id="older-than-500-but-current",
+        session_id="session",
+        state="running",
+    )
+
+    class CanonicalAssociationStore:
+        def latest_by_card(self, card_ids, *, realm_id):
+            return {"active": running}
+
+        def latest_by_session(self, session_ids, *, realm_id):
+            return {"session": running}
+
+        def history_counts(self, card_ids, *, realm_id):
+            return {"active": 501}
+
+        def current_card_ids(self, *, realm_id, limit):
+            return []
+
+        def list(self, **_kwargs):
+            raise AssertionError(
+                "Workshop must not join through a truncated history list"
+            )
+
+    running.realm_id = "default"
+    ctx = _ctx()
+    ctx.services["dispatch_store"] = CanonicalAssociationStore()
+    snapshot = build_workshop_snapshot(ctx, _overview())
+    row = next(item for item in snapshot["work_orders"] if item["id"] == "active")
+
+    assert row["session"]["id"] == "session"
+    assert row["card"]["dispatch_id"] == "older-than-500-but-current"
+    assert row["card"]["historical_dispatch_count"] == 501
+
+
+def test_waiting_capacity_and_blocked_pre_session_work_is_explicit():
+    overview = _overview()
+    activity = overview["nodes"][0]["dimensions"]["activity"]["value"]
+    activity["sessions"] = []
+    activity["dispatches"] = [
+        {
+            "dispatch_id": "waiting",
+            "card_id": "active",
+            "state": "waiting_capacity",
+            "queue": {"position": 3, "reason": "All Codex slots are occupied"},
+        },
+        {
+            "dispatch_id": "blocked",
+            "card_id": "waiting",
+            "state": "blocked",
+            "queue": {"blocked_code": "placement_unavailable"},
+        },
+    ]
+
+    snapshot = build_workshop_snapshot(_ctx(), overview)
+    workers = {
+        worker["dispatch_id"]: worker for worker in snapshot["bays"][0]["workers"]
+    }
+
+    assert workers["waiting"]["state"] == "queued"
+    assert workers["waiting"]["queue_position"] == 3
+    assert workers["waiting"]["latest_progress"] == "All Codex slots are occupied"
+    assert workers["blocked"]["state"] == "stalled"
+    assert workers["blocked"]["latest_progress"] == "placement_unavailable"
+
+
+def test_workshop_excludes_session_and_dispatch_joins_from_other_realms():
+    overview = _overview()
+    activity = overview["nodes"][0]["dimensions"]["activity"]["value"]
+    activity["sessions"] = [
+        {
+            "id": "foreign-session",
+            "title": "Foreign work",
+            "status": "working",
+            "realm_id": "other",
+        }
+    ]
+    activity["dispatches"] = [
+        {
+            "dispatch_id": "foreign-dispatch",
+            "card_id": "active",
+            "state": "waiting_capacity",
+            "realm_id": "other",
+        }
+    ]
+
+    snapshot = build_workshop_snapshot(_ctx(), overview)
+
+    assert snapshot["bays"][0]["workers"] == []
+
+
+def test_active_session_does_not_inherit_terminal_dispatch_activity_state():
+    terminal = _Dispatch(
+        state="completed",
+        effective_state="completed",
+        agent_turn={"ended": True, "completed": True, "stop_reason": "end_turn"},
+        dispatch_completion={
+            "completed": True,
+            "acknowledged_at": "2026-07-28T20:02:00Z",
+        },
+        card_completion={
+            "status": "pending",
+            "lane_before": "active",
+            "lane_after": None,
+        },
+        card_reconciliation={"state": "pending", "reason": "Disposition missing"},
+        evaluated_outcome="needs_evaluation",
+    )
+
+    class TerminalDispatchStore:
+        def list(self, *, limit):
+            return [terminal]
+
+    ctx = _ctx()
+    ctx.services["dispatch_store"] = TerminalDispatchStore()
+    snapshot = build_workshop_snapshot(ctx, _overview())
+    row = next(item for item in snapshot["work_orders"] if item["id"] == "active")
+
+    assert row["activity_state"] == "working"
+    assert row["agent_turn"]["ended"] is True
+    assert row["dispatch_completion"]["completed"] is True
+    assert row["card_completion"]["status"] == "pending"
+    assert row["card_reconciliation"]["state"] == "pending"
+    assert row["outcome_label"] == "Not evaluated"
+
+
 def test_no_session_card_keeps_lane_dispatch_activity_and_outcome_separate():
     snapshot = build_workshop_snapshot(_ctx(), _overview())
     row = next(item for item in snapshot["work_orders"] if item["id"] == "inbox")
@@ -365,7 +528,10 @@ def test_production_cardinality_snapshot_keeps_explicit_inventory_counts():
 
     assert snapshot["counts"]["total"] == 129
     assert snapshot["counts"]["lanes"]["inbox"] == 126
-    assert len(snapshot["work_orders"]) == 129
+    assert len(snapshot["work_orders"]) == WORKSHOP_PROJECTION_LIMIT
+    assert snapshot["inventory"]["omitted"] == 49
+    assert all(len(cards) <= 12 for cards in snapshot["areas"].values())
+    assert ctx.store.card_read_limits == [120]
     assert snapshot["default_view"] == {
         "filter": "operational",
         "page_size": 20,
@@ -392,11 +558,17 @@ def test_workshop_ui_contract_is_accessible_and_excludes_replay_controls():
     assert "pa.workshop.view.v1" in script
     assert 'data-workshop-compact-row="work-order"' in script
     assert "PAGE_SIZE = 20" in script
-    assert "All admitted cards" in template
+    assert "Loaded inventory" in template
+    assert "Open full Cards inventory" in template
     assert "data-workshop-search" in template
     assert 'data-label="Evaluated outcome"' in script
     assert "root === activeRoot" in script
     assert "prefers-reduced-motion" in style
+    assert 'data-workshop-inspector tabindex="-1"' in template
+    assert 'data-workshop-announcer aria-live="polite"' in template
+    assert 'data-workshop-inspector aria-live="polite"' not in template
+    assert 'class="workshop-live" role="status"' in template
+    assert "data-workshop-refresh>Refresh</button>" in template
     assert "timeline" not in template.lower()
     assert "speed" not in template.lower()
 
@@ -424,6 +596,133 @@ if (!api.shouldAcceptSnapshot({generated_at: "2026-08-03T10:00:01Z"})) process.e
         check=False,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_two_stream_iterations_emit_heartbeat_when_only_clocks_tick():
+    first = build_workshop_snapshot(_ctx(), _overview())
+    event, digest, sequence = _workshop_stream_iteration(first, "", 0)
+    assert "event: snapshot" in event
+    second = deepcopy(first)
+    second["generated_at"] = "2026-07-28T20:02:00+00:00"
+    second["bays"][0]["observed_at"] = "2026-07-28T20:02:00+00:00"
+    second["bays"][0]["activity_observed_at"] = "2026-07-28T20:02:00+00:00"
+    second["bays"][0]["activity_age_seconds"] = 0
+    second["sync"]["nodes"][0]["age_seconds"] = 0
+
+    event, next_digest, next_sequence = _workshop_stream_iteration(
+        second, digest, sequence
+    )
+
+    assert event == ": workshop heartbeat\n\n"
+    assert next_digest == digest
+    assert next_sequence == sequence
+
+
+def test_forced_workshop_refresh_never_coalesces_with_weaker_probe(
+    monkeypatch, tmp_path
+):
+    async def exercise():
+        nonforced_started = asyncio.Event()
+        release_nonforced = asyncio.Event()
+        calls = []
+
+        async def probe(_ctx, instance, dimension, *, force=False):
+            calls.append((dimension, force))
+            if not force:
+                nonforced_started.set()
+                await release_nonforced.wait()
+            return {"state": "fresh", "value": {}, "observed_at": "now"}
+
+        monkeypatch.setattr("pa.modules.fleet.probe_dimension", probe)
+        ctx = SimpleNamespace(settings=SimpleNamespace(data_dir=tmp_path))
+        instance = FleetInstance(
+            instance_id="remote", name="Remote", url="http://remote.test"
+        )
+        background = asyncio.create_task(
+            _refresh_workshop_dimensions(ctx, [instance], force=False)
+        )
+        await nonforced_started.wait()
+        forced = await _refresh_workshop_dimensions(ctx, [instance], force=True)
+        release_nonforced.set()
+        await background
+        return calls, forced
+
+    calls, forced = asyncio.run(exercise())
+
+    assert {force for _dimension, force in calls} == {False, True}
+    assert set(forced["remote"]) == {"reachability", "activity", "providers", "sync"}
+
+
+def test_workshop_route_preserves_fresh_remote_probe_results(monkeypatch):
+    reset_store()
+    reset_instance_agent()
+    with tempfile.TemporaryDirectory() as tmp:
+        settings = Settings(
+            data_dir=Path(tmp),
+            instance_id="local",
+            instance_name="Workshop host",
+            instance_url="http://workshop.test",
+            agent_enabled=False,
+            peers=[],
+        )
+        calls = []
+
+        async def probe(_ctx, instance, dimension, *, force=False):
+            calls.append((instance.instance_id, dimension, force))
+            values = {
+                "reachability": {"health": "up"},
+                "providers": [],
+                "sync": {
+                    "consistent": True,
+                    "durable_head": "a",
+                    "projection_head": "a",
+                },
+                "activity": {
+                    "capacity": {"consumed": 1, "limit": 2},
+                    "dispatches": [],
+                    "sessions": [
+                        {
+                            "id": "remote-session",
+                            "title": "Fresh remote work",
+                            "status": "working",
+                            "connected": True,
+                            "provider": "codex",
+                            "realm_id": "default",
+                        }
+                    ]
+                    if instance.instance_id == "remote"
+                    else [],
+                },
+            }
+            return {
+                "state": "fresh",
+                "value": values[dimension],
+                "observed_at": datetime.now(UTC).isoformat(),
+            }
+
+        monkeypatch.setattr("pa.modules.fleet.probe_dimension", probe)
+        try:
+            app = Kernel.boot(settings=settings).build_app()
+            with TestClient(app) as client:
+                app.state.ctx.require_service("fleet_registry").upsert_instance(
+                    FleetInstance(
+                        instance_id="remote",
+                        name="Remote",
+                        url="http://remote.test",
+                    )
+                )
+                response = client.get("/api/fleet/workshop?refresh=true")
+            assert response.status_code == 200
+            remote = next(
+                bay for bay in response.json()["bays"] if bay["id"] == "remote"
+            )
+            assert remote["activity_freshness"] == "fresh"
+            assert remote["workers"][0]["state"] == "working"
+            assert remote["workers"][0]["live"] is True
+            assert ("remote", "sync", True) in calls
+        finally:
+            reset_instance_agent()
+            reset_store()
 
 
 def test_workshop_page_and_api_render_from_same_canonical_snapshot():

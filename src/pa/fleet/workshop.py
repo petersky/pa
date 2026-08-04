@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import UTC, datetime
 from typing import Any
 
@@ -18,6 +19,14 @@ STARTING_DISPATCH_STATES = {
     "starting_session",
     "delivering_prompt",
 }
+PRE_SESSION_DISPATCH_STATES = {
+    "waiting_capacity",
+    "blocked",
+    *STARTING_DISPATCH_STATES,
+}
+WORKSHOP_CARD_READ_LIMIT = 120
+WORKSHOP_PROJECTION_LIMIT = 80
+WORKSHOP_AREA_LIMIT = 12
 SUPPORTED_WORKER_STATES = {
     "queued",
     "starting",
@@ -139,6 +148,19 @@ def _dispatch_sort_key(dispatch: dict[str, Any]) -> tuple[int, str]:
 
 
 def _worker_state(session: dict[str, Any], dispatch: dict[str, Any] | None) -> str:
+    status = str(session.get("status") or "")
+    if status == "queued":
+        return "queued"
+    if status in {"deferred", "recoverable"}:
+        return "recovering"
+    if status in {"working", "prompting"}:
+        return "working"
+    if status in {"active", "idle", "connected"}:
+        return "quiet-active"
+    if status in {"failed", "cancelled"}:
+        return "failed"
+    if status in {"completed", "closed", "ended"}:
+        return "completed"
     if dispatch:
         state = str(dispatch.get("state") or "")
         freshness = ((dispatch.get("progress") or {}).get("freshness") or {}).get(
@@ -148,6 +170,10 @@ def _worker_state(session: dict[str, Any], dispatch: dict[str, Any] | None) -> s
         phase = str(latest.get("phase") or "")
         if state in STARTING_DISPATCH_STATES:
             return "starting"
+        if state == "waiting_capacity":
+            return "queued"
+        if state == "blocked":
+            return "stalled"
         if state in {"failed", "cancelled"}:
             return "failed"
         if state in TERMINAL_DISPATCH_STATES:
@@ -160,13 +186,6 @@ def _worker_state(session: dict[str, Any], dispatch: dict[str, Any] | None) -> s
             return "working"
         if not (dispatch.get("progress") or {}).get("schema_version"):
             return "unsupported"
-    status = str(session.get("status") or "")
-    if status == "queued":
-        return "queued"
-    if status in {"deferred", "recoverable"}:
-        return "recovering"
-    if status == "working":
-        return "working"
     return "quiet-active"
 
 
@@ -185,30 +204,95 @@ def build_workshop_snapshot(
     *,
     recent_done_limit: int = 12,
 ) -> dict[str, Any]:
-    """Derive the complete Workshop model from canonical server projections."""
-    cards = list(ctx.store.list_cards(realm_id=ctx.settings.primary_realm))
+    """Derive a bounded Workshop model from canonical server projections."""
+    realm_id = ctx.settings.primary_realm
+    try:
+        cards = list(
+            ctx.store.list_cards(realm_id=realm_id, limit=WORKSHOP_CARD_READ_LIMIT)
+        )
+    except TypeError:  # Compatibility for small in-memory test/read stores.
+        cards = list(ctx.store.list_cards(realm_id=realm_id))[:WORKSHOP_CARD_READ_LIMIT]
+    card_by_id = {card.id: card for card in cards}
     projects = {
-        project.id: project
-        for project in ctx.store.list_projects(realm_id=ctx.settings.primary_realm)
+        project.id: project for project in ctx.store.list_projects(realm_id=realm_id)
     }
     dispatch_store = ctx.services.get("dispatch_store")
-    dispatches = (
-        [record.public_dict() for record in dispatch_store.list(limit=500)]
-        if dispatch_store
-        else []
-    )
-    dispatch_by_session = {
-        item["session_id"]: item for item in dispatches if item.get("session_id")
+    if dispatch_store and hasattr(dispatch_store, "current_card_ids"):
+        for card_id in dispatch_store.current_card_ids(
+            realm_id=realm_id, limit=WORKSHOP_PROJECTION_LIMIT
+        ):
+            if card_id in card_by_id:
+                continue
+            card = ctx.store.get_card(card_id, realm_id=realm_id)
+            if card:
+                card_by_id[card.id] = card
+        cards = list(card_by_id.values())
+    session_ids = {
+        str(session.get("id"))
+        for node in overview.get("nodes", [])
+        for session in ((node.get("dimensions") or {}).get("activity") or {})
+        .get("value", {})
+        .get("sessions", [])
+        if session.get("id") and session.get("realm_id", realm_id) == realm_id
     }
+    if dispatch_store and hasattr(dispatch_store, "latest_by_card"):
+        latest_records = dispatch_store.latest_by_card(
+            set(card_by_id), realm_id=realm_id
+        )
+        latest_dispatch_by_card = {
+            card_id: record.public_dict()
+            for card_id, record in latest_records.items()
+            if record.realm_id == realm_id
+        }
+    else:
+        latest_dispatch_by_card = {}
+    if dispatch_store and hasattr(dispatch_store, "latest_by_session"):
+        dispatch_by_session = {
+            session_id: record.public_dict()
+            for session_id, record in dispatch_store.latest_by_session(
+                session_ids, realm_id=realm_id
+            ).items()
+        }
+    else:
+        dispatch_by_session = {}
+    dispatches = []
+    if dispatch_store and (
+        not latest_dispatch_by_card or (session_ids and not dispatch_by_session)
+    ):
+        try:
+            records = dispatch_store.list(realm_id=realm_id, limit=1000)
+        except TypeError:
+            records = dispatch_store.list(limit=1000)
+        dispatches = [
+            record.public_dict()
+            for record in records
+            if getattr(record, "realm_id", realm_id) == realm_id
+        ]
+        for item in dispatches:
+            card_id = str(item.get("card_id") or "")
+            current = latest_dispatch_by_card.get(card_id)
+            if card_id and (
+                current is None
+                or _dispatch_sort_key(item) > _dispatch_sort_key(current)
+            ):
+                latest_dispatch_by_card[card_id] = item
+            session_id = str(item.get("session_id") or "")
+            current = dispatch_by_session.get(session_id)
+            if session_id and (
+                current is None
+                or _dispatch_sort_key(item) > _dispatch_sort_key(current)
+            ):
+                dispatch_by_session[session_id] = item
     dispatches_by_card: dict[str, list[dict[str, Any]]] = {}
     for item in dispatches:
         card_id = item.get("card_id")
         if card_id:
             dispatches_by_card.setdefault(str(card_id), []).append(item)
-    latest_dispatch_by_card = {
-        card_id: max(items, key=_dispatch_sort_key)
-        for card_id, items in dispatches_by_card.items()
-    }
+    history_counts = (
+        dispatch_store.history_counts(set(card_by_id), realm_id=realm_id)
+        if dispatch_store and hasattr(dispatch_store, "history_counts")
+        else {card_id: len(items) for card_id, items in dispatches_by_card.items()}
+    )
 
     watches_by_card: dict[str, list[dict[str, Any]]] = {}
     supervisor = ctx.services.get("pr_supervisor_store")
@@ -260,12 +344,26 @@ def build_workshop_snapshot(
                 "A current exclusive dispatch already owns this work order."
             )
         evaluated_outcome = (dispatch or {}).get("evaluated_outcome")
-        if not evaluated_outcome and dispatch_state in {
-            "completed",
-            "failed",
-            "cancelled",
-        }:
-            evaluated_outcome = dispatch_state
+        agent_turn = (dispatch or {}).get("agent_turn") or {
+            "ended": False,
+            "completed": False,
+            "stop_reason": None,
+        }
+        dispatch_completion = (dispatch or {}).get("dispatch_completion") or {
+            "completed": dispatch_state in {"completed", "acknowledged"},
+            "acknowledged_at": None,
+        }
+        card_completion = (dispatch or {}).get("card_completion") or {
+            "status": "not_requested",
+            "lane_before": None,
+            "lane_after": None,
+            "reason": None,
+            "extraction_error": None,
+        }
+        card_reconciliation = (dispatch or {}).get("card_reconciliation") or {
+            "state": "not_requested",
+            "reason": None,
+        }
         return {
             "id": card.id,
             "title": card.title,
@@ -295,7 +393,11 @@ def build_workshop_snapshot(
             "outcome_label": _label(
                 evaluated_outcome, OUTCOME_LABELS, "No outcome yet"
             ),
-            "historical_dispatch_count": len(dispatches_by_card.get(card.id, [])),
+            "historical_dispatch_count": history_counts.get(card.id, 0),
+            "agent_turn": agent_turn,
+            "dispatch_completion": dispatch_completion,
+            "card_completion": card_completion,
+            "card_reconciliation": card_reconciliation,
             "href": f"/?card={card.id}",
         }
 
@@ -312,6 +414,8 @@ def build_workshop_snapshot(
         providers = (dimensions.get("providers") or {}).get("value") or []
         workers = []
         for session in activity.get("sessions") or []:
+            if session.get("realm_id", realm_id) != realm_id:
+                continue
             session_id = str(session.get("id") or "")
             if not session_id or session_id in seen_workers:
                 continue
@@ -352,8 +456,9 @@ def build_workshop_snapshot(
         # Durable dispatch admission is visible even before a session exists.
         for dispatch in activity.get("dispatches") or []:
             if (
-                dispatch.get("session_id")
-                or dispatch.get("state") not in STARTING_DISPATCH_STATES
+                dispatch.get("realm_id", realm_id) != realm_id
+                or dispatch.get("session_id")
+                or dispatch.get("state") not in PRE_SESSION_DISPATCH_STATES
             ):
                 continue
             worker_id = f"dispatch:{dispatch.get('dispatch_id')}"
@@ -361,18 +466,39 @@ def build_workshop_snapshot(
                 continue
             seen_workers.add(worker_id)
             card_id = dispatch.get("card_id")
+            dispatch_state = str(dispatch.get("state") or "")
+            queue = dispatch.get("queue") or {}
+            reason = (
+                queue.get("reason")
+                or dispatch.get("queue_wait_reason")
+                or dispatch.get("last_error")
+                or queue.get("blocked_code")
+                or dispatch.get("queue_blocked_code")
+            )
+            worker_state = (
+                "queued"
+                if dispatch_state == "waiting_capacity"
+                else "stalled"
+                if dispatch_state == "blocked"
+                else "starting"
+            )
             workers.append(
                 {
                     "id": worker_id,
                     "title": "Reserved worker",
-                    "state": "starting",
-                    "state_label": ACTIVITY_LABELS["starting"],
+                    "state": worker_state,
+                    "state_label": _label(
+                        worker_state, ACTIVITY_LABELS, "Preparing work"
+                    ),
                     "provider": dispatch.get("capacity_provider"),
                     "connected": False,
                     "card": card_payloads.get(card_id),
                     "dispatch_id": dispatch.get("dispatch_id"),
                     "elapsed_from": dispatch.get("created_at"),
-                    "latest_progress": None,
+                    "latest_progress": reason,
+                    "queue_reason": reason,
+                    "queue_position": queue.get("position")
+                    or dispatch.get("queue_position"),
                     "tool_category": None,
                     "href": card_payloads.get(card_id, {}).get("href") or "/fleet",
                     "live": activity_state == "fresh",
@@ -524,6 +650,10 @@ def build_workshop_snapshot(
                 ),
                 "evaluated_outcome": payload["evaluated_outcome"],
                 "outcome_label": payload["outcome_label"],
+                "agent_turn": payload["agent_turn"],
+                "dispatch_completion": payload["dispatch_completion"],
+                "card_completion": payload["card_completion"],
+                "card_reconciliation": payload["card_reconciliation"],
                 "session": (
                     {
                         "id": worker["id"],
@@ -563,7 +693,9 @@ def build_workshop_snapshot(
         )
         if lane == CardLane.DONE:
             lane_items = lane_items[:recent_done_limit]
-        lane_cards[lane.value] = [card_payloads[card.id] for card in lane_items]
+        lane_cards[lane.value] = [
+            card_payloads[card.id] for card in lane_items[:WORKSHOP_AREA_LIMIT]
+        ]
 
     sync_nodes = []
     sync_issues = []
@@ -647,14 +779,32 @@ def build_workshop_snapshot(
         .get("pr-supervisor", {})
         .get("authority_instance_id")
     )
-    counts = {
-        "total": len(work_orders),
-        "live": sum(1 for item in work_orders if item["live"]),
-        "attention": sum(1 for item in work_orders if item["attention"]),
-        "lanes": {
+    work_orders.sort(
+        key=lambda item: (
+            bool(item["attention"]),
+            bool(item["live"]),
+            str(item["updated_at"]),
+        ),
+        reverse=True,
+    )
+    work_orders = work_orders[:WORKSHOP_PROJECTION_LIMIT]
+    try:
+        lane_counts = {
+            lane.value: ctx.store.count_cards(realm_id=realm_id, lane=lane)
+            for lane in CardLane
+        }
+    except AttributeError:
+        lane_counts = {
             lane.value: sum(1 for card in cards if card.lane == lane)
             for lane in CardLane
-        },
+        }
+    total_cards = sum(lane_counts.values())
+    counts = {
+        "total": total_cards,
+        "projected": len(work_orders),
+        "live": sum(1 for item in work_orders if item["live"]),
+        "attention": sum(1 for item in work_orders if item["attention"]),
+        "lanes": lane_counts,
         "orphan_sessions": len(orphan_workers),
     }
     return {
@@ -676,6 +826,16 @@ def build_workshop_snapshot(
             "page_size": 20,
             "description": "Live work and work needing attention",
         },
+        "inventory": {
+            "loaded": len(work_orders),
+            "total": total_cards,
+            "omitted": max(0, total_cards - len(work_orders)),
+            "overflow_href": f"/?realm={realm_id}",
+            "description": (
+                "Newest and operational cards are bounded in Workshop; "
+                "open Cards for the full inventory."
+            ),
+        },
         "areas": lane_cards,
         "sync": {
             "state": "degraded" if degraded else "healthy",
@@ -687,3 +847,27 @@ def build_workshop_snapshot(
             ],
         },
     }
+
+
+def workshop_semantic_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """Remove observation clocks that must not turn an SSE heartbeat into a rebuild."""
+    volatile = {
+        "generated_at",
+        "observed_at",
+        "age_seconds",
+        "activity_observed_at",
+        "activity_age_seconds",
+    }
+
+    def normalize(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {
+                key: normalize(item)
+                for key, item in value.items()
+                if key not in volatile
+            }
+        if isinstance(value, list):
+            return [normalize(item) for item in value]
+        return deepcopy(value)
+
+    return normalize(snapshot)
