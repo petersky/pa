@@ -4,9 +4,10 @@
 <div class="panel workshop-intro">
   <div class="panel-header"><h2>Workshop</h2></div>
   <p class="muted small">A live floor view of canonical fleet state. Select any bay, worker, work order, or the sync rail to inspect it.</p>
-  <div class="workshop-controls">
+  <div class="workshop-controls" role="group" aria-label="Workshop layout">
     <button type="button" class="ghost small active" data-workshop-view="floor" aria-pressed="true">Floor view</button>
-    <button type="button" class="ghost small" data-workshop-view="compact" aria-pressed="false">Compact list</button>
+    <button type="button" class="ghost small" data-workshop-view="compact" aria-pressed="false">Compact view</button>
+    <span class="workshop-view-status small" data-workshop-view-status aria-live="polite">Current layout: Floor view</span>
   </div>
   <dl class="workshop-legend small">
     <dt><span class="workshop-mark" aria-hidden="true">●</span> Working</dt><dd>Structured active progress</dd>
@@ -22,8 +23,8 @@
   <header class="workshop-header">
     <div>
       <p class="eyebrow">Fleet operations</p>
-      <h1>Floor view</h1>
-      <p class="muted">Current work, where it is running, and what needs attention.</p>
+      <h1 data-workshop-view-heading>Floor view</h1>
+      <p class="muted" data-workshop-view-description>Current work, where it is running, and what needs attention.</p>
     </div>
     <div class="workshop-live" role="status" aria-live="polite">
       <span class="workshop-live-mark" aria-hidden="true"></span>
