@@ -262,6 +262,31 @@ def deduplicate_consumer_links(links: Any) -> list[dict[str, Any]]:
     return result
 
 
+_ACTIVE_CAPACITY_SESSION_STATES = frozenset({"working", "prompting"})
+_UNKNOWN_CAPACITY_SESSION_STATES = frozenset({"", "unknown"})
+
+
+def _session_projection_priority(
+    item: dict[str, Any], *, allow_unmarked_stateless: bool = False
+) -> int | None:
+    """Rank known active sessions before bounded mixed-version fallbacks."""
+
+    state = str(item.get("status") or item.get("state") or "").strip().lower()
+    if state in _ACTIVE_CAPACITY_SESSION_STATES:
+        return 0
+    if state not in _UNKNOWN_CAPACITY_SESSION_STATES:
+        return None
+    if item.get("capacity_consuming") is True:
+        return 1
+    if (
+        allow_unmarked_stateless
+        and not state
+        and item.get("capacity_consuming") is not False
+    ):
+        return 1
+    return None
+
+
 def normalize_capacity_consumer_links(
     activity: dict[str, Any],
     *,
@@ -271,47 +296,55 @@ def normalize_capacity_consumer_links(
     """Project bounded one-slot session and reservation identities."""
 
     counts = workload_counts(activity)
-    existing = deduplicate_consumer_links(
-        activity.get("capacity_consumer_links") or []
-    )
+    raw_existing = activity.get("capacity_consumer_links") or []
+    if not isinstance(raw_existing, list):
+        raw_existing = []
+    existing = deduplicate_consumer_links(raw_existing)
     sessions = activity.get("sessions")
-    current_session_links = [
-        {
-            "kind": "session",
-            "session_id": item.get("session_id") or item.get("id"),
-            "href": item.get("href")
-            or f"/agent?session={item.get('session_id') or item.get('id')}",
-            "state": item.get("status") or item.get("state"),
-            "slots": 1,
-        }
-        for item in (sessions or [])
-        if isinstance(item, dict)
-        and (item.get("session_id") or item.get("id"))
-        and (
-            item.get("capacity_consuming") is True
-            or str(item.get("status") or item.get("state") or "").lower()
-            in {"working", "prompting"}
+    current_by_priority: list[list[dict[str, Any]]] = [[], []]
+    current_ids: set[str] = set()
+    for item in sessions or []:
+        if not isinstance(item, dict):
+            continue
+        session_id = item.get("session_id") or item.get("id")
+        if not session_id:
+            continue
+        current_ids.add(str(session_id))
+        priority = _session_projection_priority(item)
+        if priority is None:
+            continue
+        current_by_priority[priority].append(
+            {
+                "kind": "session",
+                "session_id": session_id,
+                "href": item.get("href") or f"/agent?session={session_id}",
+                "state": item.get("status") or item.get("state"),
+                "slots": 1,
+            }
         )
-    ]
     allow_stateless_legacy = not isinstance(sessions, list) and counts["active"] > 0
-    legacy_session_links = [
-        item
-        for item in existing
-        if item.get("kind") == "session"
-        and item.get("capacity_consuming") is not False
-        and str(item.get("status") or item.get("state") or "").lower()
-        not in {"idle", "deferred", "non_consuming", "non-consuming"}
-        and (
-            item.get("capacity_consuming") is True
-            or str(item.get("status") or item.get("state") or "").lower()
-            in {"working", "prompting"}
-            or (
-                allow_stateless_legacy and not (item.get("status") or item.get("state"))
-            )
+    legacy_by_priority: list[list[dict[str, Any]]] = [[], []]
+    for raw in raw_existing:
+        if not isinstance(raw, dict):
+            continue
+        item = dict(raw)
+        session_id = item.get("session_id")
+        if (
+            str(item.get("kind") or "").strip().lower() != "session"
+            or not session_id
+            or str(session_id) in current_ids
+        ):
+            continue
+        priority = _session_projection_priority(
+            item, allow_unmarked_stateless=allow_stateless_legacy
         )
-    ]
+        if priority is not None:
+            legacy_by_priority[priority].append(item)
     normalized_sessions = deduplicate_consumer_links(
-        current_session_links + legacy_session_links
+        current_by_priority[0]
+        + legacy_by_priority[0]
+        + current_by_priority[1]
+        + legacy_by_priority[1]
     )[: min(counts["active"], limit)]
     authoritative_reservations = deduplicate_consumer_links(reservation_links or [])
     existing_reservations = [

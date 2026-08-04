@@ -475,6 +475,205 @@ def test_placement_ignores_same_session_backlog_and_deduplicates_consumers(
     ]
 
 
+def test_placement_projects_working_session_after_queued_legacy_true(
+    tmp_path: Path,
+) -> None:
+    candidate = _candidate("mixed-version", capacity=4)
+    candidate.dispatch_capacity = 4
+    candidate.activity = _fresh(
+        {
+            "state": "working",
+            "active_capacity_consumers": 1,
+            "queued_prompts": 9,
+            "dispatch_reservations": 0,
+            "sessions": [
+                {
+                    "id": "queued-backlog",
+                    "status": "queued",
+                    "capacity_consuming": True,
+                },
+                {"id": "working-now", "status": "working"},
+            ],
+        }
+    )
+
+    decision = PlacementService(RoundRobinCursorStore(tmp_path)).resolve(
+        _request(PlacementPolicy.BEST_MATCH), [candidate]
+    )
+
+    detail = decision.eligible_candidates[0]
+    assert detail["active"] == 1
+    assert detail["queued"] == 9
+    assert detail["consumed"] == 1
+    assert detail["consumer_links"] == [
+        {
+            "kind": "session",
+            "session_id": "working-now",
+            "href": "/agent?session=working-now",
+            "state": "working",
+            "slots": 1,
+            "consumer_id": "session:working-now",
+        }
+    ]
+    assert detail["consumer_links_omitted"] == 0
+
+
+def test_consumer_links_rank_working_state_over_queued_legacy_true() -> None:
+    activity = normalize_activity_capacity(
+        {
+            "active_capacity_consumers": 1,
+            "queued_prompts": 9,
+            "sessions": [
+                {
+                    "id": "queued-backlog",
+                    "status": "queued",
+                    "capacity_consuming": True,
+                },
+                {"id": "working-now", "status": "working"},
+            ],
+        }
+    )
+
+    assert activity["capacity_consumer_links"] == [
+        {
+            "kind": "session",
+            "session_id": "working-now",
+            "href": "/agent?session=working-now",
+            "state": "working",
+            "slots": 1,
+            "consumer_id": "session:working-now",
+        }
+    ]
+    assert activity["capacity_consumer_links_omitted"] == 0
+
+
+@pytest.mark.parametrize("state", [None, "unknown"])
+def test_consumer_links_allow_explicit_stateless_true_fallback(
+    state: str | None,
+) -> None:
+    session = {"id": "compat-fallback", "capacity_consuming": True}
+    if state is not None:
+        session["status"] = state
+    activity = normalize_activity_capacity(
+        {
+            "active_capacity_consumers": 1,
+            "sessions": [session],
+        }
+    )
+
+    assert activity["capacity_consumer_links"] == [
+        {
+            "kind": "session",
+            "session_id": "compat-fallback",
+            "href": "/agent?session=compat-fallback",
+            "state": state,
+            "slots": 1,
+            "consumer_id": "session:compat-fallback",
+        }
+    ]
+    assert activity["capacity_consumer_links_omitted"] == 0
+
+
+@pytest.mark.parametrize(
+    ("state", "capacity_consuming", "expected_active"),
+    [
+        ("queued", False, False),
+        ("queued", True, False),
+        ("idle", True, False),
+        ("deferred", True, False),
+        ("connected", True, False),
+        ("working", False, True),
+        ("working", True, True),
+        ("prompting", False, True),
+        ("unknown", False, False),
+    ],
+)
+def test_explicit_session_state_wins_over_capacity_consuming_flag(
+    state: str,
+    capacity_consuming: bool,
+    expected_active: bool,
+) -> None:
+    activity = normalize_activity_capacity(
+        {
+            "active_capacity_consumers": 1,
+            "sessions": [
+                {
+                    "id": "semantic-session",
+                    "status": state,
+                    "capacity_consuming": capacity_consuming,
+                }
+            ],
+        }
+    )
+
+    links = activity["capacity_consumer_links"]
+    assert bool(links) is expected_active
+    assert activity["capacity_consumer_links_omitted"] == (0 if expected_active else 1)
+    if expected_active:
+        assert links[0]["consumer_id"] == "session:semantic-session"
+        assert links[0]["state"] == state
+
+
+def test_current_nonconsuming_state_suppresses_same_id_legacy_link() -> None:
+    activity = normalize_activity_capacity(
+        {
+            "active_capacity_consumers": 1,
+            "sessions": [
+                {
+                    "id": "same-session",
+                    "status": "queued",
+                    "capacity_consuming": True,
+                }
+            ],
+            "capacity_consumer_links": [
+                {
+                    "kind": "session",
+                    "session_id": "same-session",
+                    "state": "working",
+                    "slots": 10,
+                }
+            ],
+        }
+    )
+
+    assert activity["capacity_consumer_links"] == []
+    assert activity["capacity_consumer_links_omitted"] == 1
+
+
+def test_legacy_links_rank_working_state_before_queued_true_fallback() -> None:
+    activity = normalize_activity_capacity(
+        {
+            "active_capacity_consumers": 1,
+            "capacity_consumer_links": [
+                {
+                    "kind": "session",
+                    "session_id": "same-session",
+                    "state": "queued",
+                    "capacity_consuming": True,
+                    "slots": 10,
+                },
+                {
+                    "kind": "session",
+                    "session_id": "same-session",
+                    "state": "working",
+                    "slots": 10,
+                },
+            ],
+        }
+    )
+
+    assert activity["capacity_consumer_links"] == [
+        {
+            "kind": "session",
+            "session_id": "same-session",
+            "state": "working",
+            "slots": 1,
+            "consumer_id": "session:same-session",
+        }
+    ]
+    assert activity["capacity_consumer_links_omitted"] == 0
+
+
 def test_consumer_links_prefer_current_working_session_over_stale_legacy() -> None:
     activity = normalize_activity_capacity(
         {
