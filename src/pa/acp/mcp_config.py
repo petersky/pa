@@ -10,6 +10,7 @@ import sys
 import tempfile
 import time
 from collections.abc import Mapping
+from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -312,19 +313,28 @@ async def _probe_pa_mcp_stdio_async(
     stage = "spawn"
     with tempfile.TemporaryFile(mode="w+t", encoding="utf-8") as stderr:
         try:
-            async with asyncio.timeout(timeout):
-                async with stdio_client(params, errlog=stderr) as (read, write):
+            async with AsyncExitStack() as stack:
+                # Bound spawn and the handshake itself.  AsyncExitStack unwinds
+                # after this timeout scope, so the MCP SDK's separately bounded
+                # process teardown cannot turn a successful initialize/tools-list
+                # exchange into a false handshake timeout on a busy instance.
+                async with asyncio.timeout(timeout):
+                    read, write = await stack.enter_async_context(
+                        stdio_client(params, errlog=stderr)
+                    )
                     stage = "initialize"
-                    async with ClientSession(read, write) as session:
-                        await session.initialize()
-                        stage = "tools_list"
-                        tools = await session.list_tools()
-                        stage = "shutdown"
-                return {
-                    "state": "connected",
-                    "classification": "ok",
-                    "tool_count": len(tools.tools),
-                }
+                    session = await stack.enter_async_context(
+                        ClientSession(read, write)
+                    )
+                    await session.initialize()
+                    stage = "tools_list"
+                    tools = await session.list_tools()
+                stage = "shutdown"
+            return {
+                "state": "connected",
+                "classification": "ok",
+                "tool_count": len(tools.tools),
+            }
         except Exception as exc:
             classification = (
                 "timeout" if isinstance(exc, TimeoutError) else f"{stage}_failed"

@@ -42,11 +42,11 @@ DIMENSIONS = (
 )
 DETAIL_TIMEOUT = 4.0
 REACHABILITY_TIMEOUT = 2.5
-# The stdio probe owns a ten-second initialize/tools/shutdown budget.  Fleet
-# callers get two additional seconds to schedule the blocking probe and reap the
-# child; never wrap that handshake in DETAIL_TIMEOUT.
-MCP_STDIO_HANDSHAKE_TIMEOUT = 10.0
-MCP_BOOTSTRAP_TIMEOUT = 12.0
+# The stdio probe owns a twelve-second initialize/tools-list budget.  Fleet
+# callers get three additional seconds to schedule the blocking probe and let
+# the MCP SDK reap the child; never wrap that handshake in DETAIL_TIMEOUT.
+MCP_STDIO_HANDSHAKE_TIMEOUT = 12.0
+MCP_BOOTSTRAP_TIMEOUT = 15.0
 MCP_BOOTSTRAP_CACHE_TTL = 30.0
 GOOD_STATES = {"fresh", "stale"}
 EDGE_STATUS_SEVERITY = {

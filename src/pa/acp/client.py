@@ -7,6 +7,7 @@ import json
 import logging
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
@@ -783,10 +784,13 @@ class AgentConnection:
             try:
                 bridge_health = await self._offload(
                     "acp.pa_mcp_stdio_probe",
-                    probe_pa_mcp_stdio,
-                    self.settings,
-                    timeout=10.0,
-                    session_environment=self.extra_env,
+                    partial(
+                        probe_pa_mcp_stdio,
+                        self.settings,
+                        timeout=12.0,
+                        session_environment=self.extra_env,
+                    ),
+                    timeout=15.0,
                 )
             except McpHandshakeError as exc:
                 self.pa_mcp_health = {
