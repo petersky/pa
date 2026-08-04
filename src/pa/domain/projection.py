@@ -144,9 +144,15 @@ class CardProjection:
                     summary_status TEXT NOT NULL DEFAULT 'pending',
                     summary_provider TEXT,
                     summary_model TEXT,
+                    summary_auth_source TEXT,
                     summary_prompt_version TEXT,
                     summary_input_hash TEXT,
                     summary_failure TEXT,
+                    summary_failure_code TEXT,
+                    summary_attempt_count INTEGER NOT NULL DEFAULT 0,
+                    summary_next_attempt_at TEXT,
+                    summary_last_attempted_at TEXT,
+                    summary_authority_instance_id TEXT,
                     summary_updated_at TEXT,
                     summary_stale INTEGER NOT NULL DEFAULT 0,
                     lane TEXT NOT NULL DEFAULT 'inbox',
@@ -371,6 +377,7 @@ class CardProjection:
         card_cols = {
             row[1] for row in conn.execute("PRAGMA table_info(cards)").fetchall()
         }
+        adding_summary_schema = "summary" not in card_cols
         if "project_id" not in card_cols:
             conn.execute("ALTER TABLE cards ADD COLUMN project_id TEXT")
         for col, decl in (
@@ -381,27 +388,39 @@ class CardProjection:
             ("summary_status", "TEXT NOT NULL DEFAULT 'pending'"),
             ("summary_provider", "TEXT"),
             ("summary_model", "TEXT"),
+            ("summary_auth_source", "TEXT"),
             ("summary_prompt_version", "TEXT"),
             ("summary_input_hash", "TEXT"),
             ("summary_failure", "TEXT"),
+            ("summary_failure_code", "TEXT"),
+            ("summary_attempt_count", "INTEGER NOT NULL DEFAULT 0"),
+            ("summary_next_attempt_at", "TEXT"),
+            ("summary_last_attempted_at", "TEXT"),
+            ("summary_authority_instance_id", "TEXT"),
             ("attachments", "TEXT NOT NULL DEFAULT '[]'"),
         ):
             if col not in card_cols:
                 conn.execute(f"ALTER TABLE cards ADD COLUMN {col} {decl}")
-        for row in conn.execute(
-            "SELECT id, body, summary, updated_at FROM cards"
-        ).fetchall():
-            if not (row["summary"] or "").strip():
-                conn.execute(
-                    """
-                    UPDATE cards
-                    SET summary='', summary_source='fallback',
-                        summary_updated_at=NULL, summary_stale=1,
-                        summary_status='stale'
-                    WHERE id=?
-                    """,
-                    (row["id"],),
-                )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_cards_summary_failure_time "
+            "ON cards(summary_last_attempted_at DESC) "
+            "WHERE summary_failure_code IS NOT NULL"
+        )
+        if adding_summary_schema:
+            for row in conn.execute(
+                "SELECT id, body, summary, updated_at FROM cards"
+            ).fetchall():
+                if not (row["summary"] or "").strip():
+                    conn.execute(
+                        """
+                        UPDATE cards
+                        SET summary='', summary_source='fallback',
+                            summary_updated_at=NULL, summary_stale=1,
+                            summary_status='stale'
+                        WHERE id=?
+                        """,
+                        (row["id"],),
+                    )
 
         notification_cols = {
             row[1]
@@ -1224,9 +1243,17 @@ class CardProjection:
             summary_status=p.get("summary_status", "ready" if summary else "pending"),
             summary_provider=p.get("summary_provider"),
             summary_model=p.get("summary_model"),
+            summary_auth_source=p.get("summary_auth_source"),
             summary_prompt_version=p.get("summary_prompt_version"),
             summary_input_hash=p.get("summary_input_hash"),
             summary_failure=p.get("summary_failure"),
+            summary_failure_code=p.get("summary_failure_code"),
+            summary_attempt_count=int(p.get("summary_attempt_count") or 0),
+            summary_next_attempt_at=_coerce_datetime(p.get("summary_next_attempt_at")),
+            summary_last_attempted_at=_coerce_datetime(
+                p.get("summary_last_attempted_at")
+            ),
+            summary_authority_instance_id=p.get("summary_authority_instance_id"),
             summary_updated_at=(
                 _coerce_datetime(p.get("summary_updated_at"))
                 or (updated_at if summary else None)
@@ -1363,12 +1390,21 @@ class CardProjection:
         if ({"title", "body"} & payload.keys()) and "summary" not in payload:
             card.summary_stale = True
             card.summary_status = CardSummaryStatus.STALE
+            card.summary_input_hash = None
+            card.summary_failure = None
+            card.summary_failure_code = None
+            card.summary_attempt_count = 0
+            card.summary_next_attempt_at = None
+            card.summary_last_attempted_at = None
+            card.summary_authority_instance_id = None
         for key, value in payload.items():
             if key in {
                 "created_at",
                 "updated_at",
                 "lease_expires_at",
                 "summary_updated_at",
+                "summary_next_attempt_at",
+                "summary_last_attempted_at",
             }:
                 continue
             if key == "kind":
@@ -1386,6 +1422,14 @@ class CardProjection:
         if "summary_updated_at" in payload:
             card.summary_updated_at = _coerce_datetime(
                 payload.get("summary_updated_at")
+            )
+        if "summary_next_attempt_at" in payload:
+            card.summary_next_attempt_at = _coerce_datetime(
+                payload.get("summary_next_attempt_at")
+            )
+        if "summary_last_attempted_at" in payload:
+            card.summary_last_attempted_at = _coerce_datetime(
+                payload.get("summary_last_attempted_at")
             )
         # Prefer the authority stamp carried in the event so synced peers keep
         # an identical card_version for fleet dispatch materialization.
@@ -1478,12 +1522,15 @@ class CardProjection:
                 INSERT OR REPLACE INTO cards
                 (id, realm_id, kind, title, body, summary, summary_source,
                  summary_updated_at, summary_stale, summary_status, summary_provider,
-                 summary_model, summary_prompt_version, summary_input_hash, summary_failure,
+                 summary_model, summary_auth_source, summary_prompt_version,
+                 summary_input_hash, summary_failure, summary_failure_code,
+                 summary_attempt_count, summary_next_attempt_at,
+                 summary_last_attempted_at, summary_authority_instance_id,
                  lane, parent_id, project_id, tags, attachments, visibility,
                  owner_principal, preferred_instance, preferred_capabilities,
                  lease_holder_instance, lease_holder_principal, lease_expires_at,
                  created_by_principal, created_by_instance, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     card.id,
@@ -1500,9 +1547,19 @@ class CardProjection:
                     card.summary_status.value,
                     card.summary_provider,
                     card.summary_model,
+                    card.summary_auth_source,
                     card.summary_prompt_version,
                     card.summary_input_hash,
                     card.summary_failure,
+                    card.summary_failure_code,
+                    card.summary_attempt_count,
+                    card.summary_next_attempt_at.isoformat()
+                    if card.summary_next_attempt_at
+                    else None,
+                    card.summary_last_attempted_at.isoformat()
+                    if card.summary_last_attempted_at
+                    else None,
+                    card.summary_authority_instance_id,
                     card.lane.value,
                     card.parent_id,
                     card.project_id,
@@ -1668,6 +1725,19 @@ class CardProjection:
             params.append(realm_id)
         with self._conn() as conn:
             row = conn.execute(query, params).fetchone()
+        return self._row_to_card(row) if row else None
+
+    def latest_summary_failure(self) -> Card | None:
+        with self._conn() as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM cards
+                WHERE summary_failure_code IS NOT NULL
+                  AND summary_last_attempted_at IS NOT NULL
+                ORDER BY summary_last_attempted_at DESC
+                LIMIT 1
+                """
+            ).fetchone()
         return self._row_to_card(row) if row else None
 
     def get_notification(
@@ -1840,6 +1910,15 @@ class CardProjection:
             }
         now = datetime.now(UTC)
         payload = {}
+        nullable_summary_fields = {
+            "summary_failure",
+            "summary_failure_code",
+            "summary_input_hash",
+            "summary_next_attempt_at",
+            "summary_last_attempted_at",
+            "summary_auth_source",
+            "summary_authority_instance_id",
+        }
         for key, value in updates.items():
             if key in {"kind", "lane"} and value is not None:
                 payload[key] = value.value if hasattr(value, "value") else value
@@ -1847,11 +1926,21 @@ class CardProjection:
                 payload["summary_source"] = (
                     value.value if hasattr(value, "value") else value
                 )
-            elif value is not None or key in {"project_id", "summary_failure"}:
+            elif key in {"summary_next_attempt_at", "summary_last_attempted_at"}:
+                payload[key] = value.isoformat() if value is not None else None
+            elif value is not None or key in {"project_id", *nullable_summary_fields}:
                 payload[key] = value
         if ({"title", "body"} & updates.keys()) and "summary" not in updates:
             payload.update(
-                summary_stale=True, summary_status="stale", summary_failure=None
+                summary_stale=True,
+                summary_status="stale",
+                summary_input_hash=None,
+                summary_failure=None,
+                summary_failure_code=None,
+                summary_attempt_count=0,
+                summary_next_attempt_at=None,
+                summary_last_attempted_at=None,
+                summary_authority_instance_id=None,
             )
         if updates.get("summary") is not None:
             supplied_summary = updates["summary"].strip()
@@ -1863,10 +1952,13 @@ class CardProjection:
                     else CardSummarySource.FALLBACK.value
                 ),
                 summary_status="ready" if supplied_summary else "pending",
-                summary_stale=(
-                    updates["summary_stale"] if "summary_stale" in updates else False
-                ),
+                summary_stale=updates.get("summary_stale", False),
                 summary_updated_at=now.isoformat(),
+                summary_failure=None,
+                summary_failure_code=None,
+                summary_attempt_count=0,
+                summary_next_attempt_at=None,
+                summary_last_attempted_at=None,
             )
         if self.event_log and payload:
             # Stamp the authority version into the durable event so every peer
@@ -1888,13 +1980,19 @@ class CardProjection:
         for key, value in payload.items():
             if key == "summary_updated_at":
                 card.summary_updated_at = _coerce_datetime(value)
+            elif key == "summary_next_attempt_at":
+                card.summary_next_attempt_at = _coerce_datetime(value)
+            elif key == "summary_last_attempted_at":
+                card.summary_last_attempted_at = _coerce_datetime(value)
             elif key == "summary_source":
                 card.summary_source = CardSummarySource(value)
             elif key == "summary_status":
                 card.summary_status = CardSummaryStatus(value)
             elif (
                 key != "updated_at"
-                and (value is not None or key in {"project_id", "summary_failure"})
+                and (
+                    value is not None or key in {"project_id", *nullable_summary_fields}
+                )
                 and hasattr(card, key)
             ):
                 setattr(card, key, value)
@@ -3406,6 +3504,9 @@ class CardProjection:
             if "summary_provider" in keys
             else None,
             summary_model=row["summary_model"] if "summary_model" in keys else None,
+            summary_auth_source=row["summary_auth_source"]
+            if "summary_auth_source" in keys
+            else None,
             summary_prompt_version=row["summary_prompt_version"]
             if "summary_prompt_version" in keys
             else None,
@@ -3414,6 +3515,26 @@ class CardProjection:
             else None,
             summary_failure=row["summary_failure"]
             if "summary_failure" in keys
+            else None,
+            summary_failure_code=row["summary_failure_code"]
+            if "summary_failure_code" in keys
+            else None,
+            summary_attempt_count=int(row["summary_attempt_count"] or 0)
+            if "summary_attempt_count" in keys
+            else 0,
+            summary_next_attempt_at=(
+                datetime.fromisoformat(row["summary_next_attempt_at"])
+                if "summary_next_attempt_at" in keys and row["summary_next_attempt_at"]
+                else None
+            ),
+            summary_last_attempted_at=(
+                datetime.fromisoformat(row["summary_last_attempted_at"])
+                if "summary_last_attempted_at" in keys
+                and row["summary_last_attempted_at"]
+                else None
+            ),
+            summary_authority_instance_id=row["summary_authority_instance_id"]
+            if "summary_authority_instance_id" in keys
             else None,
             lane=CardLane(row["lane"]),
             parent_id=row["parent_id"],

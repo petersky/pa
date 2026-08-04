@@ -267,6 +267,38 @@ class CoreWorkUiRouteTests(unittest.TestCase):
             self.assertNotIn("card-edit-surface", detail.text)
             self.assertNotIn("data-card-edit-open", detail.text)
 
+    def test_summary_diagnostics_and_disabled_ui_are_truthful_and_redacted(
+        self,
+    ) -> None:
+        secret = "must-never-appear"
+        with TestClient(self.app) as client:
+            diagnostic = client.get("/api/cards/summary/diagnostics")
+            self.assertEqual(diagnostic.status_code, 200)
+            payload = diagnostic.json()
+            self.assertEqual(payload["state"], "disabled")
+            self.assertEqual(payload["effective_provider"], "openai")
+            self.assertEqual(payload["effective_model"], "gpt-5-mini")
+            self.assertEqual(payload["authentication_source"], "none")
+            self.assertIn("PA_CARD_SUMMARY_API_KEY", payload["setup_guidance"])
+            self.assertNotIn(secret, diagnostic.text)
+
+            card = self.app.state.ctx.store.create_card(
+                CardCreate(title="No provider", body=f"Description {secret}")
+            )
+            self.app.state.ctx.store.update_card(
+                card.id,
+                CardUpdate(
+                    summary_status="disabled",
+                    summary_failure_code="unconfigured",
+                    summary_failure="Set PA_CARD_SUMMARY_API_KEY.",
+                ),
+            )
+            detail = client.get(f"/partials/cards/{card.id}/detail")
+            self.assertEqual(detail.status_code, 200)
+            self.assertIn("Summary generation is disabled.", detail.text)
+            self.assertIn("Authentication: none", detail.text)
+            self.assertIn("Last failure: unconfigured", detail.text)
+
     def test_global_header_shows_the_serving_instance_beneath_the_pa_brand(
         self,
     ) -> None:
@@ -711,7 +743,9 @@ class CoreWorkUiRouteTests(unittest.TestCase):
                 json={"title": "First-load mutation", "body": "Works safely."},
             )
             self.assertEqual(created.status_code, 201, created.text)
-            self.assertEqual(created.json()["summary"], "Works safely.")
+            self.assertEqual(created.json()["summary"], "")
+            self.assertEqual(created.json()["summary_status"], "disabled")
+            self.assertNotEqual(created.json()["summary"], "Works safely.")
 
     def test_card_project_change_simple_assign_change_and_clear(self) -> None:
         with TestClient(self.app) as client:

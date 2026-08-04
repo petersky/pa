@@ -119,6 +119,8 @@
             </span>
             {% elif card.summary_status.value in ('pending', 'stale') %}
             <span class="muted" role="status" aria-live="polite">Summary pending.</span>
+            {% elif card.summary_status.value == 'disabled' %}
+            <span class="muted" role="status">Summary generation is disabled.</span>
             {% else %}
             <span class="muted" role="status">Summary unavailable.</span>
             {% endif %}
@@ -137,11 +139,25 @@
             </div>
           </form>
         </div>
+        <div class="muted small" data-card-summary-diagnostics>
+          Provider: {{ summary_diagnostics.effective_provider }} ·
+          Model: {{ summary_diagnostics.effective_model }} ·
+          Authentication: {{ summary_diagnostics.authentication_source }}
+          {% if card.summary_failure_code %}
+          <br>Last failure: {{ card.summary_failure_code }}{% if card.summary_failure %} — {{ card.summary_failure }}{% endif %}
+          {% elif summary_diagnostics.setup_guidance and card.summary_status.value == 'disabled' %}
+          <br>{{ summary_diagnostics.setup_guidance }}
+          {% endif %}
+        </div>
+        {% if summary_diagnostics.authority == 'local' %}
         <form hx-post="/api/cards/{{ card.id }}/summary/regenerate?realm={{ card.realm_id }}"
               hx-swap="none">
           <input type="hidden" name="csrf" value="{{ csrf_token }}">
           <button type="submit" class="ghost small">Regenerate summary</button>
         </form>
+        {% else %}
+        <p class="muted small">Regeneration is owned by the fleet-owner instance.</p>
+        {% endif %}
       </section>
 
       <section class="card-detail-section" aria-labelledby="card-details-title">

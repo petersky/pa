@@ -134,15 +134,22 @@ class Settings(BaseSettings):
     # only policy-marked candidates enter pending review.
     memory_auto_capture_enabled: bool = False
 
-    # Card summaries use an OpenAI-compatible structured-output endpoint. A
-    # blank API key leaves summaries pending/failed without delaying card I/O.
+    # Card summaries use an OpenAI-compatible structured-output endpoint.
+    # Authentication is either a dedicated key or an explicitly selected,
+    # provider-scoped Codex API credential. ChatGPT OAuth remains in Codex's
+    # credential store and is diagnosed with an actionable direct-key setup path.
     card_summary_provider: str = "openai"
     card_summary_model: str = "gpt-5-mini"
     card_summary_base_url: str = "https://api.openai.com/v1"
     card_summary_api_key: str = ""
+    card_summary_auth_source: Literal["dedicated", "codex"] = "dedicated"
     card_summary_timeout_seconds: float = Field(default=20.0, gt=0, le=120)
     card_summary_max_concurrency: int = Field(default=2, ge=1, le=16)
     card_summary_max_retries: int = Field(default=2, ge=0, le=4)
+    card_summary_retry_base_seconds: float = Field(default=15.0, ge=1, le=3600)
+    card_summary_retry_max_seconds: float = Field(default=300.0, ge=1, le=86400)
+    card_summary_retry_jitter_ratio: float = Field(default=0.2, ge=0, le=1)
+    card_summary_worker_interval_seconds: float = Field(default=10.0, ge=1, le=300)
     card_summary_migration_batch: int = Field(default=20, ge=0, le=500)
 
     # Bounded post-turn evaluation and automatic follow-up policy. Evaluators
