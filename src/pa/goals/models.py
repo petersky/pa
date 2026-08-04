@@ -420,19 +420,44 @@ class Goal(BaseModel):
         if len(criterion_ids) != len(set(criterion_ids)):
             raise ValueError("criterion ids must be unique")
         known = set(criterion_ids)
-        evidence_ids: set[str] = set()
+        evidence_by_id: dict[str, GoalEvidence] = {}
         for item in self.evidence:
-            if item.id in evidence_ids:
+            if item.id in evidence_by_id:
                 raise ValueError("evidence ids must be unique")
-            evidence_ids.add(item.id)
+            evidence_by_id[item.id] = item
+            if len(item.criterion_ids) != len(set(item.criterion_ids)):
+                raise ValueError("evidence criterion ids must be unique")
             if unknown := set(item.criterion_ids) - known:
                 raise ValueError(
                     f"evidence references unknown criteria: {sorted(unknown)}"
                 )
         for criterion in self.criteria:
-            if unknown := set(criterion.evidence_ids) - evidence_ids:
+            if len(criterion.evidence_ids) != len(set(criterion.evidence_ids)):
+                raise ValueError("criterion evidence ids must be unique")
+            if unknown := set(criterion.evidence_ids) - evidence_by_id.keys():
                 raise ValueError(
                     f"criterion references unknown evidence: {sorted(unknown)}"
+                )
+            if mismatched := {
+                evidence_id
+                for evidence_id in criterion.evidence_ids
+                if criterion.id not in evidence_by_id[evidence_id].criterion_ids
+            }:
+                raise ValueError(
+                    "criterion references evidence that does not name the criterion: "
+                    f"{sorted(mismatched)}"
+                )
+        evidence_ids_by_criterion = {
+            criterion.id: set(criterion.evidence_ids) for criterion in self.criteria
+        }
+        for item in self.evidence:
+            if missing := {
+                criterion_id
+                for criterion_id in item.criterion_ids
+                if item.id not in evidence_ids_by_criterion[criterion_id]
+            }:
+                raise ValueError(
+                    f"evidence is not linked by its named criteria: {sorted(missing)}"
                 )
         proposal_ids = [proposal.id for proposal in self.proposals]
         if len(proposal_ids) != len(set(proposal_ids)):
@@ -530,7 +555,13 @@ class GoalEvidenceCreate(BaseModel):
 
 
 class GoalAuditCreate(BaseModel):
-    auditor_principal: str
+    auditor_principal: str | None = Field(
+        default=None,
+        description=(
+            "Deprecated identity assertion. The authenticated mutation principal is "
+            "authoritative."
+        ),
+    )
     independent: bool = True
     criterion_verdicts: dict[str, CriterionVerdict]
     evidence_ids: list[str] = Field(default_factory=list)

@@ -92,8 +92,7 @@ class GoalService:
             if goal:
                 return goal
         goal = Goal(**data.model_dump(mode="python"))
-        self._commit(goal, "goal.created", context, {"revision": goal.revision})
-        return goal
+        return self._commit(goal, "goal.created", context, {"revision": goal.revision})
 
     def get(self, goal_id: str, *, realm_id: str | None = None) -> Goal | None:
         payload = get_goal_payload(self.store, goal_id, realm_id)
@@ -117,9 +116,13 @@ class GoalService:
     ) -> Goal:
         def mutate(goal: Goal) -> dict[str, Any]:
             before = goal.revision
-            values = change.model_dump(exclude_none=True, exclude={"reason"})
-            for key, value in values.items():
-                setattr(goal, key, value)
+            fields = [
+                key
+                for key in change.__class__.model_fields
+                if key != "reason" and getattr(change, key) is not None
+            ]
+            for key in fields:
+                setattr(goal, key, getattr(change, key))
             goal.revision += 1
             if (
                 change.policy is not None
@@ -129,7 +132,7 @@ class GoalService:
             return {
                 "reason": change.reason,
                 "prior_revision": before,
-                "fields": sorted(values),
+                "fields": sorted(fields),
             }
 
         return self._mutate(goal_id, context, "goal.revised", mutate)
@@ -174,6 +177,20 @@ class GoalService:
                 raise GoalConflict(
                     f"evidence references unknown criteria: {sorted(unknown)}"
                 )
+            if any(item.id == change.evidence.id for item in goal.evidence):
+                raise GoalConflict(
+                    f"evidence id already exists on goal: {change.evidence.id}"
+                )
+            verdict_criteria = set(change.criterion_verdicts)
+            if unknown := verdict_criteria - known:
+                raise GoalConflict(
+                    f"evidence verdicts reference unknown criteria: {sorted(unknown)}"
+                )
+            if unmapped := verdict_criteria - set(change.evidence.criterion_ids):
+                raise GoalConflict(
+                    "evidence verdicts require evidence mapped to each criterion: "
+                    f"{sorted(unmapped)}"
+                )
             goal.evidence.append(change.evidence)
             for criterion in goal.criteria:
                 if criterion.id in change.evidence.criterion_ids:
@@ -191,20 +208,42 @@ class GoalService:
         self, goal_id: str, change: GoalAuditCreate, context: GoalMutationContext
     ) -> Goal:
         def mutate(goal: Goal) -> dict[str, Any]:
-            if not change.independent or change.auditor_principal in {
-                goal.owner_principal,
-                context.actor_principal,
-            }:
+            if (
+                change.auditor_principal is not None
+                and change.auditor_principal != context.actor_principal
+            ):
                 raise GoalConflict(
-                    "completion audit must be independent of the goal owner and mutation actor"
+                    "audit principal must match the authenticated mutation actor"
+                )
+            if (
+                not change.independent
+                or context.actor_principal == goal.owner_principal
+            ):
+                raise GoalConflict(
+                    "completion audit must be independent of the goal owner"
                 )
             known_criteria = {item.id for item in goal.criteria}
             if set(change.criterion_verdicts) != known_criteria:
                 raise GoalConflict("audit must include a verdict for every criterion")
-            known_evidence = {item.id for item in goal.evidence}
-            if unknown := set(change.evidence_ids) - known_evidence:
+            if len(change.evidence_ids) != len(set(change.evidence_ids)):
+                raise GoalConflict("audit evidence ids must be unique")
+            evidence_by_id = {item.id: item for item in goal.evidence}
+            if unknown := set(change.evidence_ids) - evidence_by_id.keys():
                 raise GoalConflict(
                     f"audit references unknown evidence: {sorted(unknown)}"
+                )
+            missing_evidence = {
+                criterion_id
+                for criterion_id in known_criteria
+                if not any(
+                    criterion_id in evidence_by_id[evidence_id].criterion_ids
+                    for evidence_id in change.evidence_ids
+                )
+            }
+            if missing_evidence:
+                raise GoalConflict(
+                    "audit must include evidence mapped to every criterion: "
+                    f"{sorted(missing_evidence)}"
                 )
             verdict = (
                 CriterionVerdict.SATISFIED
@@ -214,7 +253,14 @@ class GoalService:
                 )
                 else CriterionVerdict.UNSATISFIED
             )
-            goal.audit = GoalAudit(verdict=verdict, **change.model_dump())
+            goal.audit = GoalAudit(
+                auditor_principal=context.actor_principal,
+                independent=True,
+                verdict=verdict,
+                criterion_verdicts=change.criterion_verdicts,
+                evidence_ids=change.evidence_ids,
+                explanation=change.explanation,
+            )
             for criterion in goal.criteria:
                 criterion.verdict = change.criterion_verdicts[criterion.id]
             return {"audit_id": goal.audit.id, "verdict": verdict.value}
@@ -373,8 +419,7 @@ class GoalService:
         payload = mutate(goal)
         goal.version += 1
         goal.updated_at = datetime.now(UTC)
-        self._commit(goal, event_type, context, payload)
-        return goal
+        return self._commit(goal, event_type, context, payload)
 
     @staticmethod
     def _check_fence(goal: Goal, context: GoalMutationContext) -> None:
@@ -390,7 +435,11 @@ class GoalService:
         event_type: str,
         context: GoalMutationContext,
         payload: dict[str, Any],
-    ) -> None:
+    ) -> Goal:
+        try:
+            goal = Goal.model_validate(goal.model_dump(mode="python"))
+        except ValueError as exc:
+            raise GoalConflict(f"invalid goal mutation: {exc}") from exc
         event_payload = {
             "goal": goal.model_dump(mode="json"),
             "goal_event": {
@@ -413,3 +462,4 @@ class GoalService:
                 payload=event_payload,
             )
         )
+        return goal

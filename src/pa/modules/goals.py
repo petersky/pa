@@ -8,6 +8,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 
+from pa.auth.middleware import get_principal_id
 from pa.core.context import AppContext
 from pa.core.contracts import Module
 from pa.core.ui.pages import PageDefinition
@@ -332,7 +333,6 @@ def audit_goal(
     expected_version: int,
     policy_revision: int,
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
-    actor: Annotated[str, Header(alias="X-PA-Actor")] = "user:local",
     authority: Annotated[str | None, Header(alias="X-PA-Authority-Instance")] = None,
     fencing_token: Annotated[
         int | None, Header(alias="X-PA-Goal-Fencing-Token")
@@ -343,7 +343,7 @@ def audit_goal(
         expected_version,
         policy_revision,
         idempotency_key,
-        actor,
+        get_principal_id(request),
         authority,
         fencing_token,
     )

@@ -107,3 +107,78 @@ def test_advanced_goal_http_contract_and_dashboard() -> None:
     assert dashboard.status_code == 200
     assert "Organization portfolio" in dashboard.text
     assert "Priority 50" in dashboard.text
+
+
+def test_goal_audit_identity_comes_from_the_authenticated_request() -> None:
+    with (
+        tempfile.TemporaryDirectory() as tmp,
+        TestClient(_app(Path(tmp))) as client,
+    ):
+        assert client.get("/").status_code == 200
+        csrf = client.cookies.get("pa_csrf")
+        headers = {
+            "X-CSRF-Token": csrf,
+            "Idempotency-Key": "create-audit-goal",
+            "X-PA-Actor": "agent:spoofed",
+            "X-PA-Authority-Instance": "local",
+        }
+        created = client.post(
+            "/api/goals",
+            params={"expected_version": 0, "policy_revision": 1},
+            headers=headers,
+            json={
+                "objective": "Bind the audit principal",
+                "owner_principal": "user:operator",
+                "criteria": [
+                    {
+                        "description": "Audit identity is authenticated",
+                        "verification_method": "HTTP contract test",
+                        "evidence_requirement": "passing response assertions",
+                    }
+                ],
+            },
+        )
+        assert created.status_code == 201, created.text
+        goal = created.json()
+        criterion_id = goal["criteria"][0]["id"]
+        evidence = client.post(
+            f"/api/goals/{goal['id']}/evidence",
+            params={"expected_version": 1, "policy_revision": 1},
+            headers={**headers, "Idempotency-Key": "record-audit-evidence"},
+            json={
+                "evidence": {
+                    "criterion_ids": [criterion_id],
+                    "kind": "test",
+                    "summary": "Authenticated audit contract passed",
+                }
+            },
+        )
+        assert evidence.status_code == 200, evidence.text
+        evidence_id = evidence.json()["evidence"][0]["id"]
+        audit_payload = {
+            "auditor_principal": "agent:spoofed",
+            "criterion_verdicts": {criterion_id: "satisfied"},
+            "evidence_ids": [evidence_id],
+            "explanation": "Verify the authenticated request boundary",
+        }
+        rejected = client.post(
+            f"/api/goals/{goal['id']}/audit",
+            params={"expected_version": 2, "policy_revision": 1},
+            headers={**headers, "Idempotency-Key": "reject-spoofed-auditor"},
+            json=audit_payload,
+        )
+        assert rejected.status_code == 409, rejected.text
+
+        audit_payload.pop("auditor_principal")
+        audited = client.post(
+            f"/api/goals/{goal['id']}/audit",
+            params={"expected_version": 2, "policy_revision": 1},
+            headers={**headers, "Idempotency-Key": "authenticated-auditor"},
+            json=audit_payload,
+        )
+        detail = client.get(f"/api/goals/{goal['id']}")
+
+    assert audited.status_code == 200, audited.text
+    assert audited.json()["audit"]["auditor_principal"] == "user:local"
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["events"][-1]["actor_principal"] == "user:local"
