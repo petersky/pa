@@ -19,12 +19,18 @@ from pa.acp.mcp_config import (
 )
 from pa.cli.main import app
 from pa.config import Settings
+from pa.domain.models import FleetInstance
 from pa.execution.dispatch import DispatchRecord, DispatchStore
 from pa.execution.progress import (
     MAX_PROGRESS_PAYLOAD_BYTES,
     MAX_VALIDATION_COMMAND,
     DispatchProgressEventV1,
     ProgressValidationV1,
+)
+from pa.fleet.overview import (
+    MCP_BOOTSTRAP_TIMEOUT,
+    MCP_STDIO_HANDSHAKE_TIMEOUT,
+    probe_dimension,
 )
 from pa.fleet.placement import (
     PlacementCandidate,
@@ -33,12 +39,6 @@ from pa.fleet.placement import (
     PlacementService,
     RoundRobinCursorStore,
 )
-from pa.fleet.overview import (
-    MCP_BOOTSTRAP_TIMEOUT,
-    MCP_STDIO_HANDSHAKE_TIMEOUT,
-    probe_dimension,
-)
-from pa.domain.models import FleetInstance
 
 
 def _event_payload(*, command: str = "pytest") -> dict:
@@ -112,9 +112,7 @@ class _FailingStdio(AbstractAsyncContextManager):
         self.errlog = errlog
 
     async def __aenter__(self):
-        self.errlog.write(
-            "ModuleNotFoundError: No module named 'mcp.server.fastmcp'\n"
-        )
+        self.errlog.write("ModuleNotFoundError: No module named 'mcp.server.fastmcp'\n")
         self.errlog.flush()
         raise ExceptionGroup(
             "outer task group",
@@ -123,6 +121,29 @@ class _FailingStdio(AbstractAsyncContextManager):
 
     async def __aexit__(self, *_args):
         return False
+
+
+class _SlowShutdownStdio(AbstractAsyncContextManager):
+    async def __aenter__(self):
+        return object(), object()
+
+    async def __aexit__(self, *_args):
+        await asyncio.sleep(0.05)
+        return False
+
+
+class _HealthySession(AbstractAsyncContextManager):
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        return False
+
+    async def initialize(self):
+        return None
+
+    async def list_tools(self):
+        return SimpleNamespace(tools=[object()])
 
 
 def test_nested_taskgroup_retains_child_stderr_and_bootstrap_context(
@@ -154,6 +175,34 @@ def test_nested_taskgroup_retains_child_stderr_and_bootstrap_context(
     assert error.context["pa_executable"]
     assert error.context["cwd"]
     assert error.context["process_exit_code"] is None
+
+
+def test_successful_handshake_is_not_failed_by_slow_child_teardown(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(data_dir=tmp_path, agent_enabled=False)
+
+    with (
+        patch(
+            "pa.acp.mcp_config.stdio_client",
+            side_effect=lambda *_args, **_kwargs: _SlowShutdownStdio(),
+        ),
+        patch(
+            "pa.acp.mcp_config.ClientSession",
+            side_effect=lambda *_args, **_kwargs: _HealthySession(),
+        ),
+        patch("pa.acp.mcp_config._ensure_supported_mcp_sdk"),
+    ):
+        result = asyncio.run(
+            _probe_pa_mcp_stdio_async(
+                settings,
+                timeout=0.01,
+                owner_environment={"PA_OWNER_SOCKET": str(tmp_path / "owner.sock")},
+                session_environment={},
+            )
+        )
+
+    assert result == {"state": "connected", "classification": "ok", "tool_count": 1}
 
 
 @pytest.mark.parametrize("version", ["1.27.1", "3.0.0"])
@@ -198,6 +247,7 @@ def test_forced_bootstrap_refreshes_coalesce(tmp_path: Path) -> None:
         name="target",
         url="http://target.test",
     )
+
     async def exercise():
         with patch("pa.fleet.overview._probe", side_effect=slow_probe):
             return await asyncio.gather(
