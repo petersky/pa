@@ -9,7 +9,7 @@ from enum import StrEnum
 from typing import Any
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
 
 
 def _canonical_hash(value: Any) -> str:
@@ -128,7 +128,7 @@ _AUTHORITY_SOURCES = {
 
 
 class VerifiedControlProvenance(BaseModel):
-    """Server-created proof that a control event crossed an authenticated boundary."""
+    """Validated control claim that requires a server issuer before it is trusted."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -138,6 +138,7 @@ class VerifiedControlProvenance(BaseModel):
     integration_id: str | None = None
     authority_instance_id: str | None = None
     transport: ControlTransport = ControlTransport.UNTRUSTED
+    _issuer: object | None = PrivateAttr(default=None)
 
     @model_validator(mode="after")
     def validate_proof(self) -> VerifiedControlProvenance:
@@ -168,6 +169,15 @@ class VerifiedControlProvenance(BaseModel):
     @property
     def trusted(self) -> bool:
         return self.authority != ControlAuthority.UNTRUSTED
+
+    @classmethod
+    def _issue(cls, issuer: object, **values: Any) -> VerifiedControlProvenance:
+        provenance = cls(**values)
+        provenance._issuer = issuer
+        return provenance
+
+    def _issued_by(self, issuer: object) -> bool:
+        return self._issuer is issuer
 
     @property
     def expected_source(self) -> SignalSource | None:

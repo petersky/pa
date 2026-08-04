@@ -53,6 +53,13 @@ class _ProviderProbe:
     finished: bool = False
 
 
+@dataclass(frozen=True)
+class _ProviderTask:
+    features: dict[str, Any]
+    probe: _ProviderProbe
+    outcomes: queue.Queue[tuple[bool, Any]]
+
+
 _EMERGENCY_RULES = {
     ControlEvent.SECURITY_REVOCATION: _EmergencyRule(
         "security_revocation",
@@ -149,11 +156,14 @@ class LimbicService:
             for integration_id, events in (integration_control_allowlist or {}).items()
             if integration_id
         }
+        self._control_issuer = object()
         self._monotonic = monotonic
         self._provider_lock = threading.Lock()
         self._provider_failures = 0
         self._provider_open_until = 0.0
         self._provider_probe: _ProviderProbe | None = None
+        self._provider_tasks: queue.Queue[_ProviderTask] = queue.Queue(maxsize=1)
+        self._provider_worker: threading.Thread | None = None
 
     def appraise(
         self,
@@ -166,7 +176,15 @@ class LimbicService:
         caller_claimed_trust = bool(
             signal.trusted_control or signal.control_provenance != "untrusted"
         )
-        provenance = control_provenance or VerifiedControlProvenance()
+        provenance_supplied = control_provenance is not None
+        provenance_issued = bool(
+            control_provenance and control_provenance._issued_by(self._control_issuer)
+        )
+        provenance = (
+            control_provenance
+            if provenance_issued and control_provenance is not None
+            else VerifiedControlProvenance()
+        )
         emergency_rule = self._emergency_rule(signal, provenance)
 
         # The canonical event class for a verified control is selected from the
@@ -195,7 +213,9 @@ class LimbicService:
             signal.event_class in _PRIVILEGED_EVENT_ALIASES and not emergency_rule
         ):
             diagnostics.append(_diagnostic("control_provenance_spoof", "security"))
-        if provenance.control_event and not emergency_rule:
+        if (provenance_supplied and not provenance_issued) or (
+            provenance.control_event and not emergency_rule
+        ):
             diagnostics.append(_diagnostic("control_provenance_rejected", "security"))
 
         baseline = self._deterministic_appraisal(signal, emergency_rule, diagnostics)
@@ -235,7 +255,9 @@ class LimbicService:
         signal: SignalEnvelope,
         provenance: VerifiedControlProvenance,
     ) -> _EmergencyRule | None:
-        if not provenance.control_event:
+        if not provenance.control_event or not provenance._issued_by(
+            self._control_issuer
+        ):
             return None
         rule = _EMERGENCY_RULES.get(provenance.control_event)
         if (
@@ -252,6 +274,28 @@ class LimbicService:
         ):
             return None
         return rule
+
+    def _issue_control_provenance(
+        self,
+        *,
+        authority: ControlAuthority,
+        control_event: ControlEvent,
+        transport: str,
+        principal_id: str | None = None,
+        integration_id: str | None = None,
+        authority_instance_id: str | None = None,
+    ) -> VerifiedControlProvenance:
+        """Issue a process-local capability from authenticated server context."""
+
+        return VerifiedControlProvenance._issue(
+            self._control_issuer,
+            authority=authority,
+            control_event=control_event,
+            transport=transport,
+            principal_id=principal_id,
+            integration_id=integration_id,
+            authority_instance_id=authority_instance_id,
+        )
 
     def _deterministic_appraisal(
         self,
@@ -475,35 +519,27 @@ class LimbicService:
     def _call_provider(
         self, features: dict[str, Any]
     ) -> tuple[dict[str, Any] | None, str | None]:
+        worker_unavailable = False
         with self._provider_lock:
             now = self._monotonic()
             if now < self._provider_open_until or self._provider_probe is not None:
                 return None, "provider_circuit_open"
-            probe = _ProviderProbe()
-            self._provider_probe = probe
+            if not self._ensure_provider_worker_locked():
+                worker_unavailable = True
+            else:
+                probe = _ProviderProbe()
+                self._provider_probe = probe
+
+        if worker_unavailable:
+            self._record_provider_failure()
+            return None, "provider_error"
 
         outcomes: queue.Queue[tuple[bool, Any]] = queue.Queue(maxsize=1)
-
-        def invoke() -> None:
-            # Network/provider implementations use heterogeneous exception types.
-            try:
-                outcomes.put((True, self.provider(features)), block=False)  # type: ignore[misc]
-            except Exception:  # noqa: BLE001
-                outcomes.put((False, None), block=False)
-            finally:
-                with self._provider_lock:
-                    probe.finished = True
-                    if probe.abandoned and self._provider_probe is probe:
-                        self._provider_probe = None
-
-        worker = threading.Thread(
-            target=invoke,
-            name="pa-limbic-provider",
-            daemon=True,
-        )
         try:
-            worker.start()
-        except Exception:  # noqa: BLE001 - resource exhaustion is provider unavailability
+            self._provider_tasks.put_nowait(
+                _ProviderTask(features=features, probe=probe, outcomes=outcomes)
+            )
+        except queue.Full:
             self._record_provider_failure(probe)
             return None, "provider_error"
         try:
@@ -520,6 +556,46 @@ class LimbicService:
             if self._provider_probe is probe:
                 self._provider_probe = None
         return value, None
+
+    def _ensure_provider_worker_locked(self) -> bool:
+        if self._provider_worker is not None:
+            return self._provider_worker.is_alive()
+        worker = threading.Thread(
+            target=self._provider_worker_loop,
+            name=f"pa-limbic-provider-{id(self):x}",
+            daemon=True,
+        )
+        try:
+            worker.start()
+        except Exception:  # noqa: BLE001 - resource exhaustion is provider unavailability
+            return False
+        self._provider_worker = worker
+        return True
+
+    def _provider_worker_loop(self) -> None:
+        while True:
+            try:
+                task = self._provider_tasks.get(timeout=1.0)
+            except queue.Empty:
+                with self._provider_lock:
+                    if self._provider_probe is None and self._provider_tasks.empty():
+                        self._provider_worker = None
+                        return
+                continue
+            try:
+                # Network/provider implementations use heterogeneous exception types.
+                try:
+                    task.outcomes.put_nowait(
+                        (True, self.provider(task.features))  # type: ignore[misc]
+                    )
+                except Exception:  # noqa: BLE001
+                    task.outcomes.put_nowait((False, None))
+            finally:
+                with self._provider_lock:
+                    task.probe.finished = True
+                    if task.probe.abandoned and self._provider_probe is task.probe:
+                        self._provider_probe = None
+                self._provider_tasks.task_done()
 
     def _record_provider_failure(
         self,

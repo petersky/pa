@@ -57,8 +57,8 @@ class LimbicMemoryTests(unittest.TestCase):
         )
 
     @staticmethod
-    def _operator_stop() -> VerifiedControlProvenance:
-        return VerifiedControlProvenance(
+    def _operator_stop(service: LimbicService) -> VerifiedControlProvenance:
+        return service._issue_control_provenance(
             authority=ControlAuthority.OPERATOR,
             control_event=ControlEvent.OPERATOR_STOP,
             principal_id="user:operator",
@@ -119,9 +119,11 @@ class LimbicMemoryTests(unittest.TestCase):
                 goal_refs=["goal-1"],
             )
 
-            first = limbic.appraise(signal, control_provenance=self._operator_stop())
+            first = limbic.appraise(
+                signal, control_provenance=self._operator_stop(limbic)
+            )
             duplicate = limbic.appraise(
-                signal, control_provenance=self._operator_stop()
+                signal, control_provenance=self._operator_stop(limbic)
             )
 
             self.assertEqual(first.route.path, ProcessingPath.BYPASS)
@@ -129,8 +131,9 @@ class LimbicMemoryTests(unittest.TestCase):
             self.assertEqual(first.appraisal.deterministic_bypass, "operator_stop")
             self.assertTrue(duplicate.deduplicated)
             replica.rebuild_from_log("default")
-            replayed = LimbicService(replica, "instance-b").appraise(
-                signal, control_provenance=self._operator_stop()
+            replay_service = LimbicService(replica, "instance-b")
+            replayed = replay_service.appraise(
+                signal, control_provenance=self._operator_stop(replay_service)
             )
             self.assertTrue(replayed.deduplicated)
             self.assertEqual(replayed.route.id, first.route.id)
@@ -264,7 +267,7 @@ class LimbicMemoryTests(unittest.TestCase):
             operator = limbic.appraise(
                 self._signal("status_query", source=SignalSource.OPERATOR),
                 persist=False,
-                control_provenance=self._operator_stop(),
+                control_provenance=self._operator_stop(limbic),
             )
             self.assertEqual(operator.route.path, ProcessingPath.BYPASS)
             self.assertEqual(operator.appraisal.deterministic_bypass, "operator_stop")
@@ -272,7 +275,7 @@ class LimbicMemoryTests(unittest.TestCase):
             revocation = limbic.appraise(
                 self._signal("status_query", source=SignalSource.INTEGRATION),
                 persist=False,
-                control_provenance=VerifiedControlProvenance(
+                control_provenance=limbic._issue_control_provenance(
                     authority=ControlAuthority.INTEGRATION,
                     control_event=ControlEvent.SECURITY_REVOCATION,
                     integration_id="integration:identity-provider",
@@ -288,7 +291,7 @@ class LimbicMemoryTests(unittest.TestCase):
             rejected = limbic.appraise(
                 self._signal("status_query", source=SignalSource.INTEGRATION),
                 persist=False,
-                control_provenance=VerifiedControlProvenance(
+                control_provenance=limbic._issue_control_provenance(
                     authority=ControlAuthority.OPERATOR,
                     control_event=ControlEvent.DATA_INTEGRITY_ALARM,
                     principal_id="user:operator",
@@ -330,8 +333,34 @@ class LimbicMemoryTests(unittest.TestCase):
             AppraiseRequest.model_validate(
                 {
                     "signal": self._signal("status_query").model_dump(mode="json"),
-                    "control_provenance": self._operator_stop().model_dump(mode="json"),
+                    "control_provenance": VerifiedControlProvenance(
+                        authority=ControlAuthority.OPERATOR,
+                        control_event=ControlEvent.OPERATOR_STOP,
+                        principal_id="user:operator",
+                        transport=ControlTransport.AUTHENTICATED_SESSION,
+                    ).model_dump(mode="json"),
                 }
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            service, _, _ = self._services(tmp)
+            caller_constructed = VerifiedControlProvenance(
+                authority=ControlAuthority.OPERATOR,
+                control_event=ControlEvent.OPERATOR_STOP,
+                principal_id="user:operator",
+                transport=ControlTransport.AUTHENTICATED_SESSION,
+            )
+            rejected = service.appraise(
+                self._signal("operator_stop", source=SignalSource.OPERATOR),
+                persist=False,
+                control_provenance=caller_constructed,
+            )
+            self.assertEqual(rejected.route.path, ProcessingPath.SLOW)
+            self.assertFalse(rejected.signal.trusted_control)
+            self.assertIsNone(rejected.appraisal.deterministic_bypass)
+            self.assertEqual(
+                [item.code for item in rejected.appraisal.diagnostics],
+                ["control_provenance_spoof", "control_provenance_rejected"],
             )
 
     def test_source_authority_and_integration_event_allowlist_gate_bypass(self) -> None:
@@ -346,7 +375,7 @@ class LimbicMemoryTests(unittest.TestCase):
                     "integration:identity-provider": {ControlEvent.SECURITY_REVOCATION}
                 },
             )
-            integration = VerifiedControlProvenance(
+            integration = service._issue_control_provenance(
                 authority=ControlAuthority.INTEGRATION,
                 control_event=ControlEvent.SECURITY_REVOCATION,
                 integration_id="integration:identity-provider",
@@ -433,7 +462,9 @@ class LimbicMemoryTests(unittest.TestCase):
                 dedupe_key="caller-collision",
             )
             untrusted = limbic.appraise(first)
-            trusted = limbic.appraise(second, control_provenance=self._operator_stop())
+            trusted = limbic.appraise(
+                second, control_provenance=self._operator_stop(limbic)
+            )
             self.assertNotEqual(untrusted.signal.content_hash, "caller-collision")
             self.assertNotEqual(untrusted.signal.dedupe_key, "caller-collision")
             self.assertNotEqual(
@@ -463,7 +494,7 @@ class LimbicMemoryTests(unittest.TestCase):
                 dedupe_key="caller-collision",
             )
             provenances = [
-                VerifiedControlProvenance(
+                service._issue_control_provenance(
                     authority=ControlAuthority.INTEGRATION,
                     control_event=ControlEvent.SECURITY_REVOCATION,
                     integration_id=integration_id,
@@ -572,6 +603,95 @@ class LimbicMemoryTests(unittest.TestCase):
             )
             self.assertTrue(recovered_after_timeout.appraisal.model_used)
             self.assertEqual(timeout_calls, 2)
+
+    def test_repeated_timeouts_reuse_one_worker_and_never_overlap_provider(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            log = EventLog(ObjectStore(root / "objects"), root, "instance-a")
+            projection = CardProjection(root / "pa.db", log)
+            releases = [threading.Event() for _ in range(3)]
+            call_started = threading.Event()
+            state_lock = threading.Lock()
+            calls = 0
+            active = 0
+            max_active = 0
+
+            def provider(_: dict) -> dict:
+                nonlocal calls, active, max_active
+                with state_lock:
+                    release = releases[calls]
+                    calls += 1
+                    active += 1
+                    max_active = max(max_active, active)
+                    call_started.set()
+                release.wait()
+                with state_lock:
+                    active -= 1
+                return self._model_payload()
+
+            now = [0.0]
+            service = LimbicService(
+                projection,
+                "instance-a",
+                provider=provider,
+                provider_timeout_seconds=0.002,
+                circuit_open_seconds=1,
+                monotonic=lambda: now[0],
+            )
+            worker_ident = None
+            for index, release in enumerate(releases):
+                call_started.clear()
+                timed_out = service.appraise(
+                    self._signal("status_query"), persist=False
+                )
+                self.assertEqual(
+                    timed_out.appraisal.diagnostics[0].code,
+                    "provider_timeout",
+                )
+                self.assertTrue(call_started.wait(0.2))
+                self.assertIsNotNone(service._provider_worker)
+                if worker_ident is None:
+                    worker_ident = service._provider_worker.ident
+                self.assertEqual(service._provider_worker.ident, worker_ident)
+                worker_name = service._provider_worker.name
+                self.assertEqual(
+                    sum(
+                        thread.is_alive() and thread.name == worker_name
+                        for thread in threading.enumerate()
+                    ),
+                    1,
+                )
+
+                now[0] += 2
+                for _ in range(10):
+                    suppressed = service.appraise(
+                        self._signal("status_query"), persist=False
+                    )
+                    self.assertEqual(
+                        suppressed.appraisal.diagnostics[0].code,
+                        "provider_circuit_open",
+                    )
+                self.assertEqual(calls, index + 1)
+                self.assertEqual(max_active, 1)
+                self.assertEqual(
+                    sum(
+                        thread.is_alive() and thread.name == worker_name
+                        for thread in threading.enumerate()
+                    ),
+                    1,
+                )
+
+                release.set()
+                for _ in range(200):
+                    if service._provider_probe is None:
+                        break
+                    time.sleep(0.001)
+                self.assertIsNone(service._provider_probe)
+
+            self.assertEqual(calls, 3)
+            self.assertEqual(max_active, 1)
 
     def test_malformed_provider_and_prompt_injection_fall_back_safely(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
