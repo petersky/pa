@@ -13,7 +13,6 @@ from fastapi.testclient import TestClient
 
 from pa.config import Settings, reset_settings
 from pa.core.kernel import Kernel
-from pa.domain.card_summaries import MAX_CARD_SUMMARY_LENGTH, fallback_card_summary
 from pa.domain.models import (
     AgentSession,
     CardCreate,
@@ -34,36 +33,23 @@ from pa.instance.agent_session import reset_instance_agent
 
 
 class CardSummaryTests(unittest.TestCase):
-    def test_fallback_is_plain_bounded_and_limited_to_three_sentences(self) -> None:
-        body = (
-            "## First [linked](https://example.test) sentence. "
-            "Second sentence! Third sentence? Fourth sentence is omitted. "
-            + "word "
-            * 100
-        )
-        summary = fallback_card_summary(body)
-
-        self.assertNotIn("##", summary)
-        self.assertNotIn("https://", summary)
-        self.assertIn("First linked sentence.", summary)
-        self.assertNotIn("Fourth sentence", summary)
-        self.assertLessEqual(len(summary), MAX_CARD_SUMMARY_LENGTH)
-
-    def test_fallback_recomputes_but_curated_summary_becomes_stale(self) -> None:
+    def test_unsummarized_cards_are_pending_and_edits_are_stale(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = CardProjection(Path(tmp) / "pa.db")
             card = store.create_card(
                 CardCreate(title="Summaries", body="Initial deterministic details.")
             )
             self.assertEqual(card.summary_source, CardSummarySource.FALLBACK)
-            self.assertEqual(card.summary, "Initial deterministic details.")
+            self.assertEqual(card.summary, "")
+            self.assertEqual(card.summary_status.value, "pending")
 
             fallback = store.update_card(
                 card.id, CardUpdate(body="Changed fallback details.")
             )
             assert fallback is not None
-            self.assertEqual(fallback.summary, "Changed fallback details.")
-            self.assertFalse(fallback.summary_stale)
+            self.assertEqual(fallback.summary, "")
+            self.assertTrue(fallback.summary_stale)
+            self.assertEqual(fallback.summary_status.value, "stale")
 
             curated = store.update_card(
                 card.id,
@@ -130,10 +116,11 @@ class CardSummaryTests(unittest.TestCase):
 
             card = CardProjection(db).get_card("legacy-card")
             assert card is not None
-            self.assertEqual(card.summary, "Legacy body becomes durable summary text.")
+            self.assertEqual(card.summary, "")
             self.assertEqual(card.summary_source, CardSummarySource.FALLBACK)
-            self.assertFalse(card.summary_stale)
-            self.assertEqual(card.summary_updated_at.isoformat(), now)
+            self.assertTrue(card.summary_stale)
+            self.assertEqual(card.summary_status.value, "stale")
+            self.assertIsNone(card.summary_updated_at)
 
     def test_open_card_session_wins_over_a_newer_closed_session(self) -> None:
         now = datetime.now(UTC)

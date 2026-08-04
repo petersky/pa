@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import mimetypes
 import os
 import re
@@ -598,7 +599,10 @@ def _card_session_view(session, local_instance_id: str) -> dict:
             "Closed locally; the provider thread can be resumed or loaded.",
         )
     elif session.status not in {"idle", "connected", "prompting"}:
-        state, detail = "unavailable", "Not active and has no resumable provider identity."
+        state, detail = (
+            "unavailable",
+            "Not active and has no resumable provider identity.",
+        )
     else:
         state, detail = "active", "Active on this instance and ready to select."
     return {
@@ -1321,6 +1325,12 @@ def create_card_api(
             card.realm_id,
             explicit_enrichment_fields(data),
         )
+    if not data.summary.strip():
+        background_tasks.add_task(
+            request.app.state.ctx.require_service("card_summary_service").request,
+            card.id,
+            card.realm_id,
+        )
     return card.model_dump(mode="json")
 
 
@@ -1369,7 +1379,11 @@ def repair_legacy_card_history_api(request: Request, body: CardRepairRequest) ->
 
 @router.patch("/cards/{card_id}")
 def update_card_api(
-    request: Request, card_id: str, data: CardUpdate, realm: str | None = None
+    request: Request,
+    card_id: str,
+    data: CardUpdate,
+    background_tasks: BackgroundTasks,
+    realm: str | None = None,
 ) -> dict:
     settings = request.app.state.ctx.settings
     realm_id = realm or settings.primary_realm
@@ -1394,7 +1408,40 @@ def update_card_api(
         ) from exc
     if not card:
         raise HTTPException(status_code=404, detail="Card not found")
+    if {"title", "body"} & data.model_fields_set:
+        background_tasks.add_task(
+            request.app.state.ctx.require_service("card_summary_service").request,
+            card.id,
+            card.realm_id,
+        )
     return card.model_dump(mode="json")
+
+
+@router.post("/cards/{card_id}/summary/regenerate", status_code=202)
+def regenerate_card_summary_api(
+    request: Request,
+    card_id: str,
+    background_tasks: BackgroundTasks,
+    realm: str | None = None,
+) -> dict:
+    realm_id = realm or request.app.state.ctx.settings.primary_realm
+    card = get_store().get_card(card_id, realm_id=realm_id)
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+    get_store().update_card(
+        card.id,
+        CardUpdate(summary_status="pending", summary_stale=bool(card.summary)),
+        realm_id=card.realm_id,
+        principal_id=get_principal_id(request),
+        instance_id=request.app.state.ctx.settings.instance_id,
+    )
+    background_tasks.add_task(
+        request.app.state.ctx.require_service("card_summary_service").request,
+        card.id,
+        card.realm_id,
+        force=True,
+    )
+    return {"card_id": card.id, "summary_status": "pending"}
 
 
 @router.get("/items")
@@ -1809,6 +1856,12 @@ async def create_card_modal_ui(
         principal_id=principal,
         instance_id=settings.instance_id,
     )
+    if not summary.strip():
+        background_tasks.add_task(
+            request.app.state.ctx.require_service("card_summary_service").request,
+            card.id,
+            card.realm_id,
+        )
     if auto_enrich:
         background_tasks.add_task(
             enrich_card,
@@ -2319,6 +2372,7 @@ def card_detail_activity_partial(
 @ui_router.post("/partials/cards/{card_id}", response_model=None)
 def card_detail_update(
     request: Request,
+    background_tasks: BackgroundTasks,
     card_id: str,
     title: str | None = Form(None),
     body: str | None = Form(None),
@@ -2352,6 +2406,12 @@ def card_detail_update(
         )
     if not card:
         raise HTTPException(status_code=404, detail="Card not found")
+    if {"title", "body"} & changes.keys():
+        background_tasks.add_task(
+            request.app.state.ctx.require_service("card_summary_service").request,
+            card.id,
+            card.realm_id,
+        )
     return _templates(request).TemplateResponse(
         request, "partials/card-detail.html", _card_summary_context(request, card)
     )
@@ -2547,6 +2607,9 @@ class ItemsModule(Module):
         return "Cards (goals, tasks, projects, concerns) and knowledge capture"
 
     def on_load(self, ctx: AppContext) -> None:
+        from pa.domain.card_summary_service import CardSummaryService
+
+        ctx.register_service("card_summary_service", CardSummaryService(ctx))
         pages: PageRegistry = ctx.require_service("pages")
         pages.register(
             PageDefinition(
@@ -2559,6 +2622,7 @@ class ItemsModule(Module):
                 context_builder=_home_context,
             )
         )
+
         pages.register(
             PageDefinition(
                 id="work",
@@ -2581,6 +2645,17 @@ class ItemsModule(Module):
                 context_builder=_knowledge_context,
             )
         )
+
+    async def on_startup(self, app, ctx: AppContext) -> None:
+        try:
+            await ctx.require_service("card_summary_service").migrate_legacy()
+        except Exception:  # migration must never make PA startup unavailable
+            logging.getLogger(__name__).exception(
+                "Card summary migration batch could not be scheduled"
+            )
+
+    async def on_shutdown(self, app, ctx: AppContext) -> None:
+        await ctx.require_service("card_summary_service").close()
 
     def api_routers(self):
         return [("/api", router, ["items", "cards"])]

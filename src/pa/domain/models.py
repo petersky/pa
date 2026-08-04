@@ -364,6 +364,13 @@ class CardSummarySource(StrEnum):
     AGENT = "agent"
 
 
+class CardSummaryStatus(StrEnum):
+    PENDING = "pending"
+    READY = "ready"
+    STALE = "stale"
+    FAILED = "failed"
+
+
 class AttachmentState(StrEnum):
     ACTIVE = "active"
     DELETED = "deleted"
@@ -396,6 +403,12 @@ class Card(BaseModel):
     body: str = ""
     summary: str = ""
     summary_source: CardSummarySource = CardSummarySource.FALLBACK
+    summary_status: CardSummaryStatus = CardSummaryStatus.PENDING
+    summary_provider: str | None = None
+    summary_model: str | None = None
+    summary_prompt_version: str | None = None
+    summary_input_hash: str | None = None
+    summary_failure: str | None = None
     summary_updated_at: datetime | None = None
     summary_stale: bool = False
     lane: CardLane = CardLane.INBOX
@@ -454,6 +467,12 @@ class CardUpdate(BaseModel):
     summary: str | None = None
     summary_source: CardSummarySource | None = None
     summary_stale: bool | None = None
+    summary_status: CardSummaryStatus | None = None
+    summary_provider: str | None = None
+    summary_model: str | None = None
+    summary_prompt_version: str | None = None
+    summary_input_hash: str | None = None
+    summary_failure: str | None = None
     lane: CardLane | None = None
     status: ItemStatus | None = Field(
         default=None,
@@ -515,9 +534,7 @@ class EventType(StrEnum):
     INSTANCE_GROUP_UPDATED = "instance_group_updated"
     INSTANCE_GROUP_ARCHIVED = "instance_group_archived"
     INSTANCE_GROUP_DELETED = "instance_group_deleted"
-    INSTANCE_PARTICIPATION_POLICY_UPDATED = (
-        "instance_participation_policy_updated"
-    )
+    INSTANCE_PARTICIPATION_POLICY_UPDATED = "instance_participation_policy_updated"
     PLACEMENT_DEFAULT_UPDATED = "placement_default_updated"
     PLACEMENT_DEFAULT_DELETED = "placement_default_deleted"
     NOTIFICATION_UPSERTED = "notification_upserted"
