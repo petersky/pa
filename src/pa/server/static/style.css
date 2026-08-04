@@ -3334,6 +3334,14 @@ code {
 .project-disclosure-panel[hidden] { display: none !important; }
 .project-disclosure-panel:not([hidden]) { margin-top: 0.65rem; }
 .project-disclosure-panel form > [data-project-disclosure-close] { margin-top: 0.35rem; }
+.project-history-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
 
 .page-projects { min-height: 0; }
 .projects-workspace {

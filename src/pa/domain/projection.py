@@ -456,6 +456,10 @@ class CardProjection:
         ):
             if col not in session_cols:
                 conn.execute(f"ALTER TABLE agent_sessions ADD COLUMN {col} {decl}")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_agent_sessions_project_history "
+            "ON agent_sessions(realm_id, project_id, status, updated_at DESC)"
+        )
 
         conn.execute(
             """
@@ -2899,6 +2903,112 @@ class CardProjection:
                     WHERE card_id IN ({placeholders})
                     ORDER BY updated_at DESC""",
                 tuple(card_ids),
+            ).fetchall()
+        return [self._row_to_session(row) for row in rows]
+
+    def list_preferred_sessions_for_project_cards(
+        self, project_id: str, *, realm_id: str = "default"
+    ) -> list[AgentSession]:
+        """Load one canonical preferred session for each card in a project."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                WITH ranked AS (
+                    SELECT sessions.*,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY sessions.card_id
+                               ORDER BY
+                                   CASE WHEN sessions.status = 'closed' THEN 1 ELSE 0 END,
+                                   sessions.updated_at DESC,
+                                   sessions.id DESC
+                           ) AS session_rank
+                    FROM agent_sessions AS sessions
+                    JOIN cards ON cards.id = sessions.card_id
+                    WHERE cards.realm_id = ?
+                      AND cards.project_id = ?
+                      AND sessions.realm_id = ?
+                )
+                SELECT * FROM ranked WHERE session_rank = 1
+                ORDER BY updated_at DESC, id DESC
+                """,
+                (realm_id, project_id, realm_id),
+            ).fetchall()
+        return [self._row_to_session(row) for row in rows]
+
+    def count_project_sessions(
+        self,
+        project_id: str,
+        *,
+        realm_id: str = "default",
+        historical: bool,
+    ) -> int:
+        """Count a project's live or historical sessions without hydrating rows."""
+        status_clause = (
+            "status IN ('closed', 'quiesced')"
+            if historical
+            else "status NOT IN ('closed', 'quiesced')"
+        )
+        with self._conn() as conn:
+            row = conn.execute(
+                f"""
+                SELECT COUNT(*) AS total
+                FROM agent_sessions
+                WHERE realm_id = ?
+                  AND (
+                      project_id = ?
+                      OR card_id IN (
+                          SELECT id FROM cards
+                          WHERE realm_id = ? AND project_id = ?
+                      )
+                  )
+                  AND {status_clause}
+                """,
+                (realm_id, project_id, realm_id, project_id),
+            ).fetchone()
+        return int(row["total"] if row else 0)
+
+    def list_project_sessions(
+        self,
+        project_id: str,
+        *,
+        realm_id: str = "default",
+        historical: bool,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[AgentSession]:
+        """Load one bounded, stable page of a project's session history."""
+        bounded_limit = max(1, min(int(limit), 100))
+        bounded_offset = max(0, int(offset))
+        status_clause = (
+            "status IN ('closed', 'quiesced')"
+            if historical
+            else "status NOT IN ('closed', 'quiesced')"
+        )
+        with self._conn() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT *
+                FROM agent_sessions
+                WHERE realm_id = ?
+                  AND (
+                      project_id = ?
+                      OR card_id IN (
+                          SELECT id FROM cards
+                          WHERE realm_id = ? AND project_id = ?
+                      )
+                  )
+                  AND {status_clause}
+                ORDER BY updated_at DESC, id DESC
+                LIMIT ? OFFSET ?
+                """,
+                (
+                    realm_id,
+                    project_id,
+                    realm_id,
+                    project_id,
+                    bounded_limit,
+                    bounded_offset,
+                ),
             ).fetchall()
         return [self._row_to_session(row) for row in rows]
 

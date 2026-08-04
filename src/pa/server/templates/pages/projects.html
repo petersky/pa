@@ -184,8 +184,8 @@
         <a href="/work?realm={{ active_realm }}&amp;project={{ project.id }}&amp;lane={{ lane.value }}#lane-{{ lane.value }}"><strong>{{ lane_counts[lane.value] }}</strong><span>{{ 'Blocked (Waiting)' if lane.value == 'waiting' else lane.value | title }}</span></a>
         {% endfor %}
         {% if sessions_available %}
-        <a href="#project-live-sessions"><strong>{{ live_project_sessions | length }}</strong><span>live sessions</span></a>
-        <a href="#project-historical-sessions" data-project-disclosure-jump="Historical agent sessions"><strong>{{ historical_project_sessions | length }}</strong><span>historical sessions</span></a>
+        <a href="#project-live-sessions"><strong>{{ live_project_session_total }}</strong><span>live sessions</span></a>
+        <a href="#project-historical-sessions" data-project-disclosure-jump="Historical agent sessions"><strong>{{ historical_project_session_total }}</strong><span>historical sessions</span></a>
         {% else %}
         <div class="project-health-unavailable" role="status"><strong>Unavailable</strong><span>session counts</span></div>
         {% endif %}
@@ -346,26 +346,47 @@
     <h2>Agents &amp; pull requests</h2>
     {% if sessions_available %}
     <section id="project-live-sessions" aria-labelledby="project-live-sessions-title">
-      <h3 id="project-live-sessions-title">Live agent sessions ({{ live_project_sessions | length }})</h3>
+      <h3 id="project-live-sessions-title">Live agent sessions ({{ live_project_session_total }})</h3>
       {% if live_project_sessions %}
       <ul class="item-list">
         {% for session in live_project_sessions %}<li class="item"><a href="/agent?session={{ session.id }}"><strong>{{ session.title or session.label or session.agent_name }}</strong></a><span class="badge">{{ session.status }}</span><p class="muted">Last activity {{ session.updated_at.strftime('%Y-%m-%d %H:%M') }}</p></li>{% endfor %}
       </ul>
+      {% if live_project_sessions_truncated %}<p class="muted small">Showing the {{ live_project_sessions | length }} most recently active sessions.</p>{% endif %}
       {% else %}<p class="empty">No live agent sessions.</p>{% endif %}
     </section>
     <details class="panel-inset" id="project-historical-sessions">
-      <summary>Historical agent sessions ({{ historical_project_sessions | length }})</summary>
+      <summary>Historical agent sessions ({{ historical_project_session_total }})</summary>
       {% if historical_project_sessions %}
+      <p class="muted small">Showing {{ session_history_pagination.start }}–{{ session_history_pagination.end }} of {{ historical_project_session_total }}, newest activity first.</p>
       <ul class="item-list">
         {% for session in historical_project_sessions %}<li class="item"><a href="/agent?session={{ session.id }}"><strong>{{ session.title or session.label or session.agent_name }}</strong></a><span class="badge">{{ session.status }}</span><p class="muted">Last activity {{ session.updated_at.strftime('%Y-%m-%d %H:%M') }}</p></li>{% endfor %}
       </ul>
+      {% if session_history_pagination.page_count > 1 %}
+      <nav class="project-history-pagination" aria-label="Historical agent session pages">
+        {% if session_history_pagination.previous_url %}<a class="ghost small" href="{{ session_history_pagination.previous_url }}">Previous</a>{% endif %}
+        <span>Page {{ session_history_pagination.page }} of {{ session_history_pagination.page_count }}</span>
+        {% if session_history_pagination.next_url %}<a class="ghost small" href="{{ session_history_pagination.next_url }}">Next</a>{% endif %}
+      </nav>
+      {% endif %}
       {% else %}<p class="empty">No historical agent sessions.</p>{% endif %}
     </details>
     {% endif %}
-    <section aria-labelledby="project-pr-title">
-      <h3 id="project-pr-title">Supervised pull requests ({{ pr_watches | length }})</h3>
-      {% if pr_watches %}<ul class="item-list">{% for watch in pr_watches %}<li class="item"><a href="/pull-requests?watch={{ watch.id }}"><strong>{{ watch.repository }} #{{ watch.pr_number }}</strong></a><span class="badge">{{ watch.status.value }}</span></li>{% endfor %}</ul>{% else %}<p class="empty">No supervised pull requests.</p>{% endif %}
-    </section>
+    <details class="panel-inset" id="project-pr-history">
+      <summary>Supervised pull request history ({{ pr_watch_history_total }})</summary>
+      {% if pr_watches_available %}
+        {% if pr_watches %}
+        <p class="muted small">Showing {{ pr_watch_history_pagination.start }}–{{ pr_watch_history_pagination.end }} of {{ pr_watch_history_total }}, newest activity first.</p>
+        <ul class="item-list">{% for watch in pr_watches %}<li class="item"><a href="/pull-requests?watch={{ watch.id }}"><strong>{{ watch.repository }} #{{ watch.pr_number }}</strong></a><span class="badge">{{ watch.status.value }}</span></li>{% endfor %}</ul>
+        {% if pr_watch_history_pagination.page_count > 1 %}
+        <nav class="project-history-pagination" aria-label="Supervised pull request history pages">
+          {% if pr_watch_history_pagination.previous_url %}<a class="ghost small" href="{{ pr_watch_history_pagination.previous_url }}">Previous</a>{% endif %}
+          <span>Page {{ pr_watch_history_pagination.page }} of {{ pr_watch_history_pagination.page_count }}</span>
+          {% if pr_watch_history_pagination.next_url %}<a class="ghost small" href="{{ pr_watch_history_pagination.next_url }}">Next</a>{% endif %}
+        </nav>
+        {% endif %}
+        {% else %}<p class="empty">No supervised pull requests.</p>{% endif %}
+      {% else %}<p class="notice" role="status">{{ pr_watches_error }}</p>{% endif %}
+    </details>
   </div>
   {% endif %}
 

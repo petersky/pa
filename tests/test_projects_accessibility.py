@@ -20,6 +20,7 @@ from pa.core.kernel import Kernel
 from pa.domain.models import AgentSession, CardCreate, CardLane, ProjectCreate
 from pa.domain.store import reset_store
 from pa.instance.agent_session import reset_instance_agent
+from pa.pr_supervisor.models import PRWatch
 
 
 ROOT = Path(__file__).parents[1]
@@ -132,7 +133,9 @@ class ProjectsHealthRouteTests(unittest.TestCase):
                 )
             )
             with patch.object(
-                store, "list_sessions", side_effect=RuntimeError("projection unavailable")
+                store,
+                "count_project_sessions",
+                side_effect=RuntimeError("projection unavailable"),
             ):
                 response = client.get(f"/projects?project={project.id}")
 
@@ -141,6 +144,110 @@ class ProjectsHealthRouteTests(unittest.TestCase):
         self.assertIn("session counts", response.text)
         self.assertIn("Card counts are current", response.text)
         self.assertNotIn("projection unavailable", response.text)
+
+    def test_history_queries_and_rendering_are_bounded_and_paginated(self) -> None:
+        with TestClient(self.app) as client:
+            store = self.app.state.ctx.store
+            project = store.create_project(ProjectCreate(title="Bounded history"))
+            for index in range(25):
+                store.save_session(
+                    AgentSession(
+                        agent_name="codex",
+                        project_id=project.id,
+                        title=f"Historical session {index:02d}",
+                        status="closed",
+                    )
+                )
+            supervisor_store = self.app.state.ctx.require_service(
+                "pr_supervisor_store"
+            )
+            for index in range(23):
+                supervisor_store.upsert_watch(
+                    PRWatch(
+                        project_id=project.id,
+                        repository="petersky/pa",
+                        pr_number=1000 + index,
+                        pr_url=f"https://github.com/petersky/pa/pull/{1000 + index}",
+                    )
+                )
+
+            self.assertEqual(
+                store.count_project_sessions(
+                    project.id, realm_id="default", historical=True
+                ),
+                25,
+            )
+            self.assertEqual(
+                len(
+                    store.list_project_sessions(
+                        project.id,
+                        realm_id="default",
+                        historical=True,
+                        limit=7,
+                    )
+                ),
+                7,
+            )
+            self.assertEqual(
+                supervisor_store.count_project_watches(
+                    project.id, realm_id="default"
+                ),
+                23,
+            )
+            self.assertEqual(
+                len(
+                    supervisor_store.list_project_watches(
+                        project.id, realm_id="default", limit=6
+                    )
+                ),
+                6,
+            )
+
+            with (
+                patch.object(
+                    store,
+                    "list_sessions",
+                    side_effect=AssertionError("unbounded session projection"),
+                ),
+                patch.object(
+                    supervisor_store,
+                    "list_watches",
+                    side_effect=AssertionError("unbounded watch projection"),
+                ),
+            ):
+                first = client.get(f"/projects?project={project.id}")
+                second = client.get(
+                    f"/projects?project={project.id}"
+                    "&session_history_page=2&pr_history_page=2"
+                )
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertIn("Historical agent sessions (25)", first.text)
+        self.assertIn("Showing 1–10 of 25", first.text)
+        self.assertEqual(first.text.count("/agent?session="), 10)
+        self.assertIn("Historical session 24", first.text)
+        self.assertNotIn("Historical session 14", first.text)
+        self.assertIn("session_history_page=2", first.text)
+        self.assertIn("Supervised pull request history (23)", first.text)
+        self.assertIn("petersky/pa #1022", first.text)
+        self.assertNotIn("petersky/pa #1012", first.text)
+        self.assertEqual(first.text.count("/pull-requests?watch="), 10)
+
+        self.assertIn("Showing 11–20 of 25", second.text)
+        self.assertIn("Historical session 14", second.text)
+        self.assertNotIn("Historical session 24", second.text)
+        self.assertIn("petersky/pa #1012", second.text)
+        self.assertNotIn("petersky/pa #1022", second.text)
+        self.assertIn("Page 2 of 3", second.text)
+        self.assertIn(
+            f"project={project.id}&amp;pr_history_page=2&amp;session_history_page=1",
+            second.text,
+        )
+        self.assertIn(
+            f"project={project.id}&amp;session_history_page=2&amp;pr_history_page=1",
+            second.text,
+        )
 
     def test_work_lane_query_selects_the_exact_metric_destination(self) -> None:
         with TestClient(self.app) as client:
@@ -213,7 +320,17 @@ class ProjectsManagedChromiumTests(unittest.IsolatedAsyncioTestCase):
   </details>
   <a href="#project-historical-sessions" data-project-disclosure-jump="Historical agent sessions">2 historical sessions</a>
   <details class="panel-inset" id="project-historical-sessions">
-    <summary>Historical agent sessions (2)</summary><a href="#one">Session one</a>
+    <summary>Historical agent sessions (25)</summary><a href="#one">Session one</a>
+    <nav class="project-history-pagination" aria-label="Historical agent session pages">
+      <a class="ghost small" href="?session_history_page=1">Previous</a>
+      <span>Page 2 of 3</span>
+      <a class="ghost small" href="?session_history_page=3">Next</a>
+    </nav>
+  </details>
+  <details class="panel-inset"><summary>Supervised pull request history (23)</summary>
+    <nav class="project-history-pagination" aria-label="Supervised pull request history pages">
+      <a class="ghost small" href="?pr_history_page=2">Next</a>
+    </nav>
   </details>
 </div></main></div>
 </main>
@@ -396,14 +513,24 @@ class ProjectsManagedChromiumTests(unittest.IsolatedAsyncioTestCase):
               '[data-project-disclosure-jump="Historical agent sessions"]'
             ).click()"""
         )
-        self.assertEqual(
-            await session.page.evaluate(
-                """document.querySelector(
-                  '[data-project-disclosure-key="historical-agent-sessions"]'
-                ).getAttribute('aria-expanded')"""
-            ),
-            "true",
+        history_state = await session.page.evaluate(
+            """({
+              expanded: document.querySelector(
+                '[data-project-disclosure-key="historical-agent-sessions"]'
+              ).getAttribute('aria-expanded'),
+              paginationLabel: document.querySelector(
+                '[aria-label="Historical agent session pages"]'
+              ).getAttribute('aria-label'),
+              paginationLinks: Array.from(document.querySelectorAll(
+                '[aria-label="Historical agent session pages"] a'
+              )).map(link => link.textContent.trim())
+            })"""
         )
+        self.assertEqual(history_state["expanded"], "true")
+        self.assertEqual(
+            history_state["paginationLabel"], "Historical agent session pages"
+        )
+        self.assertEqual(history_state["paginationLinks"], ["Previous", "Next"])
 
         await self.manager.resize(self.scope, width=390, height=844)
         mobile = await session.page.evaluate(
