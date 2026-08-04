@@ -6,10 +6,11 @@ import fcntl
 import json
 import os
 import threading
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from pa.core.io import atomic_write_json
 from pa.domain.models import CardEvent, EventType, SyncCommit, SyncRef
@@ -301,6 +302,49 @@ class EventLog:
             return None
         return SyncCommit.model_validate(data)
 
+    def _iter_commits_parent_first(
+        self,
+        commit_hash: str,
+        *,
+        seen: set[str] | None = None,
+        stop: set[str] | None = None,
+    ) -> Iterator[tuple[str, SyncCommit]]:
+        """Walk a commit DAG parent-first without using the Python call stack.
+
+        Parent hashes are visited in their stored order, matching the former
+        recursive depth-first traversal. ``active`` distinguishes a genuine
+        ancestry cycle from an already replayed merge parent so corrupt graphs
+        fail explicitly instead of recursing forever.
+        """
+        visited = seen if seen is not None else set()
+        excluded = stop if stop is not None else set()
+        active: set[str] = set()
+        stack: list[tuple[str, SyncCommit | None]] = [(commit_hash, None)]
+
+        while stack:
+            current_hash, expanded_commit = stack.pop()
+            if expanded_commit is not None:
+                active.remove(current_hash)
+                yield current_hash, expanded_commit
+                continue
+
+            if current_hash in active:
+                raise EventHistoryCycleError(current_hash)
+            if current_hash in excluded or current_hash in visited:
+                continue
+
+            # Mark commits as soon as they are discovered. This preserves the
+            # caller-visible ``seen`` contract and bounds missing/cyclic input.
+            active.add(current_hash)
+            visited.add(current_hash)
+            commit = self.get_commit(current_hash)
+            if not commit:
+                active.remove(current_hash)
+                continue
+
+            stack.append((current_hash, commit))
+            stack.extend((parent, None) for parent in reversed(commit.parent_hashes))
+
     def apply_commit_chain(
         self,
         commit_hash: str,
@@ -308,30 +352,11 @@ class EventLog:
         *,
         seen: set[str] | None = None,
     ) -> None:
-        visited = seen if seen is not None else set()
-        stack: list[tuple[str, SyncCommit | None]] = [(commit_hash, None)]
-
-        while stack:
-            current_hash, expanded_commit = stack.pop()
-            if expanded_commit is not None:
-                for event_hash in expanded_commit.event_hashes:
-                    event = self.get_event(event_hash)
-                    if event:
-                        handler(event)
-                continue
-
-            if current_hash in visited:
-                continue
-            visited.add(current_hash)
-
-            commit = self.get_commit(current_hash)
-            if not commit:
-                continue
-
-            # Replay parents before this commit's events, preserving the same
-            # deterministic depth-first order as the former recursive walk.
-            stack.append((current_hash, commit))
-            stack.extend((parent, None) for parent in reversed(commit.parent_hashes))
+        for _, commit in self._iter_commits_parent_first(commit_hash, seen=seen):
+            for event_hash in commit.event_hashes:
+                event = self.get_event(event_hash)
+                if event:
+                    handler(event)
 
     def merge_heads(
         self,
@@ -536,17 +561,8 @@ class EventLog:
 
         def changes(head: str) -> dict[tuple[str, str], dict[str, dict]]:
             result: dict[tuple[str, str], dict[str, dict]] = {}
-            seen: set[str] = set()
 
-            def walk(commit_hash: str) -> None:
-                if commit_hash in seen or commit_hash in common:
-                    return
-                seen.add(commit_hash)
-                commit = self.get_commit(commit_hash)
-                if not commit:
-                    return
-                for parent in commit.parent_hashes:
-                    walk(parent)
+            for _, commit in self._iter_commits_parent_first(head, stop=common):
                 for event_hash in commit.event_hashes:
                     event = self.get_event(event_hash)
                     if not event or event.payload.get("merge"):
@@ -575,8 +591,6 @@ class EventLog:
                         }
                     for field, value in event.payload.items():
                         entity_changes[field] = {**source, "value": value}
-
-            walk(head)
             return result
 
         left, right = changes(head_a), changes(head_b)
@@ -791,20 +805,10 @@ class EventLog:
         if not head:
             return []
         records: list[dict[str, Any]] = []
-        seen_commits: set[str] = set()
         entity_present = False
         entity_seen_since_delete = False
 
-        def walk(commit_hash: str) -> None:
-            nonlocal entity_present, entity_seen_since_delete
-            if commit_hash in seen_commits:
-                return
-            commit = self.get_commit(commit_hash)
-            if not commit:
-                return
-            for parent in commit.parent_hashes:
-                walk(parent)
-            seen_commits.add(commit_hash)
+        for commit_hash, commit in self._iter_commits_parent_first(head):
             for event_hash in commit.event_hashes:
                 event = self.get_event(event_hash)
                 if not event or _event_entity(event) != (entity, entity_id):
@@ -836,8 +840,6 @@ class EventLog:
                         ),
                     }
                 )
-
-        walk(head)
         return records
 
     def merge_audit(self, realm_id: str, *, limit: int = 50) -> list[dict]:
@@ -953,3 +955,11 @@ class DuplicateCardCreateError(RuntimeError):
         )
         self.card_id = card_id
         self.parent = parent
+
+
+class EventHistoryCycleError(RuntimeError):
+    def __init__(self, commit_hash: str) -> None:
+        super().__init__(
+            f"event history contains a parent cycle at commit {commit_hash}"
+        )
+        self.commit_hash = commit_hash

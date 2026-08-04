@@ -32,7 +32,7 @@ from pa.mcp.local_api import (
 )
 from pa.modules.items import ItemsModule
 from pa.modules.sync import _ensure_projection_at_head
-from pa.sync.event_log import EventLog, StaleSyncHeadError
+from pa.sync.event_log import EventHistoryCycleError, EventLog, StaleSyncHeadError
 from pa.sync.object_store import ObjectStore
 
 
@@ -48,17 +48,69 @@ def _event(title: str) -> CardEvent:
 
 
 class EventLogWriterSafetyTests(unittest.TestCase):
-    def test_commit_replay_handles_history_deeper_than_recursion_limit(self) -> None:
+    def test_commit_and_entity_history_handle_more_than_5000_commits(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp)
+            log = EventLog(ObjectStore(data_dir / "objects"), data_dir, "instance")
+            parent: str | None = None
+            commits: dict[str, SyncCommit] = {}
+            events: dict[str, CardEvent] = {}
+            expected: list[str] = []
+
+            for index in range(5_200):
+                event_id = f"event-{index}"
+                commit_hash = f"commit-{index}"
+                event_hash = f"event-hash-{index}"
+                events[event_hash] = CardEvent(
+                    id=event_id,
+                    type=EventType.CARD_UPDATED,
+                    realm_id="default",
+                    card_id="deep-card",
+                    author_principal="user:test",
+                    author_instance="test",
+                    payload={"title": event_id},
+                )
+                commits[commit_hash] = SyncCommit(
+                    hash=commit_hash,
+                    realm_id="default",
+                    instance_id="instance",
+                    parent_hashes=[parent] if parent else [],
+                    event_hashes=[event_hash],
+                    author_principal="user:test",
+                )
+                parent = commit_hash
+                expected.append(event_id)
+
+            replayed: list[str] = []
+            seen: set[str] = set()
+            with (
+                patch.object(log, "get_head", return_value=parent),
+                patch.object(log, "get_commit", side_effect=commits.get),
+                patch.object(log, "get_event", side_effect=events.get),
+            ):
+                log.apply_commit_chain(
+                    parent or "",
+                    lambda event: replayed.append(event.id),
+                    seen=seen,
+                )
+                history = log.entity_history("default", "card", "deep-card")
+
+            self.assertEqual(replayed, expected)
+            self.assertEqual(len(seen), 5_200)
+            self.assertEqual(
+                [item["event"]["id"] for item in history],
+                expected,
+            )
+
+    def test_create_card_after_deep_history_is_iterative(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             data_dir = Path(tmp)
             objects = ObjectStore(data_dir / "objects")
             log = EventLog(objects, data_dir, "instance")
             parent: str | None = None
-            expected: list[str] = []
 
-            for index in range(1_200):
-                title = f"event-{index}"
-                event = _event(title)
+            for index in range(1_500):
+                event = _event(f"event-{index}")
                 event_hash = objects.put_json(event.model_dump(mode="json"))
                 commit = SyncCommit(
                     hash="",
@@ -70,18 +122,136 @@ class EventLogWriterSafetyTests(unittest.TestCase):
                 )
                 commit.hash = objects.put_json(commit.model_dump(mode="json"))
                 parent = commit.hash
-                expected.append(title)
 
-            replayed: list[str] = []
-            seen: set[str] = set()
-            log.apply_commit_chain(
-                parent or "",
-                lambda event: replayed.append(event.card_id),
-                seen=seen,
+            log.advance_ref("default", parent or "", expected_head=None)
+            projection = CardProjection(data_dir / "pa.db", log)
+
+            created = projection.create_card(CardCreate(title="After deep history"))
+
+            self.assertEqual(projection.get_card(created.id).title, created.title)
+            history = log.entity_history("default", "card", created.id)
+            self.assertEqual(len(history), 1)
+            self.assertEqual(history[0]["event"]["card_id"], created.id)
+            self.assertEqual(history[0]["event"]["type"], EventType.CARD_CREATED.value)
+            self.assertEqual(history[0]["projection_effect"], "applied")
+
+    def test_entity_history_preserves_merge_parent_order_and_shared_ancestors(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp)
+            objects = ObjectStore(data_dir / "objects")
+            log = EventLog(objects, data_dir, "instance")
+
+            def commit(event: CardEvent, parents: list[str]) -> str:
+                event_hash = objects.put_json(event.model_dump(mode="json"))
+                item = SyncCommit(
+                    hash="",
+                    realm_id="default",
+                    instance_id="instance",
+                    parent_hashes=parents,
+                    event_hashes=[event_hash],
+                    author_principal="user:test",
+                )
+                item.hash = objects.put_json(item.model_dump(mode="json"))
+                return item.hash
+
+            base = commit(
+                CardEvent(
+                    id="base",
+                    type=EventType.CARD_CREATED,
+                    realm_id="default",
+                    card_id="merge-card",
+                    author_principal="user:test",
+                    author_instance="instance",
+                    payload={"id": "merge-card", "title": "base"},
+                ),
+                [],
+            )
+            left = commit(
+                CardEvent(
+                    id="left",
+                    type=EventType.CARD_UPDATED,
+                    realm_id="default",
+                    card_id="merge-card",
+                    author_principal="user:test",
+                    author_instance="left",
+                    payload={"title": "left"},
+                ),
+                [base],
+            )
+            right = commit(
+                CardEvent(
+                    id="right",
+                    type=EventType.CARD_UPDATED,
+                    realm_id="default",
+                    card_id="merge-card",
+                    author_principal="user:test",
+                    author_instance="right",
+                    payload={"body": "right"},
+                ),
+                [base],
+            )
+            merge = commit(
+                CardEvent(
+                    id="merge",
+                    type=EventType.CARD_UPDATED,
+                    realm_id="default",
+                    card_id="merge-card",
+                    author_principal="sync:auto",
+                    author_instance="instance",
+                    payload={"lane": "done"},
+                ),
+                [left, right],
+            )
+            log.advance_ref("default", merge, expected_head=None)
+
+            history = log.entity_history("default", "card", "merge-card")
+
+            self.assertEqual(
+                [item["event"]["id"] for item in history],
+                ["base", "left", "right", "merge"],
+            )
+            self.assertEqual(history[-1]["parent_hashes"], [left, right])
+            self.assertEqual(
+                log.entity_snapshot(merge, "card", "merge-card"),
+                {
+                    "id": "merge-card",
+                    "title": "left",
+                    "body": "right",
+                    "lane": "done",
+                },
             )
 
-            self.assertEqual(replayed, expected)
-            self.assertEqual(len(seen), 1_200)
+    def test_entity_history_rejects_a_corrupt_parent_cycle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp)
+            log = EventLog(ObjectStore(data_dir / "objects"), data_dir, "instance")
+            commits = {
+                "a": SyncCommit(
+                    hash="a",
+                    realm_id="default",
+                    instance_id="instance",
+                    parent_hashes=["b"],
+                    event_hashes=[],
+                    author_principal="user:test",
+                ),
+                "b": SyncCommit(
+                    hash="b",
+                    realm_id="default",
+                    instance_id="instance",
+                    parent_hashes=["a"],
+                    event_hashes=[],
+                    author_principal="user:test",
+                ),
+            }
+
+            with (
+                patch.object(log, "get_head", return_value="a"),
+                patch.object(log, "get_commit", side_effect=commits.get),
+                self.assertRaisesRegex(EventHistoryCycleError, "commit a"),
+            ):
+                log.entity_history("default", "card", "card-1")
 
     def test_multiple_event_log_objects_refresh_and_preserve_parent_chain(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
