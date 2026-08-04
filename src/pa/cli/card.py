@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from typing import Annotated, Any
 from uuid import uuid4
@@ -10,6 +11,13 @@ import httpx
 import typer
 
 from pa.auth.users import UserDirectory
+from pa.cli.dispatch_wait import (
+    DEFAULT_POLL_INTERVAL_SECONDS,
+    DEFAULT_WAIT_TIMEOUT_SECONDS,
+    DispatchFetchError,
+    KeepAwakeError,
+    wait_for_dispatches,
+)
 from pa.config import Settings, get_settings
 
 card_app = typer.Typer(help="Card execution and durable dispatch")
@@ -17,7 +25,9 @@ DEFAULT_MESSAGE = "Execute this card completely."
 
 
 class CardCommandError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
 
 
 def _base_url(settings: Settings) -> str:
@@ -87,7 +97,8 @@ def _request(
         ) from exc
     if response.status_code >= 400:
         raise CardCommandError(
-            f"PA rejected the request ({response.status_code}): {_error_detail(response)}"
+            f"PA rejected the request ({response.status_code}): {_error_detail(response)}",
+            status_code=response.status_code,
         )
     try:
         payload = response.json()
@@ -145,6 +156,115 @@ def _state_line(dispatch: dict[str, Any]) -> str:
     return line
 
 
+def _render_wait_result(
+    result: dict[str, Any], *, quiet: bool, json_output: bool
+) -> None:
+    if quiet:
+        return
+    if json_output:
+        typer.echo(json.dumps(result, sort_keys=True))
+        return
+    typer.echo("Dispatch summary:")
+    for item in result["dispatches"]:
+        target = f" target={item['target']}" if item.get("target") else ""
+        typer.echo(
+            f"  {item['dispatch_id']}  {item['state']}  {item['outcome']}{target}"
+        )
+
+
+def _execute_dispatch_wait(
+    dispatch_ids: list[str],
+    *,
+    settings: Settings,
+    timeout_seconds: float,
+    poll_interval_seconds: float,
+    keep_awake: bool,
+    quiet: bool,
+    json_output: bool,
+) -> None:
+    def fetch(dispatch_id: str) -> dict[str, Any]:
+        try:
+            payload = _request(
+                settings, "GET", f"/api/fleet/dispatch-jobs/{dispatch_id}"
+            )
+        except CardCommandError as exc:
+            raise DispatchFetchError(
+                str(exc), status_code=exc.status_code
+            ) from exc
+        if not isinstance(payload, dict):
+            raise DispatchFetchError("PA returned an invalid dispatch response.")
+        return payload
+
+    try:
+        result = wait_for_dispatches(
+            dispatch_ids,
+            fetch=fetch,
+            timeout_seconds=timeout_seconds,
+            poll_interval_seconds=poll_interval_seconds,
+            keep_awake=keep_awake,
+            emit=None if quiet or json_output else typer.echo,
+        )
+    except KeepAwakeError as exc:
+        raise CardCommandError(str(exc)) from exc
+    _render_wait_result(result, quiet=quiet, json_output=json_output)
+    if result["exit_code"]:
+        raise typer.Exit(int(result["exit_code"]))
+
+
+@card_app.command("dispatch-wait")
+def dispatch_wait(
+    dispatch_ids: Annotated[
+        list[str], typer.Argument(help="One or more durable dispatch IDs")
+    ],
+    timeout: Annotated[
+        float,
+        typer.Option(
+            "--timeout",
+            min=0.1,
+            help="Maximum total wait in seconds",
+        ),
+    ] = float(DEFAULT_WAIT_TIMEOUT_SECONDS),
+    poll_interval: Annotated[
+        float,
+        typer.Option(
+            "--poll-interval",
+            min=0.05,
+            help="Public API polling interval in seconds",
+        ),
+    ] = DEFAULT_POLL_INTERVAL_SECONDS,
+    keep_awake: Annotated[
+        bool,
+        typer.Option(
+            "--keep-awake",
+            help="Prevent macOS system/display/idle sleep while waiting",
+        ),
+    ] = False,
+    quiet: Annotated[
+        bool, typer.Option("--quiet", "-q", help="Suppress all output")
+    ] = False,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Emit one machine-readable result")
+    ] = False,
+) -> None:
+    """Wait until every durable dispatch reaches a terminal state."""
+    if quiet and json_output:
+        raise typer.BadParameter("--quiet and --json cannot be combined")
+    normalized = list(dict.fromkeys(value.strip() for value in dispatch_ids))
+    if any(not value for value in normalized):
+        raise typer.BadParameter("Dispatch IDs cannot be empty")
+    _run(
+        lambda: _execute_dispatch_wait(
+            normalized,
+            settings=get_settings(),
+            timeout_seconds=timeout,
+            poll_interval_seconds=poll_interval,
+            keep_awake=keep_awake,
+            quiet=quiet,
+            json_output=json_output,
+        )
+    )
+
+
 @card_app.command("dispatch")
 def dispatch_card(
     card_id: Annotated[str, typer.Argument(help="Card ID")],
@@ -167,8 +287,28 @@ def dispatch_card(
     priority: Annotated[
         int, typer.Option(min=-10, max=10, help="Requested queue priority")
     ] = 0,
+    wait: Annotated[
+        bool, typer.Option("--wait", help="Wait for this dispatch to become terminal")
+    ] = False,
+    keep_awake: Annotated[
+        bool,
+        typer.Option(
+            "--keep-awake",
+            help="Prevent macOS system/display/idle sleep while waiting",
+        ),
+    ] = False,
+    timeout: Annotated[
+        float,
+        typer.Option(
+            "--timeout",
+            min=0.1,
+            help="Maximum wait in seconds when --wait is used",
+        ),
+    ] = float(DEFAULT_WAIT_TIMEOUT_SECONDS),
 ) -> None:
     """Durably queue a card on a fleet instance."""
+    if keep_awake and not wait:
+        raise typer.BadParameter("--keep-awake requires --wait")
 
     def execute() -> None:
         settings = get_settings()
@@ -210,7 +350,18 @@ def dispatch_card(
         )
         typer.echo(f"  {_state_line(dispatch)}")
         typer.echo(f"  Idempotency key: {key}")
-        typer.echo(f"  Inspect: pa card dispatch-get {dispatch['dispatch_id']}")
+        if not wait:
+            typer.echo(f"  Inspect: pa card dispatch-get {dispatch['dispatch_id']}")
+            return
+        _execute_dispatch_wait(
+            [str(dispatch["dispatch_id"])],
+            settings=settings,
+            timeout_seconds=timeout,
+            poll_interval_seconds=DEFAULT_POLL_INTERVAL_SECONDS,
+            keep_awake=keep_awake,
+            quiet=False,
+            json_output=False,
+        )
 
     _run(execute)
 
