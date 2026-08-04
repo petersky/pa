@@ -12,7 +12,7 @@ from pathlib import Path
 from threading import RLock
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from pa.core.io import atomic_write_json
 from pa.fleet.capacity import (
@@ -29,6 +29,11 @@ from pa.fleet.policy import (
     InstanceParticipationPolicy,
     ParticipationMode,
     compatibility_policy,
+)
+from pa.workloads import (
+    LEGACY_CODE_PROFILE_REASON,
+    WorkloadProfile,
+    normalize_workload_profile,
 )
 
 
@@ -79,7 +84,8 @@ class PlacementRequest(BaseModel):
     model_id: str | None = None
     required_capabilities: list[str] = Field(default_factory=list)
     repository_ids: list[str] = Field(default_factory=list)
-    workload_profile: str = "research"
+    workload_profile: WorkloadProfile = WorkloadProfile.RESEARCH
+    profile_normalization_reason: str | None = None
     project_id: str | None = None
     dispatch_intent: DispatchIntent = DispatchIntent.AUTOMATIC
     requested_group_id: str | None = None
@@ -95,6 +101,25 @@ class PlacementRequest(BaseModel):
     workspace_reason: str | None = None
     allow_concurrent: bool = False
     capacity_override: bool = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_legacy_profile(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        payload = dict(value)
+        resolution = normalize_workload_profile(
+            payload.get("workload_profile", WorkloadProfile.RESEARCH),
+            allow_automatic=False,
+        )
+        payload["workload_profile"] = resolution.profile
+        supplied_reason = payload.get("profile_normalization_reason")
+        payload["profile_normalization_reason"] = resolution.migration_reason or (
+            LEGACY_CODE_PROFILE_REASON
+            if supplied_reason == LEGACY_CODE_PROFILE_REASON
+            else None
+        )
+        return payload
 
 
 class PlacementDecision(BaseModel):
@@ -112,7 +137,8 @@ class PlacementDecision(BaseModel):
     resolved_group_name: str | None = None
     group_version: int | None = None
     default_source: str | None = None
-    workload_profile: str = "research"
+    workload_profile: WorkloadProfile = WorkloadProfile.RESEARCH
+    profile_normalization_reason: str | None = None
     dispatch_intent: str = DispatchIntent.AUTOMATIC.value
     policy_versions: dict[str, int | None] = Field(default_factory=dict)
     principal_id: str | None = None
@@ -127,12 +153,14 @@ class PlacementError(RuntimeError):
         *,
         rejected_candidates: list[dict[str, Any]] | None = None,
         recoverable: bool = True,
+        detail: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
         self.rejected_candidates = rejected_candidates or []
         self.recoverable = recoverable
+        self.detail = detail or {}
 
 
 class RoundRobinCursorStore:
@@ -377,17 +405,12 @@ def _evaluate(
     policy = candidate.participation_policy or compatibility_policy(
         candidate.instance_id, request.realm_id
     )
-    privileged_override = (
-        request.dispatch_intent == DispatchIntent.PRIVILEGED_OVERRIDE
-    )
-    if (
-        request.dispatch_intent == DispatchIntent.AUTOMATIC
-        and (
-            not candidate.participation_policy_supported
-            or (
-                request.policy_enforcement_active
-                and not candidate.participation_policy_explicit
-            )
+    privileged_override = request.dispatch_intent == DispatchIntent.PRIVILEGED_OVERRIDE
+    if request.dispatch_intent == DispatchIntent.AUTOMATIC and (
+        not candidate.participation_policy_supported
+        or (
+            request.policy_enforcement_active
+            and not candidate.participation_policy_explicit
         )
     ):
         reject(
@@ -395,7 +418,10 @@ def _evaluate(
             "automatic placement cannot prove a synchronized participation policy "
             "for this mixed-version peer",
         )
-    if policy.participation_mode == ParticipationMode.DISABLED and not privileged_override:
+    if (
+        policy.participation_mode == ParticipationMode.DISABLED
+        and not privileged_override
+    ):
         reject(
             "participation_disabled",
             policy.reason or "instance policy disables all dispatched work",
@@ -616,9 +642,7 @@ def _evaluate(
         provider_key, {}
     )
     global_waiting_count = max(0, int(activity_value.get("dispatch_waiting") or 0))
-    provider_waiting_count = max(
-        0, int(provider_activity.get("dispatch_waiting") or 0)
-    )
+    provider_waiting_count = max(0, int(provider_activity.get("dispatch_waiting") or 0))
     global_queue_full = global_waiting_count >= queue_capacity.global_limit
     provider_queue_full = (
         queue_capacity.provider_limit is not None
@@ -651,9 +675,7 @@ def _evaluate(
         candidate.self_protection.get("max_concurrent_by_profile") or {}
     ).get(workload_profile)
     hard_limits = [
-        int(value)
-        for value in (hard_limit, advertised_hard_limit)
-        if value is not None
+        int(value) for value in (hard_limit, advertised_hard_limit) if value is not None
     ]
     if hard_limits and counts["active"] >= min(hard_limits):
         reject(
@@ -669,7 +691,11 @@ def _evaluate(
         )
     )
     queue_available = not global_queue_full and not provider_queue_full
-    if not execution_available and not queue_advertised and not request.capacity_override:
+    if (
+        not execution_available
+        and not queue_advertised
+        and not request.capacity_override
+    ):
         reject(
             "capacity_exhausted",
             "capacity is exhausted and this mixed-version peer does not advertise durable queue admission",
@@ -728,9 +754,7 @@ def _evaluate(
         "capacity": capacity.limit,
         "capacity_detail": capacity.model_dump(mode="json"),
         "execution_slot_available": execution_available,
-        "admission_disposition": (
-            "launchable" if execution_available else "queued"
-        ),
+        "admission_disposition": ("launchable" if execution_available else "queued"),
         "queue_count": waiting_count,
         "queue_capacity": waiting_limit,
         "queue_constraint_source": queue_constraint_source,
@@ -812,18 +836,14 @@ class PlacementService:
             )
         if not eligible:
             rejection_codes = {
-                code
-                for item in rejected
-                for code in item.get("rejection_codes") or []
+                code for item in rejected for code in item.get("rejection_codes") or []
             }
             if rejection_codes and rejection_codes <= {"provider_unavailable"}:
                 code = "provider_unavailable"
                 message = (
                     f"Provider {request.provider!r} is unavailable on every candidate."
                 )
-            elif rejection_codes and rejection_codes <= {
-                "mcp_bootstrap_unavailable"
-            }:
+            elif rejection_codes and rejection_codes <= {"mcp_bootstrap_unavailable"}:
                 code = "mcp_bootstrap_unavailable"
                 message = "PA stdio MCP bootstrap is unavailable on every candidate."
             else:
@@ -917,6 +937,7 @@ class PlacementService:
             group_version=request.group_version,
             default_source=request.default_source,
             workload_profile=request.workload_profile,
+            profile_normalization_reason=request.profile_normalization_reason,
             dispatch_intent=request.dispatch_intent.value,
             policy_versions={
                 candidate.instance_id: (

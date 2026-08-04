@@ -19,6 +19,7 @@ from pa.cli.dispatch_wait import (
     wait_for_dispatches,
 )
 from pa.config import Settings, get_settings
+from pa.workloads import CANONICAL_WORKLOAD_PROFILES
 
 card_app = typer.Typer(help="Card execution and durable dispatch")
 DEFAULT_MESSAGE = "Execute this card completely."
@@ -188,9 +189,7 @@ def _execute_dispatch_wait(
                 settings, "GET", f"/api/fleet/dispatch-jobs/{dispatch_id}"
             )
         except CardCommandError as exc:
-            raise DispatchFetchError(
-                str(exc), status_code=exc.status_code
-            ) from exc
+            raise DispatchFetchError(str(exc), status_code=exc.status_code) from exc
         if not isinstance(payload, dict):
             raise DispatchFetchError("PA returned an invalid dispatch response.")
         return payload
@@ -280,6 +279,17 @@ def dispatch_card(
     ] = None,
     mode: Annotated[str | None, typer.Option("--mode", help="Provider mode ID")] = None,
     effort: Annotated[str | None, typer.Option(help="Reasoning effort")] = None,
+    profile: Annotated[
+        str | None,
+        typer.Option(
+            "--profile",
+            help=(
+                "Workspace profile: "
+                + ", ".join(CANONICAL_WORKLOAD_PROFILES)
+                + "; legacy code maps to repository"
+            ),
+        ),
+    ] = None,
     message: Annotated[str, typer.Option(help="Initial instruction")] = DEFAULT_MESSAGE,
     idempotency_key: Annotated[
         str | None, typer.Option("--idempotency-key", help="Stable retry key")
@@ -328,6 +338,13 @@ def dispatch_card(
             "effort": effort,
             "message": message.strip(),
         }
+        if profile is not None:
+            body["execution_contract"] = {
+                "version": 1,
+                "profile": profile,
+                "confirmed": profile.strip() != "automatic",
+                "requirements": {},
+            }
         if priority:
             body["priority"] = priority
         body = {name: value for name, value in body.items() if value is not None}

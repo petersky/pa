@@ -264,7 +264,7 @@
             </label>
             <fieldset>
               <legend>Workload profiles</legend>
-              {% for profile in ['repository', 'research', 'operations'] %}
+              {% for profile in workload_profiles %}
               <label><input type="checkbox" name="allowed_profiles" value="{{ profile }}" {% if profile in policy.get('allowed_profiles', []) %}checked{% endif %}> Allow {{ profile }}</label>
               <label><input type="checkbox" name="denied_profiles" value="{{ profile }}" {% if profile in policy.get('denied_profiles', []) %}checked{% endif %}> Deny {{ profile }}</label>
               {% endfor %}
@@ -341,9 +341,7 @@
         <label>Workload profile
           <select name="workload_profile">
             <option value="">All profiles</option>
-            <option value="repository">Repository</option>
-            <option value="research">Research</option>
-            <option value="operations">Operations</option>
+            {% for profile in workload_profiles %}<option value="{{ profile }}">{{ profile | title }}</option>{% endfor %}
           </select>
         </label>
         <label>Worker group
