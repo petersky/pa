@@ -714,10 +714,12 @@ class SyncEngine:
     def _collect_objects(self, head_hash: str) -> dict[str, str]:
         objects: dict[str, str] = {}
         seen: set[str] = set()
+        pending = [head_hash]
 
-        def walk(commit_hash: str) -> None:
+        while pending:
+            commit_hash = pending.pop()
             if commit_hash in seen:
-                return
+                continue
             seen.add(commit_hash)
             data = self.store.get(commit_hash)
             if data:
@@ -728,7 +730,7 @@ class SyncEngine:
                     )
             commit = self.log.get_commit(commit_hash)
             if not commit:
-                return
+                continue
             for event_hash in commit.event_hashes:
                 if event_hash not in seen:
                     seen.add(event_hash)
@@ -739,10 +741,8 @@ class SyncEngine:
                             raise ValueError(
                                 f"sync history exceeds {MAX_SYNC_OBJECTS} objects"
                             )
-            for parent in commit.parent_hashes:
-                walk(parent)
+            pending.extend(commit.parent_hashes)
 
-        walk(head_hash)
         return objects
 
     def status(self, realm_id: str) -> dict:

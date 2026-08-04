@@ -25,6 +25,7 @@ from pa.domain.models import (
     EventType,
     FleetInstance,
     PeerRoute,
+    SyncCommit,
 )
 from pa.domain.projection import CardProjection
 from pa.domain.store import reset_store
@@ -179,6 +180,41 @@ class _SyncClient:
 
 
 class RealmConvergenceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_object_collection_handles_history_deeper_than_recursion_limit(
+        self,
+    ) -> None:
+        parent: str | None = None
+
+        for index in range(1_200):
+            event = CardEvent(
+                type=EventType.CARD_UPDATED,
+                realm_id="default",
+                card_id=f"card-{index}",
+                author_principal="user:test",
+                author_instance="authority",
+                payload={"title": f"Card {index}"},
+            )
+            event_hash = self.authority.objects.put_json(
+                event.model_dump(mode="json")
+            )
+            commit = SyncCommit(
+                hash="",
+                realm_id="default",
+                instance_id=self.authority.settings.instance_id,
+                parent_hashes=[parent] if parent else [],
+                event_hashes=[event_hash],
+                author_principal="user:test",
+            )
+            commit.hash = self.authority.objects.put_json(
+                commit.model_dump(mode="json")
+            )
+            parent = commit.hash
+
+        collected = self.authority.engine._collect_objects(parent or "")
+
+        self.assertEqual(len(collected), 2_400)
+        self.assertIn(parent, collected)
+
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         root = Path(self.temp.name)
