@@ -76,7 +76,6 @@ from pa.knowledge.capture import (
     record_lifecycle_change,
     regenerate_knowledge,
 )
-from pa.workloads import CANONICAL_WORKLOAD_PROFILES
 
 router = APIRouter()
 ui_router = APIRouter()
@@ -736,7 +735,6 @@ def _card_agent_context(request: Request, card) -> dict:
         "agent_enabled": ctx.settings.agent_enabled,
         "worker_groups": worker_groups,
         "participation_summaries": participation_summaries,
-        "workload_profiles": CANONICAL_WORKLOAD_PROFILES,
     }
 
 

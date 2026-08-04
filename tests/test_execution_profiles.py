@@ -1,16 +1,12 @@
 from types import SimpleNamespace
 
-import pytest
-
 from pa.execution.profiles import (
     ExecutionContract,
     ExecutionProfile,
     ExecutionRequirements,
     RepositoryRequirement,
     resolve_materialization_plan,
-    validate_execution_contract,
 )
-from pa.workloads import LEGACY_CODE_PROFILE_REASON, WorkloadProfileError
 
 
 def repo(identifier: str = "repo-1"):
@@ -129,63 +125,3 @@ def test_multiple_repositories_and_missing_identity_are_reported():
     assert not plan.admissible
     assert len(plan.repositories) == 1
     assert plan.missing_dependencies[0]["resource"] == "repository:missing"
-
-
-def test_legacy_code_contract_normalizes_without_rewriting_persisted_input():
-    persisted = {
-        "version": 1,
-        "profile": "code",
-        "confirmed": True,
-        "requirements": {},
-    }
-    project = SimpleNamespace(tool_config={"execution_contract": persisted})
-
-    plan = resolve_materialization_plan(
-        requested=None,
-        card=SimpleNamespace(id="legacy-card"),
-        project=project,
-        project_repositories=[(repo(), SimpleNamespace(branch="main"))],
-        explicit_repositories=[],
-        target_instance_id="worker",
-    )
-
-    assert plan.profile == ExecutionProfile.REPOSITORY
-    assert plan.profile_normalization_reason == LEGACY_CODE_PROFILE_REASON
-    assert persisted["profile"] == "code"
-
-
-@pytest.mark.parametrize(
-    ("requested", "resolved"),
-    [
-        ("automatic", ExecutionProfile.RESEARCH),
-        ("repository", ExecutionProfile.REPOSITORY),
-        ("research", ExecutionProfile.RESEARCH),
-        ("operations", ExecutionProfile.OPERATIONS),
-        ("code", ExecutionProfile.REPOSITORY),
-    ],
-)
-def test_every_supported_and_legacy_contract_profile_resolves(requested, resolved):
-    repositories = (
-        [(repo(), SimpleNamespace(branch="main"))]
-        if requested in {"repository", "code"}
-        else []
-    )
-    plan = resolve_materialization_plan(
-        requested=ExecutionContract(
-            profile=requested,
-            confirmed=True,
-        ),
-        card=None,
-        project=SimpleNamespace(tool_config={}),
-        project_repositories=repositories,
-        explicit_repositories=[],
-        target_instance_id="worker",
-    )
-    assert plan.profile == resolved
-
-
-def test_unknown_persisted_contract_profile_has_actionable_typed_error():
-    with pytest.raises(WorkloadProfileError) as raised:
-        validate_execution_contract({"version": 1, "profile": "not-real"})
-    assert raised.value.detail()["code"] == "invalid_workload_profile"
-    assert raised.value.detail()["legacy_aliases"] == {"code": "repository"}

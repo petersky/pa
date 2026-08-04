@@ -28,7 +28,6 @@ from pa.fleet.policy import (
     GroupLifecycle,
     PlacementDefault,
 )
-from pa.workloads import WorkloadProfileError, normalize_workload_profile
 
 router = APIRouter()
 ui_router = APIRouter()
@@ -64,7 +63,9 @@ def _projects_context(request: Request) -> dict:
     repository_id = request.query_params.get("repository")
     project = store.get_project(project_id, realm_id=realm) if project_id else None
     selected_repository = (
-        store.get_repository(repository_id, realm_id=realm) if repository_id else None
+        store.get_repository(repository_id, realm_id=realm)
+        if repository_id
+        else None
     )
     cards = (
         store.list_cards_for_project(project_id, realm_id=realm) if project_id else []
@@ -157,7 +158,7 @@ def _projects_context(request: Request) -> dict:
         "active_realm": realm,
         "realms": request.app.state.ctx.settings.subscribed_realms,
         "worker_groups": worker_groups,
-        "workload_profiles": list(WORKLOAD_PROFILES),
+        "workload_profiles": WORKLOAD_PROFILES,
         "project_placement_defaults": project_placement_defaults,
     }
 
@@ -463,19 +464,13 @@ def set_project_worker_default_ui(
             status_code=409,
             detail="A project default can reference only an active worker group.",
         )
-    normalized_profile = None
-    if workload_profile:
-        try:
-            normalized_profile = normalize_workload_profile(
-                workload_profile, allow_automatic=False
-            ).profile
-        except WorkloadProfileError as exc:
-            raise HTTPException(status_code=422, detail=exc.detail()) from exc
+    if workload_profile and workload_profile not in WORKLOAD_PROFILES:
+        raise HTTPException(status_code=422, detail="Unknown workload profile")
     ctx.store.set_placement_default(
         PlacementDefault(
             realm_id=realm_id,
             project_id=project_id,
-            workload_profile=normalized_profile,
+            workload_profile=workload_profile or None,
             group_id=group_id,
         ),
         principal_id=get_principal_id(request),

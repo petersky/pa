@@ -9,13 +9,6 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, model_validator
 
-from pa.workloads import (
-    PLACEMENT_WORKLOAD_PROFILES,
-    WorkloadProfile,
-    WorkloadProfileError,
-    normalize_workload_profile,
-)
-
 if TYPE_CHECKING:
     from pa.domain.models import FleetInstance
     from pa.domain.store import Store
@@ -23,8 +16,7 @@ if TYPE_CHECKING:
 
 POLICY_SCHEMA_VERSION = 1
 MACBOOK_INSTANCE_ID = "0c7d8ecb-7e45-4579-8fa0-35159492d3f1"
-# Compatibility export for modules/extensions; values derive from the one enum.
-WORKLOAD_PROFILES = PLACEMENT_WORKLOAD_PROFILES
+WORKLOAD_PROFILES = ("repository", "research", "operations")
 
 
 class GroupLifecycle(StrEnum):
@@ -143,8 +135,8 @@ class InstanceParticipationPolicy(BaseModel):
     participation_mode: ParticipationMode = ParticipationMode.AUTOMATIC
     automatic_dispatch: bool | None = None
     manual_dispatch: bool | None = None
-    allowed_profiles: list[WorkloadProfile] = Field(default_factory=list)
-    denied_profiles: list[WorkloadProfile] = Field(default_factory=list)
+    allowed_profiles: list[str] = Field(default_factory=list)
+    denied_profiles: list[str] = Field(default_factory=list)
     allowed_project_ids: list[str] = Field(default_factory=list)
     denied_project_ids: list[str] = Field(default_factory=list)
     allowed_repository_ids: list[str] = Field(default_factory=list)
@@ -153,12 +145,10 @@ class InstanceParticipationPolicy(BaseModel):
     denied_provider_ids: list[str] = Field(default_factory=list)
     allowed_model_families: list[str] = Field(default_factory=list)
     denied_model_families: list[str] = Field(default_factory=list)
-    max_concurrent_by_profile: dict[WorkloadProfile, int] = Field(default_factory=dict)
-    max_queued_by_profile: dict[WorkloadProfile, int] = Field(default_factory=dict)
-    hard_denied_profiles: list[WorkloadProfile] = Field(default_factory=list)
-    hard_max_concurrent_by_profile: dict[WorkloadProfile, int] = Field(
-        default_factory=dict
-    )
+    max_concurrent_by_profile: dict[str, int] = Field(default_factory=dict)
+    max_queued_by_profile: dict[str, int] = Field(default_factory=dict)
+    hard_denied_profiles: list[str] = Field(default_factory=list)
+    hard_max_concurrent_by_profile: dict[str, int] = Field(default_factory=dict)
     maintenance: bool = False
     quiescing: bool = False
     authority_enabled: bool = True
@@ -180,7 +170,9 @@ class InstanceParticipationPolicy(BaseModel):
                 self.participation_mode == ParticipationMode.AUTOMATIC
             )
         if self.manual_dispatch is None:
-            self.manual_dispatch = self.participation_mode != ParticipationMode.DISABLED
+            self.manual_dispatch = (
+                self.participation_mode != ParticipationMode.DISABLED
+            )
         if not self.automatic_dispatch and not self.manual_dispatch:
             self.participation_mode = ParticipationMode.DISABLED
         elif not self.automatic_dispatch and self.manual_dispatch:
@@ -229,8 +221,8 @@ class InstanceParticipationPolicyUpdate(BaseModel):
     participation_mode: ParticipationMode | None = None
     automatic_dispatch: bool | None = None
     manual_dispatch: bool | None = None
-    allowed_profiles: list[WorkloadProfile] | None = None
-    denied_profiles: list[WorkloadProfile] | None = None
+    allowed_profiles: list[str] | None = None
+    denied_profiles: list[str] | None = None
     allowed_project_ids: list[str] | None = None
     denied_project_ids: list[str] | None = None
     allowed_repository_ids: list[str] | None = None
@@ -239,10 +231,10 @@ class InstanceParticipationPolicyUpdate(BaseModel):
     denied_provider_ids: list[str] | None = None
     allowed_model_families: list[str] | None = None
     denied_model_families: list[str] | None = None
-    max_concurrent_by_profile: dict[WorkloadProfile, int] | None = None
-    max_queued_by_profile: dict[WorkloadProfile, int] | None = None
-    hard_denied_profiles: list[WorkloadProfile] | None = None
-    hard_max_concurrent_by_profile: dict[WorkloadProfile, int] | None = None
+    max_concurrent_by_profile: dict[str, int] | None = None
+    max_queued_by_profile: dict[str, int] | None = None
+    hard_denied_profiles: list[str] | None = None
+    hard_max_concurrent_by_profile: dict[str, int] | None = None
     maintenance: bool | None = None
     quiescing: bool | None = None
     authority_enabled: bool | None = None
@@ -258,7 +250,7 @@ class InstanceParticipationPolicyUpdate(BaseModel):
 class PlacementDefault(BaseModel):
     realm_id: str = "default"
     project_id: str | None = None
-    workload_profile: WorkloadProfile | None = None
+    workload_profile: str | None = None
     group_id: str
     version: int = Field(default=1, ge=1)
     actor: str = ""
@@ -337,18 +329,8 @@ def builtin_group(group_id: str, realm_id: str = "default") -> InstanceGroup | N
     )
 
 
-def default_scope_key(
-    project_id: str | None, workload_profile: WorkloadProfile | str | None
-) -> str:
-    profile: WorkloadProfile | str | None = workload_profile
-    if isinstance(workload_profile, str):
-        try:
-            profile = normalize_workload_profile(workload_profile).profile
-        except WorkloadProfileError:
-            # Projection replay must preserve unknown mixed-version scope keys;
-            # new writes are rejected by typed API boundaries.
-            profile = workload_profile
-    return f"project:{project_id or '*'}:profile:{profile or '*'}"
+def default_scope_key(project_id: str | None, workload_profile: str | None) -> str:
+    return f"project:{project_id or '*'}:profile:{workload_profile or '*'}"
 
 
 def compatibility_policy(
@@ -389,7 +371,9 @@ class FleetPolicyService:
     def effective_policy(
         self, realm_id: str, instance_id: str
     ) -> tuple[InstanceParticipationPolicy, bool]:
-        explicit = self.store.get_instance_participation_policy(instance_id, realm_id)
+        explicit = self.store.get_instance_participation_policy(
+            instance_id, realm_id
+        )
         return (
             (explicit, True)
             if explicit
@@ -401,7 +385,7 @@ class FleetPolicyService:
         *,
         realm_id: str,
         project_id: str | None,
-        workload_profile: WorkloadProfile,
+        workload_profile: str,
         requested_group_id: str | None,
     ) -> tuple[str, str]:
         if requested_group_id:
@@ -452,7 +436,7 @@ class FleetPolicyService:
         *,
         realm_id: str,
         project_id: str | None,
-        workload_profile: WorkloadProfile,
+        workload_profile: str,
         requested_group_id: str | None,
         candidates: list[Any],
         local_instance_id: str,
@@ -517,7 +501,9 @@ class FleetPolicyService:
                 "explicitly_excluded_from_group"
                 if instance_id in excluded
                 else (
-                    "included" if instance_id in selected else "not_in_requested_group"
+                    "included"
+                    if instance_id in selected
+                    else "not_in_requested_group"
                 )
             )
             for instance_id in sorted(ids)
@@ -552,11 +538,8 @@ class FleetPolicyService:
             policy = compatibility_policy(instance.instance_id, realm_id)
             policy.source = "migration_derived"
             if instance.instance_id == MACBOOK_INSTANCE_ID:
-                policy.denied_profiles = [WorkloadProfile.REPOSITORY]
-                policy.allowed_profiles = [
-                    WorkloadProfile.RESEARCH,
-                    WorkloadProfile.OPERATIONS,
-                ]
+                policy.denied_profiles = ["repository"]
+                policy.allowed_profiles = ["research", "operations"]
                 policy.reason = (
                     "MacBook is an interactive authority/UI host, not an "
                     "automatic code worker"
