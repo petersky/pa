@@ -46,6 +46,11 @@ def _event_entity(event: CardEvent) -> tuple[str | None, str | None]:
         goal = event.payload.get("goal") or {}
         goal_id = str(goal.get("id") or "")
         return ("goal", goal_id or None)
+    if event.type == EventType.GOAL_GOVERNANCE_UPSERTED:
+        entity_type = str(event.payload.get("entity_type") or "")
+        entity_id = str(event.payload.get("entity_id") or "")
+        identity = f"{entity_type}:{entity_id}" if entity_type and entity_id else None
+        return ("goal_governance", identity)
     if event.card_id:
         return "card", event.card_id
     if event.project_id and event.type not in {
@@ -616,7 +621,9 @@ class EventLog:
             matches = event_entity == entity and event_id == entity_id
             if not matches:
                 return
-            if event.type in {
+            if event.type == EventType.GOAL_GOVERNANCE_UPSERTED:
+                state = dict(event.payload.get("entity") or {})
+            elif event.type in {
                 EventType.CARD_CREATED,
                 EventType.PROJECT_CREATED,
                 EventType.INSTANCE_GROUP_CREATED,

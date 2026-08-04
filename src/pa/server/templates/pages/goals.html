@@ -1,12 +1,18 @@
-{% extends "shell.html" %}
-{% block content %}
-<section class="page-header"><div><h1>Goals</h1><p>Durable intent, evidence coverage, controller ownership, and wakeups.</p></div></section>
+<section class="page-header"><div><h1>Goals</h1><p>Durable intent, evidence coverage, bounded autonomy, and portfolio governance.</p></div></section>
+<article class="card">
+  <header><strong>Organization portfolio</strong><span class="badge">policy {{ governance_policy.version }}</span></header>
+  <p>{{ goals | rejectattr('state.value', 'in', ['achieved', 'abandoned']) | list | length }} governed goals · {{ pending_proposal_count }} pending proposals · active limit {{ governance_policy.max_active_goals }}</p>
+  {% if portfolio_review %}
+  <p>Last independent review: {{ portfolio_review.created_at }} · {{ portfolio_review.allocations | selectattr('disposition.value', 'equalto', 'active') | list | length }} active allocations{% if portfolio_review.requires_operator_review %} · operator review required{% endif %}</p>
+  {% else %}<p>No organization-level portfolio review has been recorded.</p>{% endif %}
+</article>
 <div class="card-list">
 {% for goal in goals %}
   <article class="card">
     <header><strong>{{ goal.objective }}</strong><span class="badge">{{ goal.state.value }}</span></header>
     <p>{{ goal.progress_summary or goal.motivation }}</p>
     <p>{{ goal.criteria | selectattr('verdict.value', 'equalto', 'satisfied') | list | length }}/{{ goal.criteria | length }} criteria satisfied · revision {{ goal.revision }} · policy {{ goal.policy.revision }}</p>
+    <p>Priority {{ autonomy[goal.id].priority }} · autonomy {{ goal.policy.autonomy_level }} · ${{ '%.2f' | format(autonomy[goal.id].usage.cost_usd) }} used · {{ autonomy[goal.id].provider_runs | length }} provider runs</p>
     {% if goal.lease.holder_instance_id %}<p>Controller: {{ goal.lease.holder_instance_id }} (fence {{ goal.lease.fencing_token }})</p>{% endif %}
     {% if goal.wakeup %}<p>Next wake: {{ goal.wakeup.wake_at }} — {{ goal.wakeup.reason }}</p>{% endif %}
     <details><summary>Evidence and criteria</summary>
@@ -15,4 +21,3 @@
   </article>
 {% else %}<p>No durable goals yet.</p>{% endfor %}
 </div>
-{% endblock %}
