@@ -520,17 +520,24 @@ class DispatchStore:
 
     def _open_writer(self) -> None:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        previous_read_only = self._read_only
         self._conn = sqlite3.connect(
             self.db_path, timeout=30.0, check_same_thread=False
         )
-        self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA journal_mode=WAL")
-        self._conn.execute("PRAGMA synchronous=NORMAL")
-        self._conn.execute("PRAGMA foreign_keys=ON")
-        self._conn.execute("PRAGMA busy_timeout=30000")
-        self._ensure_schema()
-        self._migrate_legacy_if_needed()
         self._read_only = False
+        try:
+            self._conn.row_factory = sqlite3.Row
+            self._conn.execute("PRAGMA journal_mode=WAL")
+            self._conn.execute("PRAGMA synchronous=NORMAL")
+            self._conn.execute("PRAGMA foreign_keys=ON")
+            self._conn.execute("PRAGMA busy_timeout=30000")
+            self._ensure_schema()
+            self._migrate_legacy_if_needed()
+        except BaseException:
+            self._conn.close()
+            self._conn = None
+            self._read_only = previous_read_only
+            raise
 
     def _open_read_only(self) -> None:
         """Open an existing database without issuing PRAGMA, DDL, or metadata writes."""
@@ -588,10 +595,7 @@ class DispatchStore:
                 self._fault("commit_after")
             except BaseException as exc:
                 if committed:
-                    try:
-                        setattr(exc, "pa_transaction_committed", True)
-                    except Exception:
-                        pass
+                    exc.__dict__["pa_transaction_committed"] = True
                 else:
                     conn.rollback()
                 raise

@@ -232,12 +232,17 @@ def test_admission_fault_never_publishes_a_ghost_and_replays_canonical_state(
         visible = store.get(record.dispatch_id)
         assert (visible is not None) is committed
         assert bool(store.latest_by_card({record.card_id or ""})) is committed
-        assert bool(
-            store.latest_by_session({record.session_id or ""}, realm_id=record.realm_id)
-        ) is committed
-        assert store.history_counts(
-            {record.card_id or ""}, realm_id=record.realm_id
-        )[record.card_id or ""] == int(committed)
+        assert (
+            bool(
+                store.latest_by_session(
+                    {record.session_id or ""}, realm_id=record.realm_id
+                )
+            )
+            is committed
+        )
+        assert store.history_counts({record.card_id or ""}, realm_id=record.realm_id)[
+            record.card_id or ""
+        ] == int(committed)
         assert store.capacity_snapshot(TARGET)["dispatch_reservations"] == int(
             committed
         )
@@ -276,7 +281,10 @@ def test_failed_put_keeps_all_indexes_on_the_committed_record() -> None:
             store.put(candidate)
 
         assert store.get(original.dispatch_id) == original
-        assert store.latest_by_card({original.card_id or ""})[original.card_id or ""] == original
+        assert (
+            store.latest_by_card({original.card_id or ""})[original.card_id or ""]
+            == original
+        )
         assert store.latest_by_card({"replacement-card"}) == {}
         assert store.by_session(original.session_id or "") == original
         assert store.by_session("replacement-session") is None
@@ -305,7 +313,10 @@ def test_read_only_auxiliary_kernel_boot_does_not_touch_or_wait_on_writer_wal() 
 
         def content_state() -> dict[str, tuple[int, str]]:
             return {
-                path.name: (path.stat().st_size, hashlib.sha256(path.read_bytes()).hexdigest())
+                path.name: (
+                    path.stat().st_size,
+                    hashlib.sha256(path.read_bytes()).hexdigest(),
+                )
                 for path in paths
                 if path.exists()
             }
@@ -368,6 +379,32 @@ def test_read_only_legacy_facade_never_creates_sqlite_or_migration_artifacts() -
         assert (root / "dispatch_mutations.json").read_bytes() == source
         assert not (root / "dispatch_mutations.db").exists()
         assert not (root / "dispatch_mutations.json.pre-sqlite-backup").exists()
+
+
+def test_read_only_facade_promotes_only_after_writer_ownership_and_migrates() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        record = _record(1)
+        source = _write_legacy(root / "dispatch_mutations.json", [record])
+        store = DispatchStore(root, read_only=True)
+        assert store.read_only is True
+        assert not store.db_path.exists()
+
+        writer_lock = DataDirWriterLock(root)
+        writer_lock.acquire()
+        try:
+            store.promote_writer()
+            assert store.read_only is False
+            assert store.get(record.dispatch_id).model_dump(
+                mode="json"
+            ) == record.model_dump(mode="json")
+            assert store.db_path.exists()
+            assert store.backup_path.read_bytes() == source
+            store.put(_record(2))
+            assert store.get("dispatch-2") is not None
+        finally:
+            store.close()
+            writer_lock.release()
 
 
 @pytest.mark.parametrize(
@@ -503,7 +540,9 @@ def test_final_evidence_is_never_coalesced_with_a_matching_checkpoint() -> None:
         assert store.ingest_progress(checkpoint).status == "accepted"
         result = store.ingest_progress(final)
         assert result.status == "accepted"
-        assert [event.kind for event in store.get(record.dispatch_id).progress_events] == [
+        assert [
+            event.kind for event in store.get(record.dispatch_id).progress_events
+        ] == [
             ProgressKind.CHECKPOINT,
             ProgressKind.FINAL,
         ]
@@ -620,7 +659,9 @@ def test_control_receipt_fault_boundary_replays_only_committed_result(
                 principal_id="user:operator",
                 idempotency_key=key,
             )
-        assert store.get(record.dispatch_id).requested_priority == (5 if committed else 0)
+        assert store.get(record.dispatch_id).requested_priority == (
+            5 if committed else 0
+        )
 
         store._fault_injector = None
         canonical = store.reprioritize(

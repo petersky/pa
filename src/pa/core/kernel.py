@@ -264,17 +264,23 @@ class Kernel:
                 kernel.ctx.register_service("writer_lock", writer_lock)
             dispatch_store = kernel.ctx.services.get("dispatch_store")
             promote_writer = getattr(dispatch_store, "promote_writer", None)
-            if callable(promote_writer):
-                promote_writer()
             started = False
             try:
+                if callable(promote_writer):
+                    promote_writer()
                 await kernel.startup(app)
                 started = True
                 yield
             finally:
-                if started:
-                    await kernel.shutdown(app)
-                writer_lock.release()
+                try:
+                    if started:
+                        await kernel.shutdown(app)
+                    elif dispatch_store and not getattr(
+                        dispatch_store, "read_only", True
+                    ):
+                        dispatch_store.close()
+                finally:
+                    writer_lock.release()
 
         app = FastAPI(
             title="PA",
