@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Header, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from pa.core.context import AppContext
 from pa.core.contracts import Module
@@ -20,6 +20,7 @@ from pa.limbic.models import (
     ReplayReport,
     RetrievedMemory,
     SignalEnvelope,
+    VerifiedControlProvenance,
     WorkingMemoryPacket,
 )
 
@@ -27,6 +28,8 @@ router = APIRouter()
 
 
 class AppraiseRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     signal: SignalEnvelope
     shadow_mode: bool = False
 
@@ -49,7 +52,14 @@ def _memory(request: Request) -> MemoryService:
 
 @router.post("/limbic/appraise", response_model=AppraisalResult)
 def appraise_signal(request: Request, body: AppraiseRequest) -> AppraisalResult:
-    return _limbic(request).appraise(body.signal, shadow_mode=body.shadow_mode)
+    # This public route has no authenticated control-event transport. Bind it
+    # explicitly to untrusted provenance; caller fields and headers cannot
+    # create a deterministic emergency bypass.
+    return _limbic(request).appraise(
+        body.signal,
+        shadow_mode=body.shadow_mode,
+        control_provenance=VerifiedControlProvenance(),
+    )
 
 
 @router.post("/limbic/replay", response_model=ReplayReport)
