@@ -405,6 +405,31 @@ class GoalGovernanceService:
                 raise GoalGovernanceConflict(
                     "idempotent action decision is no longer in the bounded projection; consult the event ledger"
                 )
+            if (
+                replayed.request != request
+                or replayed.decided_by != context.actor_principal
+                or replayed.authority_instance_id
+                != context.authority_instance_id
+                or replayed.fencing_token != context.fencing_token
+            ):
+                raise GoalGovernanceConflict(
+                    "idempotent action replay no longer matches its exact reservation"
+                )
+            if replayed.disposition == GoalActionDisposition.AUTHORIZED:
+                reservation = self._require_reservation(
+                    state, replayed.reservation_id or ""
+                )
+                if (
+                    reservation.request != request
+                    or reservation.action_class != request.action_class
+                    or reservation.actor_principal != context.actor_principal
+                    or reservation.authority_instance_id
+                    != context.authority_instance_id
+                    or reservation.fencing_token != context.fencing_token
+                ):
+                    raise GoalGovernanceConflict(
+                        "idempotent action replay no longer matches its exact reservation"
+                    )
             return state, replayed
         decision: GoalActionDecision | None = None
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import tempfile
 from pathlib import Path
@@ -329,6 +330,66 @@ def test_goal_mutation_retry_replaces_a_released_precommit_attempt() -> None:
     assert autonomy["action_reservations"][0]["actual_usage"]["actions"] == 0
     assert autonomy["action_reservations"][1]["actual_usage"]["actions"] == 1
     assert autonomy["usage"]["actions"] == 1
+
+
+def test_completed_goal_mutation_replays_exact_payload_and_rejects_changed_body(
+) -> None:
+    with (
+        tempfile.TemporaryDirectory() as tmp,
+        TestClient(_app(Path(tmp))) as client,
+    ):
+        assert client.get("/").status_code == 200
+        csrf = client.cookies.get("pa_csrf")
+        created = client.post(
+            "/api/goals",
+            params={"expected_version": 0, "policy_revision": 1},
+            headers={
+                "X-CSRF-Token": csrf,
+                "Idempotency-Key": "completed-replay-goal",
+            },
+            json={
+                "objective": "Replay one completed mutation exactly",
+                "criteria": [
+                    {
+                        "description": "payload identity is stable",
+                        "verification_method": "API replay",
+                        "evidence_requirement": "one evidence record",
+                    }
+                ],
+            },
+        )
+        goal = created.json()
+        request = {
+            "params": {"expected_version": 1, "policy_revision": 1},
+            "headers": {
+                "X-CSRF-Token": csrf,
+                "Idempotency-Key": "completed-evidence-replay",
+            },
+            "json": {
+                "evidence": {
+                    "criterion_ids": [goal["criteria"][0]["id"]],
+                    "kind": "test",
+                    "summary": "Canonical completed evidence",
+                }
+            },
+        }
+        first = client.post(f"/api/goals/{goal['id']}/evidence", **request)
+        exact = client.post(f"/api/goals/{goal['id']}/evidence", **request)
+        changed_request = copy.deepcopy(request)
+        changed_request["json"]["evidence"]["summary"] = "Changed evidence body"
+        changed = client.post(
+            f"/api/goals/{goal['id']}/evidence", **changed_request
+        )
+        detail = client.get(f"/api/goals/{goal['id']}").json()
+
+    assert first.status_code == 200, first.text
+    assert exact.status_code == 200, exact.text
+    assert len(exact.json()["evidence"]) == 1
+    assert changed.status_code == 409, changed.text
+    assert "different governed mutation" in changed.json()["detail"]
+    assert [item["event_type"] for item in detail["events"]].count(
+        "goal.evidence_recorded"
+    ) == 1
 
 
 def test_provider_launch_credential_rejects_shared_fleet_origin_spoof() -> None:

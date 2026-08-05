@@ -118,6 +118,12 @@ class GoalResourceClaim(BaseModel):
 
 class GoalActionRequest(BaseModel):
     action_class: str = Field(min_length=1, max_length=200)
+    operation_digest: str | None = Field(
+        default=None,
+        min_length=64,
+        max_length=64,
+        pattern=r"^[0-9a-f]{64}$",
+    )
     risk: GoalActionRisk = GoalActionRisk.LOW
     reversible: bool = True
     delegated: bool = False

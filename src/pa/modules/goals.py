@@ -187,21 +187,44 @@ def _governed_goal_mutation(
     goal_context: GoalMutationContext,
     operation,
     *,
+    operation_payload,
     delegated: bool = False,
     estimate: GoalUsage | None = None,
 ):
     governance = _governance(request)
     goal_service = _service(request)
     current_goal = goal_service.get(goal_id)
-    goal_mutation_exists = bool(
-        current_goal
-        and find_goal_event_by_idempotency(
-            goal_service.store,
-            current_goal.realm_id,
-            goal_context.idempotency_key,
+    goal_mutation_event = (
+        find_goal_event_by_idempotency(
+            goal_service.store, current_goal.realm_id, goal_context.idempotency_key
         )
+        if current_goal
+        else None
     )
+    goal_mutation_exists = goal_mutation_event is not None
     actor = goal_context.actor_principal
+    encoded_operation = (
+        operation_payload.model_dump(mode="json", exclude_unset=True)
+        if hasattr(operation_payload, "model_dump")
+        else operation_payload
+    )
+    operation_digest = hashlib.sha256(
+        json.dumps(
+            {"action_class": action_class, "payload": encoded_operation},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    action = GoalActionRequest(
+        action_class=action_class,
+        operation_digest=operation_digest,
+        delegated=delegated,
+        estimate=estimate or GoalUsage(actions=1),
+        operator_approved=actor.startswith(("user:", "role:admin")),
+        approval_principal=(
+            actor if actor.startswith(("user:", "role:admin")) else None
+        ),
+    )
 
     def governance_context(
         version: int,
@@ -232,6 +255,18 @@ def _governed_goal_mutation(
         ),
         key=lambda item: (item.created_at, item.id),
     )
+    if any(
+        item.request != action
+        or item.actor_principal != actor
+        or item.authority_instance_id != goal_context.authority_instance_id
+        or item.policy_revision != goal_context.policy_revision
+        or item.goal_version != goal_context.expected_version
+        or item.fencing_token != goal_context.fencing_token
+        for item in related
+    ):
+        raise GoalConflict(
+            "idempotency key already belongs to a different governed mutation"
+        )
     attempt = 0
     if related:
         latest = related[-1]
@@ -264,15 +299,44 @@ def _governed_goal_mutation(
     apply_key = f"{lifecycle_key}:apply:{attempt}"
     release_failed_key = f"{lifecycle_key}:release-failed:{attempt}"
     release_applied_key = f"{lifecycle_key}:release-applied:{attempt}"
-    action = GoalActionRequest(
-        action_class=action_class,
-        delegated=delegated,
-        estimate=estimate or GoalUsage(actions=1),
-        operator_approved=actor.startswith(("user:", "role:admin")),
-        approval_principal=(
-            actor if actor.startswith(("user:", "role:admin")) else None
-        ),
-    )
+    if goal_mutation_exists:
+        if not related or current_goal is None:
+            raise GoalConflict(
+                "durable goal mutation is missing its governed reservation identity"
+            )
+        selected = next(
+            (
+                item
+                for item in reversed(related)
+                if item.state == GoalReservationState.APPLIED
+                or item.release_reason == "goal mutation committed"
+            ),
+            related[-1],
+        )
+        if selected.state == GoalReservationState.RESERVED:
+            raise GoalConflict(
+                "durable goal mutation has an unapplied governance reservation"
+            )
+        if (
+            selected.state != GoalReservationState.RELEASED
+            or selected.release_reason != "goal mutation committed"
+            or selected.actual_usage != action.estimate
+        ):
+            current = governance.get_state(goal_id)
+            governance.release_action(
+                goal_id,
+                selected.id,
+                governance_context(
+                    current.version,
+                    release_applied_key,
+                    current_goal.version,
+                    current_goal.policy.revision,
+                ),
+                actual_usage=action.estimate,
+                reason="goal mutation committed",
+                reconcile_terminal=True,
+            )
+        return current_goal
     state, decision = governance.authorize_action(
         goal_id,
         action,
@@ -413,6 +477,7 @@ def submit_goal_proposal(
             body.action.kind,
             ctx,
             lambda: _service(request).submit_proposal(goal_id, body, ctx),
+            operation_payload=body,
             delegated=body.action.kind == "dispatch_work_package",
         )
     )
@@ -506,6 +571,7 @@ def transition_goal(
             "transition_goal",
             ctx,
             lambda: _service(request).transition(goal_id, body, ctx),
+            operation_payload=body,
         )
     )
     _wake_supervisor(request)
@@ -542,6 +608,7 @@ def revise_goal(
             "revise_goal",
             ctx,
             lambda: _service(request).revise(goal_id, body, ctx),
+            operation_payload=body,
         )
     ).model_dump(mode="json")
 
@@ -576,6 +643,7 @@ def record_goal_evidence(
             "record_evidence",
             ctx,
             lambda: _service(request).add_evidence(goal_id, body, ctx),
+            operation_payload=body,
         )
     ).model_dump(mode="json")
 
@@ -609,6 +677,7 @@ def audit_goal(
             "audit_goal",
             ctx,
             lambda: _service(request).audit(goal_id, body, ctx),
+            operation_payload=body,
         )
     ).model_dump(mode="json")
 
@@ -693,6 +762,7 @@ def schedule_goal_wakeup(
             "schedule_wakeup",
             ctx,
             lambda: _service(request).schedule_wakeup(goal_id, body, ctx),
+            operation_payload=body,
         )
     ).model_dump(mode="json")
 
