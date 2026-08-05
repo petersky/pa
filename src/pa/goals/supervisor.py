@@ -378,6 +378,13 @@ class GoalSupervisor:
                 )
             else:
                 proposal.status = ProposalStatus.REJECTED
+                if isinstance(proposal.action, DispatchWorkPackageAction):
+                    self._record_dispatch_failure(
+                        goal,
+                        proposal.action,
+                        proposal.authorization.explanation,
+                        now,
+                    )
             changed = True
         return changed
 
@@ -501,6 +508,31 @@ class GoalSupervisor:
                 proposal.updated_at = now
                 changed = True
             except (GoalConflict, KeyError, RuntimeError, TypeError, ValueError) as exc:
+                if isinstance(proposal.action, DispatchWorkPackageAction):
+                    package = next(
+                        (
+                            item
+                            for item in goal.work_packages
+                            if item.id == proposal.action.work_package_id
+                        ),
+                        None,
+                    )
+                    if package is not None and package.state not in {
+                        WorkPackageState.DISPATCHED,
+                        WorkPackageState.RUNNING,
+                    }:
+                        dispatch_proposals = sum(
+                            isinstance(item.action, DispatchWorkPackageAction)
+                            and item.action.work_package_id == package.id
+                            for item in goal.proposals
+                        )
+                        if package.attempts < dispatch_proposals:
+                            self._record_dispatch_failure(
+                                goal,
+                                proposal.action,
+                                str(exc),
+                                now,
+                            )
                 proposal.status = ProposalStatus.FAILED
                 proposal.error = str(exc)[:2000]
                 proposal.updated_at = now
@@ -610,48 +642,66 @@ class GoalSupervisor:
             return False
         if package.attempts >= package.max_attempts:
             raise RuntimeError("work-package retry limit is exhausted")
-        if not self.dispatch or not package.card_id:
-            raise RuntimeError("fleet dispatch service is unavailable")
         attempt = package.attempts + 1
-        result = self.dispatch(
-            {
-                "authority_instance_id": self.instance_id,
-                "goal_id": goal.id,
-                "goal_version": goal.version,
-                "goal_policy_revision": goal.policy.revision,
-                "goal_fencing_token": goal.lease.fencing_token,
-                "goal_action_reservation_id": self._active_reservation_id,
-                "goal_actor_principal": self.service_principal,
-                "card_id": package.card_id,
-                "target_instance_id": action.target_instance_id,
-                "placement_policy": action.placement_policy,
-                "group_id": action.group_id,
-                "message": self._work_prompt(goal, package, action.message),
-                "provider": action.provider,
-                "model_id": action.model_id,
-                "mode_id": action.mode_id,
-                "priority": action.priority,
-                "collaboration_unattended": True,
-                "collaboration_risk": "high"
-                if package.role in {GoalActorRole.VERIFIER, GoalActorRole.CRITIC}
-                else "medium",
-                "idempotency_key": (
-                    f"goal:{goal.id}:work:{package.id}:attempt:{attempt}"
-                ),
-            }
-        )
-        if result.get("accepted") is False:
-            raise RuntimeError(str(result.get("error") or "fleet dispatch rejected"))
-        dispatch_id = str(
-            result.get("dispatch_id")
-            or result.get("job_id")
-            or (result.get("dispatch") or {}).get("dispatch_id")
-            or ""
-        )
-        if not dispatch_id:
-            raise RuntimeError("fleet dispatch did not return a dispatch id")
         package.attempts = attempt
         package.action_reservation_id = self._active_reservation_id
+        package.updated_at = now
+        try:
+            if not self.dispatch or not package.card_id:
+                raise RuntimeError("fleet dispatch service is unavailable")
+            result = self.dispatch(
+                {
+                    "authority_instance_id": self.instance_id,
+                    "goal_id": goal.id,
+                    "goal_version": goal.version,
+                    "goal_policy_revision": goal.policy.revision,
+                    "goal_fencing_token": goal.lease.fencing_token,
+                    "goal_action_reservation_id": self._active_reservation_id,
+                    "goal_actor_principal": self.service_principal,
+                    "card_id": package.card_id,
+                    "target_instance_id": action.target_instance_id,
+                    "placement_policy": action.placement_policy,
+                    "group_id": action.group_id,
+                    "message": self._work_prompt(goal, package, action.message),
+                    "provider": action.provider,
+                    "model_id": action.model_id,
+                    "mode_id": action.mode_id,
+                    "priority": action.priority,
+                    "collaboration_unattended": True,
+                    "collaboration_risk": "high"
+                    if package.role in {GoalActorRole.VERIFIER, GoalActorRole.CRITIC}
+                    else "medium",
+                    "idempotency_key": (
+                        f"goal:{goal.id}:work:{package.id}:attempt:{attempt}"
+                    ),
+                }
+            )
+            if result.get("accepted") is False:
+                raise RuntimeError(
+                    str(result.get("error") or "fleet dispatch rejected")
+                )
+            dispatch_id = str(
+                result.get("dispatch_id")
+                or result.get("job_id")
+                or (result.get("dispatch") or {}).get("dispatch_id")
+                or ""
+            )
+            if not dispatch_id:
+                raise RuntimeError("fleet dispatch did not return a dispatch id")
+        except Exception as exc:
+            package.state = (
+                WorkPackageState.FAILED
+                if package.attempts >= package.max_attempts
+                else WorkPackageState.READY
+            )
+            package.result_summary = (
+                f"Dispatch retry limit exhausted after attempt {attempt}: {exc}"
+                if package.state == WorkPackageState.FAILED
+                else f"Dispatch attempt {attempt} failed before admission: {exc}"
+            )
+            if isinstance(exc, RuntimeError):
+                raise
+            raise RuntimeError(f"fleet dispatch failed before admission: {exc}") from exc
         self._append_bounded(package.dispatch_ids, dispatch_id, package.max_attempts)
         package.state = WorkPackageState.DISPATCHED
         package.updated_at = now
@@ -659,6 +709,32 @@ class GoalSupervisor:
             goal.linked_dispatch_ids, dispatch_id, _MAX_GOAL_DISPATCH_IDS
         )
         return True
+
+    @staticmethod
+    def _record_dispatch_failure(
+        goal: Goal,
+        action: DispatchWorkPackageAction,
+        reason: str,
+        now: datetime,
+    ) -> None:
+        package = next(
+            (item for item in goal.work_packages if item.id == action.work_package_id),
+            None,
+        )
+        if package is None or package.attempts >= package.max_attempts:
+            return
+        package.attempts += 1
+        package.state = (
+            WorkPackageState.FAILED
+            if package.attempts >= package.max_attempts
+            else WorkPackageState.READY
+        )
+        package.result_summary = (
+            f"Dispatch retry limit exhausted after attempt {package.attempts}: {reason}"
+            if package.state == WorkPackageState.FAILED
+            else f"Dispatch attempt {package.attempts} failed before admission: {reason}"
+        )[:8000]
+        package.updated_at = now
 
     def _record_evidence(
         self,
@@ -730,14 +806,27 @@ class GoalSupervisor:
             )
             if active:
                 continue
-            generation = (
-                sum(
-                    isinstance(item.action, DispatchWorkPackageAction)
-                    and item.action.work_package_id == package.id
-                    for item in goal.proposals
-                )
-                + 1
+            prior_proposals = sum(
+                isinstance(item.action, DispatchWorkPackageAction)
+                and item.action.work_package_id == package.id
+                for item in goal.proposals
             )
+            if (
+                package.attempts >= package.max_attempts
+                or prior_proposals >= package.max_attempts
+            ):
+                package.attempts = max(
+                    package.attempts,
+                    min(prior_proposals, package.max_attempts),
+                )
+                package.state = WorkPackageState.FAILED
+                package.result_summary = (
+                    "Dispatch retry limit exhausted before a session was admitted."
+                )
+                package.updated_at = now
+                changed = True
+                continue
+            generation = prior_proposals + 1
             proposal_id = str(
                 uuid5(
                     NAMESPACE_URL,
@@ -1188,6 +1277,13 @@ class GoalSupervisor:
                 if proposal and proposal.status == ProposalStatus.OPERATOR_REQUIRED:
                     proposal.status = ProposalStatus.REJECTED
                     proposal.error = f"operator interaction {interaction.state.value}"
+                    if isinstance(proposal.action, DispatchWorkPackageAction):
+                        self._record_dispatch_failure(
+                            goal,
+                            proposal.action,
+                            proposal.error,
+                            now,
+                        )
             else:
                 link.state = GoalInteractionState.ANSWERED
                 link.response_summary = interaction.response_summary or ""
@@ -1205,6 +1301,13 @@ class GoalSupervisor:
                     )
                     if not approved:
                         proposal.error = "operator rejected the proposal"
+                        if isinstance(proposal.action, DispatchWorkPackageAction):
+                            self._record_dispatch_failure(
+                                goal,
+                                proposal.action,
+                                proposal.error,
+                                now,
+                            )
             link.resolved_at = now
             changed = True
         return changed

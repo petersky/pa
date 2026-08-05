@@ -745,6 +745,174 @@ class GoalSupervisorTests(unittest.TestCase):
                 ["dispatch-1", "dispatch-2"],
             )
 
+    def test_pre_admission_dispatch_failures_are_durably_bounded(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service, projection = self._services(tmp)
+            criterion = GoalCriterion(
+                description="bounded admission",
+                verification_method="durable retry ledger",
+                evidence_requirement="no unbounded replacement proposals",
+            )
+            goal = service.create(self._goal_create(criterion), self._ctx(0, "create"))
+            goal = service.transition(
+                goal.id,
+                GoalTransition(state=GoalState.READY, reason="ready"),
+                self._ctx(goal.version, "ready"),
+            )
+            goal = service.submit_proposal(
+                goal.id,
+                GoalProposalCreate(
+                    proposer_principal="agent:coordinator",
+                    proposer_role=GoalActorRole.COORDINATOR,
+                    action=CreateWorkPackageAction(
+                        title="Bound admission failures",
+                        objective="Stop retrying after the package limit",
+                        criterion_ids=[criterion.id],
+                        max_attempts=2,
+                    ),
+                    rationale="Admission failures must consume durable attempts.",
+                    expected_goal_version=goal.version,
+                    policy_revision=1,
+                ),
+                self._ctx(goal.version, "proposal"),
+            )
+            calls: list[str] = []
+
+            def reject_before_admission(payload: dict) -> dict:
+                calls.append(payload["idempotency_key"])
+                raise RuntimeError("target rejected before creating a dispatch")
+
+            supervisor = GoalSupervisor(
+                service,
+                projection,
+                "instance-a",
+                dispatch_store=FakeDispatchStore(),
+                dispatch=reject_before_admission,
+            )
+            supervisor.run_once(goal.id)
+            supervisor.run_once(goal.id)
+            exhausted = supervisor.run_once(goal.id)[0]
+            for _ in range(4):
+                supervisor.run_once(goal.id)
+
+            package = exhausted.work_packages[0]
+            self.assertEqual(package.attempts, package.max_attempts)
+            self.assertEqual(package.state, WorkPackageState.FAILED)
+            self.assertIn("retry limit", package.result_summary.lower())
+            self.assertEqual(
+                calls,
+                [
+                    f"goal:{goal.id}:work:{package.id}:attempt:1",
+                    f"goal:{goal.id}:work:{package.id}:attempt:2",
+                ],
+            )
+            dispatch_proposals = [
+                item
+                for item in exhausted.proposals
+                if isinstance(item.action, DispatchWorkPackageAction)
+                and item.action.work_package_id == package.id
+            ]
+            self.assertEqual(len(dispatch_proposals), package.max_attempts)
+            self.assertTrue(
+                all(item.status == ProposalStatus.FAILED for item in dispatch_proposals)
+            )
+            autonomy = supervisor.governance.get_state(goal.id)
+            dispatch_reservations = [
+                item
+                for item in autonomy.action_reservations
+                if item.action_class == "dispatch_work_package"
+            ]
+            self.assertEqual(len(dispatch_reservations), package.max_attempts)
+            self.assertTrue(
+                all(
+                    item.state.value == "released"
+                    for item in dispatch_reservations
+                )
+            )
+
+    def test_pre_admission_crash_reuses_the_same_external_attempt_key(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service, projection = self._services(tmp)
+            criterion = GoalCriterion(
+                description="crash-safe admission",
+                verification_method="idempotent replay",
+                evidence_requirement="one canonical dispatch",
+            )
+            goal = service.create(self._goal_create(criterion), self._ctx(0, "create"))
+            goal = service.transition(
+                goal.id,
+                GoalTransition(state=GoalState.READY, reason="ready"),
+                self._ctx(goal.version, "ready"),
+            )
+            goal = service.submit_proposal(
+                goal.id,
+                GoalProposalCreate(
+                    proposer_principal="agent:coordinator",
+                    proposer_role=GoalActorRole.COORDINATOR,
+                    action=CreateWorkPackageAction(
+                        title="Replay one admission",
+                        objective="Reuse the attempt key after a local crash",
+                        criterion_ids=[criterion.id],
+                        max_attempts=2,
+                    ),
+                    rationale="External admission must be exactly replayable.",
+                    expected_goal_version=goal.version,
+                    policy_revision=1,
+                ),
+                self._ctx(goal.version, "proposal"),
+            )
+            external: dict[str, str] = {}
+            keys: list[str] = []
+
+            def crash_after_external_commit(payload: dict) -> dict:
+                key = payload["idempotency_key"]
+                keys.append(key)
+                dispatch_id = external.setdefault(key, "dispatch-canonical")
+                if len(keys) == 1:
+                    raise RuntimeError("local process stopped after external commit")
+                return {"dispatch_id": dispatch_id}
+
+            supervisor = GoalSupervisor(
+                service,
+                projection,
+                "instance-a",
+                dispatch_store=FakeDispatchStore(),
+                dispatch=crash_after_external_commit,
+            )
+            durable = supervisor.run_once(goal.id)[0]
+            proposal = next(
+                item
+                for item in durable.proposals
+                if isinstance(item.action, DispatchWorkPackageAction)
+            )
+            first_working_copy = durable.model_copy(deep=True)
+            with self.assertRaisesRegex(RuntimeError, "external commit"):
+                supervisor._dispatch_work_package(
+                    first_working_copy,
+                    proposal,
+                    proposal.action,
+                    supervisor.now(),
+                )
+
+            reloaded = service.get(goal.id)
+            assert reloaded is not None
+            self.assertEqual(reloaded.work_packages[0].attempts, 0)
+            replayed = reloaded.model_copy(deep=True)
+            self.assertTrue(
+                supervisor._dispatch_work_package(
+                    replayed,
+                    proposal,
+                    proposal.action,
+                    supervisor.now(),
+                )
+            )
+            self.assertEqual(keys[0], keys[1])
+            self.assertEqual(replayed.work_packages[0].attempts, 1)
+            self.assertEqual(
+                replayed.work_packages[0].dispatch_ids,
+                ["dispatch-canonical"],
+            )
+
     def test_verifier_role_requires_passing_validation_before_criterion(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             service, projection = self._services(tmp)
