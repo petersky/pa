@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import timedelta
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import tempfile
@@ -98,6 +99,51 @@ class ProjectsHealthRouteTests(unittest.TestCase):
                 f"project={project.id}&amp;lane={lane.value}#lane-{lane.value}",
                 response.text,
             )
+
+    def test_working_session_wins_over_newer_quiesced_history(self) -> None:
+        with TestClient(self.app) as client:
+            store = self.app.state.ctx.store
+            project = store.create_project(ProjectCreate(title="Session precedence"))
+            card = store.create_card(
+                CardCreate(
+                    title="Still working",
+                    project_id=project.id,
+                    lane=CardLane.ACTIVE,
+                )
+            )
+            working = AgentSession(
+                id="working-session",
+                agent_name="codex",
+                project_id=project.id,
+                card_id=card.id,
+                title="Live work",
+                status="working",
+            )
+            quiesced = AgentSession(
+                id="quiesced-session",
+                agent_name="codex",
+                project_id=project.id,
+                card_id=card.id,
+                title="Newer historical session",
+                status="quiesced",
+                updated_at=working.updated_at + timedelta(seconds=1),
+            )
+            store.save_session(working)
+            store.save_session(quiesced)
+
+            preferred = store.list_preferred_sessions_for_project_cards(
+                project.id, realm_id="default"
+            )
+            response = client.get(f"/projects?project={project.id}")
+
+        self.assertEqual([session.id for session in preferred], [working.id])
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(
+            'aria-label="Open live agent session for Still working"', response.text
+        )
+        self.assertNotIn('aria-label="Dispatch Still working"', response.text)
+        self.assertIn("Live agent sessions (1)", response.text)
+        self.assertIn("Historical agent sessions (1)", response.text)
 
     def test_create_partial_selects_the_project_and_pushes_the_same_url(self) -> None:
         with TestClient(self.app) as client:

@@ -2986,7 +2986,11 @@ class CardProjection:
                            ROW_NUMBER() OVER (
                                PARTITION BY sessions.card_id
                                ORDER BY
-                                   CASE WHEN sessions.status = 'closed' THEN 1 ELSE 0 END,
+                                   CASE
+                                       WHEN sessions.status IN ('closed', 'quiesced')
+                                       THEN 1
+                                       ELSE 0
+                                   END,
                                    sessions.updated_at DESC,
                                    sessions.id DESC
                            ) AS session_rank
