@@ -28,15 +28,29 @@ from pa.execution.dispatch import (
     goal_dispatch_placement_input_digest,
     goal_dispatch_record_placement_input_valid,
 )
+from pa.execution.profiles import (
+    ExecutionContract,
+    ExecutionProfile,
+    ExecutionRequirements,
+    RepositoryRequirement,
+    resolve_materialization_plan,
+)
 from pa.goals.advanced_models import (
     GoalActionDisposition,
     GoalActionRequest,
     GoalReservationState,
+    GoalResourceClaim,
     GoalUsage,
     GovernanceMutationContext,
+    ResourceAccess,
 )
 from pa.goals.authorization import authorize_proposal
 from pa.goals.governance import GoalGovernanceConflict, GoalGovernanceService
+from pa.goals.materialization import (
+    GoalMaterializationEnvelopeV1,
+    GoalMaterializationResourceClaimV1,
+    canonical_materialization_digest,
+)
 from pa.goals.models import (
     AuthorizationOutcome,
     CreateWorkPackageAction,
@@ -71,6 +85,7 @@ logger = logging.getLogger(__name__)
 
 class GoalDispatchAmbiguous(RuntimeError):
     """The Fleet call may have committed and must be replayed with the same key."""
+
 
 _TERMINAL_GOAL_STATES = {GoalState.ACHIEVED, GoalState.ABANDONED}
 _TERMINAL_PROPOSALS = {
@@ -244,9 +259,7 @@ class GoalSupervisor:
         state, reservation_decision = self.governance.authorize_action(
             goal.id,
             request,
-            self._replay_governance_context(
-                goal, state.version, f"{key}:reserve"
-            ),
+            self._replay_governance_context(goal, state.version, f"{key}:reserve"),
         )
         if reservation_decision.disposition != GoalActionDisposition.AUTHORIZED:
             raise GoalGovernanceConflict(
@@ -601,9 +614,15 @@ class GoalSupervisor:
                     package = self._dispatch_package(goal, action)
                     dispatch_provider = self._dispatch_provider(action)
                     dispatch_operation_key = self._dispatch_operation_key(goal, action)
+                    materialization_envelope, execution_contract = (
+                        self._plan_materialization_envelope(goal, action)
+                    )
                     requested_target, placement_input_digest = (
                         self._dispatch_placement_binding(
-                            goal, action, dispatch_provider
+                            goal,
+                            action,
+                            dispatch_provider,
+                            execution_contract=execution_contract,
                         )
                     )
                     request = governed_request(
@@ -611,9 +630,20 @@ class GoalSupervisor:
                         operation_key=dispatch_operation_key,
                         requested_placement_target=requested_target,
                         placement_input_digest=placement_input_digest,
+                        materialization_envelope=materialization_envelope,
                         delegated=True,
                         provider_id=dispatch_provider,
                         estimate=GoalUsage(actions=1, dispatches=1),
+                        resource_claims=[
+                            GoalResourceClaim(
+                                key=item.key,
+                                access=ResourceAccess(item.access),
+                                quantity=item.quantity,
+                                preemptible=item.preemptible,
+                                expires_at=item.expires_at,
+                            )
+                            for item in materialization_envelope.resource_claims
+                        ],
                         max_attempts=min(20, goal.budget.retry_limit + 1),
                     )
                     request_digest = self._dispatch_request_digest(request)
@@ -622,6 +652,7 @@ class GoalSupervisor:
                         action,
                         package,
                         dispatch_provider,
+                        execution_contract,
                     )
                     attempt = package.dispatch_attempt
                     if attempt is None:
@@ -644,8 +675,7 @@ class GoalSupervisor:
                         or attempt.proposal_id != proposal.id
                         or attempt.idempotency_key != dispatch_operation_key
                         or attempt.request_digest != request_digest
-                        or attempt.dispatch_payload_digest
-                        != dispatch_payload_digest
+                        or attempt.dispatch_payload_digest != dispatch_payload_digest
                     ):
                         raise GoalDispatchAmbiguous(
                             "durable dispatch attempt no longer matches its exact request"
@@ -693,9 +723,7 @@ class GoalSupervisor:
                         goal,
                         governance_key,
                         governed_request("record_evidence"),
-                        lambda action=action: self._record_evidence(
-                            goal, action, now
-                        ),
+                        lambda action=action: self._record_evidence(goal, action, now),
                     )
                 elif isinstance(action, TransitionGoalAction):
 
@@ -853,7 +881,6 @@ class GoalSupervisor:
         now: datetime,
     ) -> GoalDispatchAttemptState:
         """Replay one stable governance reservation around one ambiguous Fleet call."""
-
         self._assert_side_effect_fence(goal)
         package = self._dispatch_package(goal, action)
         attempt = package.dispatch_attempt
@@ -899,10 +926,7 @@ class GoalSupervisor:
                     request,
                     self._governance_context(goal, state.version, reserve_key),
                 )
-                if (
-                    reservation_decision.disposition
-                    != GoalActionDisposition.AUTHORIZED
-                ):
+                if reservation_decision.disposition != GoalActionDisposition.AUTHORIZED:
                     raise GoalGovernanceConflict(
                         "canonical governance denied the dispatch: "
                         + "; ".join(reservation_decision.reasons)
@@ -1026,8 +1050,14 @@ class GoalSupervisor:
                 "dispatch call requires one applied governance reservation"
             )
         dispatch_provider = self._dispatch_provider(action)
+        materialization_envelope, execution_contract = (
+            self._plan_materialization_envelope(goal, action)
+        )
         requested_target, placement_input_digest = self._dispatch_placement_binding(
-            goal, action, dispatch_provider
+            goal,
+            action,
+            dispatch_provider,
+            execution_contract=execution_contract,
         )
         current_reservation = next(
             (
@@ -1040,10 +1070,13 @@ class GoalSupervisor:
         if (
             current_reservation is None
             or current_reservation.state != GoalReservationState.APPLIED
+            or current_reservation.request.materialization_envelope
+            != materialization_envelope
         ):
             raise GoalGovernanceConflict(
                 "dispatch call requires its durably applied reservation"
             )
+        package.materialization_envelope = materialization_envelope
         try:
             result = self.dispatch(
                 self._dispatch_payload(
@@ -1055,6 +1088,7 @@ class GoalSupervisor:
                     dispatch_provider=dispatch_provider,
                     requested_target=requested_target,
                     placement_input_digest=placement_input_digest,
+                    execution_contract=execution_contract,
                 )
             )
         except Exception as exc:
@@ -1141,10 +1175,10 @@ class GoalSupervisor:
                 dispatch_id=str(record.dispatch_id),
                 now=now,
             )
-        if (
-            not admitted
-            and str(getattr(record, "state", "")) in {"failed", "cancelled"}
-        ):
+        if not admitted and str(getattr(record, "state", "")) in {
+            "failed",
+            "cancelled",
+        }:
             return self._record_rejected_dispatch(
                 package,
                 attempt,
@@ -1216,8 +1250,7 @@ class GoalSupervisor:
             and reservation.attempt == provenance.reservation_attempt
             and reservation.max_attempts == provenance.max_reservation_attempts
             and self._dispatch_request_digest(request) == attempt.request_digest
-            and self._dispatch_request_digest(unbound_request)
-            == attempt.request_digest
+            and self._dispatch_request_digest(unbound_request) == attempt.request_digest
             and reservation.request.resolved_target_instance_id
             == provenance.resolved_target_instance_id
             == getattr(record, "target_instance_id", None)
@@ -1339,8 +1372,7 @@ class GoalSupervisor:
             or reservation.authority_instance_id != self.instance_id
             or reservation.request.operation_key != attempt.idempotency_key
             or self._dispatch_request_digest(request) != attempt.request_digest
-            or self._dispatch_request_digest(unbound_request)
-            != attempt.request_digest
+            or self._dispatch_request_digest(unbound_request) != attempt.request_digest
         ):
             raise GoalGovernanceConflict(
                 "durable dispatch reservation does not match its staged request"
@@ -1357,7 +1389,13 @@ class GoalSupervisor:
         dispatch_provider: str,
         requested_target: str,
         placement_input_digest: str,
+        execution_contract: dict[str, Any],
     ) -> dict[str, Any]:
+        materialization_envelope = reservation.request.materialization_envelope
+        if materialization_envelope is None:
+            raise GoalGovernanceConflict(
+                "dispatch reservation has no materialization envelope"
+            )
         return {
             "authority_instance_id": self.instance_id,
             "goal_provenance": {
@@ -1370,6 +1408,9 @@ class GoalSupervisor:
                 "operation_key": attempt.idempotency_key,
                 "requested_placement_target": requested_target,
                 "placement_input_digest": placement_input_digest,
+                "materialization_envelope": materialization_envelope.model_dump(
+                    mode="json"
+                ),
                 "actor_principal": reservation.actor_principal,
                 "action_class": "dispatch_work_package",
                 "provider_id": dispatch_provider,
@@ -1385,6 +1426,7 @@ class GoalSupervisor:
             "provider": dispatch_provider,
             "model_id": action.model_id,
             "mode_id": action.mode_id,
+            "execution_contract": execution_contract,
             "priority": action.priority,
             "collaboration_unattended": True,
             "collaboration_risk": (
@@ -1402,6 +1444,135 @@ class GoalSupervisor:
                 "governed fleet dispatch requires a concrete configured provider"
             )
         return provider
+
+    def _plan_materialization_envelope(
+        self,
+        goal: Goal,
+        action: DispatchWorkPackageAction,
+    ) -> tuple[GoalMaterializationEnvelopeV1, dict[str, Any]]:
+        """Resolve exact server-owned resources before governance reserves them."""
+
+        package = next(
+            (item for item in goal.work_packages if item.id == action.work_package_id),
+            None,
+        )
+        if package is None or not package.card_id:
+            raise ValueError("dispatch requires a materialized work-package card")
+        card = self.store.get_card(package.card_id, realm_id=goal.realm_id)
+        if card is None:
+            raise ValueError("work-package card disappeared before materialization")
+        active_attachments = [
+            item
+            for item in card.attachments
+            if str(getattr(item.state, "value", item.state)) == "active"
+        ]
+        project = (
+            self.store.get_project(goal.project_id, realm_id=goal.realm_id)
+            if goal.project_id
+            else None
+        )
+        project_repositories = (
+            list(
+                self.store.list_project_repositories(
+                    goal.project_id,
+                    realm_id=goal.realm_id,
+                )
+            )
+            if goal.project_id
+            else []
+        )
+        project_contract = dict(getattr(project, "tool_config", None) or {}).get(
+            "execution_contract"
+        )
+        if project_contract:
+            contract = ExecutionContract.model_validate(project_contract)
+        else:
+            repositories = tuple(
+                RepositoryRequirement(
+                    repository_id=repository.id,
+                    branch=getattr(link, "branch", None),
+                )
+                for repository, link in project_repositories
+            )
+            contract = ExecutionContract(
+                profile=(
+                    ExecutionProfile.REPOSITORY
+                    if repositories
+                    else ExecutionProfile.RESEARCH
+                ),
+                requirements=ExecutionRequirements(
+                    repository_required=bool(repositories),
+                    repositories=list(repositories),
+                    attachments=bool(active_attachments),
+                    required_capabilities=list(package.preferred_capabilities),
+                ),
+                confirmed=True,
+            )
+        requirements = contract.requirements.model_copy(deep=True)
+        requirements.attachments = bool(active_attachments)
+        requirements.required_capabilities = sorted(
+            set(requirements.required_capabilities)
+            | set(package.preferred_capabilities)
+        )
+        contract = contract.model_copy(update={"requirements": requirements})
+        explicit_repositories = [
+            repository
+            for requirement in contract.requirements.repositories
+            if (
+                repository := self.store.get_repository(
+                    requirement.repository_id,
+                    goal.realm_id,
+                )
+            )
+            is not None
+        ]
+        requested_target = action.target_instance_id or (
+            f"placement:{action.placement_policy or 'best_match'}"
+        )
+        plan = resolve_materialization_plan(
+            requested=contract,
+            card=card,
+            project=project,
+            project_repositories=project_repositories,
+            explicit_repositories=explicit_repositories,
+            target_instance_id=requested_target,
+        )
+        if not plan.admissible:
+            raise ValueError(
+                "materialization envelope is not admissible: " + plan.summary
+            )
+        repository_ids = tuple(str(item["repository_id"]) for item in plan.repositories)
+        claims = [
+            GoalMaterializationResourceClaimV1(
+                key=f"fleet-dispatch:{requested_target}",
+                access="shared",
+                quantity=1,
+                preemptible=True,
+            ),
+            *[
+                GoalMaterializationResourceClaimV1(
+                    key=f"repository:{repository_id}",
+                    access="shared",
+                    quantity=1,
+                    preemptible=True,
+                )
+                for repository_id in repository_ids
+            ],
+        ]
+        contract_payload = contract.model_dump(mode="json")
+        envelope = GoalMaterializationEnvelopeV1(
+            repository_ids=repository_ids,
+            data_scopes=tuple(goal.policy.data_scope),
+            attachment_ids=tuple(item.attachment_id for item in active_attachments),
+            attachment_classes=tuple(
+                item.media_type.strip().lower() for item in active_attachments
+            ),
+            resource_claims=tuple(claims),
+            execution_contract_digest=canonical_materialization_digest(
+                contract_payload
+            ),
+        )
+        return envelope, contract_payload
 
     @staticmethod
     def _dispatch_package(
@@ -1431,6 +1602,7 @@ class GoalSupervisor:
         action: DispatchWorkPackageAction,
         package: GoalWorkPackage,
         dispatch_provider: str,
+        execution_contract: dict[str, Any],
     ) -> str:
         return self._canonical_digest(
             {
@@ -1449,8 +1621,7 @@ class GoalSupervisor:
                 "message": self._work_prompt(goal, package, action.message),
                 "collaboration_risk": (
                     "high"
-                    if package.role
-                    in {GoalActorRole.VERIFIER, GoalActorRole.CRITIC}
+                    if package.role in {GoalActorRole.VERIFIER, GoalActorRole.CRITIC}
                     else "medium"
                 ),
                 "collaboration_ambiguous": False,
@@ -1461,7 +1632,7 @@ class GoalSupervisor:
                 "capacity_override_reason": None,
                 "participation_override": False,
                 "participation_override_reason": None,
-                "execution_contract": None,
+                "execution_contract": execution_contract,
                 "priority": action.priority,
                 "allow_concurrent": False,
                 "resume_session_id": None,
@@ -1502,9 +1673,7 @@ class GoalSupervisor:
                 "capacity_override_reason": request_payload.get(
                     "capacity_override_reason"
                 ),
-                "participation_override": bool(
-                    placement.get("participation_override")
-                ),
+                "participation_override": bool(placement.get("participation_override")),
                 "participation_override_reason": request_payload.get(
                     "participation_override_reason"
                 ),
@@ -1551,6 +1720,8 @@ class GoalSupervisor:
         goal: Goal,
         action: DispatchWorkPackageAction,
         provider: str,
+        *,
+        execution_contract: dict[str, Any],
     ) -> tuple[str, str]:
         package = next(
             (item for item in goal.work_packages if item.id == action.work_package_id),
@@ -1570,6 +1741,7 @@ class GoalSupervisor:
             "provider": provider,
             "model_id": action.model_id,
             "mode_id": action.mode_id,
+            "execution_contract": execution_contract,
         }
         return requested_target, goal_dispatch_placement_input_digest(placement_input)
 
@@ -1755,10 +1927,35 @@ class GoalSupervisor:
             if not record:
                 continue
             self._reconcile_dispatch_reservation(goal, package, record)
+            provenance = getattr(record, "goal_provenance", None)
+            if provenance is not None:
+                if package.materialization_envelope != (
+                    provenance.materialization_envelope
+                ):
+                    package.materialization_envelope = (
+                        provenance.materialization_envelope
+                    )
+                    changed = True
+                if package.materialization_receipt != (
+                    provenance.materialization_receipt
+                ):
+                    package.materialization_receipt = provenance.materialization_receipt
+                    changed = True
+                if package.execution_identity != provenance.execution_identity:
+                    package.execution_identity = provenance.execution_identity
+                    changed = True
+                if package.execution_identity is not None:
+                    service_id = package.execution_identity.assigned_service_principal
+                    if package.role == GoalActorRole.VERIFIER:
+                        if package.verifier_service_id != service_id:
+                            package.verifier_service_id = service_id
+                            changed = True
+                    elif package.executor_service_id != service_id:
+                        package.executor_service_id = service_id
+                        changed = True
             if (
                 package.dispatch_attempt is not None
-                and package.dispatch_attempt.state
-                == GoalDispatchAttemptState.ADMITTED
+                and package.dispatch_attempt.state == GoalDispatchAttemptState.ADMITTED
                 and package.id not in durably_admitted_packages
                 and record.state in {"completed", "failed", "cancelled"}
             ):
@@ -1787,11 +1984,10 @@ class GoalSupervisor:
                         _MAX_GOAL_REPLACEMENTS,
                     )
                 package.session_id = record.session_id
-                authority = str(
-                    getattr(record, "authority_instance_id", "") or self.instance_id
-                )
                 service_id = (
-                    f"service:goal-{package.role.value}:{authority}:{record.session_id}"
+                    package.execution_identity.assigned_service_principal
+                    if package.execution_identity is not None
+                    else None
                 )
                 if package.role == GoalActorRole.VERIFIER:
                     package.verifier_service_id = service_id
@@ -1920,22 +2116,33 @@ class GoalSupervisor:
         if package.role == GoalActorRole.VERIFIER:
             report = record.final_report
             dependencies = set(package.depends_on)
-            executor_identities = {
-                item.executor_service_id
-                for item in goal.work_packages
-                if item.id in dependencies and item.executor_service_id
-            }
-            verifier_identity = package.verifier_service_id or (
-                f"service:goal-verifier:{getattr(record, 'authority_instance_id', self.instance_id)}:"
-                f"{record.session_id or record.dispatch_id}"
+            dependency_packages = [
+                item for item in goal.work_packages if item.id in dependencies
+            ]
+            executor_bindings = [
+                item.execution_identity
+                for item in dependency_packages
+                if item.execution_identity is not None
+            ]
+            verifier_binding = package.execution_identity
+            verifier_identity = (
+                verifier_binding.assigned_service_principal
+                if verifier_binding is not None
+                else None
             )
             independent = bool(
-                verifier_identity
-                and verifier_identity not in executor_identities
+                verifier_binding is not None
+                and record.session_id == verifier_binding.session_id
+                and dependency_packages
+                and len(executor_bindings) == len(dependency_packages)
                 and all(
-                    not record.session_id or record.session_id != item.session_id
-                    for item in goal.work_packages
-                    if item.id in dependencies
+                    verifier_binding.session_id != identity.session_id
+                    and verifier_binding.target_instance_id
+                    != identity.target_instance_id
+                    and verifier_binding.provider_id != identity.provider_id
+                    and verifier_binding.assigned_service_principal
+                    != identity.assigned_service_principal
+                    for identity in executor_bindings
                 )
             )
             passed = bool(
@@ -1986,8 +2193,7 @@ class GoalSupervisor:
                 context=GoalMutationContext(
                     actor_principal=verifier_identity,
                     authority_instance_id=str(
-                        getattr(record, "authority_instance_id", "")
-                        or self.instance_id
+                        getattr(record, "authority_instance_id", "") or self.instance_id
                     ),
                     idempotency_key=(
                         f"goal:{goal.id}:dispatch:{record.dispatch_id}:evidence"

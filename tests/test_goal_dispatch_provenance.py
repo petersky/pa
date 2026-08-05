@@ -24,14 +24,23 @@ from pa.execution.dispatch import (
     goal_dispatch_placement_input_digest,
     goal_dispatch_placement_input_snapshot,
 )
+from pa.execution.profiles import MaterializationPlan
 from pa.goals.advanced_models import (
     GoalActionDisposition,
     GoalActionRequest,
     GoalReservationState,
+    GoalResourceClaim,
     GoalUsage,
     GovernanceMutationContext,
+    ResourceAccess,
 )
 from pa.goals.governance import GoalGovernanceConflict, GoalGovernanceService
+from pa.goals.materialization import (
+    GoalMaterializationEnvelopeV1,
+    GoalMaterializationReceiptV1,
+    GoalMaterializationResourceClaimV1,
+    canonical_materialization_digest,
+)
 from pa.goals.models import (
     CreateWorkPackageAction,
     DispatchWorkPackageAction,
@@ -56,6 +65,8 @@ from pa.modules.fleet import (
     FleetDispatchBody,
     RemoteAgentStartBody,
     _bind_effective_goal_dispatch_provider,
+    _bind_goal_dispatch_execution_identity,
+    _bind_goal_dispatch_materialization,
     _bind_goal_dispatch_placement,
     _fail_goal_dispatch_admission,
     _goal_admission_proof_valid,
@@ -100,6 +111,48 @@ class GoalDispatchProvenanceTests(unittest.TestCase):
             "chosen_instance_name": target,
             "tie_breaking_reason": "The concrete test target was requested directly.",
         }
+
+    @staticmethod
+    def _materialization_plan(target: str = "instance-b") -> dict[str, object]:
+        return {
+            "contract_version": 1,
+            "profile": "research",
+            "profile_source": "dispatch_override",
+            "requirements": {
+                "repository_required": False,
+                "repositories": [],
+                "attachments": False,
+                "browser": False,
+                "external_tools": [],
+                "required_capabilities": [],
+                "writable_artifact_workspace": True,
+                "network_policy": "provider-default",
+                "expected_deliverables": [],
+            },
+            "target_instance_id": target,
+            "repositories": [],
+            "workspace": {"kind": "artifact"},
+            "missing_dependencies": [],
+            "stale_dependencies": [],
+            "confirmation_required": False,
+            "summary": "Canonical test materialization.",
+        }
+
+    @classmethod
+    def _materialization_receipt(
+        cls,
+        envelope: GoalMaterializationEnvelopeV1,
+        target: str = "instance-b",
+        provider: str = "codex",
+    ) -> GoalMaterializationReceiptV1:
+        return GoalMaterializationReceiptV1(
+            envelope_digest=str(envelope.digest),
+            target_instance_id=target,
+            provider_id=provider,
+            materialization_plan_digest=canonical_materialization_digest(
+                cls._materialization_plan(target)
+            ),
+        )
 
     def _fixture(
         self,
@@ -170,6 +223,14 @@ class GoalDispatchProvenanceTests(unittest.TestCase):
         placement_decision_digest = goal_dispatch_placement_decision_digest(
             self._placement_decision(target_instance_id)
         )
+        envelope = GoalMaterializationEnvelopeV1(
+            resource_claims=(
+                GoalMaterializationResourceClaimV1(
+                    key=f"fleet-dispatch:{target_instance_id}"
+                ),
+            ),
+            execution_contract_digest=canonical_materialization_digest(None),
+        )
         state, decision = governance.authorize_action(
             goal.id,
             GoalActionRequest(
@@ -183,9 +244,16 @@ class GoalDispatchProvenanceTests(unittest.TestCase):
                 placement_decision_digest=(
                     placement_decision_digest if placement_bound else None
                 ),
+                materialization_envelope=envelope,
                 delegated=True,
                 provider_id=reservation_provider,
                 estimate=GoalUsage(actions=1, dispatches=1),
+                resource_claims=[
+                    GoalResourceClaim(
+                        key=f"fleet-dispatch:{target_instance_id}",
+                        access=ResourceAccess.SHARED,
+                    )
+                ],
                 max_attempts=max_attempts,
             ),
             self._governance_context(goal, 0, "reserve-dispatch"),
@@ -201,6 +269,23 @@ class GoalDispatchProvenanceTests(unittest.TestCase):
         reservation = next(
             item for item in state.action_reservations if item.id == reservation_id
         )
+        if placement_bound and reservation_provider is not None:
+            receipt = self._materialization_receipt(
+                envelope,
+                target_instance_id,
+                reservation_provider,
+            )
+            state, reservation = governance.bind_dispatch_materialization(
+                goal.id,
+                reservation.id,
+                self._governance_context(
+                    goal,
+                    state.version,
+                    "bind-dispatch-materialization",
+                ),
+                envelope=envelope,
+                receipt=receipt,
+            )
         provenance = GoalDispatchProvenance(
             goal_id=goal.id,
             goal_version=reservation.goal_version,
@@ -209,16 +294,14 @@ class GoalDispatchProvenanceTests(unittest.TestCase):
             fencing_token=reservation.fencing_token or 0,
             action_reservation_id=reservation.id,
             operation_key=reservation.request.operation_key,
-            requested_placement_target=(
-                reservation.request.requested_placement_target
-            ),
+            requested_placement_target=(reservation.request.requested_placement_target),
             placement_input_digest=reservation.request.placement_input_digest,
             resolved_target_instance_id=(
                 reservation.request.resolved_target_instance_id
             ),
-            placement_decision_digest=(
-                reservation.request.placement_decision_digest
-            ),
+            placement_decision_digest=(reservation.request.placement_decision_digest),
+            materialization_envelope=reservation.request.materialization_envelope,
+            materialization_receipt=reservation.request.materialization_receipt,
             actor_principal=reservation.actor_principal,
             provider_id=reservation.request.provider_id,
             reservation_attempt=reservation.attempt,
@@ -259,7 +342,12 @@ class GoalDispatchProvenanceTests(unittest.TestCase):
             mutation_id="mutation-a",
             idempotency_key="dispatch-a",
             request_fingerprint="fingerprint-a",
-            request_payload={"provider": "codex", "message": "Do the work"},
+            materialization_plan=GoalDispatchProvenanceTests._materialization_plan(),
+            request_payload={
+                "provider": "codex",
+                "message": "Do the work",
+                "execution_contract": None,
+            },
             goal_provenance=provenance,
             goal_placement_input=placement_input,
             goal_placement_input_digest=provenance.placement_input_digest,
@@ -273,9 +361,7 @@ class GoalDispatchProvenanceTests(unittest.TestCase):
         )
         record.goal_admission_validation_state = "validated"
         record.goal_admission_validated_at = datetime.now(UTC)
-        record.goal_admission_validation_proof = goal_admission_validation_proof(
-            record
-        )
+        record.goal_admission_validation_proof = goal_admission_validation_proof(record)
         return record
 
     def _bind_trace_placement(
@@ -300,6 +386,33 @@ class GoalDispatchProvenanceTests(unittest.TestCase):
             placement_input_digest=trace.goal_placement_input_digest or "",
             placement_decision=decision,
         )
+        assert trace.goal_provenance is not None
+        goals = ctx.require_service("goal_service")
+        governance = ctx.require_service("goal_governance")
+        goal = goals.get(trace.goal_provenance.goal_id)
+        assert goal is not None
+        state = governance.get_state(goal.id)
+        envelope = trace.goal_provenance.materialization_envelope
+        assert envelope is not None
+        receipt = self._materialization_receipt(envelope, target_instance_id)
+        state, reservation = governance.bind_dispatch_materialization(
+            goal.id,
+            trace.goal_provenance.action_reservation_id,
+            self._governance_context(
+                goal,
+                state.version,
+                f"bind-trace-materialization:{target_instance_id}",
+            ),
+            envelope=envelope,
+            receipt=receipt,
+        )
+        trace.goal_provenance = trace.goal_provenance.model_copy(
+            update={
+                "materialization_receipt": (reservation.request.materialization_receipt)
+            }
+        )
+        trace.materialization_plan = self._materialization_plan(target_instance_id)
+        trace.request_payload["execution_contract"] = None
         return ledger.put(trace)
 
     @staticmethod
@@ -367,6 +480,53 @@ class GoalDispatchProvenanceTests(unittest.TestCase):
                 authority_instance_id="instance-a",
                 goal_id="different-goal",
                 goal_provenance=provenance,
+            )
+
+    def test_fleet_reconstructs_attachment_envelope_before_binding_receipt(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            _goals, _governance, _goal, provenance, _ledger, ctx = self._fixture(
+                Path(tmp)
+            )
+            body = RemoteAgentStartBody(
+                provider="codex",
+                execution_contract=None,
+                goal_provenance=provenance,
+            )
+            plan = MaterializationPlan.model_validate(self._materialization_plan())
+            exact = _bind_goal_dispatch_materialization(
+                ctx,
+                provenance,
+                selected_authority="instance-a",
+                body=body,
+                card=SimpleNamespace(attachments=[]),
+                plan=plan,
+                target_instance_id="instance-b",
+            )
+            assert exact is not None
+            self.assertEqual(
+                exact.materialization_receipt,
+                provenance.materialization_receipt,
+            )
+            attachment = SimpleNamespace(
+                attachment_id="attachment-a",
+                media_type="application/pdf",
+                state="active",
+            )
+            with self.assertRaises(HTTPException) as raised:
+                _bind_goal_dispatch_materialization(
+                    ctx,
+                    provenance,
+                    selected_authority="instance-a",
+                    body=body,
+                    card=SimpleNamespace(attachments=[attachment]),
+                    plan=plan,
+                    target_instance_id="instance-b",
+                )
+            self.assertEqual(
+                raised.exception.detail["code"],
+                "goal_materialization_envelope_mismatch",
             )
 
     def test_queue_revalidation_renews_goal_version(self) -> None:
@@ -585,7 +745,7 @@ class GoalDispatchProvenanceTests(unittest.TestCase):
         self.assertEqual(applied[0].request.provider_id, "codex")
         self.assertEqual(
             applied[0].request.requested_placement_target,
-            "placement:balanced",
+            "placement:best_match",
         )
         self.assertIsNotNone(applied[0].request.placement_input_digest)
         self.assertIsNone(applied[0].request.resolved_target_instance_id)
@@ -656,18 +816,14 @@ class GoalDispatchProvenanceTests(unittest.TestCase):
 
     def test_wrong_target_queued_promotion_quarantines_without_release(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            _goals, governance, goal, provenance, ledger, ctx = self._fixture(
-                Path(tmp)
-            )
+            _goals, governance, goal, provenance, ledger, ctx = self._fixture(Path(tmp))
             record = self._record(provenance, state="waiting_capacity")
             ledger.put(record)
             record.target_instance_id = "instance-c"
             ledger.put(record)
 
             with self.assertRaises(HTTPException) as raised:
-                asyncio.run(
-                    _refresh_queued_dispatch_readiness(self._app(ctx), record)
-                )
+                asyncio.run(_refresh_queued_dispatch_readiness(self._app(ctx), record))
             self.assertEqual(
                 raised.exception.detail["code"],
                 "goal_placement_mismatch",
@@ -939,6 +1095,21 @@ class GoalDispatchProvenanceTests(unittest.TestCase):
             _goals, governance, goal, provenance, ledger, ctx = self._fixture(Path(tmp))
             record = self._record(provenance, state="running")
             record.session_id = "session-a"
+            record.goal_provenance = _bind_goal_dispatch_execution_identity(
+                ctx,
+                record.goal_provenance,
+                selected_authority="instance-a",
+                session_id="session-a",
+            )
+            assert record.goal_provenance is not None
+            assert record.goal_provenance.execution_identity is not None
+            self.assertEqual(
+                record.goal_provenance.execution_identity.session_id,
+                "session-a",
+            )
+            self.assertFalse(
+                record.goal_provenance.execution_identity.credential_authenticated()
+            )
             ledger.put(record)
             record = _release_goal_dispatch_reservation(
                 ctx,
@@ -1162,6 +1333,18 @@ class GoalDispatchProvenanceTests(unittest.TestCase):
                 provenance.action_reservation_id,
             )
             self.assertEqual(retry_provenance.reservation_attempt, 2)
+            assert retry_provenance.materialization_envelope is not None
+            assert provenance.materialization_envelope is not None
+            assert retry_provenance.materialization_receipt is not None
+            assert provenance.materialization_receipt is not None
+            self.assertEqual(
+                retry_provenance.materialization_envelope.digest,
+                provenance.materialization_envelope.digest,
+            )
+            self.assertEqual(
+                retry_provenance.materialization_receipt.digest,
+                provenance.materialization_receipt.digest,
+            )
             before_replay = governance.get_state(goal.id).version
             replayed = _replace_goal_dispatch_reservation(
                 ctx, ledger, record, idempotency_key="retry-one"
@@ -1188,6 +1371,64 @@ class GoalDispatchProvenanceTests(unittest.TestCase):
                     ctx, ledger, record, idempotency_key="retry-two"
                 )
             self.assertEqual(exhausted.exception.detail["code"], "goal_retry_denied")
+
+    def test_retry_rejects_materialization_plan_widening(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            _goals, _governance, _goal, provenance, ledger, ctx = self._fixture(
+                Path(tmp), max_attempts=2
+            )
+            record = self._record(provenance, state="failed")
+            ledger.put(record)
+            record = _release_goal_dispatch_reservation(
+                ctx,
+                ledger,
+                record,
+                outcome="failed",
+                applied=False,
+            )
+            assert record.materialization_plan is not None
+            record.materialization_plan["summary"] = "widened after reservation"
+            ledger.put(record)
+            with self.assertRaises(HTTPException) as raised:
+                _replace_goal_dispatch_reservation(
+                    ctx,
+                    ledger,
+                    record,
+                    idempotency_key="retry-widened",
+                )
+            self.assertEqual(
+                raised.exception.detail["code"],
+                "goal_retry_materialization_widening",
+            )
+
+    def test_followup_rejects_materialization_plan_widening(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            _goals, _governance, _goal, provenance, ledger, ctx = self._fixture(
+                Path(tmp)
+            )
+            record = self._record(provenance, state="running")
+            ledger.put(record)
+            record = _release_goal_dispatch_reservation(
+                ctx,
+                ledger,
+                record,
+                outcome="started",
+                applied=True,
+            )
+            record.request_payload["model_id"] = "widened-model"
+            ledger.put(record)
+            with self.assertRaises(HTTPException) as raised:
+                _reserve_goal_dispatch_followup(
+                    ctx,
+                    ledger,
+                    record,
+                    idempotency_key="followup-widened",
+                    fingerprint="followup-widened-fingerprint",
+                )
+            self.assertEqual(
+                raised.exception.detail["code"],
+                "goal_followup_materialization_widening",
+            )
 
     def test_retry_replay_survives_bounded_decision_projection(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -38,6 +38,12 @@ from pa.execution.progress import (
     sanitize_progress_event,
     sanitize_text,
 )
+from pa.goals.materialization import (
+    GoalExecutionIdentityV1,
+    GoalMaterializationEnvelopeV1,
+    GoalMaterializationReceiptV1,
+    canonical_materialization_digest,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +118,9 @@ class GoalDispatchProvenance(BaseModel):
     placement_decision_digest: str | None = Field(
         default=None, min_length=64, max_length=64
     )
+    materialization_envelope: GoalMaterializationEnvelopeV1 | None = None
+    materialization_receipt: GoalMaterializationReceiptV1 | None = None
+    execution_identity: GoalExecutionIdentityV1 | None = None
     actor_principal: str = Field(min_length=1, max_length=300)
     action_class: Literal["dispatch_work_package"] = "dispatch_work_package"
     provider_id: str | None = Field(default=None, min_length=1, max_length=100)
@@ -510,6 +519,73 @@ def goal_dispatch_record_placement_input_valid(record: DispatchRecord) -> bool:
     return goal_dispatch_placement_input_digest(current) == digest
 
 
+def goal_dispatch_materialization_binding_valid(record: DispatchRecord) -> bool:
+    """Verify the immutable envelope and receipt against this exact launch plan."""
+
+    provenance = record.goal_provenance
+    if provenance is None:
+        return True
+    envelope = provenance.materialization_envelope
+    receipt = provenance.materialization_receipt
+    plan = record.materialization_plan
+    if envelope is None or receipt is None or plan is None:
+        return False
+    provider_id = str(record.request_payload.get("provider") or "").strip().lower()
+    if not provider_id:
+        return False
+    if (
+        canonical_materialization_digest(
+            record.request_payload.get("execution_contract")
+        )
+        != envelope.execution_contract_digest
+    ):
+        return False
+    if str(plan.get("target_instance_id") or "") != record.target_instance_id:
+        return False
+    expected = GoalMaterializationReceiptV1(
+        envelope_digest=str(envelope.digest),
+        target_instance_id=record.target_instance_id,
+        provider_id=provider_id,
+        model_id=record.request_payload.get("model_id"),
+        mode_id=record.request_payload.get("mode_id"),
+        materialization_plan_digest=canonical_materialization_digest(plan),
+    )
+    return bool(
+        receipt == expected
+        and receipt.envelope_digest == envelope.digest
+        and provenance.resolved_target_instance_id == receipt.target_instance_id
+    )
+
+
+def goal_dispatch_execution_identity_valid(
+    record: DispatchRecord,
+    *,
+    require_authenticated_credential: bool = False,
+) -> bool:
+    """Bind an allocated governed session to its exact execution identity."""
+
+    provenance = record.goal_provenance
+    if provenance is None:
+        return True
+    identity = provenance.execution_identity
+    if record.session_id is None:
+        return identity is None
+    receipt = provenance.materialization_receipt
+    if identity is None or receipt is None:
+        return False
+    valid = bool(
+        identity.materialization_receipt_digest == receipt.digest
+        and identity.provider_id.strip().lower()
+        == str(record.request_payload.get("provider") or "").strip().lower()
+        and identity.target_instance_id == record.target_instance_id
+        and identity.session_id == record.session_id
+        and identity.fencing_token == provenance.fencing_token
+    )
+    if require_authenticated_credential:
+        return valid and identity.credential_authenticated()
+    return valid
+
+
 def goal_dispatch_placement_decision_digest(
     decision: dict[str, Any] | None,
 ) -> str:
@@ -536,8 +612,9 @@ def goal_admission_validation_proof(record: DispatchRecord) -> str:
                 record.placement_decision
             ),
             "provider": record.request_payload.get("provider"),
+            "materialization_plan": record.materialization_plan,
             "goal_provenance": (
-                provenance.model_dump(mode="json")
+                provenance.model_dump(mode="json", exclude={"execution_identity"})
                 if provenance is not None
                 else None
             ),
@@ -1218,9 +1295,9 @@ class DispatchStore:
                     or not pending_existing.goal_admission_validation_proof
                     or pending_existing.goal_admission_validation_proof
                     != goal_admission_validation_proof(pending_existing)
-                    or not goal_dispatch_record_placement_input_valid(
-                        pending_existing
-                    )
+                    or not goal_dispatch_record_placement_input_valid(pending_existing)
+                    or not goal_dispatch_materialization_binding_valid(pending_existing)
+                    or not goal_dispatch_execution_identity_valid(pending_existing)
                     or provenance is None
                     or provenance != pending_existing.goal_provenance
                     or record.goal_admission_validation_state != "validated"
@@ -1231,6 +1308,8 @@ class DispatchStore:
                     or record.goal_admission_validation_proof
                     != goal_admission_validation_proof(record)
                     or not goal_dispatch_record_placement_input_valid(record)
+                    or not goal_dispatch_materialization_binding_valid(record)
+                    or not goal_dispatch_execution_identity_valid(record)
                     or provenance.resolved_target_instance_id
                     != record.target_instance_id
                     or provenance.placement_input_digest

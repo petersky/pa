@@ -27,6 +27,7 @@ from pa.goals.advanced_models import (
 )
 from pa.goals.authorization import authorize_proposal
 from pa.goals.governance import GoalGovernanceConflict
+from pa.goals.materialization import GoalExecutionIdentityV1
 from pa.goals.models import (
     AuthorizationOutcome,
     CreateWorkPackageAction,
@@ -48,6 +49,7 @@ from pa.goals.models import (
     GoalProposalCreate,
     GoalState,
     GoalTransition,
+    GoalWorkPackage,
     ProposalStatus,
     RecordEvidenceAction,
     TransitionGoalAction,
@@ -348,9 +350,7 @@ class GoalSupervisorTests(unittest.TestCase):
                     summary="Future observation",
                     observed_at=clock[0] + timedelta(minutes=6),
                 ),
-                lambda first, _second: {
-                    first.id: CriterionVerdict.SATISFIED
-                },
+                lambda first, _second: {first.id: CriterionVerdict.SATISFIED},
                 "cannot be in the future",
             ),
             (
@@ -362,9 +362,7 @@ class GoalSupervisorTests(unittest.TestCase):
                     observed_at=clock[0],
                     expires_at=clock[0],
                 ),
-                lambda first, _second: {
-                    first.id: CriterionVerdict.SATISFIED
-                },
+                lambda first, _second: {first.id: CriterionVerdict.SATISFIED},
                 "expiry must follow",
             ),
             (
@@ -375,9 +373,7 @@ class GoalSupervisorTests(unittest.TestCase):
                     summary="Verdict is outside the evidence mapping",
                     observed_at=clock[0],
                 ),
-                lambda _first, second: {
-                    second.id: CriterionVerdict.SATISFIED
-                },
+                lambda _first, second: {second.id: CriterionVerdict.SATISFIED},
                 "mapped to each criterion",
             ),
         )
@@ -441,9 +437,7 @@ class GoalSupervisorTests(unittest.TestCase):
                     request,
                     fail_once,
                 )
-            with self.assertRaisesRegex(
-                GoalGovernanceConflict, "remain applied"
-            ):
+            with self.assertRaisesRegex(GoalGovernanceConflict, "remain applied"):
                 supervisor._governed_action(
                     goal,
                     "governed-crash-replay",
@@ -879,10 +873,7 @@ class GoalSupervisorTests(unittest.TestCase):
             ]
             self.assertEqual(len(dispatch_reservations), package.max_attempts)
             self.assertTrue(
-                all(
-                    item.state.value == "released"
-                    for item in dispatch_reservations
-                )
+                all(item.state.value == "released" for item in dispatch_reservations)
             )
 
     def test_pre_admission_crash_reuses_the_same_external_attempt_key(self) -> None:
@@ -1032,9 +1023,7 @@ class GoalSupervisorTests(unittest.TestCase):
             def canonical_dispatch(payload: dict) -> dict:
                 key = payload["idempotency_key"]
                 keys.append(key)
-                return {
-                    "dispatch_id": external.setdefault(key, "dispatch-canonical")
-                }
+                return {"dispatch_id": external.setdefault(key, "dispatch-canonical")}
 
             supervisor = GoalSupervisor(
                 service,
@@ -1172,12 +1161,9 @@ class GoalSupervisorTests(unittest.TestCase):
 
             def crash_first_rejected_release(*args, **kwargs):
                 nonlocal release_crashed
-                if (
-                    not release_crashed
-                    and str(kwargs.get("idempotency_key", "")).endswith(
-                        ":release-rejected"
-                    )
-                ):
+                if not release_crashed and str(
+                    kwargs.get("idempotency_key", "")
+                ).endswith(":release-rejected"):
                     release_crashed = True
                     raise RuntimeError("crash during post-checkpoint release")
                 return original_release(*args, **kwargs)
@@ -1485,9 +1471,7 @@ class GoalSupervisorTests(unittest.TestCase):
 
             def release_without_record(payload: dict) -> dict:
                 calls.append(payload["idempotency_key"])
-                reservation_id = payload["goal_provenance"][
-                    "action_reservation_id"
-                ]
+                reservation_id = payload["goal_provenance"]["action_reservation_id"]
                 supervisor._reconcile_governed_release(
                     goal.id,
                     reservation_id,
@@ -1615,124 +1599,168 @@ class GoalSupervisorTests(unittest.TestCase):
                 ),
             )
             verified = supervisor.run_once(goal.id)[0]
-            self.assertEqual(verified.criteria[0].verdict, CriterionVerdict.SATISFIED)
-            self.assertTrue(verified.evidence)
-            self.assertEqual(verified.work_packages[0].state, WorkPackageState.VERIFIED)
-            executor = next(
-                item
-                for item in verified.work_packages
-                if item.role == GoalActorRole.EXECUTOR
+            self.assertEqual(verified.criteria[0].verdict, CriterionVerdict.PENDING)
+            self.assertFalse(verified.evidence)
+            self.assertIn(
+                "not independent",
+                next(
+                    item
+                    for item in verified.work_packages
+                    if item.role == GoalActorRole.VERIFIER
+                ).result_summary,
             )
-            verifier = next(
-                item
-                for item in verified.work_packages
-                if item.role == GoalActorRole.VERIFIER
+
+    def test_verifier_requires_separate_session_target_and_provider(self) -> None:
+        criterion = GoalCriterion(
+            description="independently verified",
+            verification_method="focused suite",
+            evidence_requirement="passing validation",
+        )
+        goal = Goal(**self._goal_create(criterion).model_dump(mode="python"))
+        executor = GoalWorkPackage(
+            proposal_id="executor-proposal",
+            title="Execute",
+            objective="Implement",
+            criterion_ids=[criterion.id],
+            role=GoalActorRole.EXECUTOR,
+            state=WorkPackageState.AWAITING_VERIFICATION,
+        )
+        verifier = GoalWorkPackage(
+            proposal_id="verifier-proposal",
+            title="Verify",
+            objective="Verify independently",
+            criterion_ids=[criterion.id],
+            depends_on=[executor.id],
+            role=GoalActorRole.VERIFIER,
+            state=WorkPackageState.RUNNING,
+        )
+        goal.work_packages = [executor, verifier]
+        goal.lease.fencing_token = 1
+        report = CompletionReportV1(
+            outcome="Independent suite passed.",
+            validations=[
+                ProgressValidationV1(
+                    command="pytest focused",
+                    status="passed",
+                    summary="all passed",
+                )
+            ],
+        )
+
+        def identity(
+            principal: str,
+            provider: str,
+            target: str,
+            session: str,
+        ) -> GoalExecutionIdentityV1:
+            return GoalExecutionIdentityV1(
+                assigned_service_principal=principal,
+                provider_id=provider,
+                target_instance_id=target,
+                session_id=session,
+                fencing_token=1,
+                materialization_receipt_digest="a" * 64,
             )
-            self.assertNotEqual(
-                executor.executor_service_id, verifier.verifier_service_id
-            )
-            self.assertEqual(
-                verified.evidence[-1].producer_service_id,
-                verifier.verifier_service_id,
-            )
-            self.assertEqual(
-                verified.evidence[-1].recorded_by_principal,
-                verifier.verifier_service_id,
-            )
-            self.assertEqual(
-                verified.evidence[-1].recorded_by_instance_id,
+
+        executor_identity = identity(
+            "service:executor",
+            "codex",
+            "instance-a",
+            "executor-session",
+        )
+        cases = {
+            "missing real session": None,
+            "same session": identity(
+                "service:verifier-session",
+                "cursor",
+                "instance-b",
+                "executor-session",
+            ),
+            "same target": identity(
+                "service:verifier-target",
+                "cursor",
                 "instance-a",
-            )
-            with self.assertRaisesRegex(GoalConflict, "assigned independent verifier"):
-                service.add_evidence(
-                    verified.id,
-                    GoalEvidenceCreate(
-                        evidence=GoalEvidence(
-                            criterion_ids=[criterion.id],
-                            kind=EvidenceKind.AUDIT,
-                            summary="A forged verifier must not be accepted",
-                        )
-                    ),
-                    GoalMutationContext(
-                        actor_principal="service:goal-verifier:forged",
-                        authority_instance_id="instance-a",
-                        idempotency_key="forged-verifier-evidence",
-                        expected_version=verified.version,
-                        policy_revision=verified.policy.revision,
-                        fencing_token=verified.lease.fencing_token,
-                    ),
+                "verifier-session",
+            ),
+            "same provider": identity(
+                "service:verifier-provider",
+                "codex",
+                "instance-b",
+                "verifier-session",
+            ),
+            "truly separate": identity(
+                "service:verifier-separate",
+                "cursor",
+                "instance-b",
+                "verifier-session",
+            ),
+        }
+        supervisor = object.__new__(GoalSupervisor)
+        supervisor.service_principal = "service:goal-supervisor:instance-a"
+        supervisor.instance_id = "instance-a"
+
+        def ingest_evidence_snapshot(
+            current: Goal,
+            data: GoalEvidenceCreate,
+            *,
+            context: GoalMutationContext,
+            now: datetime,
+        ) -> None:
+            current.evidence.append(data.evidence)
+            for criterion_id, verdict in data.criterion_verdicts.items():
+                criterion = next(
+                    item for item in current.criteria if item.id == criterion_id
                 )
-            spoofed = service.add_evidence(
-                verified.id,
-                GoalEvidenceCreate(
-                    evidence=GoalEvidence(
-                        criterion_ids=[criterion.id],
-                        kind=EvidenceKind.AUDIT,
-                        summary="A supervisor cannot assert verifier provenance",
-                        producer_role=GoalActorRole.VERIFIER,
-                        producer_service_id=verifier.verifier_service_id,
+                criterion.verdict = verdict
+
+        supervisor.service = SimpleNamespace(
+            ingest_evidence_snapshot=ingest_evidence_snapshot
+        )
+        for label, verifier_identity in cases.items():
+            with self.subTest(case=label):
+                current = goal.model_copy(deep=True)
+                current_executor, current_verifier = current.work_packages
+                current_executor.execution_identity = executor_identity
+                current_executor.executor_service_id = (
+                    executor_identity.assigned_service_principal
+                )
+                current_verifier.execution_identity = verifier_identity
+                current_verifier.verifier_service_id = (
+                    verifier_identity.assigned_service_principal
+                    if verifier_identity is not None
+                    else None
+                )
+                record = SimpleNamespace(
+                    dispatch_id="verifier-dispatch",
+                    session_id=(
+                        verifier_identity.session_id
+                        if verifier_identity is not None
+                        else None
+                    ),
+                    final_report=report,
+                )
+                changed = supervisor._complete_package(
+                    current,
+                    current_verifier,
+                    record,
+                    datetime.now(UTC),
+                )
+                self.assertTrue(changed)
+                if label == "truly separate":
+                    self.assertEqual(
+                        current.criteria[0].verdict,
+                        CriterionVerdict.SATISFIED,
                     )
-                ),
-                GoalMutationContext(
-                    actor_principal=supervisor.service_principal,
-                    authority_instance_id="instance-a",
-                    idempotency_key="spoofed-verifier-fields",
-                    expected_version=verified.version,
-                    policy_revision=verified.policy.revision,
-                    fencing_token=verified.lease.fencing_token,
-                ),
-            )
-            spoofed_evidence = spoofed.evidence[-1]
-            self.assertIsNone(spoofed_evidence.producer_role)
-            self.assertIsNone(spoofed_evidence.producer_service_id)
-            with self.assertRaisesRegex(GoalConflict, "independent verifier evidence"):
-                service.audit(
-                    spoofed.id,
-                    GoalAuditCreate(
-                        criterion_verdicts={criterion.id: CriterionVerdict.SATISFIED},
-                        evidence_ids=[spoofed_evidence.id],
-                        explanation="The forged body must not pass verification",
-                    ),
-                    GoalMutationContext(
-                        actor_principal="agent:independent-auditor",
-                        authority_instance_id="instance-a",
-                        idempotency_key="reject-spoofed-verifier-fields",
-                        expected_version=spoofed.version,
-                        policy_revision=spoofed.policy.revision,
-                        fencing_token=spoofed.lease.fencing_token,
-                    ),
-                )
-            verifier_principal = verifier.verifier_service_id
-            assert verifier_principal is not None
-            assigned = service.submit_proposal(
-                spoofed.id,
-                GoalProposalCreate(
-                    proposer_principal=verifier_principal,
-                    proposer_role=GoalActorRole.VERIFIER,
-                    action=RecordEvidenceAction(
-                        evidence=GoalEvidence(
-                            criterion_ids=[criterion.id],
-                            kind=EvidenceKind.AUDIT,
-                            summary="Assigned verifier submitted attributable evidence.",
-                        )
-                    ),
-                    rationale="Assigned runtime identity determines the verifier role.",
-                    expected_goal_version=spoofed.version,
-                    policy_revision=spoofed.policy.revision,
-                ),
-                GoalMutationContext(
-                    actor_principal=verifier_principal,
-                    authority_instance_id="instance-a",
-                    idempotency_key="assigned-verifier-proposal-role",
-                    expected_version=spoofed.version,
-                    policy_revision=spoofed.policy.revision,
-                    fencing_token=spoofed.lease.fencing_token,
-                ),
-            )
-            self.assertEqual(
-                assigned.proposals[-1].proposer_role,
-                GoalActorRole.VERIFIER,
-            )
+                    self.assertEqual(
+                        current_verifier.state,
+                        WorkPackageState.VERIFIED,
+                    )
+                else:
+                    self.assertEqual(
+                        current.criteria[0].verdict,
+                        CriterionVerdict.PENDING,
+                    )
+                    self.assertIn("not independent", current_verifier.result_summary)
 
     def test_operator_approval_survives_as_durable_correlated_interaction(
         self,

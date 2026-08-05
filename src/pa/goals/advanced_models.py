@@ -11,6 +11,11 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from pydantic import BaseModel, Field, model_validator
 
+from pa.goals.materialization import (
+    GoalExecutionIdentityV1,
+    GoalMaterializationEnvelopeV1,
+    GoalMaterializationReceiptV1,
+)
 from pa.goals.models import (
     GoalActorRole,
     GoalCreate,
@@ -377,6 +382,9 @@ class GoalActionRequest(BaseModel):
     placement_decision_digest: str | None = Field(
         default=None, min_length=64, max_length=64
     )
+    materialization_envelope: GoalMaterializationEnvelopeV1 | None = None
+    materialization_receipt: GoalMaterializationReceiptV1 | None = None
+    execution_identity: GoalExecutionIdentityV1 | None = None
     risk: GoalActionRisk = GoalActionRisk.LOW
     reversible: bool = True
     delegated: bool = False
@@ -501,6 +509,7 @@ class ProviderGoalAssignment(BaseModel):
     supports_session_load: bool = True
     strategy_id: GoalReferenceId | None = None
     estimated_usage: GoalUsage = Field(default_factory=lambda: GoalUsage(actions=1))
+    materialization_envelope: GoalMaterializationEnvelopeV1 | None = None
     role: GoalActorRole = GoalActorRole.EXECUTOR
     replaces_run_id: GoalReferenceId | None = None
     max_attempts: int = Field(default=3, ge=1, le=20)
@@ -529,6 +538,9 @@ class ProviderGoalRun(BaseModel):
     authority_instance_id: GoalReferenceId = "legacy"
     fencing_token: int | None = Field(default=None, ge=1)
     reservation_id: GoalReferenceId | None = None
+    materialization_envelope: GoalMaterializationEnvelopeV1 | None = None
+    materialization_receipt: GoalMaterializationReceiptV1 | None = None
+    execution_identity: GoalExecutionIdentityV1 | None = None
     attempt: int = Field(default=1, ge=1)
     max_attempts: int = Field(default=3, ge=1, le=20)
     replaces_run_id: GoalReferenceId | None = None

@@ -111,6 +111,10 @@ class CommandProviderGoalAdapter:
                 "command nor recoverable session turns"
             )
         packet = _goal_packet(goal, assignment.strategy_id)
+        if assignment.materialization_envelope is not None:
+            packet["materialization_envelope"] = (
+                assignment.materialization_envelope.model_dump(mode="json")
+            )
         return ProviderGoalInvocation(
             provider_id=assignment.provider_id,
             mode=(

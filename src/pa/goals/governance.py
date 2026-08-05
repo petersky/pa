@@ -41,6 +41,11 @@ from pa.goals.advanced_models import (
     ResourceAccess,
 )
 from pa.goals.idempotency import operation_fingerprint, serialized_goal_mutation
+from pa.goals.materialization import (
+    GoalExecutionIdentityV1,
+    GoalMaterializationEnvelopeV1,
+    GoalMaterializationReceiptV1,
+)
 from pa.goals.models import (
     Goal,
     GoalCreate,
@@ -452,8 +457,7 @@ class GoalGovernanceService:
             if (
                 replayed.request != request
                 or replayed.decided_by != context.actor_principal
-                or replayed.authority_instance_id
-                != context.authority_instance_id
+                or replayed.authority_instance_id != context.authority_instance_id
                 or replayed.fencing_token != context.fencing_token
             ):
                 raise GoalGovernanceConflict(
@@ -563,8 +567,7 @@ class GoalGovernanceService:
                 or replayed.action_class != reservation.action_class
                 or replayed.request != reservation.request
                 or replayed.decided_by != reservation.actor_principal
-                or replayed.authority_instance_id
-                != reservation.authority_instance_id
+                or replayed.authority_instance_id != reservation.authority_instance_id
                 or replayed.fencing_token != reservation.fencing_token
             ):
                 raise GoalGovernanceConflict(
@@ -879,6 +882,209 @@ class GoalGovernanceService:
         return state, reservation
 
     @serialized_goal_mutation
+    def bind_dispatch_materialization(
+        self,
+        goal_id: str,
+        reservation_id: str,
+        context: GovernanceMutationContext,
+        *,
+        envelope: GoalMaterializationEnvelopeV1,
+        receipt: GoalMaterializationReceiptV1,
+    ) -> tuple[GoalAutonomyState, GoalActionReservation]:
+        """Bind the exact target plan without mutating the reserved envelope."""
+
+        def exact_binding(reservation: GoalActionReservation) -> bool:
+            return bool(
+                reservation.request.materialization_envelope == envelope
+                and reservation.request.materialization_receipt == receipt
+                and receipt.envelope_digest == envelope.digest
+            )
+
+        goal = self._require_goal(goal_id)
+        operation = {
+            "reservation_id": reservation_id,
+            "envelope": envelope,
+            "receipt": receipt,
+        }
+        fingerprint = operation_fingerprint(
+            realm_id=goal.realm_id,
+            entity_type=AUTONOMY_ENTITY,
+            entity_id=goal_id,
+            event_type="goal_governance.dispatch_materialization_bound",
+            operation=operation,
+            context=context,
+        )
+        duplicate = self._duplicate(goal.realm_id, context.idempotency_key)
+        if duplicate:
+            self._validate_replay(
+                duplicate,
+                entity_type=AUTONOMY_ENTITY,
+                entity_id=goal_id,
+                event_type="goal_governance.dispatch_materialization_bound",
+                fingerprint=fingerprint,
+            )
+            state = self.get_state(goal_id)
+            reservation = self._require_reservation(state, reservation_id)
+            if not exact_binding(reservation):
+                raise GoalGovernanceConflict(
+                    "idempotent materialization binding no longer matches "
+                    "its reservation"
+                )
+            return state, reservation
+
+        def mutate(goal: Goal, state: GoalAutonomyState) -> dict[str, Any]:
+            reservation = self._require_reservation(state, reservation_id)
+            self._validate_reservation(goal, reservation, context)
+            if reservation.state != GoalReservationState.APPLIED:
+                raise GoalGovernanceConflict(
+                    "materialization binding requires an applied action reservation"
+                )
+            if reservation.request.materialization_envelope != envelope:
+                raise GoalGovernanceConflict(
+                    "dispatch reservation does not bind this materialization envelope"
+                )
+            if receipt.envelope_digest != envelope.digest:
+                raise GoalGovernanceConflict(
+                    "materialization receipt belongs to another envelope"
+                )
+            if (
+                receipt.target_instance_id
+                != reservation.request.resolved_target_instance_id
+                or receipt.provider_id.strip().lower()
+                != str(reservation.request.provider_id or "").strip().lower()
+            ):
+                raise GoalGovernanceConflict(
+                    "materialization receipt does not match the reserved execution"
+                )
+            existing = reservation.request.materialization_receipt
+            if existing is not None and existing != receipt:
+                raise GoalGovernanceConflict(
+                    "dispatch materialization is already bound to another result"
+                )
+            reservation.request.materialization_receipt = receipt
+            return {
+                "reservation_id": reservation.id,
+                "envelope_digest": envelope.digest,
+                "receipt_digest": receipt.digest,
+                "target_instance_id": receipt.target_instance_id,
+                "provider_id": receipt.provider_id,
+            }
+
+        state = self._mutate_state(
+            goal_id,
+            context,
+            "goal_governance.dispatch_materialization_bound",
+            mutate,
+            operation=operation,
+            operation_fingerprint_value=fingerprint,
+        )
+        reservation = self._require_reservation(state, reservation_id)
+        if not exact_binding(reservation):
+            raise GoalGovernanceConflict(
+                "durable materialization binding does not match the requested result"
+            )
+        return state, reservation
+
+    @serialized_goal_mutation
+    def bind_dispatch_execution_identity(
+        self,
+        goal_id: str,
+        reservation_id: str,
+        context: GovernanceMutationContext,
+        *,
+        identity: GoalExecutionIdentityV1,
+    ) -> tuple[GoalAutonomyState, GoalActionReservation]:
+        """Bind the allocated principal/session identity without credential material."""
+
+        def exact_binding(reservation: GoalActionReservation) -> bool:
+            return reservation.request.execution_identity == identity
+
+        goal = self._require_goal(goal_id)
+        operation = {
+            "reservation_id": reservation_id,
+            "identity": identity,
+        }
+        fingerprint = operation_fingerprint(
+            realm_id=goal.realm_id,
+            entity_type=AUTONOMY_ENTITY,
+            entity_id=goal_id,
+            event_type="goal_governance.dispatch_execution_identity_bound",
+            operation=operation,
+            context=context,
+        )
+        duplicate = self._duplicate(goal.realm_id, context.idempotency_key)
+        if duplicate:
+            self._validate_replay(
+                duplicate,
+                entity_type=AUTONOMY_ENTITY,
+                entity_id=goal_id,
+                event_type="goal_governance.dispatch_execution_identity_bound",
+                fingerprint=fingerprint,
+            )
+            state = self.get_state(goal_id)
+            reservation = self._require_reservation(state, reservation_id)
+            if not exact_binding(reservation):
+                raise GoalGovernanceConflict(
+                    "idempotent execution-identity binding no longer matches"
+                )
+            return state, reservation
+
+        def mutate(goal: Goal, state: GoalAutonomyState) -> dict[str, Any]:
+            reservation = self._require_reservation(state, reservation_id)
+            self._validate_reservation(goal, reservation, context)
+            if reservation.state != GoalReservationState.APPLIED:
+                raise GoalGovernanceConflict(
+                    "execution identity requires an applied action reservation"
+                )
+            receipt = reservation.request.materialization_receipt
+            if (
+                receipt is None
+                or identity.materialization_receipt_digest != receipt.digest
+            ):
+                raise GoalGovernanceConflict(
+                    "execution identity belongs to another materialization receipt"
+                )
+            if (
+                identity.provider_id.strip().lower()
+                != str(reservation.request.provider_id or "").strip().lower()
+                or identity.target_instance_id
+                != reservation.request.resolved_target_instance_id
+                or identity.fencing_token != reservation.fencing_token
+            ):
+                raise GoalGovernanceConflict(
+                    "execution identity does not match the reserved execution"
+                )
+            existing = reservation.request.execution_identity
+            if existing is not None and existing != identity:
+                raise GoalGovernanceConflict(
+                    "dispatch execution identity is already bound to another session"
+                )
+            reservation.request.execution_identity = identity
+            return {
+                "reservation_id": reservation.id,
+                "execution_identity_digest": identity.digest,
+                "provider_id": identity.provider_id,
+                "target_instance_id": identity.target_instance_id,
+                "session_id": identity.session_id,
+                "credential_bound": identity.credential_authenticated(),
+            }
+
+        state = self._mutate_state(
+            goal_id,
+            context,
+            "goal_governance.dispatch_execution_identity_bound",
+            mutate,
+            operation=operation,
+            operation_fingerprint_value=fingerprint,
+        )
+        reservation = self._require_reservation(state, reservation_id)
+        if not exact_binding(reservation):
+            raise GoalGovernanceConflict(
+                "durable execution identity does not match the requested binding"
+            )
+        return state, reservation
+
+    @serialized_goal_mutation
     def revalidate_action_sink(
         self,
         goal_id: str,
@@ -891,6 +1097,9 @@ class GoalGovernanceService:
         placement_input_digest: str,
         resolved_target_instance_id: str,
         placement_decision_digest: str,
+        materialization_envelope: GoalMaterializationEnvelopeV1,
+        materialization_receipt: GoalMaterializationReceiptV1,
+        execution_identity: GoalExecutionIdentityV1 | None = None,
         denial_actual_usage: GoalUsage | None = None,
     ) -> tuple[GoalAutonomyState, GoalActionReservation]:
         """Durably renew an applied hold against the current fenced goal envelope."""
@@ -940,12 +1149,16 @@ class GoalGovernanceService:
                 != provider_id
                 or reservation.request.requested_placement_target
                 != requested_placement_target
-                or reservation.request.placement_input_digest
-                != placement_input_digest
+                or reservation.request.placement_input_digest != placement_input_digest
                 or reservation.request.resolved_target_instance_id
                 != resolved_target_instance_id
                 or reservation.request.placement_decision_digest
                 != placement_decision_digest
+                or reservation.request.materialization_envelope
+                != materialization_envelope
+                or reservation.request.materialization_receipt
+                != materialization_receipt
+                or reservation.request.execution_identity != execution_identity
             ):
                 raise GoalGovernanceConflict(
                     "idempotent dispatch sink validation no longer matches its reservation"
@@ -984,12 +1197,16 @@ class GoalGovernanceService:
             if (
                 reservation.request.requested_placement_target
                 != requested_placement_target
-                or reservation.request.placement_input_digest
-                != placement_input_digest
+                or reservation.request.placement_input_digest != placement_input_digest
                 or reservation.request.resolved_target_instance_id
                 != resolved_target_instance_id
                 or reservation.request.placement_decision_digest
                 != placement_decision_digest
+                or reservation.request.materialization_envelope
+                != materialization_envelope
+                or reservation.request.materialization_receipt
+                != materialization_receipt
+                or reservation.request.execution_identity != execution_identity
             ):
                 raise GoalGovernanceConflict(
                     "action reservation does not bind this placement result"
@@ -1339,6 +1556,13 @@ class GoalGovernanceService:
                     raise GoalGovernanceConflict(
                         "provider retry cannot change executor/verifier role"
                     )
+                if (
+                    previous.materialization_envelope
+                    != assignment.materialization_envelope
+                ):
+                    raise GoalGovernanceConflict(
+                        "provider retry cannot widen its materialization envelope"
+                    )
                 if any(
                     item.replaces_run_id == previous.id for item in state.provider_runs
                 ):
@@ -1357,6 +1581,21 @@ class GoalGovernanceService:
                 delegated=True,
                 provider_id=assignment.provider_id,
                 estimate=assignment.estimated_usage,
+                materialization_envelope=assignment.materialization_envelope,
+                resource_claims=(
+                    [
+                        GoalResourceClaim(
+                            key=item.key,
+                            access=ResourceAccess(item.access),
+                            quantity=item.quantity,
+                            preemptible=item.preemptible,
+                            expires_at=item.expires_at,
+                        )
+                        for item in assignment.materialization_envelope.resource_claims
+                    ]
+                    if assignment.materialization_envelope is not None
+                    else []
+                ),
             )
             decision = self._evaluate_action(goal, state, request, context)
             state.recent_decisions = [*state.recent_decisions, decision][-200:]
@@ -1378,6 +1617,7 @@ class GoalGovernanceService:
                     authority_instance_id=context.authority_instance_id,
                     fencing_token=context.fencing_token,
                     reservation_id=decision.reservation_id or "",
+                    materialization_envelope=assignment.materialization_envelope,
                     attempt=attempt,
                     max_attempts=effective_max_attempts,
                     replaces_run_id=previous.id if previous else None,
@@ -2119,6 +2359,75 @@ class GoalGovernanceService:
         if request.data_scope and request.data_scope not in policy.data_scope:
             hard_denial = True
             reasons.append("the data scope is outside the goal policy scope")
+        envelope = request.materialization_envelope
+        if envelope is not None:
+            forbidden_repositories = sorted(
+                set(envelope.repository_ids) - set(policy.repository_scope)
+            )
+            if forbidden_repositories:
+                hard_denial = True
+                reasons.append(
+                    "the materialization envelope contains repositories outside "
+                    "the goal policy scope: " + ", ".join(forbidden_repositories)
+                )
+            forbidden_data = sorted(set(envelope.data_scopes) - set(policy.data_scope))
+            if forbidden_data:
+                hard_denial = True
+                reasons.append(
+                    "the materialization envelope contains data outside the goal "
+                    "policy scope: " + ", ".join(forbidden_data)
+                )
+            canonical_claims = [
+                (
+                    item.key,
+                    item.access,
+                    item.quantity,
+                    item.preemptible,
+                    item.expires_at,
+                )
+                for item in envelope.resource_claims
+            ]
+            requested_claims = sorted(
+                (
+                    item.key,
+                    item.access.value,
+                    item.quantity,
+                    item.preemptible,
+                    item.expires_at,
+                )
+                for item in request.resource_claims
+            )
+            if canonical_claims != requested_claims:
+                hard_denial = True
+                reasons.append(
+                    "the action resource claims do not exactly match the "
+                    "materialization envelope"
+                )
+            if (
+                request.materialization_receipt is not None
+                and request.materialization_receipt.envelope_digest != envelope.digest
+            ):
+                hard_denial = True
+                reasons.append(
+                    "the materialization receipt belongs to another envelope"
+                )
+            if request.execution_identity is not None and (
+                request.materialization_receipt is None
+                or request.execution_identity.materialization_receipt_digest
+                != request.materialization_receipt.digest
+            ):
+                hard_denial = True
+                reasons.append(
+                    "the execution identity belongs to another materialization receipt"
+                )
+        elif (
+            request.materialization_receipt is not None
+            or request.execution_identity is not None
+        ):
+            hard_denial = True
+            reasons.append(
+                "materialization receipts and execution identities require an envelope"
+            )
         if _matches(request.action_class, policy.require_operator_for):
             approval_required = True
             reasons.append("the goal policy requires operator approval for this action")
@@ -2390,9 +2699,7 @@ class GoalGovernanceService:
             if previously_managed_claims is not None
             else cls._active_resource_claims(state)
         )
-        legacy = [
-            claim.model_copy(deep=True) for claim in state.resource_reservations
-        ]
+        legacy = [claim.model_copy(deep=True) for claim in state.resource_reservations]
         for managed in represented:
             match = next(
                 (index for index, claim in enumerate(legacy) if claim == managed),

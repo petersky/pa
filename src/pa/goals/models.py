@@ -8,6 +8,12 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from pydantic import BaseModel, Field, model_validator
 
+from pa.goals.materialization import (
+    GoalExecutionIdentityV1,
+    GoalMaterializationEnvelopeV1,
+    GoalMaterializationReceiptV1,
+)
+
 GoalReferenceId = Annotated[
     str,
     Field(min_length=1, max_length=200, pattern=r"\S"),
@@ -724,6 +730,9 @@ class GoalWorkPackage(BaseModel):
         pattern=r"^[0-9a-f]{64}$",
     )
     fleet_lifecycle_owned: bool = False
+    materialization_envelope: GoalMaterializationEnvelopeV1 | None = None
+    materialization_receipt: GoalMaterializationReceiptV1 | None = None
+    execution_identity: GoalExecutionIdentityV1 | None = None
     attempts: int = Field(default=0, ge=0)
     max_attempts: int = Field(default=3, ge=1, le=20)
     last_progress_fingerprint: str | None = None
@@ -870,15 +879,12 @@ class Goal(BaseModel):
                     raise ValueError(
                         "dispatch attempt generation does not match package attempts"
                     )
-                if (
-                    attempt.state == GoalDispatchAttemptState.ADMITTED
-                    and (
-                        package.action_reservation_id != attempt.reservation_id
-                        or package.dispatch_admission_receipt_digest
-                        != attempt.admission_receipt_digest
-                        or attempt.dispatch_id not in package.dispatch_ids
-                        or not package.fleet_lifecycle_owned
-                    )
+                if attempt.state == GoalDispatchAttemptState.ADMITTED and (
+                    package.action_reservation_id != attempt.reservation_id
+                    or package.dispatch_admission_receipt_digest
+                    != attempt.admission_receipt_digest
+                    or attempt.dispatch_id not in package.dispatch_ids
+                    or not package.fleet_lifecycle_owned
                 ):
                     raise ValueError(
                         "admitted dispatch attempt is not bound to its package receipt"

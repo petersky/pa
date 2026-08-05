@@ -36,6 +36,11 @@ from pa.goals.advanced_models import (
     StandingGoalPolicy,
 )
 from pa.goals.governance import GoalGovernanceConflict, GoalGovernanceService
+from pa.goals.materialization import (
+    GoalMaterializationEnvelopeV1,
+    GoalMaterializationResourceClaimV1,
+    canonical_materialization_digest,
+)
 from pa.goals.models import (
     Goal,
     GoalActorRole,
@@ -298,9 +303,7 @@ class GoalGovernanceTests(unittest.TestCase):
                 governance.review_proposal(
                     proposal.id,
                     review.model_copy(update={"reviewer_principal": "user:other"}),
-                    review_context.model_copy(
-                        update={"actor_principal": "user:other"}
-                    ),
+                    review_context.model_copy(update={"actor_principal": "user:other"}),
                 )
 
     def test_concurrent_governance_mutations_atomically_claim_idempotency(self) -> None:
@@ -354,8 +357,7 @@ class GoalGovernanceTests(unittest.TestCase):
             changed_errors = []
             with ThreadPoolExecutor(max_workers=2) as executor:
                 futures = [
-                    executor.submit(changed_priority, priority)
-                    for priority in (71, 72)
+                    executor.submit(changed_priority, priority) for priority in (71, 72)
                 ]
                 for future in futures:
                     try:
@@ -591,6 +593,97 @@ class GoalGovernanceTests(unittest.TestCase):
                 deadline.disposition, GoalActionDisposition.BUDGET_EXHAUSTED
             )
 
+    def test_materialization_envelope_is_policy_and_resource_bounded(self) -> None:
+        now = datetime(2026, 8, 3, tzinfo=UTC)
+        with tempfile.TemporaryDirectory() as tmp:
+            goals, governance, _ = self._services(tmp, now)
+            goal_data = self._goal_data("Govern exact materialization")
+            goal_data.budget.max_concurrency = 2
+            goal = goals.create(goal_data, self._goal_ctx("create"))
+            forbidden = GoalMaterializationEnvelopeV1(
+                repository_ids=("outside/repository",),
+                data_scopes=("private-ledger",),
+                resource_claims=(
+                    GoalMaterializationResourceClaimV1(
+                        key="repository:outside/repository",
+                        access="exclusive",
+                    ),
+                ),
+                execution_contract_digest="a" * 64,
+            )
+            state, denied = governance.authorize_action(
+                goal.id,
+                GoalActionRequest(
+                    action_class="code.materialize.forbidden",
+                    materialization_envelope=forbidden,
+                    resource_claims=[
+                        GoalResourceClaim(
+                            key="repository:outside/repository",
+                            access=ResourceAccess.EXCLUSIVE,
+                        )
+                    ],
+                ),
+                self._ctx(0, "forbidden-materialization"),
+            )
+            self.assertEqual(denied.disposition, GoalActionDisposition.DENIED)
+            self.assertTrue(
+                any("outside the goal policy" in item for item in denied.reasons)
+            )
+
+            allowed = GoalMaterializationEnvelopeV1(
+                repository_ids=("petersky/pa",),
+                resource_claims=(
+                    GoalMaterializationResourceClaimV1(
+                        key="repository:petersky/pa",
+                        access="exclusive",
+                    ),
+                ),
+                execution_contract_digest="b" * 64,
+            )
+            state, claim_mismatch = governance.authorize_action(
+                goal.id,
+                GoalActionRequest(
+                    action_class="code.materialize.mismatch",
+                    materialization_envelope=allowed,
+                ),
+                self._ctx(state.version, "claim-mismatch"),
+            )
+            self.assertEqual(
+                claim_mismatch.disposition,
+                GoalActionDisposition.DENIED,
+            )
+            self.assertTrue(
+                any("exactly match" in item for item in claim_mismatch.reasons)
+            )
+
+            exact_request = GoalActionRequest(
+                action_class="code.materialize.first",
+                materialization_envelope=allowed,
+                resource_claims=[
+                    GoalResourceClaim(
+                        key="repository:petersky/pa",
+                        access=ResourceAccess.EXCLUSIVE,
+                    )
+                ],
+            )
+            state, exact = governance.authorize_action(
+                goal.id,
+                exact_request,
+                self._ctx(state.version, "exact-materialization"),
+            )
+            self.assertEqual(exact.disposition, GoalActionDisposition.AUTHORIZED)
+            state, conflict = governance.authorize_action(
+                goal.id,
+                exact_request.model_copy(
+                    update={"action_class": "code.materialize.second"}
+                ),
+                self._ctx(state.version, "conflicting-materialization"),
+            )
+            self.assertEqual(
+                conflict.disposition,
+                GoalActionDisposition.RESOURCE_CONFLICT,
+            )
+
     def test_provider_adapter_uses_advertised_native_command_and_ingests_claims(
         self,
     ) -> None:
@@ -611,11 +704,21 @@ class GoalGovernanceTests(unittest.TestCase):
                 ),
                 ttl_seconds=120,
             )
+            envelope = GoalMaterializationEnvelopeV1(
+                repository_ids=("petersky/pa",),
+                resource_claims=(
+                    GoalMaterializationResourceClaimV1(key="repository:petersky/pa"),
+                ),
+                execution_contract_digest=canonical_materialization_digest(
+                    {"profile": "repository"}
+                ),
+            )
 
             assignment = ProviderGoalAssignment(
                 provider_id="codex",
                 available_commands=["goal"],
                 estimated_usage=GoalUsage(actions=1, cost_usd=1, tokens=100),
+                materialization_envelope=envelope,
             )
             assign_context = self._ctx(
                 0,
@@ -632,6 +735,11 @@ class GoalGovernanceTests(unittest.TestCase):
             assert run is not None
             self.assertEqual(run.invocation.mode, ProviderGoalMode.NATIVE)
             self.assertEqual(run.invocation.canonical_goal_id, goal.id)
+            self.assertEqual(run.materialization_envelope, envelope)
+            self.assertEqual(
+                run.invocation.metadata["goal_packet"]["materialization_envelope"],
+                envelope.model_dump(mode="json"),
+            )
             self.assertTrue(
                 run.invocation.metadata["goal_packet"][
                     "provider_completion_is_evidence_claim_only"
@@ -754,6 +862,35 @@ class GoalGovernanceTests(unittest.TestCase):
                     goal.id,
                     progress.model_copy(update={"summary": "Changed progress body"}),
                     progress_context,
+                )
+
+            widened = GoalMaterializationEnvelopeV1(
+                repository_ids=("another/repository",),
+                resource_claims=(
+                    GoalMaterializationResourceClaimV1(
+                        key="repository:another/repository"
+                    ),
+                ),
+                execution_contract_digest=envelope.execution_contract_digest,
+            )
+            with self.assertRaisesRegex(
+                GoalGovernanceConflict,
+                "cannot widen",
+            ):
+                governance.assign_provider(
+                    goal.id,
+                    ProviderGoalAssignment(
+                        provider_id="codex",
+                        available_commands=["goal"],
+                        materialization_envelope=widened,
+                        replaces_run_id=run.id,
+                    ),
+                    self._ctx(
+                        state.version,
+                        "assign-widened-retry",
+                        goal_version=goal.version,
+                        fence=goal.lease.fencing_token,
+                    ),
                 )
 
     def test_provider_resume_requires_answer_and_budget_block_is_terminal(
@@ -1403,7 +1540,9 @@ class GoalGovernanceTests(unittest.TestCase):
                 self._goal_data("Revalidate old duplicate capacity claims"),
                 self._goal_ctx("create-duplicate-capacity-legacy"),
             )
-            with patch.object(governance, "_resource_conflict_reasons", return_value=[]):
+            with patch.object(
+                governance, "_resource_conflict_reasons", return_value=[]
+            ):
                 state, reserved = governance.authorize_action(
                     legacy.id,
                     request,
@@ -1459,7 +1598,9 @@ class GoalGovernanceTests(unittest.TestCase):
                 self._goal_data("Revalidate old internally exclusive claims"),
                 self._goal_ctx("create-mixed-exclusive-legacy"),
             )
-            with patch.object(governance, "_resource_conflict_reasons", return_value=[]):
+            with patch.object(
+                governance, "_resource_conflict_reasons", return_value=[]
+            ):
                 state, reserved = governance.authorize_action(
                     legacy.id,
                     request,

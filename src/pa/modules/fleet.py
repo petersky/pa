@@ -73,6 +73,8 @@ from pa.execution.dispatch import (
     DispatchWorker,
     GoalDispatchProvenance,
     goal_admission_validation_proof,
+    goal_dispatch_execution_identity_valid,
+    goal_dispatch_materialization_binding_valid,
     goal_dispatch_placement_decision_digest,
     goal_dispatch_placement_input_digest,
     goal_dispatch_placement_input_snapshot,
@@ -175,10 +177,19 @@ from pa.goals.advanced_models import (
     GoalActionDisposition,
     GoalActionRequest,
     GoalReservationState,
+    GoalResourceClaim,
     GoalUsage,
     GovernanceMutationContext,
+    ResourceAccess,
 )
 from pa.goals.governance import GoalGovernanceConflict
+from pa.goals.materialization import (
+    GoalExecutionIdentityV1,
+    GoalMaterializationEnvelopeV1,
+    GoalMaterializationReceiptV1,
+    GoalMaterializationResourceClaimV1,
+    canonical_materialization_digest,
+)
 from pa.network.peer_table import PeerTable
 
 logger = logging.getLogger(__name__)
@@ -456,6 +467,19 @@ class DispatchMaterializeBody(BaseModel):
     authority_url: str
     target_instance_id: str
     provider: str | None = None
+    model_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=200,
+        pattern=r"\S",
+    )
+    mode_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=200,
+        pattern=r"\S",
+    )
+    execution_contract: dict[str, Any] | None = None
     session_id: str | None = None
     progress_versions: list[int] = Field(default_factory=list, max_length=10)
     attachment_manifest: list[CardAttachment] = Field(default_factory=list)
@@ -1049,6 +1073,70 @@ def fleet_policy_audit(
     return sorted(events, key=lambda item: item["created_at"], reverse=True)[:limit]
 
 
+def _target_goal_materialization_binding_valid(
+    body: DispatchMaterializeBody,
+    bound_plan: MaterializationPlan,
+) -> bool:
+    """Verify the authority envelope again at the target materialization sink."""
+
+    provenance = body.goal_provenance
+    if provenance is None:
+        return True
+    envelope = provenance.materialization_envelope
+    receipt = provenance.materialization_receipt
+    provider_id = str(body.provider or "").strip().lower()
+    expected_receipt = (
+        GoalMaterializationReceiptV1(
+            envelope_digest=str(envelope.digest),
+            target_instance_id=body.target_instance_id,
+            provider_id=provider_id,
+            model_id=body.model_id,
+            mode_id=body.mode_id,
+            materialization_plan_digest=canonical_materialization_digest(
+                bound_plan.model_dump(mode="json")
+            ),
+        )
+        if envelope is not None and provider_id
+        else None
+    )
+    repository_ids = tuple(
+        sorted(str(item["repository_id"]) for item in bound_plan.repositories)
+    )
+    attachment_ids = tuple(
+        sorted(item.attachment_id for item in body.attachment_manifest)
+    )
+    attachment_classes = tuple(
+        sorted({item.media_type.strip().lower() for item in body.attachment_manifest})
+    )
+    expected_claims = tuple(
+        [
+            GoalMaterializationResourceClaimV1(
+                key=f"fleet-dispatch:{provenance.requested_placement_target}"
+            ),
+            *[
+                GoalMaterializationResourceClaimV1(key=f"repository:{repository_id}")
+                for repository_id in repository_ids
+            ],
+        ]
+    )
+    return bool(
+        envelope is not None
+        and receipt is not None
+        and expected_receipt is not None
+        and receipt == expected_receipt
+        and envelope.repository_ids == repository_ids
+        and envelope.attachment_ids == attachment_ids
+        and envelope.attachment_classes == attachment_classes
+        and envelope.resource_claims == expected_claims
+        and envelope.execution_contract_digest
+        == canonical_materialization_digest(body.execution_contract)
+        and all(
+            str(getattr(item.state, "value", item.state)) == "active"
+            for item in body.attachment_manifest
+        )
+    )
+
+
 @router.post("/fleet/dispatch/materialize")
 def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dict:
     """Make an exact authoritative card version resolvable before session creation."""
@@ -1106,6 +1194,14 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
             status_code=409,
             detail={"code": "wrong_target", "expected": settings.instance_id},
         )
+    if body.goal_provenance is not None and body.materialization_plan is None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "goal_materialization_binding_mismatch",
+                "recoverable": False,
+            },
+        )
     if body.materialization_plan is not None:
         try:
             bound_plan = MaterializationPlan.model_validate(body.materialization_plan)
@@ -1142,6 +1238,14 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
                         "recoverable": True,
                     },
                 )
+        if not _target_goal_materialization_binding_valid(body, bound_plan):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "goal_materialization_binding_mismatch",
+                    "recoverable": False,
+                },
+            )
     if body.attachment_digest is not None and body.attachment_digest != manifest_digest(
         body.attachment_manifest
     ):
@@ -1273,6 +1377,9 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
             "provenance_version": body.provenance_version,
             "progress_versions": list(body.progress_versions),
             "provider": body.provider,
+            "model_id": body.model_id,
+            "mode_id": body.mode_id,
+            "execution_contract": body.execution_contract,
         },
     )
     try:
@@ -5310,10 +5417,29 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
         "materializing",
         "Materializing the exact dispatch context on the target.",
     )
+    materialized_attachments = list(card.attachments if card else [])
+    materialized_card = record.card_snapshot
+    if (
+        record.goal_provenance is not None
+        and record.goal_provenance.materialization_envelope is not None
+    ):
+        bound_attachment_ids = set(
+            record.goal_provenance.materialization_envelope.attachment_ids
+        )
+        materialized_attachments = [
+            item
+            for item in materialized_attachments
+            if item.attachment_id in bound_attachment_ids
+        ]
+        if materialized_card is not None:
+            materialized_card = dict(materialized_card)
+            materialized_card["attachments"] = [
+                item.model_dump(mode="json") for item in materialized_attachments
+            ]
     materialize_payload = {
         "dispatch_id": record.dispatch_id,
         "mutation_id": record.mutation_id,
-        "card": record.card_snapshot,
+        "card": materialized_card,
         "card_version": record.card_version,
         "realm_id": record.realm_id,
         "project_id": record.project_id,
@@ -5324,12 +5450,15 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
         "authority_url": record.authority_url,
         "target_instance_id": record.target_instance_id,
         "provider": record.request_payload.get("provider"),
+        "model_id": record.request_payload.get("model_id"),
+        "mode_id": record.request_payload.get("mode_id"),
+        "execution_contract": record.request_payload.get("execution_contract"),
         "session_id": record.resume_session_id if record.resume_requested else None,
         "progress_versions": SUPPORTED_PROGRESS_VERSIONS,
         "attachment_manifest": [
-            item.model_dump(mode="json") for item in (card.attachments if card else [])
+            item.model_dump(mode="json") for item in materialized_attachments
         ],
-        "attachment_digest": manifest_digest(card.attachments if card else []),
+        "attachment_digest": manifest_digest(materialized_attachments),
         "materialization_plan": record.materialization_plan,
         "goal_provenance": (
             record.goal_provenance.model_dump(mode="json")
@@ -5558,6 +5687,16 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
             },
         )
     record.session_id = session_id
+    await _offload_ctx(ctx, "dispatch.record_write", ledger.put, record)
+    record.goal_provenance = await _offload_ctx(
+        ctx,
+        "goal.dispatch_execution_identity_bind",
+        _bind_goal_dispatch_execution_identity,
+        ctx,
+        record.goal_provenance,
+        selected_authority=record.authority_instance_id,
+        session_id=session_id,
+    )
     await _offload_ctx(ctx, "dispatch.record_write", ledger.put, record)
     if await _dispatch_cancelled(ctx, ledger, record):
         return
@@ -6531,6 +6670,9 @@ def _validate_goal_dispatch_provenance(
     effective_decision_digest = str(
         placement_decision_digest or provenance.placement_decision_digest or ""
     ).strip()
+    envelope = provenance.materialization_envelope
+    receipt = provenance.materialization_receipt
+    execution_identity = provenance.execution_identity
     if not effective_provider:
         raise HTTPException(
             status_code=409,
@@ -6597,6 +6739,20 @@ def _validate_goal_dispatch_provenance(
         ),
         None,
     )
+    reserved_provider = (
+        str(reservation.request.provider_id or "").strip().lower()
+        if reservation is not None
+        else ""
+    )
+    if not reserved_provider or reserved_provider != effective_provider:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "goal_governance_denied",
+                "message": "the reservation does not bind this execution provider",
+                "recoverable": False,
+            },
+        )
     if (
         reservation is None
         or reservation.state != GoalReservationState.APPLIED
@@ -6611,8 +6767,24 @@ def _validate_goal_dispatch_provenance(
         != provenance.requested_placement_target
         or reservation.request.placement_input_digest != effective_input_digest
         or reservation.request.resolved_target_instance_id != effective_target
-        or reservation.request.placement_decision_digest
-        != effective_decision_digest
+        or reservation.request.placement_decision_digest != effective_decision_digest
+        or envelope is None
+        or receipt is None
+        or receipt.envelope_digest != envelope.digest
+        or receipt.target_instance_id != effective_target
+        or receipt.provider_id.strip().lower() != effective_provider
+        or reservation.request.materialization_envelope != envelope
+        or reservation.request.materialization_receipt != receipt
+        or reservation.request.execution_identity != execution_identity
+        or (
+            execution_identity is not None
+            and (
+                execution_identity.materialization_receipt_digest != receipt.digest
+                or execution_identity.target_instance_id != effective_target
+                or execution_identity.provider_id.strip().lower() != effective_provider
+                or execution_identity.fencing_token != provenance.fencing_token
+            )
+        )
         or reservation.attempt != provenance.reservation_attempt
         or reservation.max_attempts != provenance.max_reservation_attempts
     ):
@@ -6645,6 +6817,9 @@ def _validate_goal_dispatch_provenance(
             placement_input_digest=effective_input_digest,
             resolved_target_instance_id=effective_target,
             placement_decision_digest=effective_decision_digest,
+            materialization_envelope=envelope,
+            materialization_receipt=receipt,
+            execution_identity=execution_identity,
             denial_actual_usage=(
                 reservation.reserved_usage.model_copy(deep=True)
                 if denial_applied
@@ -6677,6 +6852,9 @@ def _validate_goal_dispatch_provenance(
             "placement_decision_digest": (
                 reservation.request.placement_decision_digest
             ),
+            "materialization_envelope": (reservation.request.materialization_envelope),
+            "materialization_receipt": reservation.request.materialization_receipt,
+            "execution_identity": reservation.request.execution_identity,
             "reservation_attempt": reservation.attempt,
             "max_reservation_attempts": reservation.max_attempts,
         }
@@ -6723,7 +6901,25 @@ def _goal_admission_operation_bound(
         == provenance.placement_input_digest
         and reservation.request.placement_input_digest
         == record.goal_placement_input_digest
+        and provenance.materialization_envelope is not None
+        and reservation.request.materialization_envelope
+        == provenance.materialization_envelope
+        and reservation.request.execution_identity == provenance.execution_identity
+        and (
+            (
+                reservation.request.materialization_receipt is None
+                and provenance.materialization_receipt is None
+                and record.materialization_plan is None
+            )
+            or (
+                provenance.materialization_receipt is not None
+                and reservation.request.materialization_receipt
+                == provenance.materialization_receipt
+                and goal_dispatch_materialization_binding_valid(record)
+            )
+        )
         and goal_dispatch_record_placement_input_valid(record)
+        and goal_dispatch_execution_identity_valid(record)
     )
     if not base_bound or reservation is None:
         return False
@@ -6890,6 +7086,225 @@ def _bind_goal_dispatch_placement(
     )
 
 
+def _canonical_goal_materialization_envelope(
+    ctx: AppContext,
+    provenance: GoalDispatchProvenance,
+    *,
+    body: RemoteAgentStartBody,
+    card: Any,
+    plan: MaterializationPlan,
+) -> GoalMaterializationEnvelopeV1:
+    """Reconstruct the pre-reservation envelope from canonical server state."""
+
+    goal, _governance = _goal_dispatch_services(ctx, provenance.goal_id)
+    active_attachments = [
+        item
+        for item in (card.attachments if card is not None else [])
+        if str(getattr(item.state, "value", item.state)) == "active"
+    ]
+    repository_ids = tuple(str(item["repository_id"]) for item in plan.repositories)
+    requested_target = str(provenance.requested_placement_target or "").strip()
+    if not requested_target:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "goal_materialization_envelope_mismatch",
+                "recoverable": False,
+            },
+        )
+    claims = (
+        GoalMaterializationResourceClaimV1(
+            key=f"fleet-dispatch:{requested_target}",
+            access="shared",
+            quantity=1,
+            preemptible=True,
+        ),
+        *(
+            GoalMaterializationResourceClaimV1(
+                key=f"repository:{repository_id}",
+                access="shared",
+                quantity=1,
+                preemptible=True,
+            )
+            for repository_id in repository_ids
+        ),
+    )
+    return GoalMaterializationEnvelopeV1(
+        repository_ids=repository_ids,
+        data_scopes=tuple(goal.policy.data_scope),
+        attachment_ids=tuple(item.attachment_id for item in active_attachments),
+        attachment_classes=tuple(
+            item.media_type.strip().lower() for item in active_attachments
+        ),
+        resource_claims=claims,
+        execution_contract_digest=canonical_materialization_digest(
+            body.execution_contract
+        ),
+    )
+
+
+def _bind_goal_dispatch_materialization(
+    ctx: AppContext,
+    provenance: GoalDispatchProvenance | None,
+    *,
+    selected_authority: str,
+    body: RemoteAgentStartBody,
+    card: Any,
+    plan: MaterializationPlan,
+    target_instance_id: str,
+) -> GoalDispatchProvenance | None:
+    """Verify and durably bind one exact target-dependent materialization plan."""
+
+    if provenance is None:
+        return None
+    envelope = provenance.materialization_envelope
+    expected_envelope = _canonical_goal_materialization_envelope(
+        ctx,
+        provenance,
+        body=body,
+        card=card,
+        plan=plan,
+    )
+    if envelope is None or envelope != expected_envelope:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "goal_materialization_envelope_mismatch",
+                "recoverable": False,
+            },
+        )
+    provider_id = str(body.provider or "").strip().lower()
+    if not provider_id:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "goal_provider_unresolved", "recoverable": False},
+        )
+    receipt = GoalMaterializationReceiptV1(
+        envelope_digest=str(envelope.digest),
+        target_instance_id=target_instance_id,
+        provider_id=provider_id,
+        model_id=body.model_id,
+        mode_id=body.mode_id,
+        materialization_plan_digest=canonical_materialization_digest(
+            plan.model_dump(mode="json")
+        ),
+    )
+    goal, governance = _goal_dispatch_services(ctx, provenance.goal_id)
+    state = governance.get_state(goal.id)
+    try:
+        _state, reservation = governance.bind_dispatch_materialization(
+            goal.id,
+            provenance.action_reservation_id,
+            GovernanceMutationContext(
+                actor_principal=provenance.actor_principal,
+                authority_instance_id=selected_authority,
+                idempotency_key=(
+                    f"goal-dispatch:{provenance.action_reservation_id}:"
+                    f"materialization:{receipt.digest}"
+                )[:200],
+                expected_version=state.version,
+                policy_revision=goal.policy.revision,
+                goal_version=goal.version,
+                fencing_token=goal.lease.fencing_token,
+            ),
+            envelope=envelope,
+            receipt=receipt,
+        )
+    except GoalGovernanceConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "goal_materialization_binding_mismatch",
+                "message": str(exc),
+                "recoverable": False,
+            },
+        ) from exc
+    return provenance.model_copy(
+        update={
+            "goal_version": reservation.goal_version,
+            "policy_revision": reservation.policy_revision,
+            "fencing_token": reservation.fencing_token,
+            "materialization_envelope": reservation.request.materialization_envelope,
+            "materialization_receipt": reservation.request.materialization_receipt,
+        }
+    )
+
+
+def _bind_goal_dispatch_execution_identity(
+    ctx: AppContext,
+    provenance: GoalDispatchProvenance | None,
+    *,
+    selected_authority: str,
+    session_id: str,
+) -> GoalDispatchProvenance | None:
+    """Persist the exact allocated session identity without fabricating a credential."""
+
+    if provenance is None:
+        return None
+    receipt = provenance.materialization_receipt
+    provider_id = str(provenance.provider_id or "").strip().lower()
+    target_instance_id = str(provenance.resolved_target_instance_id or "").strip()
+    if receipt is None or not provider_id or not target_instance_id:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "goal_execution_identity_prerequisite_missing",
+                "recoverable": False,
+            },
+        )
+    principal_scope = hashlib.sha256(
+        (
+            f"{provenance.goal_id}:{provider_id}:{target_instance_id}:"
+            f"{session_id}:{provenance.fencing_token}"
+        ).encode()
+    ).hexdigest()
+    identity = GoalExecutionIdentityV1(
+        assigned_service_principal=f"service:goal-executor:{principal_scope}",
+        provider_id=provider_id,
+        target_instance_id=target_instance_id,
+        session_id=session_id,
+        fencing_token=provenance.fencing_token,
+        materialization_receipt_digest=str(receipt.digest),
+    )
+    goal, governance = _goal_dispatch_services(ctx, provenance.goal_id)
+    state = governance.get_state(goal.id)
+    try:
+        _state, reservation = governance.bind_dispatch_execution_identity(
+            goal.id,
+            provenance.action_reservation_id,
+            GovernanceMutationContext(
+                actor_principal=provenance.actor_principal,
+                authority_instance_id=selected_authority,
+                idempotency_key=(
+                    f"goal-dispatch:{provenance.action_reservation_id}:"
+                    f"execution-identity:{identity.digest}"
+                )[:200],
+                expected_version=state.version,
+                policy_revision=goal.policy.revision,
+                goal_version=goal.version,
+                fencing_token=goal.lease.fencing_token,
+            ),
+            identity=identity,
+        )
+    except GoalGovernanceConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "goal_execution_identity_mismatch",
+                "message": str(exc),
+                "recoverable": False,
+            },
+        ) from exc
+    return provenance.model_copy(
+        update={
+            "goal_version": reservation.goal_version,
+            "policy_revision": reservation.policy_revision,
+            "fencing_token": reservation.fencing_token,
+            "execution_identity": reservation.request.execution_identity,
+        }
+    )
+
+
 def _restore_goal_dispatch_placement_binding(
     ctx: AppContext,
     ledger: DispatchStore,
@@ -6915,9 +7330,7 @@ def _restore_goal_dispatch_placement_binding(
     if reservation is None:
         return record
     request = reservation.request
-    decision_digest = goal_dispatch_placement_decision_digest(
-        record.placement_decision
-    )
+    decision_digest = goal_dispatch_placement_decision_digest(record.placement_decision)
     if not (
         request.operation_key == record.idempotency_key == provenance.operation_key
         and reservation.goal_id == provenance.goal_id
@@ -6926,14 +7339,18 @@ def _restore_goal_dispatch_placement_binding(
         and reservation.action_class == provenance.action_class
         and str(request.provider_id or "").strip().lower()
         == str(provenance.provider_id or "").strip().lower()
-        and request.requested_placement_target
-        == provenance.requested_placement_target
+        and request.requested_placement_target == provenance.requested_placement_target
         and request.placement_input_digest
         == provenance.placement_input_digest
         == record.goal_placement_input_digest
         and goal_dispatch_record_placement_input_valid(record)
         and request.resolved_target_instance_id == record.target_instance_id
         and request.placement_decision_digest == decision_digest
+        and request.materialization_envelope == provenance.materialization_envelope
+        and request.materialization_receipt == provenance.materialization_receipt
+        and goal_dispatch_materialization_binding_valid(record)
+        and request.execution_identity == provenance.execution_identity
+        and goal_dispatch_execution_identity_valid(record)
         and request.resolved_target_instance_id
         and request.placement_decision_digest
     ):
@@ -7032,6 +7449,24 @@ def _validate_goal_dispatch_record(
         ),
         denial_applied=_goal_dispatch_was_applied(record),
     )
+    if refreshed is not None and not goal_dispatch_materialization_binding_valid(
+        record
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "goal_materialization_binding_mismatch",
+                "recoverable": False,
+            },
+        )
+    if refreshed is not None and not goal_dispatch_execution_identity_valid(record):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "goal_execution_identity_mismatch",
+                "recoverable": False,
+            },
+        )
     if refreshed != record.goal_provenance:
         record.goal_provenance = refreshed
         ledger.put(record)
@@ -7157,16 +7592,13 @@ def _goal_provenance_from_reservation(
         fencing_token=reservation.fencing_token or 0,
         action_reservation_id=reservation.id,
         operation_key=reservation.request.operation_key,
-        requested_placement_target=(
-            reservation.request.requested_placement_target
-        ),
+        requested_placement_target=(reservation.request.requested_placement_target),
         placement_input_digest=reservation.request.placement_input_digest,
-        resolved_target_instance_id=(
-            reservation.request.resolved_target_instance_id
-        ),
-        placement_decision_digest=(
-            reservation.request.placement_decision_digest
-        ),
+        resolved_target_instance_id=(reservation.request.resolved_target_instance_id),
+        placement_decision_digest=(reservation.request.placement_decision_digest),
+        materialization_envelope=reservation.request.materialization_envelope,
+        materialization_receipt=reservation.request.materialization_receipt,
+        execution_identity=reservation.request.execution_identity,
         actor_principal=reservation.actor_principal,
         action_class=base.action_class,
         provider_id=reservation.request.provider_id,
@@ -7192,6 +7624,22 @@ def _reserve_goal_dispatch_followup(
         raise HTTPException(
             status_code=409,
             detail={"code": "goal_followup_wrong_authority", "recoverable": False},
+        )
+    if not goal_dispatch_materialization_binding_valid(record):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "goal_followup_materialization_widening",
+                "recoverable": False,
+            },
+        )
+    if not goal_dispatch_execution_identity_valid(record):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "goal_followup_execution_identity_mismatch",
+                "recoverable": False,
+            },
         )
     provider_id = (
         str(record.request_payload.get("provider") or base.provider_id or "")
@@ -7251,9 +7699,26 @@ def _reserve_goal_dispatch_followup(
                     placement_input_digest=base.placement_input_digest,
                     resolved_target_instance_id=base.resolved_target_instance_id,
                     placement_decision_digest=base.placement_decision_digest,
+                    materialization_envelope=base.materialization_envelope,
+                    materialization_receipt=base.materialization_receipt,
+                    execution_identity=base.execution_identity,
                     delegated=True,
                     provider_id=provider_id,
                     estimate=GoalUsage(actions=1, dispatches=1),
+                    resource_claims=[
+                        GoalResourceClaim(
+                            key=item.key,
+                            access=ResourceAccess(item.access),
+                            quantity=item.quantity,
+                            preemptible=item.preemptible,
+                            expires_at=item.expires_at,
+                        )
+                        for item in (
+                            base.materialization_envelope.resource_claims
+                            if base.materialization_envelope is not None
+                            else ()
+                        )
+                    ],
                     max_attempts=1,
                 ),
                 GovernanceMutationContext(
@@ -7497,6 +7962,22 @@ def _replace_goal_dispatch_reservation(
                 "recoverable": False,
             },
         )
+    if not goal_dispatch_materialization_binding_valid(record):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "goal_retry_materialization_widening",
+                "recoverable": False,
+            },
+        )
+    if not goal_dispatch_execution_identity_valid(record):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "goal_retry_execution_identity_mismatch",
+                "recoverable": False,
+            },
+        )
     if provenance.retry_idempotency_key == idempotency_key:
         if provenance.released_at is not None:
             raise HTTPException(
@@ -7687,9 +8168,7 @@ async def _reconcile_goal_dispatch_reservations(ctx: AppContext) -> None:
                             code="admission_interrupted",
                             recoverable=True,
                             detail={
-                                "recovery": (
-                                    "retry_with_fresh_governance_reservation"
-                                ),
+                                "recovery": ("retry_with_fresh_governance_reservation"),
                                 "admission_trace": True,
                                 "placement_resolved": False,
                             },
@@ -7713,9 +8192,7 @@ async def _reconcile_goal_dispatch_reservations(ctx: AppContext) -> None:
                             sink="durable-admission",
                             provider_id=record.request_payload.get("provider"),
                             target_instance_id=record.target_instance_id,
-                            placement_input_digest=(
-                                record.goal_placement_input_digest
-                            ),
+                            placement_input_digest=(record.goal_placement_input_digest),
                             placement_decision_digest=(
                                 goal_dispatch_placement_decision_digest(
                                     record.placement_decision
@@ -8399,6 +8876,47 @@ async def _admit_remote_agent_work(
         )
         await _reject_goal_dispatch_admission(request, preadmission_record, error)
         raise error
+    project_repositories = (
+        list(store.list_project_repositories(project_id, realm_id=realm_id))
+        if project_id
+        else []
+    )
+    requested_contract = (
+        ExecutionContract.model_validate(body.execution_contract)
+        if body.execution_contract
+        else None
+    )
+    explicit_ids = [
+        item.repository_id
+        for item in (
+            requested_contract.requirements.repositories if requested_contract else []
+        )
+    ]
+    explicit_repositories = []
+    for repository_id in explicit_ids:
+        repository = store.get_repository(repository_id, realm_id)
+        if repository:
+            explicit_repositories.append(repository)
+    plan = resolve_materialization_plan(
+        requested=requested_contract,
+        card=card,
+        project=project,
+        project_repositories=project_repositories,
+        explicit_repositories=explicit_repositories,
+        target_instance_id=instance_id,
+    )
+    if not plan.admissible:
+        error = HTTPException(
+            status_code=409,
+            detail={
+                "code": "materialization_preflight_required",
+                "message": plan.summary,
+                "plan": plan.model_dump(mode="json"),
+                "recoverable": True,
+            },
+        )
+        await _reject_goal_dispatch_admission(request, preadmission_record, error)
+        raise error
     resolved_placement_decision = placement_decision or {
         "policy": "named_instance",
         "chosen_instance_id": instance_id,
@@ -8449,8 +8967,19 @@ async def _admit_remote_agent_work(
             placement_input_digest=placement_input_digest,
             placement_decision=resolved_placement_decision,
         )
+        body.goal_provenance = _bind_goal_dispatch_materialization(
+            ctx,
+            body.goal_provenance,
+            selected_authority=selected_authority,
+            body=body,
+            card=card,
+            plan=plan,
+            target_instance_id=instance_id,
+        )
         if preadmission_record is not None:
             preadmission_record.goal_provenance = body.goal_provenance
+            preadmission_record.materialization_plan = plan.model_dump(mode="json")
+            preadmission_record.request_payload = body.model_dump(mode="json")
             await _offload_request(
                 request,
                 "goal.dispatch_placement_binding",
@@ -8532,48 +9061,6 @@ async def _admit_remote_agent_work(
                 collaboration_decision.effective_mode.value
             )
         payload["config"] = payload_config
-
-    project_repositories = (
-        list(store.list_project_repositories(project_id, realm_id=realm_id))
-        if project_id
-        else []
-    )
-    requested_contract = (
-        ExecutionContract.model_validate(body.execution_contract)
-        if body.execution_contract
-        else None
-    )
-    explicit_ids = [
-        item.repository_id
-        for item in (
-            requested_contract.requirements.repositories if requested_contract else []
-        )
-    ]
-    explicit_repositories = []
-    for repository_id in explicit_ids:
-        repository = store.get_repository(repository_id, realm_id)
-        if repository:
-            explicit_repositories.append(repository)
-    plan = resolve_materialization_plan(
-        requested=requested_contract,
-        card=card,
-        project=project,
-        project_repositories=project_repositories,
-        explicit_repositories=explicit_repositories,
-        target_instance_id=instance_id,
-    )
-    if not plan.admissible:
-        error = HTTPException(
-            status_code=409,
-            detail={
-                "code": "materialization_preflight_required",
-                "message": plan.summary,
-                "plan": plan.model_dump(mode="json"),
-                "recoverable": True,
-            },
-        )
-        await _reject_goal_dispatch_admission(request, preadmission_record, error)
-        raise error
 
     record = DispatchRecord(
         dispatch_id=(
