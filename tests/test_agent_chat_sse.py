@@ -674,7 +674,7 @@ class AgentChatSseTests(unittest.TestCase):
                 call["initial_configuration"].mode_id,
                 "agent-full-access",
             )
-            self.assertEqual(record.session_id, "session-new")
+            self.assertEqual(ledger.get(record.dispatch_id).session_id, "session-new")
 
             manager.create_session.reset_mock()
             manager.get.return_value = runtime

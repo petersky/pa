@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 from pa.config import Settings
+from pa.core.writer_lock import DataDirWriterLock
 from pa.domain.models import Card, CardLane
 from pa.execution.dispatch import DispatchRecord, DispatchStore
 from pa.modules.fleet import (
@@ -88,25 +89,37 @@ class MacMiniAutonomySmokeTest(unittest.TestCase):
             # side-load a parallel card event.
             target_store.get_card.return_value = card
             target_log = MagicMock()
+            target_writer_lock = DataDirWriterLock(target_data)
+            target_writer_lock.acquire()
+            target_services = {
+                "event_log": target_log,
+                "writer_lock": target_writer_lock,
+            }
             target = _request(
                 Settings(data_dir=target_data, instance_id=TARGET_ID),
                 target_store,
-                {"event_log": target_log},
+                target_services,
                 headers={"X-PA-Origin-Instance-ID": AUTHORITY_ID},
             )
-            materialized = materialize_dispatch(
-                target,
-                DispatchMaterializeBody(
-                    dispatch_id=DISPATCH_ONE,
-                    mutation_id=MUTATION_ONE,
-                    card=card.model_dump(mode="json"),
-                    card_version=card.updated_at.isoformat(),
-                    realm_id="default",
-                    authority_instance_id=AUTHORITY_ID,
-                    authority_url="http://authority.invalid",
-                    target_instance_id=TARGET_ID,
-                ),
-            )
+            try:
+                materialized = materialize_dispatch(
+                    target,
+                    DispatchMaterializeBody(
+                        dispatch_id=DISPATCH_ONE,
+                        mutation_id=MUTATION_ONE,
+                        card=card.model_dump(mode="json"),
+                        card_version=card.updated_at.isoformat(),
+                        realm_id="default",
+                        authority_instance_id=AUTHORITY_ID,
+                        authority_url="http://authority.invalid",
+                        target_instance_id=TARGET_ID,
+                    ),
+                )
+            finally:
+                target_ledger = target_services.get("dispatch_store")
+                if target_ledger:
+                    target_ledger.close()
+                target_writer_lock.release()
             self.assertTrue(materialized["resolvable"])
             target_store.apply_event.assert_not_called()
 

@@ -1678,7 +1678,11 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
                 wake_release.wait(1.0)
 
             worker.wake.side_effect = slow_wake
-            ctx.services = {"fleet_registry": fleet, "dispatch_worker": worker}
+            ctx.services = {
+                "fleet_registry": fleet,
+                "dispatch_worker": worker,
+                "writer_lock": MagicMock(),
+            }
             ctx.require_service.side_effect = lambda name: ctx.services[name]
             ctx.register_service.side_effect = lambda name, value: (
                 ctx.services.__setitem__(name, value)
@@ -1769,7 +1773,7 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
             store.get_project.return_value = project
             store.project_working_directory.return_value = None
             ctx = MagicMock(settings=settings, store=store)
-            ctx.services = {"fleet_registry": fleet}
+            ctx.services = {"fleet_registry": fleet, "writer_lock": MagicMock()}
             ctx.require_service.side_effect = lambda name: ctx.services[name]
             ctx.register_service.side_effect = lambda name, value: (
                 ctx.services.__setitem__(name, value)
@@ -1840,7 +1844,7 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
             store.get_project.return_value = project
             store.project_working_directory.return_value = None
             ctx = MagicMock(settings=settings, store=store)
-            ctx.services = {"fleet_registry": fleet}
+            ctx.services = {"fleet_registry": fleet, "writer_lock": MagicMock()}
             ctx.require_service.side_effect = lambda name: ctx.services[name]
             ctx.register_service.side_effect = lambda name, value: (
                 ctx.services.__setitem__(name, value)
@@ -1894,7 +1898,7 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
             )
             store = MagicMock()
             ctx = MagicMock(settings=settings, store=store)
-            ctx.services = {"fleet_registry": fleet}
+            ctx.services = {"fleet_registry": fleet, "writer_lock": MagicMock()}
             ctx.require_service.side_effect = lambda name: ctx.services[name]
             ctx.register_service.side_effect = lambda name, value: (
                 ctx.services.__setitem__(name, value)

@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 from pa.config import Settings, reset_settings
 from pa.core.kernel import Kernel
 from pa.core.live_updates import LiveUpdateBroker
+from pa.core.writer_lock import DataDirWriterLock
 from pa.domain.models import (
     Card,
     CardEvent,
@@ -705,6 +706,9 @@ class RealmConvergenceTests(unittest.IsolatedAsyncioTestCase):
             "event_log": self.authority.log,
             "fleet_registry": self.authority.fleet,
         }
+        writer_lock = DataDirWriterLock(self.authority.settings.data_dir)
+        writer_lock.acquire()
+        ctx.services["writer_lock"] = writer_lock
         ctx.require_service.side_effect = lambda name: ctx.services[name]
         ctx.register_service.side_effect = lambda name, value: ctx.services.__setitem__(
             name, value
@@ -739,43 +743,50 @@ class RealmConvergenceTests(unittest.IsolatedAsyncioTestCase):
             }
 
         materialize = AsyncMock(side_effect=acknowledge_materialization)
-        with (
-            patch("pa.modules.fleet.require_user", return_value=object()),
-            patch("pa.modules.fleet.get_principal_id", return_value="user:local"),
-            patch("pa.modules.fleet._peer_agent_json", peer_agent),
-            patch("pa.modules.fleet._peer_dispatch_json", materialize),
-        ):
-            result = await start_remote_agent_work(
-                request,
-                self.target.settings.instance_id,
-                RemoteAgentStartBody(
-                    card_id=card.id,
-                    message="Continue",
-                    idempotency_key="realm-repair-dispatch",
-                    execution_contract={
-                        "version": 1,
-                        "profile": "research",
-                        "confirmed": True,
-                    },
-                ),
-            )
-            from pa.modules.fleet import _process_remote_dispatch
+        try:
+            with (
+                patch("pa.modules.fleet.require_user", return_value=object()),
+                patch("pa.modules.fleet.get_principal_id", return_value="user:local"),
+                patch("pa.modules.fleet._peer_agent_json", peer_agent),
+                patch("pa.modules.fleet._peer_dispatch_json", materialize),
+            ):
+                result = await start_remote_agent_work(
+                    request,
+                    self.target.settings.instance_id,
+                    RemoteAgentStartBody(
+                        card_id=card.id,
+                        message="Continue",
+                        idempotency_key="realm-repair-dispatch",
+                        execution_contract={
+                            "version": 1,
+                            "profile": "research",
+                            "confirmed": True,
+                        },
+                    ),
+                )
+                from pa.modules.fleet import _process_remote_dispatch
 
-            app = MagicMock()
-            app.state.ctx = ctx
-            record = ctx.services["dispatch_store"].get(result["dispatch_id"])
-            peer_agent.side_effect = [
-                {"session": {"id": "remote-session", "title": card.title}},
-                {
-                    "started": True,
-                    "queued": False,
-                    "accepted": True,
-                    "accepted_event": "queue_enqueued",
-                    "session_id": "remote-session",
-                    "dispatch_id": result["dispatch_id"],
-                },
-            ]
-            await _process_remote_dispatch(app, record)
+                app = MagicMock()
+                app.state.ctx = ctx
+                record = ctx.services["dispatch_store"].get(result["dispatch_id"])
+                peer_agent.side_effect = [
+                    {"session": {"id": "remote-session", "title": card.title}},
+                    {
+                        "started": True,
+                        "queued": False,
+                        "accepted": True,
+                        "accepted_event": "queue_enqueued",
+                        "session_id": "remote-session",
+                        "dispatch_id": result["dispatch_id"],
+                    },
+                ]
+                await _process_remote_dispatch(app, record)
+                record = ctx.services["dispatch_store"].get(result["dispatch_id"])
+        finally:
+            dispatch_store = ctx.services.get("dispatch_store")
+            if dispatch_store:
+                dispatch_store.close()
+            writer_lock.release()
         dispatched_card = materialize.await_args.args[2]["card"]
         self.assertEqual(dispatched_card["title"], "authority")
         self.assertEqual(dispatched_card["body"], "target")
