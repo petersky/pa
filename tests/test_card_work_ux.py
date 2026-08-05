@@ -66,7 +66,9 @@ class CardSummaryTests(unittest.TestCase):
             self.assertEqual(stale.summary, "A deliberately curated summary.")
             self.assertTrue(stale.summary_stale)
 
-    def test_existing_cards_are_backfilled_during_schema_migration(self) -> None:
+    def test_existing_cards_enter_pending_migration_without_startup_backfill(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "pa.db"
             now = datetime.now(UTC).isoformat()
@@ -118,8 +120,8 @@ class CardSummaryTests(unittest.TestCase):
             assert card is not None
             self.assertEqual(card.summary, "")
             self.assertEqual(card.summary_source, CardSummarySource.FALLBACK)
-            self.assertTrue(card.summary_stale)
-            self.assertEqual(card.summary_status.value, "stale")
+            self.assertFalse(card.summary_stale)
+            self.assertEqual(card.summary_status.value, "pending")
             self.assertIsNone(card.summary_updated_at)
 
     def test_open_card_session_wins_over_a_newer_closed_session(self) -> None:
@@ -266,6 +268,72 @@ class CoreWorkUiRouteTests(unittest.TestCase):
             self.assertIn("data-card-markdown", detail.text)
             self.assertNotIn("card-edit-surface", detail.text)
             self.assertNotIn("data-card-edit-open", detail.text)
+
+    def test_summary_diagnostics_and_disabled_ui_are_truthful_and_redacted(
+        self,
+    ) -> None:
+        secret = "must-never-appear"
+        with TestClient(self.app) as client:
+            diagnostic = client.get("/api/cards/summary/diagnostics")
+            self.assertEqual(diagnostic.status_code, 200)
+            payload = diagnostic.json()
+            self.assertEqual(payload["state"], "disabled")
+            self.assertEqual(payload["effective_provider"], "openai")
+            self.assertEqual(payload["effective_model"], "gpt-5-mini")
+            self.assertEqual(payload["authentication_source"], "none")
+            self.assertIn("PA_CARD_SUMMARY_API_KEY", payload["setup_guidance"])
+            self.assertNotIn(secret, diagnostic.text)
+
+            card = self.app.state.ctx.store.create_card(
+                CardCreate(title="No provider", body=f"Description {secret}")
+            )
+            self.app.state.ctx.store.update_card(
+                card.id,
+                CardUpdate(
+                    summary_status="disabled",
+                    summary_failure_code="unconfigured",
+                    summary_failure="Set PA_CARD_SUMMARY_API_KEY.",
+                ),
+            )
+            detail = client.get(f"/partials/cards/{card.id}/detail")
+            self.assertEqual(detail.status_code, 200)
+            self.assertIn("Summary generation is disabled.", detail.text)
+            self.assertIn("Authentication: none", detail.text)
+            self.assertIn("Last failure: unconfigured", detail.text)
+
+            disabled_excerpt = "LEGACY DISABLED PREFIX MUST NOT RENDER"
+            disabled = self.app.state.ctx.store.create_card(
+                CardCreate(
+                    title="Disabled legacy summary",
+                    body=f"{disabled_excerpt} with complete description details.",
+                    summary=disabled_excerpt,
+                    summary_source=CardSummarySource.FALLBACK,
+                )
+            )
+            self.app.state.ctx.store.update_card(
+                disabled.id,
+                CardUpdate(summary_status="disabled", summary_stale=True),
+            )
+            stale_excerpt = "LEGACY STALE PREFIX MUST NOT RENDER"
+            stale = self.app.state.ctx.store.create_card(
+                CardCreate(
+                    title="Stale legacy summary",
+                    body=f"{stale_excerpt} with complete description details.",
+                    summary=stale_excerpt,
+                    summary_source=CardSummarySource.FALLBACK,
+                )
+            )
+            self.app.state.ctx.store.update_card(
+                stale.id,
+                CardUpdate(summary_status="stale", summary_stale=True),
+            )
+
+            collection = client.get("/partials/cards?lane=inbox")
+            self.assertEqual(collection.status_code, 200)
+            self.assertNotIn(disabled_excerpt, collection.text)
+            self.assertNotIn(stale_excerpt, collection.text)
+            self.assertIn("Summary generation is disabled.", collection.text)
+            self.assertIn("Summary pending.", collection.text)
 
     def test_global_header_shows_the_serving_instance_beneath_the_pa_brand(
         self,
@@ -711,7 +779,9 @@ class CoreWorkUiRouteTests(unittest.TestCase):
                 json={"title": "First-load mutation", "body": "Works safely."},
             )
             self.assertEqual(created.status_code, 201, created.text)
-            self.assertEqual(created.json()["summary"], "Works safely.")
+            self.assertEqual(created.json()["summary"], "")
+            self.assertEqual(created.json()["summary_status"], "disabled")
+            self.assertNotEqual(created.json()["summary"], "Works safely.")
 
     def test_card_project_change_simple_assign_change_and_clear(self) -> None:
         with TestClient(self.app) as client:

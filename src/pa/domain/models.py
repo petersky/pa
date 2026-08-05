@@ -365,6 +365,7 @@ class CardSummarySource(StrEnum):
 
 
 class CardSummaryStatus(StrEnum):
+    DISABLED = "disabled"
     PENDING = "pending"
     READY = "ready"
     STALE = "stale"
@@ -406,9 +407,15 @@ class Card(BaseModel):
     summary_status: CardSummaryStatus = CardSummaryStatus.PENDING
     summary_provider: str | None = None
     summary_model: str | None = None
+    summary_auth_source: str | None = None
     summary_prompt_version: str | None = None
     summary_input_hash: str | None = None
     summary_failure: str | None = None
+    summary_failure_code: str | None = None
+    summary_attempt_count: int = 0
+    summary_next_attempt_at: datetime | None = None
+    summary_last_attempted_at: datetime | None = None
+    summary_authority_instance_id: str | None = None
     summary_updated_at: datetime | None = None
     summary_stale: bool = False
     lane: CardLane = CardLane.INBOX
@@ -470,9 +477,15 @@ class CardUpdate(BaseModel):
     summary_status: CardSummaryStatus | None = None
     summary_provider: str | None = None
     summary_model: str | None = None
+    summary_auth_source: str | None = None
     summary_prompt_version: str | None = None
     summary_input_hash: str | None = None
     summary_failure: str | None = None
+    summary_failure_code: str | None = None
+    summary_attempt_count: int | None = Field(default=None, ge=0)
+    summary_next_attempt_at: datetime | None = None
+    summary_last_attempted_at: datetime | None = None
+    summary_authority_instance_id: str | None = None
     lane: CardLane | None = None
     status: ItemStatus | None = Field(
         default=None,
