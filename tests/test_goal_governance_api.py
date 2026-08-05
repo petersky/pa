@@ -395,6 +395,15 @@ def test_provider_launch_credential_rejects_shared_fleet_origin_spoof() -> None:
         run = assigned.json()["run"]
         assert "invocation" not in run
         assert run["launch_required"] is True
+        autonomy_before_launch = client.get(f"/api/goals/{goal['id']}/autonomy").json()
+        unlaunched = next(
+            item
+            for item in autonomy_before_launch["provider_runs"]
+            if item["id"] == run["id"]
+        )
+        assert "invocation" not in unlaunched
+        assert "progress_credential_hash" not in unlaunched
+        assert unlaunched["launch_required"] is True
         launched = client.post(
             f"/api/goals/{goal['id']}/providers/{run['id']}/launch",
             params={

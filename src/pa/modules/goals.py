@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import hashlib
 import logging
 from typing import Annotated
@@ -132,6 +133,20 @@ def _provider_run_public(run, *, include_invocation: bool = False) -> dict | Non
         payload.pop("invocation", None)
         payload["launch_required"] = run.launched_at is None
     return payload
+
+
+def _redact_unlaunched_provider_runs(payload: dict) -> dict:
+    """Keep provider invocations behind the canonical launch/apply gate."""
+
+    public = copy.deepcopy(payload)
+    for run in public.get("provider_runs", []):
+        if not isinstance(run, dict):
+            continue
+        run.pop("progress_credential_hash", None)
+        if run.get("launched_at") is None:
+            run.pop("invocation", None)
+            run["launch_required"] = True
+    return public
 
 
 def _governed_goal_mutation(
@@ -656,7 +671,8 @@ def list_provider_goal_adapters():
 
 @router.get("/goals/{goal_id}/autonomy")
 def get_goal_autonomy(request: Request, goal_id: str):
-    return _run(lambda: _governance(request).get_state(goal_id)).model_dump(mode="json")
+    state = _run(lambda: _governance(request).get_state(goal_id))
+    return _redact_unlaunched_provider_runs(state.model_dump(mode="json"))
 
 
 @router.get("/goals/{goal_id}/autonomy/events")
