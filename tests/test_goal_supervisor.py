@@ -9,8 +9,22 @@ from uuid import uuid4
 
 from pa.domain.notifications import InteractionState, Notification
 from pa.domain.projection import CardProjection
+from pa.execution.dispatch import (
+    DispatchEvent,
+    DispatchRecord,
+    GoalDispatchProvenance,
+    goal_admission_validation_proof,
+    goal_dispatch_placement_decision_digest,
+    goal_dispatch_placement_input_digest,
+    goal_dispatch_placement_input_snapshot,
+)
 from pa.execution.progress import CompletionReportV1, ProgressValidationV1
-from pa.goals.advanced_models import GoalActionDisposition, GoalActionRequest
+from pa.goals.advanced_models import (
+    GoalActionDisposition,
+    GoalActionRequest,
+    GoalReservationState,
+    GovernanceMutationContext,
+)
 from pa.goals.authorization import authorize_proposal
 from pa.goals.governance import GoalGovernanceConflict
 from pa.goals.models import (
@@ -24,6 +38,7 @@ from pa.goals.models import (
     GoalAuditCreate,
     GoalCreate,
     GoalCriterion,
+    GoalDispatchAttemptState,
     GoalEvidence,
     GoalEvidenceCreate,
     GoalInteractionState,
@@ -50,6 +65,22 @@ class FakeDispatchStore:
 
     def get(self, dispatch_id: str):
         return self.records.get(dispatch_id)
+
+    def by_authority_idempotency(
+        self,
+        authority_instance_id: str,
+        idempotency_key: str,
+    ):
+        return next(
+            (
+                record
+                for record in self.records.values()
+                if getattr(record, "authority_instance_id", None)
+                == authority_instance_id
+                and getattr(record, "idempotency_key", None) == idempotency_key
+            ),
+            None,
+        )
 
 
 class ProjectionNotifications:
@@ -666,9 +697,21 @@ class GoalSupervisorTests(unittest.TestCase):
             assert card is not None
             self.assertIn(f"goal-work-package:{package.id}", card.tags)
 
+            staged = supervisor.run_once(goal.id)[0]
+            self.assertEqual(len(calls), 0)
+            self.assertIsNotNone(staged.work_packages[0].dispatch_attempt)
             second = supervisor.run_once(goal.id)[0]
             self.assertEqual(len(calls), 1)
             self.assertEqual(calls[0]["card_id"], package.card_id)
+            self.assertEqual(calls[0]["placement_policy"], "best_match")
+            self.assertEqual(
+                calls[0]["goal_provenance"]["requested_placement_target"],
+                "placement:best_match",
+            )
+            self.assertEqual(
+                calls[0]["goal_provenance"]["placement_input_digest"],
+                goal_dispatch_placement_input_digest(calls[0]),
+            )
             self.assertEqual(second.work_packages[0].state, WorkPackageState.DISPATCHED)
             self.assertEqual(second.linked_dispatch_ids, ["dispatch-1"])
             self.assertEqual(second.state, GoalState.ACTIVE)
@@ -723,6 +766,7 @@ class GoalSupervisorTests(unittest.TestCase):
             )
             supervisor.run_once(goal.id)
             supervisor.run_once(goal.id)
+            supervisor.run_once(goal.id)
             records.records["dispatch-1"] = dispatch_record(
                 "dispatch-1",
                 "failed",
@@ -736,7 +780,9 @@ class GoalSupervisorTests(unittest.TestCase):
                 recovered.work_packages[0].replacement_session_ids,
             )
 
-            # One cycle authorizes the replacement dispatch; the next applies it.
+            # Clear the released receipt, then create, stage, and apply replacement.
+            supervisor.run_once(goal.id)
+            supervisor.run_once(goal.id)
             supervisor.run_once(goal.id)
             replacement = service.get(goal.id)
             assert replacement is not None
@@ -782,7 +828,10 @@ class GoalSupervisorTests(unittest.TestCase):
 
             def reject_before_admission(payload: dict) -> dict:
                 calls.append(payload["idempotency_key"])
-                raise RuntimeError("target rejected before creating a dispatch")
+                return {
+                    "accepted": False,
+                    "error": "target rejected before creating a dispatch",
+                }
 
             supervisor = GoalSupervisor(
                 service,
@@ -792,10 +841,13 @@ class GoalSupervisorTests(unittest.TestCase):
                 dispatch=reject_before_admission,
                 default_provider="codex",
             )
-            supervisor.run_once(goal.id)
-            supervisor.run_once(goal.id)
-            exhausted = supervisor.run_once(goal.id)[0]
-            for _ in range(4):
+            exhausted = None
+            for _ in range(7):
+                processed = supervisor.run_once(goal.id)
+                if processed:
+                    exhausted = processed[0]
+            assert exhausted is not None
+            for _ in range(3):
                 supervisor.run_once(goal.id)
 
             package = exhausted.work_packages[0]
@@ -883,38 +935,591 @@ class GoalSupervisorTests(unittest.TestCase):
                 dispatch=crash_after_external_commit,
                 default_provider="codex",
             )
-            durable = supervisor.run_once(goal.id)[0]
-            proposal = next(
+            supervisor.run_once(goal.id)
+            staged = supervisor.run_once(goal.id)[0]
+            self.assertIsNotNone(staged.work_packages[0].dispatch_attempt)
+            self.assertEqual(supervisor.run_once(goal.id), [])
+            reloaded = service.get(goal.id)
+            assert reloaded is not None
+            self.assertEqual(reloaded.work_packages[0].attempts, 0)
+            ambiguous_attempt = reloaded.work_packages[0].dispatch_attempt
+            assert ambiguous_attempt is not None
+            self.assertEqual(
+                ambiguous_attempt.state,
+                GoalDispatchAttemptState.STAGED,
+            )
+            autonomy = supervisor.governance.get_state(goal.id)
+            dispatch_reservations = [
+                item
+                for item in autonomy.action_reservations
+                if item.action_class == "dispatch_work_package"
+            ]
+            self.assertEqual(len(dispatch_reservations), 1)
+            self.assertEqual(
+                dispatch_reservations[0].state,
+                GoalReservationState.APPLIED,
+            )
+            replayed = supervisor.run_once(goal.id)[0]
+            self.assertEqual(keys[0], keys[1])
+            package = replayed.work_packages[0]
+            self.assertEqual(package.attempts, 1)
+            self.assertEqual(
+                package.dispatch_ids,
+                ["dispatch-canonical"],
+            )
+            admitted_attempt = package.dispatch_attempt
+            assert admitted_attempt is not None
+            self.assertEqual(
+                admitted_attempt.state,
+                GoalDispatchAttemptState.ADMITTED,
+            )
+            self.assertEqual(
+                admitted_attempt.dispatch_id,
+                "dispatch-canonical",
+            )
+            self.assertEqual(
+                admitted_attempt.admission_receipt_digest,
+                package.dispatch_admission_receipt_digest,
+            )
+            self.assertTrue(admitted_attempt.fleet_lifecycle_owned)
+            self.assertTrue(package.fleet_lifecycle_owned)
+            autonomy = supervisor.governance.get_state(goal.id)
+            dispatch_reservations = [
+                item
+                for item in autonomy.action_reservations
+                if item.action_class == "dispatch_work_package"
+            ]
+            self.assertEqual(len(dispatch_reservations), 1)
+            self.assertEqual(
+                dispatch_reservations[0].state,
+                GoalReservationState.APPLIED,
+            )
+
+    def test_admitted_dispatch_replays_after_goal_checkpoint_crash(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service, projection = self._services(tmp)
+            criterion = GoalCriterion(
+                description="checkpoint-safe admission",
+                verification_method="idempotent replay",
+                evidence_requirement="one canonical dispatch",
+            )
+            goal = service.create(self._goal_create(criterion), self._ctx(0, "create"))
+            goal = service.transition(
+                goal.id,
+                GoalTransition(state=GoalState.READY, reason="ready"),
+                self._ctx(goal.version, "ready"),
+            )
+            goal = service.submit_proposal(
+                goal.id,
+                GoalProposalCreate(
+                    proposer_principal="agent:coordinator",
+                    proposer_role=GoalActorRole.COORDINATOR,
+                    action=CreateWorkPackageAction(
+                        title="Checkpoint one admission",
+                        objective="Replay after the Goal checkpoint crashes",
+                        criterion_ids=[criterion.id],
+                        max_attempts=2,
+                    ),
+                    rationale="Admission and Goal persistence are separate commits.",
+                    expected_goal_version=goal.version,
+                    policy_revision=1,
+                ),
+                self._ctx(goal.version, "proposal"),
+            )
+            external: dict[str, str] = {}
+            keys: list[str] = []
+
+            def canonical_dispatch(payload: dict) -> dict:
+                key = payload["idempotency_key"]
+                keys.append(key)
+                return {
+                    "dispatch_id": external.setdefault(key, "dispatch-canonical")
+                }
+
+            supervisor = GoalSupervisor(
+                service,
+                projection,
+                "instance-a",
+                dispatch_store=FakeDispatchStore(),
+                dispatch=canonical_dispatch,
+                default_provider="codex",
+            )
+            supervisor.run_once(goal.id)
+            staged = supervisor.run_once(goal.id)[0]
+            self.assertEqual(
+                staged.work_packages[0].dispatch_attempt.state,
+                GoalDispatchAttemptState.STAGED,
+            )
+
+            original_checkpoint = service.checkpoint_supervision
+            checkpoint_crashed = False
+
+            def crash_before_admitted_checkpoint(goal_id, checkpoint, context):
+                nonlocal checkpoint_crashed
+                package = checkpoint.work_packages[0]
+                if (
+                    not checkpoint_crashed
+                    and package.dispatch_attempt is not None
+                    and package.dispatch_attempt.state
+                    == GoalDispatchAttemptState.ADMITTED
+                ):
+                    checkpoint_crashed = True
+                    raise RuntimeError("crash before admitted Goal checkpoint")
+                return original_checkpoint(goal_id, checkpoint, context)
+
+            service.checkpoint_supervision = crash_before_admitted_checkpoint
+            self.assertEqual(supervisor.run_once(goal.id), [])
+            durable = service.get(goal.id)
+            assert durable is not None
+            package = durable.work_packages[0]
+            self.assertEqual(package.attempts, 0)
+            self.assertEqual(package.dispatch_ids, [])
+            assert package.dispatch_attempt is not None
+            self.assertEqual(
+                package.dispatch_attempt.state,
+                GoalDispatchAttemptState.STAGED,
+            )
+            autonomy = supervisor.governance.get_state(goal.id)
+            dispatch_reservations = [
+                item
+                for item in autonomy.action_reservations
+                if item.action_class == "dispatch_work_package"
+            ]
+            self.assertEqual(len(dispatch_reservations), 1)
+            self.assertEqual(
+                dispatch_reservations[0].state,
+                GoalReservationState.APPLIED,
+            )
+
+            service.checkpoint_supervision = original_checkpoint
+            replayed = supervisor.run_once(goal.id)[0]
+            self.assertEqual(keys, [keys[0], keys[0]])
+            package = replayed.work_packages[0]
+            self.assertEqual(package.attempts, 1)
+            self.assertEqual(package.dispatch_ids, ["dispatch-canonical"])
+            assert package.dispatch_attempt is not None
+            self.assertEqual(
+                package.dispatch_attempt.state,
+                GoalDispatchAttemptState.ADMITTED,
+            )
+            self.assertTrue(package.fleet_lifecycle_owned)
+            self.assertEqual(
+                package.dispatch_attempt.admission_receipt_digest,
+                package.dispatch_admission_receipt_digest,
+            )
+            autonomy = supervisor.governance.get_state(goal.id)
+            self.assertEqual(
+                dispatch_reservations[0].id,
+                package.dispatch_attempt.reservation_id,
+            )
+            reservation = next(
+                item
+                for item in autonomy.action_reservations
+                if item.id == package.dispatch_attempt.reservation_id
+            )
+            self.assertEqual(reservation.state, GoalReservationState.APPLIED)
+
+    def test_rejected_dispatch_recovers_post_checkpoint_release(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service, projection = self._services(tmp)
+            criterion = GoalCriterion(
+                description="rejection release is recoverable",
+                verification_method="durable rejection checkpoint",
+                evidence_requirement="one post-checkpoint hold release",
+            )
+            goal = service.create(self._goal_create(criterion), self._ctx(0, "create"))
+            goal = service.transition(
+                goal.id,
+                GoalTransition(state=GoalState.READY, reason="ready"),
+                self._ctx(goal.version, "ready"),
+            )
+            goal = service.submit_proposal(
+                goal.id,
+                GoalProposalCreate(
+                    proposer_principal="agent:coordinator",
+                    proposer_role=GoalActorRole.COORDINATOR,
+                    action=CreateWorkPackageAction(
+                        title="Checkpoint one rejection",
+                        objective="Release only after rejection is durable",
+                        criterion_ids=[criterion.id],
+                        max_attempts=1,
+                    ),
+                    rationale="A release crash must preserve the rejection ledger.",
+                    expected_goal_version=goal.version,
+                    policy_revision=1,
+                ),
+                self._ctx(goal.version, "proposal"),
+            )
+            keys: list[str] = []
+
+            def reject(payload: dict) -> dict:
+                keys.append(payload["idempotency_key"])
+                return {"accepted": False, "error": "definite pre-admission reject"}
+
+            supervisor = GoalSupervisor(
+                service,
+                projection,
+                "instance-a",
+                dispatch_store=FakeDispatchStore(),
+                dispatch=reject,
+                default_provider="codex",
+            )
+            supervisor.run_once(goal.id)
+            supervisor.run_once(goal.id)
+
+            original_release = supervisor._reconcile_governed_release
+            release_crashed = False
+
+            def crash_first_rejected_release(*args, **kwargs):
+                nonlocal release_crashed
+                if (
+                    not release_crashed
+                    and str(kwargs.get("idempotency_key", "")).endswith(
+                        ":release-rejected"
+                    )
+                ):
+                    release_crashed = True
+                    raise RuntimeError("crash during post-checkpoint release")
+                return original_release(*args, **kwargs)
+
+            supervisor._reconcile_governed_release = crash_first_rejected_release
+            self.assertEqual(supervisor.run_once(goal.id), [])
+            durable = service.get(goal.id)
+            assert durable is not None
+            package = durable.work_packages[0]
+            self.assertEqual(package.attempts, 1)
+            self.assertEqual(package.state, WorkPackageState.FAILED)
+            attempt = package.dispatch_attempt
+            assert attempt is not None
+            self.assertEqual(attempt.state, GoalDispatchAttemptState.REJECTED)
+            self.assertTrue(attempt.release_pending)
+            dispatch_proposal = next(
                 item
                 for item in durable.proposals
                 if isinstance(item.action, DispatchWorkPackageAction)
             )
-            first_working_copy = durable.model_copy(deep=True)
-            with self.assertRaisesRegex(RuntimeError, "external commit"):
-                supervisor._dispatch_work_package(
-                    first_working_copy,
-                    proposal,
-                    proposal.action,
-                    supervisor.now(),
-                )
-
-            reloaded = service.get(goal.id)
-            assert reloaded is not None
-            self.assertEqual(reloaded.work_packages[0].attempts, 0)
-            replayed = reloaded.model_copy(deep=True)
-            self.assertTrue(
-                supervisor._dispatch_work_package(
-                    replayed,
-                    proposal,
-                    proposal.action,
-                    supervisor.now(),
-                )
+            self.assertEqual(dispatch_proposal.status, ProposalStatus.FAILED)
+            autonomy = supervisor.governance.get_state(goal.id)
+            reservation = next(
+                item
+                for item in autonomy.action_reservations
+                if item.id == attempt.reservation_id
             )
-            self.assertEqual(keys[0], keys[1])
-            self.assertEqual(replayed.work_packages[0].attempts, 1)
+            self.assertEqual(reservation.state, GoalReservationState.APPLIED)
+
+            supervisor._reconcile_governed_release = original_release
+            released_cycle = supervisor.run_once(goal.id)[0]
+            self.assertIsNotNone(released_cycle.work_packages[0].dispatch_attempt)
+            self.assertEqual(keys, [keys[0]])
+            autonomy = supervisor.governance.get_state(goal.id)
+            reservation = next(
+                item
+                for item in autonomy.action_reservations
+                if item.id == attempt.reservation_id
+            )
+            self.assertEqual(reservation.state, GoalReservationState.RELEASED)
+
+            cleared = supervisor.run_once(goal.id)[0]
+            self.assertIsNone(cleared.work_packages[0].dispatch_attempt)
+            self.assertFalse(cleared.work_packages[0].fleet_lifecycle_owned)
+            self.assertEqual(keys, [keys[0]])
+
+    def test_fast_terminal_dispatch_recovers_from_exact_fleet_ledger(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service, projection = self._services(tmp)
+            criterion = GoalCriterion(
+                description="fast terminal admission",
+                verification_method="durable Fleet ledger",
+                evidence_requirement="exact validated admission record",
+            )
+            goal = service.create(self._goal_create(criterion), self._ctx(0, "create"))
+            goal = service.transition(
+                goal.id,
+                GoalTransition(state=GoalState.READY, reason="ready"),
+                self._ctx(goal.version, "ready"),
+            )
+            goal = service.submit_proposal(
+                goal.id,
+                GoalProposalCreate(
+                    proposer_principal="agent:coordinator",
+                    proposer_role=GoalActorRole.COORDINATOR,
+                    action=CreateWorkPackageAction(
+                        title="Recover a fast terminal dispatch",
+                        objective="Persist the exact admitted Fleet record",
+                        criterion_ids=[criterion.id],
+                    ),
+                    rationale="Fleet may finish before the Goal checkpoint.",
+                    expected_goal_version=goal.version,
+                    policy_revision=1,
+                ),
+                self._ctx(goal.version, "proposal"),
+            )
+            records = FakeDispatchStore()
+            calls: list[str] = []
+            supervisor: GoalSupervisor
+
+            def fast_terminal(payload: dict) -> dict:
+                calls.append(payload["idempotency_key"])
+                provenance = GoalDispatchProvenance.model_validate(
+                    payload["goal_provenance"]
+                )
+                autonomy = supervisor.governance.get_state(goal.id)
+                reservation = next(
+                    item
+                    for item in autonomy.action_reservations
+                    if item.id == provenance.action_reservation_id
+                )
+                placement_decision = {
+                    "policy": "best_match",
+                    "chosen_instance_id": "instance-b",
+                    "chosen_instance_name": "worker-b",
+                    "eligible_instance_ids": ["instance-b"],
+                    "tie_breaking_reason": "exact test placement",
+                }
+                current_goal = service.get(goal.id)
+                assert current_goal is not None
+                autonomy, reservation = supervisor.governance.bind_dispatch_placement(
+                    goal.id,
+                    reservation.id,
+                    GovernanceMutationContext(
+                        actor_principal=reservation.actor_principal,
+                        authority_instance_id=reservation.authority_instance_id,
+                        idempotency_key=f"test-bind:{reservation.id}",
+                        expected_version=autonomy.version,
+                        policy_revision=current_goal.policy.revision,
+                        goal_version=current_goal.version,
+                        fencing_token=reservation.fencing_token,
+                    ),
+                    requested_placement_target="placement:best_match",
+                    placement_input_digest=provenance.placement_input_digest or "",
+                    resolved_target_instance_id="instance-b",
+                    placement_decision_digest=(
+                        goal_dispatch_placement_decision_digest(placement_decision)
+                    ),
+                )
+                bound_provenance = provenance.model_copy(
+                    update={
+                        "resolved_target_instance_id": "instance-b",
+                        "placement_decision_digest": (
+                            reservation.request.placement_decision_digest
+                        ),
+                    }
+                )
+                placement_input = goal_dispatch_placement_input_snapshot(payload)
+                request_payload = {
+                    "card_id": payload["card_id"],
+                    "project_id": payload["project_id"],
+                    "title": None,
+                    "message": payload["message"],
+                    "provider": payload["provider"],
+                    "model_id": payload["model_id"],
+                    "mode_id": payload["mode_id"],
+                    "collaboration_risk": payload["collaboration_risk"],
+                    "collaboration_ambiguous": False,
+                    "collaboration_unattended": True,
+                    "effort": None,
+                    "cwd": None,
+                    "capacity_override_reason": None,
+                    "participation_override_reason": None,
+                    "priority": payload["priority"],
+                    "goal_provenance": bound_provenance.model_dump(mode="json"),
+                }
+                record = DispatchRecord(
+                    dispatch_id="dispatch-fast-terminal",
+                    mutation_id="mutation-fast-terminal",
+                    idempotency_key=payload["idempotency_key"],
+                    request_fingerprint="f" * 64,
+                    placement_request_fingerprint="p" * 64,
+                    card_id=payload["card_id"],
+                    project_id=payload["project_id"],
+                    request_payload=request_payload,
+                    goal_provenance=bound_provenance,
+                    goal_placement_input=placement_input,
+                    goal_placement_input_digest=(
+                        goal_dispatch_placement_input_digest(placement_input)
+                    ),
+                    goal_admission_validation_state="validated",
+                    goal_admission_validated_at=datetime.now(UTC),
+                    principal_id="service:goal-supervisor:instance-a",
+                    authority_instance_id="instance-a",
+                    authority_url="http://instance-a.test",
+                    target_instance_id="instance-b",
+                    placement_policy="best_match",
+                    placement_decision=placement_decision,
+                    state="completed",
+                    events=[
+                        DispatchEvent(
+                            seq=1,
+                            state="admission_pending",
+                            message="admission started",
+                        ),
+                        DispatchEvent(
+                            seq=2,
+                            state="queued",
+                            message="admission committed",
+                        ),
+                        DispatchEvent(
+                            seq=3,
+                            state="completed",
+                            message="work finished quickly",
+                        ),
+                    ],
+                )
+                record.goal_admission_validation_proof = (
+                    goal_admission_validation_proof(record)
+                )
+                records.records[record.dispatch_id] = record
+                supervisor._reconcile_governed_release(
+                    goal.id,
+                    reservation.id,
+                    actual_usage=reservation.reserved_usage,
+                    reason="Fleet observed a fast terminal dispatch",
+                    idempotency_key=f"test-release:{reservation.id}",
+                )
+                autonomy = supervisor.governance.get_state(goal.id)
+                released = next(
+                    item
+                    for item in autonomy.action_reservations
+                    if item.id == reservation.id
+                )
+                record.goal_provenance = bound_provenance.model_copy(
+                    update={
+                        "released_at": released.released_at,
+                        "release_reason": released.release_reason,
+                    }
+                )
+                records.records[record.dispatch_id] = record
+                return {"dispatch_id": record.dispatch_id}
+
+            supervisor = GoalSupervisor(
+                service,
+                projection,
+                "instance-a",
+                dispatch_store=records,
+                dispatch=fast_terminal,
+                default_provider="codex",
+            )
+            supervisor.run_once(goal.id)
+            supervisor.run_once(goal.id)
+
+            original_checkpoint = service.checkpoint_supervision
+            checkpoint_crashed = False
+
+            def crash_before_admitted_checkpoint(goal_id, checkpoint, context):
+                nonlocal checkpoint_crashed
+                attempt = checkpoint.work_packages[0].dispatch_attempt
+                if (
+                    not checkpoint_crashed
+                    and attempt is not None
+                    and attempt.state == GoalDispatchAttemptState.ADMITTED
+                ):
+                    checkpoint_crashed = True
+                    raise RuntimeError("crash before admitted Goal checkpoint")
+                return original_checkpoint(goal_id, checkpoint, context)
+
+            service.checkpoint_supervision = crash_before_admitted_checkpoint
+            self.assertEqual(supervisor.run_once(goal.id), [])
+            durable = service.get(goal.id)
+            assert durable is not None
+            assert durable.work_packages[0].dispatch_attempt is not None
             self.assertEqual(
-                replayed.work_packages[0].dispatch_ids,
-                ["dispatch-canonical"],
+                durable.work_packages[0].dispatch_attempt.state,
+                GoalDispatchAttemptState.STAGED,
+            )
+            autonomy = supervisor.governance.get_state(goal.id)
+            reservation = next(
+                item
+                for item in autonomy.action_reservations
+                if item.action_class == "dispatch_work_package"
+            )
+            self.assertEqual(reservation.state, GoalReservationState.RELEASED)
+
+            service.checkpoint_supervision = original_checkpoint
+            recovered = supervisor.run_once(goal.id)[0]
+            package = recovered.work_packages[0]
+            self.assertEqual(calls, [calls[0]])
+            self.assertEqual(package.dispatch_ids, ["dispatch-fast-terminal"])
+            assert package.dispatch_attempt is not None
+            self.assertEqual(
+                package.dispatch_attempt.state,
+                GoalDispatchAttemptState.ADMITTED,
+            )
+            self.assertEqual(
+                package.dispatch_attempt.admission_receipt_digest,
+                package.dispatch_admission_receipt_digest,
+            )
+
+    def test_released_dispatch_without_exact_record_never_reopens_fleet(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service, projection = self._services(tmp)
+            criterion = GoalCriterion(
+                description="released unknown dispatch",
+                verification_method="authority ledger lookup",
+                evidence_requirement="no ungoverned Fleet replay",
+            )
+            goal = service.create(self._goal_create(criterion), self._ctx(0, "create"))
+            goal = service.transition(
+                goal.id,
+                GoalTransition(state=GoalState.READY, reason="ready"),
+                self._ctx(goal.version, "ready"),
+            )
+            goal = service.submit_proposal(
+                goal.id,
+                GoalProposalCreate(
+                    proposer_principal="agent:coordinator",
+                    proposer_role=GoalActorRole.COORDINATOR,
+                    action=CreateWorkPackageAction(
+                        title="Do not reopen Fleet",
+                        objective="Require an exact authority ledger record",
+                        criterion_ids=[criterion.id],
+                    ),
+                    rationale="A released hold cannot authorize a new call.",
+                    expected_goal_version=goal.version,
+                    policy_revision=1,
+                ),
+                self._ctx(goal.version, "proposal"),
+            )
+            records = FakeDispatchStore()
+            calls: list[str] = []
+            supervisor: GoalSupervisor
+
+            def release_without_record(payload: dict) -> dict:
+                calls.append(payload["idempotency_key"])
+                reservation_id = payload["goal_provenance"][
+                    "action_reservation_id"
+                ]
+                supervisor._reconcile_governed_release(
+                    goal.id,
+                    reservation_id,
+                    actual_usage=GoalActionRequest(
+                        action_class="dispatch_work_package"
+                    ).estimate,
+                    reason="simulated external terminal without a local record",
+                    idempotency_key=f"test-release:{reservation_id}",
+                )
+                raise RuntimeError("response lost after release")
+
+            supervisor = GoalSupervisor(
+                service,
+                projection,
+                "instance-a",
+                dispatch_store=records,
+                dispatch=release_without_record,
+                default_provider="codex",
+            )
+            supervisor.run_once(goal.id)
+            supervisor.run_once(goal.id)
+            self.assertEqual(supervisor.run_once(goal.id), [])
+            self.assertEqual(supervisor.run_once(goal.id), [])
+            self.assertEqual(calls, [calls[0]])
+            durable = service.get(goal.id)
+            assert durable is not None
+            package = durable.work_packages[0]
+            self.assertEqual(package.attempts, 0)
+            assert package.dispatch_attempt is not None
+            self.assertEqual(
+                package.dispatch_attempt.state,
+                GoalDispatchAttemptState.STAGED,
             )
 
     def test_verifier_role_requires_passing_validation_before_criterion(self) -> None:
@@ -964,6 +1569,7 @@ class GoalSupervisorTests(unittest.TestCase):
                 dispatch=dispatch,
                 default_provider="codex",
             )
+            supervisor.run_once(goal.id)
             supervisor.run_once(goal.id)
             supervisor.run_once(goal.id)
             records.records["dispatch-1"] = dispatch_record(

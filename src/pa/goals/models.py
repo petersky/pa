@@ -71,6 +71,12 @@ class WorkPackageState(StrEnum):
     CANCELLED = "cancelled"
 
 
+class GoalDispatchAttemptState(StrEnum):
+    STAGED = "staged"
+    ADMITTED = "admitted"
+    REJECTED = "rejected"
+
+
 class GoalInteractionState(StrEnum):
     PENDING = "pending"
     ANSWERED = "answered"
@@ -235,7 +241,7 @@ class DispatchWorkPackageAction(BaseModel):
     kind: Literal["dispatch_work_package"] = "dispatch_work_package"
     work_package_id: str
     target_instance_id: str | None = None
-    placement_policy: str | None = "balanced"
+    placement_policy: str | None = "best_match"
     group_id: str | None = None
     message: str = ""
     provider: str | None = None
@@ -343,6 +349,65 @@ class GoalProposalCreate(BaseModel):
     policy_revision: int = Field(ge=1)
 
 
+class GoalDispatchAttempt(BaseModel):
+    generation: int = Field(ge=1)
+    proposal_id: str = Field(min_length=1)
+    idempotency_key: str = Field(min_length=1, max_length=200)
+    request_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    dispatch_payload_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    state: GoalDispatchAttemptState = GoalDispatchAttemptState.STAGED
+    reservation_id: str | None = Field(default=None, min_length=1)
+    dispatch_id: str | None = Field(default=None, min_length=1)
+    admission_receipt_digest: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+    fleet_lifecycle_owned: bool = False
+    release_pending: bool = False
+    error: str = Field(default="", max_length=2000)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    @model_validator(mode="after")
+    def validate_state(self) -> GoalDispatchAttempt:
+        if self.state == GoalDispatchAttemptState.STAGED:
+            if any(
+                (
+                    self.reservation_id,
+                    self.dispatch_id,
+                    self.admission_receipt_digest,
+                    self.fleet_lifecycle_owned,
+                    self.release_pending,
+                    self.error,
+                )
+            ):
+                raise ValueError("staged dispatch attempts cannot claim an outcome")
+        elif self.state == GoalDispatchAttemptState.ADMITTED:
+            if (
+                not self.reservation_id
+                or not self.dispatch_id
+                or not self.admission_receipt_digest
+                or not self.fleet_lifecycle_owned
+                or self.release_pending
+                or self.error
+            ):
+                raise ValueError(
+                    "admitted dispatch attempts require one Fleet-owned receipt"
+                )
+        elif (
+            not self.reservation_id
+            or self.dispatch_id
+            or self.admission_receipt_digest
+            or self.fleet_lifecycle_owned
+            or not self.release_pending
+            or not self.error
+        ):
+            raise ValueError(
+                "rejected dispatch attempts require one pending local release"
+            )
+        return self
+
+
 class GoalWorkPackage(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     proposal_id: str
@@ -362,6 +427,12 @@ class GoalWorkPackage(BaseModel):
     executor_service_id: str | None = None
     verifier_service_id: str | None = None
     action_reservation_id: str | None = None
+    dispatch_attempt: GoalDispatchAttempt | None = None
+    dispatch_admission_receipt_digest: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+    fleet_lifecycle_owned: bool = False
     attempts: int = Field(default=0, ge=0)
     max_attempts: int = Field(default=3, ge=1, le=20)
     last_progress_fingerprint: str | None = None
@@ -479,6 +550,7 @@ class Goal(BaseModel):
         if len(proposal_ids) != len(set(proposal_ids)):
             raise ValueError("proposal ids must be unique")
         proposal_id_set = set(proposal_ids)
+        proposals_by_id = {proposal.id: proposal for proposal in self.proposals}
         work_ids = [package.id for package in self.work_packages]
         if len(work_ids) != len(set(work_ids)):
             raise ValueError("work package ids must be unique")
@@ -487,6 +559,57 @@ class Goal(BaseModel):
         for package in self.work_packages:
             if package.proposal_id not in proposal_id_set:
                 raise ValueError("work package references unknown proposal")
+            attempt = package.dispatch_attempt
+            if attempt is not None:
+                proposal = proposals_by_id.get(attempt.proposal_id)
+                if (
+                    proposal is None
+                    or not isinstance(proposal.action, DispatchWorkPackageAction)
+                    or proposal.action.work_package_id != package.id
+                ):
+                    raise ValueError(
+                        "dispatch attempt must reference its package proposal"
+                    )
+                expected_generation = (
+                    package.attempts + 1
+                    if attempt.state == GoalDispatchAttemptState.STAGED
+                    else package.attempts
+                )
+                if attempt.generation != expected_generation:
+                    raise ValueError(
+                        "dispatch attempt generation does not match package attempts"
+                    )
+                if (
+                    attempt.state == GoalDispatchAttemptState.ADMITTED
+                    and (
+                        package.action_reservation_id != attempt.reservation_id
+                        or package.dispatch_admission_receipt_digest
+                        != attempt.admission_receipt_digest
+                        or attempt.dispatch_id not in package.dispatch_ids
+                        or not package.fleet_lifecycle_owned
+                    )
+                ):
+                    raise ValueError(
+                        "admitted dispatch attempt is not bound to its package receipt"
+                    )
+                if (
+                    attempt.state != GoalDispatchAttemptState.ADMITTED
+                    and package.fleet_lifecycle_owned
+                ):
+                    raise ValueError(
+                        "only admitted dispatch attempts can be Fleet lifecycle owned"
+                    )
+                if (
+                    attempt.state == GoalDispatchAttemptState.REJECTED
+                    and package.action_reservation_id != attempt.reservation_id
+                ):
+                    raise ValueError(
+                        "rejected dispatch attempt is not bound to its package reservation"
+                    )
+            elif package.fleet_lifecycle_owned:
+                raise ValueError(
+                    "Fleet lifecycle ownership requires a durable dispatch attempt"
+                )
             if unknown := set(package.criterion_ids) - known:
                 raise ValueError(
                     f"work package references unknown criteria: {sorted(unknown)}"

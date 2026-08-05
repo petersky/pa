@@ -22,7 +22,12 @@ from pa.domain.notifications import (
     NotificationSeverity,
     NotificationType,
 )
-from pa.execution.dispatch import goal_dispatch_placement_input_digest
+from pa.execution.dispatch import (
+    goal_admission_validation_proof,
+    goal_dispatch_placement_decision_digest,
+    goal_dispatch_placement_input_digest,
+    goal_dispatch_record_placement_input_valid,
+)
 from pa.goals.advanced_models import (
     GoalActionDisposition,
     GoalActionRequest,
@@ -40,6 +45,8 @@ from pa.goals.models import (
     EvidenceKind,
     Goal,
     GoalActorRole,
+    GoalDispatchAttempt,
+    GoalDispatchAttemptState,
     GoalDriftState,
     GoalEvidence,
     GoalEvidenceCreate,
@@ -60,6 +67,10 @@ from pa.goals.models import (
 from pa.goals.service import GoalConflict, GoalService, goal_completion_findings
 
 logger = logging.getLogger(__name__)
+
+
+class GoalDispatchAmbiguous(RuntimeError):
+    """The Fleet call may have committed and must be replayed with the same key."""
 
 _TERMINAL_GOAL_STATES = {GoalState.ACHIEVED, GoalState.ABANDONED}
 _TERMINAL_PROPOSALS = {
@@ -163,6 +174,8 @@ class GoalSupervisor:
         return processed
 
     def _needs_cycle(self, goal: Goal) -> bool:
+        if any(package.dispatch_attempt is not None for package in goal.work_packages):
+            return True
         if any(item.status not in _TERMINAL_PROPOSALS for item in goal.proposals):
             return True
         if any(
@@ -334,6 +347,65 @@ class GoalSupervisor:
                 if attempt == 2 or "expected autonomy version" not in str(exc):
                     raise
 
+    def _reconcile_dispatch_attempts(self, goal: Goal, now: datetime) -> bool:
+        """Clear only attempts whose canonical governance hold is durably released."""
+
+        state = self.governance.get_state(goal.id)
+        reservations = {item.id: item for item in state.action_reservations}
+        changed = False
+        for package in goal.work_packages:
+            attempt = package.dispatch_attempt
+            if attempt is None or attempt.state == GoalDispatchAttemptState.STAGED:
+                continue
+            reservation = reservations.get(attempt.reservation_id or "")
+            if reservation is None:
+                raise GoalGovernanceConflict(
+                    "durable dispatch attempt lost its governance reservation"
+                )
+            if reservation.state != GoalReservationState.RELEASED:
+                continue
+            if attempt.state == GoalDispatchAttemptState.ADMITTED:
+                package.fleet_lifecycle_owned = False
+            package.dispatch_attempt = None
+            package.updated_at = now
+            changed = True
+        return changed
+
+    def _release_rejected_dispatch_attempts(self, goal: Goal) -> None:
+        """Release definite pre-admission failures only after their Goal checkpoint."""
+
+        for package in goal.work_packages:
+            attempt = package.dispatch_attempt
+            if (
+                attempt is None
+                or attempt.state != GoalDispatchAttemptState.REJECTED
+                or not attempt.release_pending
+                or not attempt.reservation_id
+            ):
+                continue
+            state = self.governance.get_state(goal.id)
+            reservation = next(
+                (
+                    item
+                    for item in state.action_reservations
+                    if item.id == attempt.reservation_id
+                ),
+                None,
+            )
+            if reservation is None:
+                raise GoalGovernanceConflict(
+                    "rejected dispatch attempt lost its governance reservation"
+                )
+            if reservation.state == GoalReservationState.RELEASED:
+                continue
+            self._reconcile_governed_release(
+                goal.id,
+                reservation.id,
+                actual_usage=GoalUsage(),
+                reason="Fleet rejected the dispatch before admission",
+                idempotency_key=f"{attempt.idempotency_key}:release-rejected"[:200],
+            )
+
     def _assert_side_effect_fence(self, goal: Goal) -> None:
         current = self.service.get(goal.id)
         if current is None:
@@ -378,10 +450,24 @@ class GoalSupervisor:
     def _cycle(self, source: Goal) -> Goal:
         goal = source.model_copy(deep=True)
         now = self.now()
-        meaningful = self._ingest_interactions(goal, now)
+        durably_admitted_packages = {
+            package.id
+            for package in source.work_packages
+            if package.dispatch_attempt is not None
+            and package.dispatch_attempt.state == GoalDispatchAttemptState.ADMITTED
+        }
+        meaningful = self._reconcile_dispatch_attempts(goal, now)
+        meaningful = self._ingest_interactions(goal, now) or meaningful
         meaningful = self._authorize_pending(goal, now) or meaningful
         meaningful = self._apply_authorized(goal, now) or meaningful
-        meaningful = self._reconcile_dispatches(goal, now) or meaningful
+        meaningful = (
+            self._reconcile_dispatches(
+                goal,
+                now,
+                durably_admitted_packages=durably_admitted_packages,
+            )
+            or meaningful
+        )
         meaningful = self._advance_ready_work(goal, now) or meaningful
         meaningful = self._ensure_dispatch_proposals(goal, now) or meaningful
         meaningful = self._detect_drift(goal, now) or meaningful
@@ -413,7 +499,7 @@ class GoalSupervisor:
             progress_summary=self._summary(goal),
             reason="event-driven supervisor cycle",
         )
-        return self.service.checkpoint_supervision(
+        checkpointed = self.service.checkpoint_supervision(
             goal.id,
             checkpoint,
             self._context(
@@ -422,6 +508,8 @@ class GoalSupervisor:
                 f"{source.version}:{goal.supervision.cycle}",
             ),
         )
+        self._release_rejected_dispatch_attempts(checkpointed)
+        return checkpointed
 
     def _authorize_pending(self, goal: Goal, now: datetime) -> bool:
         changed = False
@@ -510,6 +598,7 @@ class GoalSupervisor:
                         ),
                     )
                 elif isinstance(action, DispatchWorkPackageAction):
+                    package = self._dispatch_package(goal, action)
                     dispatch_provider = self._dispatch_provider(action)
                     dispatch_operation_key = self._dispatch_operation_key(goal, action)
                     requested_target, placement_input_digest = (
@@ -517,25 +606,62 @@ class GoalSupervisor:
                             goal, action, dispatch_provider
                         )
                     )
-                    applied = self._governed_action(
-                        goal,
-                        governance_key,
-                        governed_request(
-                            "dispatch_work_package",
-                            operation_key=dispatch_operation_key,
-                            requested_placement_target=requested_target,
-                            placement_input_digest=placement_input_digest,
-                            delegated=True,
-                            provider_id=dispatch_provider,
-                            estimate=GoalUsage(actions=1, dispatches=1),
-                            max_attempts=min(20, goal.budget.retry_limit + 1),
-                        ),
-                        lambda proposal=proposal, action=action: (
-                            self._dispatch_work_package(goal, proposal, action, now)
-                        ),
-                        defer_release=True,
+                    request = governed_request(
+                        "dispatch_work_package",
+                        operation_key=dispatch_operation_key,
+                        requested_placement_target=requested_target,
+                        placement_input_digest=placement_input_digest,
+                        delegated=True,
+                        provider_id=dispatch_provider,
+                        estimate=GoalUsage(actions=1, dispatches=1),
+                        max_attempts=min(20, goal.budget.retry_limit + 1),
                     )
-                    if not applied:
+                    request_digest = self._dispatch_request_digest(request)
+                    dispatch_payload_digest = self._dispatch_payload_digest(
+                        goal,
+                        action,
+                        package,
+                        dispatch_provider,
+                    )
+                    attempt = package.dispatch_attempt
+                    if attempt is None:
+                        package.action_reservation_id = None
+                        package.fleet_lifecycle_owned = False
+                        package.dispatch_attempt = GoalDispatchAttempt(
+                            generation=package.attempts + 1,
+                            proposal_id=proposal.id,
+                            idempotency_key=dispatch_operation_key,
+                            request_digest=request_digest,
+                            dispatch_payload_digest=dispatch_payload_digest,
+                            created_at=now,
+                            updated_at=now,
+                        )
+                        package.updated_at = now
+                        changed = True
+                        continue
+                    if (
+                        attempt.state != GoalDispatchAttemptState.STAGED
+                        or attempt.proposal_id != proposal.id
+                        or attempt.idempotency_key != dispatch_operation_key
+                        or attempt.request_digest != request_digest
+                        or attempt.dispatch_payload_digest
+                        != dispatch_payload_digest
+                    ):
+                        raise GoalDispatchAmbiguous(
+                            "durable dispatch attempt no longer matches its exact request"
+                        )
+                    outcome = self._execute_staged_dispatch(
+                        goal,
+                        proposal,
+                        action,
+                        request,
+                        now,
+                    )
+                    if outcome == GoalDispatchAttemptState.REJECTED:
+                        proposal.status = ProposalStatus.FAILED
+                        proposal.error = package.dispatch_attempt.error[:2000]
+                        proposal.updated_at = now
+                        changed = True
                         continue
                 elif isinstance(action, RequestOperatorAction):
                     self._governed_action(
@@ -595,6 +721,8 @@ class GoalSupervisor:
                 proposal.applied_event_id = f"checkpoint:{goal.supervision.cycle + 1}"
                 proposal.updated_at = now
                 changed = True
+            except GoalDispatchAmbiguous:
+                raise
             except (GoalConflict, KeyError, RuntimeError, TypeError, ValueError) as exc:
                 if isinstance(proposal.action, DispatchWorkPackageAction):
                     package = next(
@@ -605,6 +733,14 @@ class GoalSupervisor:
                         ),
                         None,
                     )
+                    if (
+                        package is not None
+                        and package.dispatch_attempt is not None
+                        and package.dispatch_attempt.state
+                        == GoalDispatchAttemptState.STAGED
+                    ):
+                        package.dispatch_attempt = None
+                        package.fleet_lifecycle_owned = False
                     if package is not None and package.state not in {
                         WorkPackageState.DISPATCHED,
                         WorkPackageState.RUNNING,
@@ -708,111 +844,556 @@ class GoalSupervisor:
         )
         return card.id
 
-    def _dispatch_work_package(
+    def _execute_staged_dispatch(
         self,
         goal: Goal,
         proposal: GoalProposal,
         action: DispatchWorkPackageAction,
+        request: GoalActionRequest,
         now: datetime,
-    ) -> bool:
+    ) -> GoalDispatchAttemptState:
+        """Replay one stable governance reservation around one ambiguous Fleet call."""
+
         self._assert_side_effect_fence(goal)
-        package = next(
-            (item for item in goal.work_packages if item.id == action.work_package_id),
-            None,
-        )
-        if not package:
-            raise ValueError("dispatch references an unknown work package")
+        package = self._dispatch_package(goal, action)
+        attempt = package.dispatch_attempt
+        if attempt is None or attempt.state != GoalDispatchAttemptState.STAGED:
+            raise GoalConflict("dispatch execution requires one staged attempt")
+        if not package.card_id:
+            raise RuntimeError("work package has no materialized card")
         if package.state not in {
             WorkPackageState.READY,
             WorkPackageState.FAILED,
             WorkPackageState.BLOCKED,
         }:
-            return False
-        if package.attempts >= package.max_attempts:
+            raise GoalConflict("work package is not ready for dispatch")
+        if attempt.generation != package.attempts + 1:
+            raise GoalConflict("dispatch generation is no longer current")
+        if attempt.generation > package.max_attempts:
             raise RuntimeError("work-package retry limit is exhausted")
-        attempt = package.attempts + 1
-        operation_key = self._dispatch_operation_key(goal, action)
-        package.attempts = attempt
-        package.action_reservation_id = self._active_reservation_id
-        package.updated_at = now
+
+        governance_key = (
+            f"goal-supervisor:{goal.id}:dispatch:{package.id}:"
+            f"generation:{attempt.generation}:proposal:{proposal.id}"
+        )
+        reserve_key = f"{governance_key}:reserve"
+        apply_key = f"{governance_key}:apply"
+        state = self.governance.get_state(goal.id)
+        matching_reservations = [
+            item
+            for item in state.action_reservations
+            if item.idempotency_key == reserve_key
+        ]
+        if len(matching_reservations) > 1:
+            raise GoalGovernanceConflict(
+                "dispatch attempt has multiple canonical governance reservations"
+            )
+        reservation = matching_reservations[0] if matching_reservations else None
+        reservation_preexisted = reservation is not None
+        if reservation is None and not self.dispatch:
+            raise RuntimeError("fleet dispatch service is unavailable")
         try:
-            if not self.dispatch or not package.card_id:
-                raise RuntimeError("fleet dispatch service is unavailable")
-            dispatch_provider = self._dispatch_provider(action)
-            requested_target, placement_input_digest = (
-                self._dispatch_placement_binding(goal, action, dispatch_provider)
-            )
-            result = self.dispatch(
-                {
-                    "authority_instance_id": self.instance_id,
-                    "goal_provenance": {
-                        "goal_id": goal.id,
-                        "goal_version": goal.version,
-                        "policy_revision": goal.policy.revision,
-                        "authority_instance_id": self.instance_id,
-                        "fencing_token": goal.lease.fencing_token,
-                        "action_reservation_id": self._active_reservation_id,
-                        "operation_key": operation_key,
-                        "requested_placement_target": requested_target,
-                        "placement_input_digest": placement_input_digest,
-                        "actor_principal": self.service_principal,
-                        "action_class": "dispatch_work_package",
-                        "provider_id": dispatch_provider,
-                        "reservation_attempt": 1,
-                        "max_reservation_attempts": min(
-                            20, goal.budget.retry_limit + 1
-                        ),
-                    },
-                    "card_id": package.card_id,
-                    "project_id": goal.project_id,
-                    "target_instance_id": action.target_instance_id,
-                    "placement_policy": action.placement_policy,
-                    "group_id": action.group_id,
-                    "message": self._work_prompt(goal, package, action.message),
-                    "provider": dispatch_provider,
-                    "model_id": action.model_id,
-                    "mode_id": action.mode_id,
-                    "priority": action.priority,
-                    "collaboration_unattended": True,
-                    "collaboration_risk": "high"
-                    if package.role in {GoalActorRole.VERIFIER, GoalActorRole.CRITIC}
-                    else "medium",
-                    "idempotency_key": operation_key,
-                }
-            )
-            if result.get("accepted") is False:
-                raise RuntimeError(
-                    str(result.get("error") or "fleet dispatch rejected")
+            if reservation is None:
+                state, reservation_decision = self.governance.authorize_action(
+                    goal.id,
+                    request,
+                    self._governance_context(goal, state.version, reserve_key),
                 )
+                if (
+                    reservation_decision.disposition
+                    != GoalActionDisposition.AUTHORIZED
+                ):
+                    raise GoalGovernanceConflict(
+                        "canonical governance denied the dispatch: "
+                        + "; ".join(reservation_decision.reasons)
+                    )
+                reservation = next(
+                    (
+                        item
+                        for item in state.action_reservations
+                        if item.id == reservation_decision.reservation_id
+                    ),
+                    None,
+                )
+                if reservation is None:
+                    raise GoalGovernanceConflict(
+                        "authorized dispatch reservation was not durably projected"
+                    )
+            self._validate_staged_dispatch_reservation(
+                goal,
+                attempt,
+                request,
+                reservation,
+                reserve_key=reserve_key,
+            )
+            if reservation.state == GoalReservationState.RESERVED:
+                state, apply_decision = self.governance.apply_action(
+                    goal.id,
+                    reservation.id,
+                    self._replay_governance_context(
+                        goal,
+                        state.version,
+                        apply_key,
+                    ),
+                )
+                if apply_decision.disposition != GoalActionDisposition.AUTHORIZED:
+                    raise GoalGovernanceConflict(
+                        "canonical governance denied the dispatch at apply time: "
+                        + "; ".join(apply_decision.reasons)
+                    )
+                reservation = next(
+                    item
+                    for item in state.action_reservations
+                    if item.id == reservation.id
+                )
+            if reservation.state not in {
+                GoalReservationState.APPLIED,
+                GoalReservationState.RELEASED,
+            }:
+                raise GoalGovernanceConflict(
+                    "dispatch attempt does not have an applied governance reservation"
+                )
+
+            reconciled = self._reconcile_staged_dispatch_record(
+                goal,
+                action,
+                request,
+                reservation,
+                now,
+            )
+            if reconciled is not None:
+                return reconciled
+            if reservation.state == GoalReservationState.RELEASED:
+                raise GoalDispatchAmbiguous(
+                    "released dispatch reservation has no exact durable admission record"
+                )
+            if not self.dispatch:
+                raise GoalDispatchAmbiguous(
+                    "applied dispatch reservation cannot be replayed while Fleet is unavailable"
+                )
+            self._active_reservation_id = reservation.id
+            return self._dispatch_work_package(goal, action, now, reservation)
+        except GoalDispatchAmbiguous:
+            raise
+        except Exception as exc:
+            if reservation is not None:
+                current = next(
+                    (
+                        item
+                        for item in self.governance.get_state(
+                            goal.id
+                        ).action_reservations
+                        if item.id == reservation.id
+                    ),
+                    reservation,
+                )
+                if (
+                    not reservation_preexisted
+                    or current.state == GoalReservationState.RESERVED
+                ):
+                    return self._record_rejected_dispatch(
+                        package,
+                        attempt,
+                        reservation_id=current.id,
+                        error=f"dispatch failed before calling Fleet: {exc}"[:2000],
+                        now=now,
+                    )
+                if current.state == GoalReservationState.APPLIED:
+                    raise GoalDispatchAmbiguous(
+                        "an existing applied dispatch attempt could not be safely reconciled"
+                    ) from exc
+            raise
+        finally:
+            self._active_reservation_id = None
+
+    def _dispatch_work_package(
+        self,
+        goal: Goal,
+        action: DispatchWorkPackageAction,
+        now: datetime,
+        reservation,
+    ) -> GoalDispatchAttemptState:
+        """Call Fleet once; every callback exception is an ambiguous outcome."""
+
+        self._assert_side_effect_fence(goal)
+        package = self._dispatch_package(goal, action)
+        attempt = package.dispatch_attempt
+        if attempt is None or attempt.state != GoalDispatchAttemptState.STAGED:
+            raise GoalConflict("dispatch call requires one staged attempt")
+        reservation_id = self._active_reservation_id or ""
+        if not reservation_id or reservation.id != reservation_id:
+            raise GoalGovernanceConflict(
+                "dispatch call requires one applied governance reservation"
+            )
+        dispatch_provider = self._dispatch_provider(action)
+        requested_target, placement_input_digest = self._dispatch_placement_binding(
+            goal, action, dispatch_provider
+        )
+        current_reservation = next(
+            (
+                item
+                for item in self.governance.get_state(goal.id).action_reservations
+                if item.id == reservation_id
+            ),
+            None,
+        )
+        if (
+            current_reservation is None
+            or current_reservation.state != GoalReservationState.APPLIED
+        ):
+            raise GoalGovernanceConflict(
+                "dispatch call requires its durably applied reservation"
+            )
+        try:
+            result = self.dispatch(
+                self._dispatch_payload(
+                    goal,
+                    action,
+                    package,
+                    attempt,
+                    current_reservation,
+                    dispatch_provider=dispatch_provider,
+                    requested_target=requested_target,
+                    placement_input_digest=placement_input_digest,
+                )
+            )
+        except Exception as exc:
+            raise GoalDispatchAmbiguous(
+                "Fleet dispatch outcome is ambiguous; replay the staged attempt"
+            ) from exc
+        if not isinstance(result, dict):
+            raise GoalDispatchAmbiguous(
+                "Fleet dispatch returned an ambiguous non-object response"
+            )
+        if result.get("accepted") is False:
+            error = str(result.get("error") or "fleet dispatch rejected")[:2000]
+            return self._record_rejected_dispatch(
+                package,
+                attempt,
+                reservation_id=reservation_id,
+                error=error,
+                now=now,
+            )
+        try:
             dispatch_id = str(
                 result.get("dispatch_id")
                 or result.get("job_id")
                 or (result.get("dispatch") or {}).get("dispatch_id")
                 or ""
             )
-            if not dispatch_id:
-                raise RuntimeError("fleet dispatch did not return a dispatch id")
-        except Exception as exc:
-            package.state = (
-                WorkPackageState.FAILED
-                if package.attempts >= package.max_attempts
-                else WorkPackageState.READY
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise GoalDispatchAmbiguous(
+                "Fleet dispatch response could not be reconciled"
+            ) from exc
+        if not dispatch_id:
+            raise GoalDispatchAmbiguous(
+                "Fleet may have admitted the dispatch without returning its id"
             )
-            package.result_summary = (
-                f"Dispatch retry limit exhausted after attempt {attempt}: {exc}"
-                if package.state == WorkPackageState.FAILED
-                else f"Dispatch attempt {attempt} failed before admission: {exc}"
+        return self._record_admitted_dispatch(
+            goal,
+            package,
+            attempt,
+            reservation_id=reservation_id,
+            dispatch_id=dispatch_id,
+            now=now,
+        )
+
+    def _reconcile_staged_dispatch_record(
+        self,
+        goal: Goal,
+        action: DispatchWorkPackageAction,
+        request: GoalActionRequest,
+        reservation,
+        now: datetime,
+    ) -> GoalDispatchAttemptState | None:
+        """Recover only from an exact authority-owned durable Fleet ledger record."""
+
+        lookup = getattr(self.dispatch_store, "by_authority_idempotency", None)
+        if not callable(lookup):
+            return None
+        package = self._dispatch_package(goal, action)
+        attempt = package.dispatch_attempt
+        assert attempt is not None
+        record = lookup(self.instance_id, attempt.idempotency_key)
+        if record is None:
+            return None
+        if not self._dispatch_record_matches_attempt(
+            goal,
+            action,
+            request,
+            reservation,
+            record,
+        ):
+            raise GoalDispatchAmbiguous(
+                "authority dispatch ledger record does not match the staged attempt"
             )
-            if isinstance(exc, RuntimeError):
-                raise
-            raise RuntimeError(f"fleet dispatch failed before admission: {exc}") from exc
+        admitted_states = {"queued", "waiting_capacity"}
+        admitted = any(
+            str(getattr(event, "state", "")) in admitted_states
+            for event in (getattr(record, "events", None) or [])
+        )
+        if admitted and self._dispatch_record_has_valid_admission(record):
+            return self._record_admitted_dispatch(
+                goal,
+                package,
+                attempt,
+                reservation_id=reservation.id,
+                dispatch_id=str(record.dispatch_id),
+                now=now,
+            )
+        if (
+            not admitted
+            and str(getattr(record, "state", "")) in {"failed", "cancelled"}
+        ):
+            return self._record_rejected_dispatch(
+                package,
+                attempt,
+                reservation_id=reservation.id,
+                error=str(
+                    getattr(record, "last_error", None)
+                    or "Fleet rejected the dispatch before durable admission"
+                )[:2000],
+                now=now,
+            )
+        raise GoalDispatchAmbiguous(
+            "authority dispatch ledger has not durably resolved the staged admission"
+        )
+
+    def _dispatch_record_matches_attempt(
+        self,
+        goal: Goal,
+        action: DispatchWorkPackageAction,
+        request: GoalActionRequest,
+        reservation,
+        record,
+    ) -> bool:
+        package = self._dispatch_package(goal, action)
+        attempt = package.dispatch_attempt
+        provenance = getattr(record, "goal_provenance", None)
+        if attempt is None or provenance is None:
+            return False
+        unbound_request = reservation.request.model_copy(
+            update={
+                "resolved_target_instance_id": None,
+                "placement_decision_digest": None,
+            }
+        )
+        dispatch_provider = self._dispatch_provider(action)
+        record_payload_digest = self._dispatch_record_payload_digest(record)
+        if record_payload_digest != attempt.dispatch_payload_digest:
+            return False
+        decision_digest = goal_dispatch_placement_decision_digest(
+            getattr(record, "placement_decision", None)
+        )
+        return bool(
+            getattr(record, "authority_instance_id", None) == self.instance_id
+            and getattr(record, "idempotency_key", None) == attempt.idempotency_key
+            and getattr(record, "card_id", None) == package.card_id
+            and getattr(record, "project_id", None) == goal.project_id
+            and reservation.id == provenance.action_reservation_id
+            and reservation.goal_id == provenance.goal_id == goal.id
+            and reservation.goal_version == provenance.goal_version
+            and reservation.policy_revision == provenance.policy_revision
+            and reservation.fencing_token == provenance.fencing_token
+            and reservation.actor_principal == provenance.actor_principal
+            and reservation.authority_instance_id
+            == provenance.authority_instance_id
+            == self.instance_id
+            and reservation.action_class
+            == provenance.action_class
+            == "dispatch_work_package"
+            and reservation.request.operation_key
+            == provenance.operation_key
+            == attempt.idempotency_key
+            and reservation.request.requested_placement_target
+            == provenance.requested_placement_target
+            and reservation.request.placement_input_digest
+            == provenance.placement_input_digest
+            == getattr(record, "goal_placement_input_digest", None)
+            and str(reservation.request.provider_id or "").strip().lower()
+            == str(provenance.provider_id or "").strip().lower()
+            == dispatch_provider
+            and reservation.attempt == provenance.reservation_attempt
+            and reservation.max_attempts == provenance.max_reservation_attempts
+            and self._dispatch_request_digest(request) == attempt.request_digest
+            and self._dispatch_request_digest(unbound_request)
+            == attempt.request_digest
+            and reservation.request.resolved_target_instance_id
+            == provenance.resolved_target_instance_id
+            == getattr(record, "target_instance_id", None)
+            and reservation.request.placement_decision_digest
+            == provenance.placement_decision_digest
+            == decision_digest
+            and goal_dispatch_record_placement_input_valid(record)
+        )
+
+    @staticmethod
+    def _dispatch_record_has_valid_admission(record) -> bool:
+        if (
+            getattr(record, "goal_admission_validation_state", None) != "validated"
+            or getattr(record, "goal_admission_validated_at", None) is None
+            or not getattr(record, "goal_admission_validation_proof", None)
+        ):
+            return False
+        if record.goal_admission_validation_proof == goal_admission_validation_proof(
+            record
+        ):
+            return True
+        provenance = getattr(record, "goal_provenance", None)
+        if provenance is None or getattr(provenance, "released_at", None) is None:
+            return False
+        unreleased = record.model_copy(deep=True)
+        unreleased.goal_provenance = provenance.model_copy(
+            update={"released_at": None, "release_reason": None}
+        )
+        return (
+            record.goal_admission_validation_proof
+            == goal_admission_validation_proof(unreleased)
+        )
+
+    @staticmethod
+    def _record_rejected_dispatch(
+        package: GoalWorkPackage,
+        attempt: GoalDispatchAttempt,
+        *,
+        reservation_id: str,
+        error: str,
+        now: datetime,
+    ) -> GoalDispatchAttemptState:
+        package.attempts = attempt.generation
+        package.action_reservation_id = reservation_id
+        package.state = (
+            WorkPackageState.FAILED
+            if package.attempts >= package.max_attempts
+            else WorkPackageState.READY
+        )
+        package.result_summary = (
+            f"Dispatch retry limit exhausted after attempt {attempt.generation}: "
+            f"{error}"
+            if package.state == WorkPackageState.FAILED
+            else f"Dispatch attempt {attempt.generation} was rejected: {error}"
+        )
+        package.fleet_lifecycle_owned = False
+        attempt.state = GoalDispatchAttemptState.REJECTED
+        attempt.reservation_id = reservation_id
+        attempt.release_pending = True
+        attempt.error = error
+        attempt.updated_at = now
+        package.updated_at = now
+        return GoalDispatchAttemptState.REJECTED
+
+    def _record_admitted_dispatch(
+        self,
+        goal: Goal,
+        package: GoalWorkPackage,
+        attempt: GoalDispatchAttempt,
+        *,
+        reservation_id: str,
+        dispatch_id: str,
+        now: datetime,
+    ) -> GoalDispatchAttemptState:
+        receipt_digest = self._dispatch_admission_receipt_digest(
+            dispatch_id=dispatch_id,
+            idempotency_key=attempt.idempotency_key,
+            request_digest=attempt.request_digest,
+            reservation_id=reservation_id,
+        )
+        package.attempts = attempt.generation
+        package.action_reservation_id = reservation_id
         self._append_bounded(package.dispatch_ids, dispatch_id, package.max_attempts)
         package.state = WorkPackageState.DISPATCHED
+        package.dispatch_admission_receipt_digest = receipt_digest
+        package.fleet_lifecycle_owned = True
         package.updated_at = now
+        attempt.state = GoalDispatchAttemptState.ADMITTED
+        attempt.reservation_id = reservation_id
+        attempt.dispatch_id = dispatch_id
+        attempt.admission_receipt_digest = receipt_digest
+        attempt.fleet_lifecycle_owned = True
+        attempt.updated_at = now
         self._append_bounded(
             goal.linked_dispatch_ids, dispatch_id, _MAX_GOAL_DISPATCH_IDS
         )
-        return True
+        return GoalDispatchAttemptState.ADMITTED
+
+    def _validate_staged_dispatch_reservation(
+        self,
+        goal: Goal,
+        attempt: GoalDispatchAttempt,
+        request: GoalActionRequest,
+        reservation,
+        *,
+        reserve_key: str,
+    ) -> None:
+        unbound_request = reservation.request.model_copy(
+            update={
+                "resolved_target_instance_id": None,
+                "placement_decision_digest": None,
+            }
+        )
+        if (
+            reservation.idempotency_key != reserve_key
+            or reservation.goal_id != goal.id
+            or reservation.action_class != "dispatch_work_package"
+            or reservation.actor_principal != self.service_principal
+            or reservation.authority_instance_id != self.instance_id
+            or reservation.request.operation_key != attempt.idempotency_key
+            or self._dispatch_request_digest(request) != attempt.request_digest
+            or self._dispatch_request_digest(unbound_request)
+            != attempt.request_digest
+        ):
+            raise GoalGovernanceConflict(
+                "durable dispatch reservation does not match its staged request"
+            )
+
+    def _dispatch_payload(
+        self,
+        goal: Goal,
+        action: DispatchWorkPackageAction,
+        package: GoalWorkPackage,
+        attempt: GoalDispatchAttempt,
+        reservation,
+        *,
+        dispatch_provider: str,
+        requested_target: str,
+        placement_input_digest: str,
+    ) -> dict[str, Any]:
+        return {
+            "authority_instance_id": self.instance_id,
+            "goal_provenance": {
+                "goal_id": goal.id,
+                "goal_version": reservation.goal_version,
+                "policy_revision": reservation.policy_revision,
+                "authority_instance_id": reservation.authority_instance_id,
+                "fencing_token": reservation.fencing_token,
+                "action_reservation_id": reservation.id,
+                "operation_key": attempt.idempotency_key,
+                "requested_placement_target": requested_target,
+                "placement_input_digest": placement_input_digest,
+                "actor_principal": reservation.actor_principal,
+                "action_class": "dispatch_work_package",
+                "provider_id": dispatch_provider,
+                "reservation_attempt": reservation.attempt,
+                "max_reservation_attempts": reservation.max_attempts,
+            },
+            "card_id": package.card_id,
+            "project_id": goal.project_id,
+            "target_instance_id": action.target_instance_id,
+            "placement_policy": action.placement_policy,
+            "group_id": action.group_id,
+            "message": self._work_prompt(goal, package, action.message),
+            "provider": dispatch_provider,
+            "model_id": action.model_id,
+            "mode_id": action.mode_id,
+            "priority": action.priority,
+            "collaboration_unattended": True,
+            "collaboration_risk": (
+                "high"
+                if package.role in {GoalActorRole.VERIFIER, GoalActorRole.CRITIC}
+                else "medium"
+            ),
+            "idempotency_key": attempt.idempotency_key,
+        }
 
     def _dispatch_provider(self, action: DispatchWorkPackageAction) -> str:
         provider = str(action.provider or self.default_provider).strip().lower()
@@ -821,6 +1402,149 @@ class GoalSupervisor:
                 "governed fleet dispatch requires a concrete configured provider"
             )
         return provider
+
+    @staticmethod
+    def _dispatch_package(
+        goal: Goal,
+        action: DispatchWorkPackageAction,
+    ) -> GoalWorkPackage:
+        package = next(
+            (item for item in goal.work_packages if item.id == action.work_package_id),
+            None,
+        )
+        if package is None:
+            raise ValueError("dispatch references an unknown work package")
+        return package
+
+    @staticmethod
+    def _dispatch_request_digest(request: GoalActionRequest) -> str:
+        encoded = json.dumps(
+            request.model_dump(mode="json"),
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+        return hashlib.sha256(encoded).hexdigest()
+
+    def _dispatch_payload_digest(
+        self,
+        goal: Goal,
+        action: DispatchWorkPackageAction,
+        package: GoalWorkPackage,
+        dispatch_provider: str,
+    ) -> str:
+        return self._canonical_digest(
+            {
+                "card_id": package.card_id,
+                "project_id": goal.project_id,
+                "target_instance_id": action.target_instance_id,
+                "placement_policy": action.placement_policy,
+                "group_id": action.group_id,
+                "provider": dispatch_provider,
+                "model_id": action.model_id,
+                "mode_id": action.mode_id,
+                "required_capabilities": [],
+                "required_mcp_servers": [],
+                "optional_mcp_servers": [],
+                "title": None,
+                "message": self._work_prompt(goal, package, action.message),
+                "collaboration_risk": (
+                    "high"
+                    if package.role
+                    in {GoalActorRole.VERIFIER, GoalActorRole.CRITIC}
+                    else "medium"
+                ),
+                "collaboration_ambiguous": False,
+                "collaboration_unattended": True,
+                "effort": None,
+                "cwd": None,
+                "capacity_override": False,
+                "capacity_override_reason": None,
+                "participation_override": False,
+                "participation_override_reason": None,
+                "execution_contract": None,
+                "priority": action.priority,
+                "allow_concurrent": False,
+                "resume_session_id": None,
+            }
+        )
+
+    @classmethod
+    def _dispatch_record_payload_digest(cls, record) -> str | None:
+        placement = getattr(record, "goal_placement_input", None)
+        request_payload = getattr(record, "request_payload", None)
+        if not isinstance(placement, dict) or not isinstance(request_payload, dict):
+            return None
+        return cls._canonical_digest(
+            {
+                "card_id": placement.get("card_id"),
+                "project_id": placement.get("project_id"),
+                "target_instance_id": placement.get("target_instance_id"),
+                "placement_policy": placement.get("placement_policy"),
+                "group_id": placement.get("group_id"),
+                "provider": placement.get("provider"),
+                "model_id": placement.get("model_id"),
+                "mode_id": placement.get("mode_id"),
+                "required_capabilities": placement.get("required_capabilities") or [],
+                "required_mcp_servers": placement.get("required_mcp_servers") or [],
+                "optional_mcp_servers": placement.get("optional_mcp_servers") or [],
+                "title": request_payload.get("title"),
+                "message": request_payload.get("message"),
+                "collaboration_risk": request_payload.get("collaboration_risk"),
+                "collaboration_ambiguous": request_payload.get(
+                    "collaboration_ambiguous"
+                ),
+                "collaboration_unattended": request_payload.get(
+                    "collaboration_unattended"
+                ),
+                "effort": request_payload.get("effort"),
+                "cwd": request_payload.get("cwd"),
+                "capacity_override": bool(placement.get("capacity_override")),
+                "capacity_override_reason": request_payload.get(
+                    "capacity_override_reason"
+                ),
+                "participation_override": bool(
+                    placement.get("participation_override")
+                ),
+                "participation_override_reason": request_payload.get(
+                    "participation_override_reason"
+                ),
+                "execution_contract": placement.get("execution_contract"),
+                "priority": request_payload.get("priority"),
+                "allow_concurrent": bool(getattr(record, "allow_concurrent", False)),
+                "resume_session_id": getattr(record, "resume_session_id", None),
+            }
+        )
+
+    @staticmethod
+    def _canonical_digest(payload: dict[str, Any]) -> str:
+        encoded = json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+        return hashlib.sha256(encoded).hexdigest()
+
+    @staticmethod
+    def _dispatch_admission_receipt_digest(
+        *,
+        dispatch_id: str,
+        idempotency_key: str,
+        request_digest: str,
+        reservation_id: str,
+    ) -> str:
+        encoded = json.dumps(
+            {
+                "contract": "pa.goal-dispatch-admission-receipt.v1",
+                "dispatch_id": dispatch_id,
+                "idempotency_key": idempotency_key,
+                "request_digest": request_digest,
+                "reservation_id": reservation_id,
+                "fleet_lifecycle_owned": True,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+        return hashlib.sha256(encoded).hexdigest()
 
     @staticmethod
     def _dispatch_placement_binding(
@@ -835,7 +1559,7 @@ class GoalSupervisor:
         if package is None or not package.card_id:
             raise ValueError("dispatch requires a materialized work-package card")
         requested_target = action.target_instance_id or (
-            f"placement:{action.placement_policy or 'balanced'}"
+            f"placement:{action.placement_policy or 'best_match'}"
         )
         placement_input = {
             "card_id": package.card_id,
@@ -860,6 +1584,8 @@ class GoalSupervisor:
         )
         if package is None:
             raise ValueError("dispatch references an unknown work package")
+        if package.dispatch_attempt is not None:
+            return package.dispatch_attempt.idempotency_key
         return (f"goal:{goal.id}:work:{package.id}:attempt:{package.attempts + 1}")[
             :200
         ]
@@ -945,6 +1671,7 @@ class GoalSupervisor:
             if (
                 package.state != WorkPackageState.READY
                 or not package.dispatch_when_ready
+                or package.dispatch_attempt is not None
             ):
                 continue
             active = any(
@@ -996,7 +1723,7 @@ class GoalSupervisor:
                         work_package_id=package.id,
                         target_instance_id=package.preferred_instance_id,
                         placement_policy=(
-                            None if package.preferred_instance_id else "balanced"
+                            None if package.preferred_instance_id else "best_match"
                         ),
                     ),
                     rationale=(
@@ -1011,7 +1738,13 @@ class GoalSupervisor:
             changed = True
         return changed
 
-    def _reconcile_dispatches(self, goal: Goal, now: datetime) -> bool:
+    def _reconcile_dispatches(
+        self,
+        goal: Goal,
+        now: datetime,
+        *,
+        durably_admitted_packages: set[str],
+    ) -> bool:
         if not self.dispatch_store:
             return False
         changed = False
@@ -1022,6 +1755,17 @@ class GoalSupervisor:
             if not record:
                 continue
             self._reconcile_dispatch_reservation(goal, package, record)
+            if (
+                package.dispatch_attempt is not None
+                and package.dispatch_attempt.state
+                == GoalDispatchAttemptState.ADMITTED
+                and package.id not in durably_admitted_packages
+                and record.state in {"completed", "failed", "cancelled"}
+            ):
+                # First checkpoint the exact admission receipt. Terminal package
+                # mutation is safe only in a later cycle after Fleet's release is
+                # durably observable and the admission attempt has been cleared.
+                continue
             fingerprint = self._dispatch_fingerprint(record)
             if fingerprint != package.last_progress_fingerprint:
                 package.last_progress_fingerprint = fingerprint

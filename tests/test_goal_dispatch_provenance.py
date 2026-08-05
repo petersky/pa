@@ -570,6 +570,7 @@ class GoalDispatchProvenanceTests(unittest.TestCase):
             )
             supervisor.run_once(goal.id)
             supervisor.run_once(goal.id)
+            supervisor.run_once(goal.id)
             return goals, governance, goal.id, calls
 
         _goals, governance, goal_id, calls = exercise("codex")
