@@ -149,6 +149,14 @@ def _redact_unlaunched_provider_runs(payload: dict) -> dict:
     return public
 
 
+def _goal_portfolio_public(payload: dict) -> dict:
+    public = copy.deepcopy(payload)
+    for entry in public.get("goals", []):
+        if isinstance(entry, dict) and isinstance(entry.get("autonomy"), dict):
+            entry["autonomy"] = _redact_unlaunched_provider_runs(entry["autonomy"])
+    return public
+
+
 def _governed_goal_mutation(
     request: Request,
     goal_id: str,
@@ -889,7 +897,7 @@ def review_goal_proposal(
 
 @router.get("/goal-governance/portfolio")
 def get_goal_portfolio(request: Request, realm: str = "default"):
-    return _governance(request).portfolio(realm)
+    return _goal_portfolio_public(_governance(request).portfolio(realm))
 
 
 @router.post("/goal-governance/portfolio/reviews", status_code=201)

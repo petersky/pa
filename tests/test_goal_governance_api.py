@@ -404,6 +404,17 @@ def test_provider_launch_credential_rejects_shared_fleet_origin_spoof() -> None:
         assert "invocation" not in unlaunched
         assert "progress_credential_hash" not in unlaunched
         assert unlaunched["launch_required"] is True
+        portfolio = client.get("/api/goal-governance/portfolio").json()
+        portfolio_state = next(
+            item["autonomy"]
+            for item in portfolio["goals"]
+            if item["goal"]["id"] == goal["id"]
+        )
+        portfolio_run = next(
+            item for item in portfolio_state["provider_runs"] if item["id"] == run["id"]
+        )
+        assert "invocation" not in portfolio_run
+        assert "progress_credential_hash" not in portfolio_run
         launched = client.post(
             f"/api/goals/{goal['id']}/providers/{run['id']}/launch",
             params={
