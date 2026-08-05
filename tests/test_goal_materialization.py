@@ -80,6 +80,8 @@ class GoalMaterializationTests(unittest.TestCase):
         GoalMaterializationReceiptV1,
     ]:
         envelope = GoalMaterializationEnvelopeV1(
+            work_package_id="package-a",
+            service_role="executor",
             repository_ids=("repo-a",),
             data_scopes=("scope-b", "scope-a"),
             attachment_ids=("attachment-b", "attachment-a"),
@@ -139,6 +141,8 @@ class GoalMaterializationTests(unittest.TestCase):
     def test_envelope_is_canonical_immutable_and_digest_verified(self) -> None:
         first, _receipt = self._bindings()
         second = GoalMaterializationEnvelopeV1(
+            work_package_id="package-a",
+            service_role="executor",
             repository_ids=("repo-a", "repo-a"),
             data_scopes=("scope-a", "scope-b"),
             attachment_ids=("attachment-a", "attachment-b"),
@@ -148,14 +152,25 @@ class GoalMaterializationTests(unittest.TestCase):
         )
         self.assertEqual(first, second)
         self.assertEqual(first.digest, second.digest)
+        changed_role = GoalMaterializationEnvelopeV1.model_validate(
+            {
+                **first.model_dump(mode="python", exclude={"digest"}),
+                "service_role": "verifier",
+            }
+        )
+        self.assertNotEqual(first.digest, changed_role.digest)
         with self.assertRaisesRegex(ValidationError, "digest does not match"):
             GoalMaterializationEnvelopeV1(
+                work_package_id="package-a",
+                service_role="executor",
                 repository_ids=("repo-a",),
                 execution_contract_digest="c" * 64,
                 digest="d" * 64,
             )
         with self.assertRaises(ValidationError):
             GoalMaterializationEnvelopeV1(
+                work_package_id="package-a",
+                service_role="executor",
                 repository_ids=("   ",),
                 execution_contract_digest="c" * 64,
             )
@@ -187,6 +202,8 @@ class GoalMaterializationTests(unittest.TestCase):
         self.assertFalse(goal_dispatch_execution_identity_valid(record))
         envelope, receipt = self._bindings()
         identity = GoalExecutionIdentityV1(
+            work_package_id=envelope.work_package_id,
+            service_role=envelope.service_role,
             assigned_service_principal="service:goal-executor:principal-a",
             provider_id="codex",
             target_instance_id="instance-b",
@@ -205,6 +222,13 @@ class GoalMaterializationTests(unittest.TestCase):
         )
         self.assertFalse(identity.credential_authenticated())
         self.assertNotIn("token", identity.model_dump(mode="json"))
+        with self.assertRaisesRegex(ValidationError, "canonical service role"):
+            GoalExecutionIdentityV1.model_validate(
+                {
+                    **identity.model_dump(mode="python", exclude={"digest"}),
+                    "service_role": "verifier",
+                }
+            )
         with self.assertRaises(ValidationError):
             GoalExecutionIdentityV1.model_validate(
                 {

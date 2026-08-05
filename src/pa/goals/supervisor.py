@@ -1561,6 +1561,10 @@ class GoalSupervisor:
         ]
         contract_payload = contract.model_dump(mode="json")
         envelope = GoalMaterializationEnvelopeV1(
+            work_package_id=package.id,
+            service_role=(
+                "verifier" if package.role == GoalActorRole.VERIFIER else "executor"
+            ),
             repository_ids=repository_ids,
             data_scopes=tuple(goal.policy.data_scope),
             attachment_ids=tuple(item.attachment_id for item in active_attachments),
@@ -2120,7 +2124,7 @@ class GoalSupervisor:
                 item for item in goal.work_packages if item.id in dependencies
             ]
             executor_bindings = [
-                item.execution_identity
+                (item, item.execution_identity)
                 for item in dependency_packages
                 if item.execution_identity is not None
             ]
@@ -2132,17 +2136,26 @@ class GoalSupervisor:
             )
             independent = bool(
                 verifier_binding is not None
+                and verifier_binding.work_package_id == package.id
+                and verifier_binding.service_role == "verifier"
                 and record.session_id == verifier_binding.session_id
                 and dependency_packages
                 and len(executor_bindings) == len(dependency_packages)
                 and all(
-                    verifier_binding.session_id != identity.session_id
+                    identity.work_package_id == dependency.id
+                    and identity.service_role
+                    == (
+                        "verifier"
+                        if dependency.role == GoalActorRole.VERIFIER
+                        else "executor"
+                    )
+                    and verifier_binding.session_id != identity.session_id
                     and verifier_binding.target_instance_id
                     != identity.target_instance_id
                     and verifier_binding.provider_id != identity.provider_id
                     and verifier_binding.assigned_service_principal
                     != identity.assigned_service_principal
-                    for identity in executor_bindings
+                    for dependency, identity in executor_bindings
                 )
             )
             passed = bool(

@@ -53,6 +53,8 @@ class GoalMaterializationEnvelopeV1(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     version: Literal[1] = 1
+    work_package_id: MaterializationReferenceId
+    service_role: Literal["executor", "verifier"]
     repository_ids: tuple[MaterializationReferenceId, ...] = ()
     data_scopes: tuple[MaterializationReferenceId, ...] = ()
     attachment_ids: tuple[MaterializationReferenceId, ...] = ()
@@ -64,6 +66,8 @@ class GoalMaterializationEnvelopeV1(BaseModel):
     def canonical_payload(self) -> dict[str, Any]:
         return {
             "version": self.version,
+            "work_package_id": self.work_package_id,
+            "service_role": self.service_role,
             "repository_ids": list(self.repository_ids),
             "data_scopes": list(self.data_scopes),
             "attachment_ids": list(self.attachment_ids),
@@ -145,6 +149,8 @@ class GoalExecutionIdentityV1(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     version: Literal[1] = 1
+    work_package_id: MaterializationReferenceId
+    service_role: Literal["executor", "verifier"]
     assigned_service_principal: MaterializationReferenceId
     provider_id: MaterializationReferenceId
     target_instance_id: MaterializationReferenceId
@@ -163,6 +169,11 @@ class GoalExecutionIdentityV1(BaseModel):
 
     @model_validator(mode="after")
     def verify_digest(self) -> GoalExecutionIdentityV1:
+        expected_principal_prefix = f"service:goal-{self.service_role}:"
+        if not self.assigned_service_principal.startswith(expected_principal_prefix):
+            raise ValueError(
+                "assigned service principal does not match the canonical service role"
+            )
         if (self.credential_digest is None) != (self.credential_expires_at is None):
             raise ValueError(
                 "credential digest and expiry must be populated atomically"

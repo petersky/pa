@@ -1648,13 +1648,19 @@ class GoalSupervisorTests(unittest.TestCase):
         )
 
         def identity(
-            principal: str,
+            service_role: str,
+            work_package_id: str,
+            principal_suffix: str,
             provider: str,
             target: str,
             session: str,
         ) -> GoalExecutionIdentityV1:
             return GoalExecutionIdentityV1(
-                assigned_service_principal=principal,
+                work_package_id=work_package_id,
+                service_role=service_role,
+                assigned_service_principal=(
+                    f"service:goal-{service_role}:{principal_suffix}"
+                ),
                 provider_id=provider,
                 target_instance_id=target,
                 session_id=session,
@@ -1663,7 +1669,9 @@ class GoalSupervisorTests(unittest.TestCase):
             )
 
         executor_identity = identity(
-            "service:executor",
+            "executor",
+            executor.id,
+            "executor",
             "codex",
             "instance-a",
             "executor-session",
@@ -1671,25 +1679,33 @@ class GoalSupervisorTests(unittest.TestCase):
         cases = {
             "missing real session": None,
             "same session": identity(
-                "service:verifier-session",
+                "verifier",
+                verifier.id,
+                "verifier-session",
                 "cursor",
                 "instance-b",
                 "executor-session",
             ),
             "same target": identity(
-                "service:verifier-target",
+                "verifier",
+                verifier.id,
+                "verifier-target",
                 "cursor",
                 "instance-a",
                 "verifier-session",
             ),
             "same provider": identity(
-                "service:verifier-provider",
+                "verifier",
+                verifier.id,
+                "verifier-provider",
                 "codex",
                 "instance-b",
                 "verifier-session",
             ),
             "truly separate": identity(
-                "service:verifier-separate",
+                "verifier",
+                verifier.id,
+                "verifier-separate",
                 "cursor",
                 "instance-b",
                 "verifier-session",

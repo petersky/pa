@@ -571,10 +571,13 @@ def goal_dispatch_execution_identity_valid(
     if record.session_id is None:
         return identity is None
     receipt = provenance.materialization_receipt
-    if identity is None or receipt is None:
+    envelope = provenance.materialization_envelope
+    if identity is None or receipt is None or envelope is None:
         return False
     valid = bool(
         identity.materialization_receipt_digest == receipt.digest
+        and identity.work_package_id == envelope.work_package_id
+        and identity.service_role == envelope.service_role
         and identity.provider_id.strip().lower()
         == str(record.request_payload.get("provider") or "").strip().lower()
         and identity.target_instance_id == record.target_instance_id
@@ -768,6 +771,15 @@ class DispatchStore:
         }
         selected: dict[str, DispatchRecord] = {}
         for record in self._records.values():
+            execution_identity_check_pending = bool(
+                record.goal_provenance is not None
+                and record.goal_provenance.released_at is None
+                and record.state in RECOVERABLE_DISPATCH_STATES
+                and (
+                    record.session_id is not None
+                    or record.goal_provenance.execution_identity is not None
+                )
+            )
             base_pending = bool(
                 record.goal_provenance is not None
                 and record.goal_provenance.released_at is None
@@ -782,7 +794,7 @@ class DispatchStore:
                 )
                 for operation in record.followup_operations.values()
             )
-            if base_pending or followup_pending:
+            if base_pending or followup_pending or execution_identity_check_pending:
                 selected[record.dispatch_id] = record
         self._goal_lifecycle_records = selected
 

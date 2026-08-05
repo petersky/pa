@@ -350,7 +350,7 @@ class RemoteAgentStartBody(BaseModel):
     priority: int = Field(default=0, ge=-10, le=10)
     goal_provenance: GoalDispatchProvenance | None = None
 
-    @field_validator("provider", "model_id", mode="before")
+    @field_validator("provider", "model_id", "mode_id", mode="before")
     @classmethod
     def normalize_optional_selector(cls, value):
         if value is None:
@@ -5187,6 +5187,14 @@ async def _refresh_queued_dispatch_readiness(
     ctx = app.state.ctx
     ledger: DispatchStore = ctx.require_service("dispatch_store")
     try:
+        record = await _offload_ctx(
+            ctx,
+            "goal.dispatch_execution_identity_restore",
+            _restore_goal_dispatch_execution_identity,
+            ctx,
+            ledger,
+            record,
+        )
         record = await _validate_goal_dispatch_record_async(
             ctx, ledger, record, sink="queued-promotion"
         )
@@ -5317,6 +5325,16 @@ async def _dispatch_cancelled(
     return cancelled
 
 
+def _goal_materialization_stage_provenance(
+    provenance: GoalDispatchProvenance | None,
+) -> GoalDispatchProvenance | None:
+    """Project provenance to the immutable pre-session materialization stage."""
+
+    if provenance is None or provenance.execution_identity is None:
+        return provenance
+    return provenance.model_copy(update={"execution_identity": None})
+
+
 async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
     """Advance one persisted dispatch through independently auditable stages."""
     request = _dispatch_request(app)
@@ -5325,6 +5343,14 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
     ledger: DispatchStore = ctx.require_service("dispatch_store")
     store = ctx.store
 
+    record = await _offload_ctx(
+        ctx,
+        "goal.dispatch_execution_identity_restore",
+        _restore_goal_dispatch_execution_identity,
+        ctx,
+        ledger,
+        record,
+    )
     record = await _validate_goal_dispatch_record_async(
         ctx, ledger, record, sink="worker-start"
     )
@@ -5436,6 +5462,12 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
             materialized_card["attachments"] = [
                 item.model_dump(mode="json") for item in materialized_attachments
             ]
+    # The target materialization ledger is created before session allocation. A
+    # crash-safe resume therefore replays the same stage-bound provenance; the
+    # full execution identity is carried to the resumed session and prompt.
+    materialization_provenance = _goal_materialization_stage_provenance(
+        record.goal_provenance
+    )
     materialize_payload = {
         "dispatch_id": record.dispatch_id,
         "mutation_id": record.mutation_id,
@@ -5461,8 +5493,8 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
         "attachment_digest": manifest_digest(materialized_attachments),
         "materialization_plan": record.materialization_plan,
         "goal_provenance": (
-            record.goal_provenance.model_dump(mode="json")
-            if record.goal_provenance
+            materialization_provenance.model_dump(mode="json")
+            if materialization_provenance
             else None
         ),
     }
@@ -5473,9 +5505,12 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
     record = await _validate_goal_dispatch_record_async(
         ctx, ledger, record, sink="target-materialization"
     )
+    materialization_provenance = _goal_materialization_stage_provenance(
+        record.goal_provenance
+    )
     materialize_payload["goal_provenance"] = (
-        record.goal_provenance.model_dump(mode="json")
-        if record.goal_provenance
+        materialization_provenance.model_dump(mode="json")
+        if materialization_provenance
         else None
     )
     materialized = await _peer_dispatch_json(
@@ -7097,6 +7132,24 @@ def _canonical_goal_materialization_envelope(
     """Reconstruct the pre-reservation envelope from canonical server state."""
 
     goal, _governance = _goal_dispatch_services(ctx, provenance.goal_id)
+    bound_envelope = provenance.materialization_envelope
+    package = next(
+        (
+            item
+            for item in goal.work_packages
+            if bound_envelope is not None and item.id == bound_envelope.work_package_id
+        ),
+        None,
+    )
+    if package is None or package.card_id != body.card_id:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "goal_materialization_envelope_mismatch",
+                "recoverable": False,
+            },
+        )
+    service_role = "verifier" if package.role.value == "verifier" else "executor"
     active_attachments = [
         item
         for item in (card.attachments if card is not None else [])
@@ -7130,6 +7183,8 @@ def _canonical_goal_materialization_envelope(
         ),
     )
     return GoalMaterializationEnvelopeV1(
+        work_package_id=package.id,
+        service_role=service_role,
         repository_ids=repository_ids,
         data_scopes=tuple(goal.policy.data_scope),
         attachment_ids=tuple(item.attachment_id for item in active_attachments),
@@ -7230,6 +7285,54 @@ def _bind_goal_dispatch_materialization(
     )
 
 
+def _expected_goal_dispatch_execution_identity(
+    provenance: GoalDispatchProvenance,
+    session_id: str,
+) -> GoalExecutionIdentityV1:
+    """Derive the one role-correct identity allowed for an allocated session."""
+
+    envelope = provenance.materialization_envelope
+    receipt = provenance.materialization_receipt
+    provider_id = str(provenance.provider_id or "").strip().lower()
+    target_instance_id = str(provenance.resolved_target_instance_id or "").strip()
+    if (
+        envelope is None
+        or receipt is None
+        or receipt.envelope_digest != envelope.digest
+        or not provider_id
+        or not target_instance_id
+        or receipt.provider_id.strip().lower() != provider_id
+        or receipt.target_instance_id != target_instance_id
+        or not session_id.strip()
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "goal_execution_identity_prerequisite_missing",
+                "recoverable": False,
+            },
+        )
+    principal_scope = hashlib.sha256(
+        (
+            f"{provenance.goal_id}:{envelope.work_package_id}:"
+            f"{envelope.service_role}:{provider_id}:{target_instance_id}:"
+            f"{session_id}:{provenance.fencing_token}"
+        ).encode()
+    ).hexdigest()
+    return GoalExecutionIdentityV1(
+        work_package_id=envelope.work_package_id,
+        service_role=envelope.service_role,
+        assigned_service_principal=(
+            f"service:goal-{envelope.service_role}:{principal_scope}"
+        ),
+        provider_id=provider_id,
+        target_instance_id=target_instance_id,
+        session_id=session_id,
+        fencing_token=provenance.fencing_token,
+        materialization_receipt_digest=str(receipt.digest),
+    )
+
+
 def _bind_goal_dispatch_execution_identity(
     ctx: AppContext,
     provenance: GoalDispatchProvenance | None,
@@ -7241,31 +7344,21 @@ def _bind_goal_dispatch_execution_identity(
 
     if provenance is None:
         return None
-    receipt = provenance.materialization_receipt
-    provider_id = str(provenance.provider_id or "").strip().lower()
-    target_instance_id = str(provenance.resolved_target_instance_id or "").strip()
-    if receipt is None or not provider_id or not target_instance_id:
+    identity = _expected_goal_dispatch_execution_identity(provenance, session_id)
+    if (
+        provenance.execution_identity is not None
+        and provenance.execution_identity != identity
+    ):
         raise HTTPException(
             status_code=409,
             detail={
-                "code": "goal_execution_identity_prerequisite_missing",
+                "code": "goal_execution_identity_mismatch",
+                "message": (
+                    "Durable dispatch provenance contains another execution identity."
+                ),
                 "recoverable": False,
             },
         )
-    principal_scope = hashlib.sha256(
-        (
-            f"{provenance.goal_id}:{provider_id}:{target_instance_id}:"
-            f"{session_id}:{provenance.fencing_token}"
-        ).encode()
-    ).hexdigest()
-    identity = GoalExecutionIdentityV1(
-        assigned_service_principal=f"service:goal-executor:{principal_scope}",
-        provider_id=provider_id,
-        target_instance_id=target_instance_id,
-        session_id=session_id,
-        fencing_token=provenance.fencing_token,
-        materialization_receipt_digest=str(receipt.digest),
-    )
     goal, governance = _goal_dispatch_services(ctx, provenance.goal_id)
     state = governance.get_state(goal.id)
     try:
@@ -7303,6 +7396,130 @@ def _bind_goal_dispatch_execution_identity(
             "execution_identity": reservation.request.execution_identity,
         }
     )
+
+
+def _restore_goal_dispatch_execution_identity(
+    ctx: AppContext,
+    ledger: DispatchStore,
+    record: DispatchRecord,
+) -> DispatchRecord:
+    """Repair only the exact durable session/identity crash cut."""
+
+    provenance = record.goal_provenance
+    if provenance is None:
+        return record
+    if record.session_id is None and provenance.execution_identity is None:
+        return record
+    goal, governance = _goal_dispatch_services(ctx, provenance.goal_id)
+    reservation = next(
+        (
+            item
+            for item in governance.get_state(goal.id).action_reservations
+            if item.id == provenance.action_reservation_id
+        ),
+        None,
+    )
+    if reservation is None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "goal_execution_identity_mismatch",
+                "message": "The execution identity reservation no longer exists.",
+                "recoverable": False,
+            },
+        )
+    request = reservation.request
+    if not (
+        reservation.state == GoalReservationState.APPLIED
+        and reservation.goal_id == provenance.goal_id
+        and reservation.authority_instance_id
+        == provenance.authority_instance_id
+        == record.authority_instance_id
+        and reservation.actor_principal == provenance.actor_principal
+        and reservation.fencing_token == provenance.fencing_token
+        and str(request.provider_id or "").strip().lower()
+        == str(provenance.provider_id or "").strip().lower()
+        and request.resolved_target_instance_id
+        == provenance.resolved_target_instance_id
+        == record.target_instance_id
+        and request.materialization_envelope == provenance.materialization_envelope
+        and request.materialization_receipt == provenance.materialization_receipt
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "goal_execution_identity_mismatch",
+                "message": (
+                    "Durable dispatch and reservation identity bindings diverged."
+                ),
+                "recoverable": False,
+            },
+        )
+    durable_identity = request.execution_identity
+    provenance_identity = provenance.execution_identity
+    session_ids = {
+        str(value).strip()
+        for value in (
+            record.session_id,
+            provenance_identity.session_id if provenance_identity else None,
+            durable_identity.session_id if durable_identity else None,
+        )
+        if value is not None and str(value).strip()
+    }
+    if not session_ids:
+        return record
+    if len(session_ids) != 1:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "goal_execution_identity_mismatch",
+                "message": "Durable execution identity refers to another session.",
+                "recoverable": False,
+            },
+        )
+    session_id = next(iter(session_ids))
+    expected = _expected_goal_dispatch_execution_identity(provenance, session_id)
+    if any(
+        identity is not None and identity != expected
+        for identity in (provenance_identity, durable_identity)
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "goal_execution_identity_mismatch",
+                "message": "Durable execution identity is not the canonical binding.",
+                "recoverable": False,
+            },
+        )
+    restored = _bind_goal_dispatch_execution_identity(
+        ctx,
+        provenance,
+        selected_authority=record.authority_instance_id,
+        session_id=session_id,
+    )
+    if restored is None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "goal_execution_identity_mismatch",
+                "recoverable": False,
+            },
+        )
+    record.goal_provenance = restored
+    record.session_id = session_id
+    record.resume_requested = True
+    record.resume_session_id = session_id
+    if not goal_dispatch_execution_identity_valid(record):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "goal_execution_identity_mismatch",
+                "message": "Recovered execution identity failed exact validation.",
+                "recoverable": False,
+            },
+        )
+    ledger.put(record)
+    return record
 
 
 def _restore_goal_dispatch_placement_binding(
@@ -8134,6 +8351,34 @@ async def _reconcile_goal_dispatch_reservations(ctx: AppContext) -> None:
                 ledger,
                 record,
             )
+            if record.session_id or (
+                record.goal_provenance is not None
+                and record.goal_provenance.execution_identity is not None
+            ):
+                try:
+                    record = await _offload_ctx(
+                        ctx,
+                        "goal.dispatch_execution_identity_restore",
+                        _restore_goal_dispatch_execution_identity,
+                        ctx,
+                        ledger,
+                        record,
+                    )
+                except HTTPException as exc:
+                    detail = exc.detail if isinstance(exc.detail, dict) else {}
+                    await _offload_ctx(
+                        ctx,
+                        "goal.dispatch_execution_identity_rejected",
+                        ledger.fail,
+                        record,
+                        str(detail.get("message") or exc.detail),
+                        code=str(
+                            detail.get("code") or "goal_execution_identity_mismatch"
+                        ),
+                        recoverable=False,
+                        detail=detail,
+                    )
+                    continue
             if record.state == "admission_pending":
                 record = await _offload_ctx(
                     ctx,

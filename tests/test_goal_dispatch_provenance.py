@@ -36,6 +36,7 @@ from pa.goals.advanced_models import (
 )
 from pa.goals.governance import GoalGovernanceConflict, GoalGovernanceService
 from pa.goals.materialization import (
+    GoalExecutionIdentityV1,
     GoalMaterializationEnvelopeV1,
     GoalMaterializationReceiptV1,
     GoalMaterializationResourceClaimV1,
@@ -50,10 +51,13 @@ from pa.goals.models import (
     GoalCriterion,
     GoalMutationContext,
     GoalPolicy,
+    GoalProposal,
     GoalProposalCreate,
     GoalRevision,
     GoalState,
+    GoalSupervisionCheckpoint,
     GoalTransition,
+    GoalWorkPackage,
     ProposalStatus,
 )
 from pa.goals.service import GoalService
@@ -70,6 +74,7 @@ from pa.modules.fleet import (
     _bind_goal_dispatch_placement,
     _fail_goal_dispatch_admission,
     _goal_admission_proof_valid,
+    _goal_materialization_stage_provenance,
     _mark_goal_admission_validated,
     _persist_goal_dispatch_admission_trace,
     _reconcile_goal_dispatch_followups,
@@ -78,6 +83,7 @@ from pa.modules.fleet import (
     _release_goal_dispatch_reservation,
     _replace_goal_dispatch_reservation,
     _reserve_goal_dispatch_followup,
+    _restore_goal_dispatch_execution_identity,
     _validate_goal_dispatch_provenance,
     _validate_goal_dispatch_record,
     prompt_dispatch_session,
@@ -166,6 +172,8 @@ class GoalDispatchProvenanceTests(unittest.TestCase):
         allowed_providers: list[str] | None = None,
         target_instance_id: str = "instance-b",
         placement_bound: bool = True,
+        package_role: GoalActorRole = GoalActorRole.EXECUTOR,
+        persist_work_package: bool = False,
     ):
         objects = ObjectStore(root / "objects")
         log = EventLog(objects, root, "instance-a")
@@ -214,6 +222,47 @@ class GoalDispatchProvenanceTests(unittest.TestCase):
             ),
             ttl_seconds=600,
         )
+        proposal = GoalProposal(
+            proposer_principal=self.actor,
+            proposer_role=GoalActorRole.COORDINATOR,
+            action=CreateWorkPackageAction(
+                title="Execute governed fleet work",
+                objective=goal.objective,
+                criterion_ids=[goal.criteria[0].id],
+                role=package_role,
+            ),
+            rationale="Exercise an exact governed work package.",
+            expected_goal_version=goal.version,
+            policy_revision=goal.policy.revision,
+            status=ProposalStatus.APPLIED,
+        )
+        work_package = GoalWorkPackage(
+            proposal_id=proposal.id,
+            title="Execute governed fleet work",
+            objective=goal.objective,
+            criterion_ids=[goal.criteria[0].id],
+            role=package_role,
+        )
+        if persist_work_package:
+            goal = goals.checkpoint_supervision(
+                goal.id,
+                GoalSupervisionCheckpoint.model_validate(
+                    {
+                        **goal.model_dump(mode="python"),
+                        "proposals": [*goal.proposals, proposal],
+                        "work_packages": [work_package],
+                        "reason": "Materialize the governed test work package.",
+                    }
+                ),
+                GoalMutationContext(
+                    actor_principal=self.actor,
+                    authority_instance_id="instance-a",
+                    idempotency_key="checkpoint-work-package",
+                    expected_version=goal.version,
+                    policy_revision=goal.policy.revision,
+                    fencing_token=goal.lease.fencing_token,
+                ),
+            )
         placement_input_digest = goal_dispatch_placement_input_digest(
             {
                 "target_instance_id": target_instance_id,
@@ -224,6 +273,10 @@ class GoalDispatchProvenanceTests(unittest.TestCase):
             self._placement_decision(target_instance_id)
         )
         envelope = GoalMaterializationEnvelopeV1(
+            work_package_id=work_package.id,
+            service_role=(
+                "verifier" if package_role == GoalActorRole.VERIFIER else "executor"
+            ),
             resource_claims=(
                 GoalMaterializationResourceClaimV1(
                     key=f"fleet-dispatch:{target_instance_id}"
@@ -487,13 +540,15 @@ class GoalDispatchProvenanceTests(unittest.TestCase):
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             _goals, _governance, _goal, provenance, _ledger, ctx = self._fixture(
-                Path(tmp)
+                Path(tmp), persist_work_package=True
             )
             body = RemoteAgentStartBody(
                 provider="codex",
+                mode_id="   ",
                 execution_contract=None,
                 goal_provenance=provenance,
             )
+            self.assertIsNone(body.mode_id)
             plan = MaterializationPlan.model_validate(self._materialization_plan())
             exact = _bind_goal_dispatch_materialization(
                 ctx,
@@ -509,6 +564,8 @@ class GoalDispatchProvenanceTests(unittest.TestCase):
                 exact.materialization_receipt,
                 provenance.materialization_receipt,
             )
+            assert exact.materialization_receipt is not None
+            self.assertIsNone(exact.materialization_receipt.mode_id)
             attachment = SimpleNamespace(
                 attachment_id="attachment-a",
                 media_type="application/pdf",
@@ -1088,6 +1145,141 @@ class GoalDispatchProvenanceTests(unittest.TestCase):
             self.assertEqual(reservation.actual_usage.actions, 1)
             self.assertEqual(reservation.actual_usage.dispatches, 1)
 
+    def test_restart_repairs_exact_session_identity_once_and_resumes_same_session(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _goals, governance, goal, provenance, ledger, ctx = self._fixture(root)
+            record = self._record(provenance, state="starting_session")
+            record.session_id = "allocated-session"
+            ledger.put(record)
+
+            reloaded = DispatchStore(root / "ledger")
+            ctx.services["dispatch_store"] = reloaded
+            version_before = governance.get_state(goal.id).version
+            asyncio.run(_reconcile_goal_dispatch_reservations(ctx))
+
+            recovered = reloaded.get(record.dispatch_id)
+            assert recovered is not None and recovered.goal_provenance is not None
+            identity = recovered.goal_provenance.execution_identity
+            envelope = recovered.goal_provenance.materialization_envelope
+            assert identity is not None and envelope is not None
+            self.assertEqual(identity.work_package_id, envelope.work_package_id)
+            self.assertEqual(identity.service_role, envelope.service_role)
+            self.assertEqual(identity.session_id, "allocated-session")
+            self.assertEqual(identity.target_instance_id, "instance-b")
+            self.assertEqual(identity.provider_id, "codex")
+            self.assertEqual(identity.fencing_token, provenance.fencing_token)
+            self.assertTrue(recovered.resume_requested)
+            self.assertEqual(recovered.resume_session_id, "allocated-session")
+            version_after_bind = governance.get_state(goal.id).version
+            self.assertEqual(version_after_bind, version_before + 1)
+
+            asyncio.run(_reconcile_goal_dispatch_reservations(ctx))
+            replayed = reloaded.get(record.dispatch_id)
+            assert replayed is not None and replayed.goal_provenance is not None
+            self.assertEqual(replayed.goal_provenance.execution_identity, identity)
+            self.assertEqual(governance.get_state(goal.id).version, version_after_bind)
+
+    def test_restart_rejects_mismatched_partial_execution_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _goals, governance, goal, provenance, ledger, ctx = self._fixture(root)
+            bound = _bind_goal_dispatch_execution_identity(
+                ctx,
+                provenance,
+                selected_authority="instance-a",
+                session_id="allocated-session",
+            )
+            assert bound is not None
+            exact = bound.execution_identity
+            envelope = bound.materialization_envelope
+            receipt = bound.materialization_receipt
+            assert exact is not None and envelope is not None and receipt is not None
+            mismatched = GoalExecutionIdentityV1(
+                work_package_id=envelope.work_package_id,
+                service_role=envelope.service_role,
+                assigned_service_principal=("service:goal-executor:mismatched-session"),
+                provider_id=exact.provider_id,
+                target_instance_id=exact.target_instance_id,
+                session_id="different-session",
+                fencing_token=exact.fencing_token,
+                materialization_receipt_digest=str(receipt.digest),
+            )
+            record = self._record(
+                bound.model_copy(update={"execution_identity": mismatched}),
+                state="starting_session",
+            )
+            record.session_id = "allocated-session"
+            ledger.put(record)
+
+            reloaded = DispatchStore(root / "ledger")
+            ctx.services["dispatch_store"] = reloaded
+            version_before = governance.get_state(goal.id).version
+            asyncio.run(_reconcile_goal_dispatch_reservations(ctx))
+
+            rejected = reloaded.get(record.dispatch_id)
+            assert rejected is not None
+            self.assertEqual(rejected.state, "failed")
+            self.assertEqual(rejected.error_code, "goal_execution_identity_mismatch")
+            self.assertFalse(rejected.recoverable)
+            self.assertEqual(governance.get_state(goal.id).version, version_before)
+
+    def test_verifier_identity_is_role_correct_and_role_mutation_fails_closed(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            _goals, _governance, _goal, provenance, ledger, ctx = self._fixture(
+                Path(tmp), package_role=GoalActorRole.VERIFIER
+            )
+            bound = _bind_goal_dispatch_execution_identity(
+                ctx,
+                provenance,
+                selected_authority="instance-a",
+                session_id="verifier-session",
+            )
+            assert bound is not None and bound.execution_identity is not None
+            identity = bound.execution_identity
+            envelope = bound.materialization_envelope
+            assert envelope is not None
+            self.assertEqual(identity.work_package_id, envelope.work_package_id)
+            self.assertEqual(identity.service_role, "verifier")
+            self.assertTrue(
+                identity.assigned_service_principal.startswith("service:goal-verifier:")
+            )
+
+            mutated_envelope = GoalMaterializationEnvelopeV1.model_validate(
+                {
+                    **envelope.model_dump(mode="python", exclude={"digest"}),
+                    "service_role": "executor",
+                }
+            )
+            mutated = bound.model_copy(
+                update={"materialization_envelope": mutated_envelope}
+            )
+            with self.assertRaises(HTTPException) as bind_error:
+                _bind_goal_dispatch_execution_identity(
+                    ctx,
+                    mutated,
+                    selected_authority="instance-a",
+                    session_id="verifier-session",
+                )
+            self.assertFalse(bind_error.exception.detail["recoverable"])
+
+            retry_record = self._record(mutated, state="failed")
+            with self.assertRaises(HTTPException) as retry_error:
+                _replace_goal_dispatch_reservation(
+                    ctx,
+                    ledger,
+                    retry_record,
+                    idempotency_key="role-mutated-retry",
+                )
+            self.assertEqual(
+                retry_error.exception.detail["code"],
+                "goal_retry_materialization_widening",
+            )
+
     def test_authority_followup_uses_fresh_reservation_replays_and_releases(
         self,
     ) -> None:
@@ -1372,6 +1564,97 @@ class GoalDispatchProvenanceTests(unittest.TestCase):
                 )
             self.assertEqual(exhausted.exception.detail["code"], "goal_retry_denied")
 
+    def test_post_session_retry_resumes_exact_identity_after_reload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _goals, governance, goal, provenance, ledger, ctx = self._fixture(
+                root, max_attempts=2
+            )
+            record = self._record(provenance, state="failed")
+            record.session_id = "session-old"
+            record.goal_provenance = _bind_goal_dispatch_execution_identity(
+                ctx,
+                provenance,
+                selected_authority="instance-a",
+                session_id="session-old",
+            )
+            ledger.put(record)
+            record = _release_goal_dispatch_reservation(
+                ctx,
+                ledger,
+                record,
+                outcome="failed-after-session",
+                applied=True,
+            )
+            record = _replace_goal_dispatch_reservation(
+                ctx,
+                ledger,
+                record,
+                idempotency_key="retry-existing-session",
+            )
+            retry_provenance = record.goal_provenance
+            assert retry_provenance is not None
+            original_identity = retry_provenance.execution_identity
+            original_receipt = retry_provenance.materialization_receipt
+            assert original_identity is not None and original_receipt is not None
+            ledger.transition(record, "queued", "Retry admitted before crash.")
+
+            reloaded = DispatchStore(root / "ledger")
+            ctx.services["dispatch_store"] = reloaded
+            recovered = reloaded.get(record.dispatch_id)
+            assert recovered is not None
+            recovered = _restore_goal_dispatch_execution_identity(
+                ctx,
+                reloaded,
+                recovered,
+            )
+            assert recovered.goal_provenance is not None
+            self.assertTrue(recovered.resume_requested)
+            self.assertEqual(recovered.resume_session_id, "session-old")
+            self.assertEqual(
+                recovered.goal_provenance.execution_identity,
+                original_identity,
+            )
+            self.assertEqual(
+                recovered.goal_provenance.materialization_receipt,
+                original_receipt,
+            )
+            materialization_projection = _goal_materialization_stage_provenance(
+                recovered.goal_provenance
+            )
+            assert materialization_projection is not None
+            self.assertIsNone(materialization_projection.execution_identity)
+            self.assertEqual(
+                materialization_projection.materialization_receipt,
+                original_receipt,
+            )
+
+            version_before_replay = governance.get_state(goal.id).version
+            replayed = _restore_goal_dispatch_execution_identity(
+                ctx,
+                reloaded,
+                recovered,
+            )
+            self.assertEqual(
+                replayed.goal_provenance.execution_identity,
+                original_identity,
+            )
+            self.assertEqual(
+                governance.get_state(goal.id).version,
+                version_before_replay,
+            )
+            with self.assertRaises(HTTPException) as changed_session:
+                _bind_goal_dispatch_execution_identity(
+                    ctx,
+                    recovered.goal_provenance,
+                    selected_authority="instance-a",
+                    session_id="session-new",
+                )
+            self.assertEqual(
+                changed_session.exception.detail["code"],
+                "goal_execution_identity_mismatch",
+            )
+
     def test_retry_rejects_materialization_plan_widening(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             _goals, _governance, _goal, provenance, ledger, ctx = self._fixture(
@@ -1525,6 +1808,52 @@ class GoalDispatchProvenanceTests(unittest.TestCase):
             )
             self.assertEqual(reservation.state, GoalReservationState.RELEASED)
             self.assertEqual(reservation.actual_usage.dispatches, 1)
+
+    def test_terminal_recovery_binds_identity_before_release_and_preserves_control(
+        self,
+    ) -> None:
+        for prebound in (False, True):
+            with self.subTest(prebound=prebound), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                _goals, governance, goal, provenance, ledger, ctx = self._fixture(root)
+                record = self._record(provenance, state="failed")
+                record.session_id = "terminal-session"
+                if prebound:
+                    record.goal_provenance = _bind_goal_dispatch_execution_identity(
+                        ctx,
+                        provenance,
+                        selected_authority="instance-a",
+                        session_id="terminal-session",
+                    )
+                ledger.put(record)
+                original_identity = (
+                    record.goal_provenance.execution_identity
+                    if record.goal_provenance is not None
+                    else None
+                )
+
+                reloaded = DispatchStore(root / "ledger")
+                ctx.services["dispatch_store"] = reloaded
+                asyncio.run(_reconcile_goal_dispatch_reservations(ctx))
+
+                persisted = reloaded.get(record.dispatch_id)
+                assert persisted is not None and persisted.goal_provenance is not None
+                recovered_identity = persisted.goal_provenance.execution_identity
+                assert recovered_identity is not None
+                self.assertEqual(recovered_identity.session_id, "terminal-session")
+                if original_identity is not None:
+                    self.assertEqual(recovered_identity, original_identity)
+                self.assertIsNotNone(persisted.goal_provenance.released_at)
+                reservation = next(
+                    item
+                    for item in governance.get_state(goal.id).action_reservations
+                    if item.id == provenance.action_reservation_id
+                )
+                self.assertEqual(reservation.state, GoalReservationState.RELEASED)
+                self.assertEqual(
+                    reservation.request.execution_identity,
+                    recovered_identity,
+                )
 
     def test_atomic_admission_begin_deduplicates_authority_and_target_races(
         self,

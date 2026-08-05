@@ -601,6 +601,8 @@ class GoalGovernanceTests(unittest.TestCase):
             goal_data.budget.max_concurrency = 2
             goal = goals.create(goal_data, self._goal_ctx("create"))
             forbidden = GoalMaterializationEnvelopeV1(
+                work_package_id="package-a",
+                service_role="executor",
                 repository_ids=("outside/repository",),
                 data_scopes=("private-ledger",),
                 resource_claims=(
@@ -631,6 +633,8 @@ class GoalGovernanceTests(unittest.TestCase):
             )
 
             allowed = GoalMaterializationEnvelopeV1(
+                work_package_id="package-a",
+                service_role="executor",
                 repository_ids=("petersky/pa",),
                 resource_claims=(
                     GoalMaterializationResourceClaimV1(
@@ -705,6 +709,8 @@ class GoalGovernanceTests(unittest.TestCase):
                 ttl_seconds=120,
             )
             envelope = GoalMaterializationEnvelopeV1(
+                work_package_id="package-a",
+                service_role="executor",
                 repository_ids=("petersky/pa",),
                 resource_claims=(
                     GoalMaterializationResourceClaimV1(key="repository:petersky/pa"),
@@ -865,6 +871,8 @@ class GoalGovernanceTests(unittest.TestCase):
                 )
 
             widened = GoalMaterializationEnvelopeV1(
+                work_package_id=envelope.work_package_id,
+                service_role=envelope.service_role,
                 repository_ids=("another/repository",),
                 resource_claims=(
                     GoalMaterializationResourceClaimV1(

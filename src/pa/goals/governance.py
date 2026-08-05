@@ -1037,12 +1037,21 @@ class GoalGovernanceService:
                     "execution identity requires an applied action reservation"
                 )
             receipt = reservation.request.materialization_receipt
+            envelope = reservation.request.materialization_envelope
             if (
                 receipt is None
                 or identity.materialization_receipt_digest != receipt.digest
             ):
                 raise GoalGovernanceConflict(
                     "execution identity belongs to another materialization receipt"
+                )
+            if (
+                envelope is None
+                or identity.work_package_id != envelope.work_package_id
+                or identity.service_role != envelope.service_role
+            ):
+                raise GoalGovernanceConflict(
+                    "execution identity does not match the reserved work-package role"
                 )
             if (
                 identity.provider_id.strip().lower()
@@ -2415,6 +2424,9 @@ class GoalGovernanceService:
                 request.materialization_receipt is None
                 or request.execution_identity.materialization_receipt_digest
                 != request.materialization_receipt.digest
+                or request.execution_identity.work_package_id
+                != envelope.work_package_id
+                or request.execution_identity.service_role != envelope.service_role
             ):
                 hard_denial = True
                 reasons.append(
