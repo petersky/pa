@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
@@ -20,7 +22,6 @@ from pa.domain.models import (
     RepositoryUpdate,
     RepositoryVisibility,
 )
-from pa.domain.session_selection import preferred_sessions_by_card
 from pa.domain.store import get_store
 from pa.fleet.policy import (
     WORKLOAD_PROFILES,
@@ -31,6 +32,46 @@ from pa.fleet.policy import (
 
 router = APIRouter()
 ui_router = APIRouter()
+
+PROJECT_SESSION_HISTORY_PAGE_SIZE = 10
+PROJECT_LIVE_SESSION_LIMIT = 20
+PROJECT_PR_HISTORY_PAGE_SIZE = 10
+
+
+def _pagination_context(
+    request: Request,
+    *,
+    parameter: str,
+    total: int,
+    page_size: int,
+    fragment: str,
+) -> dict:
+    try:
+        requested_page = max(1, int(request.query_params.get(parameter, "1")))
+    except ValueError:
+        requested_page = 1
+    page_count = max(1, (total + page_size - 1) // page_size)
+    page = min(requested_page, page_count)
+
+    def page_url(target: int) -> str:
+        query = [
+            (key, value)
+            for key, value in request.query_params.multi_items()
+            if key != parameter
+        ]
+        query.append((parameter, str(target)))
+        return f"/projects?{urlencode(query)}#{fragment}"
+
+    start = (page - 1) * page_size if total else 0
+    return {
+        "page": page,
+        "page_count": page_count,
+        "offset": start,
+        "start": start + 1 if total else 0,
+        "end": min(start + page_size, total),
+        "previous_url": page_url(page - 1) if page > 1 else None,
+        "next_url": page_url(page + 1) if page < page_count else None,
+    }
 
 
 def _active_realm(request: Request) -> str:
@@ -70,6 +111,7 @@ def _projects_context(request: Request) -> dict:
     cards = (
         store.list_cards_for_project(project_id, realm_id=realm) if project_id else []
     )
+    card_ids = {card.id for card in cards}
     repositories = store.list_repositories(realm)
     linked_repositories = []
     linked_ids: set[str] = set()
@@ -95,29 +137,125 @@ def _projects_context(request: Request) -> dict:
                     ),
                 }
             )
-    card_sessions = preferred_sessions_by_card(store.list_sessions())
-    project_sessions = [
-        session
-        for session in store.list_sessions()
-        if project
-        and (
-            session.project_id == project.id
-            or session.card_id in {card.id for card in cards}
+    sessions_available = True
+    sessions_error = ""
+    card_sessions = {}
+    live_project_sessions = []
+    live_project_session_total = 0
+    historical_project_sessions = []
+    historical_project_session_total = 0
+    session_history_pagination = _pagination_context(
+        request,
+        parameter="session_history_page",
+        total=0,
+        page_size=PROJECT_SESSION_HISTORY_PAGE_SIZE,
+        fragment="project-historical-sessions",
+    )
+    try:
+        if project:
+            preferred_sessions = store.list_preferred_sessions_for_project_cards(
+                project.id, realm_id=realm
+            )
+            card_sessions = {
+                session.card_id: session
+                for session in preferred_sessions
+                if session.card_id
+            }
+            live_project_session_total = store.count_project_sessions(
+                project.id, realm_id=realm, historical=False
+            )
+            historical_project_session_total = store.count_project_sessions(
+                project.id, realm_id=realm, historical=True
+            )
+            session_history_pagination = _pagination_context(
+                request,
+                parameter="session_history_page",
+                total=historical_project_session_total,
+                page_size=PROJECT_SESSION_HISTORY_PAGE_SIZE,
+                fragment="project-historical-sessions",
+            )
+            live_project_sessions = store.list_project_sessions(
+                project.id,
+                realm_id=realm,
+                historical=False,
+                limit=PROJECT_LIVE_SESSION_LIMIT,
+            )
+            historical_project_sessions = store.list_project_sessions(
+                project.id,
+                realm_id=realm,
+                historical=True,
+                limit=PROJECT_SESSION_HISTORY_PAGE_SIZE,
+                offset=session_history_pagination["offset"],
+            )
+    except Exception:
+        # Card and repository state remains useful during a session projection failure.
+        card_sessions = {}
+        live_project_sessions = []
+        live_project_session_total = 0
+        historical_project_sessions = []
+        historical_project_session_total = 0
+        sessions_available = False
+        sessions_error = (
+            "Agent session counts are temporarily unavailable. "
+            "Card counts are current."
         )
-    ]
     active_cards = [card for card in cards if card.lane == CardLane.ACTIVE]
     blocked_cards = [card for card in cards if card.lane == CardLane.WAITING]
     recent_cards = sorted(cards, key=lambda card: card.updated_at, reverse=True)[:6]
     done_count = sum(card.lane == CardLane.DONE for card in cards)
+    lane_counts = {
+        lane.value: sum(card.lane == lane for card in cards) for lane in CardLane
+    }
+    dispatch_store = request.app.state.ctx.services.get("dispatch_store")
+    selected_dispatches = (
+        dispatch_store.latest_by_card(card_ids) if dispatch_store else {}
+    )
+    if selected_dispatches:
+        from pa.modules.items import _progress_from_dispatch
+
+        card_progress = {
+            card_id: _progress_from_dispatch(request.app.state.ctx, record)
+            for card_id, record in selected_dispatches.items()
+        }
+    else:
+        card_progress = {}
     pr_watches = []
+    pr_watches_available = True
+    pr_watches_error = ""
+    pr_watch_history_total = 0
+    pr_watch_history_pagination = _pagination_context(
+        request,
+        parameter="pr_history_page",
+        total=0,
+        page_size=PROJECT_PR_HISTORY_PAGE_SIZE,
+        fragment="project-pr-history",
+    )
     supervisor_store = request.app.state.ctx.services.get("pr_supervisor_store")
     if project and supervisor_store:
-        pr_watches = [
-            watch
-            for watch in supervisor_store.list_watches(include_retired=True)
-            if watch.project_id == project.id
-            or watch.card_id in {card.id for card in cards}
-        ]
+        try:
+            pr_watch_history_total = supervisor_store.count_project_watches(
+                project.id, realm_id=realm, card_ids=card_ids
+            )
+            pr_watch_history_pagination = _pagination_context(
+                request,
+                parameter="pr_history_page",
+                total=pr_watch_history_total,
+                page_size=PROJECT_PR_HISTORY_PAGE_SIZE,
+                fragment="project-pr-history",
+            )
+            pr_watches = supervisor_store.list_project_watches(
+                project.id,
+                realm_id=realm,
+                card_ids=card_ids,
+                limit=PROJECT_PR_HISTORY_PAGE_SIZE,
+                offset=pr_watch_history_pagination["offset"],
+            )
+        except Exception:
+            pr_watches_available = False
+            pr_watches_error = "Pull request history is temporarily unavailable."
+    elif project:
+        pr_watches_available = False
+        pr_watches_error = "Pull request history is temporarily unavailable."
     policy_service = request.app.state.ctx.services.get("fleet_policy")
     if not isinstance(policy_service, FleetPolicyService):
         policy_service = FleetPolicyService(store)
@@ -147,13 +285,29 @@ def _projects_context(request: Request) -> dict:
         "cards": cards,
         "card_projects": {card.id: project for card in cards},
         "card_sessions": card_sessions,
-        "project_sessions": project_sessions,
+        "card_progress": card_progress,
+        "live_project_sessions": live_project_sessions,
+        "live_project_session_total": live_project_session_total,
+        "live_project_sessions_truncated": (
+            live_project_session_total > len(live_project_sessions)
+        ),
+        "historical_project_sessions": historical_project_sessions,
+        "historical_project_session_total": historical_project_session_total,
+        "session_history_pagination": session_history_pagination,
+        "sessions_available": sessions_available,
+        "sessions_error": sessions_error,
         "active_cards": active_cards,
         "blocked_cards": blocked_cards,
         "recent_cards": recent_cards,
         "done_count": done_count,
+        "lane_counts": lane_counts,
         "progress_percent": round(done_count * 100 / len(cards)) if cards else 0,
+        "health_refreshed_at": datetime.now(UTC),
         "pr_watches": pr_watches,
+        "pr_watches_available": pr_watches_available,
+        "pr_watches_error": pr_watches_error,
+        "pr_watch_history_total": pr_watch_history_total,
+        "pr_watch_history_pagination": pr_watch_history_pagination,
         "lanes": list(CardLane),
         "active_realm": realm,
         "realms": request.app.state.ctx.settings.subscribed_realms,
@@ -490,7 +644,7 @@ def create_project_ui(
     from pa.modules.ui_shell import render_page
 
     realm_id = realm or _active_realm(request)
-    get_store().create_project(
+    project = get_store().create_project(
         ProjectCreate(realm_id=realm_id, title=title, description=description),
         principal_id=get_principal_id(request),
         instance_id=request.app.state.ctx.settings.instance_id,
@@ -498,7 +652,15 @@ def create_project_ui(
     page = request.app.state.ctx.require_service("pages").get_by_path("/projects")
     if not page:
         raise HTTPException(status_code=404)
-    return render_page(request, page)
+    query = urlencode(
+        {"realm": realm_id, "view": "projects", "project": project.id}
+    )
+    selected_scope = dict(request.scope)
+    selected_scope["query_string"] = query.encode()
+    selected_request = Request(selected_scope, request.receive)
+    response = render_page(selected_request, page)
+    response.headers["HX-Push-Url"] = f"/projects?{query}"
+    return response
 
 
 @ui_router.post("/projects/repositories")
@@ -756,9 +918,9 @@ def update_project_ui(
     project = get_store().update_project(
         project_id,
         ProjectUpdate(
-            title=title.strip(),
-            description=description.strip(),
-            agent_prompt=agent_prompt.strip(),
+            title=title,
+            description=description,
+            agent_prompt=agent_prompt,
             tags=[tag.strip() for tag in tags.split(",") if tag.strip()],
             status=status,
         ),
