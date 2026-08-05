@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 import mimetypes
 import os
 import re
@@ -524,6 +523,7 @@ def _card_project_impact(request: Request, card, project_id: str | None) -> dict
 
 def _card_summary_context(request: Request, card) -> dict:
     store = get_store()
+    summary_service = request.app.state.ctx.require_service("card_summary_service")
     dispatch_store = request.app.state.ctx.services.get("dispatch_store")
     realm_id = card.realm_id
     project = (
@@ -542,6 +542,7 @@ def _card_summary_context(request: Request, card) -> dict:
     )
     return {
         "card": card,
+        "summary_diagnostics": summary_service.diagnostics(),
         "project": project,
         "parent": (
             store.get_card(card.parent_id, realm_id=realm_id)
@@ -574,6 +575,25 @@ def _card_summary_context(request: Request, card) -> dict:
         "csrf_token": token_for_request(request),
         **watch_context,
     }
+
+
+def _schedule_card_summary(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    card,
+    *,
+    force: bool = False,
+):
+    service = request.app.state.ctx.require_service("card_summary_service")
+    card = service.disable_if_unconfigured(card, force=force)
+    if card.summary_status.value != "disabled":
+        background_tasks.add_task(
+            service.schedule,
+            card.id,
+            card.realm_id,
+            force=force,
+        )
+    return card
 
 
 def _card_session_view(session, local_instance_id: str) -> dict:
@@ -1184,6 +1204,9 @@ def _work_context(request: Request) -> dict:
     cards = store.list_cards(realm_id=realm)
     projects = store.list_projects(realm_id=realm)
     project_id = _active_project(request)
+    selected_lane = request.query_params.get("lane", CardLane.ACTIVE.value)
+    if selected_lane not in {lane.value for lane in CardLane}:
+        selected_lane = CardLane.ACTIVE.value
     filters = {
         key: request.query_params.get(key, "").strip()
         for key in ("q", "owner", "instance", "blocked", "tag", "updated")
@@ -1212,6 +1235,7 @@ def _work_context(request: Request) -> dict:
         "filter_query": urlencode(
             {key: value for key, value in filter_params.items() if value}
         ),
+        "selected_lane": selected_lane,
         "active_realm": realm,
     }
 
@@ -1311,6 +1335,12 @@ def list_cards_api(
     return [c.model_dump(mode="json") for c in cards]
 
 
+@router.get("/cards/summary/diagnostics")
+def card_summary_diagnostics_api(request: Request) -> dict:
+    """Return redaction-safe effective summary configuration and failure state."""
+    return request.app.state.ctx.require_service("card_summary_service").diagnostics()
+
+
 @router.post("/cards", status_code=201)
 def create_card_api(
     request: Request, data: CardCreate, background_tasks: BackgroundTasks
@@ -1331,11 +1361,7 @@ def create_card_api(
             explicit_enrichment_fields(data),
         )
     if not data.summary.strip():
-        background_tasks.add_task(
-            request.app.state.ctx.require_service("card_summary_service").request,
-            card.id,
-            card.realm_id,
-        )
+        card = _schedule_card_summary(request, background_tasks, card)
     return card.model_dump(mode="json")
 
 
@@ -1414,11 +1440,7 @@ def update_card_api(
     if not card:
         raise HTTPException(status_code=404, detail="Card not found")
     if {"title", "body"} & data.model_fields_set:
-        background_tasks.add_task(
-            request.app.state.ctx.require_service("card_summary_service").request,
-            card.id,
-            card.realm_id,
-        )
+        card = _schedule_card_summary(request, background_tasks, card)
     return card.model_dump(mode="json")
 
 
@@ -1433,20 +1455,26 @@ def regenerate_card_summary_api(
     card = get_store().get_card(card_id, realm_id=realm_id)
     if not card:
         raise HTTPException(status_code=404, detail="Card not found")
-    get_store().update_card(
-        card.id,
-        CardUpdate(summary_status="pending", summary_stale=bool(card.summary)),
-        realm_id=card.realm_id,
-        principal_id=get_principal_id(request),
-        instance_id=request.app.state.ctx.settings.instance_id,
-    )
-    background_tasks.add_task(
-        request.app.state.ctx.require_service("card_summary_service").request,
-        card.id,
-        card.realm_id,
-        force=True,
-    )
-    return {"card_id": card.id, "summary_status": "pending"}
+    service = request.app.state.ctx.require_service("card_summary_service")
+    diagnostics = service.diagnostics()
+    if not service.is_authority:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "summary_authority_remote",
+                "message": "Regenerate the summary on the fleet-owner instance.",
+                "authority": "fleet_owner",
+                "recoverable": True,
+            },
+        )
+    card = _schedule_card_summary(request, background_tasks, card, force=True)
+    return {
+        "card_id": card.id,
+        "summary_status": (
+            "disabled" if diagnostics["state"] == "disabled" else "pending"
+        ),
+        "summary_configuration": diagnostics,
+    }
 
 
 @router.get("/items")
@@ -1862,11 +1890,7 @@ async def create_card_modal_ui(
         instance_id=settings.instance_id,
     )
     if not summary.strip():
-        background_tasks.add_task(
-            request.app.state.ctx.require_service("card_summary_service").request,
-            card.id,
-            card.realm_id,
-        )
+        card = _schedule_card_summary(request, background_tasks, card)
     if auto_enrich:
         background_tasks.add_task(
             enrich_card,
@@ -2412,11 +2436,7 @@ def card_detail_update(
     if not card:
         raise HTTPException(status_code=404, detail="Card not found")
     if {"title", "body"} & changes.keys():
-        background_tasks.add_task(
-            request.app.state.ctx.require_service("card_summary_service").request,
-            card.id,
-            card.realm_id,
-        )
+        card = _schedule_card_summary(request, background_tasks, card)
     return _templates(request).TemplateResponse(
         request, "partials/card-detail.html", _card_summary_context(request, card)
     )
@@ -2652,12 +2672,9 @@ class ItemsModule(Module):
         )
 
     async def on_startup(self, app, ctx: AppContext) -> None:
-        try:
-            await ctx.require_service("card_summary_service").migrate_legacy()
-        except Exception:  # migration must never make PA startup unavailable
-            logging.getLogger(__name__).exception(
-                "Card summary migration batch could not be scheduled"
-            )
+        # Starting the sleeper is constant-time. Its first bounded migration /
+        # retry scan happens after startup has completed.
+        ctx.require_service("card_summary_service").start()
 
     async def on_shutdown(self, app, ctx: AppContext) -> None:
         await ctx.require_service("card_summary_service").close()

@@ -21,15 +21,26 @@
        data-card-id="{{ card.id }}"
        data-card-realm="{{ card.realm_id }}">{{ card.title }}</a>
   </h3>
-  {% if not progress %}
+  {% if not progress and (not session or session.status in ('closed', 'quiesced')) %}
   <button type="button" class="ghost small compact-card-dispatch" data-card-dispatch-open
           data-card-id="{{ card.id }}" data-card-realm="{{ card.realm_id }}"
           aria-label="Dispatch {{ card.title }}">Dispatch</button>
+  {% elif session and session.status not in ('closed', 'quiesced') %}
+  <a class="ghost small compact-card-dispatch" href="/agent?session={{ session.id }}"
+     aria-label="Open live agent session for {{ card.title }}">Open agent</a>
   {% endif %}
   {% if not title_only %}
+  {% if card.summary and card.summary_source.value != 'fallback' %}
   <div class="card-markdown compact-card-summary" data-card-markdown>
     <span hidden data-card-markdown-source>{{ card.summary | tojson }}</span>
   </div>
+  {% elif card.summary_status.value in ('pending', 'stale') %}
+  <p class="compact-card-summary muted" role="status">Summary pending.</p>
+  {% elif card.summary_status.value == 'disabled' %}
+  <p class="compact-card-summary muted" role="status">Summary generation is disabled.</p>
+  {% else %}
+  <p class="compact-card-summary muted" role="status">Summary unavailable.</p>
+  {% endif %}
   {% if progress and progress.latest %}
   <div class="compact-card-progress progress-{{ progress.freshness.state }}"
        data-card-progress
