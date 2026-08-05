@@ -265,7 +265,7 @@
     <details class="panel-inset">
       <summary>Worker group defaults</summary>
       <p class="muted small">Card overrides win, followed by project + workload profile, project, realm + profile, and the realm automatic-worker group. Archived groups fail visibly and never revert to all instances.</p>
-      {% for profile in ['all'] + workload_profiles %}
+      {% for profile in ['all', 'repository', 'research', 'operations'] %}
       {% set current_default = project_placement_defaults.get(profile) %}
       {% set active_group_ids = worker_groups | map(attribute='id') | list %}
       {% if current_default and current_default.group_id not in active_group_ids %}

@@ -141,9 +141,10 @@
           </td>
           {% set capacity = activity.value.capacity if activity.value and activity.value.capacity else none %}
           {% set queue_capacity = activity.value.queue_capacity if activity.value and activity.value.queue_capacity else none %}
+          {% set prompt_backlog = activity.value.queued_prompts if activity.value and activity.value.queued_prompts is defined else 0 %}
           <td data-fleet-capacity class="fleet-field fleet-field-{{ activity.state }}">
             {% if capacity %}
-            <strong>{{ capacity.consumed }}/{{ capacity.limit }} used</strong>
+            <strong aria-label="{{ capacity.consumed }}/{{ capacity.limit }} slots used · {{ prompt_backlog }} prompt{{ '' if prompt_backlog == 1 else 's' }} queued">{{ capacity.consumed }}/{{ capacity.limit }} slots used · {{ prompt_backlog }} prompt{{ '' if prompt_backlog == 1 else 's' }} queued</strong>
             <span class="muted small">{{ capacity.source | replace('_', ' ') }}</span>
             {% if queue_capacity %}<span class="muted small">{{ queue_capacity.consumed }}/{{ queue_capacity.limit }} waiting</span>{% endif %}
             {% else %}
@@ -264,7 +265,7 @@
             </label>
             <fieldset>
               <legend>Workload profiles</legend>
-              {% for profile in workload_profiles %}
+              {% for profile in ['repository', 'research', 'operations'] %}
               <label><input type="checkbox" name="allowed_profiles" value="{{ profile }}" {% if profile in policy.get('allowed_profiles', []) %}checked{% endif %}> Allow {{ profile }}</label>
               <label><input type="checkbox" name="denied_profiles" value="{{ profile }}" {% if profile in policy.get('denied_profiles', []) %}checked{% endif %}> Deny {{ profile }}</label>
               {% endfor %}
@@ -341,7 +342,9 @@
         <label>Workload profile
           <select name="workload_profile">
             <option value="">All profiles</option>
-            {% for profile in workload_profiles %}<option value="{{ profile }}">{{ profile | title }}</option>{% endfor %}
+            <option value="repository">Repository</option>
+            <option value="research">Research</option>
+            <option value="operations">Operations</option>
           </select>
         </label>
         <label>Worker group

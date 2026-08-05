@@ -100,7 +100,8 @@ class ProgressStoreTests(unittest.TestCase):
             store = DispatchStore(Path(tmp))
             store.put(record())
 
-            later = store.ingest_progress(checkpoint(3))
+            third = checkpoint(3)
+            later = store.ingest_progress(third)
             late = store.ingest_progress(
                 checkpoint(
                     1,
@@ -108,14 +109,14 @@ class ProgressStoreTests(unittest.TestCase):
                     phase=ProgressPhase.INVESTIGATING,
                 )
             )
-            duplicate = store.ingest_progress(checkpoint(3))
+            duplicate = store.ingest_progress(third)
             conflict = store.ingest_progress(
                 checkpoint(3, key="conflicting-three", summary="Different payload")
             )
 
             self.assertEqual(later.status, "accepted")
             self.assertEqual(late.status, "late")
-            self.assertEqual(duplicate.status, "duplicate")
+            self.assertEqual(duplicate, later)
             self.assertEqual(conflict.status, "conflict")
             self.assertFalse(conflict.accepted)
 

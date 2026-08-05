@@ -12,9 +12,10 @@
     <form data-card-dispatch-form>
       <label for="card-dispatch-profile-{{ card.id }}">Workspace profile</label>
       <select id="card-dispatch-profile-{{ card.id }}" name="execution_profile" required>
-        {% for profile in workload_profiles %}
-        <option value="{{ profile }}">{% if profile == 'automatic' %}Automatic (show a choice if ambiguous){% elif profile == 'repository' %}Repository work — verified isolated worktree{% elif profile == 'research' %}Research/artifact work — no Git required{% else %}Operations/external tools — no source checkout{% endif %}</option>
-        {% endfor %}
+        <option value="automatic">Automatic (show a choice if ambiguous)</option>
+        <option value="repository">Repository work — verified isolated worktree</option>
+        <option value="research">Research/artifact work — no Git required</option>
+        <option value="operations">Operations/external tools — no source checkout</option>
       </select>
       <label for="card-dispatch-group-{{ card.id }}">Worker group</label>
       <select id="card-dispatch-group-{{ card.id }}" name="worker_group">

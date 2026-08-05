@@ -204,10 +204,13 @@ high-impact actions. Depending on policy, it can:
 - route to deeper deliberation; or
 - trigger an emergency policy action already authorized by deterministic rules.
 
-Some events bypass or supplement LLM appraisal: security revocation, explicit
-operator stop, data-integrity alarms, lease fencing, and hard resource limits must
-have deterministic handling. Appraisals are logged with model/rule version and
-inputs after required redaction, so routing decisions can be audited and replayed.
+Some events bypass or supplement LLM appraisal: authenticated security revocation,
+explicit operator stop, data-integrity alarms, lease fencing, and hard resource
+limits must have deterministic handling. Bypass selection belongs to server rules
+and requires verified transport, integration, or authority provenance; equivalent
+body fields and model output carry no control authority. Appraisals are logged with
+model/rule version and minimized inputs after required redaction, so routing
+decisions can be audited and replayed without retaining raw signal content.
 
 ### Limbic safeguards
 

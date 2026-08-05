@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import inspect
-import json
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 from pa.config import Settings, reset_settings
 from pa.core.kernel import Kernel
 from pa.domain.instance_config import InstanceConfig, save_instance_config
-from pa.domain.models import CardCreate, FleetInstance, ProjectCreate, RepositoryCreate
+from pa.domain.models import CardCreate, FleetInstance
 from pa.domain.store import reset_store
 from pa.execution.dispatch import (
     CapacityAdmission,
@@ -24,7 +24,11 @@ from pa.execution.dispatch import (
     DispatchRecord,
     DispatchStore,
 )
-from pa.fleet.capacity import effective_capacity, workload_counts
+from pa.fleet.capacity import (
+    effective_capacity,
+    normalize_activity_capacity,
+    workload_counts,
+)
 from pa.fleet.placement import (
     PlacementCandidate,
     PlacementError,
@@ -35,7 +39,6 @@ from pa.fleet.placement import (
 )
 from pa.instance.agent_session import reset_instance_agent
 from pa.modules.fleet import FleetModule
-from pa.workloads import CANONICAL_WORKLOAD_PROFILES, LEGACY_CODE_PROFILE_REASON
 
 
 @pytest.fixture(autouse=True)
@@ -161,6 +164,12 @@ def test_least_busy_normalizes_load_and_breaks_ties_deterministically() -> None:
             ],
         )
         assert decision.chosen_instance_id == "large"
+        assert decision.tie_breaking_reason == (
+            "Lowest normalized execution-slot consumption (active capacity "
+            "consumers plus durable dispatch reservations); queued prompts are "
+            "backlog telemetry. Instance ID breaks exact ties."
+        )
+        assert "active-plus-queued" not in decision.tie_breaking_reason
 
         tied = service.resolve(
             _request(PlacementPolicy.LEAST_BUSY),
@@ -352,262 +361,6 @@ def test_named_dispatch_queue_full_returns_structured_actionable_details() -> No
         assert "increase dispatch_queue_capacity" in detail["remediation_options"]
 
 
-def test_preview_routes_dispatch_and_audit_normalize_legacy_code(monkeypatch) -> None:
-    with tempfile.TemporaryDirectory() as tmp:
-        settings = Settings(
-            data_dir=Path(tmp),
-            instance_id="local",
-            instance_name="Local",
-            instance_url="http://pa.test:8080",
-            agent_enabled=False,
-            subscribed_realms=["default"],
-            peers=[],
-        )
-        app = Kernel.boot(settings=settings).build_app()
-        with TestClient(app) as client:
-            store = app.state.ctx.store
-            project = store.create_project(ProjectCreate(title="Legacy profile"))
-            repository = store.create_repository(
-                RepositoryCreate(url="https://example.test/owner/repository.git")
-            )
-            assert store.link_project_repository(project.id, repository.id)
-            candidate = _candidate("local", local=True, repositories=[repository.id])
-            monkeypatch.setattr(
-                "pa.modules.fleet._placement_candidates",
-                AsyncMock(return_value=[candidate]),
-            )
-            assert client.get("/").status_code == 200
-            headers = {"X-CSRF-Token": client.cookies.get("pa_csrf")}
-            preview_card = store.create_card(
-                CardCreate(title="Preview legacy", project_id=project.id)
-            )
-            for profile in (*CANONICAL_WORKLOAD_PROFILES, "code"):
-                placement_preview = client.post(
-                    "/api/fleet/placement/preview",
-                    headers=headers,
-                    json={
-                        "card_id": preview_card.id,
-                        "placement_policy": "best_match",
-                        "execution_contract": {
-                            "version": 1,
-                            "profile": profile,
-                            "confirmed": True,
-                            "requirements": {},
-                        },
-                    },
-                )
-                group_preview = client.get(
-                    "/api/fleet/instance-groups/all-active/preview",
-                    params={
-                        "project_id": project.id,
-                        "workload_profile": profile,
-                    },
-                )
-                assert placement_preview.status_code == 200, placement_preview.text
-                assert group_preview.status_code == 200, group_preview.text
-                expected = (
-                    "repository"
-                    if profile in {"automatic", "repository", "code"}
-                    else profile
-                )
-                for response in (placement_preview, group_preview):
-                    payload = response.json()
-                    assert payload["decision"]["workload_profile"] == expected
-                    assert payload["materialization_plan"]["profile"] == expected
-                    if profile == "code":
-                        assert (
-                            payload["decision"]["profile_normalization_reason"]
-                            == LEGACY_CODE_PROFILE_REASON
-                        )
-
-            for index, profile in enumerate(
-                ["automatic", "repository", "research", "operations", "code"]
-            ):
-                card = store.create_card(
-                    CardCreate(title=f"Dispatch {profile}", project_id=project.id)
-                )
-                response = client.post(
-                    "/api/fleet/dispatch",
-                    headers=headers,
-                    json={
-                        "card_id": card.id,
-                        "placement_policy": "best_match",
-                        "provider": "codex",
-                        "idempotency_key": f"profile-{index}",
-                        "execution_contract": {
-                            "version": 1,
-                            "profile": profile,
-                            "confirmed": True,
-                            "requirements": {},
-                        },
-                    },
-                )
-                assert response.status_code == 202, response.text
-                decision = response.json()["dispatch"]["placement_decision"]
-                expected = (
-                    "repository"
-                    if profile in {"automatic", "repository", "code"}
-                    else profile
-                )
-                assert decision["workload_profile"] == expected
-                if profile == "code":
-                    assert (
-                        decision["profile_normalization_reason"]
-                        == LEGACY_CODE_PROFILE_REASON
-                    )
-                    legacy_dispatch_id = response.json()["dispatch_id"]
-
-            persisted_legacy = DispatchStore(Path(tmp)).get(legacy_dispatch_id)
-            assert persisted_legacy is not None
-            persisted_contract = persisted_legacy.request_payload["execution_contract"]
-            assert persisted_contract["profile"] == "repository"
-            assert (
-                persisted_contract["profile_normalization_reason"]
-                == LEGACY_CODE_PROFILE_REASON
-            )
-
-            named_card = store.create_card(
-                CardCreate(title="Named legacy dispatch", project_id=project.id)
-            )
-            named = client.post(
-                "/api/fleet/instances/local/agent/start",
-                headers=headers,
-                json={
-                    "card_id": named_card.id,
-                    "provider": "codex",
-                    "idempotency_key": "named-legacy-code",
-                    "execution_contract": {
-                        "version": 1,
-                        "profile": "code",
-                        "confirmed": True,
-                        "requirements": {},
-                    },
-                },
-            )
-            assert named.status_code == 202, named.text
-            named_decision = named.json()["dispatch"]["placement_decision"]
-            assert named_decision["workload_profile"] == "repository"
-            assert (
-                named_decision["profile_normalization_reason"]
-                == LEGACY_CODE_PROFILE_REASON
-            )
-
-            audit = client.get(
-                "/api/fleet/policy-audit",
-                params={"entity_type": "placement_decision"},
-            )
-            assert audit.status_code == 200, audit.text
-            legacy_audit = next(
-                item
-                for item in audit.json()
-                if item["entity_id"] == named.json()["dispatch_id"]
-            )
-            assert legacy_audit["payload"]["workload_profile"] == "repository"
-            assert (
-                legacy_audit["payload"]["profile_normalization_reason"]
-                == LEGACY_CODE_PROFILE_REASON
-            )
-
-
-def test_preview_routes_return_identical_typed_422_for_unknown_profile() -> None:
-    with tempfile.TemporaryDirectory() as tmp:
-        app = Kernel.boot(
-            settings=Settings(
-                data_dir=Path(tmp),
-                instance_id="local",
-                instance_name="Local",
-                instance_url="http://pa.test:8080",
-                agent_enabled=False,
-                subscribed_realms=["default"],
-                peers=[],
-            )
-        ).build_app()
-        with TestClient(app) as client:
-            assert client.get("/").status_code == 200
-            headers = {"X-CSRF-Token": client.cookies.get("pa_csrf")}
-            ui_card = app.state.ctx.store.create_card(CardCreate(title="UI profiles"))
-            with patch("pa.fleet.overview.build_overview", return_value={"nodes": []}):
-                dispatch_form = client.get(f"/partials/cards/{ui_card.id}/dispatch")
-            placement = client.post(
-                "/api/fleet/placement/preview",
-                headers=headers,
-                json={
-                    "placement_policy": "best_match",
-                    "execution_contract": {
-                        "version": 1,
-                        "profile": "invalid",
-                        "confirmed": True,
-                        "requirements": {},
-                    },
-                },
-            )
-            group = client.get(
-                "/api/fleet/instance-groups/all-active/preview",
-                params={"workload_profile": "invalid"},
-            )
-            dispatch = client.post(
-                "/api/fleet/dispatch",
-                headers=headers,
-                json={
-                    "placement_policy": "best_match",
-                    "execution_contract": {
-                        "version": 1,
-                        "profile": "invalid",
-                        "confirmed": True,
-                        "requirements": {},
-                    },
-                },
-            )
-            named_dispatch = client.post(
-                "/api/fleet/instances/local/agent/start",
-                headers=headers,
-                json={
-                    "execution_contract": {
-                        "version": 1,
-                        "profile": "invalid",
-                        "confirmed": True,
-                        "requirements": {},
-                    },
-                },
-            )
-            placement_default = client.put(
-                "/api/fleet/placement-defaults",
-                headers=headers,
-                json={
-                    "group_id": "all-active",
-                    "workload_profile": "invalid",
-                },
-            )
-
-        responses = (
-            placement,
-            group,
-            dispatch,
-            named_dispatch,
-            placement_default,
-        )
-        assert {response.status_code for response in responses} == {422}
-        assert {json.dumps(response.json(), sort_keys=True) for response in responses} == {
-            json.dumps(placement.json(), sort_keys=True)
-        }
-        detail = placement.json()["detail"]
-        assert detail["code"] == "invalid_workload_profile"
-        assert detail["supported_profiles"] == [
-            "automatic",
-            "repository",
-            "research",
-            "operations",
-        ]
-        assert detail["legacy_aliases"] == {"code": "repository"}
-        assert dispatch_form.status_code == 200, dispatch_form.text
-        selector = dispatch_form.text.split('name="execution_profile"', 1)[1].split(
-            "</select>", 1
-        )[0]
-        for profile in CANONICAL_WORKLOAD_PROFILES:
-            assert f'value="{profile}"' in selector
-        assert 'value="code"' not in selector
-
-
 def test_capacity_precedence_and_documented_default_are_explicit() -> None:
     configured = effective_capacity(configured=9, capabilities=["capacity:3"])
     assert configured.limit == 9
@@ -624,22 +377,22 @@ def test_capacity_precedence_and_documented_default_are_explicit() -> None:
     assert "Conservative" in fallback.rationale
 
 
-def test_connected_idle_sessions_do_not_consume_capacity() -> None:
+def test_one_working_session_with_prompt_backlog_consumes_one_slot() -> None:
     counts = workload_counts(
         {
             "connected_runtimes": 6,
-            "idle_sessions": 3,
-            "prompting_turns": 3,
-            "active_capacity_consumers": 3,
-            "queued_prompts": 0,
+            "idle_sessions": 5,
+            "prompting_turns": 1,
+            "active_capacity_consumers": 1,
+            "queued_prompts": 9,
             "dispatch_reservations": 0,
         }
     )
     assert counts == {
-        "active": 3,
-        "queued": 0,
+        "active": 1,
+        "queued": 9,
         "reservations": 0,
-        "consumed": 3,
+        "consumed": 1,
         "semantic_source": "capacity_consumers",
     }
 
@@ -655,7 +408,7 @@ def test_provider_specific_limit_applies_with_global_limit() -> None:
             "provider_concurrency": {
                 "codex": {
                     "active_capacity_consumers": 1,
-                    "queued_prompts": 0,
+                    "queued_prompts": 9,
                     "dispatch_reservations": 1,
                 }
             },
@@ -669,6 +422,669 @@ def test_provider_specific_limit_applies_with_global_limit() -> None:
     assert rejected["capacity"] == 2
     assert rejected["capacity_detail"]["source"] == "configured_provider"
     assert rejected["reserved"] == 1
+
+
+def test_placement_ignores_same_session_backlog_and_deduplicates_consumers(
+    tmp_path: Path,
+) -> None:
+    candidate = _candidate("backlogged", capacity=4)
+    candidate.dispatch_capacity = 4
+    candidate.dispatch_queue_capacity = 100
+    candidate.activity = _fresh(
+        {
+            "state": "working",
+            "active_capacity_consumers": 1,
+            "queued_prompts": 9,
+            "dispatch_reservations": 0,
+            "capacity": {"limit": 4, "consumed": 10},
+            "capacity_consumer_links": [
+                {
+                    "kind": "session",
+                    "session_id": "session-1",
+                    "state": "working",
+                    "slots": 10,
+                },
+                {
+                    "kind": "session",
+                    "session_id": "session-1",
+                    "state": "working",
+                    "slots": 10,
+                },
+            ],
+        }
+    )
+
+    decision = PlacementService(RoundRobinCursorStore(tmp_path)).resolve(
+        _request(PlacementPolicy.BEST_MATCH), [candidate]
+    )
+
+    detail = decision.eligible_candidates[0]
+    assert detail["active"] == 1
+    assert detail["queued"] == 9
+    assert detail["consumed"] == 1
+    assert detail["execution_slot_available"] is True
+    assert detail["admission_disposition"] == "launchable"
+    assert detail["consumer_links"] == [
+        {
+            "kind": "session",
+            "session_id": "session-1",
+            "state": "working",
+            "slots": 1,
+            "consumer_id": "session:session-1",
+        }
+    ]
+
+
+def test_placement_projects_working_session_after_queued_legacy_true(
+    tmp_path: Path,
+) -> None:
+    candidate = _candidate("mixed-version", capacity=4)
+    candidate.dispatch_capacity = 4
+    candidate.activity = _fresh(
+        {
+            "state": "working",
+            "active_capacity_consumers": 1,
+            "queued_prompts": 9,
+            "dispatch_reservations": 0,
+            "sessions": [
+                {
+                    "id": "queued-backlog",
+                    "status": "queued",
+                    "capacity_consuming": True,
+                },
+                {"id": "working-now", "status": "working"},
+            ],
+        }
+    )
+
+    decision = PlacementService(RoundRobinCursorStore(tmp_path)).resolve(
+        _request(PlacementPolicy.BEST_MATCH), [candidate]
+    )
+
+    detail = decision.eligible_candidates[0]
+    assert detail["active"] == 1
+    assert detail["queued"] == 9
+    assert detail["consumed"] == 1
+    assert detail["consumer_links"] == [
+        {
+            "kind": "session",
+            "session_id": "working-now",
+            "href": "/agent?session=working-now",
+            "state": "working",
+            "slots": 1,
+            "consumer_id": "session:working-now",
+        }
+    ]
+    assert detail["consumer_links_omitted"] == 0
+
+
+def test_consumer_links_rank_working_state_over_queued_legacy_true() -> None:
+    activity = normalize_activity_capacity(
+        {
+            "active_capacity_consumers": 1,
+            "queued_prompts": 9,
+            "sessions": [
+                {
+                    "id": "queued-backlog",
+                    "status": "queued",
+                    "capacity_consuming": True,
+                },
+                {"id": "working-now", "status": "working"},
+            ],
+        }
+    )
+
+    assert activity["capacity_consumer_links"] == [
+        {
+            "kind": "session",
+            "session_id": "working-now",
+            "href": "/agent?session=working-now",
+            "state": "working",
+            "slots": 1,
+            "consumer_id": "session:working-now",
+        }
+    ]
+    assert activity["capacity_consumer_links_omitted"] == 0
+
+
+@pytest.mark.parametrize("state", [None, "unknown"])
+def test_consumer_links_allow_explicit_stateless_true_fallback(
+    state: str | None,
+) -> None:
+    session = {"id": "compat-fallback", "capacity_consuming": True}
+    if state is not None:
+        session["status"] = state
+    activity = normalize_activity_capacity(
+        {
+            "active_capacity_consumers": 1,
+            "sessions": [session],
+        }
+    )
+
+    assert activity["capacity_consumer_links"] == [
+        {
+            "kind": "session",
+            "session_id": "compat-fallback",
+            "href": "/agent?session=compat-fallback",
+            "state": state,
+            "slots": 1,
+            "consumer_id": "session:compat-fallback",
+        }
+    ]
+    assert activity["capacity_consumer_links_omitted"] == 0
+
+
+@pytest.mark.parametrize(
+    ("state", "capacity_consuming", "expected_active"),
+    [
+        ("queued", False, False),
+        ("queued", True, False),
+        ("idle", True, False),
+        ("deferred", True, False),
+        ("connected", True, False),
+        ("working", False, True),
+        ("working", True, True),
+        ("prompting", False, True),
+        ("unknown", False, False),
+    ],
+)
+def test_explicit_session_state_wins_over_capacity_consuming_flag(
+    state: str,
+    capacity_consuming: bool,
+    expected_active: bool,
+) -> None:
+    activity = normalize_activity_capacity(
+        {
+            "active_capacity_consumers": 1,
+            "sessions": [
+                {
+                    "id": "semantic-session",
+                    "status": state,
+                    "capacity_consuming": capacity_consuming,
+                }
+            ],
+        }
+    )
+
+    links = activity["capacity_consumer_links"]
+    assert bool(links) is expected_active
+    assert activity["capacity_consumer_links_omitted"] == (0 if expected_active else 1)
+    if expected_active:
+        assert links[0]["consumer_id"] == "session:semantic-session"
+        assert links[0]["state"] == state
+
+
+def test_current_nonconsuming_state_suppresses_same_id_legacy_link() -> None:
+    activity = normalize_activity_capacity(
+        {
+            "active_capacity_consumers": 1,
+            "sessions": [
+                {
+                    "id": "same-session",
+                    "status": "queued",
+                    "capacity_consuming": True,
+                }
+            ],
+            "capacity_consumer_links": [
+                {
+                    "kind": "session",
+                    "session_id": "same-session",
+                    "state": "working",
+                    "slots": 10,
+                }
+            ],
+        }
+    )
+
+    assert activity["capacity_consumer_links"] == []
+    assert activity["capacity_consumer_links_omitted"] == 1
+
+
+def test_legacy_links_rank_working_state_before_queued_true_fallback() -> None:
+    activity = normalize_activity_capacity(
+        {
+            "active_capacity_consumers": 1,
+            "capacity_consumer_links": [
+                {
+                    "kind": "session",
+                    "session_id": "same-session",
+                    "state": "queued",
+                    "capacity_consuming": True,
+                    "slots": 10,
+                },
+                {
+                    "kind": "session",
+                    "session_id": "same-session",
+                    "state": "working",
+                    "slots": 10,
+                },
+            ],
+        }
+    )
+
+    assert activity["capacity_consumer_links"] == [
+        {
+            "kind": "session",
+            "session_id": "same-session",
+            "state": "working",
+            "slots": 1,
+            "consumer_id": "session:same-session",
+        }
+    ]
+    assert activity["capacity_consumer_links_omitted"] == 0
+
+
+def test_consumer_links_prefer_current_working_session_over_stale_legacy() -> None:
+    activity = normalize_activity_capacity(
+        {
+            "active_capacity_consumers": 1,
+            "capacity_consumer_links": [
+                {
+                    "kind": "session",
+                    "session_id": "stale-idle",
+                    "state": "idle",
+                    "slots": 10,
+                }
+            ],
+            "sessions": [{"id": "current-working", "status": "working"}],
+        }
+    )
+
+    assert activity["capacity_consumer_links"] == [
+        {
+            "kind": "session",
+            "session_id": "current-working",
+            "href": "/agent?session=current-working",
+            "state": "working",
+            "slots": 1,
+            "consumer_id": "session:current-working",
+        }
+    ]
+    assert activity["capacity_consumer_links_omitted"] == 0
+
+
+def test_consumer_links_keep_stateless_legacy_identity_without_sessions_list() -> None:
+    activity = normalize_activity_capacity(
+        {
+            "active_capacity_consumers": 1,
+            "capacity_consumer_links": [
+                {"kind": "session", "session_id": "legacy-active", "slots": 10}
+            ],
+        }
+    )
+
+    assert activity["capacity_consumer_links"] == [
+        {
+            "kind": "session",
+            "session_id": "legacy-active",
+            "slots": 1,
+            "consumer_id": "session:legacy-active",
+        }
+    ]
+    assert activity["capacity_consumer_links_omitted"] == 0
+
+
+def test_consumer_link_omission_counts_unprojectable_active_identity() -> None:
+    activity = normalize_activity_capacity(
+        {
+            "active_capacity_consumers": 2,
+            "capacity_consumer_links": [
+                {
+                    "kind": "session",
+                    "session_id": "stale-idle",
+                    "state": "idle",
+                }
+            ],
+            "sessions": [
+                {"id": "known-working", "status": "working"},
+                {"status": "working"},
+            ],
+        }
+    )
+
+    assert [item["consumer_id"] for item in activity["capacity_consumer_links"]] == [
+        "session:known-working"
+    ]
+    assert activity["capacity_consumer_link_count"] == 1
+    assert activity["capacity_consumer_links_omitted"] == 1
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        "completed",
+        "cancelled",
+        "failed",
+        "running",
+        "waiting_capacity",
+        "blocked",
+    ],
+)
+def test_terminal_and_nonreservation_legacy_dispatch_links_are_omitted(
+    state: str,
+) -> None:
+    activity = normalize_activity_capacity(
+        {
+            "active_capacity_consumers": 0,
+            "dispatch_reservations": 1,
+            "capacity_consumer_links": [
+                {
+                    "kind": "dispatch",
+                    "dispatch_id": f"legacy-{state}",
+                    "state": state,
+                    "slots": 10,
+                }
+            ],
+        },
+        authority_snapshot={
+            "dispatch_reservations": 0,
+            "dispatch_waiting": 0,
+            "reservation_links": [],
+        },
+    )
+
+    assert activity["capacity_consumer_links"] == []
+    assert activity["capacity_consumer_link_count"] == 0
+    assert activity["capacity_consumer_links_omitted"] == 1
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        "queued",
+        "checking_sync",
+        "materializing",
+        "provisioning",
+        "starting_session",
+        "delivering_prompt",
+    ],
+)
+def test_active_legacy_reservation_link_projects_one_slot(state: str) -> None:
+    activity = normalize_activity_capacity(
+        {
+            "active_capacity_consumers": 0,
+            "dispatch_reservations": 1,
+            "capacity_consumer_links": [
+                {
+                    "kind": "dispatch",
+                    "dispatch_id": "legacy-reservation",
+                    "state": state,
+                    "slots": 10,
+                }
+            ],
+        }
+    )
+
+    assert activity["capacity_consumer_links"] == [
+        {
+            "kind": "dispatch",
+            "dispatch_id": "legacy-reservation",
+            "state": state,
+            "slots": 1,
+            "consumer_id": "dispatch:legacy-reservation",
+        }
+    ]
+    assert activity["capacity_consumer_links_omitted"] == 0
+
+
+def test_authoritative_reservation_link_precedes_legacy_projection() -> None:
+    activity = normalize_activity_capacity(
+        {
+            "active_capacity_consumers": 0,
+            "dispatch_reservations": 1,
+            "capacity_consumer_links": [
+                {
+                    "kind": "dispatch",
+                    "dispatch_id": "reservation-1",
+                    "href": "/legacy/reservation-1",
+                    "state": "queued",
+                    "slots": 10,
+                }
+            ],
+        },
+        authority_snapshot={
+            "dispatch_reservations": 1,
+            "dispatch_waiting": 0,
+            "reservation_links": [
+                {
+                    "kind": "dispatch",
+                    "dispatch_id": "reservation-1",
+                    "href": "/authority/reservation-1",
+                    "state": "materializing",
+                    "slots": 1,
+                }
+            ],
+        },
+    )
+
+    assert activity["capacity_consumer_links"] == [
+        {
+            "kind": "dispatch",
+            "dispatch_id": "reservation-1",
+            "href": "/authority/reservation-1",
+            "state": "materializing",
+            "slots": 1,
+            "consumer_id": "dispatch:reservation-1",
+        }
+    ]
+    assert activity["capacity_consumer_links_omitted"] == 0
+
+
+def test_reservation_link_omission_counts_unverifiable_identity() -> None:
+    activity = normalize_activity_capacity(
+        {
+            "active_capacity_consumers": 0,
+            "dispatch_reservations": 2,
+            "capacity_consumer_links": [
+                {
+                    "kind": "dispatch",
+                    "dispatch_id": "known-reservation",
+                    "state": "starting_session",
+                },
+                {
+                    "kind": "dispatch",
+                    "dispatch_id": "terminal-dispatch",
+                    "state": "completed",
+                },
+                {"kind": "dispatch", "dispatch_id": "missing-state"},
+            ],
+        }
+    )
+
+    assert [item["consumer_id"] for item in activity["capacity_consumer_links"]] == [
+        "dispatch:known-reservation"
+    ]
+    assert activity["capacity_consumer_link_count"] == 1
+    assert activity["capacity_consumer_links_omitted"] == 1
+
+
+def test_authority_overlay_normalizes_session_and_reservation_identities(
+    tmp_path: Path,
+) -> None:
+    from pa.fleet.overview import build_overview
+    from pa.fleet.workshop import build_workshop_snapshot
+    from pa.modules.fleet import _placement_candidates
+
+    target = FleetInstance(
+        instance_id="remote",
+        name="Remote",
+        url="http://remote.test:8080",
+        capabilities=["capacity:2"],
+        dispatch_capacity=2,
+    )
+    legacy_activity = {
+        "state": "working",
+        "active_capacity_consumers": 1,
+        "queued_prompts": 9,
+        "dispatch_reservations": 0,
+        "capacity": {"limit": 2, "consumed": 10},
+        "provider_concurrency": {
+            "codex": {
+                "active_capacity_consumers": 1,
+                "queued_prompts": 9,
+                "dispatch_reservations": 0,
+            }
+        },
+        "capacity_consumer_links": [
+            {
+                "kind": "session",
+                "session_id": "session-1",
+                "href": "/agent?session=session-1",
+                "state": "working",
+                "slots": 10,
+            },
+            {
+                "kind": "session",
+                "session_id": "session-1",
+                "href": "/agent?session=session-1",
+                "state": "working",
+                "slots": 10,
+            },
+        ],
+        "sessions": [
+            {
+                "id": "session-1",
+                "realm_id": "default",
+                "status": "working",
+                "provider": "codex",
+            }
+        ],
+        "dispatches": [],
+    }
+    ledger = DispatchStore(tmp_path)
+    reservation = _record(
+        key="authority-reservation",
+        fingerprint="authority-reservation",
+        target="remote",
+        card_id="card-reserved",
+    )
+    reservation.dispatch_id = "dispatch-reserved"
+    reservation.capacity_provider = "codex"
+    ledger.put(reservation)
+
+    class IndexedReadSentinel(dict):
+        def values(self):
+            raise AssertionError("capacity snapshot scanned the full dispatch ledger")
+
+    original_records = ledger._records
+    ledger._records = IndexedReadSentinel(original_records)
+    indexed_snapshot = ledger.capacity_snapshot("remote")
+    ledger._records = original_records
+    assert indexed_snapshot["dispatch_reservations"] == 1
+    assert [item["dispatch_id"] for item in indexed_snapshot["reservation_links"]] == [
+        "dispatch-reserved"
+    ]
+
+    settings = Settings(
+        data_dir=tmp_path,
+        instance_id="authority",
+        instance_name="Authority",
+        instance_url="http://authority.test:8080",
+    )
+    ctx = MagicMock(settings=settings)
+    ctx.services = {"dispatch_store": ledger}
+    ctx.store.list_sessions.return_value = []
+    ctx.store.list_repositories.return_value = []
+    ctx.store.get_projection_head.return_value = "head"
+    ctx.store.list_cards.return_value = []
+    ctx.store.list_projects.return_value = []
+    ctx.store.get_card.return_value = None
+    ctx.store.count_cards.return_value = 0
+
+    def cached_dimension(_cache, _instance, dimension):
+        values = {
+            "reachability": {"health": "up"},
+            "activity": legacy_activity,
+            "providers": [
+                {
+                    "id": "codex",
+                    "available": True,
+                    "auth_state": "authenticated",
+                    "models": ["gpt-5"],
+                }
+            ],
+            "mcp_bootstrap": {"classification": "ready"},
+            "repositories": {"observations": [], "workspaces": []},
+            "sync": {"consistent": True},
+        }
+        return _fresh(values.get(dimension, {}))
+
+    with patch(
+        "pa.fleet.overview._cached_or_default",
+        side_effect=cached_dimension,
+    ):
+        overview = build_overview(ctx, [target], [])
+
+    overview_activity = overview["nodes"][0]["dimensions"]["activity"]["value"]
+    expected_links = [
+        {
+            "kind": "session",
+            "session_id": "session-1",
+            "href": "/agent?session=session-1",
+            "state": "working",
+            "slots": 1,
+            "consumer_id": "session:session-1",
+        },
+        {
+            "kind": "dispatch",
+            "dispatch_id": "dispatch-reserved",
+            "card_id": "card-reserved",
+            "href": "/?card=card-reserved",
+            "state": "queued",
+            "slots": 1,
+            "consumer_id": "dispatch:dispatch-reserved",
+        },
+    ]
+    assert overview_activity["capacity"]["consumed"] == 2
+    assert overview_activity["queued_prompts"] == 9
+    assert overview_activity["capacity_consumer_links"] == expected_links
+    assert overview_activity["capacity_consumer_links_omitted"] == 0
+
+    workshop = build_workshop_snapshot(ctx, overview)
+    assert workshop["bays"][0]["capacity"]["consumer_links"] == expected_links
+
+    async def probe(_ctx, _instance, dimension, *, force=False):
+        return cached_dimension(None, _instance, dimension)
+
+    request = MagicMock()
+    request.app.state.ctx = ctx
+    with patch("pa.modules.fleet.probe_dimension", side_effect=probe):
+        candidates = asyncio.run(_placement_candidates(request, [target]))
+
+    candidate_activity = candidates[0].activity["value"]
+    assert candidate_activity["capacity"]["consumed"] == 2
+    assert candidate_activity["capacity_consumer_links"] == expected_links
+    with pytest.raises(PlacementError) as raised:
+        PlacementService(RoundRobinCursorStore(tmp_path)).resolve(
+            _request(PlacementPolicy.BEST_MATCH), candidates
+        )
+    rejected = raised.value.rejected_candidates[0]
+    assert rejected["consumed"] == 2
+    assert rejected["reserved"] == 1
+    assert rejected["queued"] == 9
+    assert rejected["consumer_links"] == expected_links
+    assert rejected["consumer_links_omitted"] == 0
+
+
+def test_mixed_version_session_states_override_legacy_consumed_total() -> None:
+    counts = workload_counts(
+        {
+            "active_sessions": 10,
+            "queued_prompts": 9,
+            "capacity": {"limit": 4, "consumed": 10},
+            "sessions": [
+                {"id": "working", "status": "working"},
+                {"id": "idle", "status": "idle"},
+            ],
+        }
+    )
+    assert counts == {
+        "active": 1,
+        "queued": 9,
+        "reservations": 0,
+        "consumed": 1,
+        "semantic_source": "legacy_session_states",
+    }
 
 
 def _record(

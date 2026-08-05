@@ -87,8 +87,6 @@ def test_dispatch_resolves_instance_infers_project_and_sends_options(
                 "code",
                 "--effort",
                 "high",
-                "--profile",
-                "code",
                 "--idempotency-key",
                 "attempt-1",
             ],
@@ -108,65 +106,9 @@ def test_dispatch_resolves_instance_infers_project_and_sends_options(
         "mode_id": "code",
         "effort": "high",
         "message": "Execute this card completely.",
-        "execution_contract": {
-            "version": 1,
-            "profile": "code",
-            "confirmed": True,
-            "requirements": {},
-        },
     }
     assert "Queued durable card dispatch" in result.output
     assert "queued" in result.output
-
-
-def test_dispatch_surfaces_typed_invalid_workload_profile_error(tmp_path: Path) -> None:
-    from pa.cli.main import app
-
-    settings = _settings(tmp_path)
-    responses = [
-        _response(200, {"id": "card-1", "project_id": None}),
-        _response(
-            200,
-            [{"instance_id": "instance-1", "name": "worker", "url": "https://w"}],
-        ),
-        _response(
-            422,
-            {
-                "detail": {
-                    "code": "invalid_workload_profile",
-                    "message": "Unknown workload profile 'invalid'.",
-                    "supported_profiles": [
-                        "automatic",
-                        "repository",
-                        "research",
-                        "operations",
-                    ],
-                    "legacy_aliases": {"code": "repository"},
-                    "recoverable": True,
-                }
-            },
-        ),
-    ]
-    with (
-        patch("pa.cli.card.get_settings", return_value=settings),
-        patch("pa.cli.card.httpx.request", side_effect=responses),
-    ):
-        result = CliRunner().invoke(
-            app,
-            [
-                "card",
-                "dispatch",
-                "card-1",
-                "--instance",
-                "instance-1",
-                "--profile",
-                "invalid",
-            ],
-        )
-
-    assert result.exit_code == 1
-    assert "PA rejected the request (422)" in result.output
-    assert "invalid_workload_profile" in result.output
 
 
 def test_dispatch_duplicate_is_reported_as_recovered(tmp_path: Path) -> None:

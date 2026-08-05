@@ -14,7 +14,15 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from pa.execution.dispatch import DispatchRecord, DispatchStore
+from pa.config import Settings
+from pa.core.kernel import Kernel
+from pa.core.writer_lock import DataDirWriterLock
+from pa.execution.dispatch import (
+    DispatchReceiptConflict,
+    DispatchRecord,
+    DispatchStore,
+    DispatchStoreReadOnlyError,
+)
 from pa.execution.post_turn import (
     FollowupActionName,
     FollowupActionV1,
@@ -205,6 +213,166 @@ def test_newer_sqlite_schema_is_fenced_from_unsafe_downgrade() -> None:
 @pytest.mark.parametrize(
     "boundary,committed", [("commit_before", False), ("commit_after", True)]
 )
+def test_admission_fault_never_publishes_a_ghost_and_replays_canonical_state(
+    boundary: str, committed: bool
+) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        store = DispatchStore(root)
+        record = _record(1, state="queued", request_fingerprint="request-1")
+
+        def fail(observed: str) -> None:
+            if observed == boundary:
+                raise RuntimeError(f"killed at {boundary}")
+
+        store._fault_injector = fail
+        with pytest.raises(RuntimeError, match=boundary):
+            store.admit(record)
+
+        visible = store.get(record.dispatch_id)
+        assert (visible is not None) is committed
+        assert bool(store.latest_by_card({record.card_id or ""})) is committed
+        assert bool(
+            store.latest_by_session({record.session_id or ""}, realm_id=record.realm_id)
+        ) is committed
+        assert store.history_counts(
+            {record.card_id or ""}, realm_id=record.realm_id
+        )[record.card_id or ""] == int(committed)
+        assert store.capacity_snapshot(TARGET)["dispatch_reservations"] == int(
+            committed
+        )
+        # The caller's object is not a hidden pre-commit cache entry either.
+        assert record.events == []
+
+        store._fault_injector = None
+        canonical, duplicate = store.admit(record)
+        assert duplicate is committed
+        assert canonical == store.get(record.dispatch_id)
+        store.close()
+
+        resumed = DispatchStore(root)
+        replayed, duplicate = resumed.admit(record)
+        assert duplicate is True
+        assert replayed == canonical
+        assert resumed.storage_metrics()["rows"]["dispatches"] == 1
+
+
+def test_failed_put_keeps_all_indexes_on_the_committed_record() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        store = DispatchStore(root)
+        original = store.put(_record(1, state="failed"))
+        candidate = original.model_copy(deep=True)
+        candidate.card_id = "replacement-card"
+        candidate.session_id = "replacement-session"
+        candidate.state = "queued"
+
+        def fail(observed: str) -> None:
+            if observed == "commit_before":
+                raise RuntimeError("killed before put commit")
+
+        store._fault_injector = fail
+        with pytest.raises(RuntimeError, match="before put commit"):
+            store.put(candidate)
+
+        assert store.get(original.dispatch_id) == original
+        assert store.latest_by_card({original.card_id or ""})[original.card_id or ""] == original
+        assert store.latest_by_card({"replacement-card"}) == {}
+        assert store.by_session(original.session_id or "") == original
+        assert store.by_session("replacement-session") is None
+        store._fault_injector = None
+        store.close()
+
+        resumed = DispatchStore(root)
+        assert resumed.get(original.dispatch_id).model_dump(
+            mode="json"
+        ) == original.model_dump(mode="json")
+        assert resumed.latest_by_card({"replacement-card"}) == {}
+
+
+def test_read_only_auxiliary_kernel_boot_does_not_touch_or_wait_on_writer_wal() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        writer_lock = DataDirWriterLock(root)
+        writer_lock.acquire()
+        writer = DispatchStore(root)
+        writer.put(_record(1))
+        paths = [
+            writer.db_path,
+            Path(str(writer.db_path) + "-wal"),
+            Path(str(writer.db_path) + "-shm"),
+        ]
+
+        def content_state() -> dict[str, tuple[int, str]]:
+            return {
+                path.name: (path.stat().st_size, hashlib.sha256(path.read_bytes()).hexdigest())
+                for path in paths
+                if path.exists()
+            }
+
+        writer._conn.execute("BEGIN IMMEDIATE")
+        before = content_state()
+        try:
+            facade_started = time.perf_counter()
+            facade = DispatchStore(root, read_only=True)
+            facade_elapsed = time.perf_counter() - facade_started
+            assert facade.get("dispatch-1") is not None
+            facade.close()
+            assert facade_elapsed < 0.5
+
+            started = time.perf_counter()
+            kernel = Kernel.boot(
+                settings=Settings(
+                    data_dir=root,
+                    instance_id="auxiliary",
+                    instance_name="Auxiliary",
+                    instance_url="http://auxiliary.test:8080",
+                    agent_enabled=False,
+                    subscribed_realms=["default"],
+                    peers=[],
+                )
+            )
+            elapsed = time.perf_counter() - started
+            auxiliary = kernel.ctx.require_service("dispatch_store")
+            assert auxiliary.read_only is True
+            assert auxiliary.get("dispatch-1") is not None
+            assert auxiliary.storage_metrics()["mode"] == "read_only"
+            with pytest.raises(DispatchStoreReadOnlyError):
+                auxiliary.put(_record(2))
+            with pytest.raises(DispatchStoreReadOnlyError):
+                auxiliary.checkpoint()
+            with pytest.raises(DispatchStoreReadOnlyError):
+                auxiliary.compact()
+            auxiliary.close()
+            # A mistaken writer facade waits for SQLite's 30-second busy
+            # timeout here. Module discovery itself is comparatively expensive,
+            # so the direct facade assertion above carries the tight p99 bound.
+            assert elapsed < 25.0
+            assert content_state() == before
+        finally:
+            writer._conn.rollback()
+            writer.close()
+            writer_lock.release()
+
+
+def test_read_only_legacy_facade_never_creates_sqlite_or_migration_artifacts() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        record = _record(1)
+        source = _write_legacy(root / "dispatch_mutations.json", [record])
+
+        store = DispatchStore(root, read_only=True)
+        assert store.get(record.dispatch_id) == record
+        store.close()
+
+        assert (root / "dispatch_mutations.json").read_bytes() == source
+        assert not (root / "dispatch_mutations.db").exists()
+        assert not (root / "dispatch_mutations.json.pre-sqlite-backup").exists()
+
+
+@pytest.mark.parametrize(
+    "boundary,committed", [("commit_before", False), ("commit_after", True)]
+)
 def test_commit_kill_never_false_acknowledges_or_partially_persists(
     boundary: str, committed: bool
 ) -> None:
@@ -219,16 +387,17 @@ def test_commit_kill_never_false_acknowledges_or_partially_persists(
                 raise RuntimeError(f"killed at {boundary}")
 
         store._fault_injector = fail
+        event = _event(record, 1)
         with pytest.raises(RuntimeError, match=boundary):
-            store.ingest_progress(_event(record, 1))
+            store.ingest_progress(event)
         store._conn.close()
 
         resumed = DispatchStore(root)
         persisted = resumed.get(record.dispatch_id)
         assert persisted is not None
         assert len(persisted.progress_events) == int(committed)
-        result = resumed.ingest_progress(_event(record, 1))
-        assert result.status == ("duplicate" if committed else "accepted")
+        result = resumed.ingest_progress(event)
+        assert result.status == "accepted"
         assert len(resumed.get(record.dispatch_id).progress_events) == 1
 
 
@@ -262,17 +431,217 @@ def test_duplicate_conflict_and_late_semantics_survive_restart() -> None:
         store = DispatchStore(root)
         record = _record(1)
         store.put(record)
-        assert store.ingest_progress(_event(record, 3)).status == "accepted"
-        assert store.ingest_progress(_event(record, 1)).status == "late"
+        third = _event(record, 3)
+        first = _event(record, 1)
+        assert store.ingest_progress(third).status == "accepted"
+        assert store.ingest_progress(first).status == "late"
         conflict = _event(record, 3, key="different-payload-same-sequence")
         assert store.ingest_progress(conflict).status == "conflict"
 
         resumed = DispatchStore(root)
-        assert resumed.ingest_progress(_event(record, 3)).status == "duplicate"
-        assert resumed.ingest_progress(conflict).status == "duplicate"
+        assert resumed.ingest_progress(third).status == "accepted"
+        assert resumed.ingest_progress(conflict).status == "conflict"
         persisted = resumed.get(record.dispatch_id)
         assert [item.sequence for item in persisted.progress_events] == [1, 3]
         assert persisted.progress_conflicts == 1
+
+
+@pytest.mark.parametrize("mutation_kind", ["progress", "final", "heartbeat"])
+def test_exact_accepted_receipts_and_payload_conflicts_survive_restart(
+    mutation_kind: str,
+) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        store = DispatchStore(root)
+        record = _record(1)
+        store.put(record)
+        if mutation_kind == "heartbeat":
+            payload = _heartbeat(record, 1)
+            ingest = store.ingest_heartbeat
+        else:
+            payload = _event(
+                record,
+                1,
+                kind=(
+                    ProgressKind.FINAL
+                    if mutation_kind == "final"
+                    else ProgressKind.CHECKPOINT
+                ),
+            )
+            ingest = store.ingest_progress
+
+        accepted = ingest(payload)
+        assert accepted.accepted is True
+        assert ingest(payload) == accepted
+        changed = payload.model_copy(deep=True)
+        changed.summary = "same key, different canonical payload"
+        with pytest.raises(DispatchReceiptConflict, match="different payload"):
+            ingest(changed)
+        store.close()
+
+        resumed = DispatchStore(root)
+        resumed_ingest = (
+            resumed.ingest_heartbeat
+            if mutation_kind == "heartbeat"
+            else resumed.ingest_progress
+        )
+        assert resumed_ingest(payload) == accepted
+        with pytest.raises(DispatchReceiptConflict, match="different payload"):
+            resumed_ingest(changed)
+
+
+def test_final_evidence_is_never_coalesced_with_a_matching_checkpoint() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        store = DispatchStore(Path(tmp))
+        record = _record(1)
+        store.put(record)
+        checkpoint = _event(record, 1)
+        final = _event(record, 2, kind=ProgressKind.FINAL)
+        final.summary = checkpoint.summary
+        final.occurred_at = checkpoint.occurred_at + timedelta(seconds=1)
+
+        assert store.ingest_progress(checkpoint).status == "accepted"
+        result = store.ingest_progress(final)
+        assert result.status == "accepted"
+        assert [event.kind for event in store.get(record.dispatch_id).progress_events] == [
+            ProgressKind.CHECKPOINT,
+            ProgressKind.FINAL,
+        ]
+
+
+def test_exact_rejected_receipt_and_payload_conflict_survive_restart() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        store = DispatchStore(root)
+        record = _record(1)
+        store.put(record)
+        accepted = _event(record, 1)
+        rejected = _event(record, 1, key="conflicting-sequence-receipt")
+        assert store.ingest_progress(accepted).accepted is True
+
+        result = store.ingest_progress(rejected)
+        assert result.accepted is False
+        assert result.status == "conflict"
+        assert store.ingest_progress(rejected) == result
+        changed = rejected.model_copy(deep=True)
+        changed.summary = "changed rejected payload"
+        with pytest.raises(DispatchReceiptConflict, match="different payload"):
+            store.ingest_progress(changed)
+        store.close()
+
+        resumed = DispatchStore(root)
+        assert resumed.ingest_progress(rejected) == result
+        with pytest.raises(DispatchReceiptConflict, match="different payload"):
+            resumed.ingest_progress(changed)
+
+
+def test_control_receipt_replays_exact_result_and_fences_changed_parameters() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        store = DispatchStore(root)
+        record = store.put(
+            _record(
+                1,
+                state="waiting_capacity",
+                queue_admitted_at=datetime.now(UTC),
+            )
+        )
+        key = "reprioritize-receipt"
+        canonical = store.reprioritize(
+            record,
+            priority=5,
+            principal_id="user:operator",
+            idempotency_key=key,
+        )
+        assert (
+            store.reprioritize(
+                record,
+                priority=5,
+                principal_id="user:operator",
+                idempotency_key=key,
+            )
+            == canonical
+        )
+        with pytest.raises(DispatchReceiptConflict, match="different parameters"):
+            store.reprioritize(
+                record,
+                priority=4,
+                principal_id="user:operator",
+                idempotency_key=key,
+            )
+        store.close()
+
+        resumed = DispatchStore(root)
+        assert (
+            resumed.reprioritize(
+                record,
+                priority=5,
+                principal_id="user:operator",
+                idempotency_key=key,
+            )
+            == canonical
+        )
+        with pytest.raises(DispatchReceiptConflict, match="different parameters"):
+            resumed.reprioritize(
+                record,
+                priority=5,
+                principal_id="user:different",
+                idempotency_key=key,
+            )
+
+
+@pytest.mark.parametrize(
+    "boundary,committed", [("commit_before", False), ("commit_after", True)]
+)
+def test_control_receipt_fault_boundary_replays_only_committed_result(
+    boundary: str, committed: bool
+) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        store = DispatchStore(root)
+        record = store.put(
+            _record(
+                1,
+                state="waiting_capacity",
+                queue_admitted_at=datetime.now(UTC),
+            )
+        )
+        key = "faulted-control-receipt"
+
+        def fail(observed: str) -> None:
+            if observed == boundary:
+                raise RuntimeError(f"killed at {boundary}")
+
+        store._fault_injector = fail
+        with pytest.raises(RuntimeError, match=boundary):
+            store.reprioritize(
+                record,
+                priority=5,
+                principal_id="user:operator",
+                idempotency_key=key,
+            )
+        assert store.get(record.dispatch_id).requested_priority == (5 if committed else 0)
+
+        store._fault_injector = None
+        canonical = store.reprioritize(
+            record,
+            priority=5,
+            principal_id="user:operator",
+            idempotency_key=key,
+        )
+        assert canonical.requested_priority == 5
+        store.close()
+
+        resumed = DispatchStore(root)
+        assert (
+            resumed.reprioritize(
+                record,
+                priority=5,
+                principal_id="user:operator",
+                idempotency_key=key,
+            )
+            == canonical
+        )
 
 
 def test_one_heartbeat_is_delta_only_and_never_rewrites_legacy_or_history() -> None:

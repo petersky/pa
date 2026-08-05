@@ -228,7 +228,9 @@ class GitHubCapability(BaseModel):
             }
         except ValueError:
             return False
-        return not (allowed and identity not in allowed)
+        if allowed and identity not in allowed:
+            return False
+        return True
 
 
 class GateResult(BaseModel):
@@ -248,5 +250,3 @@ class LeaseGrant(BaseModel):
     fence_token: int = 0
     expires_at: datetime | None = None
     reason: str | None = None
-    terminal_status: PRWatchStatus | None = None
-    lease_seconds_remaining: float | None = Field(default=None, ge=0)
