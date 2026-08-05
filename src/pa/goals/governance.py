@@ -3304,6 +3304,19 @@ class GoalGovernanceService:
     def _validate_goal_context(
         self, goal: Goal, context: GovernanceMutationContext
     ) -> None:
+        if goal.control_authority_instance_id is None:
+            raise GoalGovernanceConflict(
+                "goal has no durable control authority; rebuild legacy history before governance"
+            )
+        if context.authority_instance_id != goal.control_authority_instance_id:
+            raise GoalGovernanceConflict(
+                "stale or unauthorized control authority fencing token; "
+                "route governance through the durable control authority"
+            )
+        if self.instance_id != goal.control_authority_instance_id:
+            raise GoalGovernanceConflict(
+                "goal governance must execute on the durable control authority instance"
+            )
         if context.goal_version is not None and context.goal_version != goal.version:
             raise GoalGovernanceConflict(
                 f"expected goal version {context.goal_version}, current version {goal.version}"

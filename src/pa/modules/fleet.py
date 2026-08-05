@@ -6745,7 +6745,11 @@ def _validate_goal_dispatch_provenance(
             detail={"code": "goal_placement_mismatch", "recoverable": False},
         )
     goal, governance = _goal_dispatch_services(ctx, provenance.goal_id)
-    if not goal.lease.active() or goal.lease.holder_instance_id != selected_authority:
+    if (
+        goal.control_authority_instance_id != selected_authority
+        or not goal.lease.active()
+        or goal.lease.holder_instance_id != selected_authority
+    ):
         raise HTTPException(
             status_code=409,
             detail={"code": "stale_goal_fence", "recoverable": False},

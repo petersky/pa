@@ -426,7 +426,8 @@ class GoalSupervisor:
         if not current.lease.active():
             raise GoalConflict("goal controller lease expired before its side effect")
         if (
-            current.lease.holder_instance_id != self.instance_id
+            current.control_authority_instance_id != self.instance_id
+            or current.lease.holder_instance_id != self.instance_id
             or current.lease.fencing_token != goal.lease.fencing_token
         ):
             raise GoalConflict("goal controller lost its fence before its side effect")
@@ -448,6 +449,8 @@ class GoalSupervisor:
 
     def _claim(self, goal: Goal) -> Goal | None:
         now = self.now()
+        if goal.control_authority_instance_id != self.instance_id:
+            return None
         if goal.lease.active(now):
             return goal if goal.lease.holder_instance_id == self.instance_id else None
         return self.service.acquire_lease(

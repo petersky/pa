@@ -139,7 +139,22 @@ def goal_projection_requires_legacy_id_rebuild(conn) -> bool:
             payload = json.loads(row["payload"])
         except TypeError, json.JSONDecodeError:
             continue
-        normalized = normalize_legacy_goal_payload(payload, fallback_goal_id=row["id"])
+        first_event = conn.execute(
+            """SELECT authority_instance_id FROM durable_goal_events
+               WHERE goal_id=? ORDER BY version, created_at, id LIMIT 1""",
+            (row["id"],),
+        ).fetchone()
+        control_authority = payload.get("control_authority_instance_id")
+        if first_event and not (
+            isinstance(control_authority, str) and control_authority.strip()
+        ):
+            # Rebuild from the immutable CardEvent so a SQLite-coerced legacy
+            # authority value is never mistaken for authenticated provenance.
+            return True
+        normalized = normalize_legacy_goal_payload(
+            payload,
+            fallback_goal_id=row["id"],
+        )
         if (
             normalized != payload
             or _canonical_goal_projection_id(normalized, row["id"]) != row["id"]
@@ -282,10 +297,23 @@ def apply_goal_event(projection, event) -> None:
     record = event.payload.get("goal_event") or {}
     from pa.goals.models import normalize_legacy_goal_payload
 
+    claimed_authority = record.get("authority_instance_id")
+    event_authority = (
+        claimed_authority
+        if isinstance(claimed_authority, str) and claimed_authority.strip()
+        else event.author_instance
+    )
+    raw_goal = event.payload.get("goal") or {}
+    has_explicit_control_authority = bool(
+        isinstance(raw_goal, dict)
+        and isinstance(raw_goal.get("control_authority_instance_id"), str)
+        and raw_goal["control_authority_instance_id"].strip()
+    )
     goal = normalize_legacy_goal_payload(
-        event.payload.get("goal") or {},
+        raw_goal,
         fallback_goal_id=record.get("goal_id"),
         legacy_entity_seed=event.id,
+        legacy_authority_instance_id=event_authority,
     )
     goal_id = _canonical_goal_projection_id(goal, record.get("goal_id"))
     if goal_id is None:
@@ -296,6 +324,11 @@ def apply_goal_event(projection, event) -> None:
         existing = conn.execute(
             "SELECT version, payload FROM durable_goals WHERE id=?", (goal_id,)
         ).fetchone()
+        if not has_explicit_control_authority:
+            legacy_holder = (goal.get("lease") or {}).get("holder_instance_id")
+            if isinstance(legacy_holder, str) and legacy_holder.strip():
+                # A legacy lease takeover was the only durable authority signal.
+                goal["control_authority_instance_id"] = legacy_holder
         accepted = _accept_projection_payload(
             conn,
             realm_id=event.realm_id,
@@ -351,7 +384,7 @@ def apply_goal_event(projection, event) -> None:
                 goal_id,
                 record.get("event_type", "goal.updated"),
                 record.get("actor_principal", event.author_principal),
-                record.get("authority_instance_id", event.author_instance),
+                event_authority,
                 int(record.get("policy_revision", 1)),
                 record.get("idempotency_key", event.id),
                 int(record.get("version", goal.get("version", 1))),

@@ -33,6 +33,7 @@ def normalize_legacy_goal_payload(
     *,
     fallback_goal_id: Any = None,
     legacy_entity_seed: str | None = None,
+    legacy_authority_instance_id: str | None = None,
 ) -> Any:
     """Canonicalize blank identifiers only while decoding a durable legacy event."""
 
@@ -72,6 +73,15 @@ def normalize_legacy_goal_payload(
     if "id" not in payload or _blank_reference(payload.get("id")):
         payload["id"] = raw_goal_id
     goal_id = str(raw_goal_id)
+    if (
+        "control_authority_instance_id" not in payload
+        or payload.get("control_authority_instance_id") is None
+        or _blank_reference(payload.get("control_authority_instance_id"))
+    ) and (
+        isinstance(legacy_authority_instance_id, str)
+        and legacy_authority_instance_id.strip()
+    ):
+        payload["control_authority_instance_id"] = legacy_authority_instance_id
 
     def normalize_entities(field: str, kind: str) -> list[str] | None:
         replacements: list[str] = []
@@ -162,7 +172,12 @@ def normalize_legacy_goal_payload(
             rewritten.update(blank_items)
         return rewritten
 
-    clear_optional_blank(payload, "project_id", "parent_goal_id")
+    clear_optional_blank(
+        payload,
+        "project_id",
+        "parent_goal_id",
+        "control_authority_instance_id",
+    )
     drop_blank_items(payload, "linked_card_ids", "linked_dispatch_ids")
     policy = payload.get("policy")
     drop_blank_items(policy, "allowed_provider_ids")
@@ -773,6 +788,7 @@ class Goal(BaseModel):
     project_id: GoalReferenceId | None = None
     parent_goal_id: GoalReferenceId | None = None
     owner_principal: GoalReferenceId = "user:local"
+    control_authority_instance_id: GoalReferenceId | None = None
     creation_source: str = "operator"
     objective: str = Field(min_length=1)
     motivation: str = ""
@@ -803,6 +819,14 @@ class Goal(BaseModel):
 
     @model_validator(mode="after")
     def validate_references(self) -> Goal:
+        if (
+            self.control_authority_instance_id
+            and self.lease.holder_instance_id
+            and self.control_authority_instance_id != self.lease.holder_instance_id
+        ):
+            raise ValueError(
+                "active goal lease holder must be the durable control authority"
+            )
         criterion_ids = [criterion.id for criterion in self.criteria]
         if len(criterion_ids) != len(set(criterion_ids)):
             raise ValueError("criterion ids must be unique")

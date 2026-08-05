@@ -246,10 +246,15 @@ class GoalService:
             goal = self.get(duplicate["goal_id"], realm_id=data.realm_id)
             if goal:
                 return goal
+        if context.authority_instance_id != self.instance_id:
+            raise GoalConflict(
+                "goal creation must execute on its authenticated control authority instance"
+            )
         create = data.model_copy(deep=True)
         create.owner_principal = context.actor_principal
         create.policy.authored_by = context.actor_principal
         goal = Goal(**create.model_dump(mode="python"))
+        goal.control_authority_instance_id = context.authority_instance_id
         return self._commit(
             goal,
             "goal.created",
@@ -630,8 +635,34 @@ class GoalService:
         self, goal_id: str, wakeup: GoalWakeup | None, context: GoalMutationContext
     ) -> Goal:
         def mutate(goal: Goal) -> dict[str, Any]:
-            goal.wakeup = wakeup
-            return {"wakeup": wakeup.model_dump(mode="json") if wakeup else None}
+            candidate = wakeup.model_copy(deep=True) if wakeup else None
+            eligible = sorted(set(candidate.eligible_instance_ids)) if candidate else []
+            if candidate:
+                candidate.eligible_instance_ids = eligible
+            previous_authority = goal.control_authority_instance_id
+            transferred = bool(
+                candidate
+                and eligible
+                and previous_authority
+                and previous_authority not in eligible
+            )
+            if transferred:
+                goal.control_authority_instance_id = eligible[0]
+                goal.lease.holder_instance_id = None
+                goal.lease.expires_at = None
+                goal.lease.claim_id = None
+                goal.lease.acquired_at = None
+                goal.lease.fencing_token += 1
+                candidate.claimed_by_instance_id = None
+                candidate.claimed_at = None
+            goal.wakeup = candidate
+            return {
+                "wakeup": candidate.model_dump(mode="json") if candidate else None,
+                "previous_control_authority_instance_id": previous_authority,
+                "control_authority_instance_id": goal.control_authority_instance_id,
+                "authority_transferred": transferred,
+                "fencing_token": goal.lease.fencing_token,
+            }
 
         return self._mutate(
             goal_id,
@@ -792,7 +823,23 @@ class GoalService:
             raise GoalConflict(
                 "mutation was not authorized by the active policy revision"
             )
-        if require_fence and goal.lease.active():
+        if (
+            goal.control_authority_instance_id
+            and context.authority_instance_id != goal.control_authority_instance_id
+        ):
+            raise GoalConflict(
+                "stale or unauthorized control authority fencing token; "
+                "route the mutation through the durable control authority"
+            )
+        if goal.control_authority_instance_id is None:
+            raise GoalConflict(
+                "goal has no durable control authority; rebuild legacy history before mutation"
+            )
+        if self.instance_id != goal.control_authority_instance_id:
+            raise GoalConflict(
+                "goal mutation must execute on the durable control authority instance"
+            )
+        if require_fence and goal.lease.active(self._clock()):
             self._check_fence(goal, context)
         if require_fence and context.actor_principal.startswith("service:"):
             if not goal.lease.active(self._clock()):

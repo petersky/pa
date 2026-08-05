@@ -58,6 +58,7 @@ from pa.goals.models import (
     GoalWakeup,
     RequestOperatorAction,
 )
+from pa.goals.projection import goal_projection_requires_legacy_id_rebuild
 from pa.goals.service import GoalConflict, GoalService
 from pa.sync.event_log import EventLog
 from pa.sync.object_store import ObjectStore
@@ -2211,6 +2212,23 @@ class GoalGovernanceTests(unittest.TestCase):
             reservation_id = decision.reservation_id or ""
 
             clock[0] += timedelta(seconds=61)
+            handed_off = service_a.schedule_wakeup(
+                goal.id,
+                GoalWakeup(
+                    wake_at=clock[0],
+                    reason="authority-authored fail-closed handoff",
+                    eligible_instance_ids=["instance-b"],
+                ),
+                GoalMutationContext(
+                    actor_principal="user:operator",
+                    authority_instance_id="instance-a",
+                    idempotency_key="handoff-instance-b",
+                    expected_version=goal.version,
+                    policy_revision=1,
+                ),
+            )
+            self.assertEqual(handed_off.control_authority_instance_id, "instance-b")
+            self.assertFalse(handed_off.lease.active(clock[0]))
             projections["instance-b"].rebuild_from_log("default")
             service_b = GoalService(
                 projections["instance-b"], "instance-b", clock=lambda: clock[0]
@@ -2294,7 +2312,7 @@ class GoalGovernanceTests(unittest.TestCase):
             )
             goal_c = service_c.get(goal.id)
             assert goal_c is not None
-            with self.assertRaisesRegex(GoalConflict, "not eligible"):
+            with self.assertRaisesRegex(GoalConflict, "control authority"):
                 service_c.acquire_lease(
                     goal.id,
                     GoalMutationContext(
@@ -2305,6 +2323,225 @@ class GoalGovernanceTests(unittest.TestCase):
                         policy_revision=1,
                     ),
                 )
+
+    def test_partitioned_stores_fail_closed_to_one_durable_control_authority(
+        self,
+    ) -> None:
+        """Independent projections cannot self-elect the same logical fence."""
+
+        clock = datetime(2026, 8, 5, tzinfo=UTC)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            projections: dict[str, CardProjection] = {}
+            services: dict[str, GoalService] = {}
+            for instance in ("instance-a", "instance-b", "instance-c"):
+                instance_root = root / instance
+                log = EventLog(
+                    ObjectStore(instance_root / "objects"),
+                    instance_root,
+                    instance,
+                )
+                projections[instance] = CardProjection(instance_root / "pa.db", log)
+                services[instance] = GoalService(
+                    projections[instance], instance, clock=lambda: clock
+                )
+
+            goal = services["instance-a"].create(
+                self._goal_data("Exactly one partitioned controller"),
+                GoalMutationContext(
+                    actor_principal="user:operator",
+                    authority_instance_id="instance-a",
+                    idempotency_key="partition-create",
+                    expected_version=0,
+                    policy_revision=1,
+                ),
+            )
+
+            def replicate(snapshot: Goal, *, event_id: str) -> None:
+                for instance in ("instance-b", "instance-c"):
+                    projections[instance].commit_event(
+                        CardEvent(
+                            id=f"{event_id}:{instance}",
+                            type=EventType.GOAL_UPSERTED,
+                            realm_id=snapshot.realm_id,
+                            author_principal="user:operator",
+                            author_instance="instance-a",
+                            payload={
+                                "goal": snapshot.model_dump(mode="json"),
+                                "goal_event": {
+                                    "goal_id": snapshot.id,
+                                    "event_type": event_id,
+                                    "actor_principal": "user:operator",
+                                    "authority_instance_id": "instance-a",
+                                    "policy_revision": 1,
+                                    "idempotency_key": event_id,
+                                    "version": snapshot.version,
+                                    "operation_fingerprint": "partition-test",
+                                    "payload": {},
+                                },
+                            },
+                        )
+                    )
+
+            replicate(goal, event_id="partition-seed")
+            for instance in ("instance-b", "instance-c"):
+                replica_goal = services[instance].get(goal.id)
+                assert replica_goal is not None
+                self.assertEqual(
+                    replica_goal.control_authority_instance_id, "instance-a"
+                )
+                with self.assertRaisesRegex(GoalConflict, "control authority"):
+                    services[instance].acquire_lease(
+                        goal.id,
+                        GoalMutationContext(
+                            actor_principal=f"service:goal-supervisor:{instance}",
+                            authority_instance_id=instance,
+                            idempotency_key=f"partition-claim:{instance}",
+                            expected_version=replica_goal.version,
+                            policy_revision=1,
+                        ),
+                    )
+
+            # Even a genuine authority-A credential cannot turn a partitioned
+            # target-B projection into a second authority-side writer.
+            replica_b = services["instance-b"].get(goal.id)
+            assert replica_b is not None
+            with self.assertRaisesRegex(GoalConflict, "execute on.*control authority"):
+                services["instance-b"].acquire_lease(
+                    goal.id,
+                    GoalMutationContext(
+                        actor_principal="service:goal-executor:assigned",
+                        authority_instance_id="instance-a",
+                        idempotency_key="partition-valid-a-credential-on-b",
+                        expected_version=replica_b.version,
+                        policy_revision=1,
+                    ),
+                )
+            self.assertEqual(
+                [item["event_type"] for item in services["instance-b"].events(goal.id)],
+                ["partition-seed"],
+            )
+
+            leased_a = services["instance-a"].acquire_lease(
+                goal.id,
+                GoalMutationContext(
+                    actor_principal="service:goal-supervisor:instance-a",
+                    authority_instance_id="instance-a",
+                    idempotency_key="partition-claim:instance-a",
+                    expected_version=goal.version,
+                    policy_revision=1,
+                ),
+            )
+            governance_a = GoalGovernanceService(
+                projections["instance-a"],
+                "instance-a",
+                services["instance-a"],
+                clock=lambda: clock,
+            )
+            state_a, reserved_a = governance_a.authorize_action(
+                goal.id,
+                GoalActionRequest(action_class="code.test"),
+                GovernanceMutationContext(
+                    actor_principal="service:goal-supervisor:instance-a",
+                    authority_instance_id="instance-a",
+                    idempotency_key="partition-reserve:a",
+                    expected_version=0,
+                    policy_revision=1,
+                    goal_version=leased_a.version,
+                    fencing_token=leased_a.lease.fencing_token,
+                ),
+            )
+            governance_a.apply_action(
+                goal.id,
+                reserved_a.reservation_id or "",
+                GovernanceMutationContext(
+                    actor_principal="service:goal-supervisor:instance-a",
+                    authority_instance_id="instance-a",
+                    idempotency_key="partition-apply:a",
+                    expected_version=state_a.version,
+                    policy_revision=1,
+                    goal_version=leased_a.version,
+                    fencing_token=leased_a.lease.fencing_token,
+                ),
+            )
+            effects = ["epoch-a:instance-a"]
+
+            handed_off = services["instance-a"].schedule_wakeup(
+                goal.id,
+                GoalWakeup(
+                    wake_at=clock,
+                    reason="authority A durably hands control to B",
+                    eligible_instance_ids=["instance-b"],
+                ),
+                GoalMutationContext(
+                    actor_principal="user:operator",
+                    authority_instance_id="instance-a",
+                    idempotency_key="partition-handoff:b",
+                    expected_version=leased_a.version,
+                    policy_revision=1,
+                    fencing_token=leased_a.lease.fencing_token,
+                ),
+            )
+            replicate(handed_off, event_id="partition-handoff")
+
+            with self.assertRaisesRegex(GoalConflict, "control authority"):
+                services["instance-a"].acquire_lease(
+                    goal.id,
+                    GoalMutationContext(
+                        actor_principal="service:goal-supervisor:instance-a",
+                        authority_instance_id="instance-a",
+                        idempotency_key="partition-stale-a",
+                        expected_version=handed_off.version,
+                        policy_revision=1,
+                    ),
+                )
+
+            goal_b = services["instance-b"].get(goal.id)
+            assert goal_b is not None
+            leased_b = services["instance-b"].acquire_lease(
+                goal.id,
+                GoalMutationContext(
+                    actor_principal="service:goal-supervisor:instance-b",
+                    authority_instance_id="instance-b",
+                    idempotency_key="partition-claim:b",
+                    expected_version=goal_b.version,
+                    policy_revision=1,
+                ),
+            )
+            governance_b = GoalGovernanceService(
+                projections["instance-b"],
+                "instance-b",
+                services["instance-b"],
+                clock=lambda: clock,
+            )
+            state_b, reserved_b = governance_b.authorize_action(
+                goal.id,
+                GoalActionRequest(action_class="code.test"),
+                GovernanceMutationContext(
+                    actor_principal="service:goal-supervisor:instance-b",
+                    authority_instance_id="instance-b",
+                    idempotency_key="partition-reserve:b",
+                    expected_version=0,
+                    policy_revision=1,
+                    goal_version=leased_b.version,
+                    fencing_token=leased_b.lease.fencing_token,
+                ),
+            )
+            governance_b.apply_action(
+                goal.id,
+                reserved_b.reservation_id or "",
+                GovernanceMutationContext(
+                    actor_principal="service:goal-supervisor:instance-b",
+                    authority_instance_id="instance-b",
+                    idempotency_key="partition-apply:b",
+                    expected_version=state_b.version,
+                    policy_revision=1,
+                    goal_version=leased_b.version,
+                    fencing_token=leased_b.lease.fencing_token,
+                ),
+            )
+            effects.append("epoch-b:instance-b")
+            self.assertEqual(effects, ["epoch-a:instance-a", "epoch-b:instance-b"])
 
     def test_equal_version_conflicts_choose_the_same_payload_in_any_replay_order(
         self,
@@ -2321,13 +2558,18 @@ class GoalGovernanceTests(unittest.TestCase):
                 deep=True, update={"objective": "Canonical payload B"}
             )
 
-            def event(event_id: str, value: Goal, offset: int) -> CardEvent:
+            def event(
+                event_id: str,
+                value: Goal,
+                offset: int,
+                authority_instance_id: str,
+            ) -> CardEvent:
                 return CardEvent(
                     id=event_id,
                     type=EventType.GOAL_UPSERTED,
                     realm_id=value.realm_id,
                     author_principal="agent:replay",
-                    author_instance="instance-a",
+                    author_instance=authority_instance_id,
                     timestamp=now + timedelta(seconds=offset),
                     payload={
                         "goal": value.model_dump(mode="json"),
@@ -2335,7 +2577,7 @@ class GoalGovernanceTests(unittest.TestCase):
                             "goal_id": value.id,
                             "event_type": "goal.replayed",
                             "actor_principal": "agent:replay",
-                            "authority_instance_id": "instance-a",
+                            "authority_instance_id": authority_instance_id,
                             "policy_revision": value.policy.revision,
                             "idempotency_key": event_id,
                             "version": value.version,
@@ -2343,8 +2585,8 @@ class GoalGovernanceTests(unittest.TestCase):
                     },
                 )
 
-            event_a = event("equal-version-event-a", goal, 1)
-            event_b = event("equal-version-event-b", competing, 2)
+            event_a = event("equal-version-event-a", goal, 1, "instance-a")
+            event_b = event("equal-version-event-b", competing, 2, "instance-b")
             first_projection.apply_event(event_a)
             first_projection.apply_event(event_b)
             second_projection.apply_event(event_b)
@@ -2358,6 +2600,51 @@ class GoalGovernanceTests(unittest.TestCase):
             )
             self.assertEqual(first.conflicts(goal.id), second.conflicts(goal.id))
             self.assertEqual(len(first.conflicts(goal.id)), 1)
+
+    def test_numeric_legacy_authority_falls_back_to_event_provenance_once(self) -> None:
+        now = datetime(2026, 8, 5, tzinfo=UTC)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            log = EventLog(ObjectStore(root / "objects"), root, "instance-valid")
+            projection = CardProjection(root / "pa.db", log)
+            goal = Goal(**self._goal_data("Reject numeric authority coercion").model_dump())
+            projection.apply_event(
+                CardEvent(
+                    id="numeric-authority-event",
+                    type=EventType.GOAL_UPSERTED,
+                    realm_id=goal.realm_id,
+                    author_principal="agent:legacy",
+                    author_instance="instance-valid",
+                    timestamp=now,
+                    payload={
+                        "goal": goal.model_dump(mode="json"),
+                        "goal_event": {
+                            "goal_id": goal.id,
+                            "event_type": "goal.legacy_numeric_authority",
+                            "actor_principal": "agent:legacy",
+                            "authority_instance_id": 123,
+                            "policy_revision": 1,
+                            "idempotency_key": "numeric-authority-event",
+                            "version": goal.version,
+                        },
+                    },
+                )
+            )
+            restored = GoalService(projection, "instance-valid").get(goal.id)
+            assert restored is not None
+            self.assertEqual(
+                restored.control_authority_instance_id, "instance-valid"
+            )
+            with projection._conn() as conn:
+                event = conn.execute(
+                    """SELECT authority_instance_id,
+                              typeof(authority_instance_id) AS storage_type
+                       FROM durable_goal_events WHERE id=?""",
+                    ("numeric-authority-event",),
+                ).fetchone()
+                self.assertEqual(event["authority_instance_id"], "instance-valid")
+                self.assertEqual(event["storage_type"], "text")
+                self.assertFalse(goal_projection_requires_legacy_id_rebuild(conn))
 
     def test_legacy_unfenced_provider_run_migrates_to_cancelled_recoverable_state(
         self,

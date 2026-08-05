@@ -58,6 +58,7 @@ from pa.goals.models import (
     GoalSupervisionCheckpoint,
     GoalTransition,
     GoalWorkPackage,
+    GoalWakeup,
     ProposalStatus,
 )
 from pa.goals.service import GoalService
@@ -913,14 +914,29 @@ class GoalDispatchProvenanceTests(unittest.TestCase):
                     fencing_token=goal.lease.fencing_token,
                 ),
             )
-            goals.acquire_lease(
+            handed_off = goals.schedule_wakeup(
+                goal.id,
+                GoalWakeup(
+                    wake_at=datetime.now(UTC),
+                    reason="authority-authored takeover",
+                    eligible_instance_ids=["instance-b"],
+                ),
+                GoalMutationContext(
+                    actor_principal="user:operator",
+                    authority_instance_id="instance-a",
+                    idempotency_key="handoff-b",
+                    expected_version=released.version,
+                    policy_revision=released.policy.revision,
+                ),
+            )
+            GoalService(goals.store, "instance-b").acquire_lease(
                 goal.id,
                 GoalMutationContext(
                     actor_principal="service:goal-supervisor:instance-b",
                     authority_instance_id="instance-b",
                     idempotency_key="claim-b",
-                    expected_version=released.version,
-                    policy_revision=released.policy.revision,
+                    expected_version=handed_off.version,
+                    policy_revision=handed_off.policy.revision,
                 ),
                 ttl_seconds=600,
             )
@@ -1036,14 +1052,29 @@ class GoalDispatchProvenanceTests(unittest.TestCase):
                         fencing_token=current.lease.fencing_token,
                     ),
                 )
-                goals.acquire_lease(
+                handed_off = goals.schedule_wakeup(
+                    goal.id,
+                    GoalWakeup(
+                        wake_at=datetime.now(UTC),
+                        reason="authority-authored pre-ledger takeover",
+                        eligible_instance_ids=["instance-b"],
+                    ),
+                    GoalMutationContext(
+                        actor_principal="user:operator",
+                        authority_instance_id="instance-a",
+                        idempotency_key="preledger-handoff-b",
+                        expected_version=released.version,
+                        policy_revision=released.policy.revision,
+                    ),
+                )
+                GoalService(goals.store, "instance-b").acquire_lease(
                     goal.id,
                     GoalMutationContext(
                         actor_principal="service:goal-supervisor:instance-b",
                         authority_instance_id="instance-b",
                         idempotency_key="preledger-claim-b",
-                        expected_version=released.version,
-                        policy_revision=released.policy.revision,
+                        expected_version=handed_off.version,
+                        policy_revision=handed_off.policy.revision,
                     ),
                     ttl_seconds=600,
                 )
