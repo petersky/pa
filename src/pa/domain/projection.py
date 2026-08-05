@@ -377,7 +377,6 @@ class CardProjection:
         card_cols = {
             row[1] for row in conn.execute("PRAGMA table_info(cards)").fetchall()
         }
-        adding_summary_schema = "summary" not in card_cols
         if "project_id" not in card_cols:
             conn.execute("ALTER TABLE cards ADD COLUMN project_id TEXT")
         for col, decl in (
@@ -406,21 +405,17 @@ class CardProjection:
             "ON cards(summary_last_attempted_at DESC) "
             "WHERE summary_failure_code IS NOT NULL"
         )
-        if adding_summary_schema:
-            for row in conn.execute(
-                "SELECT id, body, summary, updated_at FROM cards"
-            ).fetchall():
-                if not (row["summary"] or "").strip():
-                    conn.execute(
-                        """
-                        UPDATE cards
-                        SET summary='', summary_source='fallback',
-                            summary_updated_at=NULL, summary_stale=1,
-                            summary_status='stale'
-                        WHERE id=?
-                        """,
-                        (row["id"],),
-                    )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_cards_summary_worker "
+            "ON cards(summary_status, summary_source, summary_next_attempt_at, "
+            "summary_attempt_count, updated_at) "
+            "WHERE summary_source != 'manual'"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_cards_summary_migration_page "
+            "ON cards(updated_at DESC, id DESC) "
+            "WHERE summary_source != 'manual' AND summary != ''"
+        )
 
         notification_cols = {
             row[1]
@@ -1759,6 +1754,89 @@ class CardProjection:
                 """
             ).fetchone()
         return self._row_to_card(row) if row else None
+
+    def list_summary_worker_candidates(
+        self,
+        *,
+        now: datetime,
+        max_attempts: int,
+        limit: int,
+        legacy_only: bool = False,
+        include_disabled: bool = False,
+    ) -> list[Card]:
+        """Return a bounded SQL projection of due retry and fallback work."""
+        if limit <= 0:
+            return []
+        retryable_source = " AND summary_source = 'fallback'" if legacy_only else ""
+        disabled_clause = ""
+        if include_disabled:
+            disabled_clause = " OR summary_status = 'disabled'"
+            if legacy_only:
+                disabled_clause = (
+                    " OR (summary_status = 'disabled' AND summary_source = 'fallback')"
+                )
+        query = f"""
+            SELECT * FROM cards
+            WHERE summary_source != 'manual'
+              AND COALESCE(summary_attempt_count, 0) < ?
+              AND (summary_next_attempt_at IS NULL OR summary_next_attempt_at <= ?)
+              AND (
+                (summary_status IN ('pending', 'stale'){retryable_source})
+                OR (
+                  summary_source = 'fallback'
+                  AND (
+                    summary_status = 'ready'
+                    OR (
+                      summary_status = 'failed'
+                      AND (
+                        summary_failure_code IS NULL
+                        OR summary_failure_code = 'unconfigured'
+                      )
+                    )
+                  )
+                )
+                {disabled_clause}
+              )
+            ORDER BY
+              CASE WHEN summary_next_attempt_at IS NULL THEN 0 ELSE 1 END,
+              summary_next_attempt_at ASC,
+              updated_at ASC,
+              id ASC
+            LIMIT ?
+        """
+        with self._conn() as conn:
+            rows = conn.execute(
+                query,
+                (max(0, max_attempts), now.isoformat(), max(0, limit)),
+            ).fetchall()
+        return [self._row_to_card(row) for row in rows]
+
+    def list_summary_migration_page(
+        self,
+        *,
+        limit: int,
+        cursor: tuple[datetime, str] | None = None,
+    ) -> list[Card]:
+        """Page non-manual summaries for bounded legacy-prefix detection."""
+        if limit <= 0:
+            return []
+        query = """
+            SELECT * FROM cards
+            WHERE summary_source != 'manual' AND summary != ''
+        """
+        params: list[object] = []
+        if cursor:
+            updated_at, card_id = cursor
+            query += """
+              AND (updated_at < ? OR (updated_at = ? AND id < ?))
+            """
+            stamp = updated_at.isoformat()
+            params.extend((stamp, stamp, card_id))
+        query += " ORDER BY updated_at DESC, id DESC LIMIT ?"
+        params.append(max(0, limit))
+        with self._conn() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [self._row_to_card(row) for row in rows]
 
     def get_notification(
         self, notification_id: str, *, realm_id: str | None = None

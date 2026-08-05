@@ -34,8 +34,9 @@ Each provider call consumes one durable attempt. Only timeouts, connection failu
 HTTP 408/425/429, and server errors are retried. Authentication, request/model, and
 structured-output failures are terminal until an operator regenerates after correcting
 the cause. `PA_CARD_SUMMARY_MAX_RETRIES` is the retry count after the first attempt;
-backoff, jitter, and scan cadence use the `PA_CARD_SUMMARY_RETRY_*` and
-`PA_CARD_SUMMARY_WORKER_INTERVAL_SECONDS` settings.
+backoff, jitter, and scan cadence use `PA_CARD_SUMMARY_RETRY_BASE_SECONDS`,
+`PA_CARD_SUMMARY_RETRY_MAX_SECONDS`, `PA_CARD_SUMMARY_RETRY_JITTER_RATIO`, and
+`PA_CARD_SUMMARY_WORKER_INTERVAL_SECONDS`.
 
 The delayed worker scans at most `PA_CARD_SUMMARY_MIGRATION_BATCH` cards per interval.
 It incrementally migrates fallback/prefix summaries and resumes due transient attempts.

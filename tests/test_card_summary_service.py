@@ -2,16 +2,20 @@ from __future__ import annotations
 
 import asyncio
 import tempfile
+import threading
+import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import httpx
 import pytest
 
 from pa.config import Settings
 from pa.domain.card_summary_service import (
     CardSummaryService,
+    SummaryConfiguration,
     SummaryFailureCode,
     SummaryProviderError,
     sanitize_summary,
@@ -90,6 +94,56 @@ async def _old_completion_cannot_overwrite_edited_card() -> None:
 
 def test_old_completion_cannot_overwrite_edited_card() -> None:
     asyncio.run(_old_completion_cannot_overwrite_edited_card())
+
+
+async def _completed_task_cannot_forget_its_running_replacement() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx, _ = context(tmp, None)
+        ctx.settings.card_summary_max_concurrency = 4
+        card = ctx.store.create_card(CardCreate(title="Replacement", body="details"))
+        first_started = asyncio.Event()
+        release_first = asyncio.Event()
+        replacement_started = asyncio.Event()
+        release_replacement = asyncio.Event()
+        calls = 0
+
+        async def provider(title, body):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                first_started.set()
+                await release_first.wait()
+            else:
+                replacement_started.set()
+                await release_replacement.wait()
+            return f"Summary result {calls} remains bounded to one active task."
+
+        service = CardSummaryService(ctx, provider_call=provider)
+        key = (card.realm_id, card.id)
+        assert service.enqueue(card.id, card.realm_id, force=True)
+        await first_started.wait()
+
+        replacement_enqueued: list[bool] = []
+        release_first.set()
+        asyncio.get_running_loop().call_soon(
+            lambda: replacement_enqueued.append(
+                service.enqueue(card.id, card.realm_id, force=True)
+            )
+        )
+        await replacement_started.wait()
+        await asyncio.sleep(0)
+
+        assert replacement_enqueued == [True]
+        assert key in service._tasks
+        assert not service.enqueue(card.id, card.realm_id, force=True)
+        assert calls == 2
+
+        release_replacement.set()
+        await asyncio.gather(*list(service._tasks.values()))
+
+
+def test_completed_task_cannot_forget_its_running_replacement() -> None:
+    asyncio.run(_completed_task_cannot_forget_its_running_replacement())
 
 
 async def _failure_is_truthful_and_retries_are_bounded() -> None:
@@ -225,6 +279,38 @@ def test_permanent_failures_do_not_retry() -> None:
     asyncio.run(_permanent_failures_do_not_retry())
 
 
+def test_authentication_failure_guidance_matches_the_credential_source() -> None:
+    request = httpx.Request("POST", "https://api.openai.com/v1/chat/completions")
+    response = httpx.Response(401, request=request)
+    error = httpx.HTTPStatusError("unauthorized", request=request, response=response)
+    codex = SummaryConfiguration(
+        enabled=True,
+        provider="openai",
+        model="gpt-5-mini",
+        auth_source="codex_provider_api_key",
+        state="configured",
+        api_key="never-expose-this",
+    )
+    dedicated = SummaryConfiguration(
+        enabled=True,
+        provider="openai",
+        model="gpt-5-mini",
+        auth_source="dedicated_api_key",
+        state="configured",
+        api_key="never-expose-this-either",
+    )
+
+    codex_failure = CardSummaryService._classify_failure(error, codex)
+    dedicated_failure = CardSummaryService._classify_failure(error, dedicated)
+
+    assert "agent-provider configure --provider codex" in codex_failure.public_message
+    assert "PA_CARD_SUMMARY_API_KEY" not in codex_failure.public_message
+    assert "PA_CARD_SUMMARY_API_KEY" in dedicated_failure.public_message
+    assert "never-expose" not in (
+        codex_failure.public_message + dedicated_failure.public_message
+    )
+
+
 async def _codex_scoped_key_is_reused_without_exposure() -> None:
     async def provider(title, body):
         return (
@@ -322,6 +408,49 @@ async def _migration_batch_is_bounded() -> None:
 
 def test_migration_batch_is_bounded() -> None:
     asyncio.run(_migration_batch_is_bounded())
+
+
+async def _worker_enumeration_is_bounded_and_off_the_event_loop() -> None:
+    class SlowBoundedStore:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, int, int]] = []
+
+        def list_cards(self):
+            raise AssertionError("worker must not materialize the full card projection")
+
+        def list_summary_worker_candidates(self, *, limit, **kwargs):
+            self.calls.append(("candidates", limit, threading.get_ident()))
+            time.sleep(0.15)
+            return []
+
+        def list_summary_migration_page(self, *, limit, cursor):
+            self.calls.append(("migration", limit, threading.get_ident()))
+            time.sleep(0.15)
+            return []
+
+    with tempfile.TemporaryDirectory() as tmp:
+        settings = Settings(
+            data_dir=Path(tmp),
+            card_summary_api_key="test",
+            card_summary_migration_batch=3,
+        )
+        store = SlowBoundedStore()
+        service = CardSummaryService(SimpleNamespace(settings=settings, store=store))
+        event_loop_thread = threading.get_ident()
+
+        worker = asyncio.create_task(service.run_worker_once())
+        await asyncio.wait_for(asyncio.sleep(0.01), timeout=0.05)
+        assert await worker == 0
+
+        assert [(kind, limit) for kind, limit, _ in store.calls] == [
+            ("candidates", 3),
+            ("migration", 3),
+        ]
+        assert all(thread_id != event_loop_thread for _, _, thread_id in store.calls)
+
+
+def test_worker_enumeration_is_bounded_and_off_the_event_loop() -> None:
+    asyncio.run(_worker_enumeration_is_bounded_and_off_the_event_loop())
 
 
 async def _scheduling_does_not_wait_for_slow_provider() -> None:

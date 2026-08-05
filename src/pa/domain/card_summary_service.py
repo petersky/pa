@@ -137,6 +137,7 @@ class CardSummaryService:
         self._worker_task: asyncio.Task[None] | None = None
         self._semaphore = asyncio.Semaphore(self.settings.card_summary_max_concurrency)
         self._resolved_configuration: SummaryConfiguration | None = None
+        self._migration_cursor: tuple[datetime, str] | None = None
 
     @property
     def is_authority(self) -> bool:
@@ -342,8 +343,13 @@ class CardSummaryService:
             name=f"card-summary:{card_id}",
         )
         self._tasks[key] = task
-        task.add_done_callback(lambda done, k=key: self._tasks.pop(k, None))
+        task.add_done_callback(lambda done, k=key: self._forget_task(k, done))
         return True
+
+    def _forget_task(self, key: tuple[str, str], task: asyncio.Task[None]) -> None:
+        """Forget only the generation task that still owns this card key."""
+        if self._tasks.get(key) is task:
+            self._tasks.pop(key, None)
 
     async def request(
         self, card_id: str, realm_id: str, *, force: bool = False
@@ -355,7 +361,7 @@ class CardSummaryService:
         if not task or task.done():
             task = asyncio.create_task(self.generate(card_id, realm_id, force=force))
             self._tasks[key] = task
-            task.add_done_callback(lambda done, k=key: self._tasks.pop(k, None))
+            task.add_done_callback(lambda done, k=key: self._forget_task(k, done))
         await asyncio.shield(task)
 
     async def schedule(
@@ -440,7 +446,7 @@ class CardSummaryService:
                     )
             summary = sanitize_summary(summary)
         except Exception as exc:  # noqa: BLE001 - provider boundary is classified below
-            failure = self._classify_failure(exc)
+            failure = self._classify_failure(exc, configuration)
             logger.warning(
                 "Card summary generation classified for %s: code=%s retryable=%s attempt=%s",
                 card_id,
@@ -560,7 +566,9 @@ class CardSummaryService:
             ) from exc
 
     @staticmethod
-    def _classify_failure(exc: Exception) -> SummaryProviderError:
+    def _classify_failure(
+        exc: Exception, configuration: SummaryConfiguration | None = None
+    ) -> SummaryProviderError:
         if isinstance(exc, SummaryProviderError):
             return exc
         if isinstance(
@@ -574,10 +582,21 @@ class CardSummaryService:
         if isinstance(exc, httpx.HTTPStatusError):
             status = exc.response.status_code
             if status in {401, 403}:
+                if configuration and configuration.auth_source.startswith("codex_"):
+                    guidance = (
+                        "reconfigure the provider-scoped Codex credential with `pa "
+                        "agent-provider configure --provider codex --api-key ...` on "
+                        "the summary-authority instance."
+                    )
+                else:
+                    guidance = (
+                        "replace PA_CARD_SUMMARY_API_KEY on the summary-authority "
+                        "instance."
+                    )
                 return SummaryProviderError(
                     SummaryFailureCode.AUTHENTICATION,
-                    "The summary provider rejected its configured credential; replace "
-                    "PA_CARD_SUMMARY_API_KEY on the summary-authority instance.",
+                    "The summary provider rejected its configured credential; "
+                    + guidance,
                     retryable=False,
                 )
             if status == 429:
@@ -615,39 +634,93 @@ class CardSummaryService:
             retryable=False,
         )
 
+    @staticmethod
+    def _eligible_worker_card(
+        card,
+        *,
+        now: datetime,
+        max_attempts: int,
+        legacy_only: bool,
+        include_disabled: bool,
+    ) -> bool:
+        legacy = _looks_like_legacy_summary(card)
+        if legacy_only and not legacy:
+            return False
+        due = not card.summary_next_attempt_at or card.summary_next_attempt_at <= now
+        retryable_state = card.summary_status.value in {"pending", "stale"}
+        old_unconfigured_failure = (
+            card.summary_status.value == "failed"
+            and legacy
+            and (
+                not card.summary_failure_code
+                or card.summary_failure_code == SummaryFailureCode.UNCONFIGURED.value
+            )
+        )
+        legacy_ready = legacy and card.summary_status.value == "ready"
+        reenabled = include_disabled and card.summary_status.value == "disabled"
+        return bool(
+            card.summary_source != CardSummarySource.MANUAL
+            and due
+            and card.summary_attempt_count < max_attempts
+            and (
+                retryable_state or old_unconfigured_failure or legacy_ready or reenabled
+            )
+        )
+
     async def run_worker_once(self, *, legacy_only: bool = False) -> int:
         if not self.is_authority or self.settings.card_summary_migration_batch <= 0:
             return 0
         now = datetime.now(UTC)
         max_attempts = self.settings.card_summary_max_retries + 1
-        candidates = []
-        for card in self.ctx.store.list_cards():
-            legacy = _looks_like_legacy_summary(card)
-            if legacy_only and not legacy:
-                continue
-            due = (
-                not card.summary_next_attempt_at or card.summary_next_attempt_at <= now
+        limit = self.settings.card_summary_migration_batch
+        configuration = await self._configuration()
+        include_disabled = configuration.enabled
+        projected = await asyncio.to_thread(
+            self.ctx.store.list_summary_worker_candidates,
+            now=now,
+            max_attempts=max_attempts,
+            limit=limit,
+            legacy_only=legacy_only,
+            include_disabled=include_disabled,
+        )
+        candidates = [
+            card
+            for card in projected
+            if self._eligible_worker_card(
+                card,
+                now=now,
+                max_attempts=max_attempts,
+                legacy_only=legacy_only,
+                include_disabled=include_disabled,
             )
-            retryable_state = card.summary_status.value in {"pending", "stale"}
-            old_unconfigured_failure = (
-                card.summary_status.value == "failed"
-                and legacy
-                and (
-                    not card.summary_failure_code
-                    or card.summary_failure_code
-                    == SummaryFailureCode.UNCONFIGURED.value
-                )
+        ]
+        seen = {card.id for card in candidates}
+        remaining = max(0, limit - len(candidates))
+        if remaining:
+            page = await asyncio.to_thread(
+                self.ctx.store.list_summary_migration_page,
+                limit=remaining,
+                cursor=self._migration_cursor,
             )
-            legacy_ready = legacy and card.summary_status.value == "ready"
-            if (
-                card.summary_source != CardSummarySource.MANUAL
-                and due
-                and card.summary_attempt_count < max_attempts
-                and (retryable_state or old_unconfigured_failure or legacy_ready)
-            ):
+            if page:
+                last = page[-1]
+                self._migration_cursor = (last.updated_at, last.id)
+            if len(page) < remaining:
+                self._migration_cursor = None
+            for card in page:
+                if card.id in seen or not self._eligible_worker_card(
+                    card,
+                    now=now,
+                    max_attempts=max_attempts,
+                    legacy_only=legacy_only,
+                    include_disabled=include_disabled,
+                ):
+                    continue
                 candidates.append(card)
-            if len(candidates) >= self.settings.card_summary_migration_batch:
-                break
+                seen.add(card.id)
+                if len(candidates) >= limit:
+                    break
+        scheduled = 0
         for card in candidates:
             if _looks_like_legacy_summary(card) and card.summary_status.value not in {
                 "pending",
@@ -663,8 +736,9 @@ class CardSummaryService:
                     summary_failure=None,
                     summary_failure_code=None,
                 )
-            self.enqueue(card.id, card.realm_id)
-        return len(candidates)
+            if self.enqueue(card.id, card.realm_id):
+                scheduled += 1
+        return scheduled
 
     async def migrate_legacy(self) -> int:
         return await self.run_worker_once(legacy_only=True)
