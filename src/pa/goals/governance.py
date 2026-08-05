@@ -764,6 +764,16 @@ class GoalGovernanceService:
                 raise GoalGovernanceConflict(
                     "idempotent provider launch is missing its durable run"
                 )
+            if (
+                duplicate.get("actor_principal") != context.actor_principal
+                or duplicate.get("authority_instance_id")
+                != context.authority_instance_id
+                or run.authority_instance_id != context.authority_instance_id
+                or run.fencing_token != context.fencing_token
+            ):
+                raise GoalGovernanceConflict(
+                    "idempotent provider launch belongs to another actor or authority"
+                )
             payload = duplicate.get("payload") or {}
             decision_id = str(
                 payload.get("decision_id") or run.launch_decision_id or ""

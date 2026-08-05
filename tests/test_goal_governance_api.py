@@ -416,6 +416,32 @@ def test_provider_launch_credential_rejects_shared_fleet_origin_spoof() -> None:
         assert launched.status_code == 200, launched.text
         launch_body = launched.json()
         credential = launch_body["progress_credential"]
+        stolen_replay = client.post(
+            f"/api/goals/{goal['id']}/providers/{run['id']}/launch",
+            params={
+                "expected_version": assigned.json()["autonomy_version"],
+                "goal_version": goal["version"],
+                "policy_revision": 1,
+            },
+            headers={
+                **base_headers,
+                "X-PA-Authority-Instance": "different-instance",
+                "X-PA-Goal-Fencing-Token": str(goal["lease"]["fencing_token"]),
+                "Idempotency-Key": "provider-launch",
+            },
+        )
+        valid_replay = client.post(
+            f"/api/goals/{goal['id']}/providers/{run['id']}/launch",
+            params={
+                "expected_version": assigned.json()["autonomy_version"],
+                "goal_version": goal["version"],
+                "policy_revision": 1,
+            },
+            headers={**fence_headers, "Idempotency-Key": "provider-launch"},
+        )
+        assert stolen_replay.status_code == 422, stolen_replay.text
+        assert valid_replay.status_code == 200, valid_replay.text
+        assert valid_replay.json()["progress_credential"] == credential
         progress_params = {
             "expected_version": launch_body["autonomy_version"],
             "goal_version": goal["version"],
