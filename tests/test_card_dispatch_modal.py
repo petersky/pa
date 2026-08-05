@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -111,6 +112,60 @@ def test_card_modal_distinguishes_local_start_preference_and_durable_dispatch() 
         assert 'data-card-dispatch-open' in work.text
 
 
+def test_card_modal_separates_prompt_backlog_from_execution_slots() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        app = Kernel.boot(
+            settings=Settings(
+                data_dir=Path(tmp),
+                instance_id="local",
+                instance_name="Local",
+                instance_url="http://pa.test:8080",
+                agent_enabled=False,
+                subscribed_realms=["default"],
+                peers=[],
+            )
+        ).build_app()
+        overview = {
+            "nodes": [
+                {
+                    "id": "local",
+                    "name": "Local",
+                    "dispatch_capacity": 4,
+                    "capabilities": [],
+                    "dimensions": {
+                        "activity": {
+                            "state": "fresh",
+                            "value": {
+                                "queued_prompts": 9,
+                                "capacity": {
+                                    "consumed": 1,
+                                    "limit": 4,
+                                    "source": "configured",
+                                },
+                            },
+                        },
+                        "providers": {
+                            "state": "fresh",
+                            "value": [],
+                        },
+                    },
+                }
+            ]
+        }
+        with (
+            patch("pa.fleet.overview.build_overview", return_value=overview),
+            TestClient(app) as client,
+        ):
+            card = app.state.ctx.store.create_card(
+                CardCreate(title="Backlogged target")
+            )
+            response = client.get(f"/partials/cards/{card.id}/dispatch")
+
+    assert response.status_code == 200
+    assert "1/4 slots used · 9 prompts queued" in response.text
+    assert 'data-capacity-eligible="true"' in response.text
+
+
 def test_card_modal_renders_dispatch_progress_retry_and_session_links() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         app = Kernel.boot(
@@ -160,6 +215,8 @@ def test_card_modal_renders_dispatch_progress_retry_and_session_links() -> None:
         assert "no_eligible_instance" in script
         assert 'form.elements.model_id.value !== "None"' in script
         assert "refreshCardDispatchSelectors" in script
+        assert "candidate.queued" in script
+        assert '" queued; "' in script
 
 
 def test_existing_dispatch_hides_card_item_action_but_detail_opens_status() -> None:
@@ -185,5 +242,10 @@ def test_shared_modal_preserves_focus_and_workshop_uses_live_dispatch_state() ->
     assert 'addEventListener("cancel"' in script
     assert script.rstrip().endswith("})();")
     assert 'id="card-dispatch-dialog-title"' in (root / "templates/partials/card-dispatch.html").read_text()
-    assert 'card.dispatch_id ? ""' in workshop
+    assert "if (card.can_dispatch)" in workshop
+    assert "card.dispatch_unavailable_reason" in workshop
     assert "window.PACardDispatch.open" in workshop
+    order_button = workshop.split("function orderButton", 1)[1].split(
+        "function renderQuery", 1
+    )[0]
+    assert "data-workshop-dispatch" not in order_button

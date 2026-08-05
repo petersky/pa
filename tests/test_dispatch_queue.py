@@ -46,6 +46,62 @@ def capacity(*, execution: int = 4, queue: int = 100) -> CapacityAdmission:
     )
 
 
+def test_history_counts_use_maintained_index_without_scanning_ledger() -> None:
+    class NoScanRecords(dict):
+        def values(self):
+            raise AssertionError("history_counts must not scan dispatch history")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        store = DispatchStore(Path(tmp))
+        first = record(1)
+        first.card_id = "shared-card"
+        second = record(2)
+        second.card_id = "shared-card"
+        second.allow_concurrent = True
+        store.admit(first)
+        store.admit(second)
+        store._records = NoScanRecords(store._records)
+
+        assert store.history_counts({"shared-card", "missing"}, realm_id="default") == {
+            "shared-card": 2,
+            "missing": 0,
+        }
+
+
+def test_latest_by_session_uses_maintained_index_without_scanning_ledger() -> None:
+    class NoScanRecords(dict):
+        def values(self):
+            raise AssertionError("latest_by_session must not scan dispatch history")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp)
+        store = DispatchStore(path)
+        active = record(1)
+        active.session_id = "shared-session"
+        store.admit(active)
+
+        completed = record(2)
+        completed.session_id = "shared-session"
+        store.admit(completed)
+        completed.state = "completed"
+        store.put(completed)
+
+        assigned_later = record(3)
+        store.admit(assigned_later)
+        assigned_later.session_id = "shared-session"
+        assigned_later.state = "running"
+        store.put(assigned_later)
+
+        restarted = DispatchStore(path)
+        restarted._records = NoScanRecords(restarted._records)
+
+        selected = restarted.latest_by_session(
+            {"shared-session", "missing"}, realm_id="default"
+        )
+
+        assert selected == {"shared-session": restarted.get(assigned_later.dispatch_id)}
+
+
 def test_six_dispatches_use_four_slots_and_two_durable_queue_entries() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         store = DispatchStore(Path(tmp))
@@ -61,6 +117,62 @@ def test_six_dispatches_use_four_slots_and_two_durable_queue_entries() -> None:
         ]
         assert store.queue_snapshot()["total"] == 2
         assert [item.queue_position for item in store.waiting()] == [1, 2]
+
+
+def test_same_session_prompt_backlog_does_not_block_admission_or_promotion() -> None:
+    observed = capacity(execution=4).model_copy(
+        update={
+            "observed_active": 1,
+            "observed_queued": 9,
+            "observed_global_active": 1,
+            "observed_global_queued": 9,
+            "observed_provider_active": 1,
+            "observed_provider_queued": 9,
+        }
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp)
+        store = DispatchStore(path)
+        admitted, duplicate = store.admit(record(20), capacity=observed)
+
+        assert duplicate is False
+        assert admitted.state == "queued"
+        assert admitted.capacity_observed_active == 1
+        assert admitted.capacity_observed_queued == 9
+        assert store.capacity_snapshot("target")["dispatch_reservations"] == 1
+
+        restarted = DispatchStore(path)
+        persisted = restarted.get(admitted.dispatch_id)
+        assert persisted is not None
+        assert persisted.capacity_observed_queued == 9
+
+    full = capacity(execution=1).model_copy(
+        update={
+            "observed_active": 1,
+            "observed_queued": 9,
+            "observed_global_active": 1,
+            "observed_global_queued": 9,
+            "observed_provider_active": 1,
+            "observed_provider_queued": 9,
+        }
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        store = DispatchStore(Path(tmp))
+        waiting, _ = store.admit(record(21), capacity=full)
+        assert waiting.state == "waiting_capacity"
+
+        available = full.model_copy(
+            update={
+                "observed_active": 0,
+                "observed_global_active": 0,
+                "observed_provider_active": 0,
+            }
+        )
+        assert store.promote_waiting(waiting, available) is True
+        promoted = store.get(waiting.dispatch_id)
+        assert promoted is not None
+        assert promoted.state == "queued"
+        assert promoted.capacity_observed_queued == 9
 
 
 def test_queue_full_boundary_and_duplicate_retry_do_not_consume_slots() -> None:

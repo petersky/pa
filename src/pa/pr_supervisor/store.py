@@ -104,6 +104,8 @@ class PRSupervisorStore:
                     ON pr_watches(status, next_poll_at);
                 CREATE INDEX IF NOT EXISTS idx_pr_watches_card
                     ON pr_watches(card_id);
+                CREATE INDEX IF NOT EXISTS idx_pr_watches_realm_card_updated
+                    ON pr_watches(realm_id, card_id, updated_at DESC);
 
                 CREATE TABLE IF NOT EXISTS pr_watch_events (
                     id TEXT PRIMARY KEY,
@@ -359,6 +361,45 @@ class PRSupervisorStore:
         query += " ORDER BY updated_at DESC"
         with self._conn() as conn:
             rows = conn.execute(query, params).fetchall()
+        return [self._row_to_watch(row) for row in rows]
+
+    def list_watches_for_cards(
+        self,
+        card_ids: set[str],
+        *,
+        realm_id: str,
+        include_retired: bool = False,
+        per_card_limit: int = 5,
+    ) -> list[PRWatch]:
+        """Load bounded recent watch evidence only for projected Workshop cards."""
+        if not card_ids or per_card_limit <= 0:
+            return []
+        placeholders = ",".join("?" for _ in card_ids)
+        retired_clause = (
+            ""
+            if include_retired
+            else "AND retired_at IS NULL AND status IN ('active', 'blocked')"
+        )
+        query = f"""
+            SELECT * FROM (
+                SELECT pr_watches.*,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY card_id
+                           ORDER BY updated_at DESC, id ASC
+                       ) AS workshop_rank
+                FROM pr_watches
+                WHERE realm_id = ?
+                  AND card_id IN ({placeholders})
+                  {retired_clause}
+            )
+            WHERE workshop_rank <= ?
+            ORDER BY updated_at DESC, id ASC
+        """
+        with self._conn() as conn:
+            rows = conn.execute(
+                query,
+                (realm_id, *sorted(card_ids), per_card_limit),
+            ).fetchall()
         return [self._row_to_watch(row) for row in rows]
 
     def list_due(self, *, now: datetime | None = None) -> list[PRWatch]:
