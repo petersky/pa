@@ -17,6 +17,7 @@ from pa.goals.models import (
     GoalMutationContext,
     GoalRevision,
     GoalState,
+    GoalSupervisionCheckpoint,
     GoalTransition,
     GoalWakeup,
 )
@@ -362,6 +363,29 @@ class DurableGoalTests(unittest.TestCase):
                         reason="The old audit must not be enough",
                     ),
                     self._ctx(goal.version, "reject-stale-achievement"),
+                )
+            with self.assertRaisesRegex(
+                GoalConflict, "supervisor completion requirements failed.*stale"
+            ):
+                service.checkpoint_supervision(
+                    goal.id,
+                    GoalSupervisionCheckpoint(
+                        criteria=goal.criteria,
+                        evidence=goal.evidence,
+                        proposals=goal.proposals,
+                        work_packages=goal.work_packages,
+                        operator_interactions=goal.operator_interactions,
+                        supervision=goal.supervision,
+                        linked_card_ids=goal.linked_card_ids,
+                        linked_dispatch_ids=goal.linked_dispatch_ids,
+                        assumptions=goal.assumptions,
+                        risks=goal.risks,
+                        strategy_revision=goal.strategy_revision,
+                        state=GoalState.ACHIEVED,
+                        progress_summary=goal.progress_summary,
+                        reason="The checkpoint must revalidate stale evidence",
+                    ),
+                    self._ctx(goal.version, "reject-stale-checkpoint"),
                 )
 
     def test_invalid_revision_is_rejected_before_it_reaches_the_event_log(self) -> None:

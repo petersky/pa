@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
@@ -89,12 +90,12 @@ def dispatch_record(
 
 
 class GoalSupervisorTests(unittest.TestCase):
-    def _services(self, tmp: str):
+    def _services(self, tmp: str, *, now=None):
         root = Path(tmp)
         objects = ObjectStore(root / "objects")
         log = EventLog(objects, root, "instance-a")
         projection = CardProjection(root / "projection.db", log)
-        return GoalService(projection, "instance-a"), projection
+        return GoalService(projection, "instance-a", clock=now), projection
 
     @staticmethod
     def _ctx(goal_version: int, key: str, fence: int | None = None):
@@ -291,6 +292,159 @@ class GoalSupervisorTests(unittest.TestCase):
             )
             self.assertEqual(result, "completed")
             self.assertEqual(resumed_calls, ["resumed"])
+
+    def test_missing_completion_evidence_is_rejected_in_the_first_cycle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service, projection = self._services(tmp)
+            criterion = GoalCriterion(
+                description="achievement is evidenced",
+                verification_method="independent audit",
+                evidence_requirement="fresh mapped proof",
+            )
+            goal = service.create(
+                self._goal_create(criterion), self._ctx(0, "create-completion-gate")
+            )
+            for state in (GoalState.READY, GoalState.ACTIVE, GoalState.VERIFYING):
+                goal = service.transition(
+                    goal.id,
+                    GoalTransition(state=state, reason="advance to verification"),
+                    self._ctx(goal.version, f"completion-gate-{state.value}"),
+                )
+            goal = service.submit_proposal(
+                goal.id,
+                GoalProposalCreate(
+                    proposer_principal="agent:independent-verifier",
+                    proposer_role=GoalActorRole.VERIFIER,
+                    action=TransitionGoalAction(
+                        state=GoalState.ACHIEVED,
+                        reason="Claim achievement without proof",
+                    ),
+                    rationale="Exercise the completion gate.",
+                    expected_goal_version=goal.version,
+                    policy_revision=goal.policy.revision,
+                ),
+                GoalMutationContext(
+                    actor_principal="agent:independent-verifier",
+                    authority_instance_id="instance-a",
+                    idempotency_key="propose-unsupported-achievement",
+                    expected_version=goal.version,
+                    policy_revision=goal.policy.revision,
+                ),
+            )
+            supervisor = GoalSupervisor(service, projection, "instance-a")
+
+            first = supervisor.run_once(goal.id)[0]
+            proposal = first.proposals[0]
+            self.assertEqual(proposal.status, ProposalStatus.REJECTED)
+            assert proposal.authorization is not None
+            self.assertEqual(
+                proposal.authorization.reason_code,
+                "completion_requirements_unsatisfied",
+            )
+            self.assertIn("audit", proposal.authorization.explanation)
+            version = first.version
+            self.assertEqual(supervisor.run_once(goal.id), [])
+            persisted = service.get(goal.id)
+            assert persisted is not None
+            self.assertEqual(persisted.version, version)
+            self.assertEqual(persisted.proposals[0].status, ProposalStatus.REJECTED)
+
+    def test_apply_rechecks_completion_evidence_freshness_before_transition(
+        self,
+    ) -> None:
+        clock = [datetime(2026, 8, 5, tzinfo=UTC)]
+        with tempfile.TemporaryDirectory() as tmp:
+            service, projection = self._services(tmp, now=lambda: clock[0])
+            criterion = GoalCriterion(
+                description="achievement stays fresh",
+                verification_method="recent focused suite",
+                evidence_requirement="proof less than one second old",
+                freshness_seconds=1,
+            )
+            goal = service.create(
+                self._goal_create(criterion),
+                self._ctx(0, "create-apply-freshness-gate"),
+            )
+            evidence = GoalEvidence(
+                criterion_ids=[criterion.id],
+                kind=EvidenceKind.TEST,
+                summary="Initially fresh proof",
+                observed_at=clock[0],
+            )
+            goal = service.add_evidence(
+                goal.id,
+                GoalEvidenceCreate(evidence=evidence),
+                self._ctx(goal.version, "record-fresh-apply-proof"),
+            )
+            goal = service.audit(
+                goal.id,
+                GoalAuditCreate(
+                    criterion_verdicts={criterion.id: CriterionVerdict.SATISFIED},
+                    evidence_ids=[evidence.id],
+                    explanation="Proof is fresh at authorization time",
+                ),
+                GoalMutationContext(
+                    actor_principal="agent:independent-auditor",
+                    authority_instance_id="instance-a",
+                    idempotency_key="audit-fresh-apply-proof",
+                    expected_version=goal.version,
+                    policy_revision=goal.policy.revision,
+                ),
+            )
+            for state in (GoalState.READY, GoalState.ACTIVE, GoalState.VERIFYING):
+                goal = service.transition(
+                    goal.id,
+                    GoalTransition(state=state, reason="advance to verification"),
+                    self._ctx(goal.version, f"fresh-apply-{state.value}"),
+                )
+            goal = service.submit_proposal(
+                goal.id,
+                GoalProposalCreate(
+                    proposer_principal="agent:independent-verifier",
+                    proposer_role=GoalActorRole.VERIFIER,
+                    action=TransitionGoalAction(
+                        state=GoalState.ACHIEVED,
+                        reason="Apply only while evidence remains fresh",
+                    ),
+                    rationale="The audit is currently satisfied.",
+                    expected_goal_version=goal.version,
+                    policy_revision=goal.policy.revision,
+                ),
+                GoalMutationContext(
+                    actor_principal="agent:independent-verifier",
+                    authority_instance_id="instance-a",
+                    idempotency_key="propose-fresh-achievement",
+                    expected_version=goal.version,
+                    policy_revision=goal.policy.revision,
+                ),
+            )
+
+            def mark_authorized(current: Goal) -> dict:
+                current.proposals[0].status = ProposalStatus.AUTHORIZED
+                return {"proposal_id": current.proposals[0].id}
+
+            goal = service._mutate(
+                goal.id,
+                self._ctx(goal.version, "stage-authorized-achievement"),
+                "goal.test_proposal_staged",
+                mark_authorized,
+            )
+            clock[0] += timedelta(seconds=2)
+            supervisor = GoalSupervisor(
+                service,
+                projection,
+                "instance-a",
+                now=lambda: clock[0],
+            )
+            result = supervisor.run_once(goal.id)[0]
+            self.assertEqual(result.state, GoalState.VERIFYING)
+            self.assertEqual(result.proposals[0].status, ProposalStatus.FAILED)
+            self.assertIn("stale evidence", result.proposals[0].error or "")
+            version = result.version
+            self.assertEqual(supervisor.run_once(goal.id), [])
+            persisted = service.get(goal.id)
+            assert persisted is not None
+            self.assertEqual(persisted.version, version)
 
     def test_supervisor_materializes_card_and_dispatches_authorized_work(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

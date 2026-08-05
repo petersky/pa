@@ -70,6 +70,135 @@ def goal_transition_allowed(current: GoalState, target: GoalState) -> bool:
     return target in _TRANSITIONS[current]
 
 
+def audit_evidence_findings(
+    goal: Goal,
+    verdicts: dict[str, CriterionVerdict],
+    evidence_ids: list[str],
+    *,
+    now: datetime,
+) -> list[str]:
+    """Evaluate one immutable audit snapshot against the full evidence policy."""
+
+    selected = {
+        item.id: item for item in goal.evidence if item.id in set(evidence_ids)
+    }
+    executor_identities = {
+        package.executor_service_id
+        for package in goal.work_packages
+        if package.executor_service_id
+    }
+    verifier_identities = {
+        package.verifier_service_id
+        for package in goal.work_packages
+        if package.verifier_service_id
+    }
+    findings: list[str] = []
+    for criterion in goal.criteria:
+        mapped = [
+            item for item in selected.values() if criterion.id in item.criterion_ids
+        ]
+        if len(mapped) < criterion.minimum_evidence_count:
+            findings.append(
+                "audit must include evidence mapped to every criterion; "
+                f"criterion {criterion.id!r} requires at least "
+                f"{criterion.minimum_evidence_count} evidence records"
+            )
+        contradictory = [
+            item.id
+            for item in goal.evidence
+            if criterion.id in item.criterion_ids and item.contradictory
+        ]
+        if contradictory:
+            findings.append(
+                f"criterion {criterion.id!r} has contradictory evidence "
+                f"{sorted(contradictory)}"
+            )
+        expired = [
+            item.id for item in mapped if item.expires_at and item.expires_at <= now
+        ]
+        if expired:
+            findings.append(
+                f"criterion {criterion.id!r} has expired evidence {sorted(expired)}"
+            )
+        if criterion.freshness_seconds:
+            stale = [
+                item.id
+                for item in mapped
+                if (now - item.observed_at).total_seconds()
+                > criterion.freshness_seconds
+            ]
+            if stale:
+                findings.append(
+                    f"criterion {criterion.id!r} has stale evidence {sorted(stale)}"
+                )
+        present_kinds = {item.kind for item in mapped}
+        missing_kinds = set(criterion.required_evidence_kinds) - present_kinds
+        if missing_kinds:
+            findings.append(
+                f"criterion {criterion.id!r} lacks required evidence kinds "
+                f"{sorted(item.value for item in missing_kinds)}"
+            )
+        if criterion.require_independent_verifier and not any(
+            item.producer_role == GoalActorRole.VERIFIER
+            and item.producer_service_id
+            and item.producer_service_id in verifier_identities
+            and item.producer_service_id not in executor_identities
+            for item in mapped
+        ):
+            findings.append(
+                f"criterion {criterion.id!r} requires independent verifier evidence"
+            )
+        if verdicts.get(criterion.id) == CriterionVerdict.SATISFIED and not mapped:
+            findings.append(
+                f"criterion {criterion.id!r} cannot be satisfied without evidence"
+            )
+    return list(dict.fromkeys(findings))
+
+
+def goal_completion_findings(goal: Goal, *, now: datetime) -> list[str]:
+    """Return every reason the current goal snapshot cannot become achieved."""
+
+    audit = goal.audit
+    if audit is None:
+        return ["an independently satisfied audit is required before achievement"]
+    findings: list[str] = []
+    if not audit.independent or audit.auditor_principal == goal.owner_principal:
+        findings.append("completion audit is not independent of the goal owner")
+    if audit.verdict != CriterionVerdict.SATISFIED:
+        findings.append("completion audit is not satisfied")
+    known_criteria = {item.id for item in goal.criteria}
+    if set(audit.criterion_verdicts) != known_criteria:
+        findings.append("completion audit does not cover every success criterion")
+    if any(
+        audit.criterion_verdicts.get(item.id) != CriterionVerdict.SATISFIED
+        or item.verdict != CriterionVerdict.SATISFIED
+        for item in goal.criteria
+    ):
+        findings.append("every success criterion must be satisfied before achievement")
+    executor_identities = {
+        item.executor_service_id for item in goal.work_packages if item.executor_service_id
+    }
+    verifier_identities = {
+        item.verifier_service_id for item in goal.work_packages if item.verifier_service_id
+    }
+    if audit.auditor_principal in executor_identities:
+        findings.append("completion auditor is also an executor service")
+    if audit.verifier_service_id and (
+        audit.verifier_service_id not in verifier_identities
+        or audit.verifier_service_id in executor_identities
+    ):
+        findings.append("completion verifier is not an assigned independent service")
+    findings.extend(
+        audit_evidence_findings(
+            goal,
+            audit.criterion_verdicts,
+            audit.evidence_ids,
+            now=now,
+        )
+    )
+    return list(dict.fromkeys(findings))
+
+
 class GoalConflict(ValueError):
     pass
 
@@ -163,24 +292,11 @@ class GoalService:
                     f"invalid goal transition: {goal.state.value} -> {change.state.value}"
                 )
             if change.state == GoalState.ACHIEVED:
-                if not goal.audit or goal.audit.verdict != CriterionVerdict.SATISFIED:
-                    raise GoalConflict(
-                        "an independently satisfied audit is required before achievement"
-                    )
-                if any(
-                    item.verdict != CriterionVerdict.SATISFIED for item in goal.criteria
-                ):
-                    raise GoalConflict(
-                        "every success criterion must be satisfied before achievement"
-                    )
-                findings = self._audit_evidence_findings(
-                    goal,
-                    goal.audit.criterion_verdicts,
-                    goal.audit.evidence_ids,
-                )
+                findings = goal_completion_findings(goal, now=self._clock())
                 if findings:
                     raise GoalConflict(
-                        "completion evidence is no longer valid: " + "; ".join(findings)
+                        "completion evidence is no longer valid: "
+                        + "; ".join(findings)
                     )
             previous = goal.state
             goal.state = change.state
@@ -363,82 +479,12 @@ class GoalService:
         evidence_ids: list[str],
     ) -> list[str]:
         """Evaluate the criterion policy against one immutable audit snapshot."""
-
-        now = self._clock()
-        selected = {
-            item.id: item for item in goal.evidence if item.id in set(evidence_ids)
-        }
-        executor_identities = {
-            package.executor_service_id
-            for package in goal.work_packages
-            if package.executor_service_id
-        }
-        verifier_identities = {
-            package.verifier_service_id
-            for package in goal.work_packages
-            if package.verifier_service_id
-        }
-        findings: list[str] = []
-        for criterion in goal.criteria:
-            mapped = [
-                item for item in selected.values() if criterion.id in item.criterion_ids
-            ]
-            if len(mapped) < criterion.minimum_evidence_count:
-                findings.append(
-                    "audit must include evidence mapped to every criterion; "
-                    f"criterion {criterion.id!r} requires at least "
-                    f"{criterion.minimum_evidence_count} evidence records"
-                )
-            contradictory = [
-                item.id
-                for item in goal.evidence
-                if criterion.id in item.criterion_ids and item.contradictory
-            ]
-            if contradictory:
-                findings.append(
-                    f"criterion {criterion.id!r} has contradictory evidence "
-                    f"{sorted(contradictory)}"
-                )
-            expired = [
-                item.id for item in mapped if item.expires_at and item.expires_at <= now
-            ]
-            if expired:
-                findings.append(
-                    f"criterion {criterion.id!r} has expired evidence {sorted(expired)}"
-                )
-            if criterion.freshness_seconds:
-                stale = [
-                    item.id
-                    for item in mapped
-                    if (now - item.observed_at).total_seconds()
-                    > criterion.freshness_seconds
-                ]
-                if stale:
-                    findings.append(
-                        f"criterion {criterion.id!r} has stale evidence {sorted(stale)}"
-                    )
-            present_kinds = {item.kind for item in mapped}
-            missing_kinds = set(criterion.required_evidence_kinds) - present_kinds
-            if missing_kinds:
-                findings.append(
-                    f"criterion {criterion.id!r} lacks required evidence kinds "
-                    f"{sorted(item.value for item in missing_kinds)}"
-                )
-            if criterion.require_independent_verifier and not any(
-                item.producer_role == GoalActorRole.VERIFIER
-                and item.producer_service_id
-                and item.producer_service_id in verifier_identities
-                and item.producer_service_id not in executor_identities
-                for item in mapped
-            ):
-                findings.append(
-                    f"criterion {criterion.id!r} requires independent verifier evidence"
-                )
-            if verdicts.get(criterion.id) == CriterionVerdict.SATISFIED and not mapped:
-                findings.append(
-                    f"criterion {criterion.id!r} cannot be satisfied without evidence"
-                )
-        return list(dict.fromkeys(findings))
+        return audit_evidence_findings(
+            goal,
+            verdicts,
+            evidence_ids,
+            now=self._clock(),
+        )
 
     def acquire_lease(
         self, goal_id: str, context: GoalMutationContext, *, ttl_seconds: int = 60
@@ -542,31 +588,32 @@ class GoalService:
     ) -> Goal:
         def mutate(goal: Goal) -> dict[str, Any]:
             target_state = checkpoint.state
-            if target_state != goal.state:
-                if target_state not in _TRANSITIONS[goal.state]:
-                    raise GoalConflict(
-                        f"invalid goal transition: {goal.state.value} -> {target_state.value}"
-                    )
-                if target_state == GoalState.ACHIEVED and (
-                    not goal.audit
-                    or goal.audit.verdict != CriterionVerdict.SATISFIED
-                    or any(
-                        item.verdict != CriterionVerdict.SATISFIED
-                        for item in checkpoint.criteria
-                    )
-                ):
-                    raise GoalConflict(
-                        "supervisor cannot achieve a goal without a satisfied independent audit"
-                    )
+            if (
+                target_state != goal.state
+                and target_state not in _TRANSITIONS[goal.state]
+            ):
+                raise GoalConflict(
+                    f"invalid goal transition: {goal.state.value} -> {target_state.value}"
+                )
+            candidate = goal.model_copy(deep=True)
             for key in checkpoint.__class__.model_fields:
                 if key not in {"reason", "state"}:
                     setattr(
-                        goal,
+                        candidate,
                         key,
                         getattr(checkpoint, key),
                     )
-            goal.state = target_state
-            Goal.model_validate(goal.model_dump(mode="python"))
+            candidate.state = target_state
+            if target_state == GoalState.ACHIEVED:
+                findings = goal_completion_findings(candidate, now=self._clock())
+                if findings:
+                    raise GoalConflict(
+                        "supervisor completion requirements failed: "
+                        + "; ".join(findings)
+                    )
+            candidate = Goal.model_validate(candidate.model_dump(mode="python"))
+            for key in Goal.model_fields:
+                setattr(goal, key, getattr(candidate, key))
             return {
                 "reason": checkpoint.reason,
                 "cycle": checkpoint.supervision.cycle,

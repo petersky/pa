@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import UTC, datetime
 from fnmatch import fnmatchcase
 from typing import Any
 
@@ -15,12 +16,13 @@ from pa.goals.models import (
     GoalActorRole,
     GoalAuthorizationDecision,
     GoalProposal,
+    GoalState,
     ProposalStatus,
     RecordEvidenceAction,
     TransitionGoalAction,
     WorkPackageState,
 )
-from pa.goals.service import goal_transition_allowed
+from pa.goals.service import goal_completion_findings, goal_transition_allowed
 
 _ACTION_AUTONOMY = {
     "request_operator": 1,
@@ -71,7 +73,11 @@ def _decision_hash(
 
 
 def authorize_proposal(
-    goal: Goal, proposal: GoalProposal, *, instance_id: str
+    goal: Goal,
+    proposal: GoalProposal,
+    *,
+    instance_id: str,
+    now: datetime | None = None,
 ) -> GoalAuthorizationDecision:
     """Return the same decision for the same proposal and durable policy inputs."""
 
@@ -175,17 +181,24 @@ def authorize_proposal(
             outcome = AuthorizationOutcome.REJECT
             reason_code = "unknown_criteria"
             explanation = f"Evidence references unknown criteria: {sorted(unknown)}."
-    elif (
-        outcome == AuthorizationOutcome.AUTHORIZE
-        and isinstance(proposal.action, TransitionGoalAction)
-        and not goal_transition_allowed(goal.state, proposal.action.state)
+    elif outcome == AuthorizationOutcome.AUTHORIZE and isinstance(
+        proposal.action, TransitionGoalAction
     ):
-        outcome = AuthorizationOutcome.REJECT
-        reason_code = "invalid_transition"
-        explanation = (
-            f"The goal cannot transition from {goal.state.value} "
-            f"to {proposal.action.state.value}."
-        )
+        if not goal_transition_allowed(goal.state, proposal.action.state):
+            outcome = AuthorizationOutcome.REJECT
+            reason_code = "invalid_transition"
+            explanation = (
+                f"The goal cannot transition from {goal.state.value} "
+                f"to {proposal.action.state.value}."
+            )
+        elif proposal.action.state == GoalState.ACHIEVED:
+            findings = goal_completion_findings(
+                goal, now=now or datetime.now(UTC)
+            )
+            if findings:
+                outcome = AuthorizationOutcome.REJECT
+                reason_code = "completion_requirements_unsatisfied"
+                explanation = "; ".join(findings)
 
     if outcome == AuthorizationOutcome.AUTHORIZE and _matches(
         action, goal.policy.require_operator_for

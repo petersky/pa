@@ -54,7 +54,7 @@ from pa.goals.models import (
     TransitionGoalAction,
     WorkPackageState,
 )
-from pa.goals.service import GoalConflict, GoalService
+from pa.goals.service import GoalConflict, GoalService, goal_completion_findings
 
 logger = logging.getLogger(__name__)
 
@@ -352,7 +352,10 @@ class GoalSupervisor:
             if proposal.status != ProposalStatus.PENDING:
                 continue
             proposal.authorization = authorize_proposal(
-                goal, proposal, instance_id=self.instance_id
+                goal,
+                proposal,
+                instance_id=self.instance_id,
+                now=now,
             )
             proposal.updated_at = now
             if proposal.authorization.outcome == AuthorizationOutcome.AUTHORIZE:
@@ -473,6 +476,13 @@ class GoalSupervisor:
                 elif isinstance(action, TransitionGoalAction):
 
                     def transition(action=action) -> None:
+                        if action.state == GoalState.ACHIEVED:
+                            findings = goal_completion_findings(goal, now=now)
+                            if findings:
+                                raise GoalConflict(
+                                    "completion requirements failed: "
+                                    + "; ".join(findings)
+                                )
                         goal.state = action.state
                         if action.progress_summary is not None:
                             goal.progress_summary = action.progress_summary
