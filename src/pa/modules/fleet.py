@@ -7365,6 +7365,23 @@ def _bind_goal_dispatch_execution_identity(
         )
     goal, governance = _goal_dispatch_services(ctx, provenance.goal_id)
     state = governance.get_state(goal.id)
+    existing = next(
+        (
+            item
+            for item in state.action_reservations
+            if item.id == provenance.action_reservation_id
+        ),
+        None,
+    )
+    if existing is not None and existing.request.execution_identity == identity:
+        return provenance.model_copy(
+            update={
+                "goal_version": existing.goal_version,
+                "policy_revision": existing.policy_revision,
+                "fencing_token": existing.fencing_token,
+                "execution_identity": existing.request.execution_identity,
+            }
+        )
     try:
         _state, reservation = governance.bind_dispatch_execution_identity(
             goal.id,
