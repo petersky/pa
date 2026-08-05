@@ -16,6 +16,7 @@ from pa.goals.advanced_models import (
     GoalGovernancePolicy,
     GoalPortfolioReviewRequest,
     GoalProposalRequest,
+    GoalReservationState,
     GoalResourceCapacity,
     GoalResourceClaim,
     GoalStrategy,
@@ -38,11 +39,16 @@ from pa.goals.models import (
     GoalBudget,
     GoalCreate,
     GoalCriterion,
+    GoalInteractionState,
     GoalMutationContext,
+    GoalOperatorInteraction,
     GoalPolicy,
+    GoalProposalCreate,
     GoalRateLimit,
     GoalRevision,
+    GoalSupervisionCheckpoint,
     GoalWakeup,
+    RequestOperatorAction,
 )
 from pa.goals.service import GoalConflict, GoalService
 from pa.sync.event_log import EventLog
@@ -366,6 +372,252 @@ class GoalGovernanceTests(unittest.TestCase):
                 if item.id == run.reservation_id
             )
             self.assertEqual(reservation.state.value, "released")
+
+    def test_provider_resume_requires_answer_and_budget_block_is_terminal(
+        self,
+    ) -> None:
+        now = datetime(2026, 8, 3, tzinfo=UTC)
+        with tempfile.TemporaryDirectory() as tmp:
+            goals, governance, _ = self._services(tmp, now)
+            goal_data = self._goal_data("Fence provider resume paths")
+            goal_data.budget.max_tokens = 100
+            goal = goals.create(
+                goal_data, self._goal_ctx("create-provider-resume-goal")
+            )
+            goal = goals.submit_proposal(
+                goal.id,
+                GoalProposalCreate(
+                    proposer_principal="user:operator",
+                    proposer_role=GoalActorRole.COORDINATOR,
+                    action=RequestOperatorAction(
+                        prompt="Approve provider resume",
+                        allow_freeform=True,
+                    ),
+                    rationale="Provider needs attributable operator input.",
+                    expected_goal_version=goal.version,
+                    policy_revision=goal.policy.revision,
+                ),
+                GoalMutationContext(
+                    actor_principal="user:operator",
+                    authority_instance_id="instance-a",
+                    idempotency_key="provider-resume-proposal",
+                    expected_version=goal.version,
+                    policy_revision=goal.policy.revision,
+                ),
+            )
+            interaction = GoalOperatorInteraction(
+                proposal_id=goal.proposals[-1].id,
+                notification_id="provider-resume-notification",
+            )
+
+            def checkpoint(
+                current: Goal,
+                current_interaction: GoalOperatorInteraction,
+                key: str,
+                *,
+                fence: int | None = None,
+            ) -> Goal:
+                return goals.checkpoint_supervision(
+                    current.id,
+                    GoalSupervisionCheckpoint(
+                        criteria=current.criteria,
+                        evidence=current.evidence,
+                        proposals=current.proposals,
+                        work_packages=current.work_packages,
+                        operator_interactions=[current_interaction],
+                        supervision=current.supervision,
+                        linked_card_ids=current.linked_card_ids,
+                        linked_dispatch_ids=current.linked_dispatch_ids,
+                        assumptions=current.assumptions,
+                        risks=current.risks,
+                        strategy_revision=current.strategy_revision,
+                        state=current.state,
+                        progress_summary=current.progress_summary,
+                        reason="Persist provider resume interaction state",
+                    ),
+                    GoalMutationContext(
+                        actor_principal="agent:supervisor",
+                        authority_instance_id="instance-a",
+                        idempotency_key=key,
+                        expected_version=current.version,
+                        policy_revision=current.policy.revision,
+                        fencing_token=fence,
+                    ),
+                )
+
+            goal = checkpoint(goal, interaction, "provider-resume-pending")
+            goal = goals.acquire_lease(
+                goal.id,
+                GoalMutationContext(
+                    actor_principal="agent:supervisor",
+                    authority_instance_id="instance-a",
+                    idempotency_key="provider-resume-lease",
+                    expected_version=goal.version,
+                    policy_revision=goal.policy.revision,
+                ),
+                ttl_seconds=120,
+            )
+            state, run, decision = governance.assign_provider(
+                goal.id,
+                ProviderGoalAssignment(
+                    provider_id="codex",
+                    estimated_usage=GoalUsage(actions=1, tokens=50),
+                ),
+                self._ctx(
+                    0,
+                    "provider-resume-assign",
+                    goal_version=goal.version,
+                    fence=goal.lease.fencing_token,
+                ),
+            )
+            self.assertEqual(decision.disposition, GoalActionDisposition.AUTHORIZED)
+            assert run is not None
+            state, run, _ = governance.launch_provider(
+                goal.id,
+                run.id,
+                self._ctx(
+                    state.version,
+                    "provider-resume-launch",
+                    goal_version=goal.version,
+                    fence=goal.lease.fencing_token,
+                ),
+            )
+            state = governance.ingest_provider_progress(
+                goal.id,
+                ProviderGoalProgress(
+                    run_id=run.id,
+                    state=ProviderRunState.WAITING_OPERATOR,
+                    summary="Waiting for attributable input",
+                    cumulative_usage=GoalUsage(actions=1, tokens=25),
+                    interaction_refs=[interaction.id],
+                ),
+                self._ctx(
+                    state.version,
+                    "provider-waiting",
+                    actor=run.executor_principal,
+                    goal_version=goal.version,
+                    fence=run.fencing_token,
+                ),
+            )
+            with self.assertRaisesRegex(
+                GoalGovernanceConflict, "fresh durable answered operator interaction"
+            ):
+                governance.ingest_provider_progress(
+                    goal.id,
+                    ProviderGoalProgress(
+                        run_id=run.id,
+                        state=ProviderRunState.RUNNING,
+                        summary="Provider tried to resume itself",
+                        cumulative_usage=GoalUsage(actions=1, tokens=25),
+                        interaction_refs=[interaction.id],
+                    ),
+                    self._ctx(
+                        state.version,
+                        "provider-self-resume",
+                        actor=run.executor_principal,
+                        goal_version=goal.version,
+                        fence=run.fencing_token,
+                    ),
+                )
+
+            goal = goals.get(goal.id)
+            assert goal is not None
+            answered = interaction.model_copy(
+                update={
+                    "state": GoalInteractionState.ANSWERED,
+                    "response_summary": "Operator approved a bounded resume.",
+                    "response_principal": "user:operator",
+                    "resolved_at": now + timedelta(seconds=1),
+                }
+            )
+            goal = checkpoint(
+                goal,
+                answered,
+                "provider-resume-answered",
+                fence=goal.lease.fencing_token,
+            )
+            state = governance.ingest_provider_progress(
+                goal.id,
+                ProviderGoalProgress(
+                    run_id=run.id,
+                    state=ProviderRunState.RUNNING,
+                    summary="Resumed after durable operator input",
+                    cumulative_usage=GoalUsage(actions=1, tokens=25),
+                    interaction_refs=[interaction.id],
+                ),
+                self._ctx(
+                    state.version,
+                    "provider-approved-resume",
+                    actor=run.executor_principal,
+                    goal_version=goal.version,
+                    fence=run.fencing_token,
+                ),
+            )
+            state = governance.ingest_provider_progress(
+                goal.id,
+                ProviderGoalProgress(
+                    run_id=run.id,
+                    state=ProviderRunState.RUNNING,
+                    summary="Hard budget reached",
+                    cumulative_usage=GoalUsage(actions=1, tokens=101),
+                    interaction_refs=[interaction.id],
+                ),
+                self._ctx(
+                    state.version,
+                    "provider-budget-blocked",
+                    actor=run.executor_principal,
+                    goal_version=goal.version,
+                    fence=run.fencing_token,
+                ),
+            )
+            blocked = next(item for item in state.provider_runs if item.id == run.id)
+            self.assertEqual(blocked.state, ProviderRunState.BLOCKED)
+            self.assertIn("goal-budget-exhausted", blocked.blocker_refs)
+            with self.assertRaisesRegex(
+                GoalGovernanceConflict, "invalid provider transition"
+            ):
+                governance.ingest_provider_progress(
+                    goal.id,
+                    ProviderGoalProgress(
+                        run_id=run.id,
+                        state=ProviderRunState.RUNNING,
+                        summary="Blocked run tried to resume itself",
+                        cumulative_usage=GoalUsage(actions=1, tokens=101),
+                        interaction_refs=[interaction.id],
+                    ),
+                    self._ctx(
+                        state.version,
+                        "provider-budget-self-resume",
+                        actor=run.executor_principal,
+                        goal_version=goal.version,
+                        fence=run.fencing_token,
+                    ),
+                )
+            state = governance.ingest_provider_progress(
+                goal.id,
+                ProviderGoalProgress(
+                    run_id=run.id,
+                    state=ProviderRunState.FAILED,
+                    summary="Stopped at the hard budget boundary",
+                    cumulative_usage=GoalUsage(actions=1, tokens=101),
+                    interaction_refs=[interaction.id],
+                ),
+                self._ctx(
+                    state.version,
+                    "provider-budget-terminal",
+                    actor=run.executor_principal,
+                    goal_version=goal.version,
+                    fence=run.fencing_token,
+                ),
+            )
+            terminal = next(item for item in state.provider_runs if item.id == run.id)
+            self.assertEqual(terminal.state, ProviderRunState.FAILED)
+            reservation = next(
+                item
+                for item in state.action_reservations
+                if item.id == run.reservation_id
+            )
+            self.assertEqual(reservation.state, GoalReservationState.RELEASED)
 
     def test_apply_and_release_do_not_double_count_rolling_rate_usage(self) -> None:
         now = datetime(2026, 8, 3, tzinfo=UTC)

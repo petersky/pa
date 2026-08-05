@@ -98,7 +98,6 @@ _PROVIDER_TRANSITIONS = {
         ProviderRunState.CANCELLED,
     },
     ProviderRunState.BLOCKED: {
-        ProviderRunState.RUNNING,
         ProviderRunState.FAILED,
         ProviderRunState.CANCELLED,
     },
@@ -942,6 +941,28 @@ class GoalGovernanceService:
                 raise GoalGovernanceConflict(
                     f"invalid provider transition: {run.state.value} -> {progress.state.value}"
                 )
+            if (
+                run.state == ProviderRunState.WAITING_OPERATOR
+                and progress.state == ProviderRunState.RUNNING
+            ):
+                referenced = set(progress.interaction_refs)
+                answered = next(
+                    (
+                        interaction
+                        for interaction in goal.operator_interactions
+                        if interaction.id in referenced
+                        and interaction.state == GoalInteractionState.ANSWERED
+                        and interaction.response_principal
+                        and interaction.response_summary
+                        and interaction.resolved_at is not None
+                        and interaction.resolved_at >= run.updated_at
+                    ),
+                    None,
+                )
+                if answered is None:
+                    raise GoalGovernanceConflict(
+                        "provider resume requires a fresh durable answered operator interaction"
+                    )
             for metric in _USAGE_METRICS:
                 if getattr(progress.cumulative_usage, metric) < getattr(
                     run.usage, metric
