@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from threading import Barrier
 
 from pa.domain.projection import CardProjection
 from pa.goals.models import (
@@ -267,6 +269,61 @@ class DurableGoalTests(unittest.TestCase):
             self.assertTrue(
                 all(len(event["operation_fingerprint"]) == 64 for event in events)
             )
+
+    def test_concurrent_goal_creates_atomically_claim_the_idempotency_key(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service, _ = self._pair(tmp)
+            criterion = GoalCriterion(
+                description="one concurrent create wins",
+                verification_method="serialized mutation boundary",
+                evidence_requirement="one durable goal and one event",
+            )
+            canonical = GoalCreate(
+                objective="Concurrent exact create",
+                criteria=[criterion],
+            )
+            exact_context = self._ctx(0, "concurrent-exact-create")
+            start = Barrier(2)
+
+            def exact_create():
+                start.wait(timeout=5)
+                return service.create(canonical, exact_context)
+
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                exact = [executor.submit(exact_create) for _ in range(2)]
+                exact_results = [future.result(timeout=10) for future in exact]
+
+            self.assertEqual(exact_results[0].id, exact_results[1].id)
+            self.assertEqual(len(service.events(exact_results[0].id)), 1)
+
+            changed_context = self._ctx(0, "concurrent-changed-create")
+            changed_start = Barrier(2)
+            changed_bodies = [
+                canonical.model_copy(update={"objective": "Concurrent body A"}),
+                canonical.model_copy(update={"objective": "Concurrent body B"}),
+            ]
+
+            def changed_create(body: GoalCreate):
+                changed_start.wait(timeout=5)
+                return service.create(body, changed_context)
+
+            results = []
+            errors = []
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                futures = [
+                    executor.submit(changed_create, body) for body in changed_bodies
+                ]
+                for future in futures:
+                    try:
+                        results.append(future.result(timeout=10))
+                    except GoalConflict as exc:
+                        errors.append(exc)
+
+            self.assertEqual(len(results), 1)
+            self.assertEqual(len(errors), 1)
+            self.assertIn("different goal operation", str(errors[0]))
+            self.assertEqual(len(service.list()), 2)
+            self.assertEqual(len(service.events(results[0].id)), 1)
 
     def test_legacy_idempotency_event_fails_closed_without_a_fingerprint(
         self,

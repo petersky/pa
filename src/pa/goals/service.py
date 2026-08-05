@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from pa.domain.models import CardEvent, EventType
-from pa.goals.idempotency import operation_fingerprint
+from pa.goals.idempotency import operation_fingerprint, serialized_goal_mutation
 from pa.goals.models import (
     CriterionVerdict,
     Goal,
@@ -217,6 +217,7 @@ class GoalService:
         self.instance_id = instance_id
         self._clock = clock or (lambda: datetime.now(UTC))
 
+    @serialized_goal_mutation
     def create(self, data: GoalCreate, context: GoalMutationContext) -> Goal:
         if context.expected_version != 0:
             raise GoalConflict("goal creation requires expected_version=0")
@@ -750,6 +751,7 @@ class GoalService:
             operation=checkpoint,
         )
 
+    @serialized_goal_mutation
     def _mutate(
         self,
         goal_id: str,

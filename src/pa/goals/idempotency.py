@@ -4,10 +4,23 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from datetime import date, datetime
 from enum import Enum
+from functools import wraps
 from typing import Any
 from uuid import UUID
+
+
+def serialized_goal_mutation(method: Callable[..., Any]) -> Callable[..., Any]:
+    """Hold the projection writer lock across lookup, validation, and commit."""
+
+    @wraps(method)
+    def wrapped(self, *args: Any, **kwargs: Any) -> Any:
+        with self.store.mutation():
+            return method(self, *args, **kwargs)
+
+    return wrapped
 
 
 def _json_value(value: Any, *, exclude_unset: bool = False) -> Any:

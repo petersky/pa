@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from threading import Barrier
 from unittest.mock import patch
 
 from pa.domain.models import CardEvent, EventType
@@ -300,6 +302,179 @@ class GoalGovernanceTests(unittest.TestCase):
                         update={"actor_principal": "user:other"}
                     ),
                 )
+
+    def test_concurrent_governance_mutations_atomically_claim_idempotency(self) -> None:
+        now = datetime(2026, 8, 3, tzinfo=UTC)
+        with tempfile.TemporaryDirectory() as tmp:
+            goals, governance, _ = self._services(tmp, now)
+            first = goals.create(
+                self._goal_data("Concurrent governance first"),
+                self._goal_ctx("concurrent-governance-first"),
+            )
+            second = goals.create(
+                self._goal_data("Concurrent governance second"),
+                self._goal_ctx("concurrent-governance-second"),
+            )
+
+            exact_context = self._ctx(
+                0,
+                "concurrent-exact-priority",
+                goal_version=first.version,
+            )
+            exact_start = Barrier(2)
+
+            def exact_priority():
+                exact_start.wait(timeout=5)
+                return governance.set_priority(
+                    first.id, 70, "Canonical priority", exact_context
+                )
+
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                futures = [executor.submit(exact_priority) for _ in range(2)]
+                exact = [future.result(timeout=10) for future in futures]
+            self.assertEqual(exact[0].version, exact[1].version)
+
+            changed_context = self._ctx(
+                exact[0].version,
+                "concurrent-changed-priority",
+                goal_version=first.version,
+            )
+            changed_start = Barrier(2)
+
+            def changed_priority(priority: int):
+                changed_start.wait(timeout=5)
+                return governance.set_priority(
+                    first.id,
+                    priority,
+                    f"Priority {priority}",
+                    changed_context,
+                )
+
+            changed_results = []
+            changed_errors = []
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                futures = [
+                    executor.submit(changed_priority, priority)
+                    for priority in (71, 72)
+                ]
+                for future in futures:
+                    try:
+                        changed_results.append(future.result(timeout=10))
+                    except GoalGovernanceConflict as exc:
+                        changed_errors.append(exc)
+            self.assertEqual(len(changed_results), 1)
+            self.assertEqual(len(changed_errors), 1)
+            self.assertIn("different governance operation", str(changed_errors[0]))
+
+            cross_start = Barrier(2)
+            first_state = governance.get_state(first.id)
+            cross_calls = [
+                (
+                    first.id,
+                    self._ctx(
+                        first_state.version,
+                        "concurrent-cross-entity",
+                        goal_version=first.version,
+                    ),
+                ),
+                (
+                    second.id,
+                    self._ctx(
+                        0,
+                        "concurrent-cross-entity",
+                        goal_version=second.version,
+                    ),
+                ),
+            ]
+
+            def cross_entity(goal_id: str, context: GovernanceMutationContext):
+                cross_start.wait(timeout=5)
+                return governance.set_priority(
+                    goal_id, 80, "Cross-entity claim", context
+                )
+
+            cross_results = []
+            cross_errors = []
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                futures = [
+                    executor.submit(cross_entity, goal_id, context)
+                    for goal_id, context in cross_calls
+                ]
+                for future in futures:
+                    try:
+                        cross_results.append(future.result(timeout=10))
+                    except GoalGovernanceConflict as exc:
+                        cross_errors.append(exc)
+            self.assertEqual(len(cross_results), 1)
+            self.assertEqual(len(cross_errors), 1)
+            self.assertIn("another governance entity", str(cross_errors[0]))
+            cross_events = [
+                event
+                for goal_id in (first.id, second.id)
+                for event in governance.state_events(goal_id)
+                if event["idempotency_key"] == "concurrent-cross-entity"
+            ]
+            self.assertEqual(len(cross_events), 1)
+
+    def test_concurrent_proposal_approval_claim_is_atomic(self) -> None:
+        now = datetime(2026, 8, 3, tzinfo=UTC)
+        with tempfile.TemporaryDirectory() as tmp:
+            goals, governance, _ = self._services(tmp, now)
+            proposal = governance.propose_goal(
+                GoalProposalRequest(
+                    kind=ProposalKind.TOP_LEVEL,
+                    goal=self._goal_data("Concurrent approval"),
+                    category="unmatched",
+                    rationale="Requires operator review",
+                ),
+                self._ctx(0, "concurrent-approval-proposal", goal_version=None),
+            )
+            context = self._ctx(
+                proposal.version,
+                "concurrent-approval-review",
+                actor="user:operator",
+                goal_version=None,
+            )
+            start = Barrier(2)
+
+            def approve(reason: str):
+                start.wait(timeout=5)
+                return governance.review_proposal(
+                    proposal.id,
+                    GoalProposalReview(
+                        approve=True,
+                        reason=reason,
+                        reviewer_principal="user:operator",
+                    ),
+                    context,
+                )
+
+            results = []
+            errors = []
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                futures = [
+                    executor.submit(approve, reason)
+                    for reason in ("Approval A", "Approval B")
+                ]
+                for future in futures:
+                    try:
+                        results.append(future.result(timeout=10))
+                    except GoalGovernanceConflict as exc:
+                        errors.append(exc)
+            self.assertEqual(len(results), 1)
+            self.assertEqual(len(errors), 1)
+            self.assertIn("different governance operation", str(errors[0]))
+            self.assertIsNotNone(results[0].activated_goal_id)
+            self.assertEqual(
+                len(
+                    [
+                        goal
+                        for goal in goals.list()
+                        if goal.creation_source == "agent_proposed"
+                    ]
+                ),
+                1,
+            )
 
     def test_action_policy_reserves_budget_and_enforces_rate_and_risk(self) -> None:
         now = datetime(2026, 8, 3, tzinfo=UTC)

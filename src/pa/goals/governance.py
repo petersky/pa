@@ -40,7 +40,7 @@ from pa.goals.advanced_models import (
     ProviderRunState,
     ResourceAccess,
 )
-from pa.goals.idempotency import operation_fingerprint
+from pa.goals.idempotency import operation_fingerprint, serialized_goal_mutation
 from pa.goals.models import (
     Goal,
     GoalCreate,
@@ -286,6 +286,7 @@ class GoalGovernanceService:
     def effective_policy(self, realm_id: str = "default") -> GoalGovernancePolicy:
         return self.get_policy(realm_id) or GoalGovernancePolicy(realm_id=realm_id)
 
+    @serialized_goal_mutation
     def put_policy(
         self, policy: GoalGovernancePolicy, context: GovernanceMutationContext
     ) -> GoalGovernancePolicy:
@@ -346,6 +347,7 @@ class GoalGovernanceService:
         )
         return policy
 
+    @serialized_goal_mutation
     def set_priority(
         self,
         goal_id: str,
@@ -369,6 +371,7 @@ class GoalGovernanceService:
             operation={"priority": priority, "reason": reason},
         )
 
+    @serialized_goal_mutation
     def update_strategies(
         self,
         goal_id: str,
@@ -408,6 +411,7 @@ class GoalGovernanceService:
             operation=update,
         )
 
+    @serialized_goal_mutation
     def authorize_action(
         self,
         goal_id: str,
@@ -496,6 +500,7 @@ class GoalGovernanceService:
         assert decision is not None
         return state, decision
 
+    @serialized_goal_mutation
     def apply_action(
         self,
         goal_id: str,
@@ -676,6 +681,7 @@ class GoalGovernanceService:
         assert decision is not None
         return state, decision
 
+    @serialized_goal_mutation
     def release_action(
         self,
         goal_id: str,
@@ -750,6 +756,7 @@ class GoalGovernanceService:
             },
         )
 
+    @serialized_goal_mutation
     def bind_dispatch_placement(
         self,
         goal_id: str,
@@ -871,6 +878,7 @@ class GoalGovernanceService:
             )
         return state, reservation
 
+    @serialized_goal_mutation
     def revalidate_action_sink(
         self,
         goal_id: str,
@@ -1046,6 +1054,7 @@ class GoalGovernanceService:
             )
         return state, reservation
 
+    @serialized_goal_mutation
     def replace_action_reservation(
         self,
         goal_id: str,
@@ -1183,6 +1192,7 @@ class GoalGovernanceService:
         assert decision is not None
         return state, replacement, decision
 
+    @serialized_goal_mutation
     def reconcile_action_release(
         self,
         goal_id: str,
@@ -1249,6 +1259,7 @@ class GoalGovernanceService:
             validate_goal_context=False,
         )
 
+    @serialized_goal_mutation
     def assign_provider(
         self,
         goal_id: str,
@@ -1395,6 +1406,7 @@ class GoalGovernanceService:
         assert decision is not None
         return state, run, decision
 
+    @serialized_goal_mutation
     def launch_provider(
         self,
         goal_id: str,
@@ -1516,6 +1528,7 @@ class GoalGovernanceService:
         assert launched is not None
         return state, launched, decision
 
+    @serialized_goal_mutation
     def ingest_provider_progress(
         self,
         goal_id: str,
@@ -1687,6 +1700,7 @@ class GoalGovernanceService:
             operation=progress,
         )
 
+    @serialized_goal_mutation
     def propose_goal(
         self, request: GoalProposalRequest, context: GovernanceMutationContext
     ) -> GoalProposal:
@@ -1770,6 +1784,7 @@ class GoalGovernanceService:
             for item in list_governance_payloads(self.store, realm_id, PROPOSAL_ENTITY)
         ]
 
+    @serialized_goal_mutation
     def review_proposal(
         self,
         proposal_id: str,
@@ -1866,6 +1881,7 @@ class GoalGovernanceService:
         )
         return GoalPortfolioReview.model_validate(payload) if payload else None
 
+    @serialized_goal_mutation
     def review_portfolio(
         self,
         request: GoalPortfolioReviewRequest,
