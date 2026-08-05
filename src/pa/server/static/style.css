@@ -272,6 +272,25 @@
   font-size: 0.78rem;
 }
 
+.telemetry-data-table h2,
+.telemetry-data-table p {
+  margin: 0;
+}
+
+.telemetry-table-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  color: var(--pa-text-muted);
+  font-size: 0.78rem;
+}
+
+.telemetry-table-wrap {
+  max-height: 28rem;
+  overflow: auto;
+}
+
 @media (max-width: 1200px) {
   .telemetry-mini {
     min-width: 3.2rem;

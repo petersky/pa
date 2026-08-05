@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
+import shutil
 import sqlite3
+import subprocess
 import tempfile
 import time
 import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -17,6 +21,7 @@ from pa.config import Settings
 from pa.core.kernel import Kernel
 from pa.domain.config_edit import ConfigError, validate_config_changes
 from pa.domain.instance_config import InstanceConfig
+from pa.modules.telemetry import QueryBody, fleet_query
 from pa.telemetry.collector import (
     LinuxCollector,
     MacOSCollector,
@@ -293,6 +298,618 @@ class StorageTests(unittest.TestCase):
         self.assertEqual(network["points"][0]["value_count"], 0)
         self.assertEqual(network["points"][0]["quality"], "unavailable")
 
+    def test_query_preserves_zero_and_emits_typed_gap_ranges(self) -> None:
+        start = datetime(2026, 1, 1, tzinfo=UTC)
+        observed = sample(start + timedelta(minutes=1), value=0)
+        unavailable_sample = sample(start + timedelta(minutes=3), value=5)
+        unavailable_sample.metrics["cpu.utilization"] = Metric(
+            value=None,
+            unit="percent",
+            quality=MetricQuality.UNAVAILABLE,
+            source="test",
+        )
+        unsupported_sample = sample(start + timedelta(minutes=4), value=5)
+        unsupported_sample.metrics["cpu.utilization"] = Metric(
+            value=None,
+            unit="percent",
+            quality=MetricQuality.UNSUPPORTED,
+            source="test",
+        )
+        self.storage.insert_samples([observed, unavailable_sample, unsupported_sample])
+
+        result = self.storage.query(
+            TelemetryQuery(
+                start=start,
+                end=start + timedelta(minutes=6),
+                bucket_seconds=60,
+            )
+        )
+        series = result["series"][0]
+        self.assertEqual(series["points"][0]["avg"], 0)
+        self.assertEqual(series["points"][0]["observation"], "genuine_zero")
+        self.assertIsNone(series["points"][0]["missing_reason"])
+        self.assertEqual(
+            [point["observation"] for point in series["points"][1:]],
+            ["missing", "missing"],
+        )
+        reasons = [gap["reason"] for gap in series["gaps"]]
+        self.assertEqual(
+            reasons,
+            [
+                "no_sample",
+                "no_sample",
+                "temporarily_unavailable",
+                "unsupported",
+                "stale",
+            ],
+        )
+        self.assertTrue(all(gap["start"] < gap["end"] for gap in series["gaps"]))
+        exported = self.storage.export(
+            TelemetryQuery(
+                start=start,
+                end=start + timedelta(minutes=6),
+                bucket_seconds=60,
+            )
+        )
+        self.assertEqual(exported["series"][0]["points"], series["points"])
+        self.assertEqual(exported["series"][0]["gaps"], series["gaps"])
+
+    def test_all_unavailable_series_never_has_an_observed_value(self) -> None:
+        timestamp = datetime(2026, 1, 1, tzinfo=UTC)
+        item = sample(timestamp)
+        item.metrics["cpu.utilization"] = Metric(
+            value=None,
+            unit="percent",
+            quality=MetricQuality.UNAVAILABLE,
+            source="test",
+        )
+        self.storage.insert_samples([item])
+        result = self.storage.query(
+            TelemetryQuery(
+                start=timestamp,
+                end=timestamp + timedelta(minutes=1),
+                bucket_seconds=60,
+            )
+        )
+        point = result["series"][0]["points"][0]
+        self.assertIsNone(point["avg"])
+        self.assertEqual(point["value_count"], 0)
+        self.assertEqual(point["observation"], "missing")
+        self.assertEqual(point["missing_reason"], "temporarily_unavailable")
+        self.assertEqual(
+            result["series"][0]["gaps"][0]["reason"],
+            "temporarily_unavailable",
+        )
+
+    def test_mixed_quality_preserves_measured_value_raw_and_rolled(self) -> None:
+        bucket_start = (self.now - timedelta(days=10)).replace(second=0, microsecond=0)
+        bucket_start -= timedelta(minutes=bucket_start.minute % 5)
+        measured = sample(bucket_start + timedelta(seconds=10), value=5)
+        unavailable = sample(bucket_start + timedelta(seconds=20), value=99)
+        unavailable.metrics["cpu.utilization"] = Metric(
+            value=None,
+            unit="percent",
+            quality=MetricQuality.UNAVAILABLE,
+            source="test",
+        )
+        self.storage.insert_samples([measured, unavailable])
+        query = TelemetryQuery(
+            start=bucket_start,
+            end=bucket_start + timedelta(minutes=5),
+            bucket_seconds=300,
+        )
+
+        raw = self.storage.query(query)
+        self.storage.prune(
+            raw_retention_hours=24,
+            rollup_retention_hours=24 * 30,
+            max_database_bytes=16 * 1024 * 1024,
+            now=self.now,
+        )
+        rolled = self.storage.query(query)
+
+        for result in (raw, rolled):
+            point = result["series"][0]["points"][0]
+            self.assertEqual(point["avg"], 5)
+            self.assertEqual(point["value_count"], 1)
+            self.assertEqual(point["sample_count"], 2)
+            self.assertEqual(point["missing_count"], 1)
+            self.assertEqual(point["quality"], "unavailable")
+            self.assertEqual(point["observation"], "observed")
+            self.assertIsNone(point["missing_reason"])
+            self.assertEqual(point["partial_reason"], "temporarily_unavailable")
+            self.assertIn(
+                {
+                    "reason": "temporarily_unavailable",
+                    "start": bucket_start.isoformat(),
+                    "end": (bucket_start + timedelta(minutes=5)).isoformat(),
+                    "partial": True,
+                },
+                result["series"][0]["gaps"],
+            )
+
+    def test_rollups_keep_same_metric_with_different_units_separate(self) -> None:
+        bucket_start = (self.now - timedelta(days=10)).replace(second=0, microsecond=0)
+        bucket_start -= timedelta(minutes=bucket_start.minute % 5)
+
+        def drift_sample(offset: int, value: float, unit: str) -> TelemetrySample:
+            item = sample(bucket_start + timedelta(seconds=offset))
+            item.metrics = {
+                "drift.metric": Metric(
+                    value=value,
+                    unit=unit,
+                    quality=MetricQuality.MEASURED,
+                    source="test",
+                )
+            }
+            return item
+
+        self.storage.insert_samples(
+            [drift_sample(10, 1, "percent"), drift_sample(20, 1000, "bytes")]
+        )
+        query = TelemetryQuery(
+            start=bucket_start,
+            end=bucket_start + timedelta(minutes=5),
+            metrics=["drift.metric"],
+            bucket_seconds=300,
+        )
+        raw = self.storage.query(query)
+        self.storage.prune(
+            raw_retention_hours=24,
+            rollup_retention_hours=24 * 30,
+            max_database_bytes=16 * 1024 * 1024,
+            now=self.now,
+        )
+        rolled = self.storage.query(query)
+
+        def values(result: dict) -> dict[str, float]:
+            return {
+                series["unit"]: series["points"][0]["avg"]
+                for series in result["series"]
+            }
+
+        self.assertEqual(values(raw), {"percent": 1, "bytes": 1000})
+        self.assertEqual(values(rolled), values(raw))
+        with sqlite3.connect(self.path) as conn:
+            primary_key = [
+                row[1]
+                for row in conn.execute("PRAGMA table_info(rollup_metrics)")
+                if row[5]
+            ]
+        self.assertEqual(primary_key[-2:], ["metric", "unit"])
+
+    def test_unitless_rollup_schema_migrates_without_future_unit_collision(
+        self,
+    ) -> None:
+        legacy_path = self.path.parent / "legacy-rollup.db"
+        bucket_start = (self.now - timedelta(days=10)).replace(second=0, microsecond=0)
+        bucket_start -= timedelta(minutes=bucket_start.minute % 5)
+        with sqlite3.connect(legacy_path) as conn:
+            conn.executescript(
+                """
+                CREATE TABLE rollup_metrics (
+                    bucket_start REAL NOT NULL, bucket_seconds INTEGER NOT NULL,
+                    instance_id TEXT NOT NULL, instance_name TEXT NOT NULL,
+                    scope_type TEXT NOT NULL, scope_id TEXT NOT NULL,
+                    provider_id TEXT NOT NULL DEFAULT '',
+                    card_id TEXT NOT NULL DEFAULT '',
+                    project_id TEXT NOT NULL DEFAULT '',
+                    realm_id TEXT NOT NULL DEFAULT '',
+                    principal_id TEXT NOT NULL DEFAULT '',
+                    metric TEXT NOT NULL, unit TEXT NOT NULL,
+                    quality_rank INTEGER NOT NULL, value_sum REAL,
+                    value_min REAL, value_max REAL, value_last REAL,
+                    value_count INTEGER NOT NULL, sample_count INTEGER NOT NULL,
+                    restart_ids TEXT NOT NULL DEFAULT '',
+                    PRIMARY KEY(
+                        bucket_start,bucket_seconds,instance_id,scope_type,scope_id,
+                        provider_id,card_id,project_id,realm_id,principal_id,metric
+                    )
+                );
+                """
+            )
+            conn.execute(
+                """
+                INSERT INTO rollup_metrics VALUES(
+                    ?,300,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+                )
+                """,
+                (
+                    bucket_start.timestamp(),
+                    "instance-a",
+                    "Alpha",
+                    "instance",
+                    "instance-a",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "drift.metric",
+                    "percent",
+                    0,
+                    1,
+                    1,
+                    1,
+                    1,
+                    1,
+                    1,
+                    "restart-a",
+                ),
+            )
+
+        migrated = TelemetryStorage(legacy_path)
+        with sqlite3.connect(legacy_path) as conn:
+            primary_key = [
+                row[1]
+                for row in conn.execute("PRAGMA table_info(rollup_metrics)")
+                if row[5]
+            ]
+            schema_version = conn.execute(
+                "SELECT value FROM telemetry_meta WHERE key='schema_version'"
+            ).fetchone()[0]
+        self.assertEqual(primary_key[-2:], ["metric", "unit"])
+        self.assertEqual(schema_version, "3")
+        result = migrated.query(
+            TelemetryQuery(
+                start=bucket_start,
+                end=bucket_start + timedelta(minutes=5),
+                metrics=["drift.metric"],
+                bucket_seconds=300,
+            )
+        )
+        self.assertEqual(result["series"][0]["unit"], "percent")
+        self.assertEqual(result["series"][0]["points"][0]["avg"], 1)
+
+        second_unit = sample(bucket_start + timedelta(seconds=20), value=100)
+        second_unit.metrics = {
+            "drift.metric": Metric(
+                value=100,
+                unit="bytes",
+                quality=MetricQuality.MEASURED,
+                source="test",
+            )
+        }
+        migrated.insert_samples([second_unit])
+        migrated.prune(
+            raw_retention_hours=24,
+            rollup_retention_hours=24 * 30,
+            max_database_bytes=16 * 1024 * 1024,
+            now=self.now,
+        )
+        result = migrated.query(
+            TelemetryQuery(
+                start=bucket_start,
+                end=bucket_start + timedelta(minutes=5),
+                metrics=["drift.metric"],
+                bucket_seconds=300,
+            )
+        )
+        self.assertEqual(
+            {series["unit"]: series["points"][0]["avg"] for series in result["series"]},
+            {"percent": 1, "bytes": 100},
+        )
+
+    def test_interrupted_unit_migration_recovers_idempotently(
+        self,
+    ) -> None:
+        interrupted_path = self.path.parent / "interrupted-rollup.db"
+        bucket_start = (self.now - timedelta(days=10)).replace(second=0, microsecond=0)
+        bucket_start -= timedelta(minutes=bucket_start.minute % 5)
+        with sqlite3.connect(interrupted_path) as conn:
+            conn.executescript(
+                """
+                CREATE TABLE rollup_metrics_unitless (
+                    bucket_start REAL NOT NULL, bucket_seconds INTEGER NOT NULL,
+                    instance_id TEXT NOT NULL, instance_name TEXT NOT NULL,
+                    scope_type TEXT NOT NULL, scope_id TEXT NOT NULL,
+                    provider_id TEXT NOT NULL DEFAULT '',
+                    card_id TEXT NOT NULL DEFAULT '',
+                    project_id TEXT NOT NULL DEFAULT '',
+                    realm_id TEXT NOT NULL DEFAULT '',
+                    principal_id TEXT NOT NULL DEFAULT '',
+                    metric TEXT NOT NULL, unit TEXT NOT NULL,
+                    quality_rank INTEGER NOT NULL, value_sum REAL,
+                    value_min REAL, value_max REAL, value_last REAL,
+                    value_count INTEGER NOT NULL, sample_count INTEGER NOT NULL,
+                    restart_ids TEXT NOT NULL DEFAULT '',
+                    PRIMARY KEY(
+                        bucket_start,bucket_seconds,instance_id,scope_type,scope_id,
+                        provider_id,card_id,project_id,realm_id,principal_id,metric
+                    )
+                );
+                """
+            )
+            conn.execute(
+                """
+                INSERT INTO rollup_metrics_unitless VALUES(
+                    ?,300,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+                )
+                """,
+                (
+                    bucket_start.timestamp(),
+                    "instance-a",
+                    "Alpha",
+                    "instance",
+                    "instance-a",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "drift.metric",
+                    "percent",
+                    0,
+                    1,
+                    1,
+                    1,
+                    1,
+                    1,
+                    1,
+                    "restart-a",
+                ),
+            )
+
+        recovered = TelemetryStorage(interrupted_path)
+        reopened = TelemetryStorage(interrupted_path)
+        with sqlite3.connect(interrupted_path) as conn:
+            tables = {
+                row[0]
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )
+            }
+            rows = conn.execute(
+                "SELECT unit,value_sum,value_last FROM rollup_metrics"
+            ).fetchall()
+        self.assertNotIn("rollup_metrics_unitless", tables)
+        self.assertEqual(rows, [("percent", 1.0, 1.0)])
+        for storage in (recovered, reopened):
+            result = storage.query(
+                TelemetryQuery(
+                    start=bucket_start,
+                    end=bucket_start + timedelta(minutes=5),
+                    metrics=["drift.metric"],
+                    bucket_seconds=300,
+                )
+            )
+            self.assertEqual(
+                [
+                    (series["unit"], series["points"][0]["avg"])
+                    for series in result["series"]
+                ],
+                [("percent", 1)],
+            )
+
+    def test_rollup_value_last_isolated_by_every_identity_dimension(self) -> None:
+        bucket_start = (self.now - timedelta(days=10)).replace(second=0, microsecond=0)
+        bucket_start -= timedelta(minutes=bucket_start.minute % 5)
+        cases = {
+            "instance_id": {"instance_id": "instance-b"},
+            "scope_type": {"scope_type": "session"},
+            "scope_id": {"scope_id": "scope-b"},
+            "provider_id": {"provider_id": "provider-b"},
+            "card_id": {"card_id": "card-b"},
+            "project_id": {"project_id": "project-b"},
+            "realm_id": {"realm_id": "realm-b"},
+            "principal_id": {"principal_id": "principal-b"},
+        }
+        samples = []
+        for index, (dimension, second_override) in enumerate(cases.items()):
+            metric = f"value_last.{dimension}"
+            scope_id = f"collision-{dimension}"
+            base_fields = {
+                "instance_id": "instance-a",
+                "instance_name": "Alpha",
+                "scope_type": "instance",
+                "scope_id": scope_id,
+                "restart_id": "restart-a",
+                "provider_id": None,
+                "card_id": None,
+                "project_id": None,
+                "realm_id": None,
+                "principal_id": None,
+            }
+            for offset, value, overrides in (
+                (10, 1, {}),
+                (11, 100, second_override),
+            ):
+                fields = dict(base_fields)
+                fields.update(overrides)
+                samples.append(
+                    TelemetrySample(
+                        timestamp=bucket_start + timedelta(seconds=index * 2 + offset),
+                        metrics={
+                            metric: Metric(
+                                value=value,
+                                unit="count",
+                                quality=MetricQuality.MEASURED,
+                                source="test",
+                            )
+                        },
+                        **fields,
+                    )
+                )
+        self.storage.insert_samples(samples)
+        self.storage.prune(
+            raw_retention_hours=24,
+            rollup_retention_hours=24 * 30,
+            max_database_bytes=16 * 1024 * 1024,
+            now=self.now,
+        )
+        with sqlite3.connect(self.path) as conn:
+            rows = conn.execute(
+                """
+                SELECT metric,value_sum,value_last
+                FROM rollup_metrics
+                WHERE metric LIKE 'value_last.%'
+                ORDER BY metric,value_sum
+                """
+            ).fetchall()
+        self.assertEqual(len(rows), len(cases) * 2)
+        for metric, value_sum, value_last in rows:
+            with self.subTest(metric=metric, value_sum=value_sum):
+                self.assertEqual(value_last, value_sum)
+
+    def test_raw_and_rollup_queries_use_half_open_bounds(self) -> None:
+        first_bucket = (self.now - timedelta(days=10)).replace(second=0, microsecond=0)
+        first_bucket -= timedelta(minutes=first_bucket.minute % 5)
+        start = first_bucket + timedelta(minutes=5)
+        end = start + timedelta(minutes=5)
+        self.storage.insert_samples(
+            [
+                sample(first_bucket + timedelta(seconds=1), value=10),
+                sample(start, value=20),
+                sample(end, value=30),
+            ]
+        )
+        query = TelemetryQuery(start=start, end=end, bucket_seconds=300)
+        raw = self.storage.query(query)
+        self.storage.prune(
+            raw_retention_hours=24,
+            rollup_retention_hours=24 * 30,
+            max_database_bytes=16 * 1024 * 1024,
+            now=self.now,
+        )
+        rolled = self.storage.query(query)
+
+        for result in (raw, rolled):
+            points = result["series"][0]["points"]
+            self.assertEqual([point["avg"] for point in points], [20])
+            self.assertEqual(
+                [point["timestamp"] for point in points], [start.isoformat()]
+            )
+            self.assertEqual(points[0]["interval_start"], start.isoformat())
+            self.assertEqual(points[0]["interval_end"], end.isoformat())
+            self.assertTrue(
+                all(
+                    point["interval_start"] < point["interval_end"]
+                    for series in result["series"]
+                    for point in series["points"]
+                )
+            )
+
+    def test_partial_first_and_last_buckets_stay_inside_requested_domain(self) -> None:
+        bucket_start = (self.now - timedelta(days=10)).replace(second=0, microsecond=0)
+        bucket_start -= timedelta(minutes=bucket_start.minute % 5)
+        self.storage.insert_samples(
+            [
+                sample(bucket_start + timedelta(minutes=1), value=1),
+                sample(bucket_start + timedelta(minutes=5, seconds=10), value=2),
+            ]
+        )
+        start = bucket_start + timedelta(seconds=30)
+        end = bucket_start + timedelta(minutes=5, seconds=30)
+        query = TelemetryQuery(start=start, end=end, bucket_seconds=300)
+        raw = self.storage.query(query)
+        self.storage.prune(
+            raw_retention_hours=24,
+            rollup_retention_hours=24 * 30,
+            max_database_bytes=16 * 1024 * 1024,
+            now=self.now,
+        )
+        rolled = self.storage.query(query)
+
+        for result in (raw, rolled):
+            points = result["series"][0]["points"]
+            self.assertEqual(
+                [point["timestamp"] for point in points],
+                [start.isoformat(), (bucket_start + timedelta(minutes=5)).isoformat()],
+            )
+            self.assertEqual(points[0]["interval_start"], start.isoformat())
+            self.assertEqual(points[-1]["interval_end"], end.isoformat())
+            self.assertTrue(all(point["partial_bucket"] for point in points))
+            for point in points:
+                self.assertGreaterEqual(
+                    datetime.fromisoformat(point["timestamp"]), start
+                )
+                self.assertLessEqual(datetime.fromisoformat(point["timestamp"]), end)
+                self.assertGreaterEqual(
+                    datetime.fromisoformat(point["first_timestamp"]), start
+                )
+                self.assertLessEqual(
+                    datetime.fromisoformat(point["last_timestamp"]), end
+                )
+
+    def test_restart_and_missing_semantics_survive_rollup_queries(self) -> None:
+        timestamp = (self.now - timedelta(days=10)).replace(second=0, microsecond=0)
+        timestamp -= timedelta(minutes=timestamp.minute % 5)
+        timestamp += timedelta(minutes=4, seconds=59)
+        samples = []
+        for offset, restart_id in ((0, "before"), (2, "after")):
+            item = TelemetrySample(
+                timestamp=timestamp + timedelta(seconds=offset),
+                instance_id="instance-a",
+                instance_name="Alpha",
+                scope_type="instance",
+                scope_id="instance-a",
+                restart_id=restart_id,
+                metrics={
+                    "zero.metric": Metric(
+                        value=0,
+                        unit="count",
+                        quality=MetricQuality.MEASURED,
+                        source="test",
+                    ),
+                    "missing.metric": Metric(
+                        value=None,
+                        unit="count",
+                        quality=MetricQuality.UNAVAILABLE,
+                        source="test",
+                    ),
+                    "restart.metric": Metric(
+                        value=10 + offset,
+                        unit="count",
+                        quality=MetricQuality.MEASURED,
+                        source="test",
+                    ),
+                },
+            )
+            samples.append(item)
+        self.storage.insert_samples(samples)
+        query = TelemetryQuery(
+            start=self.now - timedelta(days=12),
+            end=self.now - timedelta(days=8),
+            bucket_seconds=300,
+        )
+        raw = self.storage.query(query)
+        self.storage.prune(
+            raw_retention_hours=24,
+            rollup_retention_hours=24 * 30,
+            max_database_bytes=16 * 1024 * 1024,
+            now=self.now,
+        )
+        rolled = self.storage.query(query)
+
+        def semantics(result: dict) -> dict:
+            return {
+                series["metric"]: {
+                    "observations": [
+                        point["observation"] for point in series["points"]
+                    ],
+                    "missing_reasons": [
+                        point["missing_reason"] for point in series["points"]
+                    ],
+                    "restart": [point["restart"] for point in series["points"]],
+                    "gap_reasons": [gap["reason"] for gap in series["gaps"]],
+                }
+                for series in result["series"]
+            }
+
+        self.assertEqual(semantics(rolled), semantics(raw))
+        self.assertEqual(
+            semantics(rolled)["zero.metric"]["observations"],
+            ["genuine_zero", "genuine_zero"],
+        )
+        self.assertEqual(
+            semantics(rolled)["missing.metric"]["missing_reasons"],
+            ["temporarily_unavailable", "temporarily_unavailable"],
+        )
+        self.assertEqual(
+            semantics(rolled)["restart.metric"]["restart"],
+            [False, True],
+        )
+
     def test_age_pruning_rolls_up_before_raw_deletion(self) -> None:
         old = self.now - timedelta(hours=2)
         self.storage.insert_samples(
@@ -395,16 +1012,29 @@ class StorageTests(unittest.TestCase):
             max(len(series["points"]) for series in result["series"]), 13
         )
 
-
-    def test_empty_zero_single_and_sparse_series_have_explicit_diagnostics(self) -> None:
-        empty = self.storage.query(TelemetryQuery(start=self.now - timedelta(hours=1), end=self.now, bucket_seconds=60))
+    def test_empty_zero_single_and_sparse_series_have_explicit_diagnostics(
+        self,
+    ) -> None:
+        empty = self.storage.query(
+            TelemetryQuery(
+                start=self.now - timedelta(hours=1), end=self.now, bucket_seconds=60
+            )
+        )
         self.assertEqual(empty["series"], [])
         self.assertEqual(empty["diagnostics"]["point_count"], 0)
-        self.storage.insert_samples([
-            sample(self.now - timedelta(minutes=2), value=0),
-            sample(self.now, value=0),
-        ])
-        result = self.storage.query(TelemetryQuery(start=self.now - timedelta(minutes=3), end=self.now + timedelta(seconds=1), bucket_seconds=60))
+        self.storage.insert_samples(
+            [
+                sample(self.now - timedelta(minutes=2), value=0),
+                sample(self.now, value=0),
+            ]
+        )
+        result = self.storage.query(
+            TelemetryQuery(
+                start=self.now - timedelta(minutes=3),
+                end=self.now + timedelta(seconds=1),
+                bucket_seconds=60,
+            )
+        )
         points = result["series"][0]["points"]
         self.assertEqual([point["avg"] for point in points], [0, 0])
         self.assertEqual(result["diagnostics"]["series_count"], 1)
@@ -415,18 +1045,35 @@ class StorageTests(unittest.TestCase):
     def test_non_finite_aggregate_is_dropped_and_counted(self) -> None:
         malformed = sample(self.now, value=float("inf"))
         self.storage.insert_samples([malformed])
-        result = self.storage.query(TelemetryQuery(start=self.now - timedelta(seconds=1), end=self.now + timedelta(seconds=1), bucket_seconds=60))
+        result = self.storage.query(
+            TelemetryQuery(
+                start=self.now - timedelta(seconds=1),
+                end=self.now + timedelta(seconds=1),
+                bucket_seconds=60,
+            )
+        )
         self.assertEqual(result["series"], [])
         self.assertEqual(result["diagnostics"]["dropped_invalid_samples"], 1)
 
-
     def test_timezone_boundary_is_serialized_in_utc_bucket_order(self) -> None:
         boundary = datetime.fromisoformat("2026-11-01T01:59:30-07:00")
-        self.storage.insert_samples([sample(boundary, value=1), sample(boundary + timedelta(minutes=2), value=2)])
-        result = self.storage.query(TelemetryQuery(start=boundary - timedelta(minutes=1), end=boundary + timedelta(minutes=3), bucket_seconds=60))
+        self.storage.insert_samples(
+            [
+                sample(boundary, value=1),
+                sample(boundary + timedelta(minutes=2), value=2),
+            ]
+        )
+        result = self.storage.query(
+            TelemetryQuery(
+                start=boundary - timedelta(minutes=1),
+                end=boundary + timedelta(minutes=3),
+                bucket_seconds=60,
+            )
+        )
         timestamps = [point["timestamp"] for point in result["series"][0]["points"]]
         self.assertEqual(timestamps, sorted(timestamps))
         self.assertTrue(all(timestamp.endswith("+00:00") for timestamp in timestamps))
+
 
 class FailingStorage:
     def insert_samples(self, _samples) -> int:
@@ -494,19 +1141,387 @@ class TelemetryUITests(unittest.TestCase):
         self.assertIn("Fleet instances", template)
         self.assertIn("data-chart-cursor", template)
         self.assertIn("data-chart-points", template)
+        self.assertIn("data-chart-live-output", template)
+        self.assertIn('aria-atomic="true"', template)
         self.assertIn("data-report-diagnostics", template)
         self.assertIn("ArrowLeft", script)
+        self.assertIn('stage.setAttribute("aria-label"', script)
+        self.assertIn("liveOutput.textContent = tooltip.textContent", script)
+        self.assertNotIn('svg.setAttribute("aria-label"', script)
         self.assertIn("sampling gap", script)
-        self.assertIn("ResizeObserver", script)
+        self.assertNotIn("ResizeObserver", script)
         self.assertIn("AbortController", script)
         self.assertIn("Report could not be loaded", script)
         self.assertIn("Number.isFinite", script)
         self.assertIn("unsupported", script)
+        self.assertIn("MAX_CHART_PATH_POINTS", script)
+        self.assertIn("ACCESSIBLE_PAGE_SIZE", script)
+        self.assertIn("data-telemetry-table-prev", template)
+        self.assertIn("data-telemetry-table-next", template)
         self.assertIn("js/telemetry.js", shell)
         self.assertIn("data-session-telemetry", chat)
 
+    @unittest.skipUnless(
+        shutil.which("node"), "node is required for telemetry UI tests"
+    )
+    def test_browser_model_preserves_missing_values_and_shared_domain(self) -> None:
+        root = Path(__file__).parents[1]
+        script = root / "src/pa/server/static/js/telemetry.js"
+        program = r"""
+const assert = require("assert");
+global.document = {
+  body: null,
+  hidden: false,
+  addEventListener: function () {},
+  querySelector: function () { return null; }
+};
+global.window = {
+  location: {href: "http://localhost/reports"},
+  setInterval: function () {}
+};
+const model = require(process.argv[1]);
+const start = "2026-01-01T00:00:00Z";
+const end = "2026-01-01T00:10:00Z";
+const zero = {timestamp: "2026-01-01T00:02:00Z", avg: 0, value_count: 1, quality: "measured"};
+const unavailable = {timestamp: "2026-01-01T00:03:00Z", avg: null, value_count: 0, quality: "unavailable"};
+const unsupported = {timestamp: "2026-01-01T00:04:00Z", avg: null, value_count: 0, quality: "unsupported"};
+const later = {timestamp: "2026-01-01T00:05:00Z", avg: 5, value_count: 1, quality: "measured"};
+assert.strictEqual(model.normalizeObservation(zero).state, "genuine_zero");
+assert.strictEqual(model.normalizeObservation(unavailable).value, null);
+assert.strictEqual(model.normalizeObservation(unavailable).reason, "temporarily_unavailable");
+assert.strictEqual(model.normalizeObservation(unsupported).reason, "unsupported");
+const segments = model.lineSegments([zero, unavailable, later], 800, 220, 0, 5, 60, start, end);
+assert.strictEqual(segments.length, 2);
+assert.deepStrictEqual(segments.map(function (segment) {
+  return segment.map(function (point) { return point.observation.value; });
+}), [[0], [5]]);
+const absentBucketPoints = [
+  {timestamp: "2026-01-01T00:01:00Z", avg: 1, value_count: 1, quality: "measured"},
+  {timestamp: "2026-01-01T00:03:00Z", avg: 3, value_count: 1, quality: "measured"}
+];
+const absentBucketGap = [{
+  reason: "no_sample", start: "2026-01-01T00:02:00Z", end: "2026-01-01T00:03:00Z"
+}];
+assert.strictEqual(
+  model.lineSegments(absentBucketPoints, 800, 220, 0, 3, 60, start, end).length, 1
+);
+assert.strictEqual(
+  model.lineSegments(absentBucketPoints, 800, 220, 0, 3, 60, start, end, absentBucketGap).length, 2
+);
+assert.strictEqual(
+  model.lineSegments(absentBucketPoints, 800, 220, 0, 3, 60, start, end, [
+    {...absentBucketGap[0], partial: true}
+  ]).length, 1
+);
+const differentlyBucketed = [absentBucketPoints[0], {
+  timestamp: "2026-01-01T00:05:00Z", avg: 5, value_count: 1, quality: "measured"
+}];
+assert.strictEqual(model.lineSegments(differentlyBucketed, 800, 220, 0, 5, 60, start, end).length, 2);
+assert.strictEqual(model.lineSegments(differentlyBucketed, 800, 220, 0, 5, 300, start, end).length, 1);
+const sameTimeA = model.lineSegments([zero], 800, 220, 0, 5, 60, start, end)[0][0].x;
+const sameTimeB = model.lineSegments([
+  {timestamp: zero.timestamp, avg: 4, value_count: 1, quality: "measured"}
+], 800, 220, 0, 5, 60, start, end)[0][0].x;
+assert.strictEqual(sameTimeA, sameTimeB);
+assert.ok(sameTimeA > 42 && sameTimeA < 784);
+const series = {
+  instance_name: "Alpha", scope_id: "instance-a", metric: "cpu.utilization",
+  unit: "percent", points: [zero, later],
+  gaps: [{reason: "no_sample", start: "2026-01-01T00:03:00Z", end: "2026-01-01T00:05:00Z"}]
+};
+assert.ok(model.cursorValue(series, Date.parse(zero.timestamp)).includes("genuine measured zero"));
+assert.strictEqual(model.cursorValue(series, Date.parse("2026-01-01T00:03:00Z")), "No sample");
+assert.deepStrictEqual(
+  ["no_sample", "unsupported", "temporarily_unavailable", "stale", "restart", "peer_failure"].map(model.gapLabel),
+  ["No sample", "Unsupported", "Temporarily unavailable", "Stale", "Collector restart", "Peer failure"]
+);
+const mixed = {
+  timestamp: "2026-01-01T00:06:00Z", avg: 5, value_count: 1, sample_count: 2,
+  quality: "unavailable", partial_reason: "temporarily_unavailable"
+};
+assert.strictEqual(model.normalizeObservation(mixed).reason, null);
+assert.strictEqual(model.normalizeObservation(mixed).partialReason, "temporarily_unavailable");
+assert.strictEqual(model.lineSegments([mixed], 800, 220, 0, 5, 60, start, end)[0][0].observation.value, 5);
+assert.ok(model.cursorValue({
+  instance_name: "Alpha", metric: "cpu.utilization", unit: "percent", points: [mixed], gaps: []
+}, Date.parse(mixed.timestamp)).includes("partial: temporarily unavailable"));
+assert.strictEqual(model.timeX(Date.parse("2025-12-31T23:59:59Z"), start, end, 800), null);
+assert.strictEqual(model.timeX(Date.parse("2026-01-01T00:10:01Z"), start, end, 800), null);
+assert.strictEqual(model.lineSegments([
+  {timestamp: "2025-12-31T23:59:59Z", avg: 99, value_count: 1, quality: "measured"},
+  zero
+], 800, 220, 0, 99, 60, start, end)[0].length, 1);
+const accessible = {
+  start: start, end: end, failures: [], series: [{
+    instance_name: "Alpha", scope_id: "instance-a", metric: "cpu.utilization", unit: "percent",
+    points: [
+      {timestamp: "2025-12-31T23:59:59Z", avg: 99, value_count: 1, quality: "measured"}, mixed
+    ],
+    gaps: [{reason: "stale", start: "2025-12-31T23:59:00Z", end: "2026-01-01T00:01:00Z"}]
+  }]
+};
+const firstPage = model.accessiblePage(accessible, 0, 1);
+const secondPage = model.accessiblePage(accessible, 1, 1);
+assert.strictEqual(firstPage.counts.total, 2);
+assert.strictEqual(firstPage.rows.length, 1);
+assert.ok(firstPage.rows[0].values[3].includes("partial: temporarily unavailable"));
+assert.strictEqual(secondPage.rows.length, 1);
+assert.strictEqual(secondPage.rows[0].gapReason, "stale");
+"""
+        result = subprocess.run(
+            [shutil.which("node"), "-e", program, str(script)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    @unittest.skipUnless(
+        shutil.which("node"), "node is required for telemetry UI tests"
+    )
+    def test_browser_model_bounds_production_cardinality(self) -> None:
+        root = Path(__file__).parents[1]
+        script = root / "src/pa/server/static/js/telemetry.js"
+        program = r"""
+const assert = require("assert");
+global.document = {
+  body: null, hidden: false, addEventListener: function () {},
+  querySelector: function () { return null; }
+};
+global.window = {
+  location: {href: "http://localhost/reports"}, setInterval: function () {}
+};
+const model = require(process.argv[1]);
+const start = "2026-01-01T00:00:00Z";
+const end = "2026-01-01T06:00:00Z";
+const startMs = Date.parse(start);
+const series = [];
+for (let instance = 0; instance < 27; instance += 1) {
+  for (let metric = 0; metric < 24; metric += 1) {
+    const points = [];
+    for (let bucket = 0; bucket < 360; bucket += 1) {
+      points.push({
+        timestamp: new Date(startMs + bucket * 60000).toISOString(),
+        avg: (instance + metric + bucket) % 100,
+        value_count: 1, sample_count: 1, quality: "measured"
+      });
+    }
+    series.push({
+      instance_name: "Instance " + instance, scope_id: "instance-" + instance,
+      metric: "metric." + metric, unit: "count", points: points,
+      gaps: [{
+        reason: "stale", start: "2026-01-01T02:00:00Z",
+        end: "2026-01-01T02:01:00Z"
+      }]
+    });
+  }
+}
+const data = {start: start, end: end, series: series, failures: []};
+const first = model.accessiblePage(data, 0, model.ACCESSIBLE_PAGE_SIZE);
+const second = model.accessiblePage(data, 1, model.ACCESSIBLE_PAGE_SIZE);
+assert.strictEqual(first.counts.observations, 27 * 24 * 360);
+assert.strictEqual(first.counts.gaps, 27 * 24);
+assert.strictEqual(first.rows.length, model.ACCESSIBLE_PAGE_SIZE);
+assert.strictEqual(second.rows.length, model.ACCESSIBLE_PAGE_SIZE);
+assert.notDeepStrictEqual(first.rows[0].values, second.rows[0].values);
+const chartSeries = series.slice(0, 54);
+const pathBudget = Math.max(1, Math.floor(model.MAX_CHART_PATH_POINTS / chartSeries.length));
+const markerBudget = Math.floor(model.MAX_CHART_MARKERS / chartSeries.length);
+let pathPoints = 0; let markers = 0;
+chartSeries.forEach(function (item) {
+  const raw = model.lineSegments(item.points, 800, 220, 0, 100, 60, start, end);
+  const bounded = model.boundedSegments(raw, pathBudget);
+  pathPoints += bounded.flat().length;
+  markers += model.downsamplePoints(bounded.flat(), markerBudget).length;
+});
+assert.ok(pathPoints <= model.MAX_CHART_PATH_POINTS);
+assert.ok(markers <= model.MAX_CHART_MARKERS);
+"""
+        result = subprocess.run(
+            [shutil.which("node"), "-e", program, str(script)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_report_panels_are_exact_unit_facets_with_accessible_output(self) -> None:
+        root = Path(__file__).parents[1]
+        template = (root / "src/pa/server/templates/pages/reports.html").read_text()
+        script = (root / "src/pa/server/static/js/telemetry.js").read_text()
+        panels = re.findall(
+            r"\('[^']+', '[^']+', '([^']+)', '([^']+)'\)",
+            template,
+        )
+        expected_units = {
+            "cpu.utilization": "percent",
+            "pa.cpu": "percent",
+            "session.cpu": "percent_of_one_core",
+            "agents.concurrent": "sessions",
+            "memory.utilization": "percent",
+            "swap.utilization": "percent",
+            "pa.memory_rss": "bytes",
+            "session.memory_rss": "bytes",
+            "disk.read_throughput": "bytes/second",
+            "disk.write_throughput": "bytes/second",
+            "session.disk_read": "bytes/second",
+            "session.disk_write": "bytes/second",
+            "disk.read_iops": "operations/second",
+            "disk.write_iops": "operations/second",
+            "disk.latency": "milliseconds/operation",
+            "network.ingress": "bytes/second",
+            "network.egress": "bytes/second",
+            "session.network_ingress": "bytes/second",
+            "session.network_egress": "bytes/second",
+            "network.connections": "connections",
+            "network.errors": "errors",
+            "session.processes": "processes",
+            "session.tasks": "threads",
+            "pa.threads": "threads",
+        }
+        configured = {}
+        for unit, metrics in panels:
+            for metric_name in metrics.split(","):
+                self.assertEqual(expected_units[metric_name], unit)
+                configured[metric_name] = unit
+        self.assertEqual(configured, expected_units)
+        self.assertIn("data-unit=", template)
+        self.assertIn("data-telemetry-table-body", template)
+        self.assertIn("Value or gap reason", template)
+        self.assertIn("series.unit === unit", script)
+        self.assertIn("genuine measured zero", script)
+        self.assertIn("series.bucket_seconds || data.bucket_seconds", script)
+        self.assertIn("drawAccessibleTable(report, data, 0)", script)
+
 
 class TelemetryAPITests(unittest.TestCase):
+    def test_fleet_query_pins_peer_domain_and_types_peer_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            telemetry = SimpleNamespace(
+                storage=TelemetryStorage(Path(tmp) / "telemetry.db")
+            )
+            services = {
+                "fleet_http_client": object(),
+                "fleet_registry": SimpleNamespace(
+                    list_instances=lambda: [
+                        SimpleNamespace(instance_id="peer-a", url="http://peer-a")
+                    ]
+                ),
+            }
+            ctx = SimpleNamespace(
+                settings=SimpleNamespace(instance_id="instance-a", sync_token=""),
+                services=services,
+                require_service=lambda name: (
+                    telemetry if name == "telemetry" else services[name]
+                ),
+            )
+            request = SimpleNamespace(
+                app=SimpleNamespace(state=SimpleNamespace(ctx=ctx)),
+                state=SimpleNamespace(
+                    instance_authenticated=False,
+                    user_authenticated=True,
+                ),
+            )
+            start = datetime(2026, 1, 1, tzinfo=UTC)
+            end = start + timedelta(hours=1)
+            with patch(
+                "pa.modules.telemetry._peer_json",
+                side_effect=OSError("peer unavailable"),
+            ) as peer_query:
+                response = asyncio.run(
+                    fleet_query(request, QueryBody(start=start, end=end))
+                )
+
+            self.assertEqual(
+                response["failures"],
+                [
+                    {
+                        "instance_id": "peer-a",
+                        "state": "unavailable",
+                        "reason": "peer_failure",
+                        "start": start.isoformat(),
+                        "end": end.isoformat(),
+                    }
+                ],
+            )
+            remote_body = peer_query.await_args.kwargs["body"]
+            self.assertEqual(remote_body["start"], start.isoformat())
+            self.assertEqual(remote_body["end"], end.isoformat())
+
+    def test_fleet_query_preserves_each_peer_effective_bucket_seconds(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            storage = TelemetryStorage(Path(tmp) / "telemetry.db")
+            start = datetime(2026, 1, 1, tzinfo=UTC)
+            end = start + timedelta(hours=1)
+            storage.insert_samples([sample(start + timedelta(minutes=1))])
+            telemetry = SimpleNamespace(storage=storage)
+            services = {
+                "fleet_http_client": object(),
+                "fleet_registry": SimpleNamespace(
+                    list_instances=lambda: [
+                        SimpleNamespace(instance_id="peer-a", url="http://peer-a")
+                    ]
+                ),
+            }
+            ctx = SimpleNamespace(
+                settings=SimpleNamespace(instance_id="instance-a", sync_token=""),
+                services=services,
+                require_service=lambda name: (
+                    telemetry if name == "telemetry" else services[name]
+                ),
+            )
+            request = SimpleNamespace(
+                app=SimpleNamespace(state=SimpleNamespace(ctx=ctx)),
+                state=SimpleNamespace(
+                    instance_authenticated=False,
+                    user_authenticated=True,
+                ),
+            )
+            peer_response = {
+                "start": start.isoformat(),
+                "end": end.isoformat(),
+                "bucket_seconds": 300,
+                "series": [
+                    {
+                        "instance_id": "peer-a",
+                        "instance_name": "Peer A",
+                        "scope_type": "instance",
+                        "scope_id": "peer-a",
+                        "provider_id": None,
+                        "card_id": None,
+                        "project_id": None,
+                        "realm_id": None,
+                        "metric": "cpu.utilization",
+                        "unit": "percent",
+                        "points": [
+                            {
+                                "timestamp": (start + timedelta(minutes=5)).isoformat(),
+                                "avg": 50,
+                                "value_count": 1,
+                                "sample_count": 1,
+                                "quality": "measured",
+                            }
+                        ],
+                        "gaps": [],
+                    }
+                ],
+            }
+            with patch("pa.modules.telemetry._peer_json", return_value=peer_response):
+                response = asyncio.run(
+                    fleet_query(
+                        request,
+                        QueryBody(start=start, end=end, bucket_seconds=60),
+                    )
+                )
+
+            by_instance = {
+                series["instance_id"]: series for series in response["series"]
+            }
+            self.assertEqual(by_instance["instance-a"]["bucket_seconds"], 60)
+            self.assertEqual(by_instance["peer-a"]["bucket_seconds"], 300)
+            self.assertEqual(response["bucket_seconds_values"], [60, 300])
+            self.assertTrue(response["mixed_bucket_seconds"])
+
     def test_endpoints_enforce_principal_visibility_and_bounded_ranges(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(
