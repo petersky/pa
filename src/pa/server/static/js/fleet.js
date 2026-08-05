@@ -1825,6 +1825,21 @@
     return count > 1 ? state + " +" + (count - 1) : state;
   }
 
+  function fleetCapacityPresentation(activityValue, configuredCapacity) {
+    var value = activityValue || {};
+    var capacity = value.capacity || {};
+    var promptBacklog = Number(value.queued_prompts || 0);
+    var limit = capacity.limit || configuredCapacity || "pending";
+    var consumed = Number(capacity.consumed || 0);
+    return {
+      summary: consumed + "/" + limit + " slots used · " + promptBacklog +
+        " prompt" + (promptBacklog === 1 ? "" : "s") + " queued",
+      source: String(capacity.source ||
+        (configuredCapacity ? "configured" : "compatibility pending"))
+        .replace(/_/g, " ")
+    };
+  }
+
   function setFieldState(element, state) {
     if (!element) return;
     ["fresh", "stale", "timeout", "error", "unavailable"].forEach(function (name) {
@@ -1902,17 +1917,34 @@
     }
     var capacityEl = $("[data-fleet-capacity]", tr);
     if (capacityEl) {
-      var utilization = (activity.value || {}).capacity || {};
-      var queueUtilization = (activity.value || {}).queue_capacity || {};
+      var observedActivity = activity.value;
+      var utilization = observedActivity && observedActivity.capacity || {};
+      var queueUtilization = observedActivity && observedActivity.queue_capacity || {};
       var configured = utilization.limit || node.dispatch_capacity;
-      capacityEl.innerHTML = configured
-        ? "<strong>" + escapeHtml(utilization.consumed || 0) + "/" +
-          escapeHtml(configured) + ' used</strong><span class="muted small">' +
-          escapeHtml((utilization.source || (node.dispatch_capacity ? "configured" : "compatibility pending")).replace(/_/g, " ")) + "</span>" +
-          (queueUtilization.limit == null ? "" : '<span class="muted small">' +
-            escapeHtml(queueUtilization.consumed || 0) + "/" +
-            escapeHtml(queueUtilization.limit) + " waiting</span>")
-        : '<strong>pending</strong><span class="muted small">capacity probe unavailable</span>';
+      var hasUtilization = !!observedActivity &&
+        utilization.consumed != null && observedActivity.queued_prompts != null;
+      capacityEl.removeAttribute("aria-label");
+      if (configured && hasUtilization) {
+        var capacityPresentation = fleetCapacityPresentation(
+          observedActivity, node.dispatch_capacity
+        );
+        capacityEl.innerHTML = '<strong aria-label="' +
+          escapeHtml(capacityPresentation.summary) +
+          '">' + escapeHtml(capacityPresentation.summary) +
+          '</strong><span class="muted small">' +
+          escapeHtml(capacityPresentation.source) + "</span>" +
+          (queueUtilization.limit == null || queueUtilization.consumed == null
+            ? "" : '<span class="muted small">' +
+              escapeHtml(queueUtilization.consumed) + "/" +
+              escapeHtml(queueUtilization.limit) + " waiting</span>");
+      } else if (configured) {
+        capacityEl.innerHTML = '<strong>' + escapeHtml(configured) +
+          ' slots configured</strong><span class="muted small">capacity utilization ' +
+          escapeHtml(activity.state || "pending") + "</span>";
+      } else {
+        capacityEl.innerHTML =
+          '<strong>pending</strong><span class="muted small">capacity probe unavailable</span>';
+      }
       setFieldState(capacityEl, activity.state);
     }
     var freshnessEl = $("[data-fleet-freshness]", tr);
@@ -2093,10 +2125,11 @@
       "</dd><dt>Zone</dt><dd>" + escapeHtml(node.zone || "default") +
       "</dd><dt>Capacity</dt><dd>" +
       escapeHtml((function () {
-        var capacity = (fieldValue(node, "activity").value || {}).capacity || {};
-        var limit = capacity.limit || node.dispatch_capacity || "pending";
-        return (capacity.consumed || 0) + "/" + limit + " used · " +
-          String(capacity.source || (node.dispatch_capacity ? "configured" : "compatibility pending")).replace(/_/g, " ");
+        var activityValue = fieldValue(node, "activity").value || {};
+        var presentation = fleetCapacityPresentation(
+          activityValue, node.dispatch_capacity
+        );
+        return presentation.summary + " · " + presentation.source;
       })()) + "</dd></dl>" + sections;
   }
 
@@ -2715,6 +2748,7 @@
     window.__paFleetTopology = {
       layout: fleetTopologyLayout,
       render: renderFleetTopology,
+      renderRow: renderFleetRow,
       clampScale: clampFleetTopologyScale,
       viewportAfterZoom: topologyViewportAfterZoom,
       controller: function () { return fleetTopologyController; },
@@ -4245,6 +4279,7 @@
     requiredReadiness: requiredReadiness,
     mergeFieldAttemptFailure: mergeFieldAttemptFailure,
     providerAuthState: providerAuthState,
-    providerBadgeClass: providerBadgeClass
+    providerBadgeClass: providerBadgeClass,
+    capacityPresentation: fleetCapacityPresentation
   };
 })();

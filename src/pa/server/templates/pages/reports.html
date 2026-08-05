@@ -33,18 +33,30 @@
   </header>
   <div class="telemetry-gap-banner" data-telemetry-gaps role="status" hidden></div>
   <div class="telemetry-report-diagnostics muted small" data-report-diagnostics aria-live="polite">Preparing report…</div>
+  <p class="sr-only" data-chart-live-output role="status" aria-live="polite" aria-atomic="true"></p>
   <div class="telemetry-chart-grid">
-    {% for group, title, metrics in [
-      ('cpu', 'CPU and concurrency', 'cpu.utilization,pa.cpu,session.cpu,agents.concurrent'),
-      ('memory', 'Physical and virtual memory', 'memory.utilization,pa.memory_rss,session.memory_rss,swap.utilization'),
-      ('disk', 'Disk throughput, IOPS, and latency', 'disk.read_throughput,disk.write_throughput,disk.read_iops,disk.write_iops,disk.latency,session.disk_read,session.disk_write'),
-      ('network', 'Network activity and indicators', 'network.ingress,network.egress,network.connections,network.errors,session.network_ingress,session.network_egress'),
-      ('process', 'Processes and tasks', 'session.processes,session.tasks,pa.threads')
+    {% for group, title, unit, metrics in [
+      ('cpu-percent', 'Host and PA CPU', 'percent', 'cpu.utilization,pa.cpu'),
+      ('cpu-core', 'Session CPU', 'percent_of_one_core', 'session.cpu'),
+      ('concurrency', 'Concurrent agents', 'sessions', 'agents.concurrent'),
+      ('memory-percent', 'Memory utilization', 'percent', 'memory.utilization,swap.utilization'),
+      ('memory-bytes', 'Resident memory', 'bytes', 'pa.memory_rss,session.memory_rss'),
+      ('disk-rate', 'Disk throughput', 'bytes/second', 'disk.read_throughput,disk.write_throughput,session.disk_read,session.disk_write'),
+      ('disk-iops', 'Disk operations', 'operations/second', 'disk.read_iops,disk.write_iops'),
+      ('disk-latency', 'Disk latency', 'milliseconds/operation', 'disk.latency'),
+      ('network-rate', 'Network throughput', 'bytes/second', 'network.ingress,network.egress,session.network_ingress,session.network_egress'),
+      ('connections', 'Network connections', 'connections', 'network.connections'),
+      ('network-errors', 'Network errors', 'errors', 'network.errors'),
+      ('processes', 'Session processes', 'processes', 'session.processes'),
+      ('threads', 'Tasks and threads', 'threads', 'session.tasks,pa.threads')
     ] %}
-    <section class="panel telemetry-chart" data-chart-group="{{ group }}" data-metrics="{{ metrics }}">
-      <header><h2>{{ title }}</h2><span class="muted small" data-chart-unit></span></header>
+    <section class="panel telemetry-chart"
+             data-chart-group="{{ group }}"
+             data-unit="{{ unit }}"
+             data-metrics="{{ metrics }}">
+      <header><h2>{{ title }}</h2><span class="muted small" data-chart-unit>{{ unit }}</span></header>
       <div class="telemetry-chart-stage" tabindex="0" role="img"
-           aria-label="{{ title }} time series. Use left and right arrow keys to inspect synchronized points.">
+           aria-label="{{ title }} time series in {{ unit }}. Use left and right arrow keys to inspect synchronized points.">
         <svg viewBox="0 0 800 220" preserveAspectRatio="none" aria-hidden="true">
           <g data-chart-grid></g><g data-chart-axes></g><g data-chart-lines></g><g data-chart-points></g><line data-chart-cursor x1="0" x2="0" y1="12" y2="196" hidden></line>
         </svg>
@@ -55,6 +67,25 @@
     </section>
     {% endfor %}
   </div>
+  <section class="panel telemetry-data-table" aria-labelledby="telemetry-data-title">
+    <header>
+      <div>
+        <h2 id="telemetry-data-title">Report values and gaps</h2>
+        <p class="muted small" data-telemetry-summary aria-live="polite">Preparing accessible report data…</p>
+      </div>
+      <nav class="telemetry-table-controls" aria-label="Report value pages">
+        <button type="button" data-telemetry-table-prev aria-controls="telemetry-report-values" disabled>Previous values</button>
+        <span data-telemetry-table-page role="status" aria-live="polite">Page 1 of 1.</span>
+        <button type="button" data-telemetry-table-next aria-controls="telemetry-report-values" disabled>Next values</button>
+      </nav>
+    </header>
+    <div class="telemetry-table-wrap">
+      <table class="data-table" id="telemetry-report-values">
+        <thead><tr><th>Time or range</th><th>Series and metric</th><th>Unit</th><th>Value or gap reason</th><th>Quality</th></tr></thead>
+        <tbody data-telemetry-table-body></tbody>
+      </table>
+    </div>
+  </section>
 </div>
 {% endset %}
 

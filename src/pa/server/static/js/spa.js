@@ -999,7 +999,9 @@
         var item = document.createElement("li");
         item.textContent = (candidate.name || candidate.instance_id) +
           " — eligible; " + candidate.consumed + "/" + candidate.capacity +
-          " slots used; " + (candidate.policy_summary || "policy passed");
+          " slots used; " + (candidate.queued || 0) + " prompt" +
+          ((candidate.queued || 0) === 1 ? "" : "s") + " queued; " +
+          (candidate.policy_summary || "policy passed");
         eligibleList.appendChild(item);
       });
       region.appendChild(eligibleList);

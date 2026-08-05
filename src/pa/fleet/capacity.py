@@ -21,6 +21,19 @@ DispatchQueueCapacity = Annotated[
     int, Field(ge=0, le=MAX_DISPATCH_QUEUE_CAPACITY, strict=True)
 ]
 
+# Mixed-version peers can only backfill a durable reservation identity when its
+# projected dispatch state canonically holds a pre-session execution slot.
+LEGACY_RESERVATION_CONSUMER_STATES = frozenset(
+    {
+        "queued",
+        "checking_sync",
+        "materializing",
+        "provisioning",
+        "starting_session",
+        "delivering_prompt",
+    }
+)
+
 
 class EffectiveCapacity(BaseModel):
     """Effective global/provider limit and where the value came from."""
@@ -166,7 +179,14 @@ def effective_queue_capacity(
 def workload_counts(
     activity: dict[str, Any], *, provider: str | None = None
 ) -> dict[str, Any]:
-    """Normalize new workload semantics with conservative old-peer fallbacks."""
+    """Normalize concurrency and backlog with conservative old-peer fallbacks.
+
+    A prompting session occupies one execution slot. Prompts serialized behind
+    that turn remain useful load/fairness telemetry, but cannot execute until
+    the same session's current turn completes and therefore consume no
+    additional concurrency. Pre-session dispatch reservations remain distinct
+    consumers because they may materialize into independent sessions.
+    """
 
     provider_key = provider.strip().lower() if provider else None
     provider_counts = (
@@ -208,6 +228,186 @@ def workload_counts(
         "active": active,
         "queued": queued,
         "reservations": reservations,
-        "consumed": active + queued + reservations,
+        "consumed": active + reservations,
         "semantic_source": semantic_source,
     }
+
+
+def deduplicate_consumer_links(links: Any) -> list[dict[str, Any]]:
+    """Return one one-slot identity for every session or pre-session dispatch."""
+
+    if not isinstance(links, list):
+        return []
+    result: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for raw in links:
+        if not isinstance(raw, dict):
+            continue
+        item = dict(raw)
+        kind = str(item.get("kind") or "work").strip().lower()
+        if kind == "session" and item.get("session_id"):
+            identity = f"session:{item['session_id']}"
+        elif kind == "dispatch" and item.get("dispatch_id"):
+            identity = f"dispatch:{item['dispatch_id']}"
+        else:
+            identity = str(item.get("consumer_id") or item.get("href") or "")
+        if not identity or identity in seen:
+            continue
+        seen.add(identity)
+        item["consumer_id"] = identity
+        # A session remains one concurrency consumer regardless of its prompt
+        # backlog. Durable pre-session dispatches likewise reserve one slot.
+        item["slots"] = 1
+        result.append(item)
+    return result
+
+
+_ACTIVE_CAPACITY_SESSION_STATES = frozenset({"working", "prompting"})
+_UNKNOWN_CAPACITY_SESSION_STATES = frozenset({"", "unknown"})
+
+
+def _session_projection_priority(
+    item: dict[str, Any], *, allow_unmarked_stateless: bool = False
+) -> int | None:
+    """Rank known active sessions before bounded mixed-version fallbacks."""
+
+    state = str(item.get("status") or item.get("state") or "").strip().lower()
+    if state in _ACTIVE_CAPACITY_SESSION_STATES:
+        return 0
+    if state not in _UNKNOWN_CAPACITY_SESSION_STATES:
+        return None
+    if item.get("capacity_consuming") is True:
+        return 1
+    if (
+        allow_unmarked_stateless
+        and not state
+        and item.get("capacity_consuming") is not False
+    ):
+        return 1
+    return None
+
+
+def normalize_capacity_consumer_links(
+    activity: dict[str, Any],
+    *,
+    reservation_links: Any = None,
+    limit: int = MAX_DISPATCH_CAPACITY,
+) -> list[dict[str, Any]]:
+    """Project bounded one-slot session and reservation identities."""
+
+    counts = workload_counts(activity)
+    raw_existing = activity.get("capacity_consumer_links") or []
+    if not isinstance(raw_existing, list):
+        raw_existing = []
+    existing = deduplicate_consumer_links(raw_existing)
+    sessions = activity.get("sessions")
+    current_by_priority: list[list[dict[str, Any]]] = [[], []]
+    current_ids: set[str] = set()
+    for item in sessions or []:
+        if not isinstance(item, dict):
+            continue
+        session_id = item.get("session_id") or item.get("id")
+        if not session_id:
+            continue
+        current_ids.add(str(session_id))
+        priority = _session_projection_priority(item)
+        if priority is None:
+            continue
+        current_by_priority[priority].append(
+            {
+                "kind": "session",
+                "session_id": session_id,
+                "href": item.get("href") or f"/agent?session={session_id}",
+                "state": item.get("status") or item.get("state"),
+                "slots": 1,
+            }
+        )
+    allow_stateless_legacy = not isinstance(sessions, list) and counts["active"] > 0
+    legacy_by_priority: list[list[dict[str, Any]]] = [[], []]
+    for raw in raw_existing:
+        if not isinstance(raw, dict):
+            continue
+        item = dict(raw)
+        session_id = item.get("session_id")
+        if (
+            str(item.get("kind") or "").strip().lower() != "session"
+            or not session_id
+            or str(session_id) in current_ids
+        ):
+            continue
+        priority = _session_projection_priority(
+            item, allow_unmarked_stateless=allow_stateless_legacy
+        )
+        if priority is not None:
+            legacy_by_priority[priority].append(item)
+    normalized_sessions = deduplicate_consumer_links(
+        current_by_priority[0]
+        + legacy_by_priority[0]
+        + current_by_priority[1]
+        + legacy_by_priority[1]
+    )[: min(counts["active"], limit)]
+    authoritative_reservations = deduplicate_consumer_links(reservation_links or [])
+    existing_reservations = [
+        item
+        for item in existing
+        if item.get("kind") == "dispatch"
+        and str(item.get("state") or item.get("status") or "").strip().lower()
+        in LEGACY_RESERVATION_CONSUMER_STATES
+    ]
+    remaining = max(0, limit - len(normalized_sessions))
+    normalized_reservations = deduplicate_consumer_links(
+        authoritative_reservations + existing_reservations
+    )[: min(counts["reservations"], remaining)]
+    return normalized_sessions + normalized_reservations
+
+
+def normalize_activity_capacity(
+    activity: dict[str, Any],
+    *,
+    authority_snapshot: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Overlay authoritative dispatch counts and reconcile consumer identities."""
+
+    value = dict(activity or {})
+    authority = authority_snapshot or {}
+    if authority_snapshot is not None:
+        value["dispatch_reservations"] = max(
+            int(value.get("dispatch_reservations") or 0),
+            int(authority.get("dispatch_reservations") or 0),
+        )
+        value["dispatch_waiting"] = max(
+            int(value.get("dispatch_waiting") or 0),
+            int(authority.get("dispatch_waiting") or 0),
+        )
+        if value.get("queue_capacity"):
+            queue_capacity = dict(value["queue_capacity"])
+            queue_capacity["consumed"] = max(
+                int(queue_capacity.get("consumed") or 0),
+                int(authority.get("dispatch_waiting") or 0),
+            )
+            value["queue_capacity"] = queue_capacity
+        provider_concurrency = {
+            key: dict(counts)
+            for key, counts in (value.get("provider_concurrency") or {}).items()
+        }
+        for provider, counts in (authority.get("provider_concurrency") or {}).items():
+            current = provider_concurrency.setdefault(provider, {})
+            for key, count in counts.items():
+                current[key] = max(int(current.get(key) or 0), int(count or 0))
+        value["provider_concurrency"] = provider_concurrency
+
+    counts = workload_counts(value)
+    links = normalize_capacity_consumer_links(
+        value,
+        reservation_links=authority.get("reservation_links") or [],
+    )
+    value["capacity_consumer_links"] = links
+    value["capacity_consumer_link_count"] = len(links)
+    value["capacity_consumer_links_omitted"] = max(
+        0, counts["consumed"] - len(links)
+    )
+    if value.get("capacity"):
+        capacity = dict(value["capacity"])
+        capacity["consumed"] = counts["consumed"]
+        value["capacity"] = capacity
+    return value

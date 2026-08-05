@@ -718,16 +718,21 @@ def _card_agent_context(request: Request, card) -> dict:
         ).model_dump(mode="json")
         consumed = int(capacity.get("consumed") or 0)
         limit = int(capacity.get("limit") or 0)
+        queued_prompts = int(value.get("queued_prompts") or 0)
+        queued_prompt_label = "prompt" if queued_prompts == 1 else "prompts"
         freshness = activity.get("state") or "unavailable"
         source = str(capacity.get("source") or "unknown").replace("_", " ")
         fleet_capacity[node["id"]] = {
             "consumed": consumed,
             "limit": limit,
+            "queued_prompts": queued_prompts,
             "source": source,
             "freshness": freshness,
             "eligible": freshness == "fresh" and limit > consumed,
             "summary": (
-                f"{consumed}/{limit} slots used · {source} · {freshness}"
+                f"{consumed}/{limit} slots used · "
+                f"{queued_prompts} {queued_prompt_label} queued · "
+                f"{source} · {freshness}"
                 if limit
                 else f"capacity unavailable · {freshness}"
             ),
