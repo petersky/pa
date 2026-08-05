@@ -1640,6 +1640,8 @@ class CardProjection:
         lane: CardLane | None = None,
         kind: CardKind | None = None,
         project_id: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
     ) -> list[Card]:
         query = "SELECT * FROM cards WHERE 1=1"
         params: list[str] = []
@@ -1656,9 +1658,27 @@ class CardProjection:
             query += " AND project_id = ?"
             params.append(project_id)
         query += " ORDER BY updated_at DESC"
+        if limit is not None:
+            query += " LIMIT ? OFFSET ?"
+            params.extend([str(max(0, limit)), str(max(0, offset))])
         with self._conn() as conn:
             rows = conn.execute(query, params).fetchall()
         return [self._row_to_card(row) for row in rows]
+
+    def count_cards(
+        self, *, realm_id: str | None = None, lane: CardLane | None = None
+    ) -> int:
+        query = "SELECT COUNT(*) AS count FROM cards WHERE 1=1"
+        params: list[str] = []
+        if realm_id:
+            query += " AND realm_id = ?"
+            params.append(realm_id)
+        if lane:
+            query += " AND lane = ?"
+            params.append(lane.value)
+        with self._conn() as conn:
+            row = conn.execute(query, params).fetchone()
+        return int(row["count"] if row else 0)
 
     def get_card(self, card_id: str, realm_id: str | None = None) -> Card | None:
         query = "SELECT * FROM cards WHERE id = ?"
@@ -2887,6 +2907,54 @@ class CardProjection:
                     "SELECT * FROM agent_sessions ORDER BY updated_at DESC"
                 ).fetchall()
         return [self._row_to_session(row) for row in rows]
+
+    def list_sessions_for_workshop(
+        self, *, realm_id: str, limit: int
+    ) -> tuple[list[AgentSession], int]:
+        """Return a bounded active-first session projection and its full count.
+
+        Workshop does not need closed session history. Filtering it in SQLite keeps
+        both row materialization and the fleet heartbeat bounded while the count
+        makes any omitted active rows explicit.
+        """
+        active_statuses = (
+            "working",
+            "prompting",
+            "queued",
+            "active",
+            "connected",
+            "idle",
+            "recoverable",
+            "deferred",
+        )
+        placeholders = ",".join("?" for _ in active_statuses)
+        params = (realm_id, *active_statuses)
+        with self._conn() as conn:
+            total = int(
+                conn.execute(
+                    f"""SELECT COUNT(*) FROM agent_sessions
+                        WHERE realm_id = ? AND status IN ({placeholders})""",
+                    params,
+                ).fetchone()[0]
+            )
+            rows = conn.execute(
+                f"""SELECT * FROM agent_sessions
+                    WHERE realm_id = ? AND status IN ({placeholders})
+                    ORDER BY
+                      CASE status
+                        WHEN 'working' THEN 0
+                        WHEN 'prompting' THEN 0
+                        WHEN 'queued' THEN 1
+                        WHEN 'recoverable' THEN 2
+                        WHEN 'deferred' THEN 2
+                        ELSE 3
+                      END,
+                      updated_at DESC,
+                      id ASC
+                    LIMIT ?""",
+                (*params, max(0, limit)),
+            ).fetchall()
+        return [self._row_to_session(row) for row in rows], total
 
     def list_sessions_for_cards(self, card_ids: set[str]) -> list[AgentSession]:
         """Load sessions only for cards currently rendered on a board page."""

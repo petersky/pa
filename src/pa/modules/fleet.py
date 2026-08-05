@@ -163,7 +163,7 @@ from pa.fleet.update import (
     prepare_update_job_recovery,
     start_update_job,
 )
-from pa.fleet.workshop import build_workshop_snapshot
+from pa.fleet.workshop import build_workshop_snapshot, workshop_semantic_snapshot
 from pa.network.peer_table import PeerTable
 
 logger = logging.getLogger(__name__)
@@ -2205,33 +2205,54 @@ def _workshop_context(request: Request) -> dict:
 
 
 _workshop_refresh_lock = asyncio.Lock()
-_workshop_refresh_tasks: dict[str, asyncio.Task[None]] = {}
+_workshop_refresh_tasks: dict[
+    tuple[str, bool], asyncio.Task[dict[str, dict[str, dict[str, Any]]]]
+] = {}
 
 
 async def _refresh_workshop_dimensions(
     ctx: Any, instances: list[FleetInstance], *, force: bool
-) -> None:
+) -> dict[str, dict[str, dict[str, Any]]]:
     """Refresh the small Workshop projection as one coalesced fleet operation."""
-    key = str(ctx.settings.data_dir)
+    key = (str(ctx.settings.data_dir), force)
     async with _workshop_refresh_lock:
         task = _workshop_refresh_tasks.get(key)
         if task is None or task.done():
             active = [item for item in instances if item.lifecycle_state == "active"]
 
-            async def refresh() -> None:
-                await asyncio.gather(
+            async def refresh() -> dict[str, dict[str, dict[str, Any]]]:
+                requests = [
+                    (instance, dimension)
+                    for instance in active
+                    for dimension in (
+                        "reachability",
+                        "activity",
+                        "providers",
+                        "sync",
+                    )
+                ]
+                results = await asyncio.gather(
                     *(
                         probe_dimension(ctx, instance, dimension, force=force)
-                        for instance in active
-                        for dimension in ("reachability", "activity", "providers")
+                        for instance, dimension in requests
                     ),
                     return_exceptions=True,
                 )
+                observations: dict[str, dict[str, dict[str, Any]]] = {}
+                for (instance, dimension), result in zip(
+                    requests, results, strict=True
+                ):
+                    if isinstance(result, BaseException):
+                        continue
+                    observations.setdefault(instance.instance_id, {})[dimension] = (
+                        result
+                    )
+                return observations
 
             task = asyncio.create_task(refresh())
             _workshop_refresh_tasks[key] = task
     try:
-        await asyncio.shield(task)
+        return await asyncio.shield(task)
     finally:
         if task.done():
             async with _workshop_refresh_lock:
@@ -2240,9 +2261,38 @@ async def _refresh_workshop_dimensions(
 
 
 def _build_workshop(
-    ctx: Any, instances: list[FleetInstance], routes: list[Any]
+    ctx: Any,
+    instances: list[FleetInstance],
+    routes: list[Any],
+    observations: dict[str, dict[str, dict[str, Any]]] | None = None,
 ) -> dict:
-    return build_workshop_snapshot(ctx, build_overview(ctx, instances, routes))
+    fleet_overview = build_overview(ctx, instances, routes)
+    if observations:
+        for node in fleet_overview.get("nodes", []):
+            probed = observations.get(str(node.get("id")))
+            if probed:
+                node.setdefault("dimensions", {}).update(probed)
+    return build_workshop_snapshot(ctx, fleet_overview)
+
+
+def _workshop_stream_iteration(
+    snapshot: dict[str, Any], last_digest: str, sequence: int
+) -> tuple[str, str, int]:
+    digest = hashlib.sha256(
+        json.dumps(
+            workshop_semantic_snapshot(snapshot), sort_keys=True, default=str
+        ).encode()
+    ).hexdigest()
+    if digest == last_digest:
+        return ": workshop heartbeat\n\n", last_digest, sequence
+    sequence += 1
+    return (
+        f"id: {sequence}\nevent: snapshot\ndata: "
+        + json.dumps(snapshot, default=str)
+        + "\n\n",
+        digest,
+        sequence,
+    )
 
 
 @router.get("/fleet/readiness")
@@ -2621,8 +2671,8 @@ async def fleet_workshop(request: Request, refresh: bool = False) -> dict:
     fleet: FleetRegistry = ctx.require_service("fleet_registry")
     peer_table: PeerTable = ctx.require_service("peer_table")
     instances = list(fleet.list_instances())
-    await _refresh_workshop_dimensions(ctx, instances, force=refresh)
-    return _build_workshop(ctx, instances, list(peer_table.all_routes()))
+    observations = await _refresh_workshop_dimensions(ctx, instances, force=refresh)
+    return _build_workshop(ctx, instances, list(peer_table.all_routes()), observations)
 
 
 @router.get("/fleet/workshop/events")
@@ -2638,22 +2688,16 @@ async def fleet_workshop_events(request: Request) -> StreamingResponse:
         sequence = 0
         while not await request.is_disconnected():
             instances = list(fleet.list_instances())
-            await _refresh_workshop_dimensions(ctx, instances, force=False)
-            snapshot = _build_workshop(ctx, instances, list(peer_table.all_routes()))
-            stable = {**snapshot, "generated_at": None}
-            digest = hashlib.sha256(
-                json.dumps(stable, sort_keys=True, default=str).encode()
-            ).hexdigest()
-            if digest != last_digest:
-                sequence += 1
-                last_digest = digest
-                yield (
-                    f"id: {sequence}\nevent: snapshot\ndata: "
-                    + json.dumps(snapshot, default=str)
-                    + "\n\n"
-                )
-            else:
-                yield ": workshop heartbeat\n\n"
+            observations = await _refresh_workshop_dimensions(
+                ctx, instances, force=False
+            )
+            snapshot = _build_workshop(
+                ctx, instances, list(peer_table.all_routes()), observations
+            )
+            event, last_digest, sequence = _workshop_stream_iteration(
+                snapshot, last_digest, sequence
+            )
+            yield event
             await asyncio.sleep(2.0)
 
     return StreamingResponse(

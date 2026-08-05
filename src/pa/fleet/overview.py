@@ -40,6 +40,7 @@ DIMENSIONS = (
     "repositories",
     "supervisor",
 )
+WORKSHOP_SESSION_LIMIT = 80
 DETAIL_TIMEOUT = 4.0
 REACHABILITY_TIMEOUT = 2.5
 # The stdio probe owns a twelve-second initialize/tools-list budget.  Fleet
@@ -397,7 +398,52 @@ def _local_activity(ctx: Any) -> dict[str, Any]:
     }
     sessions = []
     deferred_sessions = 0
-    for session in ctx.store.list_sessions():
+    bounded_sessions = None
+    projection = getattr(ctx.store, "list_sessions_for_workshop", None)
+    if callable(projection):
+        candidate = projection(
+            realm_id=ctx.settings.primary_realm,
+            limit=WORKSHOP_SESSION_LIMIT,
+        )
+        if isinstance(candidate, tuple) and len(candidate) == 2:
+            bounded_sessions = candidate
+    if bounded_sessions is not None:
+        durable_sessions, durable_session_total = bounded_sessions
+    else:
+        # Compatibility for small in-memory stores used by extensions/tests.
+        durable_sessions = [
+            session
+            for session in ctx.store.list_sessions()
+            if session.realm_id == ctx.settings.primary_realm
+            and session.status
+            in {
+                "working",
+                "prompting",
+                "queued",
+                "active",
+                "connected",
+                "idle",
+                "recoverable",
+                "deferred",
+            }
+        ]
+        durable_session_total = len(durable_sessions)
+        durable_sessions = durable_sessions[:WORKSHOP_SESSION_LIMIT]
+    session_candidates = {session.id: session for session in durable_sessions}
+    for runtime in runtime_by_id.values():
+        if runtime.session.realm_id == ctx.settings.primary_realm:
+            session_candidates[runtime.session.id] = runtime.session
+    ranked_sessions = sorted(
+        session_candidates.values(),
+        key=lambda session: (
+            session.id not in runtime_by_id,
+            session.status not in {"working", "prompting", "queued"},
+            -session.updated_at.timestamp(),
+            session.id,
+        ),
+    )
+    session_total = max(durable_session_total, len(session_candidates))
+    for session in ranked_sessions[:WORKSHOP_SESSION_LIMIT]:
         runtime = runtime_by_id.get(session.id)
         active = bool(runtime) or session.status in {
             "active",
@@ -421,6 +467,7 @@ def _local_activity(ctx: Any) -> dict[str, Any]:
         sessions.append(
             {
                 "id": session.id,
+                "realm_id": session.realm_id,
                 "title": session.title or session.label or session.id,
                 "card_id": session.card_id or session.item_id,
                 "project_id": session.project_id,
@@ -440,7 +487,9 @@ def _local_activity(ctx: Any) -> dict[str, Any]:
         dispatch_store.expire_capacity_reservations()
         dispatches = [
             item.public_dict()
-            for item in dispatch_store.list(limit=100)
+            for item in dispatch_store.list(
+                realm_id=ctx.settings.primary_realm, limit=100
+            )
             if item.state not in TERMINAL_DISPATCH_STATES
             and (
                 item.target_instance_id == ctx.settings.instance_id
@@ -594,6 +643,8 @@ def _local_activity(ctx: Any) -> dict[str, Any]:
         "connected_runtimes": progress.get("connected_runtimes", 0),
         "idle_sessions": progress.get("idle_sessions", 0),
         "deferred_sessions": deferred_sessions,
+        "session_total": session_total,
+        "session_omitted": max(0, session_total - len(sessions)),
         "prompting_turns": progress.get("prompting_turns", 0),
         "active_capacity_consumers": progress.get("active_capacity_consumers", 0),
         "queued_prompts": progress.get("queued_prompts", 0),

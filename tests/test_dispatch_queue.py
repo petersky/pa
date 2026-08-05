@@ -46,6 +46,62 @@ def capacity(*, execution: int = 4, queue: int = 100) -> CapacityAdmission:
     )
 
 
+def test_history_counts_use_maintained_index_without_scanning_ledger() -> None:
+    class NoScanRecords(dict):
+        def values(self):
+            raise AssertionError("history_counts must not scan dispatch history")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        store = DispatchStore(Path(tmp))
+        first = record(1)
+        first.card_id = "shared-card"
+        second = record(2)
+        second.card_id = "shared-card"
+        second.allow_concurrent = True
+        store.admit(first)
+        store.admit(second)
+        store._records = NoScanRecords(store._records)
+
+        assert store.history_counts({"shared-card", "missing"}, realm_id="default") == {
+            "shared-card": 2,
+            "missing": 0,
+        }
+
+
+def test_latest_by_session_uses_maintained_index_without_scanning_ledger() -> None:
+    class NoScanRecords(dict):
+        def values(self):
+            raise AssertionError("latest_by_session must not scan dispatch history")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp)
+        store = DispatchStore(path)
+        active = record(1)
+        active.session_id = "shared-session"
+        store.admit(active)
+
+        completed = record(2)
+        completed.session_id = "shared-session"
+        store.admit(completed)
+        completed.state = "completed"
+        store.put(completed)
+
+        assigned_later = record(3)
+        store.admit(assigned_later)
+        assigned_later.session_id = "shared-session"
+        assigned_later.state = "running"
+        store.put(assigned_later)
+
+        restarted = DispatchStore(path)
+        restarted._records = NoScanRecords(restarted._records)
+
+        selected = restarted.latest_by_session(
+            {"shared-session", "missing"}, realm_id="default"
+        )
+
+        assert selected == {"shared-session": restarted.get(assigned_later.dispatch_id)}
+
+
 def test_six_dispatches_use_four_slots_and_two_durable_queue_entries() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         store = DispatchStore(Path(tmp))

@@ -454,6 +454,8 @@ class DispatchStore:
         self.metrics_path = data_dir / "dispatch_queue_metrics.json"
         self._records: dict[str, DispatchRecord] = {}
         self._latest_card_records: dict[str, DispatchRecord] = {}
+        self._latest_session_records: dict[tuple[str, str], DispatchRecord] = {}
+        self._history_counts: dict[tuple[str, str], int] = {}
         self._lock = RLock()
         try:
             metrics = json.loads(self.metrics_path.read_text())
@@ -465,8 +467,19 @@ class DispatchStore:
     @staticmethod
     def _prefer_card_record(candidate: DispatchRecord, current: DispatchRecord) -> bool:
         active_states = {
-            "queued", "checking_sync", "materializing", "provisioning",
-            "starting_session", "delivering_prompt", "running",
+            "waiting_capacity",
+            "blocked",
+            "queued",
+            "checking_sync",
+            "materializing",
+            "provisioning",
+            "starting_session",
+            "delivering_prompt",
+            "dispatching",
+            "dispatched",
+            "materialized",
+            "running",
+            "completion_pending",
         }
         return (
             (candidate.state in active_states) > (current.state in active_states)
@@ -485,6 +498,47 @@ class DispatchStore:
             if current is None or self._prefer_card_record(record, current):
                 selected[record.card_id] = record
         self._latest_card_records = selected
+
+    def _rebuild_latest_session_records_locked(self) -> None:
+        selected: dict[tuple[str, str], DispatchRecord] = {}
+        for record in self._records.values():
+            if not record.session_id:
+                continue
+            key = (record.realm_id, record.session_id)
+            current = selected.get(key)
+            if current is None or self._prefer_card_record(record, current):
+                selected[key] = record
+        self._latest_session_records = selected
+
+    def _rebuild_history_counts_locked(self) -> None:
+        counts: dict[tuple[str, str], int] = {}
+        for record in self._records.values():
+            if record.card_id:
+                key = (record.realm_id, record.card_id)
+                counts[key] = counts.get(key, 0) + 1
+        self._history_counts = counts
+
+    def _update_history_count_locked(
+        self,
+        record: DispatchRecord,
+        previous: DispatchRecord | None,
+    ) -> None:
+        previous_key = (
+            (previous.realm_id, previous.card_id)
+            if previous and previous.card_id
+            else None
+        )
+        next_key = (record.realm_id, record.card_id) if record.card_id else None
+        if previous_key == next_key:
+            return
+        if previous_key:
+            remaining = self._history_counts.get(previous_key, 1) - 1
+            if remaining > 0:
+                self._history_counts[previous_key] = remaining
+            else:
+                self._history_counts.pop(previous_key, None)
+        if next_key:
+            self._history_counts[next_key] = self._history_counts.get(next_key, 0) + 1
 
     def _record_queue_rejection_locked(self) -> None:
         self._queue_rejections += 1
@@ -558,6 +612,8 @@ class DispatchStore:
                 migrated = True
         self._records = records
         self._rebuild_latest_card_records_locked()
+        self._rebuild_latest_session_records_locked()
+        self._rebuild_history_counts_locked()
         for record in self._records.values():
             if (
                 record.card_id
@@ -575,6 +631,7 @@ class DispatchStore:
 
     def _save(self) -> None:
         self._rebuild_latest_card_records_locked()
+        self._rebuild_latest_session_records_locked()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         atomic_write_json(
             self.path,
@@ -589,7 +646,11 @@ class DispatchStore:
             return self._records.get(dispatch_id)
 
     def list(
-        self, *, target_instance_id: str | None = None, limit: int = 100
+        self,
+        *,
+        target_instance_id: str | None = None,
+        realm_id: str | None = None,
+        limit: int = 100,
     ) -> list[DispatchRecord]:
         with self._lock:
             self._refresh_queue_positions_locked()
@@ -600,11 +661,15 @@ class DispatchStore:
                 for record in records
                 if record.target_instance_id == target_instance_id
             ]
+        if realm_id:
+            records = [record for record in records if record.realm_id == realm_id]
         return sorted(records, key=lambda record: record.updated_at, reverse=True)[
             :limit
         ]
 
-    def latest_by_card(self, card_ids: set[str]) -> dict[str, DispatchRecord]:
+    def latest_by_card(
+        self, card_ids: set[str], *, realm_id: str | None = None
+    ) -> dict[str, DispatchRecord]:
         """Return one useful dispatch per requested card without copying history."""
         if not card_ids:
             return {}
@@ -613,7 +678,45 @@ class DispatchStore:
                 card_id: self._latest_card_records[card_id]
                 for card_id in card_ids
                 if card_id in self._latest_card_records
+                and (
+                    realm_id is None
+                    or self._latest_card_records[card_id].realm_id == realm_id
+                )
             }
+
+    def history_counts(self, card_ids: set[str], *, realm_id: str) -> dict[str, int]:
+        """Return maintained dispatch-history counts for bounded card ids."""
+        with self._lock:
+            return {
+                card_id: self._history_counts.get((realm_id, card_id), 0)
+                for card_id in card_ids
+            }
+
+    def latest_by_session(
+        self, session_ids: set[str], *, realm_id: str
+    ) -> dict[str, DispatchRecord]:
+        """Return the active-preferred newest dispatch for each requested session."""
+        if not session_ids:
+            return {}
+        with self._lock:
+            return {
+                session_id: self._latest_session_records[(realm_id, session_id)]
+                for session_id in session_ids
+                if (realm_id, session_id) in self._latest_session_records
+            }
+
+    def current_card_ids(self, *, realm_id: str, limit: int) -> list[str]:
+        """Return bounded card ids with current dispatch work in one realm."""
+        with self._lock:
+            records = [
+                record
+                for record in self._latest_card_records.values()
+                if record.realm_id == realm_id
+                and record.state
+                not in {"completed", "acknowledged", "failed", "cancelled"}
+            ]
+        records.sort(key=lambda record: record.updated_at, reverse=True)
+        return [record.card_id for record in records[:limit] if record.card_id]
 
     def capacity_snapshot(self, target_instance_id: str) -> dict[str, Any]:
         """Return authority-local reservations and waiting work for one target."""
@@ -976,6 +1079,7 @@ class DispatchStore:
                 )
             )
             record.updated_at = datetime.now(UTC)
+            self._update_history_count_locked(record, None)
             self._records[record.dispatch_id] = record
             self._refresh_queue_positions_locked()
             self._save()
@@ -1009,6 +1113,7 @@ class DispatchStore:
             if existing and existing.mutation_id != record.mutation_id:
                 raise ValueError("dispatch id already belongs to another mutation")
             record.updated_at = datetime.now(UTC)
+            self._update_history_count_locked(record, existing)
             self._records[record.dispatch_id] = record
             self._save()
         return record

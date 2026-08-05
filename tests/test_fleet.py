@@ -1334,7 +1334,7 @@ class FleetOverviewTests(unittest.IsolatedAsyncioTestCase):
             )
             manager.list_runtimes.return_value = []
             ctx.services = {"instance_agent": manager}
-            ctx.store.list_sessions.return_value = [
+            bounded_sessions = [
                 AgentSession(
                     id="session-1",
                     agent_name="codex",
@@ -1350,11 +1350,18 @@ class FleetOverviewTests(unittest.IsolatedAsyncioTestCase):
                     title="Second card",
                 ),
             ]
+            ctx.store.list_sessions_for_workshop.return_value = (
+                bounded_sessions,
+                len(bounded_sessions),
+            )
 
             activity = local_dimension(ctx, "activity")
 
             self.assertEqual(activity["state"], "working")
             self.assertEqual(activity["active_sessions"], 2)
+            self.assertEqual(activity["session_total"], 2)
+            self.assertEqual(activity["session_omitted"], 0)
+            ctx.store.list_sessions.assert_not_called()
             self.assertEqual(activity["queued_prompts"], 1)
             self.assertEqual(
                 {session["card_id"] for session in activity["sessions"]},
