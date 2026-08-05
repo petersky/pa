@@ -1808,22 +1808,29 @@ class GoalGovernanceService:
         )
         if allocation and allocation.disposition != AllocationDisposition.ACTIVE:
             reasons.append("the latest portfolio review did not allocate this goal")
+        requested_by_key: dict[str, list[GoalResourceClaim]] = {}
         for claim in claims:
-            same = [(owner, item) for owner, item in existing if item.key == claim.key]
+            requested_by_key.setdefault(claim.key, []).append(claim)
+        for key, requested in requested_by_key.items():
+            same = [(owner, item) for owner, item in existing if item.key == key]
+            requested_exclusive = any(
+                item.access == ResourceAccess.EXCLUSIVE for item in requested
+            )
             if any(
-                claim.access == ResourceAccess.EXCLUSIVE
-                or item.access == ResourceAccess.EXCLUSIVE
+                requested_exclusive or item.access == ResourceAccess.EXCLUSIVE
                 for _, item in same
-            ):
+            ) or (requested_exclusive and len(requested) > 1):
+                owners = sorted({owner for owner, _ in same})
                 reasons.append(
-                    f"resource {claim.key!r} conflicts with "
-                    + ", ".join(sorted({owner for owner, _ in same}))
+                    f"resource {key!r} has incompatible exclusive claims"
+                    + (f" with {', '.join(owners)}" if owners else " in this action")
                 )
-            capacity = capacities.get(claim.key)
+            capacity = capacities.get(key)
             if capacity is not None:
                 used = sum(item.quantity for _, item in same)
-                if used + claim.quantity > capacity:
-                    reasons.append(f"resource {claim.key!r} capacity would be exceeded")
+                requested_quantity = sum(item.quantity for item in requested)
+                if used + requested_quantity > capacity:
+                    reasons.append(f"resource {key!r} capacity would be exceeded")
         return list(dict.fromkeys(reasons))
 
     def _proposal_policy(

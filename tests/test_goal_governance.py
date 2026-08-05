@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 from pa.domain.models import CardEvent, EventType
 from pa.domain.projection import CardProjection
@@ -515,6 +516,129 @@ class GoalGovernanceTests(unittest.TestCase):
                 sorted(claim.quantity for claim in state.resource_reservations),
                 [1, 2],
             )
+
+    def test_duplicate_shared_claims_enforce_combined_capacity_at_reserve_and_apply(
+        self,
+    ) -> None:
+        now = datetime(2026, 8, 3, tzinfo=UTC)
+        with tempfile.TemporaryDirectory() as tmp:
+            goals, governance, _ = self._services(tmp, now)
+            governance.put_policy(
+                GoalGovernancePolicy(
+                    version=1,
+                    authored_by="user:operator",
+                    resource_capacities=[
+                        GoalResourceCapacity(key="single-slot-pool", capacity=1)
+                    ],
+                ),
+                self._ctx(
+                    0,
+                    "duplicate-capacity-policy",
+                    actor="user:operator",
+                    goal_version=None,
+                ),
+            )
+            request = GoalActionRequest(
+                action_class="resource.reserve",
+                resource_claims=[
+                    GoalResourceClaim(key="single-slot-pool", quantity=1),
+                    GoalResourceClaim(key="single-slot-pool", quantity=1),
+                ],
+            )
+            fresh = goals.create(
+                self._goal_data("Reject duplicate capacity claims"),
+                self._goal_ctx("create-duplicate-capacity-fresh"),
+            )
+            _state, denied = governance.authorize_action(
+                fresh.id,
+                request,
+                self._ctx(0, "reserve-duplicate-capacity-fresh"),
+            )
+            self.assertEqual(
+                denied.disposition, GoalActionDisposition.RESOURCE_CONFLICT
+            )
+
+            legacy = goals.create(
+                self._goal_data("Revalidate old duplicate capacity claims"),
+                self._goal_ctx("create-duplicate-capacity-legacy"),
+            )
+            with patch.object(governance, "_resource_conflict_reasons", return_value=[]):
+                state, reserved = governance.authorize_action(
+                    legacy.id,
+                    request,
+                    self._ctx(0, "reserve-duplicate-capacity-legacy"),
+                )
+            self.assertEqual(reserved.disposition, GoalActionDisposition.AUTHORIZED)
+            state, applied = governance.apply_action(
+                legacy.id,
+                reserved.reservation_id or "",
+                self._ctx(state.version, "apply-duplicate-capacity-legacy"),
+            )
+            self.assertEqual(
+                applied.disposition, GoalActionDisposition.RESOURCE_CONFLICT
+            )
+            reservation = next(
+                item
+                for item in state.action_reservations
+                if item.id == reserved.reservation_id
+            )
+            self.assertEqual(reservation.state.value, "released")
+
+    def test_mixed_shared_exclusive_claims_conflict_at_reserve_and_apply(self) -> None:
+        now = datetime(2026, 8, 3, tzinfo=UTC)
+        with tempfile.TemporaryDirectory() as tmp:
+            goals, governance, _ = self._services(tmp, now)
+            request = GoalActionRequest(
+                action_class="resource.reserve",
+                resource_claims=[
+                    GoalResourceClaim(
+                        key="repository:petersky/pa",
+                        access=ResourceAccess.SHARED,
+                    ),
+                    GoalResourceClaim(
+                        key="repository:petersky/pa",
+                        access=ResourceAccess.EXCLUSIVE,
+                    ),
+                ],
+            )
+            fresh = goals.create(
+                self._goal_data("Reject internally exclusive claims"),
+                self._goal_ctx("create-mixed-exclusive-fresh"),
+            )
+            _state, denied = governance.authorize_action(
+                fresh.id,
+                request,
+                self._ctx(0, "reserve-mixed-exclusive-fresh"),
+            )
+            self.assertEqual(
+                denied.disposition, GoalActionDisposition.RESOURCE_CONFLICT
+            )
+
+            legacy = goals.create(
+                self._goal_data("Revalidate old internally exclusive claims"),
+                self._goal_ctx("create-mixed-exclusive-legacy"),
+            )
+            with patch.object(governance, "_resource_conflict_reasons", return_value=[]):
+                state, reserved = governance.authorize_action(
+                    legacy.id,
+                    request,
+                    self._ctx(0, "reserve-mixed-exclusive-legacy"),
+                )
+            self.assertEqual(reserved.disposition, GoalActionDisposition.AUTHORIZED)
+            state, applied = governance.apply_action(
+                legacy.id,
+                reserved.reservation_id or "",
+                self._ctx(state.version, "apply-mixed-exclusive-legacy"),
+            )
+            self.assertEqual(
+                applied.disposition, GoalActionDisposition.RESOURCE_CONFLICT
+            )
+            reservation = next(
+                item
+                for item in state.action_reservations
+                if item.id == reserved.reservation_id
+            )
+            self.assertEqual(reservation.state.value, "released")
 
     def test_provider_launch_revalidates_mutations_after_assignment(self) -> None:
         now = datetime(2026, 8, 3, tzinfo=UTC)
