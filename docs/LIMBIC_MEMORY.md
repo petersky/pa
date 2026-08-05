@@ -7,13 +7,35 @@ correlation metadata. Model features are minimized; confidential and restricted
 content never enters the optional appraisal provider.
 
 `LimbicService` applies versioned rules first. Security revocation, operator stop,
-data-integrity alarms, lease fencing, and hard resource limits always use a
-deterministic bypass. Known bounded status requests can use the preliminary fast
-path. Unknown, consequential, repeated-failure, or prompt-injection inputs route
-to slow deliberation. A model may supplement non-sensitive inputs, but can only
-escalate the baseline. Shadow mode records the proposed appraisal without changing
-the effective route. Replay fixtures report agreement, missed escalations, and
-false escalations without mutating durable state.
+data-integrity alarms, lease fencing, and hard resource limits use a deterministic
+bypass only when the server supplies verified provenance from an authenticated
+operator, integration, or authority boundary. Signal-body trust flags, event-class
+lookalikes, hashes, and dedupe keys are never authoritative. The service records a
+content-free spoof diagnostic and routes unverified control lookalikes to slow
+deliberation. The general `/api/limbic/appraise` and MCP entry point never infer
+trusted provenance from request fields or headers; authenticated adapters must
+construct it server-side. The service revalidates proof objects at use time,
+including objects produced through unchecked model-copy/construct helpers.
+Content hashes and dedupe keys are recomputed from normalized content and an
+authority-specific identity fingerprint, so trusted and untrusted copies do not
+collide and separate integrations cannot share a dedupe scope.
+
+Known bounded status requests can use the preliminary fast path. Unknown,
+consequential, repeated-failure, or prompt-injection inputs route to slow
+deliberation. A model may supplement non-sensitive inputs, but its output is
+schema-allowlisted and can only escalate the baseline. Model-proposed bypasses,
+wake targets, actions, and unknown fields are rejected. Provider calls have a
+strict deadline and circuit breaker; timeouts, provider/network errors, and
+malformed output return the deterministic baseline with code-only diagnostics.
+One provider invocation remains admitted after a timeout until its worker actually
+exits, preventing a hung provider from accumulating threads on circuit retries.
+Shadow mode records a policy-validated proposal without changing the effective
+route.
+
+Replay fixtures report exact agreement and a per-case escalation confusion matrix
+without mutating durable state. Empty suites return `no_data` with no accuracy;
+malformed suites are `invalid`, never perfect scores. Durable appraisal events use
+redacted signal content, minimized metadata, and content-free audit features.
 
 The memory service stores sensory, working, episodic, semantic, and procedural
 records in the realm event log. Every record carries source provenance, actor,

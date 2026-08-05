@@ -48,14 +48,16 @@ The activity probe exposes these counts separately:
 - `completion_work`: completion-outbox and reconciliation work; and
 - `provider_concurrency`: the same execution counts grouped by provider.
 
-Admission consumption is `prompting_turns + queued_prompts +
-dispatch_reservations`. A dispatch linked to an already-prompting session is not
-also counted as a reservation. Idle and deferred sessions, completion and
-reconciliation, PR-supervisor polling, advisor/control-plane work with no ACP
-turn, provider login jobs, and other operational sessions consume no slot by
-themselves. PR executors, advisors, and temporary operational agents consume a
-slot whenever their ACP turn is prompting or queued, exactly like user-created
-sessions.
+Admission consumption is `prompting_turns` / `active_capacity_consumers` plus
+`dispatch_reservations`. A dispatch linked to an already-prompting session is
+not also counted as a reservation. `queued_prompts` are persisted backlog
+telemetry for load, fairness, and ETA; prompts serialized behind the same ACP
+session do not consume additional execution-concurrency slots. Idle and
+deferred sessions, completion and reconciliation, PR-supervisor polling,
+advisor/control-plane work with no ACP turn, provider login jobs, and other
+operational sessions consume no slot by themselves. PR executors, advisors,
+and temporary operational agents consume a slot only while their ACP turn is
+prompting, exactly like user-created sessions.
 
 Provider action gates (`max_active=2`, `max_queue=8` by default) bound calls
 inside one provider adapter. They protect a different resource and do not

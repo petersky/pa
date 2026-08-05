@@ -11,7 +11,7 @@ from pathlib import Path
 
 from pa.telemetry.models import MetricQuality, TelemetryQuery, TelemetrySample
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 3
 ROLLUP_BUCKET_SECONDS = 300
 _QUALITY_RANK = {
     MetricQuality.MEASURED.value: 0,
@@ -45,6 +45,132 @@ class TelemetryStorage:
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("PRAGMA busy_timeout=5000")
         return conn
+
+    @staticmethod
+    def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
+        return (
+            conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                (name,),
+            ).fetchone()
+            is not None
+        )
+
+    @staticmethod
+    def _rollup_primary_key(conn: sqlite3.Connection, table: str) -> list[str]:
+        return [
+            row[1]
+            for row in sorted(
+                conn.execute(f"PRAGMA table_info({table})"),
+                key=lambda row: row[5] or 10_000,
+            )
+            if row[5]
+        ]
+
+    @staticmethod
+    def _finish_rollup_unit_migration(conn: sqlite3.Connection) -> None:
+        expected_primary_key = [
+            "bucket_start",
+            "bucket_seconds",
+            "instance_id",
+            "scope_type",
+            "scope_id",
+            "provider_id",
+            "card_id",
+            "project_id",
+            "realm_id",
+            "principal_id",
+            "metric",
+            "unit",
+        ]
+        migration_table = "rollup_metrics_unitless"
+        current_primary_key = TelemetryStorage._rollup_primary_key(
+            conn, "rollup_metrics"
+        )
+        migration_interrupted = TelemetryStorage._table_exists(conn, migration_table)
+        if current_primary_key == expected_primary_key and not migration_interrupted:
+            return
+
+        columns = (
+            "bucket_start,bucket_seconds,instance_id,instance_name,"
+            "scope_type,scope_id,provider_id,card_id,project_id,realm_id,"
+            "principal_id,metric,unit,quality_rank,value_sum,value_min,"
+            "value_max,value_last,value_count,sample_count,restart_ids"
+        )
+        conn.execute("SAVEPOINT rollup_unit_migration")
+        try:
+            sources = ["rollup_metrics"]
+            if migration_interrupted:
+                # Copy the stranded historical table first. If a previous attempt
+                # already copied any row into the current table, the current row
+                # replaces that duplicate instead of double-counting it.
+                sources.insert(0, migration_table)
+            for table in sources:
+                rollup_columns = {
+                    row[1] for row in conn.execute(f"PRAGMA table_info({table})")
+                }
+                if "restart_ids" not in rollup_columns:
+                    conn.execute(
+                        f"ALTER TABLE {table} "
+                        "ADD COLUMN restart_ids TEXT NOT NULL DEFAULT ''"
+                    )
+
+            conn.execute("DROP TABLE IF EXISTS rollup_metrics_rebuild")
+            conn.execute(
+                """
+                CREATE TABLE rollup_metrics_rebuild (
+                    bucket_start REAL NOT NULL,
+                    bucket_seconds INTEGER NOT NULL,
+                    instance_id TEXT NOT NULL,
+                    instance_name TEXT NOT NULL,
+                    scope_type TEXT NOT NULL,
+                    scope_id TEXT NOT NULL,
+                    provider_id TEXT NOT NULL DEFAULT '',
+                    card_id TEXT NOT NULL DEFAULT '',
+                    project_id TEXT NOT NULL DEFAULT '',
+                    realm_id TEXT NOT NULL DEFAULT '',
+                    principal_id TEXT NOT NULL DEFAULT '',
+                    metric TEXT NOT NULL,
+                    unit TEXT NOT NULL,
+                    quality_rank INTEGER NOT NULL,
+                    value_sum REAL,
+                    value_min REAL,
+                    value_max REAL,
+                    value_last REAL,
+                    value_count INTEGER NOT NULL,
+                    sample_count INTEGER NOT NULL,
+                    restart_ids TEXT NOT NULL DEFAULT '',
+                    PRIMARY KEY(
+                        bucket_start, bucket_seconds, instance_id, scope_type,
+                        scope_id, provider_id, card_id, project_id, realm_id,
+                        principal_id, metric, unit
+                    )
+                )
+                """
+            )
+            for table in sources:
+                conn.execute(
+                    f"INSERT OR REPLACE INTO rollup_metrics_rebuild({columns}) "
+                    f"SELECT {columns} FROM {table}"
+                )
+            conn.execute("DROP INDEX IF EXISTS rollups_time_idx")
+            conn.execute("DROP INDEX IF EXISTS rollups_scope_idx")
+            conn.execute("DROP TABLE rollup_metrics")
+            if migration_interrupted:
+                conn.execute(f"DROP TABLE {migration_table}")
+            conn.execute("ALTER TABLE rollup_metrics_rebuild RENAME TO rollup_metrics")
+            conn.execute(
+                "CREATE INDEX rollups_time_idx ON rollup_metrics(bucket_start)"
+            )
+            conn.execute(
+                "CREATE INDEX rollups_scope_idx "
+                "ON rollup_metrics(scope_type, scope_id, metric, bucket_start)"
+            )
+            conn.execute("RELEASE SAVEPOINT rollup_unit_migration")
+        except Exception:
+            conn.execute("ROLLBACK TO SAVEPOINT rollup_unit_migration")
+            conn.execute("RELEASE SAVEPOINT rollup_unit_migration")
+            raise
 
     def _open_or_recover(self) -> None:
         try:
@@ -131,9 +257,11 @@ class TelemetryStorage:
                 value_last REAL,
                 value_count INTEGER NOT NULL,
                 sample_count INTEGER NOT NULL,
+                restart_ids TEXT NOT NULL DEFAULT '',
                 PRIMARY KEY(
                     bucket_start, bucket_seconds, instance_id, scope_type, scope_id,
-                    provider_id, card_id, project_id, realm_id, principal_id, metric
+                    provider_id, card_id, project_id, realm_id, principal_id, metric,
+                    unit
                 )
             );
             CREATE INDEX IF NOT EXISTS rollups_time_idx
@@ -142,6 +270,7 @@ class TelemetryStorage:
                 ON rollup_metrics(scope_type, scope_id, metric, bucket_start);
             """
         )
+        TelemetryStorage._finish_rollup_unit_migration(conn)
         conn.execute(
             "INSERT INTO telemetry_meta(key,value) VALUES('schema_version',?) "
             "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
@@ -216,7 +345,7 @@ class TelemetryStorage:
     ) -> tuple[str, list]:
         clauses = [
             f"{alias}.{time_column} >= ?",
-            f"{alias}.{time_column} <= ?",
+            f"{alias}.{time_column} < ?",
         ]
         values: list = [
             query.start.timestamp() - start_offset_seconds,
@@ -257,10 +386,10 @@ class TelemetryStorage:
         where, values = self._where(query)
         with self._lock, self._connect() as conn:
             has_rollups = conn.execute(
-                "SELECT 1 FROM rollup_metrics WHERE bucket_start>=? "
-                "AND bucket_start<=? LIMIT 1",
+                "SELECT 1 FROM rollup_metrics "
+                "WHERE bucket_start+bucket_seconds>? AND bucket_start<? LIMIT 1",
                 (
-                    query.start.timestamp() - ROLLUP_BUCKET_SECONDS,
+                    query.start.timestamp(),
                     query.end.timestamp(),
                 ),
             ).fetchone()
@@ -283,7 +412,7 @@ class TelemetryStorage:
                        MAX(CASE m.quality
                          WHEN 'unsupported' THEN 3 WHEN 'unavailable' THEN 2
                          WHEN 'estimated' THEN 1 ELSE 0 END) quality_rank,
-                       COUNT(DISTINCT s.restart_id) restart_count,
+                       GROUP_CONCAT(DISTINCT s.restart_id) restart_ids,
                        MIN(s.ts) first_ts,MAX(s.ts) last_ts
                 FROM samples s JOIN sample_metrics m ON m.sample_id=s.id
                 WHERE {where}{metric_clause}
@@ -317,7 +446,8 @@ class TelemetryStorage:
                        SUM(r.value_count) value_count,
                        SUM(r.sample_count) sample_count,
                        MAX(r.quality_rank) quality_rank,
-                       0 restart_count,MIN(r.bucket_start) first_ts,
+                       GROUP_CONCAT(r.restart_ids, ',') restart_ids,
+                       MIN(r.bucket_start) first_ts,
                        MAX(r.bucket_start+r.bucket_seconds) last_ts
                 FROM rollup_metrics r
                 WHERE {rollup_where}{rollup_metric_clause}
@@ -384,16 +514,33 @@ class TelemetryStorage:
             current["quality_rank"] = max(
                 current["quality_rank"], incoming["quality_rank"]
             )
-            current["restart_count"] += incoming["restart_count"]
+            current["restart_ids"] = ",".join(
+                value
+                for value in (current["restart_ids"], incoming["restart_ids"])
+                if value
+            )
             current["first_ts"] = min(current["first_ts"], incoming["first_ts"])
             current["last_ts"] = max(current["last_ts"], incoming["last_ts"])
 
         dropped_invalid_samples = 0
         series: dict[tuple, list] = defaultdict(list)
         for row in sorted(combined.values(), key=lambda item: item["bucket_start"]):
-            if any(value is not None and not math.isfinite(float(value)) for value in (row["value_avg"], row["value_min"], row["value_max"])):
+            if any(
+                value is not None and not math.isfinite(float(value))
+                for value in (row["value_avg"], row["value_min"], row["value_max"])
+            ):
                 dropped_invalid_samples += 1
                 continue
+            bucket_start = datetime.fromtimestamp(row["bucket_start"], UTC)
+            bucket_end = bucket_start + timedelta(seconds=bucket)
+            interval_start = max(query.start, bucket_start)
+            interval_end = min(query.end, bucket_end)
+            if interval_start >= interval_end:
+                continue
+            first_timestamp = max(
+                query.start, datetime.fromtimestamp(row["first_ts"], UTC)
+            )
+            last_timestamp = min(query.end, datetime.fromtimestamp(row["last_ts"], UTC))
             series[
                 (
                     row["instance_id"],
@@ -409,9 +556,11 @@ class TelemetryStorage:
                 )
             ].append(
                 {
-                    "timestamp": datetime.fromtimestamp(
-                        row["bucket_start"], UTC
-                    ).isoformat(),
+                    "timestamp": interval_start.isoformat(),
+                    "interval_start": interval_start.isoformat(),
+                    "interval_end": interval_end.isoformat(),
+                    "partial_bucket": interval_start != bucket_start
+                    or interval_end != bucket_end,
                     "avg": row["value_avg"],
                     "min": row["value_min"],
                     "max": row["value_max"],
@@ -420,13 +569,16 @@ class TelemetryStorage:
                     "quality": _RANK_QUALITY.get(
                         row["quality_rank"], MetricQuality.UNAVAILABLE.value
                     ),
-                    "restart": row["restart_count"] > 1,
-                    "first_timestamp": datetime.fromtimestamp(
-                        row["first_ts"], UTC
-                    ).isoformat(),
-                    "last_timestamp": datetime.fromtimestamp(
-                        row["last_ts"], UTC
-                    ).isoformat(),
+                    "restart_ids": sorted(
+                        {
+                            value
+                            for value in (row["restart_ids"] or "").split(",")
+                            if value
+                        }
+                    ),
+                    "restart": False,
+                    "first_timestamp": first_timestamp.isoformat(),
+                    "last_timestamp": last_timestamp.isoformat(),
                 }
             )
         return {
@@ -445,18 +597,159 @@ class TelemetryStorage:
                     "realm_id": key[7] or None,
                     "metric": key[8],
                     "unit": key[9],
-                    "points": points,
+                    "bucket_seconds": bucket,
+                    "points": self._typed_points(points),
+                    "gaps": self._series_gaps(
+                        points,
+                        start=query.start,
+                        end=query.end,
+                        bucket_seconds=bucket,
+                    ),
                 }
                 for key, points in series.items()
             ],
             "diagnostics": {
-                "bucket_count": len({point["timestamp"] for points in series.values() for point in points}),
+                "bucket_count": len(
+                    {
+                        point["timestamp"]
+                        for points in series.values()
+                        for point in points
+                    }
+                ),
                 "series_count": len(series),
                 "point_count": sum(len(points) for points in series.values()),
-                "collection_freshness": max((point["last_timestamp"] for points in series.values() for point in points), default=None),
+                "collection_freshness": max(
+                    (
+                        point["last_timestamp"]
+                        for points in series.values()
+                        for point in points
+                    ),
+                    default=None,
+                ),
                 "dropped_invalid_samples": dropped_invalid_samples,
             },
         }
+
+    @staticmethod
+    def _missing_reason(point: dict) -> str | None:
+        if point["value_count"] > 0 and point["avg"] is not None:
+            return None
+        if point["quality"] == MetricQuality.UNSUPPORTED.value:
+            return "unsupported"
+        if point["quality"] == MetricQuality.UNAVAILABLE.value:
+            return "temporarily_unavailable"
+        if point["value_count"] == 0 or point["avg"] is None:
+            return "no_sample"
+        return None
+
+    @staticmethod
+    def _partial_reason(point: dict) -> str | None:
+        if point["value_count"] <= 0 or point["avg"] is None:
+            return None
+        if point["quality"] == MetricQuality.UNSUPPORTED.value:
+            return "unsupported"
+        if point["quality"] == MetricQuality.UNAVAILABLE.value:
+            return "temporarily_unavailable"
+        if point["value_count"] < point["sample_count"]:
+            return "no_sample"
+        return None
+
+    @classmethod
+    def _typed_points(cls, points: list[dict]) -> list[dict]:
+        previous_restart_ids: set[str] = set()
+        for point in points:
+            reason = cls._missing_reason(point)
+            restart_ids = set(point.get("restart_ids") or [])
+            point["restart"] = len(restart_ids) > 1 or bool(
+                previous_restart_ids
+                and restart_ids
+                and not restart_ids.issubset(previous_restart_ids)
+            )
+            if restart_ids:
+                previous_restart_ids = restart_ids
+            point["missing_reason"] = reason
+            point["missing_count"] = max(
+                0, point["sample_count"] - point["value_count"]
+            )
+            point["partial_reason"] = cls._partial_reason(point)
+            point["observation"] = (
+                "missing"
+                if reason
+                else "genuine_zero"
+                if point["avg"] == 0
+                else "observed"
+            )
+        return points
+
+    @classmethod
+    def _series_gaps(
+        cls,
+        points: list[dict],
+        *,
+        start: datetime,
+        end: datetime,
+        bucket_seconds: int,
+    ) -> list[dict]:
+        gaps: list[dict] = []
+        cursor = start
+        ordered = sorted(points, key=lambda point: point["timestamp"])
+        for point in ordered:
+            point_start = datetime.fromisoformat(
+                point.get("interval_start") or point["timestamp"]
+            )
+            point_end = datetime.fromisoformat(
+                point.get("interval_end")
+                or (point_start + timedelta(seconds=bucket_seconds)).isoformat()
+            )
+            bucket_start = max(start, point_start)
+            bucket_end = min(end, point_end)
+            if bucket_end <= start or bucket_start >= end:
+                continue
+            if cursor < bucket_start:
+                gaps.append(
+                    {
+                        "reason": "no_sample",
+                        "start": cursor.isoformat(),
+                        "end": bucket_start.isoformat(),
+                    }
+                )
+            reason = cls._missing_reason(point)
+            if reason:
+                gaps.append(
+                    {
+                        "reason": reason,
+                        "start": bucket_start.isoformat(),
+                        "end": bucket_end.isoformat(),
+                    }
+                )
+            partial_reason = cls._partial_reason(point)
+            if partial_reason:
+                gaps.append(
+                    {
+                        "reason": partial_reason,
+                        "start": bucket_start.isoformat(),
+                        "end": bucket_end.isoformat(),
+                        "partial": True,
+                    }
+                )
+            if point["restart"]:
+                gaps.append(
+                    {
+                        "reason": "restart",
+                        "start": bucket_start.isoformat(),
+                        "end": bucket_end.isoformat(),
+                    }
+                )
+            cursor = max(cursor, bucket_end)
+        if cursor < end:
+            gaps.append(
+                {
+                    "reason": "stale" if ordered else "no_sample",
+                    "start": cursor.isoformat(),
+                    "end": end.isoformat(),
+                }
+            )
+        return gaps
 
     @staticmethod
     def _rollup_ids(conn: sqlite3.Connection, ids: list[int]) -> int:
@@ -481,11 +774,22 @@ class TelemetryStorage:
                    (SELECT sm2.value FROM sample_metrics sm2
                      JOIN samples s2 ON s2.id=sm2.sample_id
                      WHERE sm2.metric=m.metric
+                       AND s2.instance_id=s.instance_id
+                       AND s2.scope_type=s.scope_type
                        AND s2.scope_id=s.scope_id
+                       AND COALESCE(s2.provider_id,'')=
+                           COALESCE(s.provider_id,'')
+                       AND COALESCE(s2.card_id,'')=COALESCE(s.card_id,'')
+                       AND COALESCE(s2.project_id,'')=COALESCE(s.project_id,'')
+                       AND COALESCE(s2.realm_id,'')=COALESCE(s.realm_id,'')
+                       AND COALESCE(s2.principal_id,'')=
+                           COALESCE(s.principal_id,'')
+                       AND sm2.unit=m.unit
                        AND CAST(s2.ts / ? AS INTEGER)=CAST(s.ts / ? AS INTEGER)
                        AND s2.id IN ({placeholders})
-                     ORDER BY s2.ts DESC LIMIT 1) value_last,
-                   COUNT(m.value) value_count,COUNT(*) sample_count
+                     ORDER BY s2.ts DESC,s2.id DESC LIMIT 1) value_last,
+                   COUNT(m.value) value_count,COUNT(*) sample_count,
+                   GROUP_CONCAT(DISTINCT s.restart_id) restart_ids
             FROM samples s JOIN sample_metrics m ON m.sample_id=s.id
             WHERE s.id IN ({placeholders})
             GROUP BY bucket_start,s.instance_id,s.instance_name,s.scope_type,
@@ -508,11 +812,11 @@ class TelemetryStorage:
                     bucket_start,bucket_seconds,instance_id,instance_name,
                     scope_type,scope_id,provider_id,card_id,project_id,realm_id,
                     principal_id,metric,unit,quality_rank,value_sum,value_min,
-                    value_max,value_last,value_count,sample_count
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    value_max,value_last,value_count,sample_count,restart_ids
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(
                     bucket_start,bucket_seconds,instance_id,scope_type,scope_id,
-                    provider_id,card_id,project_id,realm_id,principal_id,metric
+                    provider_id,card_id,project_id,realm_id,principal_id,metric,unit
                 ) DO UPDATE SET
                     quality_rank=MAX(quality_rank,excluded.quality_rank),
                     value_sum=COALESCE(value_sum,0)+COALESCE(excluded.value_sum,0),
@@ -526,7 +830,11 @@ class TelemetryStorage:
                       ELSE MAX(value_max,excluded.value_max) END,
                     value_last=COALESCE(excluded.value_last,value_last),
                     value_count=value_count+excluded.value_count,
-                    sample_count=sample_count+excluded.sample_count
+                    sample_count=sample_count+excluded.sample_count,
+                    restart_ids=CASE
+                      WHEN restart_ids='' THEN excluded.restart_ids
+                      WHEN excluded.restart_ids='' THEN restart_ids
+                      ELSE restart_ids || ',' || excluded.restart_ids END
                 """,
                 (
                     row["bucket_start"],
@@ -549,6 +857,7 @@ class TelemetryStorage:
                     row["value_last"],
                     row["value_count"],
                     row["sample_count"],
+                    row["restart_ids"] or "",
                 ),
             )
         conn.execute(
