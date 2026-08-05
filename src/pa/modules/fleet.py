@@ -18,7 +18,7 @@ from uuid import UUID, uuid4
 import httpx
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from pa.acp.configuration import SessionConfigurationRequest
 from pa.acp.providers.registry import get_provider
@@ -71,6 +71,12 @@ from pa.execution.dispatch import (
     DispatchRecord,
     DispatchStore,
     DispatchWorker,
+    GoalDispatchProvenance,
+    goal_admission_validation_proof,
+    goal_dispatch_placement_decision_digest,
+    goal_dispatch_placement_input_digest,
+    goal_dispatch_placement_input_snapshot,
+    goal_dispatch_record_placement_input_valid,
 )
 from pa.execution.disposition import decide_card_disposition
 from pa.execution.post_turn import (
@@ -165,6 +171,14 @@ from pa.fleet.update import (
     start_update_job,
 )
 from pa.fleet.workshop import build_workshop_snapshot, workshop_semantic_snapshot
+from pa.goals.advanced_models import (
+    GoalActionDisposition,
+    GoalActionRequest,
+    GoalReservationState,
+    GoalUsage,
+    GovernanceMutationContext,
+)
+from pa.goals.governance import GoalGovernanceConflict
 from pa.network.peer_table import PeerTable
 
 logger = logging.getLogger(__name__)
@@ -323,6 +337,7 @@ class RemoteAgentStartBody(BaseModel):
     participation_override_reason: str | None = Field(default=None, max_length=500)
     execution_contract: dict[str, Any] | None = None
     priority: int = Field(default=0, ge=-10, le=10)
+    goal_provenance: GoalDispatchProvenance | None = None
 
     @field_validator("provider", "model_id", mode="before")
     @classmethod
@@ -350,6 +365,42 @@ class FleetDispatchBody(RemoteAgentStartBody):
     goal_fencing_token: int | None = Field(default=None, ge=1)
     goal_action_reservation_id: str | None = None
     goal_actor_principal: str | None = None
+
+    @model_validator(mode="after")
+    def normalize_goal_provenance(self) -> FleetDispatchBody:
+        legacy = {
+            "goal_id": self.goal_id,
+            "goal_version": self.goal_version,
+            "policy_revision": self.goal_policy_revision,
+            "fencing_token": self.goal_fencing_token,
+            "action_reservation_id": self.goal_action_reservation_id,
+            "actor_principal": self.goal_actor_principal,
+        }
+        supplied = {key: value for key, value in legacy.items() if value is not None}
+        if self.goal_provenance is not None:
+            mismatched = {
+                key
+                for key, value in supplied.items()
+                if getattr(self.goal_provenance, key) != value
+            }
+            if mismatched:
+                raise ValueError(
+                    "flat and typed goal provenance disagree: "
+                    + ", ".join(sorted(mismatched))
+                )
+            return self
+        if not supplied:
+            return self
+        missing = sorted(key for key, value in legacy.items() if value is None)
+        if missing:
+            raise ValueError(
+                "incomplete goal dispatch provenance: " + ", ".join(missing)
+            )
+        self.goal_provenance = GoalDispatchProvenance(
+            **legacy,
+            authority_instance_id=self.authority_instance_id or "",
+        )
+        return self
 
 
 class PlacementDefaultBody(BaseModel):
@@ -404,11 +455,13 @@ class DispatchMaterializeBody(BaseModel):
     authority_instance_name: str | None = None
     authority_url: str
     target_instance_id: str
+    provider: str | None = None
     session_id: str | None = None
     progress_versions: list[int] = Field(default_factory=list, max_length=10)
     attachment_manifest: list[CardAttachment] = Field(default_factory=list)
     attachment_digest: str | None = None
     materialization_plan: dict[str, Any] | None = None
+    goal_provenance: GoalDispatchProvenance | None = None
 
 
 class AttachmentFinalizeBody(BaseModel):
@@ -1153,6 +1206,14 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
                     "message": "dispatch id is already in use",
                 },
             )
+        if recorded.goal_provenance != body.goal_provenance:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "goal_dispatch_provenance_mismatch",
+                    "recoverable": False,
+                },
+            )
         return {
             "dispatch_id": body.dispatch_id,
             "card_id": recorded.card_id,
@@ -1207,9 +1268,11 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
         progress_protocol_version=progress_protocol_version,
         attachment_evidence=attachment_evidence,
         materialization_plan=body.materialization_plan,
+        goal_provenance=body.goal_provenance,
         request_payload={
             "provenance_version": body.provenance_version,
             "progress_versions": list(body.progress_versions),
+            "provider": body.provider,
         },
     )
     try:
@@ -5015,6 +5078,45 @@ async def _refresh_queued_dispatch_readiness(
 
     request = _dispatch_request(app)
     ctx = app.state.ctx
+    ledger: DispatchStore = ctx.require_service("dispatch_store")
+    try:
+        record = await _validate_goal_dispatch_record_async(
+            ctx, ledger, record, sink="queued-promotion"
+        )
+    except HTTPException as exc:
+        release_authorized = _goal_admission_proof_valid(ctx, record)
+        detail = exc.detail if isinstance(exc.detail, dict) else {}
+        record = await _offload_ctx(
+            ctx,
+            "dispatch.goal_fence_failure",
+            ledger.fail,
+            record,
+            str(detail.get("message") or detail or exc),
+            code=str(detail.get("code") or "goal_governance_denied"),
+            recoverable=False,
+            detail=detail,
+        )
+        if release_authorized:
+            await _release_goal_dispatch_reservation_async(
+                ctx,
+                ledger,
+                record,
+                outcome="promotion-denied",
+                applied=False,
+            )
+        else:
+            record.goal_admission_validation_state = "rejected"
+            record.goal_admission_validation_error = (
+                "Queued promotion failed exact admission proof validation; "
+                "the authoritative reservation was quarantined without release."
+            )
+            await _offload_ctx(
+                ctx,
+                "dispatch.goal_fence_quarantine",
+                ledger.put,
+                record,
+            )
+        raise
     fleet: FleetRegistry = ctx.require_service("fleet_registry")
     inst = fleet.get_instance(record.target_instance_id)
     if not inst or inst.lifecycle_state != "active":
@@ -5096,7 +5198,16 @@ async def _dispatch_cancelled(
         )
         return True
 
-    return await _offload_ctx(ctx, "dispatch.cancel_check", check_and_transition)
+    cancelled = await _offload_ctx(ctx, "dispatch.cancel_check", check_and_transition)
+    if cancelled:
+        await _release_goal_dispatch_reservation_async(
+            ctx,
+            ledger,
+            record,
+            outcome="cancelled",
+            applied=_goal_dispatch_was_applied(record),
+        )
+    return cancelled
 
 
 async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
@@ -5106,6 +5217,10 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
     settings = ctx.settings
     ledger: DispatchStore = ctx.require_service("dispatch_store")
     store = ctx.store
+
+    record = await _validate_goal_dispatch_record_async(
+        ctx, ledger, record, sink="worker-start"
+    )
 
     if await _dispatch_cancelled(ctx, ledger, record):
         return
@@ -5208,6 +5323,7 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
         "authority_instance_name": record.authority_instance_name,
         "authority_url": record.authority_url,
         "target_instance_id": record.target_instance_id,
+        "provider": record.request_payload.get("provider"),
         "session_id": record.resume_session_id if record.resume_requested else None,
         "progress_versions": SUPPORTED_PROGRESS_VERSIONS,
         "attachment_manifest": [
@@ -5215,11 +5331,24 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
         ],
         "attachment_digest": manifest_digest(card.attachments if card else []),
         "materialization_plan": record.materialization_plan,
+        "goal_provenance": (
+            record.goal_provenance.model_dump(mode="json")
+            if record.goal_provenance
+            else None
+        ),
     }
     manifest = [
         CardAttachment.model_validate(item)
         for item in materialize_payload["attachment_manifest"]
     ]
+    record = await _validate_goal_dispatch_record_async(
+        ctx, ledger, record, sink="target-materialization"
+    )
+    materialize_payload["goal_provenance"] = (
+        record.goal_provenance.model_dump(mode="json")
+        if record.goal_provenance
+        else None
+    )
     materialized = await _peer_dispatch_json(
         request, record.target_instance_id, materialize_payload
     )
@@ -5314,6 +5443,11 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
         "config": payload.get("config") or {},
         "surface": "execution",
         "dispatch_id": record.dispatch_id,
+        "goal_provenance": (
+            record.goal_provenance.model_dump(mode="json")
+            if record.goal_provenance
+            else None
+        ),
         "resume": record.resume_requested,
         "resume_session_id": record.resume_session_id,
     }
@@ -5322,6 +5456,14 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
         for key, value in session_body.items()
         if value not in (None, "", False)
     }
+    record = await _validate_goal_dispatch_record_async(
+        ctx, ledger, record, sink="session-allocation"
+    )
+    session_body["goal_provenance"] = (
+        record.goal_provenance.model_dump(mode="json")
+        if record.goal_provenance
+        else None
+    )
     snapshot = await _peer_agent_json(
         request,
         record.target_instance_id,
@@ -5437,6 +5579,9 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
             "delivering_prompt",
             "Delivering and awaiting durable prompt acceptance.",
         )
+        record = await _validate_goal_dispatch_record_async(
+            ctx, ledger, record, sink="prompt-delivery"
+        )
         delivered = await _peer_agent_json(
             request,
             record.target_instance_id,
@@ -5447,6 +5592,11 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
                 "card_id": record.card_id,
                 "project_id": record.project_id,
                 "dispatch_id": record.dispatch_id,
+                "goal_provenance": (
+                    record.goal_provenance.model_dump(mode="json")
+                    if record.goal_provenance
+                    else None
+                ),
             },
         )
         prompt_result = delivered if isinstance(delivered, dict) else None
@@ -5538,6 +5688,13 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
                 "configuration": confirmed_configuration,
             },
         )
+    await _release_goal_dispatch_reservation_async(
+        ctx,
+        ledger,
+        record,
+        outcome="started",
+        applied=True,
+    )
 
 
 async def _placement_candidates(
@@ -6114,43 +6271,309 @@ def _validate_participation_override(user, body: RemoteAgentStartBody) -> None:
         )
 
 
-def _validate_goal_dispatch_fence(
-    ctx: AppContext, body: FleetDispatchBody, selected_authority: str
-) -> None:
-    if not body.goal_id:
-        return
-    required = {
-        "goal_version": body.goal_version,
-        "goal_policy_revision": body.goal_policy_revision,
-        "goal_fencing_token": body.goal_fencing_token,
-        "goal_action_reservation_id": body.goal_action_reservation_id,
-        "goal_actor_principal": body.goal_actor_principal,
-    }
-    missing = sorted(key for key, value in required.items() if value in {None, ""})
-    if missing:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "code": "incomplete_goal_fence",
-                "missing": missing,
-                "recoverable": False,
-            },
-        )
+def _goal_dispatch_services(ctx: AppContext, goal_id: str):
     goal_service = ctx.services.get("goal_service")
     governance = ctx.services.get("goal_governance")
-    goal = goal_service.get(body.goal_id) if goal_service else None
+    goal = goal_service.get(goal_id) if goal_service else None
     if goal is None or governance is None:
         raise HTTPException(
             status_code=409,
             detail={"code": "goal_authority_unavailable", "recoverable": True},
         )
-    if (
-        goal.version != body.goal_version
-        or goal.policy.revision != body.goal_policy_revision
-        or not goal.lease.active()
-        or goal.lease.holder_instance_id != selected_authority
-        or goal.lease.fencing_token != body.goal_fencing_token
+    return goal, governance
+
+
+def _goal_governance_replay_context(
+    governance,
+    goal,
+    context: GovernanceMutationContext,
+) -> GovernanceMutationContext:
+    """Recover the exact original autonomy version for an internal retry."""
+
+    duplicate = governance._duplicate(goal.realm_id, context.idempotency_key)
+    if duplicate is None:
+        return context
+    return context.model_copy(
+        update={"expected_version": max(int(duplicate.get("version", 1)) - 1, 0)}
+    )
+
+
+def _goal_dispatch_lifecycle_owned(ctx: AppContext, record: DispatchRecord) -> bool:
+    provenance = record.goal_provenance
+    local_instance_id = str(
+        getattr(getattr(ctx, "settings", None), "instance_id", "") or ""
+    )
+    return bool(
+        provenance is not None
+        and local_instance_id
+        and record.authority_instance_id == local_instance_id
+        and provenance.authority_instance_id == local_instance_id
+    )
+
+
+def _bind_effective_goal_dispatch_provider(
+    body: RemoteAgentStartBody, default_provider: str
+) -> None:
+    """Persist one concrete provider before governed admission fingerprinting."""
+
+    if body.goal_provenance is None:
+        return
+    body.provider = str(body.provider or default_provider).strip().lower() or None
+    if body.provider is None:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "goal_provider_unresolved", "recoverable": False},
+        )
+
+
+def _goal_dispatch_placement_input(
+    body: RemoteAgentStartBody,
+    *,
+    target_instance_id: str,
+) -> tuple[str, dict[str, Any], str]:
+    payload = body.model_dump(mode="json")
+    if isinstance(body, FleetDispatchBody):
+        requested_target = body.target_instance_id or (
+            f"placement:{body.placement_policy or 'balanced'}"
+        )
+    else:
+        payload["target_instance_id"] = target_instance_id
+        payload["placement_policy"] = None
+        requested_target = target_instance_id
+    snapshot = goal_dispatch_placement_input_snapshot(payload)
+    return (
+        requested_target,
+        snapshot,
+        goal_dispatch_placement_input_digest(snapshot),
+    )
+
+
+def _persist_goal_dispatch_admission_trace(
+    ctx: AppContext,
+    ledger: DispatchStore,
+    body: RemoteAgentStartBody,
+    *,
+    idempotency_key: str,
+    request_fingerprint: str,
+    target_instance_id: str,
+    principal_id: str,
+    placement_policy: str,
+    idempotency_scope: str,
+) -> tuple[DispatchRecord | None, bool]:
+    """Write restart-recoverable evidence before governed admission can block."""
+
+    if body.goal_provenance is None:
+        return None, True
+    settings = ctx.settings
+    (
+        _requested_target,
+        placement_input,
+        placement_input_digest,
+    ) = _goal_dispatch_placement_input(body, target_instance_id=target_instance_id)
+    record = DispatchRecord(
+        mutation_id=str(uuid4()),
+        idempotency_key=idempotency_key,
+        request_fingerprint=request_fingerprint,
+        placement_request_fingerprint=request_fingerprint,
+        card_id=body.card_id,
+        project_id=body.project_id,
+        request_payload=body.model_dump(mode="json"),
+        goal_provenance=body.goal_provenance,
+        goal_placement_input=placement_input,
+        goal_placement_input_digest=placement_input_digest,
+        goal_admission_validation_state="pending",
+        principal_id=principal_id,
+        authority_instance_id=settings.instance_id,
+        authority_instance_name=getattr(
+            settings, "instance_name", settings.instance_id
+        ),
+        authority_url=str(getattr(settings, "instance_url", "") or ""),
+        target_instance_id=target_instance_id,
+        placement_policy=placement_policy,
+        requested_priority=body.priority,
+        allow_concurrent=body.allow_concurrent,
+        state="admission_pending",
+        events=[
+            DispatchEvent(
+                seq=1,
+                state="admission_pending",
+                message="Governed dispatch admission durably started.",
+            )
+        ],
+    )
+    return ledger.begin_admission(record, idempotency_scope=idempotency_scope)
+
+
+def _admission_in_progress_error(record: DispatchRecord) -> HTTPException:
+    return HTTPException(
+        status_code=409,
+        detail={
+            "code": "dispatch_admission_in_progress",
+            "message": "The canonical governed admission for this idempotency key is still in progress.",
+            "dispatch_id": record.dispatch_id,
+            "recoverable": True,
+        },
+    )
+
+
+def _fail_goal_dispatch_admission(
+    ctx: AppContext,
+    ledger: DispatchStore,
+    record: DispatchRecord | None,
+    *,
+    message: str,
+    code: str,
+    recoverable: bool,
+    detail: dict[str, Any] | None = None,
+) -> DispatchRecord | None:
+    """Terminalize a pre-admission trace before releasing its exact goal hold."""
+
+    if record is None:
+        return None
+    current = ledger.get(record.dispatch_id) or record
+    if current.state != "admission_pending":
+        return current
+    current = ledger.fail(
+        current,
+        message,
+        code=code,
+        recoverable=recoverable,
+        detail=detail,
+    )
+    if current.goal_provenance is not None and not _goal_admission_operation_bound(
+        ctx, current
     ):
+        current.goal_admission_validation_state = "rejected"
+        current.goal_admission_validation_error = (
+            "The staged provenance was not bound to this admission operation."
+        )
+        return ledger.put(current)
+    return _release_goal_dispatch_reservation(
+        ctx,
+        ledger,
+        current,
+        outcome=f"admission-failed:{code}",
+        applied=False,
+    )
+
+
+async def _fail_goal_dispatch_admission_request(
+    request: Request,
+    record: DispatchRecord | None,
+    *,
+    message: str,
+    code: str,
+    recoverable: bool,
+    detail: dict[str, Any] | None = None,
+) -> DispatchRecord | None:
+    if record is None:
+        return None
+    return await _offload_request(
+        request,
+        "goal.dispatch_admission_failed",
+        _fail_goal_dispatch_admission,
+        request.app.state.ctx,
+        _dispatch_store(request),
+        record,
+        message=message,
+        code=code,
+        recoverable=recoverable,
+        detail=detail,
+    )
+
+
+async def _reject_goal_dispatch_admission(
+    request: Request,
+    record: DispatchRecord | None,
+    error: HTTPException,
+    *,
+    default_code: str = "admission_rejected",
+) -> None:
+    """Make a normal pre-admission rejection terminal and restart-recoverable."""
+
+    detail = error.detail if isinstance(error.detail, dict) else None
+    code = str((detail or {}).get("code") or default_code)
+    message = str((detail or {}).get("message") or error.detail or code)
+    recoverable = bool((detail or {}).get("recoverable", error.status_code >= 500))
+    await _fail_goal_dispatch_admission_request(
+        request,
+        record,
+        message=message,
+        code=code,
+        recoverable=recoverable,
+        detail=detail,
+    )
+
+
+def _validate_goal_dispatch_provenance(
+    ctx: AppContext,
+    provenance: GoalDispatchProvenance | None,
+    selected_authority: str,
+    *,
+    sink: str,
+    provider_id: str | None = None,
+    target_instance_id: str | None = None,
+    placement_input_digest: str | None = None,
+    placement_decision_digest: str | None = None,
+    denial_applied: bool = False,
+) -> GoalDispatchProvenance | None:
+    """Use the canonical governance state at every dispatch side-effect sink."""
+
+    if provenance is None:
+        return None
+    effective_provider = str(provider_id or "").strip().lower()
+    effective_target = str(
+        target_instance_id or provenance.resolved_target_instance_id or ""
+    ).strip()
+    effective_input_digest = str(
+        placement_input_digest or provenance.placement_input_digest or ""
+    ).strip()
+    effective_decision_digest = str(
+        placement_decision_digest or provenance.placement_decision_digest or ""
+    ).strip()
+    if not effective_provider:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "goal_provider_unresolved", "recoverable": False},
+        )
+    if provenance.released_at is not None:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "released_goal_reservation", "recoverable": False},
+        )
+    if provenance.authority_instance_id != selected_authority:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "goal_authority_mismatch", "recoverable": False},
+        )
+    if (
+        provenance.provider_id is not None
+        and provenance.provider_id.strip().lower() != effective_provider
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "goal_provider_mismatch", "recoverable": False},
+        )
+    if (
+        not provenance.requested_placement_target
+        or not effective_target
+        or not effective_input_digest
+        or not effective_decision_digest
+        or provenance.placement_input_digest != effective_input_digest
+        or provenance.resolved_target_instance_id != effective_target
+        or provenance.placement_decision_digest != effective_decision_digest
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "goal_placement_mismatch", "recoverable": False},
+        )
+    goal, governance = _goal_dispatch_services(ctx, provenance.goal_id)
+    if not goal.lease.active() or goal.lease.holder_instance_id != selected_authority:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "stale_goal_fence", "recoverable": False},
+        )
+    if provenance.fencing_token != goal.lease.fencing_token:
         raise HTTPException(
             status_code=409,
             detail={"code": "stale_goal_fence", "recoverable": False},
@@ -6170,24 +6593,1207 @@ def _validate_goal_dispatch_fence(
         (
             item
             for item in state.action_reservations
-            if item.id == body.goal_action_reservation_id
+            if item.id == provenance.action_reservation_id
         ),
         None,
     )
     if (
         reservation is None
-        or reservation.state.value != "applied"
-        or reservation.action_class != "dispatch_work_package"
-        or reservation.goal_version != body.goal_version
-        or reservation.policy_revision != body.goal_policy_revision
-        or reservation.actor_principal != body.goal_actor_principal
+        or reservation.state != GoalReservationState.APPLIED
+        or reservation.action_class != provenance.action_class
+        or reservation.actor_principal != provenance.actor_principal
         or reservation.authority_instance_id != selected_authority
-        or reservation.fencing_token != body.goal_fencing_token
+        or reservation.goal_version != provenance.goal_version
+        or reservation.policy_revision != provenance.policy_revision
+        or reservation.fencing_token != provenance.fencing_token
+        or reservation.request.operation_key != provenance.operation_key
+        or reservation.request.requested_placement_target
+        != provenance.requested_placement_target
+        or reservation.request.placement_input_digest != effective_input_digest
+        or reservation.request.resolved_target_instance_id != effective_target
+        or reservation.request.placement_decision_digest
+        != effective_decision_digest
+        or reservation.attempt != provenance.reservation_attempt
+        or reservation.max_attempts != provenance.max_reservation_attempts
     ):
         raise HTTPException(
             status_code=409,
             detail={"code": "invalid_goal_reservation", "recoverable": False},
         )
+    context = GovernanceMutationContext(
+        actor_principal=provenance.actor_principal,
+        authority_instance_id=selected_authority,
+        idempotency_key=(
+            f"goal-dispatch:{provenance.action_reservation_id}:validate:{sink}:"
+            f"g{goal.version}:p{goal.policy.revision}:f{goal.lease.fencing_token}:"
+            f"provider:{effective_provider}:target:{effective_target}:"
+            f"placement:{effective_decision_digest}"
+        )[:200],
+        expected_version=state.version,
+        policy_revision=goal.policy.revision,
+        goal_version=goal.version,
+        fencing_token=goal.lease.fencing_token,
+    )
+    try:
+        _, reservation = governance.revalidate_action_sink(
+            goal.id,
+            provenance.action_reservation_id,
+            _goal_governance_replay_context(governance, goal, context),
+            action_class=provenance.action_class,
+            provider_id=effective_provider,
+            requested_placement_target=provenance.requested_placement_target,
+            placement_input_digest=effective_input_digest,
+            resolved_target_instance_id=effective_target,
+            placement_decision_digest=effective_decision_digest,
+            denial_actual_usage=(
+                reservation.reserved_usage.model_copy(deep=True)
+                if denial_applied
+                else GoalUsage()
+            ),
+        )
+    except GoalGovernanceConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "goal_governance_denied",
+                "message": str(exc),
+                "recoverable": False,
+            },
+        ) from exc
+    return provenance.model_copy(
+        update={
+            "goal_version": reservation.goal_version,
+            "policy_revision": reservation.policy_revision,
+            "fencing_token": reservation.fencing_token,
+            "provider_id": effective_provider,
+            "operation_key": reservation.request.operation_key,
+            "requested_placement_target": (
+                reservation.request.requested_placement_target
+            ),
+            "placement_input_digest": reservation.request.placement_input_digest,
+            "resolved_target_instance_id": (
+                reservation.request.resolved_target_instance_id
+            ),
+            "placement_decision_digest": (
+                reservation.request.placement_decision_digest
+            ),
+            "reservation_attempt": reservation.attempt,
+            "max_reservation_attempts": reservation.max_attempts,
+        }
+    )
+
+
+def _goal_admission_operation_bound(
+    ctx: AppContext,
+    record: DispatchRecord,
+) -> bool:
+    provenance = record.goal_provenance
+    operation_key = str(record.idempotency_key or "")
+    if (
+        provenance is None
+        or not operation_key
+        or provenance.operation_key != operation_key
+    ):
+        return False
+    try:
+        _goal, governance = _goal_dispatch_services(ctx, provenance.goal_id)
+        state = governance.get_state(provenance.goal_id)
+    except HTTPException, GoalGovernanceConflict:
+        return False
+    reservation = next(
+        (
+            item
+            for item in state.action_reservations
+            if item.id == provenance.action_reservation_id
+        ),
+        None,
+    )
+    base_bound = bool(
+        reservation is not None
+        and reservation.request.operation_key == operation_key
+        and reservation.goal_id == provenance.goal_id
+        and reservation.authority_instance_id == provenance.authority_instance_id
+        and reservation.actor_principal == provenance.actor_principal
+        and reservation.action_class == provenance.action_class
+        and str(reservation.request.provider_id or "").strip().lower()
+        == str(provenance.provider_id or "").strip().lower()
+        and reservation.request.requested_placement_target
+        == provenance.requested_placement_target
+        and reservation.request.placement_input_digest
+        == provenance.placement_input_digest
+        and reservation.request.placement_input_digest
+        == record.goal_placement_input_digest
+        and goal_dispatch_record_placement_input_valid(record)
+    )
+    if not base_bound or reservation is None:
+        return False
+    requested_target = reservation.request.requested_placement_target
+    resolved_target = reservation.request.resolved_target_instance_id
+    decision_digest = reservation.request.placement_decision_digest
+    if resolved_target is None and decision_digest is None:
+        return bool(
+            requested_target
+            and record.target_instance_id == requested_target
+            and record.placement_decision is None
+            and provenance.resolved_target_instance_id is None
+            and provenance.placement_decision_digest is None
+        )
+    return bool(
+        resolved_target
+        and decision_digest
+        and record.target_instance_id == resolved_target
+        and provenance.resolved_target_instance_id == resolved_target
+        and provenance.placement_decision_digest == decision_digest
+        and goal_dispatch_placement_decision_digest(record.placement_decision)
+        == decision_digest
+    )
+
+
+def _bind_goal_dispatch_placement(
+    ctx: AppContext,
+    provenance: GoalDispatchProvenance | None,
+    *,
+    selected_authority: str,
+    operation_key: str,
+    target_instance_id: str,
+    placement_input_digest: str,
+    placement_decision: dict[str, Any],
+) -> GoalDispatchProvenance | None:
+    """Persist the resolved target and decision on the canonical reservation."""
+
+    if provenance is None:
+        return None
+    requested_target = str(provenance.requested_placement_target or "").strip()
+    if (
+        not requested_target
+        or provenance.placement_input_digest != placement_input_digest
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "goal_placement_mismatch", "recoverable": False},
+        )
+    if str(placement_decision.get("chosen_instance_id") or "") != target_instance_id:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "goal_placement_mismatch", "recoverable": False},
+        )
+    if requested_target.startswith("placement:"):
+        requested_policy = requested_target.partition(":")[2]
+        if str(placement_decision.get("policy") or "") != requested_policy:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "goal_placement_mismatch", "recoverable": False},
+            )
+    elif requested_target != target_instance_id:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "goal_placement_mismatch", "recoverable": False},
+        )
+    goal, governance = _goal_dispatch_services(ctx, provenance.goal_id)
+    state = governance.get_state(goal.id)
+    reservation = next(
+        (
+            item
+            for item in state.action_reservations
+            if item.id == provenance.action_reservation_id
+        ),
+        None,
+    )
+    if (
+        provenance.authority_instance_id != selected_authority
+        or reservation is None
+        or reservation.state != GoalReservationState.APPLIED
+        or reservation.goal_id != provenance.goal_id
+        or reservation.action_class != provenance.action_class
+        or reservation.actor_principal != provenance.actor_principal
+        or reservation.authority_instance_id != selected_authority
+        or reservation.goal_version != provenance.goal_version
+        or reservation.policy_revision != provenance.policy_revision
+        or reservation.fencing_token != provenance.fencing_token
+        or reservation.request.operation_key != provenance.operation_key
+        or provenance.operation_key != operation_key
+        or str(reservation.request.provider_id or "").strip().lower()
+        != str(provenance.provider_id or "").strip().lower()
+        or reservation.request.requested_placement_target != requested_target
+        or reservation.request.placement_input_digest != placement_input_digest
+        or reservation.attempt != provenance.reservation_attempt
+        or reservation.max_attempts != provenance.max_reservation_attempts
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "invalid_goal_reservation", "recoverable": False},
+        )
+    decision_digest = goal_dispatch_placement_decision_digest(placement_decision)
+    binding_digest = hashlib.sha256(
+        json.dumps(
+            {
+                "requested": requested_target,
+                "input": placement_input_digest,
+                "target": target_instance_id,
+                "decision": decision_digest,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    try:
+        placement_context = GovernanceMutationContext(
+            actor_principal=provenance.actor_principal,
+            authority_instance_id=selected_authority,
+            idempotency_key=(
+                f"goal-dispatch:{provenance.action_reservation_id}:"
+                f"placement:{binding_digest}"
+            )[:200],
+            expected_version=state.version,
+            policy_revision=goal.policy.revision,
+            goal_version=goal.version,
+            fencing_token=goal.lease.fencing_token,
+        )
+        _state, reservation = governance.bind_dispatch_placement(
+            goal.id,
+            provenance.action_reservation_id,
+            _goal_governance_replay_context(
+                governance,
+                goal,
+                placement_context,
+            ),
+            requested_placement_target=requested_target,
+            placement_input_digest=placement_input_digest,
+            resolved_target_instance_id=target_instance_id,
+            placement_decision_digest=decision_digest,
+        )
+    except GoalGovernanceConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "goal_placement_mismatch",
+                "message": str(exc),
+                "recoverable": False,
+            },
+        ) from exc
+    return provenance.model_copy(
+        update={
+            "goal_version": reservation.goal_version,
+            "policy_revision": reservation.policy_revision,
+            "fencing_token": reservation.fencing_token,
+            "requested_placement_target": (
+                reservation.request.requested_placement_target
+            ),
+            "placement_input_digest": reservation.request.placement_input_digest,
+            "resolved_target_instance_id": (
+                reservation.request.resolved_target_instance_id
+            ),
+            "placement_decision_digest": (
+                reservation.request.placement_decision_digest
+            ),
+        }
+    )
+
+
+def _restore_goal_dispatch_placement_binding(
+    ctx: AppContext,
+    ledger: DispatchStore,
+    record: DispatchRecord,
+) -> DispatchRecord:
+    """Recover provenance only from an already-bound canonical reservation."""
+
+    provenance = record.goal_provenance
+    if provenance is None:
+        return record
+    try:
+        _goal, governance = _goal_dispatch_services(ctx, provenance.goal_id)
+        reservation = next(
+            (
+                item
+                for item in governance.get_state(provenance.goal_id).action_reservations
+                if item.id == provenance.action_reservation_id
+            ),
+            None,
+        )
+    except HTTPException, GoalGovernanceConflict:
+        return record
+    if reservation is None:
+        return record
+    request = reservation.request
+    decision_digest = goal_dispatch_placement_decision_digest(
+        record.placement_decision
+    )
+    if not (
+        request.operation_key == record.idempotency_key == provenance.operation_key
+        and reservation.goal_id == provenance.goal_id
+        and reservation.authority_instance_id == provenance.authority_instance_id
+        and reservation.actor_principal == provenance.actor_principal
+        and reservation.action_class == provenance.action_class
+        and str(request.provider_id or "").strip().lower()
+        == str(provenance.provider_id or "").strip().lower()
+        and request.requested_placement_target
+        == provenance.requested_placement_target
+        and request.placement_input_digest
+        == provenance.placement_input_digest
+        == record.goal_placement_input_digest
+        and goal_dispatch_record_placement_input_valid(record)
+        and request.resolved_target_instance_id == record.target_instance_id
+        and request.placement_decision_digest == decision_digest
+        and request.resolved_target_instance_id
+        and request.placement_decision_digest
+    ):
+        return record
+    record.goal_provenance = provenance.model_copy(
+        update={
+            "resolved_target_instance_id": request.resolved_target_instance_id,
+            "placement_decision_digest": request.placement_decision_digest,
+        }
+    )
+    return ledger.put(record)
+
+
+def _mark_goal_admission_validated(
+    ctx: AppContext,
+    ledger: DispatchStore,
+    record: DispatchRecord,
+) -> DispatchRecord:
+    provenance = record.goal_provenance
+    if (
+        not _goal_admission_operation_bound(ctx, record)
+        or provenance is None
+        or not provenance.resolved_target_instance_id
+        or not provenance.placement_decision_digest
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "goal_admission_operation_mismatch",
+                "recoverable": False,
+            },
+        )
+    record.goal_admission_validation_state = "validated"
+    record.goal_admission_validated_at = datetime.now(UTC)
+    record.goal_admission_validation_proof = goal_admission_validation_proof(record)
+    record.goal_admission_validation_error = None
+    return ledger.put(record)
+
+
+def _goal_admission_proof_valid(
+    ctx: AppContext,
+    record: DispatchRecord,
+) -> bool:
+    return bool(
+        record.goal_admission_validation_state == "validated"
+        and record.goal_admission_validated_at is not None
+        and record.goal_admission_validation_proof
+        == goal_admission_validation_proof(record)
+        and _goal_admission_operation_bound(ctx, record)
+    )
+
+
+def _reject_unvalidated_goal_admission(
+    ledger: DispatchStore,
+    record: DispatchRecord,
+    message: str,
+) -> DispatchRecord:
+    record.goal_admission_validation_state = "rejected"
+    record.goal_admission_validation_error = message[:1000]
+    return ledger.fail(
+        record,
+        message,
+        code="invalid_goal_admission_trace",
+        recoverable=False,
+        detail={"reservation_released": False, "validation_state": "rejected"},
+    )
+
+
+def _validate_goal_dispatch_record(
+    ctx: AppContext,
+    ledger: DispatchStore,
+    record: DispatchRecord,
+    *,
+    sink: str,
+) -> DispatchRecord:
+    if record.goal_provenance is not None and not _goal_dispatch_lifecycle_owned(
+        ctx, record
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "target_goal_dispatch_copy_not_launchable",
+                "recoverable": False,
+            },
+        )
+    refreshed = _validate_goal_dispatch_provenance(
+        ctx,
+        record.goal_provenance,
+        record.authority_instance_id,
+        sink=sink,
+        provider_id=record.request_payload.get("provider"),
+        target_instance_id=record.target_instance_id,
+        placement_input_digest=record.goal_placement_input_digest,
+        placement_decision_digest=goal_dispatch_placement_decision_digest(
+            record.placement_decision
+        ),
+        denial_applied=_goal_dispatch_was_applied(record),
+    )
+    if refreshed != record.goal_provenance:
+        record.goal_provenance = refreshed
+        ledger.put(record)
+    return record
+
+
+def _release_goal_action_provenance(
+    ctx: AppContext,
+    provenance: GoalDispatchProvenance,
+    *,
+    operation_id: str,
+    outcome: str,
+    applied: bool,
+) -> GoalDispatchProvenance:
+    """Release one authority-owned goal action and return durable provenance."""
+
+    if provenance.authority_instance_id != ctx.settings.instance_id:
+        return provenance
+    goal, governance = _goal_dispatch_services(ctx, provenance.goal_id)
+    state = governance.get_state(goal.id)
+    reservation = next(
+        (
+            item
+            for item in state.action_reservations
+            if item.id == provenance.action_reservation_id
+        ),
+        None,
+    )
+    if reservation is None:
+        raise GoalGovernanceConflict("goal dispatch reservation disappeared")
+    if reservation.state != GoalReservationState.RELEASED:
+        release_context = GovernanceMutationContext(
+            actor_principal=(
+                f"service:goal-dispatch-lifecycle:{reservation.authority_instance_id}"
+            ),
+            authority_instance_id=reservation.authority_instance_id,
+            idempotency_key=(
+                f"goal-dispatch:{operation_id}:release:{outcome}:"
+                f"attempt:{reservation.attempt}"
+            )[:200],
+            expected_version=state.version,
+            policy_revision=goal.policy.revision,
+            goal_version=goal.version,
+            fencing_token=reservation.fencing_token,
+        )
+        state = governance.reconcile_action_release(
+            goal.id,
+            reservation.id,
+            release_context,
+            actual_usage=(
+                reservation.reserved_usage.model_copy(deep=True)
+                if applied
+                else GoalUsage()
+            ),
+            reason=f"fleet dispatch {outcome}",
+        )
+        reservation = next(
+            item for item in state.action_reservations if item.id == reservation.id
+        )
+    return provenance.model_copy(
+        update={
+            "goal_version": reservation.goal_version,
+            "policy_revision": reservation.policy_revision,
+            "fencing_token": reservation.fencing_token,
+            "released_at": reservation.released_at,
+            "release_reason": reservation.release_reason,
+        }
+    )
+
+
+def _release_goal_dispatch_reservation(
+    ctx: AppContext,
+    ledger: DispatchStore,
+    record: DispatchRecord,
+    *,
+    outcome: str,
+    applied: bool,
+) -> DispatchRecord:
+    provenance = record.goal_provenance
+    if provenance is None:
+        return record
+    if not _goal_dispatch_lifecycle_owned(ctx, record):
+        return record
+    record.goal_provenance = _release_goal_action_provenance(
+        ctx,
+        provenance,
+        operation_id=record.dispatch_id,
+        outcome=outcome,
+        applied=applied,
+    )
+    ledger.put(record)
+    return record
+
+
+def _goal_dispatch_was_applied(record: DispatchRecord) -> bool:
+    """Return whether an irreversible dispatch sink was durably reached."""
+
+    return bool(
+        record.state in {"running", "completion_pending", "completed"}
+        or record.session_id
+        or record.prompt_acknowledged_at
+        or any(
+            event.state in {"running", "completion_pending", "completed"}
+            for event in record.events
+        )
+    )
+
+
+def _goal_followup_operation_key(record: DispatchRecord, idempotency_key: str) -> str:
+    digest = hashlib.sha256(idempotency_key.encode()).hexdigest()
+    return f"dispatch-followup:{record.dispatch_id}:{digest}"[:200]
+
+
+def _goal_provenance_from_reservation(
+    base: GoalDispatchProvenance,
+    reservation,
+) -> GoalDispatchProvenance:
+    return GoalDispatchProvenance(
+        goal_id=base.goal_id,
+        goal_version=reservation.goal_version,
+        policy_revision=reservation.policy_revision,
+        authority_instance_id=reservation.authority_instance_id,
+        fencing_token=reservation.fencing_token or 0,
+        action_reservation_id=reservation.id,
+        operation_key=reservation.request.operation_key,
+        requested_placement_target=(
+            reservation.request.requested_placement_target
+        ),
+        placement_input_digest=reservation.request.placement_input_digest,
+        resolved_target_instance_id=(
+            reservation.request.resolved_target_instance_id
+        ),
+        placement_decision_digest=(
+            reservation.request.placement_decision_digest
+        ),
+        actor_principal=reservation.actor_principal,
+        action_class=base.action_class,
+        provider_id=reservation.request.provider_id,
+        reservation_attempt=reservation.attempt,
+        max_reservation_attempts=reservation.max_attempts,
+    )
+
+
+def _reserve_goal_dispatch_followup(
+    ctx: AppContext,
+    ledger: DispatchStore,
+    record: DispatchRecord,
+    *,
+    idempotency_key: str,
+    fingerprint: str,
+) -> GoalDispatchProvenance | None:
+    """Durably stage, reserve, and apply one fresh governed follow-up action."""
+
+    base = record.goal_provenance
+    if base is None:
+        return None
+    if not _goal_dispatch_lifecycle_owned(ctx, record):
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "goal_followup_wrong_authority", "recoverable": False},
+        )
+    provider_id = (
+        str(record.request_payload.get("provider") or base.provider_id or "")
+        .strip()
+        .lower()
+    )
+    if not provider_id:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "goal_provider_unresolved", "recoverable": False},
+        )
+    goal, governance = _goal_dispatch_services(ctx, base.goal_id)
+    if (
+        not goal.lease.active()
+        or goal.lease.holder_instance_id != base.authority_instance_id
+        or goal.lease.fencing_token != base.fencing_token
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "stale_goal_fence", "recoverable": False},
+        )
+    operation_key = _goal_followup_operation_key(record, idempotency_key)
+    operation = record.followup_operations.setdefault(
+        idempotency_key,
+        {
+            "fingerprint": fingerprint,
+            "state": "governance_pending",
+            "operation_key": operation_key,
+        },
+    )
+    if operation.get("fingerprint") != fingerprint:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "idempotency_conflict", "recoverable": False},
+        )
+    operation["state"] = "governance_pending"
+    operation["operation_key"] = operation_key
+    ledger.put(record)
+
+    state = governance.get_state(goal.id)
+    reservation = next(
+        (
+            item
+            for item in state.action_reservations
+            if item.request.operation_key == operation_key
+        ),
+        None,
+    )
+    if reservation is None:
+        try:
+            state, decision = governance.authorize_action(
+                goal.id,
+                GoalActionRequest(
+                    action_class=base.action_class,
+                    operation_key=operation_key,
+                    requested_placement_target=base.requested_placement_target,
+                    placement_input_digest=base.placement_input_digest,
+                    resolved_target_instance_id=base.resolved_target_instance_id,
+                    placement_decision_digest=base.placement_decision_digest,
+                    delegated=True,
+                    provider_id=provider_id,
+                    estimate=GoalUsage(actions=1, dispatches=1),
+                    max_attempts=1,
+                ),
+                GovernanceMutationContext(
+                    actor_principal=base.actor_principal,
+                    authority_instance_id=base.authority_instance_id,
+                    idempotency_key=f"{operation_key}:reserve"[:200],
+                    expected_version=state.version,
+                    policy_revision=goal.policy.revision,
+                    goal_version=goal.version,
+                    fencing_token=goal.lease.fencing_token,
+                ),
+            )
+        except GoalGovernanceConflict as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "goal_followup_governance_denied",
+                    "message": str(exc),
+                    "recoverable": False,
+                },
+            ) from exc
+        if (
+            decision.disposition != GoalActionDisposition.AUTHORIZED
+            or not decision.reservation_id
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "goal_followup_governance_denied",
+                    "message": "; ".join(decision.reasons),
+                    "disposition": decision.disposition.value,
+                    "recoverable": False,
+                },
+            )
+        reservation = next(
+            item
+            for item in state.action_reservations
+            if item.id == decision.reservation_id
+        )
+    provenance = _goal_provenance_from_reservation(base, reservation)
+    operation["goal_provenance"] = provenance.model_dump(mode="json")
+    operation["state"] = (
+        "reservation_applied"
+        if reservation.state == GoalReservationState.APPLIED
+        else "reserved"
+    )
+    ledger.put(record)
+    if reservation.state == GoalReservationState.RELEASED:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "goal_followup_reservation_released",
+                "recoverable": False,
+            },
+        )
+    if reservation.state != GoalReservationState.APPLIED:
+        try:
+            state, applied = governance.apply_action(
+                goal.id,
+                reservation.id,
+                GovernanceMutationContext(
+                    actor_principal=base.actor_principal,
+                    authority_instance_id=base.authority_instance_id,
+                    idempotency_key=f"{operation_key}:apply"[:200],
+                    expected_version=state.version,
+                    policy_revision=goal.policy.revision,
+                    goal_version=goal.version,
+                    fencing_token=goal.lease.fencing_token,
+                ),
+            )
+        except GoalGovernanceConflict as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "goal_followup_governance_denied",
+                    "message": str(exc),
+                    "recoverable": False,
+                },
+            ) from exc
+        if applied.disposition != GoalActionDisposition.AUTHORIZED:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "goal_followup_governance_denied",
+                    "message": "; ".join(applied.reasons),
+                    "disposition": applied.disposition.value,
+                    "recoverable": False,
+                },
+            )
+        reservation = next(
+            item for item in state.action_reservations if item.id == reservation.id
+        )
+        provenance = _goal_provenance_from_reservation(base, reservation)
+    operation["goal_provenance"] = provenance.model_dump(mode="json")
+    operation["state"] = "reservation_applied"
+    ledger.put(record)
+    return provenance
+
+
+def _release_goal_dispatch_followup(
+    ctx: AppContext,
+    ledger: DispatchStore,
+    record: DispatchRecord,
+    *,
+    idempotency_key: str,
+    outcome: str,
+    applied: bool,
+    final_state: str,
+) -> DispatchRecord:
+    operation = record.followup_operations.get(idempotency_key)
+    if not operation or not operation.get("goal_provenance"):
+        return record
+    provenance = GoalDispatchProvenance.model_validate(operation["goal_provenance"])
+    provenance = _release_goal_action_provenance(
+        ctx,
+        provenance,
+        operation_id=f"{record.dispatch_id}:followup:{idempotency_key}",
+        outcome=outcome,
+        applied=applied,
+    )
+    operation["goal_provenance"] = provenance.model_dump(mode="json")
+    operation["state"] = final_state
+    operation["released_at"] = (
+        provenance.released_at.isoformat() if provenance.released_at else None
+    )
+    ledger.put(record)
+    return record
+
+
+def _reconcile_goal_dispatch_followups(
+    ctx: AppContext,
+    ledger: DispatchStore,
+    record: DispatchRecord,
+) -> DispatchRecord:
+    """Close every authority-side governed follow-up crash window."""
+
+    base = record.goal_provenance
+    if base is None or not _goal_dispatch_lifecycle_owned(ctx, record):
+        return record
+    for idempotency_key, operation in list(record.followup_operations.items()):
+        raw_provenance = operation.get("goal_provenance")
+        if raw_provenance and raw_provenance.get("released_at"):
+            continue
+        if not raw_provenance and operation.get("state") != "governance_pending":
+            continue
+        goal, governance = _goal_dispatch_services(ctx, base.goal_id)
+        state = governance.get_state(goal.id)
+        reservation = None
+        if raw_provenance:
+            provenance = GoalDispatchProvenance.model_validate(raw_provenance)
+            reservation = next(
+                (
+                    item
+                    for item in state.action_reservations
+                    if item.id == provenance.action_reservation_id
+                ),
+                None,
+            )
+        else:
+            operation_key = str(operation.get("operation_key") or "")
+            reservation = next(
+                (
+                    item
+                    for item in state.action_reservations
+                    if item.request.operation_key == operation_key
+                ),
+                None,
+            )
+            if reservation is None:
+                operation["state"] = "failed"
+                operation["error"] = {
+                    "code": "goal_followup_governance_interrupted",
+                    "message": "Follow-up governance ended before a reservation was created.",
+                    "recoverable": True,
+                }
+                ledger.put(record)
+                continue
+            provenance = _goal_provenance_from_reservation(base, reservation)
+            operation["goal_provenance"] = provenance.model_dump(mode="json")
+        if reservation is None:
+            operation["state"] = "failed"
+            operation["error"] = {
+                "code": "goal_followup_reservation_missing",
+                "recoverable": False,
+            }
+            ledger.put(record)
+            continue
+        prior_state = str(operation.get("state") or "")
+        accepted = prior_state in {"accepted", "accepted_pending_release"}
+        cancelled = prior_state in {"cancelled", "cancelled_pending_release"}
+        failed = prior_state in {"failed", "failed_pending_release"}
+        applied = accepted or (
+            not cancelled
+            and not failed
+            and reservation.state == GoalReservationState.APPLIED
+        )
+        final_state = (
+            "accepted"
+            if accepted
+            else "cancelled"
+            if cancelled
+            else "failed"
+            if failed
+            else "interrupted"
+        )
+        operation["state"] = f"{final_state}_pending_release"
+        if final_state == "interrupted":
+            operation["error"] = {
+                "code": "goal_followup_delivery_interrupted",
+                "message": "Follow-up delivery outcome was interrupted; usage was conservatively accounted.",
+                "recoverable": True,
+            }
+        ledger.put(record)
+        record = _release_goal_dispatch_followup(
+            ctx,
+            ledger,
+            record,
+            idempotency_key=idempotency_key,
+            outcome=f"followup-{final_state}",
+            applied=applied,
+            final_state=final_state,
+        )
+    return record
+
+
+def _replace_goal_dispatch_reservation(
+    ctx: AppContext,
+    ledger: DispatchStore,
+    record: DispatchRecord,
+    *,
+    idempotency_key: str,
+) -> DispatchRecord:
+    provenance = record.goal_provenance
+    if provenance is None:
+        return record
+    if not _goal_dispatch_lifecycle_owned(ctx, record):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "goal_retry_wrong_authority",
+                "recoverable": False,
+            },
+        )
+    if provenance.retry_idempotency_key == idempotency_key:
+        if provenance.released_at is not None:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "goal_retry_reservation_released",
+                    "recoverable": True,
+                },
+            )
+        return record
+    goal, governance = _goal_dispatch_services(ctx, provenance.goal_id)
+    if (
+        not goal.lease.active()
+        or goal.lease.holder_instance_id != provenance.authority_instance_id
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "stale_goal_fence", "recoverable": False},
+        )
+    state = governance.get_state(goal.id)
+    context = GovernanceMutationContext(
+        actor_principal=provenance.actor_principal,
+        authority_instance_id=provenance.authority_instance_id,
+        idempotency_key=(
+            f"goal-dispatch:{record.dispatch_id}:retry:{idempotency_key}:reserve"
+        )[:200],
+        expected_version=state.version,
+        policy_revision=goal.policy.revision,
+        goal_version=goal.version,
+        fencing_token=goal.lease.fencing_token,
+    )
+    try:
+        state, replacement, decision = governance.replace_action_reservation(
+            goal.id,
+            provenance.action_reservation_id,
+            _goal_governance_replay_context(governance, goal, context),
+        )
+        if (
+            replacement is None
+            or decision.disposition != GoalActionDisposition.AUTHORIZED
+        ):
+            raise GoalGovernanceConflict(
+                "canonical governance denied the dispatch retry: "
+                + "; ".join(decision.reasons)
+            )
+        apply_context = GovernanceMutationContext(
+            actor_principal=provenance.actor_principal,
+            authority_instance_id=provenance.authority_instance_id,
+            idempotency_key=(
+                f"goal-dispatch:{record.dispatch_id}:retry:{idempotency_key}:apply"
+            )[:200],
+            expected_version=state.version,
+            policy_revision=goal.policy.revision,
+            goal_version=goal.version,
+            fencing_token=goal.lease.fencing_token,
+        )
+        state, applied = governance.apply_action(
+            goal.id,
+            replacement.id,
+            _goal_governance_replay_context(governance, goal, apply_context),
+        )
+        if applied.disposition != GoalActionDisposition.AUTHORIZED:
+            raise GoalGovernanceConflict(
+                "canonical governance denied the dispatch retry at apply time: "
+                + "; ".join(applied.reasons)
+            )
+        replacement = next(
+            item for item in state.action_reservations if item.id == replacement.id
+        )
+    except GoalGovernanceConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "goal_retry_denied",
+                "message": str(exc),
+                "recoverable": False,
+            },
+        ) from exc
+    record.goal_provenance = provenance.model_copy(
+        update={
+            "goal_version": replacement.goal_version,
+            "policy_revision": replacement.policy_revision,
+            "fencing_token": replacement.fencing_token,
+            "action_reservation_id": replacement.id,
+            "reservation_attempt": replacement.attempt,
+            "max_reservation_attempts": replacement.max_attempts,
+            "retry_idempotency_key": idempotency_key,
+            "released_at": None,
+            "release_reason": None,
+        }
+    )
+    ledger.put(record)
+    return record
+
+
+async def _release_goal_dispatch_reservation_async(
+    ctx: AppContext,
+    ledger: DispatchStore,
+    record: DispatchRecord,
+    *,
+    outcome: str,
+    applied: bool,
+) -> DispatchRecord:
+    return await _offload_ctx(
+        ctx,
+        "goal.dispatch_reservation_release",
+        _release_goal_dispatch_reservation,
+        ctx,
+        ledger,
+        record,
+        outcome=outcome,
+        applied=applied,
+    )
+
+
+async def _validate_goal_dispatch_record_async(
+    ctx: AppContext,
+    ledger: DispatchStore,
+    record: DispatchRecord,
+    *,
+    sink: str,
+) -> DispatchRecord:
+    return await _offload_ctx(
+        ctx,
+        "goal.dispatch_reservation_validate",
+        _validate_goal_dispatch_record,
+        ctx,
+        ledger,
+        record,
+        sink=sink,
+    )
+
+
+async def _reconcile_goal_dispatch_reservations(ctx: AppContext) -> None:
+    """Repair crash windows between a durable dispatch state and its goal hold."""
+
+    ledger: DispatchStore = ctx.require_service("dispatch_store")
+    records = await _offload_ctx(
+        ctx,
+        "goal.dispatch_lifecycle_index",
+        ledger.pending_goal_lifecycle,
+        ctx.settings.instance_id,
+        limit=100,
+    )
+    for record in records:
+        if not _goal_dispatch_lifecycle_owned(ctx, record):
+            continue
+        try:
+            record = await _offload_ctx(
+                ctx,
+                "goal.dispatch_followup_reconcile",
+                _reconcile_goal_dispatch_followups,
+                ctx,
+                ledger,
+                record,
+            )
+            if record.state == "admission_pending":
+                record = await _offload_ctx(
+                    ctx,
+                    "goal.dispatch_placement_binding_restore",
+                    _restore_goal_dispatch_placement_binding,
+                    ctx,
+                    ledger,
+                    record,
+                )
+                if not _goal_admission_proof_valid(ctx, record):
+                    if not _goal_admission_operation_bound(ctx, record):
+                        await _offload_ctx(
+                            ctx,
+                            "goal.dispatch_admission_rejected",
+                            _reject_unvalidated_goal_admission,
+                            ledger,
+                            record,
+                            "Staged goal provenance was not bound to this admission operation.",
+                        )
+                        continue
+                    if (
+                        record.goal_provenance is None
+                        or not record.goal_provenance.resolved_target_instance_id
+                        or not record.goal_provenance.placement_decision_digest
+                    ):
+                        record = await _offload_ctx(
+                            ctx,
+                            "goal.dispatch_admission_recovered",
+                            ledger.fail,
+                            record,
+                            "Governed dispatch admission was interrupted before placement resolved.",
+                            code="admission_interrupted",
+                            recoverable=True,
+                            detail={
+                                "recovery": (
+                                    "retry_with_fresh_governance_reservation"
+                                ),
+                                "admission_trace": True,
+                                "placement_resolved": False,
+                            },
+                        )
+                        await _release_goal_dispatch_reservation_async(
+                            ctx,
+                            ledger,
+                            record,
+                            outcome="admission-interrupted",
+                            applied=False,
+                        )
+                        continue
+                    try:
+                        record.goal_provenance = await _offload_ctx(
+                            ctx,
+                            "goal.dispatch_admission_revalidate",
+                            _validate_goal_dispatch_provenance,
+                            ctx,
+                            record.goal_provenance,
+                            record.authority_instance_id,
+                            sink="durable-admission",
+                            provider_id=record.request_payload.get("provider"),
+                            target_instance_id=record.target_instance_id,
+                            placement_input_digest=(
+                                record.goal_placement_input_digest
+                            ),
+                            placement_decision_digest=(
+                                goal_dispatch_placement_decision_digest(
+                                    record.placement_decision
+                                )
+                            ),
+                        )
+                        record = await _offload_ctx(
+                            ctx,
+                            "goal.dispatch_admission_validation_proof",
+                            _mark_goal_admission_validated,
+                            ctx,
+                            ledger,
+                            record,
+                        )
+                    except HTTPException as exc:
+                        detail = exc.detail if isinstance(exc.detail, dict) else {}
+                        record = await _offload_ctx(
+                            ctx,
+                            "goal.dispatch_admission_revalidation_failed",
+                            ledger.fail,
+                            record,
+                            str(detail.get("message") or exc.detail),
+                            code=str(
+                                detail.get("code")
+                                or "goal_admission_revalidation_failed"
+                            ),
+                            recoverable=bool(detail.get("recoverable", False)),
+                            detail=detail,
+                        )
+                        await _release_goal_dispatch_reservation_async(
+                            ctx,
+                            ledger,
+                            record,
+                            outcome="admission-revalidation-failed",
+                            applied=False,
+                        )
+                        continue
+                record = await _offload_ctx(
+                    ctx,
+                    "goal.dispatch_admission_recovered",
+                    ledger.fail,
+                    record,
+                    "Governed dispatch admission was interrupted before durable admission.",
+                    code="admission_interrupted",
+                    recoverable=True,
+                    detail={
+                        "recovery": "retry_with_fresh_governance_reservation",
+                        "admission_trace": True,
+                    },
+                )
+                await _release_goal_dispatch_reservation_async(
+                    ctx,
+                    ledger,
+                    record,
+                    outcome="admission-interrupted",
+                    applied=False,
+                )
+            elif record.state in {
+                "running",
+                "completion_pending",
+                "completed",
+                "failed",
+                "cancelled",
+            }:
+                await _release_goal_dispatch_reservation_async(
+                    ctx,
+                    ledger,
+                    record,
+                    outcome=f"{record.state}-reconciled",
+                    applied=_goal_dispatch_was_applied(record),
+                )
+        except Exception:
+            # Preserve the explicit unreleased provenance. The dispatch worker's
+            # bounded lifecycle scan will retry without preventing fleet startup.
+            logger.exception(
+                "Dispatch %s startup goal-lifecycle reconciliation failed",
+                record.dispatch_id,
+            )
 
 
 @router.post("/fleet/dispatch", status_code=202)
@@ -6260,6 +7866,7 @@ async def dispatch_fleet_work(request: Request, body: FleetDispatchBody) -> dict
         settings.instance_id,
         idempotency_key,
     )
+    preadmission_record: DispatchRecord | None = None
     if existing:
         if existing.placement_request_fingerprint != placement_fingerprint:
             raise HTTPException(
@@ -6270,16 +7877,39 @@ async def dispatch_fleet_work(request: Request, body: FleetDispatchBody) -> dict
                     "dispatch_id": existing.dispatch_id,
                 },
             )
-        return {
-            "accepted": True,
-            "duplicate": True,
-            "admission": "duplicate",
-            "dispatch_id": existing.dispatch_id,
-            "job_id": existing.dispatch_id,
-            "dispatch": _dispatch_public(request, existing),
-        }
+        if existing.state == "admission_pending":
+            raise _admission_in_progress_error(existing)
+        else:
+            return {
+                "accepted": True,
+                "duplicate": True,
+                "admission": "duplicate",
+                "dispatch_id": existing.dispatch_id,
+                "job_id": existing.dispatch_id,
+                "dispatch": _dispatch_public(request, existing),
+            }
 
-    _validate_goal_dispatch_fence(ctx, body, selected_authority)
+    _bind_effective_goal_dispatch_provider(body, settings.agent_provider)
+    if preadmission_record is None:
+        preadmission_record, created = await _offload_request(
+            request,
+            "goal.dispatch_admission_trace",
+            _persist_goal_dispatch_admission_trace,
+            ctx,
+            ledger,
+            body,
+            idempotency_key=idempotency_key,
+            request_fingerprint=placement_fingerprint,
+            target_instance_id=(
+                body.target_instance_id
+                or f"placement:{body.placement_policy or 'balanced'}"
+            ),
+            principal_id=get_principal_id(request),
+            placement_policy=str(body.placement_policy or "named_instance"),
+            idempotency_scope="authority",
+        )
+        if preadmission_record is not None and not created:
+            raise _admission_in_progress_error(preadmission_record)
 
     store = ctx.store
     realm_id = settings.primary_realm
@@ -6295,7 +7925,9 @@ async def dispatch_fleet_work(request: Request, body: FleetDispatchBody) -> dict
         else None
     )
     if body.card_id and not card:
-        raise _dispatch_lookup_error("card", body.card_id)
+        error = _dispatch_lookup_error("card", body.card_id)
+        await _reject_goal_dispatch_admission(request, preadmission_record, error)
+        raise error
     project_id = body.project_id or (card.project_id if card else None)
     project = (
         await _offload_request(
@@ -6309,7 +7941,9 @@ async def dispatch_fleet_work(request: Request, body: FleetDispatchBody) -> dict
         else None
     )
     if project_id and not project:
-        raise _dispatch_lookup_error("project", project_id)
+        error = _dispatch_lookup_error("project", project_id)
+        await _reject_goal_dispatch_admission(request, preadmission_record, error)
+        raise error
     principal_id = get_principal_id(request)
     if project and project.memberships:
         authorized = any(
@@ -6317,7 +7951,7 @@ async def dispatch_fleet_work(request: Request, body: FleetDispatchBody) -> dict
             for membership in project.memberships
         )
         if not authorized and getattr(user, "role", None) != "admin":
-            raise HTTPException(
+            error = HTTPException(
                 status_code=403,
                 detail={
                     "code": "insufficient_authorization",
@@ -6325,6 +7959,8 @@ async def dispatch_fleet_work(request: Request, body: FleetDispatchBody) -> dict
                     "recoverable": False,
                 },
             )
+            await _reject_goal_dispatch_admission(request, preadmission_record, error)
+            raise error
 
     try:
         decision, _plan = await _resolve_policy_placement(
@@ -6340,7 +7976,9 @@ async def dispatch_fleet_work(request: Request, body: FleetDispatchBody) -> dict
             exc.code,
             exc.rejected_candidates,
         )
-        raise _placement_http_error(exc) from exc
+        error = _placement_http_error(exc)
+        await _reject_goal_dispatch_admission(request, preadmission_record, error)
+        raise error from exc
 
     start_payload = body.model_dump(
         mode="json",
@@ -6360,6 +7998,7 @@ async def dispatch_fleet_work(request: Request, body: FleetDispatchBody) -> dict
         placement_decision=decision.model_dump(mode="json"),
         placement_request_fingerprint=placement_fingerprint,
         idempotency_scope="authority",
+        preadmission_record=preadmission_record,
     )
 
 
@@ -6401,6 +8040,61 @@ async def start_remote_agent_work(
         # preserves direct internal callers that intentionally construct a
         # minimal context; every booted HTTP/MCP surface registers placement.
         return await _admit_remote_agent_work(request, instance_id, body)
+    _submitted_payload, submitted_fingerprint, idempotency_key = (
+        _named_dispatch_identity(request, instance_id, body, body.project_id)
+    )
+    body.idempotency_key = idempotency_key
+    ledger = _dispatch_store(request)
+    existing_record = await _offload_request(
+        request,
+        "dispatch.idempotency_read",
+        ledger.by_idempotency,
+        instance_id,
+        idempotency_key,
+    )
+    preadmission_record: DispatchRecord | None = None
+    if existing_record is not None:
+        existing_fingerprint = (
+            existing_record.placement_request_fingerprint
+            or existing_record.request_fingerprint
+        )
+        if existing_fingerprint != submitted_fingerprint:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "idempotency_conflict",
+                    "message": "This idempotency key was already used for different remote work.",
+                    "dispatch_id": existing_record.dispatch_id,
+                },
+            )
+        if existing_record.state == "admission_pending":
+            raise _admission_in_progress_error(existing_record)
+        else:
+            return {
+                "accepted": True,
+                "duplicate": True,
+                "dispatch_id": existing_record.dispatch_id,
+                "job_id": existing_record.dispatch_id,
+                "dispatch": _dispatch_public(request, existing_record),
+            }
+    _bind_effective_goal_dispatch_provider(body, ctx.settings.agent_provider)
+    if preadmission_record is None:
+        preadmission_record, created = await _offload_request(
+            request,
+            "goal.dispatch_admission_trace",
+            _persist_goal_dispatch_admission_trace,
+            ctx,
+            ledger,
+            body,
+            idempotency_key=idempotency_key,
+            request_fingerprint=submitted_fingerprint,
+            target_instance_id=instance_id,
+            principal_id=get_principal_id(request),
+            placement_policy="named_instance",
+            idempotency_scope="target",
+        )
+        if preadmission_record is not None and not created:
+            raise _admission_in_progress_error(preadmission_record)
     realm_id = ctx.settings.primary_realm
     card = (
         await _offload_request(
@@ -6414,7 +8108,9 @@ async def start_remote_agent_work(
         else None
     )
     if body.card_id and not card:
-        raise _dispatch_lookup_error("card", body.card_id)
+        error = _dispatch_lookup_error("card", body.card_id)
+        await _reject_goal_dispatch_admission(request, preadmission_record, error)
+        raise error
     project_id = body.project_id or (card.project_id if card else None)
     project = (
         await _offload_request(
@@ -6428,10 +8124,9 @@ async def start_remote_agent_work(
         else None
     )
     if project_id and not project:
-        raise _dispatch_lookup_error("project", project_id)
-    existing = await _existing_named_dispatch(request, instance_id, body, project_id)
-    if existing is not None:
-        return existing
+        error = _dispatch_lookup_error("project", project_id)
+        await _reject_goal_dispatch_admission(request, preadmission_record, error)
+        raise error
     placement_body = FleetDispatchBody(
         **body.model_dump(mode="python"),
         target_instance_id=instance_id,
@@ -6451,23 +8146,25 @@ async def start_remote_agent_work(
             exc.code,
             exc.rejected_candidates,
         )
-        raise _placement_http_error(exc) from exc
+        error = _placement_http_error(exc)
+        await _reject_goal_dispatch_admission(request, preadmission_record, error)
+        raise error from exc
+    body.provider = placement_body.provider
     return await _admit_remote_agent_work(
         request,
         instance_id,
         body,
         placement_decision=decision.model_dump(mode="json"),
+        placement_request_fingerprint=submitted_fingerprint,
+        preadmission_record=preadmission_record,
     )
 
 
-def _named_dispatch_identity(
-    request: Request,
+def _named_dispatch_payload(
     instance_id: str,
     body: RemoteAgentStartBody,
     project_id: str | None,
-    *,
-    placement_request_fingerprint: str | None = None,
-) -> tuple[dict[str, Any], str, str]:
+) -> tuple[dict[str, Any], str]:
     payload = body.model_dump(
         mode="json",
         exclude={
@@ -6478,16 +8175,23 @@ def _named_dispatch_identity(
         },
     )
     payload["project_id"] = project_id
-    fingerprint = (
-        placement_request_fingerprint
-        or hashlib.sha256(
-            json.dumps(
-                {"target_instance_id": instance_id, "payload": payload},
-                sort_keys=True,
-                separators=(",", ":"),
-            ).encode()
-        ).hexdigest()
-    )
+    fingerprint = hashlib.sha256(
+        json.dumps(
+            {"target_instance_id": instance_id, "payload": payload},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    return payload, fingerprint
+
+
+def _named_dispatch_identity(
+    request: Request,
+    instance_id: str,
+    body: RemoteAgentStartBody,
+    project_id: str | None,
+) -> tuple[dict[str, Any], str, str]:
+    payload, fingerprint = _named_dispatch_payload(instance_id, body, project_id)
     header_key = request.headers.get("idempotency-key")
     if not isinstance(header_key, str):
         header_key = None
@@ -6517,7 +8221,9 @@ async def _existing_named_dispatch(
     )
     if not existing:
         return None
-    if existing.request_fingerprint != fingerprint:
+    if (
+        existing.placement_request_fingerprint or existing.request_fingerprint
+    ) != fingerprint:
         raise HTTPException(
             status_code=409,
             detail={
@@ -6526,6 +8232,8 @@ async def _existing_named_dispatch(
                 "dispatch_id": existing.dispatch_id,
             },
         )
+    if existing.state == "admission_pending":
+        return None
     return {
         "accepted": True,
         "duplicate": True,
@@ -6543,6 +8251,7 @@ async def _admit_remote_agent_work(
     placement_decision: dict[str, Any] | None = None,
     placement_request_fingerprint: str | None = None,
     idempotency_scope: str = "target",
+    preadmission_record: DispatchRecord | None = None,
 ) -> dict:
     require_user(request)
     ctx = request.app.state.ctx
@@ -6566,58 +8275,11 @@ async def _admit_remote_agent_work(
             f"instances/{instance_id}/agent/start",
             body=forwarded,
         )
-    store = ctx.store
-    realm_id = settings.primary_realm
-    card = (
-        await _offload_request(
-            request,
-            "sqlite.card_read",
-            store.get_card,
-            body.card_id,
-            realm_id=realm_id,
-        )
-        if body.card_id
-        else None
+    _submitted_payload, submitted_fingerprint, idempotency_key = (
+        _named_dispatch_identity(request, instance_id, body, body.project_id)
     )
-    if body.card_id and not card:
-        raise _dispatch_lookup_error("card", body.card_id)
-    project_id = body.project_id or (card.project_id if card else None)
-    project = (
-        await _offload_request(
-            request,
-            "sqlite.project_read",
-            store.get_project,
-            project_id,
-            realm_id=realm_id,
-        )
-        if project_id
-        else None
-    )
-    if project_id and not project:
-        raise _dispatch_lookup_error("project", project_id)
-    inst = _fleet_instance_or_404(request, instance_id)
-    authority_url = settings.instance_url
-    if instance_id != settings.instance_id and (
-        not authority_url
-        or authority_url.startswith(("http://127.", "http://localhost"))
-    ):
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code": "authority_unroutable",
-                "message": "Configure a fleet-reachable instance_url before remote dispatch.",
-                "recoverable": True,
-            },
-        )
-    payload, fingerprint, idempotency_key = _named_dispatch_identity(
-        request,
-        instance_id,
-        body,
-        project_id,
-        placement_request_fingerprint=placement_request_fingerprint,
-    )
-    if not idempotency_key:
-        raise HTTPException(status_code=400, detail="Idempotency-Key cannot be empty")
+    body.idempotency_key = idempotency_key
+    idempotency_fingerprint = placement_request_fingerprint or submitted_fingerprint
     ledger = _dispatch_store(request)
     existing_lookup = (
         ledger.by_authority_idempotency
@@ -6635,7 +8297,10 @@ async def _admit_remote_agent_work(
         idempotency_key,
     )
     if existing:
-        if existing.request_fingerprint != fingerprint:
+        existing_fingerprint = (
+            existing.placement_request_fingerprint or existing.request_fingerprint
+        )
+        if existing_fingerprint != idempotency_fingerprint:
             raise HTTPException(
                 status_code=409,
                 detail={
@@ -6644,13 +8309,181 @@ async def _admit_remote_agent_work(
                     "dispatch_id": existing.dispatch_id,
                 },
             )
-        return {
-            "accepted": True,
-            "duplicate": True,
-            "dispatch_id": existing.dispatch_id,
-            "job_id": existing.dispatch_id,
-            "dispatch": _dispatch_public(request, existing),
-        }
+        if (
+            existing.state == "admission_pending"
+            and preadmission_record is not None
+            and preadmission_record.dispatch_id == existing.dispatch_id
+        ):
+            preadmission_record = existing
+        elif existing.state == "admission_pending":
+            raise _admission_in_progress_error(existing)
+        else:
+            return {
+                "accepted": True,
+                "duplicate": True,
+                "dispatch_id": existing.dispatch_id,
+                "job_id": existing.dispatch_id,
+                "dispatch": _dispatch_public(request, existing),
+            }
+
+    _bind_effective_goal_dispatch_provider(body, settings.agent_provider)
+    if preadmission_record is None:
+        preadmission_record, created = await _offload_request(
+            request,
+            "goal.dispatch_admission_trace",
+            _persist_goal_dispatch_admission_trace,
+            ctx,
+            ledger,
+            body,
+            idempotency_key=idempotency_key,
+            request_fingerprint=idempotency_fingerprint,
+            target_instance_id=instance_id,
+            principal_id=get_principal_id(request),
+            placement_policy=str(
+                (placement_decision or {}).get("policy") or "named_instance"
+            ),
+            idempotency_scope=idempotency_scope,
+        )
+        if preadmission_record is not None and not created:
+            raise _admission_in_progress_error(preadmission_record)
+    store = ctx.store
+    realm_id = settings.primary_realm
+    card = (
+        await _offload_request(
+            request,
+            "sqlite.card_read",
+            store.get_card,
+            body.card_id,
+            realm_id=realm_id,
+        )
+        if body.card_id
+        else None
+    )
+    if body.card_id and not card:
+        error = _dispatch_lookup_error("card", body.card_id)
+        await _reject_goal_dispatch_admission(request, preadmission_record, error)
+        raise error
+    project_id = body.project_id or (card.project_id if card else None)
+    project = (
+        await _offload_request(
+            request,
+            "sqlite.project_read",
+            store.get_project,
+            project_id,
+            realm_id=realm_id,
+        )
+        if project_id
+        else None
+    )
+    if project_id and not project:
+        error = _dispatch_lookup_error("project", project_id)
+        await _reject_goal_dispatch_admission(request, preadmission_record, error)
+        raise error
+    try:
+        inst = _fleet_instance_or_404(request, instance_id)
+    except HTTPException as error:
+        await _reject_goal_dispatch_admission(request, preadmission_record, error)
+        raise
+    authority_url = settings.instance_url
+    if instance_id != settings.instance_id and (
+        not authority_url
+        or authority_url.startswith(("http://127.", "http://localhost"))
+    ):
+        error = HTTPException(
+            status_code=409,
+            detail={
+                "code": "authority_unroutable",
+                "message": "Configure a fleet-reachable instance_url before remote dispatch.",
+                "recoverable": True,
+            },
+        )
+        await _reject_goal_dispatch_admission(request, preadmission_record, error)
+        raise error
+    resolved_placement_decision = placement_decision or {
+        "policy": "named_instance",
+        "chosen_instance_id": instance_id,
+        "chosen_instance_name": inst.name,
+        "tie_breaking_reason": "The concrete API target was requested directly.",
+    }
+    if preadmission_record is not None:
+        placement_input = dict(preadmission_record.goal_placement_input or {})
+        placement_input["card_id"] = card.id if card else None
+        placement_input["project_id"] = project_id
+        preadmission_record.goal_placement_input = (
+            goal_dispatch_placement_input_snapshot(placement_input)
+        )
+        preadmission_record.goal_placement_input_digest = (
+            goal_dispatch_placement_input_digest(
+                preadmission_record.goal_placement_input
+            )
+        )
+        preadmission_record.target_instance_id = instance_id
+        preadmission_record.target_instance_name = inst.name
+        preadmission_record.request_payload = body.model_dump(mode="json")
+        preadmission_record.goal_provenance = body.goal_provenance
+        preadmission_record.placement_policy = str(
+            resolved_placement_decision.get("policy") or "named_instance"
+        )
+        preadmission_record.placement_decision = resolved_placement_decision
+        await _offload_request(
+            request,
+            "goal.dispatch_admission_trace_update",
+            ledger.put,
+            preadmission_record,
+        )
+    try:
+        placement_input_digest = (
+            preadmission_record.goal_placement_input_digest
+            if preadmission_record is not None
+            else _goal_dispatch_placement_input(
+                body,
+                target_instance_id=instance_id,
+            )[2]
+        )
+        body.goal_provenance = _bind_goal_dispatch_placement(
+            ctx,
+            body.goal_provenance,
+            selected_authority=selected_authority,
+            operation_key=idempotency_key,
+            target_instance_id=instance_id,
+            placement_input_digest=placement_input_digest,
+            placement_decision=resolved_placement_decision,
+        )
+        if preadmission_record is not None:
+            preadmission_record.goal_provenance = body.goal_provenance
+            await _offload_request(
+                request,
+                "goal.dispatch_placement_binding",
+                ledger.put,
+                preadmission_record,
+            )
+        body.goal_provenance = _validate_goal_dispatch_provenance(
+            ctx,
+            body.goal_provenance,
+            selected_authority,
+            sink="durable-admission",
+            provider_id=body.provider,
+            target_instance_id=instance_id,
+            placement_input_digest=placement_input_digest,
+            placement_decision_digest=goal_dispatch_placement_decision_digest(
+                resolved_placement_decision
+            ),
+        )
+    except HTTPException as error:
+        await _reject_goal_dispatch_admission(request, preadmission_record, error)
+        raise
+    if preadmission_record is not None:
+        preadmission_record.goal_provenance = body.goal_provenance
+        preadmission_record.request_payload = body.model_dump(mode="json")
+        await _offload_request(
+            request,
+            "goal.dispatch_admission_trace_validated",
+            _mark_goal_admission_validated,
+            ctx,
+            ledger,
+            preadmission_record,
+        )
+    payload, fingerprint = _named_dispatch_payload(instance_id, body, project_id)
 
     collaboration_service = ctx.services.get("collaboration")
     collaboration_decision = None
@@ -6730,7 +8563,7 @@ async def _admit_remote_agent_work(
         target_instance_id=instance_id,
     )
     if not plan.admissible:
-        raise HTTPException(
+        error = HTTPException(
             status_code=409,
             detail={
                 "code": "materialization_preflight_required",
@@ -6739,12 +8572,23 @@ async def _admit_remote_agent_work(
                 "recoverable": True,
             },
         )
+        await _reject_goal_dispatch_admission(request, preadmission_record, error)
+        raise error
 
     record = DispatchRecord(
-        mutation_id=str(uuid4()),
+        dispatch_id=(
+            preadmission_record.dispatch_id
+            if preadmission_record is not None
+            else str(uuid4())
+        ),
+        mutation_id=(
+            preadmission_record.mutation_id
+            if preadmission_record is not None
+            else str(uuid4())
+        ),
         idempotency_key=idempotency_key,
         request_fingerprint=fingerprint,
-        placement_request_fingerprint=placement_request_fingerprint,
+        placement_request_fingerprint=idempotency_fingerprint,
         card_id=card.id if card else None,
         project_id=project_id,
         realm_id=realm_id,
@@ -6752,6 +8596,35 @@ async def _admit_remote_agent_work(
         card_snapshot=card.model_dump(mode="json") if card else None,
         materialization_plan=plan.model_dump(mode="json"),
         request_payload=payload,
+        goal_provenance=body.goal_provenance,
+        goal_placement_input_digest=(
+            preadmission_record.goal_placement_input_digest
+            if preadmission_record is not None
+            else placement_input_digest
+        ),
+        goal_placement_input=(
+            preadmission_record.goal_placement_input
+            if preadmission_record is not None
+            else _goal_dispatch_placement_input(
+                body,
+                target_instance_id=instance_id,
+            )[1]
+        ),
+        goal_admission_validation_state=(
+            preadmission_record.goal_admission_validation_state
+            if preadmission_record is not None
+            else "not_required"
+        ),
+        goal_admission_validated_at=(
+            preadmission_record.goal_admission_validated_at
+            if preadmission_record is not None
+            else None
+        ),
+        goal_admission_validation_proof=(
+            preadmission_record.goal_admission_validation_proof
+            if preadmission_record is not None
+            else None
+        ),
         principal_id=(
             f"instance:{request.headers.get('X-PA-Origin-Instance-ID', 'fleet')}"
             if getattr(request.state, "instance_authenticated", False) is True
@@ -6763,27 +8636,24 @@ async def _admit_remote_agent_work(
         target_instance_id=instance_id,
         target_instance_name=inst.name,
         placement_policy=str(
-            (placement_decision or {}).get("policy") or "named_instance"
+            resolved_placement_decision.get("policy") or "named_instance"
         ),
-        placement_decision=placement_decision
-        or {
-            "policy": "named_instance",
-            "chosen_instance_id": instance_id,
-            "chosen_instance_name": inst.name,
-            "tie_breaking_reason": "The concrete API target was requested directly.",
-        },
+        placement_decision=resolved_placement_decision,
         placement_resolved_at=datetime.now(UTC),
         allow_concurrent=body.allow_concurrent,
         resume_requested=bool(body.resume_session_id),
         resume_session_id=body.resume_session_id,
         requested_priority=body.priority,
+        state="admission_pending" if preadmission_record is not None else "queued",
+        events=(
+            list(preadmission_record.events) if preadmission_record is not None else []
+        ),
+        created_at=(
+            preadmission_record.created_at
+            if preadmission_record is not None
+            else datetime.now(UTC)
+        ),
     )
-    if collaboration_service is not None and collaboration_decision is not None:
-        collaboration_service.store.record_decision(
-            collaboration_decision,
-            dispatch_id=record.dispatch_id,
-            card_id=record.card_id,
-        )
     try:
         record, duplicate = await _offload_request(
             request,
@@ -6799,16 +8669,18 @@ async def _admit_remote_agent_work(
             ),
         )
     except DispatchIdempotencyConflict as exc:
-        raise HTTPException(
+        error = HTTPException(
             status_code=409,
             detail={
                 "code": "idempotency_conflict",
                 "message": "This idempotency key was already used for different remote work.",
                 "dispatch_id": exc.existing.dispatch_id,
             },
-        ) from exc
+        )
+        await _reject_goal_dispatch_admission(request, preadmission_record, error)
+        raise error from exc
     except ConcurrentCardDispatch as exc:
-        raise HTTPException(
+        error = HTTPException(
             status_code=409,
             detail={
                 "code": "card_dispatch_in_progress",
@@ -6817,7 +8689,9 @@ async def _admit_remote_agent_work(
                 "state": exc.existing.state,
                 "recoverable": True,
             },
-        ) from exc
+        )
+        await _reject_goal_dispatch_admission(request, preadmission_record, error)
+        raise error from exc
     except DispatchCapacityExhausted as exc:
         logger.warning(
             "fleet capacity admission rejected target=%s provider=%s detail=%s",
@@ -6825,7 +8699,9 @@ async def _admit_remote_agent_work(
             body.provider,
             exc.detail,
         )
-        raise HTTPException(status_code=409, detail=exc.detail) from exc
+        error = HTTPException(status_code=409, detail=exc.detail)
+        await _reject_goal_dispatch_admission(request, preadmission_record, error)
+        raise error from exc
     except DispatchQueueFull as exc:
         logger.warning(
             "fleet dispatch queue admission rejected target=%s provider=%s detail=%s",
@@ -6833,7 +8709,9 @@ async def _admit_remote_agent_work(
             body.provider,
             exc.detail,
         )
-        raise HTTPException(status_code=429, detail=exc.detail) from exc
+        error = HTTPException(status_code=429, detail=exc.detail)
+        await _reject_goal_dispatch_admission(request, preadmission_record, error)
+        raise error from exc
     if duplicate:
         return {
             "accepted": True,
@@ -6843,6 +8721,12 @@ async def _admit_remote_agent_work(
             "job_id": record.dispatch_id,
             "dispatch": _dispatch_public(request, record),
         }
+    if collaboration_service is not None and collaboration_decision is not None:
+        collaboration_service.store.record_decision(
+            collaboration_decision,
+            dispatch_id=record.dispatch_id,
+            card_id=record.card_id,
+        )
     worker = ctx.services.get("dispatch_worker")
     if worker:
         # Let the ASGI handler serialize and send the durable 202 admission
@@ -7411,23 +9295,119 @@ async def prompt_dispatch_session(
                     "message": "This follow-up key was used for a different prompt.",
                 },
             )
-        return {**dict(prior.get("response") or {}), "duplicate": True}
-    result = await _peer_agent_json(
-        request,
-        record.target_instance_id,
-        "POST",
-        f"sessions/{record.session_id}/prompt",
-        body={
-            "message": body.message,
-            "action": body.action,
-            "card_id": record.card_id,
-            "project_id": record.project_id,
-            "dispatch_id": record.dispatch_id,
-            "idempotency_key": key,
-        },
-    )
+        if prior.get("response"):
+            return {**dict(prior.get("response") or {}), "duplicate": True}
+        if prior.get("state") in {"failed", "cancelled", "interrupted"}:
+            error = dict(prior.get("error") or {})
+            raise HTTPException(
+                status_code=int(error.pop("status_code", 409)),
+                detail={
+                    "code": "goal_followup_replay_terminal",
+                    "previous_error": error,
+                    "recoverable": False,
+                },
+            )
+
+    ledger = _dispatch_store(request)
+    followup_provenance: GoalDispatchProvenance | None = None
+    try:
+        followup_provenance = await _offload_request(
+            request,
+            "goal.dispatch_followup_reserve",
+            _reserve_goal_dispatch_followup,
+            request.app.state.ctx,
+            ledger,
+            record,
+            idempotency_key=key,
+            fingerprint=fingerprint,
+        )
+        if followup_provenance is not None:
+            followup_provenance = await _offload_request(
+                request,
+                "goal.dispatch_followup_validate",
+                _validate_goal_dispatch_provenance,
+                request.app.state.ctx,
+                followup_provenance,
+                record.authority_instance_id,
+                sink=f"followup-delivery:{key}",
+                provider_id=record.request_payload.get("provider"),
+                target_instance_id=record.target_instance_id,
+                placement_input_digest=record.goal_placement_input_digest,
+                placement_decision_digest=goal_dispatch_placement_decision_digest(
+                    record.placement_decision
+                ),
+            )
+            operation = record.followup_operations[key]
+            operation["goal_provenance"] = followup_provenance.model_dump(mode="json")
+            await _offload_request(
+                request,
+                "dispatch.followup_governance_update",
+                ledger.put,
+                record,
+            )
+        result = await _peer_agent_json(
+            request,
+            record.target_instance_id,
+            "POST",
+            f"sessions/{record.session_id}/prompt",
+            body={
+                "message": body.message,
+                "action": body.action,
+                "card_id": record.card_id,
+                "project_id": record.project_id,
+                "dispatch_id": record.dispatch_id,
+                "idempotency_key": key,
+                "goal_provenance": (
+                    followup_provenance.model_dump(mode="json")
+                    if followup_provenance
+                    else None
+                ),
+            },
+        )
+    except Exception as exc:
+        operation = record.followup_operations.setdefault(
+            key,
+            {"fingerprint": fingerprint},
+        )
+        operation["state"] = (
+            "failed_pending_release" if operation.get("goal_provenance") else "failed"
+        )
+        detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
+        operation["error"] = {
+            "code": (
+                str(detail.get("code") or "goal_followup_failed")
+                if isinstance(detail, dict)
+                else "goal_followup_failed"
+            ),
+            "message": (
+                str(detail.get("message") or detail)
+                if isinstance(detail, dict)
+                else str(detail)
+            )[:1000],
+            "status_code": exc.status_code if isinstance(exc, HTTPException) else 502,
+        }
+        await _offload_request(
+            request,
+            "dispatch.followup_failed",
+            ledger.put,
+            record,
+        )
+        if operation.get("goal_provenance"):
+            await _offload_request(
+                request,
+                "goal.dispatch_followup_release_failed",
+                _release_goal_dispatch_followup,
+                request.app.state.ctx,
+                ledger,
+                record,
+                idempotency_key=key,
+                outcome="followup-failed",
+                applied=False,
+                final_state="failed",
+            )
+        raise
     if not isinstance(result, dict) or not result.get("accepted"):
-        raise HTTPException(
+        error = HTTPException(
             status_code=502,
             detail={
                 "code": "followup_not_acknowledged",
@@ -7435,6 +9415,28 @@ async def prompt_dispatch_session(
                 "recoverable": True,
             },
         )
+        operation = record.followup_operations.setdefault(
+            key, {"fingerprint": fingerprint}
+        )
+        operation["state"] = (
+            "failed_pending_release" if operation.get("goal_provenance") else "failed"
+        )
+        operation["error"] = {**error.detail, "status_code": error.status_code}
+        await _offload_request(request, "dispatch.followup_failed", ledger.put, record)
+        if operation.get("goal_provenance"):
+            await _offload_request(
+                request,
+                "goal.dispatch_followup_release_failed",
+                _release_goal_dispatch_followup,
+                request.app.state.ctx,
+                ledger,
+                record,
+                idempotency_key=key,
+                outcome="followup-not-acknowledged",
+                applied=False,
+                final_state="failed",
+            )
+        raise error
     public = {
         key: result.get(key)
         for key in (
@@ -7450,10 +9452,21 @@ async def prompt_dispatch_session(
         )
     }
     public["authority_instance_id"] = record.authority_instance_id
-    record.followup_operations[key] = {
-        "fingerprint": fingerprint,
-        "response": public,
-    }
+    operation = record.followup_operations.setdefault(key, {"fingerprint": fingerprint})
+    operation.update(
+        {
+            "response": public,
+            "state": "accepted_pending_release"
+            if followup_provenance is not None
+            else "accepted",
+            "goal_provenance": (
+                followup_provenance.model_dump(mode="json")
+                if followup_provenance
+                else None
+            ),
+        }
+    )
+    operation.pop("error", None)
     await _offload_request(
         request,
         "dispatch.followup_ack",
@@ -7466,6 +9479,19 @@ async def prompt_dispatch_session(
             "prompt_id": result.get("prompt_id"),
         },
     )
+    if followup_provenance is not None:
+        await _offload_request(
+            request,
+            "goal.dispatch_followup_release_accepted",
+            _release_goal_dispatch_followup,
+            request.app.state.ctx,
+            ledger,
+            record,
+            idempotency_key=key,
+            outcome="followup-accepted",
+            applied=True,
+            final_state="accepted",
+        )
     return public
 
 
@@ -7613,12 +9639,31 @@ async def _retry_dispatch_api(
         record.placement_decision = revalidation
         record = await _offload_request(
             request,
-            "dispatch.retry_capacity_admission",
-            ledger.retry_with_capacity,
+            "goal.dispatch_retry_reservation",
+            _replace_goal_dispatch_reservation,
+            ctx,
+            ledger,
             record,
-            capacity,
             idempotency_key=idempotency_key,
         )
+        try:
+            record = await _offload_request(
+                request,
+                "dispatch.retry_capacity_admission",
+                ledger.retry_with_capacity,
+                record,
+                capacity,
+                idempotency_key=idempotency_key,
+            )
+        except DispatchQueueFull, DispatchCapacityExhausted, ValueError:
+            await _release_goal_dispatch_reservation_async(
+                ctx,
+                ledger,
+                record,
+                outcome="retry-admission-failed",
+                applied=False,
+            )
+            raise
     except PlacementError as exc:
         raise _placement_http_error(exc) from exc
     except DispatchQueueFull as exc:
@@ -7663,6 +9708,12 @@ def retry_dispatch(
                 "message": f"Dispatch in {record.state} cannot be retried safely.",
             },
         )
+    record = _replace_goal_dispatch_reservation(
+        request.app.state.ctx,
+        ledger,
+        record,
+        idempotency_key=idempotency_key,
+    )
     if record.capacity_limit:
         capacity = CapacityAdmission(
             limit=record.capacity_limit,
@@ -7677,8 +9728,22 @@ def retry_dispatch(
                 record, capacity, idempotency_key=idempotency_key
             )
         except DispatchQueueFull as exc:
+            _release_goal_dispatch_reservation(
+                request.app.state.ctx,
+                ledger,
+                record,
+                outcome="retry-admission-failed",
+                applied=False,
+            )
             raise HTTPException(status_code=429, detail=exc.detail) from exc
         except DispatchCapacityExhausted as exc:
+            _release_goal_dispatch_reservation(
+                request.app.state.ctx,
+                ledger,
+                record,
+                outcome="retry-admission-failed",
+                applied=False,
+            )
             raise HTTPException(status_code=409, detail=exc.detail) from exc
     else:
         # Legacy records predate reservations. Preserve their retry behavior;
@@ -7753,6 +9818,13 @@ def cancel_dispatch(
     if record.state in {"waiting_capacity", "blocked", "queued"}:
         record.control_operations[idempotency_key] = "cancel"
         ledger.transition(record, "cancelled", "Operator cancelled queued dispatch.")
+        _release_goal_dispatch_reservation(
+            request.app.state.ctx,
+            ledger,
+            record,
+            outcome="cancelled",
+            applied=False,
+        )
         return _dispatch_public(request, record)
     if record.state not in {
         "checking_sync",
@@ -8594,11 +10666,20 @@ class FleetModule(Module):
                 async_runtime=async_runtime,
                 http_client=fleet_http_client,
             )
+        await _reconcile_goal_dispatch_reservations(ctx)
         dispatch_worker = DispatchWorker(
             ctx.require_service("dispatch_store"),
             lambda record: _process_remote_dispatch(app, record),
             async_runtime=async_runtime,
             readiness=lambda record: _refresh_queued_dispatch_readiness(app, record),
+            terminal=lambda record, outcome: _release_goal_dispatch_reservation_async(
+                ctx,
+                ctx.require_service("dispatch_store"),
+                record,
+                outcome=outcome,
+                applied=_goal_dispatch_was_applied(record),
+            ),
+            lifecycle_recovery=lambda: _reconcile_goal_dispatch_reservations(ctx),
         )
         dispatch_worker.start()
         ctx.register_service("dispatch_worker", dispatch_worker)

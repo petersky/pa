@@ -655,6 +655,7 @@ class GoalSupervisorTests(unittest.TestCase):
                 "instance-a",
                 dispatch_store=FakeDispatchStore(),
                 dispatch=dispatch,
+                default_provider="codex",
             )
             first = supervisor.run_once(goal.id)[0]
             self.assertEqual(len(first.work_packages), 1)
@@ -718,6 +719,7 @@ class GoalSupervisorTests(unittest.TestCase):
                 "instance-a",
                 dispatch_store=records,
                 dispatch=dispatch,
+                default_provider="codex",
             )
             supervisor.run_once(goal.id)
             supervisor.run_once(goal.id)
@@ -788,6 +790,7 @@ class GoalSupervisorTests(unittest.TestCase):
                 "instance-a",
                 dispatch_store=FakeDispatchStore(),
                 dispatch=reject_before_admission,
+                default_provider="codex",
             )
             supervisor.run_once(goal.id)
             supervisor.run_once(goal.id)
@@ -878,6 +881,7 @@ class GoalSupervisorTests(unittest.TestCase):
                 "instance-a",
                 dispatch_store=FakeDispatchStore(),
                 dispatch=crash_after_external_commit,
+                default_provider="codex",
             )
             durable = supervisor.run_once(goal.id)[0]
             proposal = next(
@@ -958,6 +962,7 @@ class GoalSupervisorTests(unittest.TestCase):
                 "instance-a",
                 dispatch_store=records,
                 dispatch=dispatch,
+                default_provider="codex",
             )
             supervisor.run_once(goal.id)
             supervisor.run_once(goal.id)
@@ -1232,6 +1237,7 @@ class GoalSupervisorTests(unittest.TestCase):
                 "instance-a",
                 dispatch_store=records,
                 dispatch=lambda _payload: {"dispatch_id": "dispatch-stalled"},
+                default_provider="codex",
                 no_progress_cycles=1,
                 stalled_cycles=2,
             )

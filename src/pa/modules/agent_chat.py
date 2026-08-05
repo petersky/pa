@@ -22,13 +22,13 @@ from pa.core.contracts import Module
 from pa.core.preferences import get_preferences_store
 from pa.core.ui.instance_identity import current_instance_name
 from pa.domain.models import AgentSession, TranscriptEvent
+from pa.execution.dispatch import GoalDispatchProvenance
 from pa.execution.observability import (
     SESSION_OBSERVABILITY_CAPABILITY,
     SESSION_OBSERVABILITY_VERSION,
     build_session_observability,
     diagnostic_timeline,
 )
-from pa.intake.models import IntakeMutationContext
 from pa.instance.agent_session import (
     RECOVERY_BLOCKED_STATUS,
     TRANSCRIPT_WINDOW_LIMIT,
@@ -38,6 +38,7 @@ from pa.instance.agent_session import (
     AgentStartupNotReady,
 )
 from pa.instance.quiesce import MAX_TOTAL_IMAGE_BYTES, ImageAttachment
+from pa.intake.models import IntakeMutationContext
 from pa.modules.agent_lifecycle import require_startup_ready
 
 router = APIRouter(prefix="/agent")
@@ -249,6 +250,7 @@ class CreateSessionBody(BaseModel):
     resume: bool = False
     resume_session_id: str | None = None
     fresh: bool = False
+    goal_provenance: GoalDispatchProvenance | None = None
 
 
 def _config_option_id(runtime, requested: str) -> str:
@@ -337,6 +339,7 @@ class PromptBody(BaseModel):
         pattern=r"^[A-Za-z0-9._:-]+$",
     )
     idempotency_key: str | None = None
+    goal_provenance: GoalDispatchProvenance | None = None
 
     @model_validator(mode="after")
     def validate_total_image_size(self) -> PromptBody:
@@ -345,6 +348,26 @@ class PromptBody(BaseModel):
         if self.client_prompt_id and self.dispatch_id:
             raise ValueError("client_prompt_id and dispatch_id are mutually exclusive")
         return self
+
+
+def _goal_followup_provenance_matches(
+    base: GoalDispatchProvenance,
+    candidate: GoalDispatchProvenance | None,
+) -> bool:
+    """Accept only a fresh action fenced to the same governed dispatch lineage."""
+
+    return bool(
+        candidate is not None
+        and candidate.released_at is None
+        and candidate.action_reservation_id != base.action_reservation_id
+        and candidate.goal_id == base.goal_id
+        and candidate.authority_instance_id == base.authority_instance_id
+        and candidate.actor_principal == base.actor_principal
+        and candidate.action_class == base.action_class
+        and candidate.fencing_token == base.fencing_token
+        and str(candidate.provider_id or "").strip().lower()
+        == str(base.provider_id or "").strip().lower()
+    )
 
 
 class PermissionBody(BaseModel):
@@ -465,6 +488,25 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                     "code": "dispatch_provenance_mismatch",
                     "message": "Session provenance does not match the materialized dispatch.",
                     "mismatches": mismatches,
+                    "recoverable": False,
+                },
+            )
+        if dispatch_record.goal_provenance != body.goal_provenance:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "goal_dispatch_provenance_mismatch",
+                    "recoverable": False,
+                },
+            )
+        if body.goal_provenance is not None and (
+            str(body.provider or "").strip().lower()
+            != str(body.goal_provenance.provider_id or "").strip().lower()
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "goal_dispatch_provider_mismatch",
                     "recoverable": False,
                 },
             )
@@ -952,13 +994,13 @@ def _multiplex_after_cursors(request: Request) -> dict[str, int]:
     if raw:
         try:
             value = json.loads(raw)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             value = {}
         if isinstance(value, dict):
             for session_id, seq in value.items():
                 try:
                     cursors[str(session_id)] = max(0, int(seq))
-                except (TypeError, ValueError):
+                except TypeError, ValueError:
                     continue
     last_event_id = request.headers.get("Last-Event-ID") or ""
     if ":" in last_event_id:
@@ -998,10 +1040,8 @@ async def multiplexed_session_events(request: Request) -> StreamingResponse:
             session_scope="all_live",
         )
         try:
-            reconnect_attempt = int(
-                request.query_params.get("reconnect_attempt") or 0
-            )
-        except (TypeError, ValueError):
+            reconnect_attempt = int(request.query_params.get("reconnect_attempt") or 0)
+        except TypeError, ValueError:
             reconnect_attempt = 0
         if reconnect_attempt > 0:
             sse_connections.increment("reconnecting")
@@ -1043,14 +1083,18 @@ async def multiplexed_session_events(request: Request) -> StreamingResponse:
             return events
 
         try:
-            yield "retry: 5000\nevent: ready\ndata: " + json.dumps(
-                {
-                    "schema_version": 1,
-                    "scope": "all_live_sessions",
-                    "session_count": 0,
-                    "timestamp": datetime.now(UTC).isoformat(),
-                }
-            ) + "\n\n"
+            yield (
+                "retry: 5000\nevent: ready\ndata: "
+                + json.dumps(
+                    {
+                        "schema_version": 1,
+                        "scope": "all_live_sessions",
+                        "session_count": 0,
+                        "timestamp": datetime.now(UTC).isoformat(),
+                    }
+                )
+                + "\n\n"
+            )
             while not is_shutting_down():
                 if await request.is_disconnected():
                     outcome = "cancelled"
@@ -1790,6 +1834,65 @@ async def session_prompt(request: Request, session_id: str, body: PromptBody) ->
     instance_authenticated = (
         getattr(request.state, "instance_authenticated", False) is True
     )
+    session_record = runtime.session if runtime is not None else durable_session
+    linked_dispatch_id = getattr(session_record, "dispatch_id", None)
+    dispatch_record = None
+    dispatch_store = request.app.state.ctx.services.get("dispatch_store")
+    if linked_dispatch_id and dispatch_store:
+        dispatch_record = await (
+            _runtime_offload(
+                runtime,
+                "dispatch.record_read",
+                dispatch_store.get,
+                linked_dispatch_id,
+            )
+            if runtime is not None
+            else _offload(
+                mgr,
+                "dispatch.record_read",
+                dispatch_store.get,
+                linked_dispatch_id,
+            )
+        )
+    if dispatch_record and dispatch_record.goal_provenance is not None:
+        if not instance_authenticated:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "governed_dispatch_prompt_requires_authority",
+                    "message": "Goal-linked sessions accept prompts only through their dispatch authority.",
+                    "recoverable": False,
+                },
+            )
+        if body.dispatch_id != linked_dispatch_id:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "governed_dispatch_prompt_missing_contract",
+                    "expected_dispatch_id": linked_dispatch_id,
+                    "recoverable": False,
+                },
+            )
+        if body.idempotency_key:
+            if not _goal_followup_provenance_matches(
+                dispatch_record.goal_provenance,
+                body.goal_provenance,
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "goal_followup_provenance_mismatch",
+                        "recoverable": False,
+                    },
+                )
+        elif dispatch_record.goal_provenance != body.goal_provenance:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "goal_dispatch_provenance_mismatch",
+                    "recoverable": False,
+                },
+            )
     if instance_authenticated and not body.dispatch_id:
         raise HTTPException(
             status_code=403,
@@ -1838,17 +1941,18 @@ async def session_prompt(request: Request, session_id: str, body: PromptBody) ->
         if intake:
             response["intake"] = intake
         return response
-    dispatch_record = None
-    dispatch_store = None
     if body.dispatch_id:
-        dispatch_store = request.app.state.ctx.services.get("dispatch_store")
-        dispatch_record = (
-            await _runtime_offload(
-                runtime, "dispatch.record_read", dispatch_store.get, body.dispatch_id
+        if dispatch_record is None:
+            dispatch_record = (
+                await _runtime_offload(
+                    runtime,
+                    "dispatch.record_read",
+                    dispatch_store.get,
+                    body.dispatch_id,
+                )
+                if dispatch_store
+                else None
             )
-            if dispatch_store
-            else None
-        )
         if not dispatch_record:
             raise HTTPException(
                 status_code=409,
@@ -1861,6 +1965,18 @@ async def session_prompt(request: Request, session_id: str, body: PromptBody) ->
                     "code": "dispatch_session_mismatch",
                     "expected": dispatch_record.session_id,
                     "actual": session_id,
+                    "recoverable": False,
+                },
+            )
+        if (
+            instance_authenticated
+            and dispatch_record.goal_provenance is None
+            and body.goal_provenance is not None
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "goal_dispatch_provenance_mismatch",
                     "recoverable": False,
                 },
             )
@@ -1880,6 +1996,17 @@ async def session_prompt(request: Request, session_id: str, body: PromptBody) ->
                         detail={
                             "code": "idempotency_conflict",
                             "message": "This follow-up key was used for a different prompt.",
+                        },
+                    )
+                if dispatch_record.goal_provenance is not None and (
+                    prior.get("goal_provenance")
+                    != body.goal_provenance.model_dump(mode="json")
+                ):
+                    raise HTTPException(
+                        status_code=409,
+                        detail={
+                            "code": "goal_followup_provenance_mismatch",
+                            "recoverable": False,
                         },
                     )
                 return {
@@ -1990,6 +2117,12 @@ async def session_prompt(request: Request, session_id: str, body: PromptBody) ->
         if body.idempotency_key:
             dispatch_record.followup_operations[body.idempotency_key] = {
                 "fingerprint": followup_fingerprint,
+                "goal_provenance": (
+                    body.goal_provenance.model_dump(mode="json")
+                    if body.goal_provenance
+                    else None
+                ),
+                "state": "accepted_target",
                 "response": {
                     key: response.get(key)
                     for key in (

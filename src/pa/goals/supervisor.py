@@ -22,9 +22,11 @@ from pa.domain.notifications import (
     NotificationSeverity,
     NotificationType,
 )
+from pa.execution.dispatch import goal_dispatch_placement_input_digest
 from pa.goals.advanced_models import (
     GoalActionDisposition,
     GoalActionRequest,
+    GoalReservationState,
     GoalUsage,
     GovernanceMutationContext,
 )
@@ -107,6 +109,7 @@ class GoalSupervisor:
         no_progress_cycles: int = 3,
         stalled_cycles: int = 6,
         lease_ttl_seconds: int = 90,
+        default_provider: str | None = None,
     ) -> None:
         if stalled_cycles <= no_progress_cycles:
             raise ValueError("stalled_cycles must exceed no_progress_cycles")
@@ -121,6 +124,7 @@ class GoalSupervisor:
             store, instance_id, service, clock=self.now
         )
         self.service_principal = f"service:goal-supervisor:{instance_id}"
+        self.default_provider = str(default_provider or "").strip().lower()
         self._active_reservation_id: str | None = None
         self.no_progress_threshold = no_progress_cycles
         self.stalled_threshold = stalled_cycles
@@ -218,6 +222,8 @@ class GoalSupervisor:
         key: str,
         request: GoalActionRequest,
         operation: Callable[[], Any],
+        *,
+        defer_release: bool = False,
     ) -> Any:
         """Reserve, revalidate, apply, and release one side effect."""
 
@@ -249,30 +255,84 @@ class GoalSupervisor:
             self._active_reservation_id = reservation_id
             result = operation()
         except BaseException:
-            current = self.governance.get_state(goal.id)
-            self.governance.release_action(
+            self._reconcile_governed_release(
                 goal.id,
                 reservation_id,
-                self._replay_governance_context(
-                    goal, current.version, f"{key}:release-failed"
-                ),
                 actual_usage=GoalUsage(),
                 reason="side effect failed before a durable result",
+                idempotency_key=f"{key}:release-failed",
             )
             raise
         finally:
             self._active_reservation_id = None
-        current = self.governance.get_state(goal.id)
-        self.governance.release_action(
+        if defer_release and result:
+            return result
+        self._reconcile_governed_release(
             goal.id,
             reservation_id,
-            self._replay_governance_context(
-                goal, current.version, f"{key}:release-applied"
-            ),
             actual_usage=request.estimate,
             reason="side effect applied",
+            idempotency_key=f"{key}:release-applied",
         )
         return result
+
+    def _reconcile_governed_release(
+        self,
+        goal_id: str,
+        reservation_id: str,
+        *,
+        actual_usage: GoalUsage,
+        reason: str,
+        idempotency_key: str,
+    ) -> None:
+        """Release an exact owned hold even if the controller lease changed."""
+
+        for attempt in range(3):
+            state = self.governance.get_state(goal_id)
+            reservation = next(
+                (
+                    item
+                    for item in state.action_reservations
+                    if item.id == reservation_id
+                ),
+                None,
+            )
+            if reservation is None:
+                raise GoalGovernanceConflict(
+                    "governed side-effect reservation disappeared before release"
+                )
+            if (
+                reservation.actor_principal != self.service_principal
+                or reservation.authority_instance_id != self.instance_id
+            ):
+                raise GoalGovernanceConflict(
+                    "governed side-effect release does not own the reservation"
+                )
+            current_goal = self.service.get(goal_id)
+            if current_goal is None:
+                raise GoalGovernanceConflict(
+                    "governed side-effect goal disappeared before release"
+                )
+            try:
+                self.governance.reconcile_action_release(
+                    goal_id,
+                    reservation_id,
+                    GovernanceMutationContext(
+                        actor_principal=self.service_principal,
+                        authority_instance_id=self.instance_id,
+                        idempotency_key=idempotency_key[:200],
+                        expected_version=state.version,
+                        policy_revision=current_goal.policy.revision,
+                        goal_version=current_goal.version,
+                        fencing_token=reservation.fencing_token,
+                    ),
+                    actual_usage=actual_usage,
+                    reason=reason,
+                )
+                return
+            except GoalGovernanceConflict as exc:
+                if attempt == 2 or "expected autonomy version" not in str(exc):
+                    raise
 
     def _assert_side_effect_fence(self, goal: Goal) -> None:
         current = self.service.get(goal.id)
@@ -450,18 +510,30 @@ class GoalSupervisor:
                         ),
                     )
                 elif isinstance(action, DispatchWorkPackageAction):
+                    dispatch_provider = self._dispatch_provider(action)
+                    dispatch_operation_key = self._dispatch_operation_key(goal, action)
+                    requested_target, placement_input_digest = (
+                        self._dispatch_placement_binding(
+                            goal, action, dispatch_provider
+                        )
+                    )
                     applied = self._governed_action(
                         goal,
                         governance_key,
                         governed_request(
                             "dispatch_work_package",
+                            operation_key=dispatch_operation_key,
+                            requested_placement_target=requested_target,
+                            placement_input_digest=placement_input_digest,
                             delegated=True,
-                            provider_id=action.provider,
+                            provider_id=dispatch_provider,
                             estimate=GoalUsage(actions=1, dispatches=1),
+                            max_attempts=min(20, goal.budget.retry_limit + 1),
                         ),
                         lambda proposal=proposal, action=action: (
                             self._dispatch_work_package(goal, proposal, action, now)
                         ),
+                        defer_release=True,
                     )
                     if not applied:
                         continue
@@ -659,27 +731,45 @@ class GoalSupervisor:
         if package.attempts >= package.max_attempts:
             raise RuntimeError("work-package retry limit is exhausted")
         attempt = package.attempts + 1
+        operation_key = self._dispatch_operation_key(goal, action)
         package.attempts = attempt
         package.action_reservation_id = self._active_reservation_id
         package.updated_at = now
         try:
             if not self.dispatch or not package.card_id:
                 raise RuntimeError("fleet dispatch service is unavailable")
+            dispatch_provider = self._dispatch_provider(action)
+            requested_target, placement_input_digest = (
+                self._dispatch_placement_binding(goal, action, dispatch_provider)
+            )
             result = self.dispatch(
                 {
                     "authority_instance_id": self.instance_id,
-                    "goal_id": goal.id,
-                    "goal_version": goal.version,
-                    "goal_policy_revision": goal.policy.revision,
-                    "goal_fencing_token": goal.lease.fencing_token,
-                    "goal_action_reservation_id": self._active_reservation_id,
-                    "goal_actor_principal": self.service_principal,
+                    "goal_provenance": {
+                        "goal_id": goal.id,
+                        "goal_version": goal.version,
+                        "policy_revision": goal.policy.revision,
+                        "authority_instance_id": self.instance_id,
+                        "fencing_token": goal.lease.fencing_token,
+                        "action_reservation_id": self._active_reservation_id,
+                        "operation_key": operation_key,
+                        "requested_placement_target": requested_target,
+                        "placement_input_digest": placement_input_digest,
+                        "actor_principal": self.service_principal,
+                        "action_class": "dispatch_work_package",
+                        "provider_id": dispatch_provider,
+                        "reservation_attempt": 1,
+                        "max_reservation_attempts": min(
+                            20, goal.budget.retry_limit + 1
+                        ),
+                    },
                     "card_id": package.card_id,
+                    "project_id": goal.project_id,
                     "target_instance_id": action.target_instance_id,
                     "placement_policy": action.placement_policy,
                     "group_id": action.group_id,
                     "message": self._work_prompt(goal, package, action.message),
-                    "provider": action.provider,
+                    "provider": dispatch_provider,
                     "model_id": action.model_id,
                     "mode_id": action.mode_id,
                     "priority": action.priority,
@@ -687,9 +777,7 @@ class GoalSupervisor:
                     "collaboration_risk": "high"
                     if package.role in {GoalActorRole.VERIFIER, GoalActorRole.CRITIC}
                     else "medium",
-                    "idempotency_key": (
-                        f"goal:{goal.id}:work:{package.id}:attempt:{attempt}"
-                    ),
+                    "idempotency_key": operation_key,
                 }
             )
             if result.get("accepted") is False:
@@ -725,6 +813,56 @@ class GoalSupervisor:
             goal.linked_dispatch_ids, dispatch_id, _MAX_GOAL_DISPATCH_IDS
         )
         return True
+
+    def _dispatch_provider(self, action: DispatchWorkPackageAction) -> str:
+        provider = str(action.provider or self.default_provider).strip().lower()
+        if not provider:
+            raise RuntimeError(
+                "governed fleet dispatch requires a concrete configured provider"
+            )
+        return provider
+
+    @staticmethod
+    def _dispatch_placement_binding(
+        goal: Goal,
+        action: DispatchWorkPackageAction,
+        provider: str,
+    ) -> tuple[str, str]:
+        package = next(
+            (item for item in goal.work_packages if item.id == action.work_package_id),
+            None,
+        )
+        if package is None or not package.card_id:
+            raise ValueError("dispatch requires a materialized work-package card")
+        requested_target = action.target_instance_id or (
+            f"placement:{action.placement_policy or 'balanced'}"
+        )
+        placement_input = {
+            "card_id": package.card_id,
+            "project_id": goal.project_id,
+            "target_instance_id": action.target_instance_id,
+            "placement_policy": action.placement_policy,
+            "group_id": action.group_id,
+            "provider": provider,
+            "model_id": action.model_id,
+            "mode_id": action.mode_id,
+        }
+        return requested_target, goal_dispatch_placement_input_digest(placement_input)
+
+    @staticmethod
+    def _dispatch_operation_key(
+        goal: Goal,
+        action: DispatchWorkPackageAction,
+    ) -> str:
+        package = next(
+            (item for item in goal.work_packages if item.id == action.work_package_id),
+            None,
+        )
+        if package is None:
+            raise ValueError("dispatch references an unknown work package")
+        return (f"goal:{goal.id}:work:{package.id}:attempt:{package.attempts + 1}")[
+            :200
+        ]
 
     @staticmethod
     def _record_dispatch_failure(
@@ -883,6 +1021,7 @@ class GoalSupervisor:
             record = self.dispatch_store.get(package.dispatch_ids[-1])
             if not record:
                 continue
+            self._reconcile_dispatch_reservation(goal, package, record)
             fingerprint = self._dispatch_fingerprint(record)
             if fingerprint != package.last_progress_fingerprint:
                 package.last_progress_fingerprint = fingerprint
@@ -960,6 +1099,76 @@ class GoalSupervisor:
                 changed = True
             package.updated_at = now
         return changed
+
+    def _reconcile_dispatch_reservation(self, goal, package, record) -> None:
+        """Release a dispatch hold before any terminal supervisor mutation.
+
+        Fleet owns the primary lifecycle release. This bounded reconciliation path
+        closes legacy and crash windows where the supervisor can observe a running
+        or terminal record before fleet has durably released its canonical hold.
+        """
+
+        if record.state not in {
+            "running",
+            "completion_pending",
+            "completed",
+            "failed",
+            "cancelled",
+        }:
+            return
+        provenance = getattr(record, "goal_provenance", None)
+        reservation_id = (
+            provenance.action_reservation_id
+            if provenance is not None
+            else package.action_reservation_id
+        )
+        if not reservation_id:
+            return
+        state = self.governance.get_state(goal.id)
+        reservation = next(
+            (item for item in state.action_reservations if item.id == reservation_id),
+            None,
+        )
+        if reservation is None:
+            raise GoalGovernanceConflict(
+                "dispatch reconciliation could not find its action reservation"
+            )
+        if reservation.state == GoalReservationState.RELEASED:
+            return
+        if (
+            reservation.actor_principal != self.service_principal
+            or reservation.authority_instance_id != self.instance_id
+        ):
+            raise GoalGovernanceConflict(
+                "dispatch reconciliation cannot release another controller's hold"
+            )
+        applied = record.state in {
+            "running",
+            "completion_pending",
+            "completed",
+        } or bool(getattr(record, "prompt_acknowledged_at", None))
+        self.governance.reconcile_action_release(
+            goal.id,
+            reservation.id,
+            GovernanceMutationContext(
+                actor_principal=self.service_principal,
+                authority_instance_id=self.instance_id,
+                idempotency_key=(
+                    f"goal-supervisor:{goal.id}:dispatch:{record.dispatch_id}:"
+                    f"release:attempt:{reservation.attempt}"
+                )[:200],
+                expected_version=state.version,
+                policy_revision=goal.policy.revision,
+                goal_version=goal.version,
+                fencing_token=reservation.fencing_token,
+            ),
+            actual_usage=(
+                reservation.reserved_usage.model_copy(deep=True)
+                if applied
+                else GoalUsage()
+            ),
+            reason=f"supervisor observed fleet dispatch {record.state}",
+        )
 
     def _complete_package(self, goal: Goal, package, record, now: datetime) -> bool:
         if package.state == WorkPackageState.VERIFIED:

@@ -1077,6 +1077,7 @@ class GoalsModule(Module):
             dispatch_store=ctx.services.get("dispatch_store"),
             dispatch=dispatch,
             governance=governance,
+            default_provider=ctx.settings.agent_provider,
         )
         ctx.register_service("goal_supervisor", supervisor)
         self._supervisor_stop: asyncio.Event | None = None

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import shutil
 import subprocess
 import tempfile
@@ -16,6 +18,11 @@ from jinja2 import Environment, FileSystemLoader
 
 from pa.domain.models import TranscriptEvent
 from pa.domain.projection import CardProjection
+from pa.execution.dispatch import (
+    DispatchRecord,
+    DispatchStore,
+    GoalDispatchProvenance,
+)
 from pa.modules.agent_chat import PromptBody, _submit_client_prompt, session_prompt
 
 ROOT = Path(__file__).parents[1]
@@ -40,7 +47,9 @@ class AgentChatDraftContractTests(unittest.TestCase):
         self.assertIn("data-pa-instance-id", shell)
         chrome = (SERVER / "templates" / "partials" / "chrome-actions.html").read_text()
         agent_page = (SERVER / "templates" / "pages" / "agent.html").read_text()
-        draft_widget = (SERVER / "static" / "js" / "agent-chat-draft-widget.js").read_text()
+        draft_widget = (
+            SERVER / "static" / "js" / "agent-chat-draft-widget.js"
+        ).read_text()
         self.assertIn('href="/agent"', chrome)
         self.assertIn("starting up — restoring sessions", agent_page)
         self.assertIn("else 'offline'", agent_page)
@@ -61,15 +70,23 @@ class AgentChatDraftContractTests(unittest.TestCase):
         self.assertIn("never persists attachment bytes", docs)
 
     def test_sessions_control_navigates_while_offline_or_starting(self) -> None:
-        env = Environment(loader=FileSystemLoader(SERVER / "templates"), autoescape=True)
+        env = Environment(
+            loader=FileSystemLoader(SERVER / "templates"), autoescape=True
+        )
         template = env.get_template("partials/chrome-actions.html")
-        common = {"telemetry_enabled": False, "appearance": "system", "active_path": "/"}
+        common = {
+            "telemetry_enabled": False,
+            "appearance": "system",
+            "active_path": "/",
+        }
         offline = template.render(
-            **common, agent_connected=False,
+            **common,
+            agent_connected=False,
             agent_startup={"complete": True, "phase": "ready"},
         )
         starting = template.render(
-            **common, agent_connected=False,
+            **common,
+            agent_connected=False,
             agent_startup={"complete": False, "phase": "recovering"},
         )
         for html in (offline, starting):
@@ -81,9 +98,9 @@ class AgentChatDraftContractTests(unittest.TestCase):
 
     def test_session_routing_scopes_draft_before_restoring_conversation(self) -> None:
         script = (SERVER / "static" / "js" / "agent-chat.js").read_text()
-        open_session = script.split(
-            "AgentChatWidget.prototype.openSession", 1
-        )[1].split("AgentChatWidget.prototype.recoverSession", 1)[0]
+        open_session = script.split("AgentChatWidget.prototype.openSession", 1)[
+            1
+        ].split("AgentChatWidget.prototype.recoverSession", 1)[0]
 
         self.assertLess(
             open_session.index("this.drafts.setInstance(ownerInstanceId)"),
@@ -97,9 +114,9 @@ class AgentChatDraftContractTests(unittest.TestCase):
 
     def test_snapshot_retains_draft_hook_while_blocking_recovery_composer(self) -> None:
         script = (SERVER / "static" / "js" / "agent-chat.js").read_text()
-        apply_snapshot = script.split(
-            "AgentChatWidget.prototype.applySnapshot", 1
-        )[1].split("AgentChatWidget.prototype.applyOptionSnapshot", 1)[0]
+        apply_snapshot = script.split("AgentChatWidget.prototype.applySnapshot", 1)[
+            1
+        ].split("AgentChatWidget.prototype.applyOptionSnapshot", 1)[0]
 
         self.assertIn("this.drafts.onSnapshot(session)", apply_snapshot)
         self.assertIn(
@@ -260,9 +277,7 @@ class ClientPromptAdmissionTests(unittest.TestCase):
 
         async def run() -> None:
             with (
-                patch(
-                    "pa.modules.agent_chat._runtime_or_404", return_value=runtime
-                ),
+                patch("pa.modules.agent_chat._runtime_or_404", return_value=runtime),
                 patch(
                     "pa.modules.agent_chat.get_principal_id",
                     return_value="intruder",
@@ -281,6 +296,160 @@ class ClientPromptAdmissionTests(unittest.TestCase):
                 submit.assert_not_awaited()
 
         asyncio.run(run())
+
+    def test_direct_and_client_prompt_paths_cannot_bypass_governed_dispatch(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = DispatchStore(Path(tmp) / "ledger")
+            provenance = GoalDispatchProvenance(
+                goal_id="goal-a",
+                goal_version=2,
+                policy_revision=1,
+                authority_instance_id="authority-a",
+                fencing_token=4,
+                action_reservation_id="reservation-a",
+                actor_principal="service:goal-supervisor:authority-a",
+                provider_id="codex",
+            )
+            ledger.put(
+                DispatchRecord(
+                    dispatch_id="dispatch-a",
+                    mutation_id="mutation-a",
+                    authority_instance_id="authority-a",
+                    authority_url="http://authority-a",
+                    target_instance_id="target-a",
+                    session_id="session-a",
+                    request_payload={"provider": "codex"},
+                    goal_provenance=provenance,
+                    state="running",
+                )
+            )
+            request = MagicMock()
+            request.app.state.ctx.settings = SimpleNamespace(auth_required=False)
+            request.app.state.ctx.services = {"dispatch_store": ledger}
+            request.state.instance_authenticated = False
+            request.state.user = SimpleNamespace(role="admin")
+            runtime = SimpleNamespace(
+                session=SimpleNamespace(
+                    principal_id="owner",
+                    dispatch_id="dispatch-a",
+                )
+            )
+
+            async def run() -> None:
+                with (
+                    patch(
+                        "pa.modules.agent_chat._runtime_or_404", return_value=runtime
+                    ),
+                    patch(
+                        "pa.modules.agent_chat._submit_client_prompt",
+                        new_callable=AsyncMock,
+                    ) as submit,
+                ):
+                    for body in (
+                        PromptBody(message="direct bypass"),
+                        PromptBody(
+                            message="client bypass",
+                            client_prompt_id="browser-prompt-governed",
+                        ),
+                    ):
+                        with self.assertRaises(HTTPException) as raised:
+                            await session_prompt(request, "session-a", body)
+                        self.assertEqual(
+                            raised.exception.detail["code"],
+                            "governed_dispatch_prompt_requires_authority",
+                        )
+                    submit.assert_not_awaited()
+
+            asyncio.run(run())
+
+    def test_authority_followup_contract_replays_at_governed_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = DispatchStore(Path(tmp) / "ledger")
+            base = GoalDispatchProvenance(
+                goal_id="goal-a",
+                goal_version=2,
+                policy_revision=1,
+                authority_instance_id="authority-a",
+                fencing_token=4,
+                action_reservation_id="reservation-initial",
+                actor_principal="service:goal-supervisor:authority-a",
+                provider_id="codex",
+            )
+            followup = base.model_copy(
+                update={"action_reservation_id": "reservation-followup"}
+            )
+            fingerprint = hashlib.sha256(
+                json.dumps(
+                    {"message": "continue", "action": "append"},
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()
+            ).hexdigest()
+            record = DispatchRecord(
+                dispatch_id="dispatch-a",
+                mutation_id="mutation-a",
+                authority_instance_id="authority-a",
+                authority_url="http://authority-a",
+                target_instance_id="target-a",
+                session_id="session-a",
+                request_payload={"provider": "codex"},
+                goal_provenance=base,
+                state="running",
+                followup_operations={
+                    "followup-a": {
+                        "fingerprint": fingerprint,
+                        "goal_provenance": followup.model_dump(mode="json"),
+                        "state": "accepted_target",
+                        "response": {
+                            "accepted": True,
+                            "dispatch_id": "dispatch-a",
+                            "session_id": "session-a",
+                            "prompt_id": "prompt-a",
+                        },
+                    }
+                },
+            )
+            ledger.put(record)
+            request = MagicMock()
+            request.app.state.ctx.settings = SimpleNamespace(auth_required=False)
+            request.app.state.ctx.services = {"dispatch_store": ledger}
+            request.state.instance_authenticated = True
+            request.state.user = None
+            runtime = SimpleNamespace(
+                session=SimpleNamespace(
+                    principal_id="user:owner",
+                    dispatch_id="dispatch-a",
+                )
+            )
+
+            async def run() -> dict:
+                with (
+                    patch(
+                        "pa.modules.agent_chat._runtime_or_404", return_value=runtime
+                    ),
+                    patch(
+                        "pa.modules.agent_chat._record_web_intake",
+                        new_callable=AsyncMock,
+                        return_value=None,
+                    ),
+                ):
+                    return await session_prompt(
+                        request,
+                        "session-a",
+                        PromptBody(
+                            message="continue",
+                            action="append",
+                            dispatch_id="dispatch-a",
+                            idempotency_key="followup-a",
+                            goal_provenance=followup,
+                        ),
+                    )
+
+            response = asyncio.run(run())
+            self.assertTrue(response["accepted"])
+            self.assertTrue(response["duplicate"])
 
 
 @unittest.skipUnless(shutil.which("node"), "node is required for draft UI tests")

@@ -750,6 +750,505 @@ class GoalGovernanceService:
             },
         )
 
+    def bind_dispatch_placement(
+        self,
+        goal_id: str,
+        reservation_id: str,
+        context: GovernanceMutationContext,
+        *,
+        requested_placement_target: str,
+        placement_input_digest: str,
+        resolved_target_instance_id: str,
+        placement_decision_digest: str,
+    ) -> tuple[GoalAutonomyState, GoalActionReservation]:
+        """Bind one applied dispatch hold to the immutable placement result."""
+
+        def exact_binding(reservation: GoalActionReservation) -> bool:
+            request = reservation.request
+            return bool(
+                request.requested_placement_target == requested_placement_target
+                and request.placement_input_digest == placement_input_digest
+                and request.resolved_target_instance_id == resolved_target_instance_id
+                and request.placement_decision_digest == placement_decision_digest
+            )
+
+        goal = self._require_goal(goal_id)
+        operation = {
+            "reservation_id": reservation_id,
+            "requested_placement_target": requested_placement_target,
+            "placement_input_digest": placement_input_digest,
+            "resolved_target_instance_id": resolved_target_instance_id,
+            "placement_decision_digest": placement_decision_digest,
+        }
+        fingerprint = operation_fingerprint(
+            realm_id=goal.realm_id,
+            entity_type=AUTONOMY_ENTITY,
+            entity_id=goal_id,
+            event_type="goal_governance.dispatch_placement_bound",
+            operation=operation,
+            context=context,
+        )
+        duplicate = self._duplicate(goal.realm_id, context.idempotency_key)
+        if duplicate:
+            self._validate_replay(
+                duplicate,
+                entity_type=AUTONOMY_ENTITY,
+                entity_id=goal_id,
+                event_type="goal_governance.dispatch_placement_bound",
+                fingerprint=fingerprint,
+            )
+            state = self.get_state(goal_id)
+            reservation = self._require_reservation(state, reservation_id)
+            if not exact_binding(reservation):
+                raise GoalGovernanceConflict(
+                    "idempotent placement binding no longer matches its reservation"
+                )
+            return state, reservation
+
+        def mutate(goal: Goal, state: GoalAutonomyState) -> dict[str, Any]:
+            reservation = self._require_reservation(state, reservation_id)
+            self._validate_reservation(goal, reservation, context)
+            if reservation.state != GoalReservationState.APPLIED:
+                raise GoalGovernanceConflict(
+                    "placement binding requires an applied action reservation"
+                )
+            request = reservation.request
+            if request.action_class != "dispatch_work_package":
+                raise GoalGovernanceConflict(
+                    "placement binding requires a dispatch-work-package reservation"
+                )
+            if request.requested_placement_target != requested_placement_target:
+                raise GoalGovernanceConflict(
+                    "dispatch reservation does not bind this placement request"
+                )
+            if request.placement_input_digest != placement_input_digest:
+                raise GoalGovernanceConflict(
+                    "dispatch reservation does not bind these placement inputs"
+                )
+            if requested_placement_target.startswith("placement:"):
+                requested_policy = requested_placement_target.partition(":")[2]
+                if not requested_policy:
+                    raise GoalGovernanceConflict(
+                        "dispatch reservation has an invalid placement policy binding"
+                    )
+            elif requested_placement_target != resolved_target_instance_id:
+                raise GoalGovernanceConflict(
+                    "named dispatch resolved to a different target instance"
+                )
+            existing = (
+                request.resolved_target_instance_id,
+                request.placement_decision_digest,
+            )
+            if existing != (None, None) and existing != (
+                resolved_target_instance_id,
+                placement_decision_digest,
+            ):
+                raise GoalGovernanceConflict(
+                    "dispatch placement is already bound to another result"
+                )
+            request.resolved_target_instance_id = resolved_target_instance_id
+            request.placement_decision_digest = placement_decision_digest
+            return {
+                "reservation_id": reservation.id,
+                "requested_placement_target": requested_placement_target,
+                "placement_input_digest": placement_input_digest,
+                "resolved_target_instance_id": resolved_target_instance_id,
+                "placement_decision_digest": placement_decision_digest,
+            }
+
+        state = self._mutate_state(
+            goal_id,
+            context,
+            "goal_governance.dispatch_placement_bound",
+            mutate,
+            operation=operation,
+            operation_fingerprint_value=fingerprint,
+        )
+        reservation = self._require_reservation(state, reservation_id)
+        if not exact_binding(reservation):
+            raise GoalGovernanceConflict(
+                "durable placement binding does not match the requested result"
+            )
+        return state, reservation
+
+    def revalidate_action_sink(
+        self,
+        goal_id: str,
+        reservation_id: str,
+        context: GovernanceMutationContext,
+        *,
+        action_class: str,
+        provider_id: str,
+        requested_placement_target: str,
+        placement_input_digest: str,
+        resolved_target_instance_id: str,
+        placement_decision_digest: str,
+        denial_actual_usage: GoalUsage | None = None,
+    ) -> tuple[GoalAutonomyState, GoalActionReservation]:
+        """Durably renew an applied hold against the current fenced goal envelope."""
+
+        provider_id = provider_id.strip().lower()
+        if not provider_id:
+            raise GoalGovernanceConflict(
+                "dispatch side effects require a concrete provider"
+            )
+        goal = self._require_goal(goal_id)
+        operation = {
+            "reservation_id": reservation_id,
+            "action_class": action_class,
+            "provider_id": provider_id,
+            "requested_placement_target": requested_placement_target,
+            "placement_input_digest": placement_input_digest,
+            "resolved_target_instance_id": resolved_target_instance_id,
+            "placement_decision_digest": placement_decision_digest,
+            "denial_actual_usage": denial_actual_usage,
+        }
+        fingerprint = operation_fingerprint(
+            realm_id=goal.realm_id,
+            entity_type=AUTONOMY_ENTITY,
+            entity_id=goal_id,
+            event_type="goal_governance.action_sink_revalidated",
+            operation=operation,
+            context=context,
+        )
+        duplicate = self._duplicate(goal.realm_id, context.idempotency_key)
+        if duplicate:
+            self._validate_replay(
+                duplicate,
+                entity_type=AUTONOMY_ENTITY,
+                entity_id=goal_id,
+                event_type="goal_governance.action_sink_revalidated",
+                fingerprint=fingerprint,
+            )
+            state = self.get_state(goal_id)
+            reservation = self._require_reservation(state, reservation_id)
+            if (
+                reservation.state != GoalReservationState.APPLIED
+                or reservation.action_class != action_class
+                or reservation.actor_principal != context.actor_principal
+                or reservation.authority_instance_id != context.authority_instance_id
+                or reservation.fencing_token != context.fencing_token
+                or (reservation.request.provider_id or "").strip().lower()
+                != provider_id
+                or reservation.request.requested_placement_target
+                != requested_placement_target
+                or reservation.request.placement_input_digest
+                != placement_input_digest
+                or reservation.request.resolved_target_instance_id
+                != resolved_target_instance_id
+                or reservation.request.placement_decision_digest
+                != placement_decision_digest
+            ):
+                raise GoalGovernanceConflict(
+                    "idempotent dispatch sink validation no longer matches its reservation"
+                )
+            return state, reservation
+        decision: GoalActionDecision | None = None
+
+        def mutate(goal: Goal, state: GoalAutonomyState) -> dict[str, Any]:
+            nonlocal decision
+            reservation = self._require_reservation(state, reservation_id)
+            if reservation.state != GoalReservationState.APPLIED:
+                raise GoalGovernanceConflict(
+                    "dispatch side effects require an applied action reservation"
+                )
+            if reservation.action_class != action_class:
+                raise GoalGovernanceConflict(
+                    "action reservation does not authorize this side-effect class"
+                )
+            if reservation.authority_instance_id != context.authority_instance_id:
+                raise GoalGovernanceConflict(
+                    "action reservation belongs to another authority instance"
+                )
+            if reservation.actor_principal != context.actor_principal:
+                raise GoalGovernanceConflict(
+                    "action reservation belongs to another authenticated actor"
+                )
+            if reservation.fencing_token != context.fencing_token:
+                raise GoalGovernanceConflict(
+                    "action reservation belongs to a stale controller fence"
+                )
+            reserved_provider = (reservation.request.provider_id or "").strip().lower()
+            if not reserved_provider or reserved_provider != provider_id:
+                raise GoalGovernanceConflict(
+                    "action reservation does not bind this execution provider"
+                )
+            if (
+                reservation.request.requested_placement_target
+                != requested_placement_target
+                or reservation.request.placement_input_digest
+                != placement_input_digest
+                or reservation.request.resolved_target_instance_id
+                != resolved_target_instance_id
+                or reservation.request.placement_decision_digest
+                != placement_decision_digest
+            ):
+                raise GoalGovernanceConflict(
+                    "action reservation does not bind this placement result"
+                )
+
+            available = self._state_without_reservation(goal, state, reservation)
+            decision = self._evaluate_action(
+                goal,
+                available,
+                reservation.request,
+                context,
+                reserve=False,
+                exclude_reservation_id=reservation.id,
+            )
+            decision.reservation_id = reservation.id
+            state.recent_decisions = [*state.recent_decisions, decision][-200:]
+            if decision.disposition != GoalActionDisposition.AUTHORIZED:
+                self._release_reservation(
+                    goal,
+                    state,
+                    reservation,
+                    actual_usage=denial_actual_usage or GoalUsage(),
+                    reason=f"side-effect revalidation {decision.disposition.value}",
+                )
+            else:
+                renewed = (
+                    reservation.goal_version != goal.version
+                    or reservation.policy_revision != goal.policy.revision
+                )
+                reservation.goal_version = goal.version
+                reservation.policy_revision = goal.policy.revision
+                if renewed:
+                    reservation.renewal_count += 1
+                    reservation.renewed_at = self._clock()
+            return {
+                "reservation_id": reservation.id,
+                "decision_id": decision.id,
+                "disposition": decision.disposition.value,
+                "goal_version": reservation.goal_version,
+                "policy_revision": reservation.policy_revision,
+                "fencing_token": reservation.fencing_token,
+                "renewal_count": reservation.renewal_count,
+                "provider_id": provider_id,
+                "resolved_target_instance_id": resolved_target_instance_id,
+                "placement_decision_digest": placement_decision_digest,
+            }
+
+        state = self._mutate_state(
+            goal_id,
+            context,
+            "goal_governance.action_sink_revalidated",
+            mutate,
+            operation=operation,
+            operation_fingerprint_value=fingerprint,
+        )
+        reservation = self._require_reservation(state, reservation_id)
+        assert decision is not None
+        if decision.disposition != GoalActionDisposition.AUTHORIZED:
+            raise GoalGovernanceConflict(
+                "canonical governance denied the dispatch side effect: "
+                + "; ".join(decision.reasons)
+            )
+        return state, reservation
+
+    def replace_action_reservation(
+        self,
+        goal_id: str,
+        reservation_id: str,
+        context: GovernanceMutationContext,
+    ) -> tuple[GoalAutonomyState, GoalActionReservation | None, GoalActionDecision]:
+        """Create one bounded fresh hold for a retry of the same durable action."""
+
+        goal = self._require_goal(goal_id)
+        operation = {"reservation_id": reservation_id}
+        fingerprint = operation_fingerprint(
+            realm_id=goal.realm_id,
+            entity_type=AUTONOMY_ENTITY,
+            entity_id=goal_id,
+            event_type="goal_governance.action_reservation_replaced",
+            operation=operation,
+            context=context,
+        )
+        duplicate = self._duplicate(goal.realm_id, context.idempotency_key)
+        if duplicate:
+            self._validate_replay(
+                duplicate,
+                entity_type=AUTONOMY_ENTITY,
+                entity_id=goal_id,
+                event_type="goal_governance.action_reservation_replaced",
+                fingerprint=fingerprint,
+            )
+            state = self.get_state(goal_id)
+            payload = duplicate.get("payload") or {}
+            replacement_id = str(payload.get("replacement_reservation_id") or "")
+            decision_id = str(payload.get("decision_id") or "")
+            replacement = next(
+                (
+                    item
+                    for item in state.action_reservations
+                    if item.id == replacement_id
+                ),
+                None,
+            )
+            serialized = payload.get("decision")
+            decision = (
+                GoalActionDecision.model_validate(serialized)
+                if isinstance(serialized, dict)
+                else next(
+                    (item for item in state.recent_decisions if item.id == decision_id),
+                    None,
+                )
+            )
+            if decision is None:
+                raise GoalGovernanceConflict(
+                    "idempotent retry decision is no longer in the bounded projection"
+                )
+            return state, replacement, decision
+
+        replacement: GoalActionReservation | None = None
+        decision: GoalActionDecision | None = None
+
+        def mutate(goal: Goal, state: GoalAutonomyState) -> dict[str, Any]:
+            nonlocal replacement, decision
+            previous = self._require_reservation(state, reservation_id)
+            if previous.authority_instance_id != context.authority_instance_id:
+                raise GoalGovernanceConflict(
+                    "retry reservation belongs to another authority instance"
+                )
+            if previous.actor_principal != context.actor_principal:
+                raise GoalGovernanceConflict(
+                    "retry reservation belongs to another authenticated actor"
+                )
+            existing = next(
+                (
+                    item
+                    for item in state.action_reservations
+                    if item.replaces_reservation_id == previous.id
+                ),
+                None,
+            )
+            if existing is not None:
+                replacement = existing
+                decision = next(
+                    (
+                        item
+                        for item in state.recent_decisions
+                        if item.id == existing.decision_id
+                    ),
+                    None,
+                )
+                if decision is None:
+                    raise GoalGovernanceConflict(
+                        "replacement reservation is missing its durable decision"
+                    )
+                return {
+                    "decision_id": decision.id,
+                    "replacement_reservation_id": existing.id,
+                    "decision": decision.model_dump(mode="json"),
+                    "replayed": True,
+                }
+            if previous.attempt >= previous.max_attempts:
+                raise GoalGovernanceConflict("action retry limit is exhausted")
+            if previous.state != GoalReservationState.RELEASED:
+                self._release_reservation(
+                    goal,
+                    state,
+                    previous,
+                    actual_usage=GoalUsage(),
+                    reason="superseded by a bounded retry",
+                )
+            decision = self._evaluate_action(goal, state, previous.request, context)
+            state.recent_decisions = [*state.recent_decisions, decision][-200:]
+            if decision.disposition == GoalActionDisposition.AUTHORIZED:
+                replacement = self._require_reservation(
+                    state, decision.reservation_id or ""
+                )
+                replacement.attempt = previous.attempt + 1
+                replacement.max_attempts = previous.max_attempts
+                replacement.replaces_reservation_id = previous.id
+            return {
+                "decision_id": decision.id,
+                "disposition": decision.disposition.value,
+                "reasons": decision.reasons,
+                "previous_reservation_id": previous.id,
+                "replacement_reservation_id": (
+                    replacement.id if replacement is not None else None
+                ),
+                "decision": decision.model_dump(mode="json"),
+            }
+
+        state = self._mutate_state(
+            goal_id,
+            context,
+            "goal_governance.action_reservation_replaced",
+            mutate,
+            operation=operation,
+            operation_fingerprint_value=fingerprint,
+        )
+        assert decision is not None
+        return state, replacement, decision
+
+    def reconcile_action_release(
+        self,
+        goal_id: str,
+        reservation_id: str,
+        context: GovernanceMutationContext,
+        *,
+        actual_usage: GoalUsage,
+        reason: str,
+    ) -> GoalAutonomyState:
+        """Release an exact dispatch hold even after its controller lease ended."""
+
+        def mutate(goal: Goal, state: GoalAutonomyState) -> dict[str, Any]:
+            reservation = self._require_reservation(state, reservation_id)
+            lifecycle_principal = (
+                f"service:goal-dispatch-lifecycle:{reservation.authority_instance_id}"
+            )
+            if context.actor_principal not in {
+                reservation.actor_principal,
+                lifecycle_principal,
+            } and not _is_operator(context.actor_principal):
+                raise GoalGovernanceConflict(
+                    "dispatch release actor is not authorized for this reservation"
+                )
+            if (
+                not _is_operator(context.actor_principal)
+                and context.authority_instance_id != reservation.authority_instance_id
+            ):
+                raise GoalGovernanceConflict(
+                    "dispatch release came from another authority instance"
+                )
+            if (
+                not _is_operator(context.actor_principal)
+                and context.fencing_token != reservation.fencing_token
+            ):
+                raise GoalGovernanceConflict(
+                    "dispatch release has the wrong reservation fencing token"
+                )
+            if reservation.state != GoalReservationState.RELEASED:
+                self._release_reservation(
+                    goal,
+                    state,
+                    reservation,
+                    actual_usage=actual_usage,
+                    reason=reason,
+                )
+            return {
+                "reservation_id": reservation.id,
+                "state": reservation.state.value,
+                "reason": reservation.release_reason,
+                "actual_usage": reservation.actual_usage.model_dump(mode="json"),
+                "terminal_reconciliation": True,
+            }
+
+        return self._mutate_state(
+            goal_id,
+            context,
+            "goal_governance.action_release_reconciled",
+            mutate,
+            operation={
+                "reservation_id": reservation_id,
+                "actual_usage": actual_usage,
+                "reason": reason,
+            },
+            validate_goal_context=False,
+        )
+
     def assign_provider(
         self,
         goal_id: str,
@@ -1504,6 +2003,7 @@ class GoalGovernanceService:
         *,
         operation: Any = None,
         operation_fingerprint_value: str | None = None,
+        validate_goal_context: bool = True,
     ) -> GoalAutonomyState:
         goal = self._require_goal(goal_id)
         fingerprint = operation_fingerprint_value or operation_fingerprint(
@@ -1524,7 +2024,8 @@ class GoalGovernanceService:
                 fingerprint=fingerprint,
             )
             return self.get_state(goal_id)
-        self._validate_goal_context(goal, context)
+        if validate_goal_context:
+            self._validate_goal_context(goal, context)
         state = self.get_state(goal_id)
         if context.expected_version != state.version:
             raise GoalGovernanceConflict(
@@ -1713,6 +2214,7 @@ class GoalGovernanceService:
                 resource_claims=[
                     item.model_copy(deep=True) for item in request.resource_claims
                 ],
+                max_attempts=request.max_attempts,
                 created_at=self._clock(),
             )
             decision.reservation_id = reservation.id
@@ -1765,6 +2267,34 @@ class GoalGovernanceService:
         if reservation is None:
             raise GoalGovernanceConflict("action reservation does not exist")
         return reservation
+
+    def _state_without_reservation(
+        self,
+        goal: Goal,
+        state: GoalAutonomyState,
+        reservation: GoalActionReservation,
+    ) -> GoalAutonomyState:
+        available = state.model_copy(deep=True)
+        accounted = (
+            reservation.actual_usage
+            if any(
+                getattr(reservation.actual_usage, metric) for metric in _USAGE_METRICS
+            )
+            else reservation.reserved_usage
+        )
+        available.usage = _replace_usage(available.usage, accounted, GoalUsage())
+        self._replace_rate_usage(
+            goal,
+            available,
+            reservation.request,
+            accounted,
+            GoalUsage(),
+        )
+        available.action_reservations = [
+            item for item in available.action_reservations if item.id != reservation.id
+        ]
+        self._refresh_resource_reservations(available)
+        return available
 
     def _validate_reservation(
         self,

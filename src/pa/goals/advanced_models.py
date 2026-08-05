@@ -124,6 +124,19 @@ class GoalActionRequest(BaseModel):
         max_length=64,
         pattern=r"^[0-9a-f]{64}$",
     )
+    operation_key: str | None = Field(default=None, min_length=1, max_length=200)
+    requested_placement_target: str | None = Field(
+        default=None, min_length=1, max_length=200
+    )
+    placement_input_digest: str | None = Field(
+        default=None, min_length=64, max_length=64
+    )
+    resolved_target_instance_id: str | None = Field(
+        default=None, min_length=1, max_length=80
+    )
+    placement_decision_digest: str | None = Field(
+        default=None, min_length=64, max_length=64
+    )
     risk: GoalActionRisk = GoalActionRisk.LOW
     reversible: bool = True
     delegated: bool = False
@@ -137,6 +150,7 @@ class GoalActionRequest(BaseModel):
     operator_approved: bool = False
     approval_principal: str | None = None
     approval_interaction_id: str | None = None
+    max_attempts: int = Field(default=1, ge=1, le=20)
 
     @model_validator(mode="after")
     def approval_is_attributable(self) -> GoalActionRequest:
@@ -195,6 +209,11 @@ class GoalActionReservation(BaseModel):
     applied_at: datetime | None = None
     released_at: datetime | None = None
     release_reason: str = ""
+    attempt: int = Field(default=1, ge=1, le=20)
+    max_attempts: int = Field(default=1, ge=1, le=20)
+    replaces_reservation_id: str | None = None
+    renewal_count: int = Field(default=0, ge=0)
+    renewed_at: datetime | None = None
 
 
 class GoalStrategy(BaseModel):
