@@ -10,7 +10,8 @@ from threading import Barrier
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from pa.domain.projection import CardProjection
@@ -18,6 +19,7 @@ from pa.execution.dispatch import (
     DispatchIdempotencyConflict,
     DispatchRecord,
     DispatchStore,
+    DispatchWorker,
     GoalDispatchProvenance,
     goal_admission_validation_proof,
     goal_dispatch_placement_decision_digest,
@@ -82,12 +84,17 @@ from pa.modules.fleet import (
     _reconcile_goal_dispatch_reservations,
     _refresh_queued_dispatch_readiness,
     _release_goal_dispatch_reservation,
+    _release_goal_dispatch_reservation_async,
     _replace_goal_dispatch_reservation,
     _reserve_goal_dispatch_followup,
     _restore_goal_dispatch_execution_identity,
+    _synchronize_target_goal_execution_identity,
     _validate_goal_dispatch_provenance,
     _validate_goal_dispatch_record,
     prompt_dispatch_session,
+)
+from pa.modules.fleet import (
+    router as fleet_router,
 )
 from pa.sync.event_log import EventLog
 from pa.sync.object_store import ObjectStore
@@ -535,6 +542,21 @@ class GoalDispatchProvenanceTests(unittest.TestCase):
                 goal_id="different-goal",
                 goal_provenance=provenance,
             )
+
+    def test_remote_mode_id_is_bounded_before_governance_mutation(self) -> None:
+        app = FastAPI()
+        app.include_router(fleet_router, prefix="/api")
+        with patch("pa.modules.fleet._persist_goal_dispatch_admission_trace") as mutate:
+            with TestClient(app) as client:
+                response = client.post(
+                    "/api/fleet/instances/instance-b/agent/start",
+                    json={"mode_id": "x" * 201},
+                )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json()["detail"][0]["loc"][-1], "mode_id")
+        mutate.assert_not_called()
+        self.assertEqual(RemoteAgentStartBody(mode_id="  code  ").mode_id, "code")
 
     def test_fleet_reconstructs_attachment_envelope_before_binding_receipt(
         self,
@@ -1213,6 +1235,48 @@ class GoalDispatchProvenanceTests(unittest.TestCase):
             self.assertEqual(replayed.goal_provenance.execution_identity, identity)
             self.assertEqual(governance.get_state(goal.id).version, version_after_bind)
 
+    def test_authority_checkpoints_target_identity_before_identity_traffic(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            _goals, _governance, _goal, provenance, _ledger, ctx = self._fixture(
+                Path(tmp)
+            )
+            bound = _bind_goal_dispatch_execution_identity(
+                ctx,
+                provenance,
+                selected_authority="instance-a",
+                session_id="session-a",
+            )
+            assert bound is not None and bound.execution_identity is not None
+            record = self._record(bound, state="starting_session")
+            record.session_id = "session-a"
+            acknowledged = {
+                "resolvable": True,
+                "dispatch_id": record.dispatch_id,
+                "session_id": "session-a",
+                "execution_identity_digest": bound.execution_identity.digest,
+            }
+            request = MagicMock()
+            with patch(
+                "pa.modules.fleet._peer_dispatch_json",
+                AsyncMock(return_value=acknowledged),
+            ) as peer:
+                asyncio.run(
+                    _synchronize_target_goal_execution_identity(
+                        request,
+                        record,
+                        {"goal_provenance": None, "session_id": None},
+                    )
+                )
+
+            sent = peer.await_args.args[2]
+            self.assertEqual(sent["session_id"], "session-a")
+            self.assertEqual(
+                sent["goal_provenance"]["execution_identity"]["digest"],
+                bound.execution_identity.digest,
+            )
+
     def test_restart_rejects_mismatched_partial_execution_identity(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1885,6 +1949,50 @@ class GoalDispatchProvenanceTests(unittest.TestCase):
                     reservation.request.execution_identity,
                     recovered_identity,
                 )
+
+    def test_live_worker_terminal_binds_session_identity_before_release(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            _goals, governance, goal, provenance, ledger, ctx = self._fixture(Path(tmp))
+            record = self._record(provenance, state="queued")
+            ledger.put(record)
+
+            async def fail_after_session_allocation(current: DispatchRecord) -> None:
+                current.session_id = "fast-terminal-session"
+                ledger.transition(
+                    current,
+                    "starting_session",
+                    "Session allocated immediately before provider failure.",
+                )
+                raise RuntimeError("provider failed after session allocation")
+
+            worker = DispatchWorker(
+                ledger,
+                fail_after_session_allocation,
+                terminal=lambda current, outcome: (
+                    _release_goal_dispatch_reservation_async(
+                        ctx,
+                        ledger,
+                        current,
+                        outcome=outcome,
+                        applied=True,
+                    )
+                ),
+            )
+            asyncio.run(worker._execute(record))
+
+            persisted = ledger.get(record.dispatch_id)
+            assert persisted is not None and persisted.goal_provenance is not None
+            identity = persisted.goal_provenance.execution_identity
+            assert identity is not None
+            self.assertEqual(identity.session_id, "fast-terminal-session")
+            self.assertIsNotNone(persisted.goal_provenance.released_at)
+            reservation = next(
+                item
+                for item in governance.get_state(goal.id).action_reservations
+                if item.id == provenance.action_reservation_id
+            )
+            self.assertEqual(reservation.state, GoalReservationState.RELEASED)
+            self.assertEqual(reservation.request.execution_identity, identity)
 
     def test_atomic_admission_begin_deduplicates_authority_and_target_races(
         self,

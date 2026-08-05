@@ -331,7 +331,12 @@ class RemoteAgentStartBody(BaseModel):
     message: str = ""
     provider: str | None = None
     model_id: str | None = None
-    mode_id: str | None = None
+    mode_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=200,
+        pattern=r"\S",
+    )
     collaboration_mode: CollaborationMode | None = None
     collaboration_risk: str = "low"
     collaboration_ambiguous: bool = False
@@ -1137,6 +1142,145 @@ def _target_goal_materialization_binding_valid(
     )
 
 
+def _target_goal_execution_identity_transition(
+    recorded: DispatchRecord,
+    body: DispatchMaterializeBody,
+) -> GoalDispatchProvenance | None:
+    """Accept only the monotonic stage-to-session identity transition."""
+
+    current = recorded.goal_provenance
+    incoming = body.goal_provenance
+    if current is None or incoming is None:
+        if current == incoming:
+            return current
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "goal_dispatch_provenance_mismatch",
+                "recoverable": False,
+            },
+        )
+
+    current_stage = _goal_materialization_stage_provenance(current)
+    incoming_stage = _goal_materialization_stage_provenance(incoming)
+    retry_transition = False
+    if current_stage != incoming_stage:
+        mutable_retry_fields = {
+            "goal_version",
+            "policy_revision",
+            "action_reservation_id",
+            "reservation_attempt",
+            "retry_idempotency_key",
+            "released_at",
+            "release_reason",
+            "execution_identity",
+        }
+        current_base = current.model_dump(
+            mode="python",
+            exclude=mutable_retry_fields,
+        )
+        incoming_base = incoming.model_dump(
+            mode="python",
+            exclude=mutable_retry_fields,
+        )
+        retry_transition = bool(
+            current_base == incoming_base
+            and incoming.action_reservation_id != current.action_reservation_id
+            and incoming.reservation_attempt == current.reservation_attempt + 1
+            and incoming.max_reservation_attempts == current.max_reservation_attempts
+            and incoming.reservation_attempt <= incoming.max_reservation_attempts
+            and incoming.goal_version >= current.goal_version
+            and incoming.policy_revision >= current.policy_revision
+            and incoming.retry_idempotency_key
+            and incoming.released_at is None
+            and incoming.release_reason is None
+        )
+        if not retry_transition:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "goal_dispatch_provenance_mismatch",
+                    "recoverable": False,
+                },
+            )
+        current = incoming.model_copy(
+            update={"execution_identity": current.execution_identity}
+        )
+
+    recorded_session_id = str(recorded.session_id or "").strip()
+    incoming_session_id = str(body.session_id or "").strip()
+    if recorded_session_id:
+        stage_replay_before_authority_session_checkpoint = bool(
+            not incoming_session_id
+            and incoming.execution_identity is None
+            and not retry_transition
+        )
+        if (
+            incoming_session_id != recorded_session_id
+            and not stage_replay_before_authority_session_checkpoint
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "goal_execution_identity_mismatch",
+                    "message": ("Target execution identity refers to another session."),
+                    "recoverable": False,
+                },
+            )
+    elif incoming_session_id:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "goal_execution_identity_mismatch",
+                "message": "Target session was not durably allocated.",
+                "recoverable": False,
+            },
+        )
+
+    current_identity = current.execution_identity
+    incoming_identity = incoming.execution_identity
+    if incoming_identity is not None:
+        if not recorded_session_id:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "goal_execution_identity_mismatch",
+                    "message": "Execution identity requires a durable target session.",
+                    "recoverable": False,
+                },
+            )
+        expected = _expected_goal_dispatch_execution_identity(
+            incoming,
+            recorded_session_id,
+        )
+        if incoming_identity != expected:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "goal_execution_identity_mismatch",
+                    "message": "Target execution identity is not canonical.",
+                    "recoverable": False,
+                },
+            )
+
+    if current_identity == incoming_identity:
+        return current
+    if current_identity is None and incoming_identity is not None:
+        return incoming
+    if current_identity is not None and incoming_identity is None:
+        # The worker deliberately replays the pre-session stage before an
+        # identity-aware resume. Never downgrade the already bound target copy.
+        return current
+    raise HTTPException(
+        status_code=409,
+        detail={
+            "code": "goal_execution_identity_mismatch",
+            "message": "Target execution identity is already bound.",
+            "recoverable": False,
+        },
+    )
+
+
 @router.post("/fleet/dispatch/materialize")
 def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dict:
     """Make an exact authoritative card version resolvable before session creation."""
@@ -1310,14 +1454,10 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
                     "message": "dispatch id is already in use",
                 },
             )
-        if recorded.goal_provenance != body.goal_provenance:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "code": "goal_dispatch_provenance_mismatch",
-                    "recoverable": False,
-                },
-            )
+        target_provenance = _target_goal_execution_identity_transition(recorded, body)
+        if target_provenance != recorded.goal_provenance:
+            recorded.goal_provenance = target_provenance
+            ledger.put(recorded)
         return {
             "dispatch_id": body.dispatch_id,
             "card_id": recorded.card_id,
@@ -1328,7 +1468,28 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
             "progress_protocol_version": recorded.progress_protocol_version,
             "attachment_evidence": recorded.attachment_evidence,
             "materialization_plan": recorded.materialization_plan,
+            "execution_identity_digest": (
+                target_provenance.execution_identity.digest
+                if target_provenance is not None
+                and target_provenance.execution_identity is not None
+                else None
+            ),
         }
+
+    if (
+        body.goal_provenance is not None
+        and body.goal_provenance.execution_identity is not None
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "goal_execution_identity_mismatch",
+                "message": (
+                    "Target execution identity requires an existing materialization stage."
+                ),
+                "recoverable": False,
+            },
+        )
 
     store = request.app.state.ctx.store
     incoming = body.card
@@ -5335,6 +5496,54 @@ def _goal_materialization_stage_provenance(
     return provenance.model_copy(update={"execution_identity": None})
 
 
+async def _synchronize_target_goal_execution_identity(
+    request: Request,
+    record: DispatchRecord,
+    materialize_payload: dict[str, Any],
+) -> None:
+    """Durably bind the target copy before any identity-bearing session traffic."""
+
+    provenance = record.goal_provenance
+    identity = provenance.execution_identity if provenance is not None else None
+    if identity is None:
+        return
+    session_id = str(record.session_id or "").strip()
+    if not session_id or identity.session_id != session_id:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "goal_execution_identity_mismatch",
+                "message": "Authority execution identity is not bound to this session.",
+                "recoverable": False,
+            },
+        )
+    payload = dict(materialize_payload)
+    payload["session_id"] = session_id
+    payload["goal_provenance"] = provenance.model_dump(mode="json")
+    acknowledged = await _peer_dispatch_json(
+        request,
+        record.target_instance_id,
+        payload,
+    )
+    if not (
+        isinstance(acknowledged, dict)
+        and acknowledged.get("resolvable") is True
+        and acknowledged.get("dispatch_id") == record.dispatch_id
+        and acknowledged.get("session_id") == session_id
+        and acknowledged.get("execution_identity_digest") == identity.digest
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "target_execution_identity_unconfirmed",
+                "message": (
+                    "The target did not durably acknowledge the exact execution identity."
+                ),
+                "recoverable": True,
+            },
+        )
+
+
 async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
     """Advance one persisted dispatch through independently auditable stages."""
     request = _dispatch_request(app)
@@ -5575,6 +5784,11 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
         else None
     )
     await _offload_ctx(ctx, "dispatch.record_write", ledger.put, record)
+    await _synchronize_target_goal_execution_identity(
+        request,
+        record,
+        materialize_payload,
+    )
     if await _dispatch_cancelled(ctx, ledger, record):
         return
 
@@ -5641,6 +5855,11 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
     session_id = session.get("id") if isinstance(session, dict) else None
     if not session_id:
         raise HTTPException(status_code=502, detail="Peer did not return a session id")
+    # Persist the target-allocated identity before configuration checks. A
+    # crash from this point forward can then bind governance and resume exactly
+    # this session instead of trying to allocate another one.
+    record.session_id = session_id
+    await _offload_ctx(ctx, "dispatch.record_write", ledger.put, record)
     await _offload_ctx(
         ctx,
         "dispatch.record_write",
@@ -5721,8 +5940,6 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
                 "recoverable": False,
             },
         )
-    record.session_id = session_id
-    await _offload_ctx(ctx, "dispatch.record_write", ledger.put, record)
     record.goal_provenance = await _offload_ctx(
         ctx,
         "goal.dispatch_execution_identity_bind",
@@ -5733,6 +5950,11 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
         session_id=session_id,
     )
     await _offload_ctx(ctx, "dispatch.record_write", ledger.put, record)
+    await _synchronize_target_goal_execution_identity(
+        request,
+        record,
+        materialize_payload,
+    )
     if await _dispatch_cancelled(ctx, ledger, record):
         return
 
@@ -8319,6 +8541,26 @@ async def _release_goal_dispatch_reservation_async(
     outcome: str,
     applied: bool,
 ) -> DispatchRecord:
+    if (
+        record.goal_provenance is not None
+        and record.goal_provenance.released_at is None
+        and not goal_dispatch_execution_identity_valid(record)
+        and (
+            record.session_id is not None
+            or record.goal_provenance.execution_identity is not None
+        )
+    ):
+        # A worker can fail immediately after the target allocates a session.
+        # Bind that durable identity before release, otherwise the released hold
+        # can no longer be repaired into an attributable execution.
+        record = await _offload_ctx(
+            ctx,
+            "goal.dispatch_execution_identity_restore",
+            _restore_goal_dispatch_execution_identity,
+            ctx,
+            ledger,
+            record,
+        )
     return await _offload_ctx(
         ctx,
         "goal.dispatch_reservation_release",
