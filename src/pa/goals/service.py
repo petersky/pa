@@ -223,6 +223,10 @@ class GoalService:
                 raise GoalConflict("evidence expiry must follow its observation")
             evidence.recorded_by_principal = context.actor_principal
             evidence.recorded_by_instance_id = context.authority_instance_id
+            # Producer identity is authoritative runtime provenance, never a
+            # caller-supplied assertion from the evidence body.
+            evidence.producer_role = None
+            evidence.producer_service_id = None
             executor_identities = {
                 item.executor_service_id
                 for item in goal.work_packages
@@ -364,6 +368,16 @@ class GoalService:
         selected = {
             item.id: item for item in goal.evidence if item.id in set(evidence_ids)
         }
+        executor_identities = {
+            package.executor_service_id
+            for package in goal.work_packages
+            if package.executor_service_id
+        }
+        verifier_identities = {
+            package.verifier_service_id
+            for package in goal.work_packages
+            if package.verifier_service_id
+        }
         findings: list[str] = []
         for criterion in goal.criteria:
             mapped = [
@@ -413,12 +427,8 @@ class GoalService:
             if criterion.require_independent_verifier and not any(
                 item.producer_role == GoalActorRole.VERIFIER
                 and item.producer_service_id
-                and item.producer_service_id
-                not in {
-                    package.executor_service_id
-                    for package in goal.work_packages
-                    if package.executor_service_id
-                }
+                and item.producer_service_id in verifier_identities
+                and item.producer_service_id not in executor_identities
                 for item in mapped
             ):
                 findings.append(

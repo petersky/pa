@@ -18,6 +18,7 @@ from pa.goals.models import (
     EvidenceKind,
     Goal,
     GoalActorRole,
+    GoalAuditCreate,
     GoalCreate,
     GoalCriterion,
     GoalEvidence,
@@ -468,6 +469,46 @@ class GoalSupervisorTests(unittest.TestCase):
                         expected_version=verified.version,
                         policy_revision=verified.policy.revision,
                         fencing_token=verified.lease.fencing_token,
+                    ),
+                )
+            spoofed = service.add_evidence(
+                verified.id,
+                GoalEvidenceCreate(
+                    evidence=GoalEvidence(
+                        criterion_ids=[criterion.id],
+                        kind=EvidenceKind.AUDIT,
+                        summary="A supervisor cannot assert verifier provenance",
+                        producer_role=GoalActorRole.VERIFIER,
+                        producer_service_id=verifier.verifier_service_id,
+                    )
+                ),
+                GoalMutationContext(
+                    actor_principal=supervisor.service_principal,
+                    authority_instance_id="instance-a",
+                    idempotency_key="spoofed-verifier-fields",
+                    expected_version=verified.version,
+                    policy_revision=verified.policy.revision,
+                    fencing_token=verified.lease.fencing_token,
+                ),
+            )
+            spoofed_evidence = spoofed.evidence[-1]
+            self.assertIsNone(spoofed_evidence.producer_role)
+            self.assertIsNone(spoofed_evidence.producer_service_id)
+            with self.assertRaisesRegex(GoalConflict, "independent verifier evidence"):
+                service.audit(
+                    spoofed.id,
+                    GoalAuditCreate(
+                        criterion_verdicts={criterion.id: CriterionVerdict.SATISFIED},
+                        evidence_ids=[spoofed_evidence.id],
+                        explanation="The forged body must not pass verification",
+                    ),
+                    GoalMutationContext(
+                        actor_principal="agent:independent-auditor",
+                        authority_instance_id="instance-a",
+                        idempotency_key="reject-spoofed-verifier-fields",
+                        expected_version=spoofed.version,
+                        policy_revision=spoofed.policy.revision,
+                        fencing_token=spoofed.lease.fencing_token,
                     ),
                 )
 
