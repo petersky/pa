@@ -409,10 +409,18 @@ class GoalGovernanceTests(unittest.TestCase):
                 proposal_id=goal.proposals[-1].id,
                 notification_id="provider-resume-notification",
             )
+            unrelated = GoalOperatorInteraction(
+                proposal_id=goal.proposals[-1].id,
+                notification_id="unrelated-answered-notification",
+                state=GoalInteractionState.ANSWERED,
+                response_summary="An earlier unrelated answer.",
+                response_principal="user:operator",
+                resolved_at=now,
+            )
 
             def checkpoint(
                 current: Goal,
-                current_interaction: GoalOperatorInteraction,
+                current_interactions: list[GoalOperatorInteraction],
                 key: str,
                 *,
                 fence: int | None = None,
@@ -424,7 +432,7 @@ class GoalGovernanceTests(unittest.TestCase):
                         evidence=current.evidence,
                         proposals=current.proposals,
                         work_packages=current.work_packages,
-                        operator_interactions=[current_interaction],
+                        operator_interactions=current_interactions,
                         supervision=current.supervision,
                         linked_card_ids=current.linked_card_ids,
                         linked_dispatch_ids=current.linked_dispatch_ids,
@@ -445,7 +453,11 @@ class GoalGovernanceTests(unittest.TestCase):
                     ),
                 )
 
-            goal = checkpoint(goal, interaction, "provider-resume-pending")
+            goal = checkpoint(
+                goal,
+                [interaction, unrelated],
+                "provider-resume-pending",
+            )
             goal = goals.acquire_lease(
                 goal.id,
                 GoalMutationContext(
@@ -482,6 +494,26 @@ class GoalGovernanceTests(unittest.TestCase):
                     fence=goal.lease.fencing_token,
                 ),
             )
+            with self.assertRaisesRegex(
+                GoalGovernanceConflict, "durable pending operator interactions"
+            ):
+                governance.ingest_provider_progress(
+                    goal.id,
+                    ProviderGoalProgress(
+                        run_id=run.id,
+                        state=ProviderRunState.WAITING_OPERATOR,
+                        summary="Tried to wait on an already answered interaction",
+                        cumulative_usage=GoalUsage(actions=1, tokens=25),
+                        interaction_refs=[unrelated.id],
+                    ),
+                    self._ctx(
+                        state.version,
+                        "provider-preexisting-answer",
+                        actor=run.executor_principal,
+                        goal_version=goal.version,
+                        fence=run.fencing_token,
+                    ),
+                )
             state = governance.ingest_provider_progress(
                 goal.id,
                 ProviderGoalProgress(
@@ -499,8 +531,31 @@ class GoalGovernanceTests(unittest.TestCase):
                     fence=run.fencing_token,
                 ),
             )
+            waiting = next(item for item in state.provider_runs if item.id == run.id)
+            self.assertEqual(waiting.wait_generation, 1)
+            self.assertEqual(waiting.waiting_interaction_refs, [interaction.id])
             with self.assertRaisesRegex(
-                GoalGovernanceConflict, "fresh durable answered operator interaction"
+                GoalGovernanceConflict, "bound to its wait generation"
+            ):
+                governance.ingest_provider_progress(
+                    goal.id,
+                    ProviderGoalProgress(
+                        run_id=run.id,
+                        state=ProviderRunState.RUNNING,
+                        summary="Provider cited an unrelated earlier answer",
+                        cumulative_usage=GoalUsage(actions=1, tokens=25),
+                        interaction_refs=[unrelated.id],
+                    ),
+                    self._ctx(
+                        state.version,
+                        "provider-unrelated-resume",
+                        actor=run.executor_principal,
+                        goal_version=goal.version,
+                        fence=run.fencing_token,
+                    ),
+                )
+            with self.assertRaisesRegex(
+                GoalGovernanceConflict, "durable answer for its wait generation"
             ):
                 governance.ingest_provider_progress(
                     goal.id,
@@ -527,12 +582,12 @@ class GoalGovernanceTests(unittest.TestCase):
                     "state": GoalInteractionState.ANSWERED,
                     "response_summary": "Operator approved a bounded resume.",
                     "response_principal": "user:operator",
-                    "resolved_at": now + timedelta(seconds=1),
+                    "resolved_at": now,
                 }
             )
             goal = checkpoint(
                 goal,
-                answered,
+                [answered, unrelated],
                 "provider-resume-answered",
                 fence=goal.lease.fencing_token,
             )

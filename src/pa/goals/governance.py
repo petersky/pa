@@ -941,27 +941,50 @@ class GoalGovernanceService:
                 raise GoalGovernanceConflict(
                     f"invalid provider transition: {run.state.value} -> {progress.state.value}"
                 )
+            entering_operator_wait = (
+                progress.state == ProviderRunState.WAITING_OPERATOR
+                and run.state != ProviderRunState.WAITING_OPERATOR
+            )
+            requested_interactions = list(dict.fromkeys(progress.interaction_refs))
+            interactions = {item.id: item for item in goal.operator_interactions}
+            if entering_operator_wait and (
+                not requested_interactions
+                or any(
+                    reference not in interactions
+                    or interactions[reference].state != GoalInteractionState.PENDING
+                    for reference in requested_interactions
+                )
+            ):
+                raise GoalGovernanceConflict(
+                    "provider wait requires durable pending operator interactions"
+                )
             if (
                 run.state == ProviderRunState.WAITING_OPERATOR
                 and progress.state == ProviderRunState.RUNNING
             ):
-                referenced = set(progress.interaction_refs)
+                if (
+                    not run.waiting_interaction_refs
+                    or requested_interactions != run.waiting_interaction_refs
+                ):
+                    raise GoalGovernanceConflict(
+                        "provider resume must cite the interactions bound to its wait generation"
+                    )
                 answered = next(
                     (
                         interaction
-                        for interaction in goal.operator_interactions
-                        if interaction.id in referenced
-                        and interaction.state == GoalInteractionState.ANSWERED
+                        for reference in run.waiting_interaction_refs
+                        if reference in interactions
+                        for interaction in [interactions[reference]]
+                        if interaction.state == GoalInteractionState.ANSWERED
                         and interaction.response_principal
                         and interaction.response_summary
                         and interaction.resolved_at is not None
-                        and interaction.resolved_at >= run.updated_at
                     ),
                     None,
                 )
                 if answered is None:
                     raise GoalGovernanceConflict(
-                        "provider resume requires a fresh durable answered operator interaction"
+                        "provider resume requires a durable answer for its wait generation"
                     )
             for metric in _USAGE_METRICS:
                 if getattr(progress.cumulative_usage, metric) < getattr(
@@ -1001,6 +1024,9 @@ class GoalGovernanceService:
                 )
             )
             run.state = progress.state
+            if entering_operator_wait:
+                run.wait_generation += 1
+                run.waiting_interaction_refs = requested_interactions
             run.summary = progress.summary
             run.usage = progress.cumulative_usage
             run.blocker_refs = progress.blocker_refs[-100:]

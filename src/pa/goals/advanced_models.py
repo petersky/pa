@@ -280,6 +280,8 @@ class ProviderGoalRun(BaseModel):
     usage: GoalUsage = Field(default_factory=GoalUsage)
     blocker_refs: list[str] = Field(default_factory=list)
     interaction_refs: list[str] = Field(default_factory=list)
+    wait_generation: int = Field(default=0, ge=0)
+    waiting_interaction_refs: list[str] = Field(default_factory=list)
     artifact_refs: list[str] = Field(default_factory=list)
     evidence_claims: list[dict[str, Any]] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
