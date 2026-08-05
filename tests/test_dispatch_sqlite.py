@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sqlite3
 import statistics
+import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -14,6 +17,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from pa.acp.mcp_config import probe_pa_mcp_stdio
 from pa.config import Settings
 from pa.core.kernel import Kernel
 from pa.core.writer_lock import DataDirWriterLock
@@ -107,6 +111,17 @@ def _write_legacy(path: Path, records: list[DispatchRecord]) -> bytes:
     ).encode()
     path.write_bytes(raw)
     return raw
+
+
+def _content_state(paths: list[Path]) -> dict[str, tuple[int, str]]:
+    return {
+        path.name: (
+            path.stat().st_size,
+            hashlib.sha256(path.read_bytes()).hexdigest(),
+        )
+        for path in paths
+        if path.exists()
+    }
 
 
 def test_migration_reconciles_counts_keeps_backup_and_exports_all_receipts() -> None:
@@ -311,18 +326,8 @@ def test_read_only_auxiliary_kernel_boot_does_not_touch_or_wait_on_writer_wal() 
             Path(str(writer.db_path) + "-shm"),
         ]
 
-        def content_state() -> dict[str, tuple[int, str]]:
-            return {
-                path.name: (
-                    path.stat().st_size,
-                    hashlib.sha256(path.read_bytes()).hexdigest(),
-                )
-                for path in paths
-                if path.exists()
-            }
-
         writer._conn.execute("BEGIN IMMEDIATE")
-        before = content_state()
+        before = _content_state(paths)
         try:
             facade_started = time.perf_counter()
             facade = DispatchStore(root, read_only=True)
@@ -346,8 +351,12 @@ def test_read_only_auxiliary_kernel_boot_does_not_touch_or_wait_on_writer_wal() 
             elapsed = time.perf_counter() - started
             auxiliary = kernel.ctx.require_service("dispatch_store")
             assert auxiliary.read_only is True
-            assert auxiliary.get("dispatch-1") is not None
-            assert auxiliary.storage_metrics()["mode"] == "read_only"
+            assert auxiliary.deferred_read_only is True
+            assert auxiliary._conn is None
+            assert auxiliary.storage_metrics()["mode"] == "deferred_read_only"
+            assert auxiliary.storage_metrics()["rows"]["available"] is False
+            with pytest.raises(DispatchStoreReadOnlyError, match="running PA server API"):
+                auxiliary.get("dispatch-1")
             with pytest.raises(DispatchStoreReadOnlyError):
                 auxiliary.put(_record(2))
             with pytest.raises(DispatchStoreReadOnlyError):
@@ -359,7 +368,72 @@ def test_read_only_auxiliary_kernel_boot_does_not_touch_or_wait_on_writer_wal() 
             # timeout here. Module discovery itself is comparatively expensive,
             # so the direct facade assertion above carries the tight p99 bound.
             assert elapsed < 25.0
-            assert content_state() == before
+            assert _content_state(paths) == before
+        finally:
+            writer._conn.rollback()
+            writer.close()
+            writer_lock.release()
+
+
+def test_auxiliary_commands_never_open_or_touch_live_dispatch_wal() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        writer_lock = DataDirWriterLock(root)
+        writer_lock.acquire()
+        writer = DispatchStore(root)
+        writer.put(_record(1))
+        paths = [
+            writer.db_path,
+            Path(str(writer.db_path) + "-wal"),
+            Path(str(writer.db_path) + "-shm"),
+        ]
+        environment = {
+            **os.environ,
+            "PA_DATA_DIR": str(root),
+            "PA_INSTANCE_ID": "auxiliary-subprocess",
+            "PA_INSTANCE_NAME": "Auxiliary subprocess",
+            "PA_INSTANCE_URL": "http://127.0.0.1:1",
+            "PA_AGENT_ENABLED": "false",
+            "PA_PEERS": "[]",
+        }
+        settings = Settings(
+            data_dir=root,
+            instance_id="auxiliary-subprocess",
+            instance_name="Auxiliary subprocess",
+            instance_url="http://127.0.0.1:1",
+            agent_enabled=False,
+            peers=[],
+        )
+
+        writer._conn.execute("BEGIN IMMEDIATE")
+        try:
+            for command in (
+                ("status",),
+                ("plugins", "list"),
+                ("doctor", "--json"),
+            ):
+                before = _content_state(paths)
+                completed = subprocess.run(
+                    [sys.executable, "-m", "pa", *command],
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    check=False,
+                )
+                if command[0] != "doctor":
+                    assert completed.returncode == 0, completed.stderr
+                assert _content_state(paths) == before, command
+
+            before = _content_state(paths)
+            handshake = probe_pa_mcp_stdio(
+                settings,
+                timeout=45.0,
+                owner_environment=environment,
+            )
+            assert handshake["state"] == "connected"
+            assert handshake["tool_count"] > 0
+            assert _content_state(paths) == before
         finally:
             writer._conn.rollback()
             writer.close()
@@ -386,8 +460,10 @@ def test_read_only_facade_promotes_only_after_writer_ownership_and_migrates() ->
         root = Path(tmp)
         record = _record(1)
         source = _write_legacy(root / "dispatch_mutations.json", [record])
-        store = DispatchStore(root, read_only=True)
+        store = DispatchStore(root, read_only=True, deferred_read_only=True)
         assert store.read_only is True
+        assert store.deferred_read_only is True
+        assert store._conn is None
         assert not store.db_path.exists()
 
         writer_lock = DataDirWriterLock(root)
@@ -395,6 +471,7 @@ def test_read_only_facade_promotes_only_after_writer_ownership_and_migrates() ->
         try:
             store.promote_writer()
             assert store.read_only is False
+            assert store.deferred_read_only is False
             assert store.get(record.dispatch_id).model_dump(
                 mode="json"
             ) == record.model_dump(mode="json")
@@ -402,6 +479,39 @@ def test_read_only_facade_promotes_only_after_writer_ownership_and_migrates() ->
             assert store.backup_path.read_bytes() == source
             store.put(_record(2))
             assert store.get("dispatch-2") is not None
+        finally:
+            store.close()
+            writer_lock.release()
+
+
+def test_failed_deferred_promotion_rolls_back_mode_and_can_retry() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        record = _record(1)
+        _write_legacy(root / "dispatch_mutations.json", [record])
+        store = DispatchStore(root, read_only=True, deferred_read_only=True)
+
+        def fail(boundary: str) -> None:
+            if boundary == "migration_before_commit":
+                raise RuntimeError("promotion interrupted")
+
+        writer_lock = DataDirWriterLock(root)
+        writer_lock.acquire()
+        try:
+            store._fault_injector = fail
+            with pytest.raises(RuntimeError, match="promotion interrupted"):
+                store.promote_writer()
+            assert store.read_only is True
+            assert store.deferred_read_only is True
+            assert store._conn is None
+            with pytest.raises(DispatchStoreReadOnlyError, match="running PA server API"):
+                store.get(record.dispatch_id)
+
+            store._fault_injector = None
+            store.promote_writer()
+            assert store.read_only is False
+            assert store.deferred_read_only is False
+            assert store.get(record.dispatch_id) is not None
         finally:
             store.close()
             writer_lock.release()

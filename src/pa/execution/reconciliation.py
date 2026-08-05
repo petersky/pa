@@ -162,7 +162,14 @@ class CompletionReconciler:
             )
             await self._advance(record)
             self._wake.set()
-            return record
+            canonical = await self._offload(
+                "reconciliation.dispatch_read",
+                self.dispatch_store.get,
+                dispatch_id,
+            )
+            if not canonical:
+                raise KeyError(dispatch_id)
+            return canonical
 
     async def handle_completion(self, session_id: str, payload: dict[str, Any]) -> bool:
         """Route one turn completion to delivery or one reconciliation prompt."""

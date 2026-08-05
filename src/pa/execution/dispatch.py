@@ -473,7 +473,10 @@ class DispatchStore:
         *,
         fault_injector: Callable[[str], None] | None = None,
         read_only: bool = False,
+        deferred_read_only: bool = False,
     ) -> None:
+        if deferred_read_only and not read_only:
+            raise ValueError("deferred dispatch storage must be read-only")
         self.path = data_dir / "dispatch_mutations.json"
         self.db_path = data_dir / "dispatch_mutations.db"
         self.backup_path = self.path.with_name(
@@ -502,21 +505,31 @@ class DispatchStore:
         self._retention_actions = 0
         self._queued_writers = 0
         self._read_only = bool(read_only)
+        self._deferred_read_only = bool(deferred_read_only)
         self._conn: sqlite3.Connection | None = None
-        if self._read_only:
+        if self._read_only and not self._deferred_read_only:
             self._open_read_only()
-        else:
+        elif not self._read_only:
             self._open_writer()
         try:
-            metrics = json.loads(self.metrics_path.read_text())
+            metrics = (
+                {}
+                if self._deferred_read_only
+                else json.loads(self.metrics_path.read_text())
+            )
             self._queue_rejections = max(0, int(metrics.get("rejections") or 0))
         except (OSError, ValueError, TypeError):
             self._queue_rejections = 0
-        self._load()
+        if not self._deferred_read_only:
+            self._load()
 
     @property
     def read_only(self) -> bool:
         return self._read_only
+
+    @property
+    def deferred_read_only(self) -> bool:
+        return self._deferred_read_only
 
     def _open_writer(self) -> None:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -559,11 +572,28 @@ class DispatchStore:
         with self._lock:
             if not self._read_only:
                 return
+            was_deferred = self._deferred_read_only
             if self._conn is not None:
                 self._conn.close()
             self._conn = None
-            self._open_writer()
-            self._load()
+            try:
+                self._open_writer()
+                self._load()
+            except BaseException:
+                if self._conn is not None:
+                    self._conn.close()
+                self._conn = None
+                self._read_only = True
+                self._deferred_read_only = was_deferred
+                raise
+            self._deferred_read_only = False
+
+    def _require_readable(self) -> None:
+        if self._deferred_read_only:
+            raise DispatchStoreReadOnlyError(
+                "dispatch reads are deferred in this auxiliary process; "
+                "use the running PA server API"
+            )
 
     def _require_writer(self) -> sqlite3.Connection:
         if self._read_only or self._conn is None:
@@ -1574,6 +1604,7 @@ class DispatchStore:
         return self._snapshot(self._records[record.dispatch_id])
 
     def get(self, dispatch_id: str) -> DispatchRecord | None:
+        self._require_readable()
         self._yield_to_index_writer()
         with self._index_lock:
             record = self._records.get(dispatch_id)
@@ -1586,6 +1617,7 @@ class DispatchStore:
         realm_id: str | None = None,
         limit: int = 100,
     ) -> list[DispatchRecord]:
+        self._require_readable()
         self._yield_to_index_writer()
         with self._index_lock:
             self._refresh_queue_positions_locked()
@@ -1609,6 +1641,7 @@ class DispatchStore:
         self, card_ids: set[str], *, realm_id: str | None = None
     ) -> dict[str, DispatchRecord]:
         """Return one useful dispatch per requested card without copying history."""
+        self._require_readable()
         if not card_ids:
             return {}
         self._yield_to_index_writer()
@@ -1625,6 +1658,7 @@ class DispatchStore:
 
     def history_counts(self, card_ids: set[str], *, realm_id: str) -> dict[str, int]:
         """Return maintained dispatch-history counts for bounded card ids."""
+        self._require_readable()
         self._yield_to_index_writer()
         with self._index_lock:
             return {
@@ -1636,6 +1670,7 @@ class DispatchStore:
         self, session_ids: set[str], *, realm_id: str
     ) -> dict[str, DispatchRecord]:
         """Return the active-preferred newest dispatch for each requested session."""
+        self._require_readable()
         if not session_ids:
             return {}
         self._yield_to_index_writer()
@@ -1650,6 +1685,7 @@ class DispatchStore:
 
     def current_card_ids(self, *, realm_id: str, limit: int) -> list[str]:
         """Return bounded card ids with current dispatch work in one realm."""
+        self._require_readable()
         self._yield_to_index_writer()
         with self._index_lock:
             records = [
@@ -1665,6 +1701,7 @@ class DispatchStore:
     def capacity_snapshot(self, target_instance_id: str) -> dict[str, Any]:
         """Return indexed authority reservations and waiting work for one target."""
 
+        self._require_readable()
         if not self._read_only:
             self.expire_capacity_reservations(target_instance_id=target_instance_id)
         self._yield_to_index_writer()
@@ -1712,6 +1749,7 @@ class DispatchStore:
             }
 
     def by_session(self, session_id: str) -> DispatchRecord | None:
+        self._require_readable()
         self._yield_to_index_writer()
         with self._index_lock:
             record = self._latest_session_records_global.get(session_id)
@@ -1720,6 +1758,7 @@ class DispatchStore:
     def by_idempotency(
         self, target_instance_id: str, idempotency_key: str
     ) -> DispatchRecord | None:
+        self._require_readable()
         self._yield_to_index_writer()
         with self._index_lock:
             record = max(
@@ -1737,6 +1776,7 @@ class DispatchStore:
     def by_authority_idempotency(
         self, authority_instance_id: str, idempotency_key: str
     ) -> DispatchRecord | None:
+        self._require_readable()
         self._yield_to_index_writer()
         with self._index_lock:
             record = max(
@@ -2542,6 +2582,7 @@ class DispatchStore:
             DispatchProgressEventV1 | DispatchProgressHeartbeatV1,
         ]
     ]:
+        self._require_readable()
         pending: list[
             tuple[
                 DispatchRecord,
@@ -2652,6 +2693,7 @@ class DispatchStore:
     def build_final_report(
         self, dispatch_id: str, result: dict[str, Any]
     ) -> CompletionReportV1 | None:
+        self._require_readable()
         with self._lock:
             record = self._records.get(dispatch_id)
             if not record:
@@ -2880,6 +2922,7 @@ class DispatchStore:
         return expired
 
     def waiting(self) -> list[DispatchRecord]:
+        self._require_readable()
         with self._lock:
             self._refresh_queue_positions_locked()
             waiting = [
@@ -3030,6 +3073,7 @@ class DispatchStore:
             )
 
     def queue_snapshot(self) -> dict[str, Any]:
+        self._require_readable()
         waiting = self.waiting()
         now = datetime.now(UTC)
         blocked = sum(item.state == "blocked" for item in waiting)
@@ -3087,45 +3131,55 @@ class DispatchStore:
     def storage_metrics(self) -> dict[str, Any]:
         """Expose bounded ledger health without deserializing historical payloads."""
         with self._lock:
-            try:
+            if self._deferred_read_only:
                 counts = {
-                    "dispatches": self._conn.execute(
-                        "SELECT COUNT(*) FROM dispatches"
-                    ).fetchone()[0],
-                    "progress_events": self._conn.execute(
-                        "SELECT COUNT(*) FROM dispatch_progress_events"
-                    ).fetchone()[0],
-                    "heartbeats": self._conn.execute(
-                        "SELECT COUNT(*) FROM dispatch_heartbeats"
-                    ).fetchone()[0],
-                    "receipts": self._conn.execute(
-                        "SELECT COUNT(*) FROM dispatch_receipts"
-                    ).fetchone()[0],
-                    "final_reports": sum(
-                        record.final_report is not None
-                        for record in self._records.values()
-                    ),
+                    "available": False,
+                    "dispatches": None,
+                    "progress_events": None,
+                    "heartbeats": None,
+                    "receipts": None,
+                    "final_reports": None,
                 }
-            except (AttributeError, sqlite3.OperationalError):
-                counts = {
-                    "dispatches": len(self._records),
-                    "progress_events": sum(
-                        len(record.progress_events)
-                        for record in self._records.values()
-                    ),
-                    "heartbeats": sum(
-                        record.progress_heartbeat is not None
-                        for record in self._records.values()
-                    ),
-                    "receipts": sum(
-                        len(record.progress_seen_keys)
-                        for record in self._records.values()
-                    ),
-                    "final_reports": sum(
-                        record.final_report is not None
-                        for record in self._records.values()
-                    ),
-                }
+            else:
+                try:
+                    counts = {
+                        "dispatches": self._conn.execute(
+                            "SELECT COUNT(*) FROM dispatches"
+                        ).fetchone()[0],
+                        "progress_events": self._conn.execute(
+                            "SELECT COUNT(*) FROM dispatch_progress_events"
+                        ).fetchone()[0],
+                        "heartbeats": self._conn.execute(
+                            "SELECT COUNT(*) FROM dispatch_heartbeats"
+                        ).fetchone()[0],
+                        "receipts": self._conn.execute(
+                            "SELECT COUNT(*) FROM dispatch_receipts"
+                        ).fetchone()[0],
+                        "final_reports": sum(
+                            record.final_report is not None
+                            for record in self._records.values()
+                        ),
+                    }
+                except (AttributeError, sqlite3.OperationalError):
+                    counts = {
+                        "dispatches": len(self._records),
+                        "progress_events": sum(
+                            len(record.progress_events)
+                            for record in self._records.values()
+                        ),
+                        "heartbeats": sum(
+                            record.progress_heartbeat is not None
+                            for record in self._records.values()
+                        ),
+                        "receipts": sum(
+                            len(record.progress_seen_keys)
+                            for record in self._records.values()
+                        ),
+                        "final_reports": sum(
+                            record.final_report is not None
+                            for record in self._records.values()
+                        ),
+                    }
             sizes = {}
             for label, path in (
                 ("database", self.db_path),
@@ -3138,11 +3192,23 @@ class DispatchStore:
                     sizes[label] = path.stat().st_size
                 except OSError:
                     sizes[label] = 0
-            migration = self._migration_meta() or {"state": "unknown"}
+            migration = (
+                {"state": "deferred", "available": False}
+                if self._deferred_read_only
+                else self._migration_meta() or {"state": "unknown"}
+            )
             return {
                 "schema_version": self.SCHEMA_VERSION,
-                "mode": "read_only" if self._read_only else "writer",
-                "journal_mode": "existing" if self._read_only else "wal",
+                "mode": (
+                    "deferred_read_only"
+                    if self._deferred_read_only
+                    else "read_only" if self._read_only else "writer"
+                ),
+                "journal_mode": (
+                    "unopened"
+                    if self._deferred_read_only
+                    else "existing" if self._read_only else "wal"
+                ),
                 "synchronous": "unchanged" if self._read_only else "normal",
                 "store_bytes": sum(
                     sizes[key] for key in ("database", "wal", "shm")
@@ -3349,7 +3415,7 @@ class DispatchStore:
             if record.state not in RECOVERABLE_DISPATCH_STATES:
                 continue
             if not record.request_payload:
-                self.fail(
+                record = self.fail(
                     record,
                     "This legacy dispatch was interrupted before durable job details were recorded; retry it from Fleet Operations.",
                     code="orphaned_legacy_dispatch",
@@ -3360,7 +3426,7 @@ class DispatchStore:
             record.cancel_requested = False
             record.last_error = None
             record.error_code = None
-            self.transition(
+            record = self.transition(
                 record,
                 "queued",
                 "Recovered interrupted dispatch after restart.",
@@ -3872,12 +3938,11 @@ class CompletionOutbox:
                 }
             )
             record.lifecycle_inconsistencies = record.lifecycle_inconsistencies[-50:]
-            self.store.put(record)
-            return record
+            return self.store.put(record)
         record.completion_delivery_class = "operator_retry"
         record.completion_next_retry_at = None
         record.reconciliation_condition = "operator_retry"
-        self.store.transition(
+        record = self.store.transition(
             record,
             "completion_pending",
             "Operator re-armed preserved completion evidence for delivery.",
