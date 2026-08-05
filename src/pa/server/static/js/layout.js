@@ -258,10 +258,181 @@
     region.scrollBy({ top: delta, behavior: "auto" });
   });
 
+  var PROJECT_DISCLOSURE_STATE = "pa:projects:disclosures:";
+  var PROJECT_DISCLOSURE_RETURN = "pa:projects:return-focus";
+
+  function projectDisclosureKey(label) {
+    return (label || "")
+      .replace(/\s*\(\d+\)\s*$/, "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || "section";
+  }
+
+  function projectDisclosureState(workspace) {
+    var key = PROJECT_DISCLOSURE_STATE +
+      (workspace.getAttribute("data-projects-disclosure-scope") || "projects");
+    var state = {};
+    try { state = JSON.parse(sessionStorage.getItem(key) || "{}"); } catch (_error) {}
+    return { key: key, value: state && typeof state === "object" ? state : {} };
+  }
+
+  function storeProjectDisclosure(workspace, key, open) {
+    var stored = projectDisclosureState(workspace);
+    stored.value[key] = !!open;
+    try { sessionStorage.setItem(stored.key, JSON.stringify(stored.value)); } catch (_error) {}
+  }
+
+  function setProjectDisclosure(toggle, panel, open, focusToggle) {
+    toggle.setAttribute("aria-expanded", open ? "true" : "false");
+    panel.hidden = !open;
+    var workspace = toggle.closest(".projects-workspace");
+    if (workspace) {
+      storeProjectDisclosure(workspace, toggle.dataset.projectDisclosureKey, open);
+    }
+    if (focusToggle) toggle.focus({ preventScroll: true });
+  }
+
+  function transformProjectDisclosures(root) {
+    var scope = root || document;
+    scope.querySelectorAll(".projects-workspace").forEach(function (workspace) {
+      var stored = projectDisclosureState(workspace).value;
+      var used = {};
+      workspace.querySelectorAll("details").forEach(function (details) {
+        if (details.dataset.projectDisclosureReady) return;
+        var summary = details.querySelector(":scope > summary");
+        if (!summary) return;
+        var label = summary.textContent.trim();
+        var base = projectDisclosureKey(label);
+        var occurrence = used[base] || 0;
+        used[base] = occurrence + 1;
+        var key = occurrence ? base + "-" + occurrence : base;
+        var originalId = details.id;
+        var wrapper = document.createElement("div");
+        wrapper.className = (details.className ? details.className + " " : "") +
+          "project-disclosure";
+        if (originalId) wrapper.id = originalId;
+
+        var toggle = document.createElement("button");
+        toggle.type = "button";
+        toggle.className = (summary.className ? summary.className + " " : "") +
+          "project-disclosure-toggle";
+        toggle.textContent = label;
+        toggle.dataset.projectDisclosureKey = key;
+
+        var panel = document.createElement("div");
+        panel.className = "project-disclosure-panel";
+        panel.id = "project-disclosure-" + key + "-" + occurrence;
+        panel.dataset.projectDisclosurePanel = key;
+        toggle.setAttribute("aria-controls", panel.id);
+
+        Array.from(details.childNodes).forEach(function (child) {
+          if (child !== summary) panel.appendChild(child);
+        });
+        wrapper.appendChild(toggle);
+        wrapper.appendChild(panel);
+        details.replaceWith(wrapper);
+
+        var initialOpen = Object.prototype.hasOwnProperty.call(stored, key)
+          ? !!stored[key]
+          : details.open;
+        toggle.setAttribute("aria-expanded", initialOpen ? "true" : "false");
+        panel.hidden = !initialOpen;
+
+        toggle.addEventListener("click", function () {
+          setProjectDisclosure(
+            toggle,
+            panel,
+            toggle.getAttribute("aria-expanded") !== "true",
+            false
+          );
+        });
+        panel.addEventListener("keydown", function (event) {
+          if (event.key !== "Escape") return;
+          event.preventDefault();
+          var form = event.target.closest("form");
+          if (form) form.reset();
+          setProjectDisclosure(toggle, panel, false, true);
+        });
+
+        panel.querySelectorAll("form").forEach(function (form) {
+          form.dataset.projectDisclosureForm = key;
+          if (form.querySelector("[data-project-disclosure-close]")) return;
+          var cancel = document.createElement("button");
+          cancel.type = "button";
+          cancel.className = "ghost";
+          cancel.textContent = "Cancel";
+          cancel.dataset.projectDisclosureClose = "";
+          cancel.addEventListener("click", function () {
+            form.reset();
+            setProjectDisclosure(toggle, panel, false, true);
+          });
+          form.appendChild(cancel);
+        });
+      });
+    });
+  }
+
+  function rememberProjectDisclosureSubmit(event) {
+    var form = event.target.closest &&
+      event.target.closest("form[data-project-disclosure-form]");
+    if (!form) return;
+    try {
+      sessionStorage.setItem(PROJECT_DISCLOSURE_RETURN, JSON.stringify({
+        key: form.dataset.projectDisclosureForm
+      }));
+    } catch (_error) {}
+  }
+
+  function restoreProjectDisclosureFocus(root) {
+    var pending = null;
+    try {
+      pending = JSON.parse(sessionStorage.getItem(PROJECT_DISCLOSURE_RETURN) || "null");
+    } catch (_error) {}
+    if (!pending || !pending.key) return;
+    var scope = root || document;
+    var toggle = scope.querySelector(
+      '[data-project-disclosure-key="' + pending.key + '"]'
+    );
+    if (!toggle) return;
+    var panel = document.getElementById(toggle.getAttribute("aria-controls"));
+    if (panel) setProjectDisclosure(toggle, panel, false, false);
+    toggle.focus({ preventScroll: true });
+    try { sessionStorage.removeItem(PROJECT_DISCLOSURE_RETURN); } catch (_error) {}
+  }
+
+  function initProjectDisclosureJumps(root) {
+    var scope = root || document;
+    scope.querySelectorAll("[data-project-disclosure-jump]").forEach(function (link) {
+      if (link.dataset.projectDisclosureJumpReady) return;
+      link.dataset.projectDisclosureJumpReady = "1";
+      link.addEventListener("click", function () {
+        var wanted = projectDisclosureKey(
+          link.getAttribute("data-project-disclosure-jump")
+        );
+        var toggle = document.querySelector(
+          '[data-project-disclosure-key="' + wanted + '"]'
+        );
+        if (!toggle) return;
+        var panel = document.getElementById(toggle.getAttribute("aria-controls"));
+        if (panel) setProjectDisclosure(toggle, panel, true, false);
+      });
+    });
+  }
+
+  document.addEventListener("submit", rememberProjectDisclosureSubmit);
+  document.body.addEventListener("htmx:responseError", function () {
+    try { sessionStorage.removeItem(PROJECT_DISCLOSURE_RETURN); } catch (_error) {}
+  });
+
   function boot(root) {
     initResize(root);
     initSections(root);
     initProjectFilters(root);
+    transformProjectDisclosures(root);
+    initProjectDisclosureJumps(root);
+    restoreProjectDisclosureFocus(root);
   }
 
   if (document.readyState === "loading") {

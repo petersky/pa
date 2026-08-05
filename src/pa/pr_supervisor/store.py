@@ -162,6 +162,10 @@ class PRSupervisorStore:
                     conn.execute(
                         f"ALTER TABLE pr_watches ADD COLUMN {column} {declaration}"
                     )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_pr_watches_project_history "
+                "ON pr_watches(realm_id, project_id, updated_at DESC)"
+            )
 
     def upsert_watch(self, watch: PRWatch, *, preserve_lease: bool = True) -> PRWatch:
         with self._conn(immediate=True) as conn:
@@ -359,6 +363,55 @@ class PRSupervisorStore:
         if not include_retired:
             query += " AND retired_at IS NULL AND status IN ('active', 'blocked')"
         query += " ORDER BY updated_at DESC"
+        with self._conn() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [self._row_to_watch(row) for row in rows]
+
+    def count_project_watches(
+        self,
+        project_id: str,
+        *,
+        realm_id: str,
+        card_ids: set[str] | None = None,
+    ) -> int:
+        """Count all watches related to a project without hydrating history."""
+        query = "SELECT COUNT(*) AS total FROM pr_watches WHERE realm_id = ?"
+        params: list[Any] = [realm_id]
+        related = "project_id = ?"
+        params.append(project_id)
+        bounded_card_ids = sorted(card_ids or set())
+        if bounded_card_ids:
+            placeholders = ",".join("?" for _ in bounded_card_ids)
+            related += f" OR card_id IN ({placeholders})"
+            params.extend(bounded_card_ids)
+        query += f" AND ({related})"
+        with self._conn() as conn:
+            row = conn.execute(query, params).fetchone()
+        return int(row["total"] if row else 0)
+
+    def list_project_watches(
+        self,
+        project_id: str,
+        *,
+        realm_id: str,
+        card_ids: set[str] | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[PRWatch]:
+        """Load a bounded, stable page of all watches related to a project."""
+        bounded_limit = max(1, min(int(limit), 100))
+        bounded_offset = max(0, int(offset))
+        query = "SELECT * FROM pr_watches WHERE realm_id = ?"
+        params: list[Any] = [realm_id]
+        related = "project_id = ?"
+        params.append(project_id)
+        bounded_card_ids = sorted(card_ids or set())
+        if bounded_card_ids:
+            placeholders = ",".join("?" for _ in bounded_card_ids)
+            related += f" OR card_id IN ({placeholders})"
+            params.extend(bounded_card_ids)
+        query += f" AND ({related}) ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?"
+        params.extend((bounded_limit, bounded_offset))
         with self._conn() as conn:
             rows = conn.execute(query, params).fetchall()
         return [self._row_to_watch(row) for row in rows]
