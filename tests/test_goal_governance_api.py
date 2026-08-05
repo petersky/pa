@@ -113,7 +113,7 @@ def test_advanced_goal_http_contract_and_dashboard() -> None:
     assert "Priority 50" in dashboard.text
 
 
-def test_goal_audit_identity_comes_from_the_authenticated_request() -> None:
+def test_goal_identity_and_authority_come_from_the_authenticated_request() -> None:
     with (
         tempfile.TemporaryDirectory() as tmp,
         TestClient(_app(Path(tmp))) as client,
@@ -124,7 +124,7 @@ def test_goal_audit_identity_comes_from_the_authenticated_request() -> None:
             "X-CSRF-Token": csrf,
             "Idempotency-Key": "create-audit-goal",
             "X-PA-Actor": "agent:spoofed",
-            "X-PA-Authority-Instance": "local",
+            "X-PA-Authority-Instance": "forged-instance",
         }
         created = client.post(
             "/api/goals",
@@ -144,6 +144,8 @@ def test_goal_audit_identity_comes_from_the_authenticated_request() -> None:
         )
         assert created.status_code == 201, created.text
         goal = created.json()
+        assert goal["owner_principal"] == "user:local"
+        assert goal["policy"]["authored_by"] == "user:local"
         criterion_id = goal["criteria"][0]["id"]
         evidence = client.post(
             f"/api/goals/{goal['id']}/evidence",
@@ -158,6 +160,10 @@ def test_goal_audit_identity_comes_from_the_authenticated_request() -> None:
             },
         )
         assert evidence.status_code == 200, evidence.text
+        assert evidence.json()["evidence"][0]["recorded_by_principal"] == "user:local"
+        assert (
+            evidence.json()["evidence"][0]["recorded_by_instance_id"] == "local"
+        )
         evidence_id = evidence.json()["evidence"][0]["id"]
         audit_payload = {
             "auditor_principal": "agent:spoofed",
@@ -174,18 +180,27 @@ def test_goal_audit_identity_comes_from_the_authenticated_request() -> None:
         assert rejected.status_code == 409, rejected.text
 
         audit_payload.pop("auditor_principal")
-        audited = client.post(
+        owner_audit = client.post(
             f"/api/goals/{goal['id']}/audit",
             params={"expected_version": 2, "policy_revision": 1},
             headers={**headers, "Idempotency-Key": "authenticated-auditor"},
             json=audit_payload,
         )
         detail = client.get(f"/api/goals/{goal['id']}")
+        autonomy = client.get(f"/api/goals/{goal['id']}/autonomy")
 
-    assert audited.status_code == 200, audited.text
-    assert audited.json()["audit"]["auditor_principal"] == "user:local"
+    assert owner_audit.status_code == 409, owner_audit.text
+    assert "independent of the goal owner" in owner_audit.json()["detail"]
     assert detail.status_code == 200, detail.text
-    assert detail.json()["events"][-1]["actor_principal"] == "user:local"
+    assert all(
+        event["authority_instance_id"] == "local"
+        for event in detail.json()["events"]
+    )
+    assert autonomy.status_code == 200, autonomy.text
+    assert all(
+        item["authority_instance_id"] == "local"
+        for item in autonomy.json()["action_reservations"]
+    )
 
 
 def test_goal_mutation_retry_releases_crash_stranded_reservation() -> None:
@@ -490,7 +505,7 @@ def test_provider_launch_credential_rejects_shared_fleet_origin_spoof() -> None:
         assert launched.status_code == 200, launched.text
         launch_body = launched.json()
         credential = launch_body["progress_credential"]
-        stolen_replay = client.post(
+        forged_authority_header_replay = client.post(
             f"/api/goals/{goal['id']}/providers/{run['id']}/launch",
             params={
                 "expected_version": assigned.json()["autonomy_version"],
@@ -513,7 +528,12 @@ def test_provider_launch_credential_rejects_shared_fleet_origin_spoof() -> None:
             },
             headers={**fence_headers, "Idempotency-Key": "provider-launch"},
         )
-        assert stolen_replay.status_code == 422, stolen_replay.text
+        assert (
+            forged_authority_header_replay.status_code == 200
+        ), forged_authority_header_replay.text
+        assert (
+            forged_authority_header_replay.json()["progress_credential"] == credential
+        )
         assert valid_replay.status_code == 200, valid_replay.text
         assert valid_replay.json()["progress_credential"] == credential
         progress_params = {

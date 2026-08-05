@@ -212,6 +212,27 @@ class GoalSupervisorTests(unittest.TestCase):
                     ),
                     self._ctx(goal.version, "spoofed"),
                 )
+            with self.assertRaisesRegex(
+                GoalConflict, "role does not match the authenticated actor assignment"
+            ):
+                service.submit_proposal(
+                    goal.id,
+                    GoalProposalCreate(
+                        proposer_principal="agent:coordinator",
+                        proposer_role=GoalActorRole.VERIFIER,
+                        action=RecordEvidenceAction(
+                            evidence=GoalEvidence(
+                                criterion_ids=[criterion.id],
+                                kind=EvidenceKind.TEST,
+                                summary="An ordinary actor cannot self-label as verifier.",
+                            )
+                        ),
+                        rationale="Exercise role derivation.",
+                        expected_goal_version=goal.version,
+                        policy_revision=goal.policy.revision,
+                    ),
+                    self._ctx(goal.version, "spoofed-role"),
+                )
 
     def test_record_evidence_proposals_use_the_central_ingestion_boundary(
         self,
@@ -459,8 +480,8 @@ class GoalSupervisorTests(unittest.TestCase):
             goal = service.submit_proposal(
                 goal.id,
                 GoalProposalCreate(
-                    proposer_principal="agent:independent-verifier",
-                    proposer_role=GoalActorRole.VERIFIER,
+                    proposer_principal="agent:coordinator",
+                    proposer_role=GoalActorRole.COORDINATOR,
                     action=TransitionGoalAction(
                         state=GoalState.ACHIEVED,
                         reason="Claim achievement without proof",
@@ -470,7 +491,7 @@ class GoalSupervisorTests(unittest.TestCase):
                     policy_revision=goal.policy.revision,
                 ),
                 GoalMutationContext(
-                    actor_principal="agent:independent-verifier",
+                    actor_principal="agent:coordinator",
                     authority_instance_id="instance-a",
                     idempotency_key="propose-unsupported-achievement",
                     expected_version=goal.version,
@@ -546,8 +567,8 @@ class GoalSupervisorTests(unittest.TestCase):
             goal = service.submit_proposal(
                 goal.id,
                 GoalProposalCreate(
-                    proposer_principal="agent:independent-verifier",
-                    proposer_role=GoalActorRole.VERIFIER,
+                    proposer_principal="agent:coordinator",
+                    proposer_role=GoalActorRole.COORDINATOR,
                     action=TransitionGoalAction(
                         state=GoalState.ACHIEVED,
                         reason="Apply only while evidence remains fresh",
@@ -557,7 +578,7 @@ class GoalSupervisorTests(unittest.TestCase):
                     policy_revision=goal.policy.revision,
                 ),
                 GoalMutationContext(
-                    actor_principal="agent:independent-verifier",
+                    actor_principal="agent:coordinator",
                     authority_instance_id="instance-a",
                     idempotency_key="propose-fresh-achievement",
                     expected_version=goal.version,
@@ -902,6 +923,37 @@ class GoalSupervisorTests(unittest.TestCase):
                         fencing_token=spoofed.lease.fencing_token,
                     ),
                 )
+            verifier_principal = verifier.verifier_service_id
+            assert verifier_principal is not None
+            assigned = service.submit_proposal(
+                spoofed.id,
+                GoalProposalCreate(
+                    proposer_principal=verifier_principal,
+                    proposer_role=GoalActorRole.VERIFIER,
+                    action=RecordEvidenceAction(
+                        evidence=GoalEvidence(
+                            criterion_ids=[criterion.id],
+                            kind=EvidenceKind.AUDIT,
+                            summary="Assigned verifier submitted attributable evidence.",
+                        )
+                    ),
+                    rationale="Assigned runtime identity determines the verifier role.",
+                    expected_goal_version=spoofed.version,
+                    policy_revision=spoofed.policy.revision,
+                ),
+                GoalMutationContext(
+                    actor_principal=verifier_principal,
+                    authority_instance_id="instance-a",
+                    idempotency_key="assigned-verifier-proposal-role",
+                    expected_version=spoofed.version,
+                    policy_revision=spoofed.policy.revision,
+                    fencing_token=spoofed.lease.fencing_token,
+                ),
+            )
+            self.assertEqual(
+                assigned.proposals[-1].proposer_role,
+                GoalActorRole.VERIFIER,
+            )
 
     def test_operator_approval_survives_as_durable_correlated_interaction(
         self,

@@ -230,7 +230,10 @@ class GoalService:
             goal = self.get(duplicate["goal_id"], realm_id=data.realm_id)
             if goal:
                 return goal
-        goal = Goal(**data.model_dump(mode="python"))
+        create = data.model_copy(deep=True)
+        create.owner_principal = context.actor_principal
+        create.policy.authored_by = context.actor_principal
+        goal = Goal(**create.model_dump(mode="python"))
         return self._commit(goal, "goal.created", context, {"revision": goal.revision})
 
     def get(self, goal_id: str, *, realm_id: str | None = None) -> Goal | None:
@@ -269,7 +272,11 @@ class GoalService:
                 if key != "reason" and getattr(change, key) is not None
             ]
             for key in fields:
-                setattr(goal, key, getattr(change, key))
+                value = getattr(change, key)
+                if key == "policy":
+                    value = value.model_copy(deep=True)
+                    value.authored_by = context.actor_principal
+                setattr(goal, key, value)
             goal.revision += 1
             if (
                 change.policy is not None
@@ -583,6 +590,12 @@ class GoalService:
                 raise GoalConflict(
                     "proposal principal must match the authenticated mutation actor"
                 )
+            derived_role = self._proposal_role(goal, context.actor_principal)
+            if proposal.proposer_role != derived_role:
+                raise GoalConflict(
+                    "proposal role does not match the authenticated actor assignment: "
+                    f"expected {derived_role.value}"
+                )
             if proposal.expected_goal_version != goal.version:
                 raise GoalConflict(
                     "proposal expected_goal_version does not match the durable goal"
@@ -600,6 +613,21 @@ class GoalService:
             }
 
         return self._mutate(goal_id, context, "goal.proposal_submitted", mutate)
+
+    @staticmethod
+    def _proposal_role(goal: Goal, actor_principal: str) -> GoalActorRole:
+        for package in goal.work_packages:
+            if (
+                package.role == GoalActorRole.VERIFIER
+                and package.verifier_service_id == actor_principal
+            ):
+                return GoalActorRole.VERIFIER
+            if package.executor_service_id != actor_principal:
+                continue
+            if package.role == GoalActorRole.CRITIC:
+                return GoalActorRole.CRITIC
+            return GoalActorRole.EXECUTOR
+        return GoalActorRole.COORDINATOR
 
     def checkpoint_supervision(
         self,

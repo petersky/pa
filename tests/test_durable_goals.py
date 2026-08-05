@@ -15,6 +15,7 @@ from pa.goals.models import (
     GoalEvidence,
     GoalEvidenceCreate,
     GoalMutationContext,
+    GoalPolicy,
     GoalRevision,
     GoalState,
     GoalSupervisionCheckpoint,
@@ -111,6 +112,40 @@ class DurableGoalTests(unittest.TestCase):
             self.assertTrue(
                 all(event["authority_instance_id"] == "instance-a" for event in events)
             )
+
+    def test_owner_and_policy_author_are_derived_from_the_mutation_actor(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service, _ = self._pair(tmp)
+            criterion = GoalCriterion(
+                description="identity is attributable",
+                verification_method="durable projection",
+                evidence_requirement="server-derived principals",
+            )
+            create = GoalCreate(
+                objective="Ignore caller identity assertions",
+                owner_principal="user:forged-owner",
+                criteria=[criterion],
+                policy=GoalPolicy(authored_by="user:forged-author"),
+            )
+            goal = service.create(create, self._ctx(0, "derived-create-identity"))
+            self.assertEqual(goal.owner_principal, "agent:supervisor")
+            self.assertEqual(goal.policy.authored_by, "agent:supervisor")
+            self.assertEqual(create.owner_principal, "user:forged-owner")
+            self.assertEqual(create.policy.authored_by, "user:forged-author")
+
+            policy = goal.policy.model_copy(
+                update={
+                    "revision": 2,
+                    "authored_by": "user:forged-revision-author",
+                }
+            )
+            revised = service.revise(
+                goal.id,
+                GoalRevision(policy=policy, reason="Advance policy safely"),
+                self._ctx(goal.version, "derived-revision-identity"),
+            )
+            self.assertEqual(revised.policy.authored_by, "agent:supervisor")
+            self.assertEqual(policy.authored_by, "user:forged-revision-author")
 
     def test_controller_lease_fences_stale_instances_and_idempotent_retry(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

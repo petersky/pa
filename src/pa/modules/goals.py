@@ -52,6 +52,15 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+def _authoritative_instance_id(request: Request) -> str:
+    """Resolve mutation authority from authenticated transport, never a header."""
+
+    authenticated = getattr(request.state, "authenticated_instance_id", None)
+    if getattr(request.state, "instance_authenticated", False) and authenticated:
+        return str(authenticated)
+    return request.app.state.ctx.settings.instance_id
+
+
 def _service(request: Request) -> GoalService:
     return request.app.state.ctx.require_service("goal_service")
 
@@ -75,7 +84,7 @@ def _governance_context(
     authenticated_actor = get_principal_id(request) or "user:local"
     return GovernanceMutationContext(
         actor_principal=authenticated_actor,
-        authority_instance_id=authority or request.app.state.ctx.settings.instance_id,
+        authority_instance_id=_authoritative_instance_id(request),
         idempotency_key=idempotency_key,
         expected_version=expected_version,
         policy_revision=policy_revision,
@@ -98,7 +107,7 @@ def _context(
     authenticated_actor = get_principal_id(request) or "user:local"
     return GoalMutationContext(
         actor_principal=authenticated_actor,
-        authority_instance_id=authority or request.app.state.ctx.settings.instance_id,
+        authority_instance_id=_authoritative_instance_id(request),
         idempotency_key=idempotency_key,
         expected_version=expected_version,
         policy_revision=policy_revision,
@@ -423,7 +432,7 @@ def create_goal_explicit(
 ):
     ctx = GoalMutationContext(
         actor_principal=get_principal_id(request) or "user:local",
-        authority_instance_id=authority or request.app.state.ctx.settings.instance_id,
+        authority_instance_id=_authoritative_instance_id(request),
         idempotency_key=idempotency_key,
         expected_version=expected_version,
         policy_revision=policy_revision,
@@ -513,7 +522,7 @@ def _ctx(
 ):
     return GoalMutationContext(
         actor_principal=get_principal_id(request) or "user:local",
-        authority_instance_id=authority or request.app.state.ctx.settings.instance_id,
+        authority_instance_id=_authoritative_instance_id(request),
         idempotency_key=idempotency_key,
         expected_version=expected_version,
         policy_revision=policy_revision,
