@@ -969,22 +969,16 @@ class GoalGovernanceService:
                     raise GoalGovernanceConflict(
                         "provider resume must cite the interactions bound to its wait generation"
                     )
-                answered = next(
-                    (
-                        interaction
-                        for reference in run.waiting_interaction_refs
-                        if reference in interactions
-                        for interaction in [interactions[reference]]
-                        if interaction.state == GoalInteractionState.ANSWERED
-                        and interaction.response_principal
-                        and interaction.response_summary
-                        and interaction.resolved_at is not None
-                    ),
-                    None,
-                )
-                if answered is None:
+                if any(
+                    reference not in interactions
+                    or interactions[reference].state != GoalInteractionState.ANSWERED
+                    or not interactions[reference].response_principal
+                    or not interactions[reference].response_summary
+                    or interactions[reference].resolved_at is None
+                    for reference in run.waiting_interaction_refs
+                ):
                     raise GoalGovernanceConflict(
-                        "provider resume requires a durable answer for its wait generation"
+                        "provider resume requires durable answers for its wait generation"
                     )
             for metric in _USAGE_METRICS:
                 if getattr(progress.cumulative_usage, metric) < getattr(
