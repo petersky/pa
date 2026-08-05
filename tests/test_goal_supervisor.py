@@ -34,6 +34,7 @@ from pa.goals.models import (
     GoalState,
     GoalTransition,
     ProposalStatus,
+    RecordEvidenceAction,
     TransitionGoalAction,
     WorkPackageState,
 )
@@ -210,6 +211,151 @@ class GoalSupervisorTests(unittest.TestCase):
                         policy_revision=1,
                     ),
                     self._ctx(goal.version, "spoofed"),
+                )
+
+    def test_record_evidence_proposals_use_the_central_ingestion_boundary(
+        self,
+    ) -> None:
+        clock = [datetime(2026, 8, 5, 12, tzinfo=UTC)]
+
+        def exercise(
+            tmp: str,
+            *,
+            evidence: GoalEvidence,
+            verdicts: dict[str, CriterionVerdict],
+            criteria: list[GoalCriterion],
+            key: str,
+        ) -> Goal:
+            service, projection = self._services(tmp, now=lambda: clock[0])
+            create = self._goal_create(criteria[0]).model_copy(
+                update={"criteria": criteria}
+            )
+            goal = service.create(create, self._ctx(0, f"create-{key}"))
+            goal = service.submit_proposal(
+                goal.id,
+                GoalProposalCreate(
+                    proposer_principal="agent:coordinator",
+                    proposer_role=GoalActorRole.COORDINATOR,
+                    action=RecordEvidenceAction(
+                        evidence=evidence,
+                        criterion_verdicts=verdicts,
+                    ),
+                    rationale="Exercise the canonical evidence boundary.",
+                    expected_goal_version=goal.version,
+                    policy_revision=goal.policy.revision,
+                ),
+                self._ctx(goal.version, f"proposal-{key}"),
+            )
+            result = GoalSupervisor(
+                service,
+                projection,
+                "instance-a",
+                now=lambda: clock[0],
+            ).run_once(goal.id)
+            self.assertEqual(len(result), 1)
+            return result[0]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            criterion = GoalCriterion(
+                description="server-derived evidence provenance",
+                verification_method="identity check",
+                evidence_requirement="unspoofable recorder and producer",
+            )
+            applied = exercise(
+                tmp,
+                evidence=GoalEvidence(
+                    criterion_ids=[criterion.id],
+                    kind=EvidenceKind.TEST,
+                    summary="The body attempts to impersonate a verifier.",
+                    observed_at=clock[0],
+                    recorded_by_principal="service:goal-verifier:forged",
+                    recorded_by_instance_id="forged-instance",
+                    producer_role=GoalActorRole.VERIFIER,
+                    producer_service_id="service:goal-verifier:forged",
+                ),
+                verdicts={criterion.id: CriterionVerdict.SATISFIED},
+                criteria=[criterion],
+                key="spoofed-provenance",
+            )
+            self.assertEqual(applied.proposals[0].status, ProposalStatus.APPLIED)
+            recorded = applied.evidence[0]
+            self.assertEqual(
+                recorded.recorded_by_principal,
+                "service:goal-supervisor:instance-a",
+            )
+            self.assertEqual(recorded.recorded_by_instance_id, "instance-a")
+            self.assertIsNone(recorded.producer_role)
+            self.assertIsNone(recorded.producer_service_id)
+
+        invalid_cases = (
+            (
+                "future",
+                lambda first, _second: GoalEvidence(
+                    criterion_ids=[first.id],
+                    kind=EvidenceKind.TEST,
+                    summary="Future observation",
+                    observed_at=clock[0] + timedelta(minutes=6),
+                ),
+                lambda first, _second: {
+                    first.id: CriterionVerdict.SATISFIED
+                },
+                "cannot be in the future",
+            ),
+            (
+                "expiry",
+                lambda first, _second: GoalEvidence(
+                    criterion_ids=[first.id],
+                    kind=EvidenceKind.TEST,
+                    summary="Invalid expiry",
+                    observed_at=clock[0],
+                    expires_at=clock[0],
+                ),
+                lambda first, _second: {
+                    first.id: CriterionVerdict.SATISFIED
+                },
+                "expiry must follow",
+            ),
+            (
+                "unmapped",
+                lambda first, _second: GoalEvidence(
+                    criterion_ids=[first.id],
+                    kind=EvidenceKind.TEST,
+                    summary="Verdict is outside the evidence mapping",
+                    observed_at=clock[0],
+                ),
+                lambda _first, second: {
+                    second.id: CriterionVerdict.SATISFIED
+                },
+                "mapped to each criterion",
+            ),
+        )
+        for key, evidence_factory, verdict_factory, error in invalid_cases:
+            with self.subTest(case=key), tempfile.TemporaryDirectory() as tmp:
+                first = GoalCriterion(
+                    description=f"{key} primary criterion",
+                    verification_method="validation",
+                    evidence_requirement="valid evidence",
+                )
+                second = GoalCriterion(
+                    description=f"{key} secondary criterion",
+                    verification_method="validation",
+                    evidence_requirement="mapped evidence",
+                )
+                failed = exercise(
+                    tmp,
+                    evidence=evidence_factory(first, second),
+                    verdicts=verdict_factory(first, second),
+                    criteria=[first, second],
+                    key=key,
+                )
+                self.assertEqual(failed.proposals[0].status, ProposalStatus.FAILED)
+                self.assertIn(error, failed.proposals[0].error or "")
+                self.assertEqual(failed.evidence, [])
+                self.assertTrue(
+                    all(
+                        item.verdict == CriterionVerdict.PENDING
+                        for item in failed.criteria
+                    )
                 )
 
     def test_governed_action_replay_requires_a_still_applied_hold(self) -> None:
@@ -688,6 +834,14 @@ class GoalSupervisorTests(unittest.TestCase):
             self.assertEqual(
                 verified.evidence[-1].producer_service_id,
                 verifier.verifier_service_id,
+            )
+            self.assertEqual(
+                verified.evidence[-1].recorded_by_principal,
+                verifier.verifier_service_id,
+            )
+            self.assertEqual(
+                verified.evidence[-1].recorded_by_instance_id,
+                "instance-a",
             )
             with self.assertRaisesRegex(GoalConflict, "assigned independent verifier"):
                 service.add_evidence(

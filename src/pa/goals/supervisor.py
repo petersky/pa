@@ -40,6 +40,7 @@ from pa.goals.models import (
     GoalActorRole,
     GoalDriftState,
     GoalEvidence,
+    GoalEvidenceCreate,
     GoalInteractionState,
     GoalMutationContext,
     GoalOperatorInteraction,
@@ -471,7 +472,9 @@ class GoalSupervisor:
                         goal,
                         governance_key,
                         governed_request("record_evidence"),
-                        lambda action=action: self._record_evidence(goal, action),
+                        lambda action=action: self._record_evidence(
+                            goal, action, now
+                        ),
                     )
                 elif isinstance(action, TransitionGoalAction):
 
@@ -657,15 +660,28 @@ class GoalSupervisor:
         )
         return True
 
-    def _record_evidence(self, goal: Goal, action: RecordEvidenceAction) -> None:
-        if any(item.id == action.evidence.id for item in goal.evidence):
-            return
-        goal.evidence.append(action.evidence)
-        for criterion in goal.criteria:
-            if criterion.id in action.evidence.criterion_ids:
-                criterion.evidence_ids.append(action.evidence.id)
-            if criterion.id in action.criterion_verdicts:
-                criterion.verdict = action.criterion_verdicts[criterion.id]
+    def _record_evidence(
+        self,
+        goal: Goal,
+        action: RecordEvidenceAction,
+        now: datetime,
+    ) -> None:
+        self.service.ingest_evidence_snapshot(
+            goal,
+            GoalEvidenceCreate(
+                evidence=action.evidence,
+                criterion_verdicts=action.criterion_verdicts,
+            ),
+            context=GoalMutationContext(
+                actor_principal=self.service_principal,
+                authority_instance_id=self.instance_id,
+                idempotency_key=f"goal:{goal.id}:supervisor-record-evidence",
+                expected_version=goal.version,
+                policy_revision=goal.policy.revision,
+                fencing_token=goal.lease.fencing_token,
+            ),
+            now=now,
+        )
 
     def _advance_ready_work(self, goal: Goal, now: datetime) -> bool:
         changed = False
@@ -898,17 +914,32 @@ class GoalSupervisor:
                     ],
                 },
                 observed_at=now,
-                recorded_by_principal=self.service_principal,
-                recorded_by_instance_id=self.instance_id,
-                producer_role=GoalActorRole.VERIFIER,
-                producer_service_id=verifier_identity,
             )
-            if not any(item.id == evidence.id for item in goal.evidence):
-                goal.evidence.append(evidence)
-                for criterion in goal.criteria:
-                    if criterion.id in package.criterion_ids:
-                        criterion.evidence_ids.append(evidence.id)
-                        criterion.verdict = CriterionVerdict.SATISFIED
+            package.verifier_service_id = verifier_identity
+            self.service.ingest_evidence_snapshot(
+                goal,
+                GoalEvidenceCreate(
+                    evidence=evidence,
+                    criterion_verdicts={
+                        criterion_id: CriterionVerdict.SATISFIED
+                        for criterion_id in package.criterion_ids
+                    },
+                ),
+                context=GoalMutationContext(
+                    actor_principal=verifier_identity,
+                    authority_instance_id=str(
+                        getattr(record, "authority_instance_id", "")
+                        or self.instance_id
+                    ),
+                    idempotency_key=(
+                        f"goal:{goal.id}:dispatch:{record.dispatch_id}:evidence"
+                    ),
+                    expected_version=goal.version,
+                    policy_revision=goal.policy.revision,
+                    fencing_token=goal.lease.fencing_token,
+                ),
+                now=now,
+            )
             for item in goal.work_packages:
                 if item.id in dependencies:
                     item.state = WorkPackageState.VERIFIED

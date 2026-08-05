@@ -12,6 +12,7 @@ from pa.goals.models import (
     GoalAudit,
     GoalAuditCreate,
     GoalCreate,
+    GoalEvidence,
     GoalEvidenceCreate,
     GoalMutationContext,
     GoalProposal,
@@ -314,71 +315,7 @@ class GoalService:
         self, goal_id: str, change: GoalEvidenceCreate, context: GoalMutationContext
     ) -> Goal:
         def mutate(goal: Goal) -> dict[str, Any]:
-            evidence = change.evidence.model_copy(deep=True)
-            known = {item.id for item in goal.criteria}
-            if unknown := set(evidence.criterion_ids) - known:
-                raise GoalConflict(
-                    f"evidence references unknown criteria: {sorted(unknown)}"
-                )
-            if any(item.id == evidence.id for item in goal.evidence):
-                raise GoalConflict(f"evidence id already exists on goal: {evidence.id}")
-            verdict_criteria = set(change.criterion_verdicts)
-            if unknown := verdict_criteria - known:
-                raise GoalConflict(
-                    f"evidence verdicts reference unknown criteria: {sorted(unknown)}"
-                )
-            if unmapped := verdict_criteria - set(evidence.criterion_ids):
-                raise GoalConflict(
-                    "evidence verdicts require evidence mapped to each criterion: "
-                    f"{sorted(unmapped)}"
-                )
-            now = self._clock()
-            if evidence.observed_at > now + timedelta(minutes=5):
-                raise GoalConflict("evidence observed_at cannot be in the future")
-            if evidence.expires_at and evidence.expires_at <= evidence.observed_at:
-                raise GoalConflict("evidence expiry must follow its observation")
-            evidence.recorded_by_principal = context.actor_principal
-            evidence.recorded_by_instance_id = context.authority_instance_id
-            # Producer identity is authoritative runtime provenance, never a
-            # caller-supplied assertion from the evidence body.
-            evidence.producer_role = None
-            evidence.producer_service_id = None
-            executor_identities = {
-                item.executor_service_id
-                for item in goal.work_packages
-                if item.executor_service_id
-            }
-            verifier_identities = {
-                item.verifier_service_id
-                for item in goal.work_packages
-                if item.verifier_service_id
-            }
-            if context.actor_principal.startswith("service:goal-verifier:"):
-                if (
-                    context.actor_principal not in verifier_identities
-                    or context.actor_principal in executor_identities
-                ):
-                    raise GoalConflict(
-                        "verifier evidence requires an assigned independent verifier service"
-                    )
-                evidence.producer_role = GoalActorRole.VERIFIER
-                evidence.producer_service_id = context.actor_principal
-            elif context.actor_principal.startswith("service:goal-executor:"):
-                if (
-                    context.actor_principal not in executor_identities
-                    or context.actor_principal in verifier_identities
-                ):
-                    raise GoalConflict(
-                        "executor evidence requires the assigned executor service"
-                    )
-                evidence.producer_role = GoalActorRole.EXECUTOR
-                evidence.producer_service_id = context.actor_principal
-            goal.evidence.append(evidence)
-            for criterion in goal.criteria:
-                if criterion.id in evidence.criterion_ids:
-                    criterion.evidence_ids.append(evidence.id)
-                if criterion.id in change.criterion_verdicts:
-                    criterion.verdict = change.criterion_verdicts[criterion.id]
+            evidence = self.ingest_evidence_snapshot(goal, change, context=context)
             return {
                 "evidence_id": evidence.id,
                 "criterion_ids": evidence.criterion_ids,
@@ -387,6 +324,90 @@ class GoalService:
             }
 
         return self._mutate(goal_id, context, "goal.evidence_recorded", mutate)
+
+    def ingest_evidence_snapshot(
+        self,
+        goal: Goal,
+        change: GoalEvidenceCreate,
+        *,
+        context: GoalMutationContext,
+        now: datetime | None = None,
+    ) -> GoalEvidence:
+        """Validate and record evidence on an in-memory goal checkpoint.
+
+        Every evidence path, including autonomous proposals and dispatch completion,
+        must pass through this boundary so provenance is derived from runtime
+        identity rather than accepted from a proposal body.
+        """
+
+        evidence = change.evidence.model_copy(deep=True)
+        known = {item.id for item in goal.criteria}
+        if unknown := set(evidence.criterion_ids) - known:
+            raise GoalConflict(
+                f"evidence references unknown criteria: {sorted(unknown)}"
+            )
+        if any(item.id == evidence.id for item in goal.evidence):
+            raise GoalConflict(f"evidence id already exists on goal: {evidence.id}")
+        verdict_criteria = set(change.criterion_verdicts)
+        if unknown := verdict_criteria - known:
+            raise GoalConflict(
+                f"evidence verdicts reference unknown criteria: {sorted(unknown)}"
+            )
+        if unmapped := verdict_criteria - set(evidence.criterion_ids):
+            raise GoalConflict(
+                "evidence verdicts require evidence mapped to each criterion: "
+                f"{sorted(unmapped)}"
+            )
+        observed_now = now or self._clock()
+        if evidence.observed_at > observed_now + timedelta(minutes=5):
+            raise GoalConflict("evidence observed_at cannot be in the future")
+        if evidence.expires_at and evidence.expires_at <= evidence.observed_at:
+            raise GoalConflict("evidence expiry must follow its observation")
+
+        evidence.recorded_by_principal = context.actor_principal
+        evidence.recorded_by_instance_id = context.authority_instance_id
+        # Producer identity is authoritative runtime provenance, never a
+        # caller-supplied assertion from the evidence body.
+        evidence.producer_role = None
+        evidence.producer_service_id = None
+        executor_identities = {
+            item.executor_service_id
+            for item in goal.work_packages
+            if item.executor_service_id
+        }
+        verifier_identities = {
+            item.verifier_service_id
+            for item in goal.work_packages
+            if item.verifier_service_id
+        }
+        if context.actor_principal.startswith("service:goal-verifier:"):
+            if (
+                context.actor_principal not in verifier_identities
+                or context.actor_principal in executor_identities
+            ):
+                raise GoalConflict(
+                    "verifier evidence requires an assigned independent verifier service"
+                )
+            evidence.producer_role = GoalActorRole.VERIFIER
+            evidence.producer_service_id = context.actor_principal
+        elif context.actor_principal.startswith("service:goal-executor:"):
+            if (
+                context.actor_principal not in executor_identities
+                or context.actor_principal in verifier_identities
+            ):
+                raise GoalConflict(
+                    "executor evidence requires the assigned executor service"
+                )
+            evidence.producer_role = GoalActorRole.EXECUTOR
+            evidence.producer_service_id = context.actor_principal
+
+        goal.evidence.append(evidence)
+        for criterion in goal.criteria:
+            if criterion.id in evidence.criterion_ids:
+                criterion.evidence_ids.append(evidence.id)
+            if criterion.id in change.criterion_verdicts:
+                criterion.verdict = change.criterion_verdicts[criterion.id]
+        return evidence
 
     def audit(
         self, goal_id: str, change: GoalAuditCreate, context: GoalMutationContext
