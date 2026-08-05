@@ -483,6 +483,7 @@ class GoalGovernanceService:
                 }
 
             available = state.model_copy(deep=True)
+            previously_managed_claims = self._active_resource_claims(available)
             available.usage = _replace_usage(
                 available.usage, reservation.reserved_usage, GoalUsage()
             )
@@ -498,7 +499,10 @@ class GoalGovernanceService:
                 for item in available.action_reservations
                 if item.id != reservation.id
             ]
-            self._refresh_resource_reservations(available)
+            self._refresh_resource_reservations(
+                available,
+                previously_managed_claims=previously_managed_claims,
+            )
             decision = self._evaluate_action(
                 goal,
                 available,
@@ -946,11 +950,15 @@ class GoalGovernanceService:
             )
             reservation.actual_usage = progress.cumulative_usage
             if terminal:
+                previously_managed_claims = self._active_resource_claims(state)
                 reservation.state = GoalReservationState.RELEASED
                 reservation.released_at = self._clock()
                 reservation.release_reason = f"provider run {progress.state.value}"
                 run.reserved_usage = GoalUsage()
-                self._refresh_resource_reservations(state)
+                self._refresh_resource_reservations(
+                    state,
+                    previously_managed_claims=previously_managed_claims,
+                )
             exceeded = self._budget_reasons(goal, state.usage)
             if exceeded and not terminal:
                 run.state = ProviderRunState.BLOCKED
@@ -1390,6 +1398,7 @@ class GoalGovernanceService:
             decided_at=self._clock(),
         )
         if disposition == GoalActionDisposition.AUTHORIZED and reserve:
+            previously_managed_claims = self._active_resource_claims(state)
             reservation = GoalActionReservation(
                 idempotency_key=context.idempotency_key,
                 decision_id=decision.id,
@@ -1410,7 +1419,10 @@ class GoalGovernanceService:
             decision.reservation_id = reservation.id
             state.action_reservations.append(reservation)
             state.usage = projected
-            self._refresh_resource_reservations(state)
+            self._refresh_resource_reservations(
+                state,
+                previously_managed_claims=previously_managed_claims,
+            )
             self._reserve_rate_windows(goal, state, request)
         return decision
 
@@ -1503,23 +1515,49 @@ class GoalGovernanceService:
             )
 
     @staticmethod
-    def _refresh_resource_reservations(state: GoalAutonomyState) -> None:
-        managed = [
+    def _active_resource_claims(
+        state: GoalAutonomyState,
+    ) -> list[GoalResourceClaim]:
+        return [
             claim
-            for reservation in state.action_reservations
-            for claim in reservation.resource_claims
-        ]
-        legacy = [
-            claim
-            for claim in state.resource_reservations
-            if not any(claim == item for item in managed)
-        ]
-        state.resource_reservations = legacy + [
-            claim.model_copy(deep=True)
             for reservation in state.action_reservations
             if reservation.state
             in {GoalReservationState.RESERVED, GoalReservationState.APPLIED}
             for claim in reservation.resource_claims
+        ]
+
+    @classmethod
+    def _refresh_resource_reservations(
+        cls,
+        state: GoalAutonomyState,
+        *,
+        previously_managed_claims: list[GoalResourceClaim] | None = None,
+    ) -> None:
+        """Rebuild managed claims without mistaking a removed claim for legacy.
+
+        ``resource_reservations`` predates action reservations and can contain
+        genuine legacy claims.  Callers that add or release a reservation pass
+        the exact pre-mutation managed multiset so only those represented claim
+        occurrences are removed; equal legacy or sibling claims remain intact.
+        """
+
+        represented = (
+            previously_managed_claims
+            if previously_managed_claims is not None
+            else cls._active_resource_claims(state)
+        )
+        legacy = [
+            claim.model_copy(deep=True) for claim in state.resource_reservations
+        ]
+        for managed in represented:
+            match = next(
+                (index for index, claim in enumerate(legacy) if claim == managed),
+                None,
+            )
+            if match is not None:
+                legacy.pop(match)
+        state.resource_reservations = legacy + [
+            claim.model_copy(deep=True) for claim in cls._active_resource_claims(state)
         ]
 
     def _release_reservation(
@@ -1531,6 +1569,7 @@ class GoalGovernanceService:
         actual_usage: GoalUsage,
         reason: str,
     ) -> None:
+        previously_managed_claims = self._active_resource_claims(state)
         previous = (
             reservation.actual_usage
             if any(
@@ -1550,7 +1589,10 @@ class GoalGovernanceService:
         reservation.state = GoalReservationState.RELEASED
         reservation.released_at = self._clock()
         reservation.release_reason = reason[:500]
-        self._refresh_resource_reservations(state)
+        self._refresh_resource_reservations(
+            state,
+            previously_managed_claims=previously_managed_claims,
+        )
 
     def _budget_reasons(self, goal: Goal, projected: GoalUsage) -> list[str]:
         reasons: list[str] = []

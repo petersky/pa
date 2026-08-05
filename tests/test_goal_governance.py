@@ -420,6 +420,102 @@ class GoalGovernanceTests(unittest.TestCase):
             )
             self.assertEqual(limited.disposition, GoalActionDisposition.RATE_LIMITED)
 
+    def test_apply_excludes_its_own_exclusive_resource_claim(self) -> None:
+        now = datetime(2026, 8, 3, tzinfo=UTC)
+        with tempfile.TemporaryDirectory() as tmp:
+            goals, governance, _ = self._services(tmp, now)
+            goal = goals.create(
+                self._goal_data("Apply one exclusive resource action"),
+                self._goal_ctx("create-exclusive-apply"),
+            )
+            claim = GoalResourceClaim(
+                key="repository:petersky/pa",
+                access=ResourceAccess.EXCLUSIVE,
+            )
+            state, reserved = governance.authorize_action(
+                goal.id,
+                GoalActionRequest(
+                    action_class="resource.reserve",
+                    resource_claims=[claim],
+                ),
+                self._ctx(0, "reserve-exclusive-apply"),
+            )
+            self.assertEqual(reserved.disposition, GoalActionDisposition.AUTHORIZED)
+
+            state, applied = governance.apply_action(
+                goal.id,
+                reserved.reservation_id or "",
+                self._ctx(state.version, "apply-exclusive-resource"),
+            )
+
+            self.assertEqual(applied.disposition, GoalActionDisposition.AUTHORIZED)
+            self.assertEqual(state.resource_reservations, [claim])
+
+    def test_apply_excludes_only_its_shared_capacity_claim(self) -> None:
+        now = datetime(2026, 8, 3, tzinfo=UTC)
+        with tempfile.TemporaryDirectory() as tmp:
+            goals, governance, _ = self._services(tmp, now)
+            goal_data = self._goal_data("Apply one capacity-limited shared action")
+            goal_data.budget.max_concurrency = 2
+            goal = goals.create(
+                goal_data,
+                self._goal_ctx("create-shared-capacity-apply"),
+            )
+            governance.put_policy(
+                GoalGovernancePolicy(
+                    version=1,
+                    authored_by="user:operator",
+                    resource_capacities=[
+                        GoalResourceCapacity(key="build-pool", capacity=3)
+                    ],
+                ),
+                self._ctx(
+                    0,
+                    "shared-capacity-policy",
+                    actor="user:operator",
+                    goal_version=None,
+                ),
+            )
+            applying_claim = GoalResourceClaim(
+                key="build-pool",
+                access=ResourceAccess.SHARED,
+                quantity=2,
+            )
+            sibling_claim = GoalResourceClaim(
+                key="build-pool",
+                access=ResourceAccess.SHARED,
+                quantity=1,
+            )
+            state, applying = governance.authorize_action(
+                goal.id,
+                GoalActionRequest(
+                    action_class="resource.reserve",
+                    resource_claims=[applying_claim],
+                ),
+                self._ctx(0, "reserve-shared-applying"),
+            )
+            state, sibling = governance.authorize_action(
+                goal.id,
+                GoalActionRequest(
+                    action_class="resource.reserve",
+                    resource_claims=[sibling_claim],
+                ),
+                self._ctx(state.version, "reserve-shared-sibling"),
+            )
+            self.assertEqual(sibling.disposition, GoalActionDisposition.AUTHORIZED)
+
+            state, applied = governance.apply_action(
+                goal.id,
+                applying.reservation_id or "",
+                self._ctx(state.version, "apply-shared-capacity"),
+            )
+
+            self.assertEqual(applied.disposition, GoalActionDisposition.AUTHORIZED)
+            self.assertEqual(
+                sorted(claim.quantity for claim in state.resource_reservations),
+                [1, 2],
+            )
+
     def test_provider_launch_revalidates_mutations_after_assignment(self) -> None:
         now = datetime(2026, 8, 3, tzinfo=UTC)
         with tempfile.TemporaryDirectory() as tmp:
