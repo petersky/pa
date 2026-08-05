@@ -16,6 +16,7 @@ from pa.goals.advanced_models import (
     GoalGovernancePolicy,
     GoalPortfolioReviewRequest,
     GoalProposalRequest,
+    GoalProposalReview,
     GoalReservationState,
     GoalResourceCapacity,
     GoalResourceClaim,
@@ -143,6 +144,162 @@ class GoalGovernanceTests(unittest.TestCase):
             goal_version=goal_version,
             fencing_token=fence,
         )
+
+    def test_generic_governance_idempotency_binds_operation_and_entity(self) -> None:
+        now = datetime(2026, 8, 3, tzinfo=UTC)
+        with tempfile.TemporaryDirectory() as tmp:
+            goals, governance, _ = self._services(tmp, now)
+            first = goals.create(
+                self._goal_data("Bind the first governance entity"),
+                self._goal_ctx("create-first-fingerprint-goal"),
+            )
+            second = goals.create(
+                self._goal_data("Bind the second governance entity"),
+                self._goal_ctx("create-second-fingerprint-goal"),
+            )
+            context = self._ctx(
+                0,
+                "generic-priority-fingerprint",
+                goal_version=first.version,
+            )
+            changed = governance.set_priority(
+                first.id,
+                70,
+                "Canonical priority",
+                context,
+            )
+            exact = governance.set_priority(
+                first.id,
+                70,
+                "Canonical priority",
+                context,
+            )
+            self.assertEqual(exact.version, changed.version)
+            with self.assertRaisesRegex(
+                GoalGovernanceConflict, "different governance operation"
+            ):
+                governance.set_priority(
+                    first.id,
+                    71,
+                    "Changed body",
+                    context,
+                )
+            with self.assertRaisesRegex(
+                GoalGovernanceConflict, "different governance operation"
+            ):
+                governance.set_priority(
+                    first.id,
+                    70,
+                    "Canonical priority",
+                    context.model_copy(
+                        update={
+                            "actor_principal": "agent:other",
+                            "authority_instance_id": "instance-b",
+                        }
+                    ),
+                )
+            with self.assertRaisesRegex(
+                GoalGovernanceConflict, "another governance entity"
+            ):
+                governance.set_priority(
+                    second.id,
+                    70,
+                    "Canonical priority",
+                    context.model_copy(update={"goal_version": second.version}),
+                )
+
+            policy = GoalGovernancePolicy(
+                version=1,
+                authored_by="user:operator",
+                max_active_goals=2,
+            )
+            policy_context = self._ctx(
+                0,
+                "generic-policy-fingerprint",
+                actor="user:operator",
+                goal_version=None,
+            )
+            persisted = governance.put_policy(policy, policy_context)
+            exact_policy = governance.put_policy(policy, policy_context)
+            self.assertEqual(exact_policy.id, persisted.id)
+            with self.assertRaisesRegex(
+                GoalGovernanceConflict, "different governance operation"
+            ):
+                governance.put_policy(
+                    policy.model_copy(update={"max_active_goals": 3}),
+                    policy_context,
+                )
+            events = governance.state_events(first.id)
+            self.assertTrue(
+                all(len(event["operation_fingerprint"]) == 64 for event in events)
+            )
+
+    def test_proposal_and_review_idempotency_bind_exact_request_and_actor(self) -> None:
+        now = datetime(2026, 8, 3, tzinfo=UTC)
+        with tempfile.TemporaryDirectory() as tmp:
+            _, governance, _ = self._services(tmp, now)
+            request = GoalProposalRequest(
+                kind=ProposalKind.TOP_LEVEL,
+                goal=self._goal_data("Proposal fingerprint"),
+                category="unmatched",
+                rationale="Requires an explicit operator review",
+            )
+            propose_context = self._ctx(
+                0,
+                "proposal-fingerprint",
+                goal_version=None,
+            )
+            proposal = governance.propose_goal(request, propose_context)
+            replayed = governance.propose_goal(request, propose_context)
+            self.assertEqual(replayed.id, proposal.id)
+            with self.assertRaisesRegex(
+                GoalGovernanceConflict, "different governance operation"
+            ):
+                governance.propose_goal(
+                    request.model_copy(update={"rationale": "Changed rationale"}),
+                    propose_context,
+                )
+
+            review = GoalProposalReview(
+                approve=True,
+                reason="Operator approved the bounded work",
+                reviewer_principal="user:operator",
+            )
+            review_context = self._ctx(
+                proposal.version,
+                "proposal-review-fingerprint",
+                actor="user:operator",
+                goal_version=None,
+            )
+            approved = governance.review_proposal(
+                proposal.id,
+                review,
+                review_context,
+            )
+            exact = governance.review_proposal(
+                proposal.id,
+                review,
+                review_context,
+            )
+            self.assertEqual(exact.activated_goal_id, approved.activated_goal_id)
+            with self.assertRaisesRegex(
+                GoalGovernanceConflict, "different governance operation"
+            ):
+                governance.review_proposal(
+                    proposal.id,
+                    review.model_copy(update={"reason": "Changed approval reason"}),
+                    review_context,
+                )
+            with self.assertRaisesRegex(
+                GoalGovernanceConflict, "different governance operation"
+            ):
+                governance.review_proposal(
+                    proposal.id,
+                    review.model_copy(update={"reviewer_principal": "user:other"}),
+                    review_context.model_copy(
+                        update={"actor_principal": "user:other"}
+                    ),
+                )
 
     def test_action_policy_reserves_budget_and_enforces_rate_and_risk(self) -> None:
         now = datetime(2026, 8, 3, tzinfo=UTC)
@@ -280,19 +437,21 @@ class GoalGovernanceTests(unittest.TestCase):
                 ttl_seconds=120,
             )
 
+            assignment = ProviderGoalAssignment(
+                provider_id="codex",
+                available_commands=["goal"],
+                estimated_usage=GoalUsage(actions=1, cost_usd=1, tokens=100),
+            )
+            assign_context = self._ctx(
+                0,
+                "assign",
+                goal_version=goal.version,
+                fence=goal.lease.fencing_token,
+            )
             state, run, decision = governance.assign_provider(
                 goal.id,
-                ProviderGoalAssignment(
-                    provider_id="codex",
-                    available_commands=["goal"],
-                    estimated_usage=GoalUsage(actions=1, cost_usd=1, tokens=100),
-                ),
-                self._ctx(
-                    0,
-                    "assign",
-                    goal_version=goal.version,
-                    fence=goal.lease.fencing_token,
-                ),
+                assignment,
+                assign_context,
             )
             self.assertEqual(decision.disposition, GoalActionDisposition.AUTHORIZED)
             assert run is not None
@@ -309,18 +468,51 @@ class GoalGovernanceTests(unittest.TestCase):
                 ]
             )
 
+            replayed_state, replayed_run, _ = governance.assign_provider(
+                goal.id,
+                assignment,
+                assign_context,
+            )
+            self.assertEqual(replayed_state.version, state.version)
+            assert replayed_run is not None
+            self.assertEqual(replayed_run.id, run.id)
+            with self.assertRaisesRegex(
+                GoalGovernanceConflict, "different governance operation"
+            ):
+                governance.assign_provider(
+                    goal.id,
+                    assignment.model_copy(update={"provider_id": "cursor"}),
+                    assign_context,
+                )
+
+            launch_context = self._ctx(
+                state.version,
+                "launch",
+                goal_version=goal.version,
+                fence=goal.lease.fencing_token,
+            )
             state, run, launch = governance.launch_provider(
                 goal.id,
                 run.id,
-                self._ctx(
-                    state.version,
-                    "launch",
-                    goal_version=goal.version,
-                    fence=goal.lease.fencing_token,
-                ),
+                launch_context,
             )
             self.assertEqual(launch.disposition, GoalActionDisposition.AUTHORIZED)
             self.assertIsNotNone(run.launched_at)
+            replayed_state, replayed_run, _ = governance.launch_provider(
+                goal.id,
+                run.id,
+                launch_context,
+            )
+            self.assertEqual(replayed_state.version, state.version)
+            self.assertEqual(replayed_run.id, run.id)
+            with self.assertRaisesRegex(
+                GoalGovernanceConflict, "different governance operation"
+            ):
+                governance.launch_provider(
+                    goal.id,
+                    "another-run",
+                    launch_context,
+                )
 
             with self.assertRaisesRegex(
                 GoalGovernanceConflict, "assigned service identity"
@@ -341,24 +533,26 @@ class GoalGovernanceTests(unittest.TestCase):
                     ),
                 )
 
+            progress = ProviderGoalProgress(
+                run_id=run.id,
+                state=ProviderRunState.COMPLETED,
+                summary="Provider reports completion",
+                cumulative_usage=GoalUsage(
+                    actions=1, cost_usd=1.25, tokens=120, api_calls=2
+                ),
+                evidence_claims=[{"criterion_id": goal.criteria[0].id}],
+            )
+            progress_context = self._ctx(
+                state.version,
+                "progress",
+                actor=run.executor_principal,
+                goal_version=goal.version,
+                fence=run.fencing_token,
+            )
             state = governance.ingest_provider_progress(
                 goal.id,
-                ProviderGoalProgress(
-                    run_id=run.id,
-                    state=ProviderRunState.COMPLETED,
-                    summary="Provider reports completion",
-                    cumulative_usage=GoalUsage(
-                        actions=1, cost_usd=1.25, tokens=120, api_calls=2
-                    ),
-                    evidence_claims=[{"criterion_id": goal.criteria[0].id}],
-                ),
-                self._ctx(
-                    state.version,
-                    "progress",
-                    actor=run.executor_principal,
-                    goal_version=goal.version,
-                    fence=run.fencing_token,
-                ),
+                progress,
+                progress_context,
             )
             self.assertEqual(state.usage.cost_usd, 1.25)
             self.assertEqual(len(goal.evidence), 0)
@@ -372,6 +566,20 @@ class GoalGovernanceTests(unittest.TestCase):
                 if item.id == run.reservation_id
             )
             self.assertEqual(reservation.state.value, "released")
+            replayed_progress = governance.ingest_provider_progress(
+                goal.id,
+                progress,
+                progress_context,
+            )
+            self.assertEqual(replayed_progress.version, state.version)
+            with self.assertRaisesRegex(
+                GoalGovernanceConflict, "different governance operation"
+            ):
+                governance.ingest_provider_progress(
+                    goal.id,
+                    progress.model_copy(update={"summary": "Changed progress body"}),
+                    progress_context,
+                )
 
     def test_provider_resume_requires_answer_and_budget_block_is_terminal(
         self,
@@ -797,20 +1005,21 @@ class GoalGovernanceTests(unittest.TestCase):
                         actor="user:bob",
                     ),
                 )
+            apply_context = self._ctx(
+                state.version,
+                "apply-user-action",
+                actor="user:alice",
+            )
             state, applied = governance.apply_action(
                 goal.id,
                 user_reservation.reservation_id or "",
-                self._ctx(
-                    state.version,
-                    "apply-user-action",
-                    actor="user:alice",
-                ),
+                apply_context,
             )
             self.assertEqual(applied.disposition, GoalActionDisposition.AUTHORIZED)
             replay_state, replayed = governance.apply_action(
                 goal.id,
                 user_reservation.reservation_id or "",
-                self._ctx(0, "apply-user-action", actor="user:alice"),
+                apply_context,
             )
             self.assertEqual(replayed.id, applied.id)
             self.assertEqual(replay_state.version, state.version)

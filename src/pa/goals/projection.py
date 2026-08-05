@@ -24,6 +24,7 @@ def init_goal_schema(conn) -> None:
             actor_principal TEXT NOT NULL, authority_instance_id TEXT NOT NULL,
             policy_revision INTEGER NOT NULL, idempotency_key TEXT NOT NULL,
             version INTEGER NOT NULL, payload TEXT NOT NULL DEFAULT '{}',
+            operation_fingerprint TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL, UNIQUE(realm_id, idempotency_key)
         );
         CREATE INDEX IF NOT EXISTS idx_durable_goal_events_goal
@@ -42,6 +43,7 @@ def init_goal_schema(conn) -> None:
             authority_instance_id TEXT NOT NULL, policy_revision INTEGER NOT NULL,
             idempotency_key TEXT NOT NULL, version INTEGER NOT NULL,
             payload TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL,
+            operation_fingerprint TEXT NOT NULL DEFAULT '',
             UNIQUE(realm_id, idempotency_key)
         );
         CREATE INDEX IF NOT EXISTS idx_goal_governance_events_entity
@@ -79,6 +81,16 @@ def init_goal_schema(conn) -> None:
             "ALTER TABLE durable_goal_projection_heads "
             "ADD COLUMN event_timestamp TEXT NOT NULL DEFAULT ''"
         )
+    for table in ("durable_goal_events", "durable_goal_governance_events"):
+        columns = {
+            row[1]
+            for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+        }
+        if "operation_fingerprint" not in columns:
+            conn.execute(
+                f"ALTER TABLE {table} ADD COLUMN "
+                "operation_fingerprint TEXT NOT NULL DEFAULT ''"
+            )
 
 
 def _encoded_payload(payload: dict) -> tuple[str, str]:
@@ -248,8 +260,8 @@ def apply_goal_event(projection, event) -> None:
             INSERT OR IGNORE INTO durable_goal_events
                 (id, realm_id, goal_id, event_type, actor_principal,
                  authority_instance_id, policy_revision, idempotency_key,
-                 version, payload, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 version, payload, operation_fingerprint, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 event.id,
@@ -262,6 +274,7 @@ def apply_goal_event(projection, event) -> None:
                 record.get("idempotency_key", event.id),
                 int(record.get("version", goal.get("version", 1))),
                 json.dumps(record.get("payload") or {}),
+                record.get("operation_fingerprint", ""),
                 event.timestamp.isoformat(),
             ),
         )
@@ -322,8 +335,9 @@ def apply_goal_governance_event(projection, event) -> None:
             INSERT OR IGNORE INTO durable_goal_governance_events
                 (id, realm_id, entity_type, entity_id, event_type,
                  actor_principal, authority_instance_id, policy_revision,
-                 idempotency_key, version, payload, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 idempotency_key, version, payload, operation_fingerprint,
+                 created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 event.id,
@@ -337,6 +351,7 @@ def apply_goal_governance_event(projection, event) -> None:
                 record.get("idempotency_key", event.id),
                 version,
                 json.dumps(record.get("payload") or {}),
+                record.get("operation_fingerprint", ""),
                 event.timestamp.isoformat(),
             ),
         )

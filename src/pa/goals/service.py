@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from pa.domain.models import CardEvent, EventType
+from pa.goals.idempotency import operation_fingerprint
 from pa.goals.models import (
     CriterionVerdict,
     Goal,
@@ -223,10 +224,24 @@ class GoalService:
             raise GoalConflict(
                 "mutation policy revision does not match the goal policy"
             )
+        fingerprint = operation_fingerprint(
+            realm_id=data.realm_id,
+            entity_type="goal",
+            entity_id="<new>",
+            event_type="goal.created",
+            operation=data,
+            context=context,
+        )
         duplicate = find_goal_event_by_idempotency(
             self.store, data.realm_id, context.idempotency_key
         )
         if duplicate:
+            self._validate_replay(
+                duplicate,
+                goal_id=str(duplicate["goal_id"]),
+                event_type="goal.created",
+                fingerprint=fingerprint,
+            )
             goal = self.get(duplicate["goal_id"], realm_id=data.realm_id)
             if goal:
                 return goal
@@ -234,7 +249,13 @@ class GoalService:
         create.owner_principal = context.actor_principal
         create.policy.authored_by = context.actor_principal
         goal = Goal(**create.model_dump(mode="python"))
-        return self._commit(goal, "goal.created", context, {"revision": goal.revision})
+        return self._commit(
+            goal,
+            "goal.created",
+            context,
+            {"revision": goal.revision},
+            operation_fingerprint=fingerprint,
+        )
 
     def get(self, goal_id: str, *, realm_id: str | None = None) -> Goal | None:
         payload = get_goal_payload(self.store, goal_id, realm_id)
@@ -289,7 +310,13 @@ class GoalService:
                 "fields": sorted(fields),
             }
 
-        return self._mutate(goal_id, context, "goal.revised", mutate)
+        return self._mutate(
+            goal_id,
+            context,
+            "goal.revised",
+            mutate,
+            operation=change,
+        )
 
     def transition(
         self, goal_id: str, change: GoalTransition, context: GoalMutationContext
@@ -316,7 +343,13 @@ class GoalService:
                 "reason": change.reason,
             }
 
-        return self._mutate(goal_id, context, "goal.transitioned", mutate)
+        return self._mutate(
+            goal_id,
+            context,
+            "goal.transitioned",
+            mutate,
+            operation=change,
+        )
 
     def add_evidence(
         self, goal_id: str, change: GoalEvidenceCreate, context: GoalMutationContext
@@ -330,7 +363,13 @@ class GoalService:
                 "recorded_by_instance_id": evidence.recorded_by_instance_id,
             }
 
-        return self._mutate(goal_id, context, "goal.evidence_recorded", mutate)
+        return self._mutate(
+            goal_id,
+            context,
+            "goal.evidence_recorded",
+            mutate,
+            operation=change,
+        )
 
     def ingest_evidence_snapshot(
         self,
@@ -498,7 +537,13 @@ class GoalService:
                 criterion.verdict = change.criterion_verdicts[criterion.id]
             return {"audit_id": goal.audit.id, "verdict": verdict.value}
 
-        return self._mutate(goal_id, context, "goal.audited", mutate)
+        return self._mutate(
+            goal_id,
+            context,
+            "goal.audited",
+            mutate,
+            operation=change,
+        )
 
     def _audit_evidence_findings(
         self,
@@ -551,7 +596,12 @@ class GoalService:
             }
 
         return self._mutate(
-            goal_id, context, "goal.lease_acquired", mutate, require_fence=False
+            goal_id,
+            context,
+            "goal.lease_acquired",
+            mutate,
+            require_fence=False,
+            operation={"ttl_seconds": ttl_seconds},
         )
 
     def release_lease(self, goal_id: str, context: GoalMutationContext) -> Goal:
@@ -567,7 +617,12 @@ class GoalService:
             return {"fencing_token": token}
 
         return self._mutate(
-            goal_id, context, "goal.lease_released", mutate, require_fence=False
+            goal_id,
+            context,
+            "goal.lease_released",
+            mutate,
+            require_fence=False,
+            operation={},
         )
 
     def schedule_wakeup(
@@ -577,7 +632,13 @@ class GoalService:
             goal.wakeup = wakeup
             return {"wakeup": wakeup.model_dump(mode="json") if wakeup else None}
 
-        return self._mutate(goal_id, context, "goal.wakeup_scheduled", mutate)
+        return self._mutate(
+            goal_id,
+            context,
+            "goal.wakeup_scheduled",
+            mutate,
+            operation=wakeup,
+        )
 
     def submit_proposal(
         self,
@@ -612,7 +673,13 @@ class GoalService:
                 "proposer_role": item.proposer_role.value,
             }
 
-        return self._mutate(goal_id, context, "goal.proposal_submitted", mutate)
+        return self._mutate(
+            goal_id,
+            context,
+            "goal.proposal_submitted",
+            mutate,
+            operation=proposal,
+        )
 
     @staticmethod
     def _proposal_role(goal: Goal, actor_principal: str) -> GoalActorRole:
@@ -675,7 +742,13 @@ class GoalService:
                 "drift_state": checkpoint.supervision.drift_state.value,
             }
 
-        return self._mutate(goal_id, context, "goal.supervision_checkpointed", mutate)
+        return self._mutate(
+            goal_id,
+            context,
+            "goal.supervision_checkpointed",
+            mutate,
+            operation=checkpoint,
+        )
 
     def _mutate(
         self,
@@ -685,16 +758,29 @@ class GoalService:
         mutate: Callable[[Goal], dict[str, Any]],
         *,
         require_fence: bool = True,
+        operation: Any = None,
     ) -> Goal:
         goal = self.get(goal_id)
         if not goal:
             raise KeyError(goal_id)
+        fingerprint = operation_fingerprint(
+            realm_id=goal.realm_id,
+            entity_type="goal",
+            entity_id=goal_id,
+            event_type=event_type,
+            operation=operation,
+            context=context,
+        )
         duplicate = find_goal_event_by_idempotency(
             self.store, goal.realm_id, context.idempotency_key
         )
         if duplicate:
-            if duplicate["goal_id"] != goal_id:
-                raise GoalConflict("idempotency key already belongs to another goal")
+            self._validate_replay(
+                duplicate,
+                goal_id=goal_id,
+                event_type=event_type,
+                fingerprint=fingerprint,
+            )
             return goal
         if context.expected_version != goal.version:
             raise GoalConflict(
@@ -715,7 +801,37 @@ class GoalService:
         payload = mutate(goal)
         goal.version += 1
         goal.updated_at = self._clock()
-        return self._commit(goal, event_type, context, payload)
+        return self._commit(
+            goal,
+            event_type,
+            context,
+            payload,
+            operation_fingerprint=fingerprint,
+        )
+
+    @staticmethod
+    def _validate_replay(
+        duplicate: dict[str, Any],
+        *,
+        goal_id: str,
+        event_type: str,
+        fingerprint: str,
+    ) -> None:
+        if duplicate["goal_id"] != goal_id:
+            raise GoalConflict("idempotency key already belongs to another goal")
+        if duplicate.get("event_type") != event_type:
+            raise GoalConflict(
+                "idempotency key already belongs to another goal operation"
+            )
+        recorded = str(duplicate.get("operation_fingerprint") or "")
+        if not recorded:
+            raise GoalConflict(
+                "legacy idempotency event cannot be replayed without an exact operation fingerprint"
+            )
+        if recorded != fingerprint:
+            raise GoalConflict(
+                "idempotency key already belongs to a different goal operation"
+            )
 
     @staticmethod
     def _check_fence(goal: Goal, context: GoalMutationContext) -> None:
@@ -731,6 +847,8 @@ class GoalService:
         event_type: str,
         context: GoalMutationContext,
         payload: dict[str, Any],
+        *,
+        operation_fingerprint: str,
     ) -> Goal:
         try:
             goal = Goal.model_validate(goal.model_dump(mode="python"))
@@ -746,6 +864,7 @@ class GoalService:
                 "policy_revision": context.policy_revision,
                 "idempotency_key": context.idempotency_key,
                 "version": goal.version,
+                "operation_fingerprint": operation_fingerprint,
                 "payload": payload,
             },
         }

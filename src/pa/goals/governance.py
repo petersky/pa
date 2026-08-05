@@ -40,6 +40,7 @@ from pa.goals.advanced_models import (
     ProviderRunState,
     ResourceAccess,
 )
+from pa.goals.idempotency import operation_fingerprint
 from pa.goals.models import (
     Goal,
     GoalCreate,
@@ -288,8 +289,24 @@ class GoalGovernanceService:
     def put_policy(
         self, policy: GoalGovernancePolicy, context: GovernanceMutationContext
     ) -> GoalGovernancePolicy:
+        policy = policy.model_copy(deep=True)
+        fingerprint = operation_fingerprint(
+            realm_id=policy.realm_id,
+            entity_type=POLICY_ENTITY,
+            entity_id="organization",
+            event_type="goal_governance.policy_updated",
+            operation=policy,
+            context=context,
+        )
         duplicate = self._duplicate(policy.realm_id, context.idempotency_key)
         if duplicate:
+            self._validate_replay(
+                duplicate,
+                entity_type=POLICY_ENTITY,
+                entity_id="organization",
+                event_type="goal_governance.policy_updated",
+                fingerprint=fingerprint,
+            )
             current = self.get_policy(policy.realm_id)
             if current:
                 return current
@@ -325,6 +342,7 @@ class GoalGovernanceService:
             "goal_governance.policy_updated",
             context,
             {"version": policy.version},
+            operation_fingerprint_value=fingerprint,
         )
         return policy
 
@@ -344,7 +362,11 @@ class GoalGovernanceService:
             return {"from": previous, "to": priority, "reason": reason}
 
         return self._mutate_state(
-            goal_id, context, "goal_governance.priority_changed", mutate
+            goal_id,
+            context,
+            "goal_governance.priority_changed",
+            mutate,
+            operation={"priority": priority, "reason": reason},
         )
 
     def update_strategies(
@@ -379,7 +401,11 @@ class GoalGovernanceService:
             }
 
         return self._mutate_state(
-            goal_id, context, "goal_governance.strategies_updated", mutate
+            goal_id,
+            context,
+            "goal_governance.strategies_updated",
+            mutate,
+            operation=update,
         )
 
     def authorize_action(
@@ -389,8 +415,23 @@ class GoalGovernanceService:
         context: GovernanceMutationContext,
     ) -> tuple[GoalAutonomyState, GoalActionDecision]:
         goal = self._require_goal(goal_id)
+        fingerprint = operation_fingerprint(
+            realm_id=goal.realm_id,
+            entity_type=AUTONOMY_ENTITY,
+            entity_id=goal_id,
+            event_type="goal_governance.action_decided",
+            operation=request,
+            context=context,
+        )
         duplicate = self._duplicate(goal.realm_id, context.idempotency_key)
         if duplicate:
+            self._validate_replay(
+                duplicate,
+                entity_type=AUTONOMY_ENTITY,
+                entity_id=goal_id,
+                event_type="goal_governance.action_decided",
+                fingerprint=fingerprint,
+            )
             state = self.get_state(goal_id)
             payload = duplicate.get("payload") or {}
             decision_id = str(payload.get("decision_id") or "")
@@ -445,7 +486,12 @@ class GoalGovernanceService:
             }
 
         state = self._mutate_state(
-            goal_id, context, "goal_governance.action_decided", mutate
+            goal_id,
+            context,
+            "goal_governance.action_decided",
+            mutate,
+            operation=request,
+            operation_fingerprint_value=fingerprint,
         )
         assert decision is not None
         return state, decision
@@ -461,8 +507,27 @@ class GoalGovernanceService:
         """Revalidate a reservation immediately before its side effect is applied."""
 
         goal = self._require_goal(goal_id)
+        apply_operation = {
+            "reservation_id": reservation_id,
+            "actual_usage": actual_usage,
+        }
+        fingerprint = operation_fingerprint(
+            realm_id=goal.realm_id,
+            entity_type=AUTONOMY_ENTITY,
+            entity_id=goal_id,
+            event_type="goal_governance.action_applied",
+            operation=apply_operation,
+            context=context,
+        )
         duplicate = self._duplicate(goal.realm_id, context.idempotency_key)
         if duplicate:
+            self._validate_replay(
+                duplicate,
+                entity_type=AUTONOMY_ENTITY,
+                entity_id=goal_id,
+                event_type="goal_governance.action_applied",
+                fingerprint=fingerprint,
+            )
             state = self.get_state(goal_id)
             payload = duplicate.get("payload") or {}
             decision_id = str(payload.get("decision_id") or "")
@@ -601,7 +666,12 @@ class GoalGovernanceService:
             }
 
         state = self._mutate_state(
-            goal_id, context, "goal_governance.action_applied", mutate
+            goal_id,
+            context,
+            "goal_governance.action_applied",
+            mutate,
+            operation=apply_operation,
+            operation_fingerprint_value=fingerprint,
         )
         assert decision is not None
         return state, decision
@@ -668,7 +738,16 @@ class GoalGovernanceService:
             }
 
         return self._mutate_state(
-            goal_id, context, "goal_governance.action_released", mutate
+            goal_id,
+            context,
+            "goal_governance.action_released",
+            mutate,
+            operation={
+                "reservation_id": reservation_id,
+                "actual_usage": actual_usage,
+                "reason": reason,
+                "reconcile_terminal": reconcile_terminal,
+            },
         )
 
     def assign_provider(
@@ -678,8 +757,23 @@ class GoalGovernanceService:
         context: GovernanceMutationContext,
     ) -> tuple[GoalAutonomyState, ProviderGoalRun | None, GoalActionDecision]:
         goal = self._require_goal(goal_id)
+        fingerprint = operation_fingerprint(
+            realm_id=goal.realm_id,
+            entity_type=AUTONOMY_ENTITY,
+            entity_id=goal_id,
+            event_type="goal_governance.provider_assigned",
+            operation=assignment,
+            context=context,
+        )
         duplicate = self._duplicate(goal.realm_id, context.idempotency_key)
         if duplicate:
+            self._validate_replay(
+                duplicate,
+                entity_type=AUTONOMY_ENTITY,
+                entity_id=goal_id,
+                event_type="goal_governance.provider_assigned",
+                fingerprint=fingerprint,
+            )
             state = self.get_state(goal_id)
             payload = duplicate.get("payload") or {}
             decision_id = str(payload.get("decision_id") or "")
@@ -792,7 +886,12 @@ class GoalGovernanceService:
             }
 
         state = self._mutate_state(
-            goal_id, context, "goal_governance.provider_assigned", mutate
+            goal_id,
+            context,
+            "goal_governance.provider_assigned",
+            mutate,
+            operation=assignment,
+            operation_fingerprint_value=fingerprint,
         )
         assert decision is not None
         return state, run, decision
@@ -806,8 +905,24 @@ class GoalGovernanceService:
         """Apply the run reservation at the final sink before exposing invocation."""
 
         goal = self._require_goal(goal_id)
+        launch_operation = {"run_id": run_id}
+        fingerprint = operation_fingerprint(
+            realm_id=goal.realm_id,
+            entity_type=AUTONOMY_ENTITY,
+            entity_id=goal_id,
+            event_type="goal_governance.provider_launched",
+            operation=launch_operation,
+            context=context,
+        )
         duplicate = self._duplicate(goal.realm_id, context.idempotency_key)
         if duplicate:
+            self._validate_replay(
+                duplicate,
+                entity_type=AUTONOMY_ENTITY,
+                entity_id=goal_id,
+                event_type="goal_governance.provider_launched",
+                fingerprint=fingerprint,
+            )
             state = self.get_state(goal_id)
             run = next(
                 (item for item in state.provider_runs if item.id == run_id), None
@@ -896,6 +1011,8 @@ class GoalGovernanceService:
             context.model_copy(update={"expected_version": state.version}),
             "goal_governance.provider_launched",
             mutate,
+            operation=launch_operation,
+            operation_fingerprint_value=fingerprint,
         )
         assert launched is not None
         return state, launched, decision
@@ -1064,16 +1181,35 @@ class GoalGovernanceService:
             }
 
         return self._mutate_state(
-            goal_id, context, "goal_governance.provider_progressed", mutate
+            goal_id,
+            context,
+            "goal_governance.provider_progressed",
+            mutate,
+            operation=progress,
         )
 
     def propose_goal(
         self, request: GoalProposalRequest, context: GovernanceMutationContext
     ) -> GoalProposal:
         realm_id = request.goal.realm_id
+        fingerprint = operation_fingerprint(
+            realm_id=realm_id,
+            entity_type=PROPOSAL_ENTITY,
+            entity_id="<new>",
+            event_type="goal_governance.goal_proposed",
+            operation=request,
+            context=context,
+        )
         duplicate = self._duplicate(realm_id, context.idempotency_key)
         if duplicate:
             entity_id = str(duplicate.get("entity_id") or "")
+            self._validate_replay(
+                duplicate,
+                entity_type=PROPOSAL_ENTITY,
+                entity_id=entity_id,
+                event_type="goal_governance.goal_proposed",
+                fingerprint=fingerprint,
+            )
             proposal = self.get_proposal(entity_id, realm_id=realm_id)
             if proposal:
                 if (
@@ -1110,6 +1246,7 @@ class GoalGovernanceService:
             "goal_governance.goal_proposed",
             context,
             {"kind": request.kind.value, "automatic_activation": auto},
+            operation_fingerprint_value=fingerprint,
         )
         if auto:
             proposal = self._activate_proposal(
@@ -1145,9 +1282,48 @@ class GoalGovernanceService:
         proposal = self.get_proposal(proposal_id, realm_id=realm_id)
         if not proposal:
             raise KeyError(proposal_id)
-        duplicate = self._duplicate(realm_id, context.idempotency_key)
-        if duplicate:
-            return self.get_proposal(proposal_id, realm_id=realm_id) or proposal
+        if review.approve:
+            activation_key = f"{context.idempotency_key}:proposal-activated"
+            activation_context = context.model_copy(
+                update={"idempotency_key": activation_key}
+            )
+            fingerprint = operation_fingerprint(
+                realm_id=realm_id,
+                entity_type=PROPOSAL_ENTITY,
+                entity_id=proposal_id,
+                event_type="goal_governance.proposal_activated",
+                operation=review,
+                context=activation_context,
+            )
+            duplicate = self._duplicate(realm_id, activation_key)
+            if duplicate:
+                self._validate_replay(
+                    duplicate,
+                    entity_type=PROPOSAL_ENTITY,
+                    entity_id=proposal_id,
+                    event_type="goal_governance.proposal_activated",
+                    fingerprint=fingerprint,
+                )
+                return self.get_proposal(proposal_id, realm_id=realm_id) or proposal
+        else:
+            fingerprint = operation_fingerprint(
+                realm_id=realm_id,
+                entity_type=PROPOSAL_ENTITY,
+                entity_id=proposal_id,
+                event_type="goal_governance.proposal_rejected",
+                operation=review,
+                context=context,
+            )
+            duplicate = self._duplicate(realm_id, context.idempotency_key)
+            if duplicate:
+                self._validate_replay(
+                    duplicate,
+                    entity_type=PROPOSAL_ENTITY,
+                    entity_id=proposal_id,
+                    event_type="goal_governance.proposal_rejected",
+                    fingerprint=fingerprint,
+                )
+                return self.get_proposal(proposal_id, realm_id=realm_id) or proposal
         if context.expected_version != proposal.version:
             raise GoalGovernanceConflict(
                 f"expected proposal version {context.expected_version}, "
@@ -1165,6 +1341,7 @@ class GoalGovernanceService:
                 context,
                 disposition=ProposalDisposition.APPROVED,
                 reason=review.reason,
+                operation=review,
             )
         proposal.disposition = ProposalDisposition.REJECTED
         proposal.review_reason = review.reason
@@ -1178,6 +1355,7 @@ class GoalGovernanceService:
             "goal_governance.proposal_rejected",
             context,
             {"reason": review.reason},
+            operation_fingerprint_value=fingerprint,
         )
         return proposal
 
@@ -1196,8 +1374,23 @@ class GoalGovernanceService:
         *,
         realm_id: str = "default",
     ) -> GoalPortfolioReview:
+        fingerprint = operation_fingerprint(
+            realm_id=realm_id,
+            entity_type=REVIEW_ENTITY,
+            entity_id=CURRENT_REVIEW_ID,
+            event_type="goal_governance.portfolio_reviewed",
+            operation=request,
+            context=context,
+        )
         duplicate = self._duplicate(realm_id, context.idempotency_key)
         if duplicate:
+            self._validate_replay(
+                duplicate,
+                entity_type=REVIEW_ENTITY,
+                entity_id=CURRENT_REVIEW_ID,
+                event_type="goal_governance.portfolio_reviewed",
+                fingerprint=fingerprint,
+            )
             current = self.get_latest_review(realm_id)
             if current:
                 return current
@@ -1278,6 +1471,7 @@ class GoalGovernanceService:
                 "findings": findings,
                 "allocation_count": len(allocations),
             },
+            operation_fingerprint_value=fingerprint,
         )
         return review
 
@@ -1307,14 +1501,28 @@ class GoalGovernanceService:
         context: GovernanceMutationContext,
         event_type: str,
         mutate: Callable[[Goal, GoalAutonomyState], dict[str, Any]],
+        *,
+        operation: Any = None,
+        operation_fingerprint_value: str | None = None,
     ) -> GoalAutonomyState:
         goal = self._require_goal(goal_id)
+        fingerprint = operation_fingerprint_value or operation_fingerprint(
+            realm_id=goal.realm_id,
+            entity_type=AUTONOMY_ENTITY,
+            entity_id=goal_id,
+            event_type=event_type,
+            operation=operation,
+            context=context,
+        )
         duplicate = self._duplicate(goal.realm_id, context.idempotency_key)
         if duplicate:
-            if duplicate.get("entity_id") != goal_id:
-                raise GoalGovernanceConflict(
-                    "idempotency key belongs to another governance entity"
-                )
+            self._validate_replay(
+                duplicate,
+                entity_type=AUTONOMY_ENTITY,
+                entity_id=goal_id,
+                event_type=event_type,
+                fingerprint=fingerprint,
+            )
             return self.get_state(goal_id)
         self._validate_goal_context(goal, context)
         state = self.get_state(goal_id)
@@ -1334,6 +1542,7 @@ class GoalGovernanceService:
             event_type,
             context,
             payload,
+            operation_fingerprint_value=fingerprint,
         )
         return state
 
@@ -2073,9 +2282,37 @@ class GoalGovernanceService:
         *,
         disposition: ProposalDisposition,
         reason: str,
+        operation: Any = None,
     ) -> GoalProposal:
         activation_key = f"{context.idempotency_key}:proposal-activated"
-        if self._duplicate(proposal.realm_id, activation_key):
+        activation_context = context.model_copy(
+            update={"idempotency_key": activation_key}
+        )
+        fingerprint = operation_fingerprint(
+            realm_id=proposal.realm_id,
+            entity_type=PROPOSAL_ENTITY,
+            entity_id=proposal.id,
+            event_type="goal_governance.proposal_activated",
+            operation=(
+                operation
+                if operation is not None
+                else {
+                    "proposal_id": proposal.id,
+                    "disposition": disposition,
+                    "reason": reason,
+                }
+            ),
+            context=activation_context,
+        )
+        duplicate = self._duplicate(proposal.realm_id, activation_key)
+        if duplicate:
+            self._validate_replay(
+                duplicate,
+                entity_type=PROPOSAL_ENTITY,
+                entity_id=proposal.id,
+                event_type="goal_governance.proposal_activated",
+                fingerprint=fingerprint,
+            )
             return (
                 self.get_proposal(proposal.id, realm_id=proposal.realm_id) or proposal
             )
@@ -2099,12 +2336,6 @@ class GoalGovernanceService:
         proposal.review_reason = reason
         proposal.version += 1
         proposal.updated_at = self._clock()
-        activation_context = context.model_copy(
-            update={
-                "idempotency_key": activation_key,
-                "expected_version": proposal.version - 1,
-            }
-        )
         self._commit_entity(
             proposal.realm_id,
             PROPOSAL_ENTITY,
@@ -2113,6 +2344,7 @@ class GoalGovernanceService:
             "goal_governance.proposal_activated",
             activation_context,
             {"goal_id": activated.id, "disposition": disposition.value},
+            operation_fingerprint_value=fingerprint,
         )
         return proposal
 
@@ -2247,6 +2479,36 @@ class GoalGovernanceService:
     def _duplicate(self, realm_id: str, key: str) -> dict[str, Any] | None:
         return find_governance_event_by_idempotency(self.store, realm_id, key)
 
+    @staticmethod
+    def _validate_replay(
+        duplicate: dict[str, Any],
+        *,
+        entity_type: str,
+        entity_id: str,
+        event_type: str,
+        fingerprint: str,
+    ) -> None:
+        if (
+            duplicate.get("entity_type") != entity_type
+            or duplicate.get("entity_id") != entity_id
+        ):
+            raise GoalGovernanceConflict(
+                "idempotency key belongs to another governance entity"
+            )
+        if duplicate.get("event_type") != event_type:
+            raise GoalGovernanceConflict(
+                "idempotency key belongs to another governance operation"
+            )
+        recorded = str(duplicate.get("operation_fingerprint") or "")
+        if not recorded:
+            raise GoalGovernanceConflict(
+                "legacy governance event cannot be replayed without an exact operation fingerprint"
+            )
+        if recorded != fingerprint:
+            raise GoalGovernanceConflict(
+                "idempotency key belongs to a different governance operation"
+            )
+
     def _commit_entity(
         self,
         realm_id: str,
@@ -2256,8 +2518,18 @@ class GoalGovernanceService:
         event_type: str,
         context: GovernanceMutationContext,
         payload: dict[str, Any],
+        *,
+        operation_fingerprint_value: str | None = None,
     ) -> None:
         version = int(getattr(entity, "version", 1))
+        fingerprint = operation_fingerprint_value or operation_fingerprint(
+            realm_id=realm_id,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            event_type=event_type,
+            operation=payload,
+            context=context,
+        )
         self.store.commit_event(
             CardEvent(
                 type=EventType.GOAL_GOVERNANCE_UPSERTED,
@@ -2275,6 +2547,7 @@ class GoalGovernanceService:
                         "policy_revision": context.policy_revision,
                         "idempotency_key": context.idempotency_key,
                         "version": version,
+                        "operation_fingerprint": fingerprint,
                         "payload": payload,
                     },
                 },

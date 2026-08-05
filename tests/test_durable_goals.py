@@ -147,6 +147,155 @@ class DurableGoalTests(unittest.TestCase):
             self.assertEqual(revised.policy.authored_by, "agent:supervisor")
             self.assertEqual(policy.authored_by, "user:forged-revision-author")
 
+    def test_idempotency_replay_binds_create_lease_and_checkpoint_operations(
+        self,
+    ) -> None:
+        clock = datetime(2026, 8, 5, tzinfo=UTC)
+        with tempfile.TemporaryDirectory() as tmp:
+            service, _ = self._pair(tmp, clock=lambda: clock)
+            criterion = GoalCriterion(
+                description="operation identity is exact",
+                verification_method="idempotent replay",
+                evidence_requirement="one canonical mutation",
+            )
+            create = GoalCreate(
+                objective="Bind every duplicate replay",
+                criteria=[criterion],
+            )
+            create_context = self._ctx(0, "fingerprinted-create")
+            goal = service.create(create, create_context)
+            exact_create = service.create(create, create_context)
+            self.assertEqual(exact_create.id, goal.id)
+            with self.assertRaisesRegex(GoalConflict, "different goal operation"):
+                service.create(
+                    create.model_copy(update={"objective": "Changed create body"}),
+                    create_context,
+                )
+            with self.assertRaisesRegex(GoalConflict, "different goal operation"):
+                service.create(
+                    create,
+                    create_context.model_copy(
+                        update={"actor_principal": "agent:other-creator"}
+                    ),
+                )
+
+            lease_context = self._ctx(
+                goal.version,
+                "fingerprinted-lease",
+                actor="agent:controller-a",
+            )
+            leased = service.acquire_lease(
+                goal.id,
+                lease_context,
+                ttl_seconds=10,
+            )
+            exact_lease = service.acquire_lease(
+                goal.id,
+                lease_context,
+                ttl_seconds=10,
+            )
+            self.assertEqual(exact_lease.version, leased.version)
+            with self.assertRaisesRegex(GoalConflict, "different goal operation"):
+                service.acquire_lease(
+                    goal.id,
+                    lease_context,
+                    ttl_seconds=999,
+                )
+            with self.assertRaisesRegex(GoalConflict, "different goal operation"):
+                service.acquire_lease(
+                    goal.id,
+                    lease_context.model_copy(
+                        update={
+                            "actor_principal": "agent:controller-b",
+                            "authority_instance_id": "instance-b",
+                        }
+                    ),
+                    ttl_seconds=10,
+                )
+
+            checkpoint = GoalSupervisionCheckpoint(
+                criteria=leased.criteria,
+                evidence=leased.evidence,
+                proposals=leased.proposals,
+                work_packages=leased.work_packages,
+                operator_interactions=leased.operator_interactions,
+                supervision=leased.supervision,
+                linked_card_ids=leased.linked_card_ids,
+                linked_dispatch_ids=leased.linked_dispatch_ids,
+                assumptions=leased.assumptions,
+                risks=leased.risks,
+                strategy_revision=leased.strategy_revision,
+                state=leased.state,
+                progress_summary="Canonical checkpoint",
+                reason="Persist one exact checkpoint",
+            )
+            checkpoint_context = self._ctx(
+                leased.version,
+                "fingerprinted-checkpoint",
+                actor="agent:controller-a",
+                fence=leased.lease.fencing_token,
+            )
+            checkpointed = service.checkpoint_supervision(
+                goal.id,
+                checkpoint,
+                checkpoint_context,
+            )
+            exact_checkpoint = service.checkpoint_supervision(
+                goal.id,
+                checkpoint,
+                checkpoint_context,
+            )
+            self.assertEqual(exact_checkpoint.version, checkpointed.version)
+            with self.assertRaisesRegex(GoalConflict, "different goal operation"):
+                service.checkpoint_supervision(
+                    goal.id,
+                    checkpoint.model_copy(
+                        update={
+                            "progress_summary": "Changed checkpoint",
+                            "reason": "Changed body",
+                        }
+                    ),
+                    checkpoint_context.model_copy(
+                        update={
+                            "actor_principal": "agent:controller-b",
+                            "authority_instance_id": "instance-b",
+                        }
+                    ),
+                )
+
+            events = service.events(goal.id)
+            self.assertTrue(
+                all(len(event["operation_fingerprint"]) == 64 for event in events)
+            )
+
+    def test_legacy_idempotency_event_fails_closed_without_a_fingerprint(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service, _ = self._pair(tmp)
+            create = GoalCreate(
+                objective="Fail closed on ambiguous legacy replay",
+                criteria=[
+                    GoalCriterion(
+                        description="legacy replay is explicit",
+                        verification_method="operation fingerprint",
+                        evidence_requirement="conservative conflict",
+                    )
+                ],
+            )
+            context = self._ctx(0, "legacy-fingerprint-gap")
+            service.create(create, context)
+            with service.store._conn() as conn:
+                conn.execute(
+                    "UPDATE durable_goal_events SET operation_fingerprint='' "
+                    "WHERE realm_id=? AND idempotency_key=?",
+                    (create.realm_id, context.idempotency_key),
+                )
+            with self.assertRaisesRegex(
+                GoalConflict, "legacy idempotency event.*exact operation fingerprint"
+            ):
+                service.create(create, context)
+
     def test_controller_lease_fences_stale_instances_and_idempotent_retry(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             service, _ = self._pair(tmp)

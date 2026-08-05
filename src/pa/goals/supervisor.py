@@ -200,6 +200,18 @@ class GoalSupervisor:
             fencing_token=goal.lease.fencing_token or None,
         )
 
+    def _replay_governance_context(
+        self,
+        goal: Goal,
+        expected_version: int,
+        key: str,
+    ) -> GovernanceMutationContext:
+        context = self._governance_context(goal, expected_version, key)
+        duplicate = self.governance._duplicate(goal.realm_id, key)
+        if duplicate is not None:
+            context.expected_version = max(int(duplicate.get("version", 1)) - 1, 0)
+        return context
+
     def _governed_action(
         self,
         goal: Goal,
@@ -213,7 +225,9 @@ class GoalSupervisor:
         state, reservation_decision = self.governance.authorize_action(
             goal.id,
             request,
-            self._governance_context(goal, state.version, f"{key}:reserve"),
+            self._replay_governance_context(
+                goal, state.version, f"{key}:reserve"
+            ),
         )
         if reservation_decision.disposition != GoalActionDisposition.AUTHORIZED:
             raise GoalGovernanceConflict(
@@ -224,7 +238,7 @@ class GoalSupervisor:
         state, apply_decision = self.governance.apply_action(
             goal.id,
             reservation_id,
-            self._governance_context(goal, state.version, f"{key}:apply"),
+            self._replay_governance_context(goal, state.version, f"{key}:apply"),
         )
         if apply_decision.disposition != GoalActionDisposition.AUTHORIZED:
             raise GoalGovernanceConflict(
@@ -239,7 +253,7 @@ class GoalSupervisor:
             self.governance.release_action(
                 goal.id,
                 reservation_id,
-                self._governance_context(
+                self._replay_governance_context(
                     goal, current.version, f"{key}:release-failed"
                 ),
                 actual_usage=GoalUsage(),
@@ -252,7 +266,9 @@ class GoalSupervisor:
         self.governance.release_action(
             goal.id,
             reservation_id,
-            self._governance_context(goal, current.version, f"{key}:release-applied"),
+            self._replay_governance_context(
+                goal, current.version, f"{key}:release-applied"
+            ),
             actual_usage=request.estimate,
             reason="side effect applied",
         )
