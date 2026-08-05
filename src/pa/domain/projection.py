@@ -359,11 +359,16 @@ class CardProjection:
             self._migrate_schema(conn)
             self._migrate_project_repositories(conn)
 
-            from pa.goals.projection import init_goal_schema
+            from pa.goals.projection import (
+                goal_projection_requires_legacy_id_rebuild,
+                init_goal_schema,
+            )
             from pa.intake.projection import init_intake_schema
             from pa.limbic.projection import init_limbic_schema
 
             init_goal_schema(conn)
+            if goal_projection_requires_legacy_id_rebuild(conn):
+                self._legacy_integrity_upgrade_required = True
             init_intake_schema(conn)
             init_limbic_schema(conn)
 
@@ -3484,6 +3489,30 @@ class CardProjection:
             return
         with self._conn() as conn:
             conn.execute("DELETE FROM cards WHERE realm_id = ?", (realm_id,))
+            # Goal state and its event/index projections are all derived from the
+            # same durable realm log.  Leaving any of them behind makes an ID
+            # canonicalization rebuild append a second logical entity beside the
+            # malformed legacy row.
+            conn.execute("DELETE FROM durable_goals WHERE realm_id = ?", (realm_id,))
+            conn.execute(
+                "DELETE FROM durable_goal_events WHERE realm_id = ?", (realm_id,)
+            )
+            conn.execute(
+                "DELETE FROM durable_goal_governance_entities WHERE realm_id = ?",
+                (realm_id,),
+            )
+            conn.execute(
+                "DELETE FROM durable_goal_governance_events WHERE realm_id = ?",
+                (realm_id,),
+            )
+            conn.execute(
+                "DELETE FROM durable_goal_projection_heads WHERE realm_id = ?",
+                (realm_id,),
+            )
+            conn.execute(
+                "DELETE FROM durable_goal_projection_conflicts WHERE realm_id = ?",
+                (realm_id,),
+            )
             conn.execute(
                 "DELETE FROM project_repositories WHERE project_id IN (SELECT id FROM projects WHERE realm_id=?)",
                 (realm_id,),

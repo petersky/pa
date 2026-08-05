@@ -203,6 +203,82 @@ def test_goal_identity_and_authority_come_from_the_authenticated_request() -> No
     )
 
 
+def test_blank_goal_reference_ids_are_rejected_at_the_http_boundary() -> None:
+    with (
+        tempfile.TemporaryDirectory() as tmp,
+        TestClient(_app(Path(tmp))) as client,
+    ):
+        assert client.get("/").status_code == 200
+        csrf = client.cookies.get("pa_csrf")
+        headers = {
+            "X-CSRF-Token": csrf,
+            "Idempotency-Key": "blank-reference-goal",
+        }
+        blank_criterion = client.post(
+            "/api/goals",
+            params={"expected_version": 0, "policy_revision": 1},
+            headers=headers,
+            json={
+                "objective": "Reject blank graph references",
+                "criteria": [
+                    {
+                        "id": "   ",
+                        "description": "ids are nonblank",
+                        "verification_method": "HTTP validation",
+                        "evidence_requirement": "422 response",
+                    }
+                ],
+            },
+        )
+        assert blank_criterion.status_code == 422, blank_criterion.text
+
+        created = client.post(
+            "/api/goals",
+            params={"expected_version": 0, "policy_revision": 1},
+            headers={**headers, "Idempotency-Key": "valid-reference-goal"},
+            json={
+                "objective": "Reject blank evidence references",
+                "criteria": [
+                    {
+                        "description": "evidence ids are nonblank",
+                        "verification_method": "HTTP validation",
+                        "evidence_requirement": "422 response",
+                    }
+                ],
+            },
+        )
+        assert created.status_code == 201, created.text
+        goal = created.json()
+        blank_evidence = client.post(
+            f"/api/goals/{goal['id']}/evidence",
+            params={"expected_version": 1, "policy_revision": 1},
+            headers={**headers, "Idempotency-Key": "blank-evidence-id"},
+            json={
+                "evidence": {
+                    "id": "",
+                    "criterion_ids": [goal["criteria"][0]["id"]],
+                    "kind": "test",
+                    "summary": "This must not enter the event ledger",
+                }
+            },
+        )
+        blank_criterion_reference = client.post(
+            f"/api/goals/{goal['id']}/evidence",
+            params={"expected_version": 1, "policy_revision": 1},
+            headers={**headers, "Idempotency-Key": "blank-criterion-reference"},
+            json={
+                "evidence": {
+                    "criterion_ids": ["\t"],
+                    "kind": "test",
+                    "summary": "Blank references are invalid",
+                }
+            },
+        )
+
+    assert blank_evidence.status_code == 422, blank_evidence.text
+    assert blank_criterion_reference.status_code == 422, blank_criterion_reference.text
+
+
 def test_goal_mutation_retry_releases_crash_stranded_reservation() -> None:
     with (
         tempfile.TemporaryDirectory() as tmp,

@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import Barrier
 
+from pa.domain.models import CardEvent, EventType
 from pa.domain.projection import CardProjection
 from pa.goals.models import (
     CriterionVerdict,
@@ -114,6 +115,350 @@ class DurableGoalTests(unittest.TestCase):
             self.assertTrue(
                 all(event["authority_instance_id"] == "instance-a" for event in events)
             )
+
+    def test_legacy_blank_graph_ids_migrate_deterministically_across_rebuilds(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service, replica = self._pair(tmp)
+            goal_id = "legacy-blank-reference-goal"
+            stamp = "2026-01-02T03:04:05Z"
+            legacy_goal = {
+                "id": goal_id,
+                "parent_goal_id": " ",
+                "objective": "Preserve a legacy goal graph without blank ids",
+                "policy": {"effective_at": stamp},
+                "lease": {
+                    "holder_instance_id": " ",
+                    "claim_id": "\t",
+                    "eligible_instance_ids": ["", "instance-a"],
+                },
+                "linked_card_ids": ["", "legacy-card"],
+                "linked_dispatch_ids": [" ", "legacy-dispatch"],
+                "supervision": {
+                    "controller_session_id": " ",
+                    "replacement_session_ids": ["", "legacy-session"],
+                },
+                "created_at": stamp,
+                "updated_at": stamp,
+                "criteria": [
+                    {
+                        "id": "",
+                        "description": "first criterion",
+                        "verification_method": "legacy replay",
+                        "evidence_requirement": "first evidence",
+                        "evidence_ids": [""],
+                    },
+                    {
+                        "id": "   ",
+                        "description": "second criterion",
+                        "verification_method": "replica rebuild",
+                        "evidence_requirement": "second evidence",
+                        "evidence_ids": ["\t"],
+                    },
+                ],
+                "evidence": [
+                    {
+                        "id": "",
+                        "criterion_ids": [""],
+                        "kind": "test",
+                        "summary": "first legacy observation",
+                        "observed_at": stamp,
+                        "recorded_by_principal": " ",
+                        "recorded_by_instance_id": "\t",
+                        "producer_service_id": " ",
+                    },
+                    {
+                        "id": "\n",
+                        "criterion_ids": [" "],
+                        "kind": "test",
+                        "summary": "second legacy observation",
+                        "observed_at": stamp,
+                    },
+                ],
+                "proposals": [
+                    {
+                        "id": "",
+                        "proposer_principal": "agent:legacy",
+                        "proposer_role": "coordinator",
+                        "action": {
+                            "kind": "create_work_package",
+                            "title": "first package",
+                            "objective": "verify first criterion",
+                            "criterion_ids": [""],
+                        },
+                        "rationale": "legacy package",
+                        "expected_goal_version": 1,
+                        "policy_revision": 1,
+                        "created_at": stamp,
+                        "updated_at": stamp,
+                    },
+                    {
+                        "id": " ",
+                        "proposer_principal": "agent:legacy",
+                        "proposer_role": "coordinator",
+                        "action": {
+                            "kind": "dispatch_work_package",
+                            "work_package_id": "",
+                        },
+                        "rationale": "legacy dispatch",
+                        "expected_goal_version": 1,
+                        "policy_revision": 1,
+                        "created_at": stamp,
+                        "updated_at": stamp,
+                    },
+                    {
+                        "id": "\t",
+                        "proposer_principal": "agent:legacy",
+                        "proposer_role": "verifier",
+                        "action": {
+                            "kind": "record_evidence",
+                            "evidence": {
+                                "id": "",
+                                "criterion_ids": [""],
+                                "kind": "test",
+                                "summary": "first proposed evidence",
+                                "observed_at": stamp,
+                            },
+                        },
+                        "rationale": "first legacy evidence proposal",
+                        "expected_goal_version": 1,
+                        "policy_revision": 1,
+                        "created_at": stamp,
+                        "updated_at": stamp,
+                    },
+                    {
+                        "id": "\n",
+                        "proposer_principal": "agent:legacy",
+                        "proposer_role": "verifier",
+                        "action": {
+                            "kind": "record_evidence",
+                            "evidence": {
+                                "id": " ",
+                                "criterion_ids": [" "],
+                                "kind": "test",
+                                "summary": "second proposed evidence",
+                                "observed_at": stamp,
+                            },
+                        },
+                        "rationale": "second legacy evidence proposal",
+                        "expected_goal_version": 1,
+                        "policy_revision": 1,
+                        "created_at": stamp,
+                        "updated_at": stamp,
+                    },
+                ],
+                "work_packages": [
+                    {
+                        "id": "",
+                        "proposal_id": "",
+                        "title": "first package",
+                        "objective": "verify first criterion",
+                        "criterion_ids": [""],
+                        "card_id": " ",
+                        "preferred_instance_id": "\t",
+                        "dispatch_ids": ["", "legacy-dispatch"],
+                        "session_id": " ",
+                        "replacement_session_ids": ["\n", "legacy-session"],
+                        "executor_service_id": " ",
+                        "action_reservation_id": "\t",
+                        "created_at": stamp,
+                        "updated_at": stamp,
+                    },
+                    {
+                        "id": "\t",
+                        "proposal_id": " ",
+                        "title": "second package",
+                        "objective": "verify second criterion",
+                        "criterion_ids": [" "],
+                        "depends_on": [""],
+                        "created_at": stamp,
+                        "updated_at": stamp,
+                    },
+                ],
+                "operator_interactions": [
+                    {
+                        "id": "",
+                        "proposal_id": "",
+                        "notification_id": "notice-one",
+                        "created_at": stamp,
+                    },
+                    {
+                        "id": " ",
+                        "proposal_id": " ",
+                        "notification_id": "notice-two",
+                        "created_at": stamp,
+                    },
+                ],
+                "audit": {
+                    "id": "",
+                    "auditor_principal": "agent:legacy-verifier",
+                    "auditor_instance_id": " ",
+                    "verifier_service_id": "\t",
+                    "verdict": "satisfied",
+                    "criterion_verdicts": {
+                        "": "satisfied",
+                        " ": "unsatisfied",
+                    },
+                    "evidence_ids": ["", " "],
+                    "explanation": "legacy evidence satisfied both criteria",
+                    "created_at": stamp,
+                },
+            }
+            service.store.commit_event(
+                CardEvent(
+                    type=EventType.GOAL_UPSERTED,
+                    realm_id="default",
+                    author_principal="agent:legacy",
+                    author_instance="instance-a",
+                    payload={
+                        "goal": legacy_goal,
+                        "goal_event": {
+                            "goal_id": goal_id,
+                            "event_type": "goal.legacy_imported",
+                            "actor_principal": "agent:legacy",
+                            "authority_instance_id": "instance-a",
+                            "policy_revision": 1,
+                            "idempotency_key": "legacy-blank-reference-import",
+                            "version": 1,
+                        },
+                    },
+                )
+            )
+
+            restored = service.get(goal_id)
+            assert restored is not None
+            replica.rebuild_from_log("default")
+            rebuilt = GoalService(replica, "instance-b").get(goal_id)
+            assert rebuilt is not None
+
+            self.assertEqual(
+                restored.model_dump(mode="json"), rebuilt.model_dump(mode="json")
+            )
+            self.assertEqual(
+                restored.model_dump(mode="json"),
+                service.get(goal_id).model_dump(mode="json"),
+            )
+            criterion_ids = [item.id for item in restored.criteria]
+            evidence_ids = [item.id for item in restored.evidence]
+            proposal_ids = [item.id for item in restored.proposals]
+            package_ids = [item.id for item in restored.work_packages]
+            interaction_ids = [item.id for item in restored.operator_interactions]
+            for identifiers in (
+                criterion_ids,
+                evidence_ids,
+                proposal_ids,
+                package_ids,
+                interaction_ids,
+            ):
+                self.assertEqual(len(identifiers), len(set(identifiers)))
+                self.assertTrue(all(identifier.strip() for identifier in identifiers))
+            self.assertTrue(restored.audit.id.strip())
+            self.assertIsNone(restored.parent_goal_id)
+            self.assertEqual(restored.linked_card_ids, ["legacy-card"])
+            self.assertEqual(restored.linked_dispatch_ids, ["legacy-dispatch"])
+            self.assertIsNone(restored.lease.holder_instance_id)
+            self.assertIsNone(restored.lease.claim_id)
+            self.assertEqual(restored.lease.eligible_instance_ids, ["instance-a"])
+            self.assertIsNone(restored.supervision.controller_session_id)
+            self.assertEqual(
+                restored.supervision.replacement_session_ids, ["legacy-session"]
+            )
+            self.assertIsNone(restored.evidence[0].recorded_by_principal)
+            self.assertIsNone(restored.evidence[0].recorded_by_instance_id)
+            self.assertIsNone(restored.evidence[0].producer_service_id)
+            self.assertEqual(restored.criteria[0].evidence_ids, [evidence_ids[0]])
+            self.assertEqual(restored.criteria[1].evidence_ids, [evidence_ids[1]])
+            self.assertEqual(restored.evidence[0].criterion_ids, [criterion_ids[0]])
+            self.assertEqual(restored.evidence[1].criterion_ids, [criterion_ids[1]])
+            self.assertEqual(restored.work_packages[0].proposal_id, proposal_ids[0])
+            self.assertEqual(restored.work_packages[1].proposal_id, proposal_ids[1])
+            self.assertEqual(restored.work_packages[1].depends_on, [package_ids[0]])
+            self.assertEqual(
+                restored.proposals[0].action.criterion_ids, [criterion_ids[0]]
+            )
+            self.assertEqual(
+                restored.proposals[1].action.work_package_id, package_ids[0]
+            )
+            self.assertIsNone(restored.work_packages[0].card_id)
+            self.assertIsNone(restored.work_packages[0].preferred_instance_id)
+            self.assertEqual(
+                restored.work_packages[0].dispatch_ids, ["legacy-dispatch"]
+            )
+            self.assertIsNone(restored.work_packages[0].session_id)
+            self.assertEqual(
+                restored.work_packages[0].replacement_session_ids,
+                ["legacy-session"],
+            )
+            self.assertIsNone(restored.work_packages[0].executor_service_id)
+            self.assertIsNone(restored.work_packages[0].action_reservation_id)
+            proposed_evidence_ids = [
+                restored.proposals[index].action.evidence.id for index in (2, 3)
+            ]
+            self.assertEqual(len(set(proposed_evidence_ids)), 2)
+            self.assertTrue(set(proposed_evidence_ids).isdisjoint(evidence_ids))
+            self.assertEqual(
+                [item.proposal_id for item in restored.operator_interactions],
+                proposal_ids[:2],
+            )
+            self.assertEqual(
+                set(restored.audit.criterion_verdicts.values()),
+                {CriterionVerdict.SATISFIED, CriterionVerdict.UNSATISFIED},
+            )
+            self.assertIsNone(restored.audit.auditor_instance_id)
+            self.assertIsNone(restored.audit.verifier_service_id)
+            self.assertEqual(restored.audit.evidence_ids, evidence_ids)
+
+    def test_legacy_blank_top_level_goal_id_is_canonical_before_projection(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service, replica = self._pair(tmp)
+            canonical_id = "legacy-event-goal-id"
+            stamp = "2026-01-02T03:04:05Z"
+            service.store.commit_event(
+                CardEvent(
+                    type=EventType.GOAL_UPSERTED,
+                    realm_id="default",
+                    author_principal="agent:legacy",
+                    author_instance="instance-a",
+                    payload={
+                        "goal": {
+                            "id": " ",
+                            "objective": "Canonicalize before indexing",
+                            "criteria": [
+                                {
+                                    "id": "criterion-one",
+                                    "description": "addressable after migration",
+                                    "verification_method": "replica lookup",
+                                    "evidence_requirement": "stable goal id",
+                                }
+                            ],
+                            "policy": {"effective_at": stamp},
+                            "created_at": stamp,
+                            "updated_at": stamp,
+                        },
+                        "goal_event": {
+                            "goal_id": canonical_id,
+                            "event_type": "goal.legacy_imported",
+                            "actor_principal": "agent:legacy",
+                            "authority_instance_id": "instance-a",
+                            "policy_revision": 1,
+                            "idempotency_key": "legacy-blank-goal-id",
+                            "version": 1,
+                        },
+                    },
+                )
+            )
+
+            restored = service.get(canonical_id)
+            assert restored is not None
+            self.assertEqual(restored.id, canonical_id)
+            self.assertEqual(service.get(restored.id).id, canonical_id)
+            self.assertEqual([item.id for item in service.list()], [canonical_id])
+            replica.rebuild_from_log("default")
+            rebuilt = GoalService(replica, "instance-b")
+            self.assertEqual(rebuilt.get(canonical_id).id, canonical_id)
 
     def test_owner_and_policy_author_are_derived_from_the_mutation_actor(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

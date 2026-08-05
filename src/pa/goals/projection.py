@@ -2,6 +2,41 @@ from __future__ import annotations
 
 import hashlib
 import json
+from typing import Any
+
+
+def _canonical_goal_projection_id(
+    goal: Any, fallback_goal_id: Any = None
+) -> str | None:
+    if not isinstance(goal, dict):
+        return None
+    candidate = goal.get("id") or fallback_goal_id
+    if not isinstance(candidate, str) or not candidate.strip():
+        return None
+    return candidate
+
+
+def _canonical_governance_projection_id(
+    entity_type: str,
+    raw_entity_id: Any,
+    entity: Any,
+) -> str | None:
+    if not isinstance(entity, dict):
+        return None
+    if raw_entity_id is not None and not isinstance(raw_entity_id, str):
+        return None
+    raw = raw_entity_id or ""
+    if entity_type == "goal_autonomy":
+        candidate = entity.get("goal_id") or raw
+    elif entity_type == "goal_governance_policy":
+        candidate = "organization"
+    elif entity_type == "goal_portfolio_review":
+        candidate = "current"
+    else:
+        candidate = entity.get("id") or raw
+    if not isinstance(candidate, str) or not candidate.strip():
+        return None
+    return candidate
 
 
 def init_goal_schema(conn) -> None:
@@ -91,6 +126,47 @@ def init_goal_schema(conn) -> None:
                 f"ALTER TABLE {table} ADD COLUMN "
                 "operation_fingerprint TEXT NOT NULL DEFAULT ''"
             )
+
+
+def goal_projection_requires_legacy_id_rebuild(conn) -> bool:
+    """Detect projected payloads whose canonical legacy identifiers would change."""
+
+    from pa.goals.advanced_models import normalize_legacy_governance_payload
+    from pa.goals.models import normalize_legacy_goal_payload
+
+    for row in conn.execute("SELECT id, payload FROM durable_goals").fetchall():
+        try:
+            payload = json.loads(row["payload"])
+        except TypeError, json.JSONDecodeError:
+            continue
+        normalized = normalize_legacy_goal_payload(payload, fallback_goal_id=row["id"])
+        if (
+            normalized != payload
+            or _canonical_goal_projection_id(normalized, row["id"]) != row["id"]
+        ):
+            return True
+    for row in conn.execute(
+        """SELECT realm_id, entity_type, id, payload
+           FROM durable_goal_governance_entities"""
+    ).fetchall():
+        try:
+            payload = json.loads(row["payload"])
+        except TypeError, json.JSONDecodeError:
+            continue
+        entity_type = str(row["entity_type"])
+        normalized = normalize_legacy_governance_payload(
+            entity_type,
+            row["id"],
+            payload,
+            realm_id=str(row["realm_id"]),
+        )
+        if (
+            normalized != payload
+            or _canonical_governance_projection_id(entity_type, row["id"], normalized)
+            != row["id"]
+        ):
+            return True
+    return False
 
 
 def _encoded_payload(payload: dict) -> tuple[str, str]:
@@ -203,10 +279,16 @@ def _accept_projection_payload(
 
 
 def apply_goal_event(projection, event) -> None:
-    goal = event.payload.get("goal") or {}
     record = event.payload.get("goal_event") or {}
-    goal_id = str(goal.get("id") or record.get("goal_id") or "")
-    if not goal_id:
+    from pa.goals.models import normalize_legacy_goal_payload
+
+    goal = normalize_legacy_goal_payload(
+        event.payload.get("goal") or {},
+        fallback_goal_id=record.get("goal_id"),
+        legacy_entity_seed=event.id,
+    )
+    goal_id = _canonical_goal_projection_id(goal, record.get("goal_id"))
+    if goal_id is None:
         return
     wakeup = goal.get("wakeup") or {}
     version = int(goal.get("version", 1))
@@ -281,11 +363,27 @@ def apply_goal_event(projection, event) -> None:
 
 
 def apply_goal_governance_event(projection, event) -> None:
-    entity_type = str(event.payload.get("entity_type") or "")
-    entity_id = str(event.payload.get("entity_id") or "")
-    entity = event.payload.get("entity") or {}
+    raw_entity_type = event.payload.get("entity_type")
+    if not isinstance(raw_entity_type, str) or not raw_entity_type.strip():
+        return
+    entity_type = raw_entity_type
+    raw_entity_id = event.payload.get("entity_id")
+    if raw_entity_id is None:
+        raw_entity_id = ""
+    if not isinstance(raw_entity_id, str):
+        return
+    from pa.goals.advanced_models import normalize_legacy_governance_payload
+
+    entity = normalize_legacy_governance_payload(
+        entity_type,
+        raw_entity_id,
+        event.payload.get("entity") or {},
+        realm_id=event.realm_id,
+        legacy_entity_seed=event.id,
+    )
+    entity_id = _canonical_governance_projection_id(entity_type, raw_entity_id, entity)
     record = event.payload.get("governance_event") or {}
-    if not entity_type or not entity_id or not entity:
+    if entity_id is None or not entity:
         return
     version = int(entity.get("version", record.get("version", 1)))
     updated_at = str(
@@ -360,20 +458,44 @@ def apply_goal_governance_event(projection, event) -> None:
 def get_goal_payload(
     projection, goal_id: str, realm_id: str | None = None
 ) -> dict | None:
-    query = "SELECT payload FROM durable_goals WHERE id=?"
+    query = "SELECT id, payload FROM durable_goals WHERE id=?"
     params: list[object] = [goal_id]
     if realm_id:
         query += " AND realm_id=?"
         params.append(realm_id)
     with projection._conn() as conn:
         row = conn.execute(query, params).fetchone()
-    return json.loads(row["payload"]) if row else None
+    from pa.goals.models import normalize_legacy_goal_payload
+
+    if row:
+        return normalize_legacy_goal_payload(
+            json.loads(row["payload"]),
+            fallback_goal_id=str(row["id"] or "") or None,
+        )
+    # A projection created by an older build may have indexed a whitespace
+    # top-level id before decoding it. Keep that legacy row addressable until
+    # the automatic event-log rebuild canonicalizes its primary key.
+    fallback_query = "SELECT id, payload FROM durable_goals"
+    fallback_params: list[object] = []
+    if realm_id:
+        fallback_query += " WHERE realm_id=?"
+        fallback_params.append(realm_id)
+    with projection._conn() as conn:
+        rows = conn.execute(fallback_query, fallback_params).fetchall()
+    for candidate in rows:
+        payload = normalize_legacy_goal_payload(
+            json.loads(candidate["payload"]),
+            fallback_goal_id=str(candidate["id"] or "") or None,
+        )
+        if payload.get("id") == goal_id:
+            return payload
+    return None
 
 
 def list_goal_payloads(
     projection, realm_id: str | None = None, state: str | None = None
 ) -> list[dict]:
-    query = "SELECT payload FROM durable_goals WHERE 1=1"
+    query = "SELECT id, payload FROM durable_goals WHERE 1=1"
     params: list[object] = []
     if realm_id:
         query += " AND realm_id=?"
@@ -384,7 +506,15 @@ def list_goal_payloads(
     query += " ORDER BY updated_at DESC"
     with projection._conn() as conn:
         rows = conn.execute(query, params).fetchall()
-    return [json.loads(row["payload"]) for row in rows]
+    from pa.goals.models import normalize_legacy_goal_payload
+
+    return [
+        normalize_legacy_goal_payload(
+            json.loads(row["payload"]),
+            fallback_goal_id=str(row["id"] or "") or None,
+        )
+        for row in rows
+    ]
 
 
 def list_goal_events(projection, goal_id: str) -> list[dict]:
@@ -424,17 +554,36 @@ def get_governance_payload(
                WHERE realm_id=? AND entity_type=? AND id=?""",
             (realm_id, entity_type, entity_id),
         ).fetchone()
-    return json.loads(row["payload"]) if row else None
+    if not row:
+        return None
+    from pa.goals.advanced_models import normalize_legacy_governance_payload
+
+    return normalize_legacy_governance_payload(
+        entity_type,
+        entity_id,
+        json.loads(row["payload"]),
+        realm_id=realm_id,
+    )
 
 
 def list_governance_payloads(projection, realm_id: str, entity_type: str) -> list[dict]:
     with projection._conn() as conn:
         rows = conn.execute(
-            """SELECT payload FROM durable_goal_governance_entities
+            """SELECT id, payload FROM durable_goal_governance_entities
                WHERE realm_id=? AND entity_type=? ORDER BY updated_at DESC, id""",
             (realm_id, entity_type),
         ).fetchall()
-    return [json.loads(row["payload"]) for row in rows]
+    from pa.goals.advanced_models import normalize_legacy_governance_payload
+
+    return [
+        normalize_legacy_governance_payload(
+            entity_type,
+            str(row["id"]),
+            json.loads(row["payload"]),
+            realm_id=realm_id,
+        )
+        for row in rows
+    ]
 
 
 def list_governance_events(
