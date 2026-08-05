@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import hashlib
+import json
 import logging
 from typing import Annotated
 
@@ -154,6 +155,28 @@ def _goal_portfolio_public(payload: dict) -> dict:
     for entry in public.get("goals", []):
         if isinstance(entry, dict) and isinstance(entry.get("autonomy"), dict):
             entry["autonomy"] = _redact_unlaunched_provider_runs(entry["autonomy"])
+    return public
+
+
+def _projection_conflicts_public(conflicts: list[dict]) -> list[dict]:
+    public = copy.deepcopy(conflicts)
+    for conflict in public:
+        for field in ("canonical_payload", "competing_payload"):
+            encoded = conflict.get(field)
+            if not isinstance(encoded, str):
+                continue
+            try:
+                payload = json.loads(encoded)
+            except TypeError, ValueError:
+                continue
+            if isinstance(payload, dict) and isinstance(
+                payload.get("provider_runs"), list
+            ):
+                conflict[field] = json.dumps(
+                    _redact_unlaunched_provider_runs(payload),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
     return public
 
 
@@ -354,7 +377,9 @@ def get_goal(request: Request, goal_id: str, realm: str | None = None):
     return {
         "goal": goal.model_dump(mode="json"),
         "events": _service(request).events(goal_id),
-        "projection_conflicts": _service(request).conflicts(goal_id),
+        "projection_conflicts": _projection_conflicts_public(
+            _service(request).conflicts(goal_id)
+        ),
     }
 
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from pa.config import Settings, reset_settings
 from pa.core.kernel import Kernel
 from pa.domain.store import reset_store
 from pa.instance.agent_session import reset_instance_agent
+from pa.modules.goals import _projection_conflicts_public
 
 
 @pytest.fixture(autouse=True)
@@ -489,3 +491,29 @@ def test_provider_launch_credential_rejects_shared_fleet_origin_spoof() -> None:
     assert spoofed.json()["detail"]["code"] == "invalid_provider_run_credential"
     assert accepted.status_code == 200, accepted.text
     assert accepted.json()["provider_runs"][0]["state"] == "completed"
+
+
+def test_projection_conflict_reads_do_not_bypass_provider_launch_gate() -> None:
+    autonomy = {
+        "goal_id": "goal-a",
+        "provider_runs": [
+            {
+                "id": "run-a",
+                "launched_at": None,
+                "invocation": {"prompt": "execute before apply"},
+                "progress_credential_hash": "sensitive-derived-value",
+            }
+        ],
+    }
+    public = _projection_conflicts_public(
+        [
+            {
+                "canonical_payload": json.dumps(autonomy),
+                "competing_payload": json.dumps(autonomy),
+            }
+        ]
+    )
+    for field in ("canonical_payload", "competing_payload"):
+        provider_run = json.loads(public[0][field])["provider_runs"][0]
+        assert "invocation" not in provider_run
+        assert "progress_credential_hash" not in provider_run
