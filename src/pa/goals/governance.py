@@ -452,6 +452,30 @@ class GoalGovernanceService:
                 raise GoalGovernanceConflict(
                     "idempotent apply decision is no longer in the bounded projection; consult the event ledger"
                 )
+            reservation = self._require_reservation(state, reservation_id)
+            self._validate_reservation(
+                goal,
+                reservation,
+                context,
+                allow_stale_policy=True,
+            )
+            if reservation.state != GoalReservationState.APPLIED:
+                raise GoalGovernanceConflict(
+                    "idempotent apply replay requires its reservation to remain applied"
+                )
+            if (
+                replayed.disposition != GoalActionDisposition.AUTHORIZED
+                or replayed.reservation_id != reservation.id
+                or replayed.action_class != reservation.action_class
+                or replayed.request != reservation.request
+                or replayed.decided_by != reservation.actor_principal
+                or replayed.authority_instance_id
+                != reservation.authority_instance_id
+                or replayed.fencing_token != reservation.fencing_token
+            ):
+                raise GoalGovernanceConflict(
+                    "idempotent apply replay no longer matches its exact reservation"
+                )
             return state, replayed
         decision: GoalActionDecision | None = None
 
@@ -1508,7 +1532,6 @@ class GoalGovernanceService:
         if (
             not recovery_authorized
             and context.actor_principal != reservation.actor_principal
-            and not _is_operator(context.actor_principal)
         ):
             raise GoalGovernanceConflict(
                 "action reservation belongs to another authenticated actor"
@@ -1771,8 +1794,20 @@ class GoalGovernanceService:
         *,
         current_state: GoalAutonomyState | None = None,
     ) -> list[str]:
+        reasons: list[str] = []
+        latest = self.get_latest_review(goal.realm_id)
+        allocation = next(
+            (
+                item
+                for item in (latest.allocations if latest else [])
+                if item.goal_id == goal.id
+            ),
+            None,
+        )
+        if allocation and allocation.disposition != AllocationDisposition.ACTIVE:
+            reasons.append("the latest portfolio review did not allocate this goal")
         if not claims:
-            return []
+            return reasons
         now = self._clock()
         existing: list[tuple[str, GoalResourceClaim]] = []
         if current_state is not None:
@@ -1792,22 +1827,10 @@ class GoalGovernanceService:
                 for claim in state.resource_reservations
                 if not claim.expires_at or claim.expires_at > now
             )
-        reasons: list[str] = []
         capacities = {
             item.key: item.capacity
             for item in self.effective_policy(goal.realm_id).resource_capacities
         }
-        latest = self.get_latest_review(goal.realm_id)
-        allocation = next(
-            (
-                item
-                for item in (latest.allocations if latest else [])
-                if item.goal_id == goal.id
-            ),
-            None,
-        )
-        if allocation and allocation.disposition != AllocationDisposition.ACTIVE:
-            reasons.append("the latest portfolio review did not allocate this goal")
         requested_by_key: dict[str, list[GoalResourceClaim]] = {}
         for claim in claims:
             requested_by_key.setdefault(claim.key, []).append(claim)

@@ -9,7 +9,9 @@ from uuid import uuid4
 from pa.domain.notifications import InteractionState, Notification
 from pa.domain.projection import CardProjection
 from pa.execution.progress import CompletionReportV1, ProgressValidationV1
+from pa.goals.advanced_models import GoalActionDisposition, GoalActionRequest
 from pa.goals.authorization import authorize_proposal
+from pa.goals.governance import GoalGovernanceConflict
 from pa.goals.models import (
     AuthorizationOutcome,
     CreateWorkPackageAction,
@@ -208,6 +210,87 @@ class GoalSupervisorTests(unittest.TestCase):
                     ),
                     self._ctx(goal.version, "spoofed"),
                 )
+
+    def test_governed_action_replay_requires_a_still_applied_hold(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service, projection = self._services(tmp)
+            criterion = GoalCriterion(
+                description="replay exactly once",
+                verification_method="durable reservation state",
+                evidence_requirement="one side effect",
+            )
+            goal = service.create(
+                self._goal_create(criterion), self._ctx(0, "create-replay-goal")
+            )
+            supervisor = GoalSupervisor(service, projection, "instance-a")
+            goal = service.acquire_lease(
+                goal.id,
+                supervisor._context(goal, "lease-replay-goal"),
+                ttl_seconds=120,
+            )
+            request = GoalActionRequest(action_class="create_work_package")
+            failed_calls: list[str] = []
+
+            def fail_once():
+                failed_calls.append("failed")
+                raise RuntimeError("side effect failed before checkpoint")
+
+            with self.assertRaisesRegex(RuntimeError, "before checkpoint"):
+                supervisor._governed_action(
+                    goal,
+                    "governed-crash-replay",
+                    request,
+                    fail_once,
+                )
+            with self.assertRaisesRegex(
+                GoalGovernanceConflict, "remain applied"
+            ):
+                supervisor._governed_action(
+                    goal,
+                    "governed-crash-replay",
+                    request,
+                    lambda: failed_calls.append("must-not-run"),
+                )
+            self.assertEqual(failed_calls, ["failed"])
+
+            resumable = service.create(
+                self._goal_create(criterion), self._ctx(0, "create-resume-goal")
+            )
+            resumable = service.acquire_lease(
+                resumable.id,
+                supervisor._context(resumable, "lease-resume-goal"),
+                ttl_seconds=120,
+            )
+            state = supervisor.governance.get_state(resumable.id)
+            state, reserved = supervisor.governance.authorize_action(
+                resumable.id,
+                request,
+                supervisor._governance_context(
+                    resumable,
+                    state.version,
+                    "governed-applied-resume:reserve",
+                ),
+            )
+            self.assertEqual(reserved.disposition, GoalActionDisposition.AUTHORIZED)
+            state, applied = supervisor.governance.apply_action(
+                resumable.id,
+                reserved.reservation_id or "",
+                supervisor._governance_context(
+                    resumable,
+                    state.version,
+                    "governed-applied-resume:apply",
+                ),
+            )
+            self.assertEqual(applied.disposition, GoalActionDisposition.AUTHORIZED)
+            resumed_calls: list[str] = []
+            result = supervisor._governed_action(
+                resumable,
+                "governed-applied-resume",
+                request,
+                lambda: resumed_calls.append("resumed") or "completed",
+            )
+            self.assertEqual(result, "completed")
+            self.assertEqual(resumed_calls, ["resumed"])
 
     def test_supervisor_materializes_card_and_dispatches_authorized_work(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

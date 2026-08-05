@@ -421,6 +421,113 @@ class GoalGovernanceTests(unittest.TestCase):
             )
             self.assertEqual(limited.disposition, GoalActionDisposition.RATE_LIMITED)
 
+    def test_apply_and_replay_require_the_exact_reservation_actor(self) -> None:
+        now = datetime(2026, 8, 3, tzinfo=UTC)
+        with tempfile.TemporaryDirectory() as tmp:
+            goals, governance, _ = self._services(tmp, now)
+            goal = goals.create(
+                self._goal_data("Bind action application to its actor"),
+                self._goal_ctx("create-actor-bound-apply"),
+            )
+            request = GoalActionRequest(action_class="code.test")
+            state, user_reservation = governance.authorize_action(
+                goal.id,
+                request,
+                self._ctx(0, "reserve-user-action", actor="user:alice"),
+            )
+            with self.assertRaisesRegex(
+                GoalGovernanceConflict, "another authenticated actor"
+            ):
+                governance.apply_action(
+                    goal.id,
+                    user_reservation.reservation_id or "",
+                    self._ctx(
+                        state.version,
+                        "apply-user-action",
+                        actor="user:bob",
+                    ),
+                )
+            state, applied = governance.apply_action(
+                goal.id,
+                user_reservation.reservation_id or "",
+                self._ctx(
+                    state.version,
+                    "apply-user-action",
+                    actor="user:alice",
+                ),
+            )
+            self.assertEqual(applied.disposition, GoalActionDisposition.AUTHORIZED)
+            replay_state, replayed = governance.apply_action(
+                goal.id,
+                user_reservation.reservation_id or "",
+                self._ctx(0, "apply-user-action", actor="user:alice"),
+            )
+            self.assertEqual(replayed.id, applied.id)
+            self.assertEqual(replay_state.version, state.version)
+            state = governance.release_action(
+                goal.id,
+                user_reservation.reservation_id or "",
+                self._ctx(
+                    state.version,
+                    "release-user-action",
+                    actor="user:alice",
+                ),
+                actual_usage=request.estimate,
+                reason="user action completed",
+            )
+
+            goal = goals.acquire_lease(
+                goal.id,
+                GoalMutationContext(
+                    actor_principal="service:worker:a",
+                    authority_instance_id="instance-a",
+                    idempotency_key="lease-service-action",
+                    expected_version=goal.version,
+                    policy_revision=goal.policy.revision,
+                ),
+                ttl_seconds=120,
+            )
+
+            state, service_reservation = governance.authorize_action(
+                goal.id,
+                request,
+                self._ctx(
+                    state.version,
+                    "reserve-service-action",
+                    actor="service:worker:a",
+                    goal_version=goal.version,
+                    fence=goal.lease.fencing_token,
+                ),
+            )
+            with self.assertRaisesRegex(
+                GoalGovernanceConflict, "another authenticated actor"
+            ):
+                governance.apply_action(
+                    goal.id,
+                    service_reservation.reservation_id or "",
+                    self._ctx(
+                        state.version,
+                        "apply-service-action",
+                        actor="service:worker:b",
+                        goal_version=goal.version,
+                        fence=goal.lease.fencing_token,
+                    ),
+                )
+            _state, service_applied = governance.apply_action(
+                goal.id,
+                service_reservation.reservation_id or "",
+                self._ctx(
+                    state.version,
+                    "apply-service-action",
+                    actor="service:worker:a",
+                    goal_version=goal.version,
+                    fence=goal.lease.fencing_token,
+                ),
+            )
+            self.assertEqual(
+                service_applied.disposition, GoalActionDisposition.AUTHORIZED
+            )
+
     def test_apply_excludes_its_own_exclusive_resource_claim(self) -> None:
         now = datetime(2026, 8, 3, tzinfo=UTC)
         with tempfile.TemporaryDirectory() as tmp:
@@ -995,6 +1102,125 @@ class GoalGovernanceTests(unittest.TestCase):
                 allocations[second.id].disposition, AllocationDisposition.QUEUED
             )
             self.assertTrue(review.requires_operator_review)
+
+    def test_portfolio_allocation_gates_claimless_reserve_and_apply(self) -> None:
+        now = datetime(2026, 8, 3, tzinfo=UTC)
+        with tempfile.TemporaryDirectory() as tmp:
+            goals, governance, _ = self._services(tmp, now)
+            first = goals.create(
+                self._goal_data("Initially allocated"),
+                self._goal_ctx("create-allocation-first"),
+            )
+            second = goals.create(
+                self._goal_data("Initially queued"),
+                self._goal_ctx("create-allocation-second"),
+            )
+            governance.put_policy(
+                GoalGovernancePolicy(
+                    version=1,
+                    authored_by="user:operator",
+                    max_active_goals=1,
+                ),
+                self._ctx(
+                    0,
+                    "allocation-policy",
+                    actor="user:operator",
+                    goal_version=None,
+                ),
+            )
+            first_state = governance.set_priority(
+                first.id, 90, "initial winner", self._ctx(0, "first-initial-priority")
+            )
+            second_state = governance.set_priority(
+                second.id,
+                10,
+                "initial backlog",
+                self._ctx(0, "second-initial-priority"),
+            )
+            review = governance.review_portfolio(
+                GoalPortfolioReviewRequest(
+                    reviewer_principal="agent:critic",
+                    explanation="Allocate one active goal",
+                ),
+                self._ctx(
+                    0,
+                    "initial-allocation-review",
+                    actor="agent:critic",
+                    goal_version=None,
+                ),
+            )
+            initial = {item.goal_id: item.disposition for item in review.allocations}
+            self.assertEqual(initial[first.id], AllocationDisposition.ACTIVE)
+            self.assertEqual(initial[second.id], AllocationDisposition.QUEUED)
+
+            request = GoalActionRequest(action_class="code.test")
+            first_state, reserved = governance.authorize_action(
+                first.id,
+                request,
+                self._ctx(first_state.version, "reserve-before-preemption"),
+            )
+            self.assertEqual(reserved.disposition, GoalActionDisposition.AUTHORIZED)
+            second_state, queued = governance.authorize_action(
+                second.id,
+                request,
+                self._ctx(second_state.version, "reserve-while-queued"),
+            )
+            self.assertEqual(
+                queued.disposition, GoalActionDisposition.RESOURCE_CONFLICT
+            )
+
+            first_state = governance.set_priority(
+                first.id,
+                0,
+                "yield allocation",
+                self._ctx(first_state.version, "first-lowered-priority"),
+            )
+            second_state = governance.set_priority(
+                second.id,
+                100,
+                "take allocation",
+                self._ctx(second_state.version, "second-raised-priority"),
+            )
+            review = governance.review_portfolio(
+                GoalPortfolioReviewRequest(
+                    reviewer_principal="agent:critic",
+                    explanation="Higher priority goal preempts the old allocation",
+                ),
+                self._ctx(
+                    review.version,
+                    "preempting-allocation-review",
+                    actor="agent:critic",
+                    goal_version=None,
+                ),
+            )
+            reallocated = {
+                item.goal_id: item.disposition for item in review.allocations
+            }
+            self.assertEqual(reallocated[first.id], AllocationDisposition.PREEMPTED)
+            self.assertEqual(reallocated[second.id], AllocationDisposition.ACTIVE)
+
+            first_state, denied_apply = governance.apply_action(
+                first.id,
+                reserved.reservation_id or "",
+                self._ctx(first_state.version, "apply-after-preemption"),
+            )
+            self.assertEqual(
+                denied_apply.disposition, GoalActionDisposition.RESOURCE_CONFLICT
+            )
+            reservation = next(
+                item
+                for item in first_state.action_reservations
+                if item.id == reserved.reservation_id
+            )
+            self.assertEqual(reservation.state.value, "released")
+            _state, preempted = governance.authorize_action(
+                first.id,
+                request,
+                self._ctx(first_state.version, "reserve-while-preempted"),
+            )
+            self.assertEqual(
+                preempted.disposition, GoalActionDisposition.RESOURCE_CONFLICT
+            )
 
     def test_governance_state_replays_to_replacement_projection(self) -> None:
         now = datetime(2026, 8, 3, tzinfo=UTC)

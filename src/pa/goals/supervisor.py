@@ -788,6 +788,11 @@ class GoalSupervisor:
                 package.state = WorkPackageState.RUNNING
                 changed = True
             elif record.state == "completed":
+                if package.state == WorkPackageState.VERIFIED or (
+                    package.role == GoalActorRole.EXECUTOR
+                    and package.state == WorkPackageState.AWAITING_VERIFICATION
+                ):
+                    continue
                 completed = self._governed_action(
                     goal,
                     (
