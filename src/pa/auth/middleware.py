@@ -98,10 +98,6 @@ def _is_fleet_instance_route(request: Request) -> bool:
     if request.method == "POST" and request.url.path == "/api/fleet/dispatch":
         return True
     if request.method == "POST" and re.fullmatch(
-        r"/api/goals/[A-Za-z0-9-]{1,80}/providers/progress", request.url.path
-    ):
-        return True
-    if request.method == "POST" and re.fullmatch(
         r"/api/fleet/instances/[A-Za-z0-9-]{1,80}/agent/start", request.url.path
     ):
         return True
@@ -127,6 +123,15 @@ def _is_fleet_instance_route(request: Request) -> bool:
     )
 
 
+def _is_provider_progress_route(request: Request) -> bool:
+    return request.method == "POST" and bool(
+        re.fullmatch(
+            r"/api/goals/[A-Za-z0-9-]{1,80}/providers/progress",
+            request.url.path,
+        )
+    )
+
+
 def _sync_auth_required(settings: Settings) -> bool:
     """Peer sync endpoints require a bearer when a sync token (or auth_required) is set."""
     return bool(settings.sync_token) or settings.auth_required
@@ -137,6 +142,8 @@ def _needs_csrf(request: Request) -> bool:
         return False
     path = request.url.path
     if _is_public(path) or path in CSRF_EXEMPT_PATHS:
+        return False
+    if _is_provider_progress_route(request):
         return False
     return not (
         path.startswith("/api/")
@@ -179,6 +186,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
         request.state.user = None
         request.state.user_authenticated = False
         request.state.instance_authenticated = False
+        request.state.authenticated_instance_id = None
+        request.state.provider_run_credential = None
         cookie_csrf = request.cookies.get(COOKIE_NAME)
         csrf_status = inspect_token(cookie_csrf, self.settings.session_secret)
         rotate_csrf = csrf_status != "valid"
@@ -191,6 +200,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
         is_fleet_instance_route = _is_fleet_instance_route(request)
 
         auth_header = request.headers.get("authorization", "")
+        provider_run_credential_supplied = auth_header.startswith("GoalRun ")
+        if provider_run_credential_supplied:
+            request.state.provider_run_credential = auth_header[8:].strip()
         bearer_supplied = auth_header.startswith("Bearer ")
         bearer_valid = False
         if auth_header.startswith("Bearer "):
@@ -244,6 +256,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 and path.startswith("/api/")
                 and not is_public
                 and not _is_sync_path(path)
+                and not (
+                    _is_provider_progress_route(request)
+                    and provider_run_credential_supplied
+                )
                 and not (
                     is_fleet_instance_route and request.state.instance_authenticated
                 )

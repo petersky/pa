@@ -171,6 +171,7 @@ class GoalActionReservation(BaseModel):
     """A durable, fenced hold created before an autonomous side effect."""
 
     id: str = Field(default_factory=lambda: str(uuid4()))
+    idempotency_key: str = Field(default="", max_length=300)
     decision_id: str
     goal_id: str
     action_class: str
@@ -264,6 +265,9 @@ class ProviderGoalRun(BaseModel):
     attempt: int = Field(default=1, ge=1)
     max_attempts: int = Field(default=3, ge=1, le=20)
     replaces_run_id: str | None = None
+    launch_decision_id: str | None = None
+    launched_at: datetime | None = None
+    progress_credential_hash: str = ""
     state: ProviderRunState = ProviderRunState.ASSIGNED
     summary: str = ""
     reserved_usage: GoalUsage = Field(default_factory=GoalUsage)

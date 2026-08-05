@@ -15,10 +15,13 @@ from pa.goals.models import (
     CreateWorkPackageAction,
     CriterionVerdict,
     DispatchWorkPackageAction,
+    EvidenceKind,
     Goal,
     GoalActorRole,
     GoalCreate,
     GoalCriterion,
+    GoalEvidence,
+    GoalEvidenceCreate,
     GoalInteractionState,
     GoalMutationContext,
     GoalPolicy,
@@ -344,6 +347,7 @@ class GoalSupervisorTests(unittest.TestCase):
                 description="independently verified",
                 verification_method="focused suite",
                 evidence_requirement="passed command",
+                require_independent_verifier=True,
             )
             goal = service.create(self._goal_create(criterion), self._ctx(0, "create"))
             goal = service.transition(
@@ -430,6 +434,42 @@ class GoalSupervisorTests(unittest.TestCase):
             self.assertEqual(verified.criteria[0].verdict, CriterionVerdict.SATISFIED)
             self.assertTrue(verified.evidence)
             self.assertEqual(verified.work_packages[0].state, WorkPackageState.VERIFIED)
+            executor = next(
+                item
+                for item in verified.work_packages
+                if item.role == GoalActorRole.EXECUTOR
+            )
+            verifier = next(
+                item
+                for item in verified.work_packages
+                if item.role == GoalActorRole.VERIFIER
+            )
+            self.assertNotEqual(
+                executor.executor_service_id, verifier.verifier_service_id
+            )
+            self.assertEqual(
+                verified.evidence[-1].producer_service_id,
+                verifier.verifier_service_id,
+            )
+            with self.assertRaisesRegex(GoalConflict, "assigned independent verifier"):
+                service.add_evidence(
+                    verified.id,
+                    GoalEvidenceCreate(
+                        evidence=GoalEvidence(
+                            criterion_ids=[criterion.id],
+                            kind=EvidenceKind.AUDIT,
+                            summary="A forged verifier must not be accepted",
+                        )
+                    ),
+                    GoalMutationContext(
+                        actor_principal="service:goal-verifier:forged",
+                        authority_instance_id="instance-a",
+                        idempotency_key="forged-verifier-evidence",
+                        expected_version=verified.version,
+                        policy_revision=verified.policy.revision,
+                        fencing_token=verified.lease.fencing_token,
+                    ),
+                )
 
     def test_operator_approval_survives_as_durable_correlated_interaction(
         self,

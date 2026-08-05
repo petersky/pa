@@ -368,7 +368,9 @@ class GoalSupervisor:
                         f"approval:{goal.supervision.cycle + 1}"
                     ),
                     GoalActionRequest(action_class="request_operator"),
-                    lambda: self._ensure_interaction(goal, proposal, approval=True),
+                    lambda proposal=proposal: self._ensure_interaction(
+                        goal, proposal, approval=True
+                    ),
                 )
             else:
                 proposal.status = ProposalStatus.REJECTED
@@ -395,7 +397,7 @@ class GoalSupervisor:
                 )
 
                 def governed_request(
-                    action_class: str, **kwargs: Any
+                    action_class: str, approval=approval, **kwargs: Any
                 ) -> GoalActionRequest:
                     return GoalActionRequest(
                         action_class=action_class,
@@ -416,7 +418,9 @@ class GoalSupervisor:
                         goal,
                         governance_key,
                         governed_request("create_work_package"),
-                        lambda: self._create_work_package(goal, proposal, action, now),
+                        lambda proposal=proposal, action=action: (
+                            self._create_work_package(goal, proposal, action, now)
+                        ),
                     )
                 elif isinstance(action, DispatchWorkPackageAction):
                     applied = self._governed_action(
@@ -428,8 +432,8 @@ class GoalSupervisor:
                             provider_id=action.provider,
                             estimate=GoalUsage(actions=1, dispatches=1),
                         ),
-                        lambda: self._dispatch_work_package(
-                            goal, proposal, action, now
+                        lambda proposal=proposal, action=action: (
+                            self._dispatch_work_package(goal, proposal, action, now)
                         ),
                     )
                     if not applied:
@@ -439,13 +443,13 @@ class GoalSupervisor:
                         goal,
                         governance_key,
                         governed_request("request_operator"),
-                        lambda: self._ensure_interaction(
+                        lambda proposal=proposal: self._ensure_interaction(
                             goal, proposal, approval=False
                         ),
                     )
                 elif isinstance(action, ReviseStrategyAction):
 
-                    def revise_strategy() -> None:
+                    def revise_strategy(action=action) -> None:
                         goal.assumptions = list(
                             dict.fromkeys([*goal.assumptions, *action.assumptions])
                         )
@@ -464,11 +468,11 @@ class GoalSupervisor:
                         goal,
                         governance_key,
                         governed_request("record_evidence"),
-                        lambda: self._record_evidence(goal, action),
+                        lambda action=action: self._record_evidence(goal, action),
                     )
                 elif isinstance(action, TransitionGoalAction):
 
-                    def transition() -> None:
+                    def transition(action=action) -> None:
                         goal.state = action.state
                         if action.progress_summary is not None:
                             goal.progress_summary = action.progress_summary
@@ -797,7 +801,9 @@ class GoalSupervisor:
                             else "observe.dispatch.read"
                         )
                     ),
-                    lambda: self._complete_package(goal, package, record, now),
+                    lambda package=package, record=record: self._complete_package(
+                        goal, package, record, now
+                    ),
                 )
                 changed = completed or changed
             elif record.state in {"failed", "cancelled"}:

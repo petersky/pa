@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 from collections.abc import Callable
 from datetime import UTC, datetime
 from fnmatch import fnmatchcase
@@ -119,6 +121,11 @@ def _matches(value: str, patterns: list[str]) -> bool:
     return any(fnmatchcase(value, pattern) for pattern in patterns)
 
 
+def _child_idempotency_key(parent: str, stage: str) -> str:
+    digest = hashlib.sha256(parent.encode()).hexdigest()
+    return f"goal-governance:{digest}:{stage}"
+
+
 def _is_operator(principal: str) -> bool:
     return principal.startswith(("user:", "role:admin"))
 
@@ -161,11 +168,41 @@ class GoalGovernanceService:
         goal_service: GoalService,
         *,
         clock: Callable[[], datetime] | None = None,
+        progress_token_secret: str | None = None,
     ) -> None:
         self.store = store
         self.instance_id = instance_id
         self.goals = goal_service
         self._clock = clock or (lambda: datetime.now(UTC))
+        self._progress_token_secret = progress_token_secret
+
+    def provider_progress_credential(self, run: ProviderGoalRun) -> str:
+        if not self._progress_token_secret:
+            raise GoalGovernanceConflict(
+                "provider progress credentials are unavailable on this authority"
+            )
+        message = "\0".join(
+            (
+                run.goal_id,
+                run.id,
+                run.executor_principal,
+                run.authority_instance_id,
+                str(run.fencing_token or ""),
+            )
+        )
+        return hmac.new(
+            self._progress_token_secret.encode(),
+            message.encode(),
+            hashlib.sha256,
+        ).hexdigest()
+
+    def verify_provider_progress_credential(
+        self, run: ProviderGoalRun, credential: str
+    ) -> bool:
+        if not credential or not run.progress_credential_hash:
+            return False
+        candidate = hashlib.sha256(credential.encode()).hexdigest()
+        return hmac.compare_digest(candidate, run.progress_credential_hash)
 
     def get_state(self, goal_id: str) -> GoalAutonomyState:
         goal = self._require_goal(goal_id)
@@ -199,6 +236,7 @@ class GoalGovernanceService:
             state.action_reservations.append(
                 GoalActionReservation(
                     id=run.reservation_id,
+                    idempotency_key=f"legacy-provider-run:{run.id}",
                     decision_id=f"legacy-provider-decision:{run.id}",
                     goal_id=goal.id,
                     action_class="provider.goal.assign",
@@ -355,11 +393,14 @@ class GoalGovernanceService:
         duplicate = self._duplicate(goal.realm_id, context.idempotency_key)
         if duplicate:
             state = self.get_state(goal_id)
-            decision_id = str((duplicate.get("payload") or {}).get("decision_id") or "")
+            payload = duplicate.get("payload") or {}
+            decision_id = str(payload.get("decision_id") or "")
             replayed = next(
                 (item for item in state.recent_decisions if item.id == decision_id),
                 None,
             )
+            if replayed is None and isinstance(payload.get("decision"), dict):
+                replayed = GoalActionDecision.model_validate(payload["decision"])
             if replayed is None:
                 raise GoalGovernanceConflict(
                     "idempotent action decision is no longer in the bounded projection; consult the event ledger"
@@ -376,6 +417,7 @@ class GoalGovernanceService:
                 "action_class": request.action_class,
                 "disposition": decision.disposition.value,
                 "reasons": decision.reasons,
+                "decision": decision.model_dump(mode="json"),
             }
 
         state = self._mutate_state(
@@ -398,11 +440,14 @@ class GoalGovernanceService:
         duplicate = self._duplicate(goal.realm_id, context.idempotency_key)
         if duplicate:
             state = self.get_state(goal_id)
-            decision_id = str((duplicate.get("payload") or {}).get("decision_id") or "")
+            payload = duplicate.get("payload") or {}
+            decision_id = str(payload.get("decision_id") or "")
             replayed = next(
                 (item for item in state.recent_decisions if item.id == decision_id),
                 None,
             )
+            if replayed is None and isinstance(payload.get("decision"), dict):
+                replayed = GoalActionDecision.model_validate(payload["decision"])
             if replayed is None:
                 raise GoalGovernanceConflict(
                     "idempotent apply decision is no longer in the bounded projection; consult the event ledger"
@@ -500,6 +545,7 @@ class GoalGovernanceService:
                 "decision_id": decision.id,
                 "disposition": decision.disposition.value,
                 "reasons": decision.reasons,
+                "decision": decision.model_dump(mode="json"),
             }
 
         state = self._mutate_state(
@@ -516,6 +562,7 @@ class GoalGovernanceService:
         *,
         actual_usage: GoalUsage | None = None,
         reason: str,
+        reconcile_terminal: bool = False,
     ) -> GoalAutonomyState:
         """Release budget and resource holds on every terminal action path."""
 
@@ -547,6 +594,20 @@ class GoalGovernanceService:
                     actual_usage=resolved_usage,
                     reason=reason,
                 )
+            elif reconcile_terminal and actual_usage is not None:
+                state.usage = _replace_usage(
+                    state.usage, reservation.actual_usage, actual_usage
+                )
+                self._replace_rate_usage(
+                    goal,
+                    state,
+                    reservation.request,
+                    reservation.actual_usage,
+                    actual_usage,
+                )
+                reservation.actual_usage = actual_usage
+                reservation.release_reason = reason[:500]
+                reservation.released_at = self._clock()
             return {
                 "reservation_id": reservation.id,
                 "state": reservation.state.value,
@@ -578,6 +639,10 @@ class GoalGovernanceService:
             replayed_run = next(
                 (item for item in state.provider_runs if item.id == run_id), None
             )
+            if replayed_decision is None and isinstance(payload.get("decision"), dict):
+                replayed_decision = GoalActionDecision.model_validate(
+                    payload["decision"]
+                )
             if replayed_decision is None:
                 raise GoalGovernanceConflict(
                     "idempotent provider decision is no longer in the bounded projection; consult the event ledger"
@@ -671,6 +736,7 @@ class GoalGovernanceService:
                 "role": assignment.role.value,
                 "attempt": attempt,
                 "mode": run.invocation.mode.value if run else None,
+                "decision": decision.model_dump(mode="json"),
             }
 
         state = self._mutate_state(
@@ -678,6 +744,99 @@ class GoalGovernanceService:
         )
         assert decision is not None
         return state, run, decision
+
+    def launch_provider(
+        self,
+        goal_id: str,
+        run_id: str,
+        context: GovernanceMutationContext,
+    ) -> tuple[GoalAutonomyState, ProviderGoalRun, GoalActionDecision]:
+        """Apply the run reservation at the final sink before exposing invocation."""
+
+        goal = self._require_goal(goal_id)
+        duplicate = self._duplicate(goal.realm_id, context.idempotency_key)
+        if duplicate:
+            state = self.get_state(goal_id)
+            run = next(
+                (item for item in state.provider_runs if item.id == run_id), None
+            )
+            if run is None or run.launched_at is None:
+                raise GoalGovernanceConflict(
+                    "idempotent provider launch is missing its durable run"
+                )
+            payload = duplicate.get("payload") or {}
+            decision_id = str(
+                payload.get("decision_id") or run.launch_decision_id or ""
+            )
+            decision = next(
+                (item for item in state.recent_decisions if item.id == decision_id),
+                None,
+            )
+            if decision is None and isinstance(payload.get("decision"), dict):
+                decision = GoalActionDecision.model_validate(payload["decision"])
+            if decision is None:
+                raise GoalGovernanceConflict(
+                    "idempotent provider launch is missing its durable decision"
+                )
+            return state, run, decision
+
+        state = self.get_state(goal_id)
+        run = next((item for item in state.provider_runs if item.id == run_id), None)
+        if run is None:
+            raise GoalGovernanceConflict("provider launch references an unknown run")
+        if run.state != ProviderRunState.ASSIGNED or run.launched_at is not None:
+            raise GoalGovernanceConflict("provider run is not awaiting launch")
+        state, decision = self.apply_action(
+            goal_id,
+            run.reservation_id,
+            context.model_copy(
+                update={
+                    "idempotency_key": _child_idempotency_key(
+                        context.idempotency_key, "provider-apply"
+                    )
+                }
+            ),
+        )
+        if decision.disposition != GoalActionDisposition.AUTHORIZED:
+            return state, run, decision
+
+        launched: ProviderGoalRun | None = None
+
+        def mutate(goal: Goal, current: GoalAutonomyState) -> dict[str, Any]:
+            nonlocal launched
+            launched = next(
+                (item for item in current.provider_runs if item.id == run_id), None
+            )
+            if launched is None:
+                raise GoalGovernanceConflict("provider run disappeared before launch")
+            reservation = self._require_reservation(current, launched.reservation_id)
+            if reservation.state != GoalReservationState.APPLIED:
+                raise GoalGovernanceConflict(
+                    "provider launch requires an applied action reservation"
+                )
+            launched.launch_decision_id = decision.id
+            launched.launched_at = self._clock()
+            if self._progress_token_secret:
+                credential = self.provider_progress_credential(launched)
+                launched.progress_credential_hash = hashlib.sha256(
+                    credential.encode()
+                ).hexdigest()
+            launched.updated_at = self._clock()
+            return {
+                "run_id": launched.id,
+                "decision_id": decision.id,
+                "reservation_id": reservation.id,
+                "decision": decision.model_dump(mode="json"),
+            }
+
+        state = self._mutate_state(
+            goal_id,
+            context.model_copy(update={"expected_version": state.version}),
+            "goal_governance.provider_launched",
+            mutate,
+        )
+        assert launched is not None
+        return state, launched, decision
 
     def ingest_provider_progress(
         self,
@@ -705,6 +864,14 @@ class GoalGovernanceService:
             if context.fencing_token != run.fencing_token:
                 raise GoalGovernanceConflict(
                     "provider progress has a stale fencing token"
+                )
+            reservation = self._require_reservation(state, run.reservation_id)
+            if (
+                run.launched_at is None
+                or reservation.state != GoalReservationState.APPLIED
+            ):
+                raise GoalGovernanceConflict(
+                    "provider progress requires a durably applied launch reservation"
                 )
             if run.state in _TERMINAL_PROVIDER_STATES:
                 raise GoalGovernanceConflict("terminal provider runs cannot be updated")
@@ -760,7 +927,6 @@ class GoalGovernanceService:
             state.usage = _replace_usage(
                 state.usage, previous_accounted, next_accounted
             )
-            reservation = self._require_reservation(state, run.reservation_id)
             self._replace_rate_usage(
                 goal,
                 state,
@@ -769,9 +935,6 @@ class GoalGovernanceService:
                 next_accounted,
             )
             reservation.actual_usage = progress.cumulative_usage
-            if reservation.state == GoalReservationState.RESERVED:
-                reservation.state = GoalReservationState.APPLIED
-                reservation.applied_at = self._clock()
             if terminal:
                 reservation.state = GoalReservationState.RELEASED
                 reservation.released_at = self._clock()
@@ -1218,6 +1381,7 @@ class GoalGovernanceService:
         )
         if disposition == GoalActionDisposition.AUTHORIZED and reserve:
             reservation = GoalActionReservation(
+                idempotency_key=context.idempotency_key,
                 decision_id=decision.id,
                 goal_id=goal.id,
                 action_class=request.action_class,

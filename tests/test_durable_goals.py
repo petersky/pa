@@ -26,13 +26,13 @@ from pa.sync.object_store import ObjectStore
 
 
 class DurableGoalTests(unittest.TestCase):
-    def _pair(self, tmp: str):
+    def _pair(self, tmp: str, *, clock=None):
         root = Path(tmp)
         objects = ObjectStore(root / "objects")
         log = EventLog(objects, root, "instance-a")
         authority = CardProjection(root / "authority.db", log)
         replica = CardProjection(root / "replica.db", log)
-        return GoalService(authority, "instance-a"), replica
+        return GoalService(authority, "instance-a", clock=clock), replica
 
     @staticmethod
     def _ctx(
@@ -200,6 +200,169 @@ class DurableGoalTests(unittest.TestCase):
             )
             self.assertEqual(achieved.state, GoalState.ACHIEVED)
             self.assertEqual(achieved.audit.verdict, CriterionVerdict.SATISFIED)
+
+    def test_audit_rejects_stale_expired_contradictory_and_wrong_kind_evidence(
+        self,
+    ) -> None:
+        now = datetime(2026, 8, 3, tzinfo=UTC)
+        with tempfile.TemporaryDirectory() as tmp:
+            service, _ = self._pair(tmp, clock=lambda: now)
+            scenarios = [
+                (
+                    "stale",
+                    GoalCriterion(
+                        description="fresh test",
+                        verification_method="recent regression",
+                        evidence_requirement="fresh result",
+                        freshness_seconds=60,
+                    ),
+                    GoalEvidence(
+                        criterion_ids=["placeholder"],
+                        kind=EvidenceKind.TEST,
+                        summary="Old result",
+                        observed_at=now - timedelta(minutes=2),
+                    ),
+                    "stale evidence",
+                ),
+                (
+                    "expired",
+                    GoalCriterion(
+                        description="unexpired test",
+                        verification_method="valid artifact",
+                        evidence_requirement="unexpired result",
+                    ),
+                    GoalEvidence(
+                        criterion_ids=["placeholder"],
+                        kind=EvidenceKind.TEST,
+                        summary="Expired result",
+                        observed_at=now - timedelta(minutes=2),
+                        expires_at=now - timedelta(seconds=1),
+                    ),
+                    "expired evidence",
+                ),
+                (
+                    "contradictory",
+                    GoalCriterion(
+                        description="consistent test",
+                        verification_method="uncontradicted result",
+                        evidence_requirement="consistent evidence",
+                    ),
+                    GoalEvidence(
+                        criterion_ids=["placeholder"],
+                        kind=EvidenceKind.TEST,
+                        summary="Contradictory result",
+                        contradictory=True,
+                        observed_at=now,
+                    ),
+                    "contradictory evidence",
+                ),
+                (
+                    "kind",
+                    GoalCriterion(
+                        description="test-kind result",
+                        verification_method="test runner",
+                        evidence_requirement="test evidence",
+                        required_evidence_kinds=[EvidenceKind.TEST],
+                    ),
+                    GoalEvidence(
+                        criterion_ids=["placeholder"],
+                        kind=EvidenceKind.ARTIFACT,
+                        summary="Artifact without a test",
+                        observed_at=now,
+                    ),
+                    "lacks required evidence kinds",
+                ),
+            ]
+            for index, (name, criterion, evidence, expected) in enumerate(scenarios):
+                goal = service.create(
+                    GoalCreate(
+                        objective=f"Reject {name} evidence", criteria=[criterion]
+                    ),
+                    self._ctx(0, f"create-{name}"),
+                )
+                evidence.criterion_ids = [criterion.id]
+                goal = service.add_evidence(
+                    goal.id,
+                    GoalEvidenceCreate(evidence=evidence),
+                    self._ctx(goal.version, f"evidence-{name}"),
+                )
+                with (
+                    self.subTest(case=name),
+                    self.assertRaisesRegex(GoalConflict, expected),
+                ):
+                    service.audit(
+                        goal.id,
+                        GoalAuditCreate(
+                            criterion_verdicts={
+                                criterion.id: CriterionVerdict.SATISFIED
+                            },
+                            evidence_ids=[evidence.id],
+                            explanation="Adversarial evidence policy check",
+                        ),
+                        self._ctx(
+                            goal.version,
+                            f"audit-{index}",
+                            actor="agent:independent-auditor",
+                        ),
+                    )
+
+    def test_achievement_rechecks_evidence_freshness_after_a_valid_audit(self) -> None:
+        clock = [datetime(2026, 8, 3, tzinfo=UTC)]
+        with tempfile.TemporaryDirectory() as tmp:
+            service, _ = self._pair(tmp, clock=lambda: clock[0])
+            criterion = GoalCriterion(
+                description="fresh through completion",
+                verification_method="recent test",
+                evidence_requirement="test younger than one minute",
+                freshness_seconds=60,
+                required_evidence_kinds=[EvidenceKind.TEST],
+            )
+            goal = service.create(
+                GoalCreate(
+                    objective="Do not achieve on stale proof", criteria=[criterion]
+                ),
+                self._ctx(0, "create-freshness-goal"),
+            )
+            evidence = GoalEvidence(
+                criterion_ids=[criterion.id],
+                kind=EvidenceKind.TEST,
+                summary="Fresh focused suite",
+                observed_at=clock[0],
+            )
+            goal = service.add_evidence(
+                goal.id,
+                GoalEvidenceCreate(evidence=evidence),
+                self._ctx(goal.version, "fresh-evidence"),
+            )
+            goal = service.audit(
+                goal.id,
+                GoalAuditCreate(
+                    criterion_verdicts={criterion.id: CriterionVerdict.SATISFIED},
+                    evidence_ids=[evidence.id],
+                    explanation="The evidence is fresh at audit time",
+                ),
+                self._ctx(
+                    goal.version,
+                    "fresh-audit",
+                    actor="agent:independent-auditor",
+                ),
+            )
+            for state in (GoalState.READY, GoalState.ACTIVE, GoalState.VERIFYING):
+                goal = service.transition(
+                    goal.id,
+                    GoalTransition(state=state, reason="advance toward completion"),
+                    self._ctx(goal.version, f"advance-{state.value}"),
+                )
+            clock[0] += timedelta(seconds=61)
+            with self.assertRaisesRegex(GoalConflict, "no longer valid.*stale"):
+                service.transition(
+                    goal.id,
+                    GoalTransition(
+                        state=GoalState.ACHIEVED,
+                        reason="The old audit must not be enough",
+                    ),
+                    self._ctx(goal.version, "reject-stale-achievement"),
+                )
 
     def test_invalid_revision_is_rejected_before_it_reaches_the_event_log(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

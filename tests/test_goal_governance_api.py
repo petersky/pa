@@ -23,7 +23,7 @@ def _reset_pa_singletons():
     reset_settings()
 
 
-def _app(path: Path):
+def _app(path: Path, *, sync_token: str | None = None):
     return Kernel.boot(
         settings=Settings(
             data_dir=path,
@@ -33,6 +33,7 @@ def _app(path: Path):
             agent_enabled=False,
             subscribed_realms=["default"],
             peers=[],
+            sync_token=sync_token or "",
         )
     ).build_app()
 
@@ -182,3 +183,263 @@ def test_goal_audit_identity_comes_from_the_authenticated_request() -> None:
     assert audited.json()["audit"]["auditor_principal"] == "user:local"
     assert detail.status_code == 200, detail.text
     assert detail.json()["events"][-1]["actor_principal"] == "user:local"
+
+
+def test_goal_mutation_retry_releases_crash_stranded_reservation() -> None:
+    with (
+        tempfile.TemporaryDirectory() as tmp,
+        TestClient(_app(Path(tmp))) as client,
+    ):
+        assert client.get("/").status_code == 200
+        csrf = client.cookies.get("pa_csrf")
+        headers = {
+            "X-CSRF-Token": csrf,
+            "Idempotency-Key": "crash-safe-goal",
+        }
+        created = client.post(
+            "/api/goals",
+            params={"expected_version": 0, "policy_revision": 1},
+            headers=headers,
+            json={
+                "objective": "Release a reservation after process recovery",
+                "criteria": [
+                    {
+                        "description": "retry is terminally reconciled",
+                        "verification_method": "crash injection",
+                        "evidence_requirement": "one durable evidence record",
+                    }
+                ],
+            },
+        )
+        goal = created.json()
+        governance = client.app.state.ctx.require_service("goal_governance")
+        original_release = governance.release_action
+        crash_once = True
+
+        def crash_after_commit(*args, **kwargs):
+            nonlocal crash_once
+            if crash_once and kwargs.get("reason") == "goal mutation committed":
+                crash_once = False
+                raise RuntimeError("injected crash before terminal release")
+            return original_release(*args, **kwargs)
+
+        governance.release_action = crash_after_commit
+        evidence_request = {
+            "params": {"expected_version": 1, "policy_revision": 1},
+            "headers": {
+                **headers,
+                "Idempotency-Key": "crash-after-evidence-commit",
+            },
+            "json": {
+                "evidence": {
+                    "criterion_ids": [goal["criteria"][0]["id"]],
+                    "kind": "test",
+                    "summary": "The evidence commit itself is durable",
+                }
+            },
+        }
+        with pytest.raises(RuntimeError, match="injected crash"):
+            client.post(f"/api/goals/{goal['id']}/evidence", **evidence_request)
+        governance.release_action = original_release
+
+        retried = client.post(f"/api/goals/{goal['id']}/evidence", **evidence_request)
+        autonomy = client.get(f"/api/goals/{goal['id']}/autonomy")
+        detail = client.get(f"/api/goals/{goal['id']}")
+
+    assert retried.status_code == 200, retried.text
+    assert len(retried.json()["evidence"]) == 1
+    state = autonomy.json()
+    assert state["usage"]["actions"] == 1
+    assert len(state["action_reservations"]) == 1
+    assert state["action_reservations"][0]["state"] == "released"
+    assert state["action_reservations"][0]["release_reason"] == (
+        "goal mutation committed"
+    )
+    assert [item["event_type"] for item in detail.json()["events"]].count(
+        "goal.evidence_recorded"
+    ) == 1
+
+
+def test_goal_mutation_retry_replaces_a_released_precommit_attempt() -> None:
+    with (
+        tempfile.TemporaryDirectory() as tmp,
+        TestClient(_app(Path(tmp))) as client,
+    ):
+        assert client.get("/").status_code == 200
+        csrf = client.cookies.get("pa_csrf")
+        created = client.post(
+            "/api/goals",
+            params={"expected_version": 0, "policy_revision": 1},
+            headers={
+                "X-CSRF-Token": csrf,
+                "Idempotency-Key": "precommit-retry-goal",
+            },
+            json={
+                "objective": "Retry a failed precommit mutation",
+                "criteria": [
+                    {
+                        "description": "replacement reservation succeeds",
+                        "verification_method": "injected precommit failure",
+                        "evidence_requirement": "one durable evidence record",
+                    }
+                ],
+            },
+        )
+        goal = created.json()
+        service = client.app.state.ctx.require_service("goal_service")
+        original_add = service.add_evidence
+        fail_once = True
+
+        def fail_before_commit(*args, **kwargs):
+            nonlocal fail_once
+            if fail_once:
+                fail_once = False
+                raise RuntimeError("injected precommit failure")
+            return original_add(*args, **kwargs)
+
+        service.add_evidence = fail_before_commit
+        request = {
+            "params": {"expected_version": 1, "policy_revision": 1},
+            "headers": {
+                "X-CSRF-Token": csrf,
+                "Idempotency-Key": "retry-precommit-evidence",
+            },
+            "json": {
+                "evidence": {
+                    "criterion_ids": [goal["criteria"][0]["id"]],
+                    "kind": "test",
+                    "summary": "Replacement attempt committed",
+                }
+            },
+        }
+        with pytest.raises(RuntimeError, match="injected precommit"):
+            client.post(f"/api/goals/{goal['id']}/evidence", **request)
+        service.add_evidence = original_add
+        retried = client.post(f"/api/goals/{goal['id']}/evidence", **request)
+        autonomy = client.get(f"/api/goals/{goal['id']}/autonomy").json()
+
+    assert retried.status_code == 200, retried.text
+    assert len(autonomy["action_reservations"]) == 2
+    assert [item["state"] for item in autonomy["action_reservations"]] == [
+        "released",
+        "released",
+    ]
+    assert autonomy["action_reservations"][0]["actual_usage"]["actions"] == 0
+    assert autonomy["action_reservations"][1]["actual_usage"]["actions"] == 1
+    assert autonomy["usage"]["actions"] == 1
+
+
+def test_provider_launch_credential_rejects_shared_fleet_origin_spoof() -> None:
+    fleet_token = "shared-fleet-token-with-enough-entropy-123456789"
+    with (
+        tempfile.TemporaryDirectory() as tmp,
+        TestClient(_app(Path(tmp), sync_token=fleet_token)) as client,
+    ):
+        assert client.get("/").status_code == 200
+        csrf = client.cookies.get("pa_csrf")
+        base_headers = {"X-CSRF-Token": csrf}
+        created = client.post(
+            "/api/goals",
+            params={"expected_version": 0, "policy_revision": 1},
+            headers={**base_headers, "Idempotency-Key": "provider-goal"},
+            json={
+                "objective": "Bind provider progress to its launched run",
+                "criteria": [
+                    {
+                        "description": "provider identity is non-spoofable",
+                        "verification_method": "run credential",
+                        "evidence_requirement": "authenticated progress",
+                    }
+                ],
+                "policy": {
+                    "revision": 1,
+                    "autonomy_level": 4,
+                    "permitted_actions": ["provider.goal.assign"],
+                    "allowed_provider_ids": ["codex"],
+                },
+                "budget": {"max_actions": 5, "max_concurrency": 1},
+            },
+        )
+        assert created.status_code == 201, created.text
+        goal = created.json()
+        leased = client.post(
+            f"/api/goals/{goal['id']}/lease",
+            params={
+                "expected_version": goal["version"],
+                "policy_revision": 1,
+                "ttl_seconds": 120,
+            },
+            headers={**base_headers, "Idempotency-Key": "provider-lease"},
+        )
+        assert leased.status_code == 200, leased.text
+        goal = leased.json()
+        fence_headers = {
+            **base_headers,
+            "X-PA-Goal-Fencing-Token": str(goal["lease"]["fencing_token"]),
+        }
+        assigned = client.post(
+            f"/api/goals/{goal['id']}/providers/assign",
+            params={
+                "expected_version": 0,
+                "goal_version": goal["version"],
+                "policy_revision": 1,
+            },
+            headers={**fence_headers, "Idempotency-Key": "provider-assign"},
+            json={
+                "provider_id": "codex",
+                "available_commands": ["goal"],
+                "estimated_usage": {"actions": 1},
+            },
+        )
+        assert assigned.status_code == 200, assigned.text
+        run = assigned.json()["run"]
+        assert "invocation" not in run
+        assert run["launch_required"] is True
+        launched = client.post(
+            f"/api/goals/{goal['id']}/providers/{run['id']}/launch",
+            params={
+                "expected_version": assigned.json()["autonomy_version"],
+                "goal_version": goal["version"],
+                "policy_revision": 1,
+            },
+            headers={**fence_headers, "Idempotency-Key": "provider-launch"},
+        )
+        assert launched.status_code == 200, launched.text
+        launch_body = launched.json()
+        credential = launch_body["progress_credential"]
+        progress_params = {
+            "expected_version": launch_body["autonomy_version"],
+            "goal_version": goal["version"],
+            "policy_revision": 1,
+        }
+        progress_body = {
+            "run_id": run["id"],
+            "state": "completed",
+            "summary": "Provider claim only",
+            "cumulative_usage": {"actions": 1},
+        }
+        spoofed = client.post(
+            f"/api/goals/{goal['id']}/providers/progress",
+            params=progress_params,
+            headers={
+                "Authorization": f"Bearer {fleet_token}",
+                "X-PA-Origin-Instance-ID": "local",
+                "Idempotency-Key": "spoofed-progress",
+            },
+            json=progress_body,
+        )
+        accepted = client.post(
+            f"/api/goals/{goal['id']}/providers/progress",
+            params=progress_params,
+            headers={
+                "Authorization": f"GoalRun {credential}",
+                "X-PA-Origin-Instance-ID": "different-instance",
+                "Idempotency-Key": "valid-progress",
+            },
+            json=progress_body,
+        )
+
+    assert spoofed.status_code == 403, spoofed.text
+    assert spoofed.json()["detail"]["code"] == "invalid_provider_run_credential"
+    assert accepted.status_code == 200, accepted.text
+    assert accepted.json()["provider_runs"][0]["state"] == "completed"
