@@ -22,6 +22,7 @@ from pa.fleet.capacity import (
     EffectiveQueueCapacity,
     effective_capacity,
     effective_queue_capacity,
+    normalize_capacity_consumer_links,
     workload_counts,
 )
 from pa.fleet.policy import (
@@ -713,6 +714,7 @@ def _evaluate(
         "available_capacity": max(0.0, 1.0 - normalized),
         "normalized_workload": normalized,
     }
+    consumer_links = normalize_capacity_consumer_links(activity_value)
     detail = {
         "instance_id": candidate.instance_id,
         "name": candidate.name,
@@ -739,8 +741,10 @@ def _evaluate(
         "provider_workload": provider_counts,
         "global_queue_count": global_waiting_count,
         "provider_queue_count": provider_waiting_count,
-        "consumer_links": (_envelope(candidate, "activity").get("value") or {}).get(
-            "capacity_consumer_links", []
+        "consumer_links": consumer_links,
+        "consumer_link_count": len(consumer_links),
+        "consumer_links_omitted": max(
+            0, global_counts["consumed"] - len(consumer_links)
         ),
         "cached_repository_ids": cached_repositories,
         "freshness": _freshness(candidate),
@@ -853,7 +857,11 @@ class PlacementService:
                     item[0].instance_id,
                 ),
             )
-            tie_reason = "Lowest normalized active-plus-queued workload; instance ID breaks exact ties."
+            tie_reason = (
+                "Lowest normalized execution-slot consumption (active capacity "
+                "consumers plus durable dispatch reservations); queued prompts are "
+                "backlog telemetry. Instance ID breaks exact ties."
+            )
         elif request.policy == PlacementPolicy.ROUND_ROBIN:
             chosen_id = self.cursor_store.choose(
                 request.fleet_id,
