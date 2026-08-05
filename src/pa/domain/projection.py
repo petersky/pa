@@ -1781,6 +1781,12 @@ class CardProjection:
         principal_id: str,
         instance_id: str,
     ) -> Notification:
+        if (
+            notification.interaction
+            and notification.interaction.state.value == "answered"
+            and not notification.interaction.response_principal
+        ):
+            notification.interaction.response_principal = principal_id
         event = CardEvent(
             type=EventType.NOTIFICATION_UPSERTED,
             realm_id=notification.realm_id,

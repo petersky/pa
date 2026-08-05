@@ -92,6 +92,9 @@ class GoalCriterion(BaseModel):
     verdict: CriterionVerdict = CriterionVerdict.PENDING
     evidence_ids: list[str] = Field(default_factory=list)
     freshness_seconds: int | None = Field(default=None, ge=1)
+    required_evidence_kinds: list[EvidenceKind] = Field(default_factory=list)
+    minimum_evidence_count: int = Field(default=1, ge=1, le=100)
+    require_independent_verifier: bool = False
     explanation: str = ""
 
 
@@ -107,6 +110,10 @@ class GoalEvidence(BaseModel):
     expires_at: datetime | None = None
     sensitivity: str = "internal"
     contradictory: bool = False
+    recorded_by_principal: str = ""
+    recorded_by_instance_id: str = ""
+    producer_role: GoalActorRole | None = None
+    producer_service_id: str | None = None
 
 
 class GoalRateLimit(BaseModel):
@@ -178,6 +185,9 @@ class GoalLease(BaseModel):
     holder_instance_id: str | None = None
     fencing_token: int = Field(default=0, ge=0)
     expires_at: datetime | None = None
+    claim_id: str | None = None
+    eligible_instance_ids: list[str] = Field(default_factory=list)
+    acquired_at: datetime | None = None
 
     def active(self, now: datetime | None = None) -> bool:
         now = now or datetime.now(UTC)
@@ -197,6 +207,8 @@ class GoalWakeup(BaseModel):
 class GoalAudit(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     auditor_principal: str
+    auditor_instance_id: str = ""
+    verifier_service_id: str | None = None
     independent: bool = True
     verdict: CriterionVerdict
     criterion_verdicts: dict[str, CriterionVerdict]
@@ -347,6 +359,9 @@ class GoalWorkPackage(BaseModel):
     dispatch_ids: list[str] = Field(default_factory=list)
     session_id: str | None = None
     replacement_session_ids: list[str] = Field(default_factory=list)
+    executor_service_id: str | None = None
+    verifier_service_id: str | None = None
+    action_reservation_id: str | None = None
     attempts: int = Field(default=0, ge=0)
     max_attempts: int = Field(default=3, ge=1, le=20)
     last_progress_fingerprint: str | None = None
@@ -363,6 +378,7 @@ class GoalOperatorInteraction(BaseModel):
     notification_id: str
     state: GoalInteractionState = GoalInteractionState.PENDING
     response_summary: str = ""
+    response_principal: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     resolved_at: datetime | None = None
 
@@ -498,6 +514,21 @@ class Goal(BaseModel):
 
         for package_id in work_ids:
             visit(package_id)
+        executor_services = {
+            package.executor_service_id
+            for package in self.work_packages
+            if package.executor_service_id
+        }
+        verifier_services = {
+            package.verifier_service_id
+            for package in self.work_packages
+            if package.verifier_service_id
+        }
+        if overlap := executor_services & verifier_services:
+            raise ValueError(
+                "executor and verifier service identities must be distinct: "
+                f"{sorted(overlap)}"
+            )
         notification_ids: set[str] = set()
         for interaction in self.operator_interactions:
             if interaction.proposal_id not in proposal_id_set:

@@ -22,7 +22,14 @@ from pa.domain.notifications import (
     NotificationSeverity,
     NotificationType,
 )
+from pa.goals.advanced_models import (
+    GoalActionDisposition,
+    GoalActionRequest,
+    GoalUsage,
+    GovernanceMutationContext,
+)
 from pa.goals.authorization import authorize_proposal
+from pa.goals.governance import GoalGovernanceConflict, GoalGovernanceService
 from pa.goals.models import (
     AuthorizationOutcome,
     CreateWorkPackageAction,
@@ -77,6 +84,9 @@ _TERMINAL_INTERACTIONS = {
     InteractionState.SUPERSEDED,
     InteractionState.DELIVERED,
 }
+_MAX_PACKAGE_REPLACEMENTS = 20
+_MAX_GOAL_REPLACEMENTS = 100
+_MAX_GOAL_DISPATCH_IDS = 200
 
 
 class GoalSupervisor:
@@ -91,6 +101,7 @@ class GoalSupervisor:
         notification_service=None,
         dispatch_store=None,
         dispatch: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+        governance: GoalGovernanceService | None = None,
         now: Callable[[], datetime] | None = None,
         no_progress_cycles: int = 3,
         stalled_cycles: int = 6,
@@ -105,6 +116,11 @@ class GoalSupervisor:
         self.dispatch_store = dispatch_store
         self.dispatch = dispatch
         self.now = now or (lambda: datetime.now(UTC))
+        self.governance = governance or GoalGovernanceService(
+            store, instance_id, service, clock=self.now
+        )
+        self.service_principal = f"service:goal-supervisor:{instance_id}"
+        self._active_reservation_id: str | None = None
         self.no_progress_threshold = no_progress_cycles
         self.stalled_threshold = stalled_cycles
         self.lease_ttl_seconds = lease_ttl_seconds
@@ -162,13 +178,111 @@ class GoalSupervisor:
 
     def _context(self, goal: Goal, key: str) -> GoalMutationContext:
         return GoalMutationContext(
-            actor_principal="agent:goal-supervisor",
+            actor_principal=self.service_principal,
             authority_instance_id=self.instance_id,
             idempotency_key=key,
             expected_version=goal.version,
             policy_revision=goal.policy.revision,
             fencing_token=goal.lease.fencing_token or None,
         )
+
+    def _governance_context(
+        self, goal: Goal, expected_version: int, key: str
+    ) -> GovernanceMutationContext:
+        return GovernanceMutationContext(
+            actor_principal=self.service_principal,
+            authority_instance_id=self.instance_id,
+            idempotency_key=key,
+            expected_version=expected_version,
+            policy_revision=goal.policy.revision,
+            goal_version=goal.version,
+            fencing_token=goal.lease.fencing_token or None,
+        )
+
+    def _governed_action(
+        self,
+        goal: Goal,
+        key: str,
+        request: GoalActionRequest,
+        operation: Callable[[], Any],
+    ) -> Any:
+        """Reserve, revalidate, apply, and release one side effect."""
+
+        state = self.governance.get_state(goal.id)
+        state, reservation_decision = self.governance.authorize_action(
+            goal.id,
+            request,
+            self._governance_context(goal, state.version, f"{key}:reserve"),
+        )
+        if reservation_decision.disposition != GoalActionDisposition.AUTHORIZED:
+            raise GoalGovernanceConflict(
+                "canonical governance denied the action: "
+                + "; ".join(reservation_decision.reasons)
+            )
+        reservation_id = reservation_decision.reservation_id or ""
+        state, apply_decision = self.governance.apply_action(
+            goal.id,
+            reservation_id,
+            self._governance_context(goal, state.version, f"{key}:apply"),
+        )
+        if apply_decision.disposition != GoalActionDisposition.AUTHORIZED:
+            raise GoalGovernanceConflict(
+                "canonical governance denied the action at apply time: "
+                + "; ".join(apply_decision.reasons)
+            )
+        try:
+            self._active_reservation_id = reservation_id
+            result = operation()
+        except BaseException:
+            current = self.governance.get_state(goal.id)
+            self.governance.release_action(
+                goal.id,
+                reservation_id,
+                self._governance_context(
+                    goal, current.version, f"{key}:release-failed"
+                ),
+                actual_usage=GoalUsage(),
+                reason="side effect failed before a durable result",
+            )
+            raise
+        finally:
+            self._active_reservation_id = None
+        current = self.governance.get_state(goal.id)
+        self.governance.release_action(
+            goal.id,
+            reservation_id,
+            self._governance_context(goal, current.version, f"{key}:release-applied"),
+            actual_usage=request.estimate,
+            reason="side effect applied",
+        )
+        return result
+
+    def _assert_side_effect_fence(self, goal: Goal) -> None:
+        current = self.service.get(goal.id)
+        if current is None:
+            raise GoalConflict("goal disappeared before its side effect")
+        if not current.lease.active():
+            raise GoalConflict("goal controller lease expired before its side effect")
+        if (
+            current.lease.holder_instance_id != self.instance_id
+            or current.lease.fencing_token != goal.lease.fencing_token
+        ):
+            raise GoalConflict("goal controller lost its fence before its side effect")
+        eligible = set(
+            current.wakeup.eligible_instance_ids
+            if current.wakeup and current.wakeup.eligible_instance_ids
+            else current.lease.eligible_instance_ids
+        )
+        if eligible and self.instance_id not in eligible:
+            raise GoalConflict("goal controller is not eligible for this side effect")
+
+    @staticmethod
+    def _append_bounded(values: list[str], value: str, limit: int) -> None:
+        if not value:
+            return
+        values[:] = [item for item in values if item != value]
+        values.append(value)
+        del values[:-limit]
 
     def _claim(self, goal: Goal) -> Goal | None:
         now = self.now()
@@ -247,7 +361,15 @@ class GoalSupervisor:
                 proposal.authorization.outcome == AuthorizationOutcome.REQUIRE_OPERATOR
             ):
                 proposal.status = ProposalStatus.OPERATOR_REQUIRED
-                self._ensure_interaction(goal, proposal, approval=True)
+                self._governed_action(
+                    goal,
+                    (
+                        f"goal-supervisor:{goal.id}:proposal:{proposal.id}:"
+                        f"approval:{goal.supervision.cycle + 1}"
+                    ),
+                    GoalActionRequest(action_class="request_operator"),
+                    lambda: self._ensure_interaction(goal, proposal, approval=True),
+                )
             else:
                 proposal.status = ProposalStatus.REJECTED
             changed = True
@@ -260,26 +382,103 @@ class GoalSupervisor:
                 continue
             try:
                 action = proposal.action
+                approval = next(
+                    (
+                        item
+                        for item in goal.operator_interactions
+                        if item.proposal_id == proposal.id
+                        and item.state == GoalInteractionState.ANSWERED
+                        and item.response_principal
+                        and item.response_summary
+                    ),
+                    None,
+                )
+
+                def governed_request(
+                    action_class: str, **kwargs: Any
+                ) -> GoalActionRequest:
+                    return GoalActionRequest(
+                        action_class=action_class,
+                        operator_approved=approval is not None,
+                        approval_principal=(
+                            approval.response_principal if approval else None
+                        ),
+                        approval_interaction_id=(approval.id if approval else None),
+                        **kwargs,
+                    )
+
+                governance_key = (
+                    f"goal-supervisor:{goal.id}:proposal:{proposal.id}:"
+                    f"cycle:{goal.supervision.cycle + 1}"
+                )
                 if isinstance(action, CreateWorkPackageAction):
-                    self._create_work_package(goal, proposal, action, now)
+                    self._governed_action(
+                        goal,
+                        governance_key,
+                        governed_request("create_work_package"),
+                        lambda: self._create_work_package(goal, proposal, action, now),
+                    )
                 elif isinstance(action, DispatchWorkPackageAction):
-                    if not self._dispatch_work_package(goal, proposal, action, now):
+                    applied = self._governed_action(
+                        goal,
+                        governance_key,
+                        governed_request(
+                            "dispatch_work_package",
+                            delegated=True,
+                            provider_id=action.provider,
+                            estimate=GoalUsage(actions=1, dispatches=1),
+                        ),
+                        lambda: self._dispatch_work_package(
+                            goal, proposal, action, now
+                        ),
+                    )
+                    if not applied:
                         continue
                 elif isinstance(action, RequestOperatorAction):
-                    self._ensure_interaction(goal, proposal, approval=False)
-                elif isinstance(action, ReviseStrategyAction):
-                    goal.assumptions = list(
-                        dict.fromkeys([*goal.assumptions, *action.assumptions])
+                    self._governed_action(
+                        goal,
+                        governance_key,
+                        governed_request("request_operator"),
+                        lambda: self._ensure_interaction(
+                            goal, proposal, approval=False
+                        ),
                     )
-                    goal.risks = list(dict.fromkeys([*goal.risks, *action.risks]))
-                    goal.strategy_revision += 1
-                    goal.progress_summary = action.summary
+                elif isinstance(action, ReviseStrategyAction):
+
+                    def revise_strategy() -> None:
+                        goal.assumptions = list(
+                            dict.fromkeys([*goal.assumptions, *action.assumptions])
+                        )
+                        goal.risks = list(dict.fromkeys([*goal.risks, *action.risks]))
+                        goal.strategy_revision += 1
+                        goal.progress_summary = action.summary
+
+                    self._governed_action(
+                        goal,
+                        governance_key,
+                        governed_request("revise_strategy"),
+                        revise_strategy,
+                    )
                 elif isinstance(action, RecordEvidenceAction):
-                    self._record_evidence(goal, action)
+                    self._governed_action(
+                        goal,
+                        governance_key,
+                        governed_request("record_evidence"),
+                        lambda: self._record_evidence(goal, action),
+                    )
                 elif isinstance(action, TransitionGoalAction):
-                    goal.state = action.state
-                    if action.progress_summary is not None:
-                        goal.progress_summary = action.progress_summary
+
+                    def transition() -> None:
+                        goal.state = action.state
+                        if action.progress_summary is not None:
+                            goal.progress_summary = action.progress_summary
+
+                    self._governed_action(
+                        goal,
+                        governance_key,
+                        governed_request("transition_goal"),
+                        transition,
+                    )
                 proposal.status = ProposalStatus.APPLIED
                 proposal.applied_event_id = f"checkpoint:{goal.supervision.cycle + 1}"
                 proposal.updated_at = now
@@ -317,8 +516,12 @@ class GoalSupervisor:
             card_id=action.card_id,
             preferred_instance_id=action.preferred_instance_id,
             preferred_capabilities=action.preferred_capabilities,
-            max_attempts=action.max_attempts,
+            max_attempts=min(
+                action.max_attempts,
+                goal.budget.retry_limit + 1,
+            ),
             dispatch_when_ready=action.dispatch_when_ready,
+            action_reservation_id=self._active_reservation_id,
             created_at=now,
             updated_at=now,
         )
@@ -329,6 +532,7 @@ class GoalSupervisor:
         return package
 
     def _materialize_card(self, goal: Goal, package: GoalWorkPackage) -> str:
+        self._assert_side_effect_fence(goal)
         if package.card_id:
             if not self.store.get_card(package.card_id, realm_id=goal.realm_id):
                 raise ValueError("work-package card does not exist in the goal realm")
@@ -362,7 +566,7 @@ class GoalSupervisor:
                 preferred_instance=package.preferred_instance_id,
                 preferred_capabilities=package.preferred_capabilities,
             ),
-            principal_id="agent:goal-supervisor",
+            principal_id=self.service_principal,
             instance_id=self.instance_id,
         )
         return card.id
@@ -374,6 +578,7 @@ class GoalSupervisor:
         action: DispatchWorkPackageAction,
         now: datetime,
     ) -> bool:
+        self._assert_side_effect_fence(goal)
         package = next(
             (item for item in goal.work_packages if item.id == action.work_package_id),
             None,
@@ -386,12 +591,20 @@ class GoalSupervisor:
             WorkPackageState.BLOCKED,
         }:
             return False
+        if package.attempts >= package.max_attempts:
+            raise RuntimeError("work-package retry limit is exhausted")
         if not self.dispatch or not package.card_id:
             raise RuntimeError("fleet dispatch service is unavailable")
         attempt = package.attempts + 1
         result = self.dispatch(
             {
                 "authority_instance_id": self.instance_id,
+                "goal_id": goal.id,
+                "goal_version": goal.version,
+                "goal_policy_revision": goal.policy.revision,
+                "goal_fencing_token": goal.lease.fencing_token,
+                "goal_action_reservation_id": self._active_reservation_id,
+                "goal_actor_principal": self.service_principal,
                 "card_id": package.card_id,
                 "target_instance_id": action.target_instance_id,
                 "placement_policy": action.placement_policy,
@@ -421,10 +634,13 @@ class GoalSupervisor:
         if not dispatch_id:
             raise RuntimeError("fleet dispatch did not return a dispatch id")
         package.attempts = attempt
-        package.dispatch_ids.append(dispatch_id)
+        package.action_reservation_id = self._active_reservation_id
+        self._append_bounded(package.dispatch_ids, dispatch_id, package.max_attempts)
         package.state = WorkPackageState.DISPATCHED
         package.updated_at = now
-        goal.linked_dispatch_ids.append(dispatch_id)
+        self._append_bounded(
+            goal.linked_dispatch_ids, dispatch_id, _MAX_GOAL_DISPATCH_IDS
+        )
         return True
 
     def _record_evidence(self, goal: Goal, action: RecordEvidenceAction) -> None:
@@ -501,7 +717,7 @@ class GoalSupervisor:
             goal.proposals.append(
                 GoalProposal(
                     id=proposal_id,
-                    proposer_principal="agent:goal-supervisor",
+                    proposer_principal=self.service_principal,
                     proposer_role=GoalActorRole.COORDINATOR,
                     action=DispatchWorkPackageAction(
                         work_package_id=package.id,
@@ -542,18 +758,55 @@ class GoalSupervisor:
                 package.no_progress_cycles += 1
             if record.session_id and record.session_id != package.session_id:
                 if package.session_id:
-                    package.replacement_session_ids.append(package.session_id)
-                    goal.supervision.replacement_session_ids.append(package.session_id)
+                    self._append_bounded(
+                        package.replacement_session_ids,
+                        package.session_id,
+                        _MAX_PACKAGE_REPLACEMENTS,
+                    )
+                    self._append_bounded(
+                        goal.supervision.replacement_session_ids,
+                        package.session_id,
+                        _MAX_GOAL_REPLACEMENTS,
+                    )
                 package.session_id = record.session_id
+                authority = str(
+                    getattr(record, "authority_instance_id", "") or self.instance_id
+                )
+                service_id = (
+                    f"service:goal-{package.role.value}:{authority}:{record.session_id}"
+                )
+                if package.role == GoalActorRole.VERIFIER:
+                    package.verifier_service_id = service_id
+                else:
+                    package.executor_service_id = service_id
                 changed = True
             if record.state == "running" and package.state != WorkPackageState.RUNNING:
                 package.state = WorkPackageState.RUNNING
                 changed = True
             elif record.state == "completed":
-                changed = self._complete_package(goal, package, record, now) or changed
+                completed = self._governed_action(
+                    goal,
+                    (
+                        f"goal-supervisor:{goal.id}:dispatch:{record.dispatch_id}:"
+                        f"terminal:{package.state.value}"
+                    ),
+                    GoalActionRequest(
+                        action_class=(
+                            "record_evidence"
+                            if package.role == GoalActorRole.VERIFIER
+                            else "observe.dispatch.read"
+                        )
+                    ),
+                    lambda: self._complete_package(goal, package, record, now),
+                )
+                changed = completed or changed
             elif record.state in {"failed", "cancelled"}:
                 if record.session_id:
-                    package.replacement_session_ids.append(record.session_id)
+                    self._append_bounded(
+                        package.replacement_session_ids,
+                        record.session_id,
+                        _MAX_PACKAGE_REPLACEMENTS,
+                    )
                 if package.attempts < package.max_attempts:
                     package.state = WorkPackageState.READY
                     package.result_summary = (
@@ -571,11 +824,31 @@ class GoalSupervisor:
             return False
         if package.role == GoalActorRole.VERIFIER:
             report = record.final_report
+            dependencies = set(package.depends_on)
+            executor_identities = {
+                item.executor_service_id
+                for item in goal.work_packages
+                if item.id in dependencies and item.executor_service_id
+            }
+            verifier_identity = package.verifier_service_id or (
+                f"service:goal-verifier:{getattr(record, 'authority_instance_id', self.instance_id)}:"
+                f"{record.session_id or record.dispatch_id}"
+            )
+            independent = bool(
+                verifier_identity
+                and verifier_identity not in executor_identities
+                and all(
+                    not record.session_id or record.session_id != item.session_id
+                    for item in goal.work_packages
+                    if item.id in dependencies
+                )
+            )
             passed = bool(
                 report
                 and not report.blockers
                 and report.validations
                 and all(item.status == "passed" for item in report.validations)
+                and independent
             )
             if not passed:
                 package.state = (
@@ -583,7 +856,11 @@ class GoalSupervisor:
                     if package.attempts < package.max_attempts
                     else WorkPackageState.FAILED
                 )
-                package.result_summary = "Verifier did not provide passing evidence."
+                package.result_summary = (
+                    "Verifier was not independent of the executor."
+                    if not independent
+                    else "Verifier did not provide passing evidence."
+                )
                 return True
             package.state = WorkPackageState.VERIFIED
             package.result_summary = report.outcome
@@ -600,6 +877,10 @@ class GoalSupervisor:
                     ],
                 },
                 observed_at=now,
+                recorded_by_principal=self.service_principal,
+                recorded_by_instance_id=self.instance_id,
+                producer_role=GoalActorRole.VERIFIER,
+                producer_service_id=verifier_identity,
             )
             if not any(item.id == evidence.id for item in goal.evidence):
                 goal.evidence.append(evidence)
@@ -607,7 +888,6 @@ class GoalSupervisor:
                     if criterion.id in package.criterion_ids:
                         criterion.evidence_ids.append(evidence.id)
                         criterion.verdict = CriterionVerdict.SATISFIED
-            dependencies = set(package.depends_on)
             for item in goal.work_packages:
                 if item.id in dependencies:
                     item.state = WorkPackageState.VERIFIED
@@ -643,7 +923,7 @@ class GoalSupervisor:
         goal.proposals.append(
             GoalProposal(
                 id=proposal_id,
-                proposer_principal="agent:goal-supervisor",
+                proposer_principal=self.service_principal,
                 proposer_role=GoalActorRole.COORDINATOR,
                 action=CreateWorkPackageAction(
                     title=f"Verify: {package.title}",
@@ -730,7 +1010,7 @@ class GoalSupervisor:
         goal.proposals.append(
             GoalProposal(
                 id=proposal_id,
-                proposer_principal="agent:goal-supervisor",
+                proposer_principal=self.service_principal,
                 proposer_role=GoalActorRole.COORDINATOR,
                 action=CreateWorkPackageAction(
                     title=f"Critique stalled strategy for {goal.objective[:120]}",
@@ -754,6 +1034,7 @@ class GoalSupervisor:
     def _ensure_interaction(
         self, goal: Goal, proposal: GoalProposal, *, approval: bool
     ) -> GoalOperatorInteraction | None:
+        self._assert_side_effect_fence(goal)
         existing = next(
             (
                 item
@@ -818,7 +1099,7 @@ class GoalSupervisor:
                 ),
                 deduplication_key=f"goal:{goal.id}:proposal:{proposal.id}",
             ),
-            principal_id="agent:goal-supervisor",
+            principal_id=self.service_principal,
             instance_id=self.instance_id,
         )
         interaction = GoalOperatorInteraction(
@@ -858,6 +1139,7 @@ class GoalSupervisor:
             else:
                 link.state = GoalInteractionState.ANSWERED
                 link.response_summary = interaction.response_summary or ""
+                link.response_principal = interaction.response_principal
                 if proposal and proposal.status == ProposalStatus.OPERATOR_REQUIRED:
                     response = interaction.response or {}
                     approved = (

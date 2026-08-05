@@ -13,12 +13,16 @@ from pa.core.context import AppContext
 from pa.core.contracts import Module
 from pa.core.ui.pages import PageDefinition
 from pa.goals.advanced_models import (
+    GoalActionApply,
+    GoalActionDisposition,
+    GoalActionRelease,
     GoalActionRequest,
     GoalGovernancePolicy,
     GoalPortfolioReviewRequest,
     GoalProposalRequest,
     GoalProposalReview,
     GoalStrategyPortfolioUpdate,
+    GoalUsage,
     GovernanceMutationContext,
     ProviderGoalAssignment,
     ProviderGoalProgress,
@@ -35,6 +39,7 @@ from pa.goals.models import (
     GoalTransition,
     GoalWakeup,
 )
+from pa.goals.projection import find_goal_event_by_idempotency
 from pa.goals.providers import list_goal_adapter_capabilities
 from pa.goals.service import GoalConflict, GoalService
 from pa.goals.supervisor import GoalSupervisor
@@ -63,8 +68,9 @@ def _governance_context(
         int | None, Header(alias="X-PA-Goal-Fencing-Token")
     ] = None,
 ) -> GovernanceMutationContext:
+    authenticated_actor = get_principal_id(request) or "user:local"
     return GovernanceMutationContext(
-        actor_principal=actor,
+        actor_principal=authenticated_actor,
         authority_instance_id=authority or request.app.state.ctx.settings.instance_id,
         idempotency_key=idempotency_key,
         expected_version=expected_version,
@@ -85,8 +91,9 @@ def _context(
         int | None, Header(alias="X-PA-Goal-Fencing-Token")
     ] = None,
 ) -> GoalMutationContext:
+    authenticated_actor = get_principal_id(request) or "user:local"
     return GoalMutationContext(
-        actor_principal=actor,
+        actor_principal=authenticated_actor,
         authority_instance_id=authority or request.app.state.ctx.settings.instance_id,
         idempotency_key=idempotency_key,
         expected_version=expected_version,
@@ -114,6 +121,118 @@ def _wake_supervisor(request: Request) -> None:
         supervisor.wake()
 
 
+def _governed_goal_mutation(
+    request: Request,
+    goal_id: str,
+    action_class: str,
+    goal_context: GoalMutationContext,
+    operation,
+    *,
+    delegated: bool = False,
+    estimate: GoalUsage | None = None,
+):
+    governance = _governance(request)
+    goal_service = _service(request)
+    current_goal = goal_service.get(goal_id)
+    if current_goal:
+        duplicate = find_goal_event_by_idempotency(
+            goal_service.store,
+            current_goal.realm_id,
+            goal_context.idempotency_key,
+        )
+        if duplicate:
+            return operation()
+    actor = goal_context.actor_principal
+
+    def governance_context(
+        version: int,
+        key: str,
+        goal_version: int,
+        policy_revision: int | None = None,
+    ):
+        return GovernanceMutationContext(
+            actor_principal=actor,
+            authority_instance_id=goal_context.authority_instance_id,
+            idempotency_key=key,
+            expected_version=version,
+            policy_revision=policy_revision or goal_context.policy_revision,
+            goal_version=goal_version,
+            fencing_token=goal_context.fencing_token,
+        )
+
+    state = governance.get_state(goal_id)
+    action = GoalActionRequest(
+        action_class=action_class,
+        delegated=delegated,
+        estimate=estimate or GoalUsage(actions=1),
+        operator_approved=actor.startswith(("user:", "role:admin")),
+        approval_principal=(
+            actor if actor.startswith(("user:", "role:admin")) else None
+        ),
+    )
+    state, decision = governance.authorize_action(
+        goal_id,
+        action,
+        governance_context(
+            state.version,
+            f"{goal_context.idempotency_key}:governance-reserve",
+            goal_context.expected_version,
+        ),
+    )
+    if decision.disposition != GoalActionDisposition.AUTHORIZED:
+        raise GoalConflict(
+            "canonical governance denied the mutation: " + "; ".join(decision.reasons)
+        )
+    reservation_id = decision.reservation_id or ""
+    state, applied = governance.apply_action(
+        goal_id,
+        reservation_id,
+        governance_context(
+            state.version,
+            f"{goal_context.idempotency_key}:governance-apply",
+            goal_context.expected_version,
+        ),
+    )
+    if applied.disposition != GoalActionDisposition.AUTHORIZED:
+        raise GoalConflict(
+            "canonical governance denied the mutation at apply time: "
+            + "; ".join(applied.reasons)
+        )
+    try:
+        result = operation()
+    except BaseException:
+        current_goal = _service(request).get(goal_id)
+        current = governance.get_state(goal_id)
+        governance.release_action(
+            goal_id,
+            reservation_id,
+            governance_context(
+                current.version,
+                f"{goal_context.idempotency_key}:governance-release-failed",
+                current_goal.version if current_goal else goal_context.expected_version,
+                current_goal.policy.revision if current_goal else None,
+            ),
+            actual_usage=GoalUsage(),
+            reason="goal mutation failed before commit",
+        )
+        raise
+    current_goal = _service(request).get(goal_id)
+    current = governance.get_state(goal_id)
+    governance.release_action(
+        goal_id,
+        reservation_id,
+        governance_context(
+            current.version,
+            f"{goal_context.idempotency_key}:governance-release-applied",
+            current_goal.version if current_goal else goal_context.expected_version,
+            current_goal.policy.revision if current_goal else None,
+        ),
+        actual_usage=action.estimate,
+        reason="goal mutation committed",
+    )
+    return result
+
+
 @router.get("/goals")
 def list_goals(
     request: Request, realm: str | None = None, state: GoalState | None = None
@@ -135,7 +254,7 @@ def create_goal_explicit(
     authority: Annotated[str | None, Header(alias="X-PA-Authority-Instance")] = None,
 ):
     ctx = GoalMutationContext(
-        actor_principal=actor,
+        actor_principal=get_principal_id(request) or "user:local",
         authority_instance_id=authority or request.app.state.ctx.settings.instance_id,
         idempotency_key=idempotency_key,
         expected_version=expected_version,
@@ -154,6 +273,7 @@ def get_goal(request: Request, goal_id: str, realm: str | None = None):
     return {
         "goal": goal.model_dump(mode="json"),
         "events": _service(request).events(goal_id),
+        "projection_conflicts": _service(request).conflicts(goal_id),
     }
 
 
@@ -180,7 +300,16 @@ def submit_goal_proposal(
         authority,
         fencing_token,
     )
-    result = _run(lambda: _service(request).submit_proposal(goal_id, body, ctx))
+    result = _run(
+        lambda: _governed_goal_mutation(
+            request,
+            goal_id,
+            body.action.kind,
+            ctx,
+            lambda: _service(request).submit_proposal(goal_id, body, ctx),
+            delegated=body.action.kind == "dispatch_work_package",
+        )
+    )
     _wake_supervisor(request)
     return result.model_dump(mode="json")
 
@@ -212,7 +341,7 @@ def _ctx(
     fencing_token,
 ):
     return GoalMutationContext(
-        actor_principal=actor,
+        actor_principal=get_principal_id(request) or "user:local",
         authority_instance_id=authority or request.app.state.ctx.settings.instance_id,
         idempotency_key=idempotency_key,
         expected_version=expected_version,
@@ -264,7 +393,15 @@ def transition_goal(
         authority,
         fencing_token,
     )
-    result = _run(lambda: _service(request).transition(goal_id, body, ctx))
+    result = _run(
+        lambda: _governed_goal_mutation(
+            request,
+            goal_id,
+            "transition_goal",
+            ctx,
+            lambda: _service(request).transition(goal_id, body, ctx),
+        )
+    )
     _wake_supervisor(request)
     return result.model_dump(mode="json")
 
@@ -292,9 +429,15 @@ def revise_goal(
         authority,
         fencing_token,
     )
-    return _run(lambda: _service(request).revise(goal_id, body, ctx)).model_dump(
-        mode="json"
-    )
+    return _run(
+        lambda: _governed_goal_mutation(
+            request,
+            goal_id,
+            "revise_goal",
+            ctx,
+            lambda: _service(request).revise(goal_id, body, ctx),
+        )
+    ).model_dump(mode="json")
 
 
 @router.post("/goals/{goal_id}/evidence")
@@ -320,9 +463,15 @@ def record_goal_evidence(
         authority,
         fencing_token,
     )
-    return _run(lambda: _service(request).add_evidence(goal_id, body, ctx)).model_dump(
-        mode="json"
-    )
+    return _run(
+        lambda: _governed_goal_mutation(
+            request,
+            goal_id,
+            "record_evidence",
+            ctx,
+            lambda: _service(request).add_evidence(goal_id, body, ctx),
+        )
+    ).model_dump(mode="json")
 
 
 @router.post("/goals/{goal_id}/audit")
@@ -347,9 +496,15 @@ def audit_goal(
         authority,
         fencing_token,
     )
-    return _run(lambda: _service(request).audit(goal_id, body, ctx)).model_dump(
-        mode="json"
-    )
+    return _run(
+        lambda: _governed_goal_mutation(
+            request,
+            goal_id,
+            "audit_goal",
+            ctx,
+            lambda: _service(request).audit(goal_id, body, ctx),
+        )
+    ).model_dump(mode="json")
 
 
 @router.post("/goals/{goal_id}/lease")
@@ -426,7 +581,13 @@ def schedule_goal_wakeup(
         fencing_token,
     )
     return _run(
-        lambda: _service(request).schedule_wakeup(goal_id, body, ctx)
+        lambda: _governed_goal_mutation(
+            request,
+            goal_id,
+            "schedule_wakeup",
+            ctx,
+            lambda: _service(request).schedule_wakeup(goal_id, body, ctx),
+        )
     ).model_dump(mode="json")
 
 
@@ -438,6 +599,11 @@ def list_provider_goal_adapters():
 @router.get("/goals/{goal_id}/autonomy")
 def get_goal_autonomy(request: Request, goal_id: str):
     return _run(lambda: _governance(request).get_state(goal_id)).model_dump(mode="json")
+
+
+@router.get("/goals/{goal_id}/autonomy/events")
+def get_goal_autonomy_events(request: Request, goal_id: str):
+    return _run(lambda: _governance(request).state_events(goal_id))
 
 
 @router.put("/goals/{goal_id}/priority")
@@ -481,6 +647,45 @@ def authorize_goal_action(
     }
 
 
+@router.post("/goals/{goal_id}/actions/apply")
+def apply_goal_action(
+    request: Request,
+    goal_id: str,
+    body: GoalActionApply,
+    context: Annotated[GovernanceMutationContext, Depends(_governance_context)],
+):
+    state, decision = _run(
+        lambda: _governance(request).apply_action(
+            goal_id,
+            body.reservation_id,
+            context,
+            actual_usage=body.actual_usage,
+        )
+    )
+    return {
+        "decision": decision.model_dump(mode="json"),
+        "autonomy_version": state.version,
+    }
+
+
+@router.post("/goals/{goal_id}/actions/release")
+def release_goal_action(
+    request: Request,
+    goal_id: str,
+    body: GoalActionRelease,
+    context: Annotated[GovernanceMutationContext, Depends(_governance_context)],
+):
+    return _run(
+        lambda: _governance(request).release_action(
+            goal_id,
+            body.reservation_id,
+            context,
+            actual_usage=body.actual_usage,
+            reason=body.reason,
+        )
+    ).model_dump(mode="json")
+
+
 @router.post("/goals/{goal_id}/providers/assign")
 def assign_provider_goal(
     request: Request,
@@ -505,6 +710,25 @@ def ingest_provider_goal_progress(
     body: ProviderGoalProgress,
     context: Annotated[GovernanceMutationContext, Depends(_governance_context)],
 ):
+    if getattr(request.state, "instance_authenticated", False):
+        origin = request.headers.get("X-PA-Origin-Instance-ID", "").strip()
+        state = _run(lambda: _governance(request).get_state(goal_id))
+        run = next(
+            (item for item in state.provider_runs if item.id == body.run_id), None
+        )
+        if run is None:
+            raise HTTPException(status_code=404, detail="provider run not found")
+        if not origin or origin != run.authority_instance_id:
+            raise HTTPException(
+                status_code=403,
+                detail="authenticated instance does not own this provider run",
+            )
+        context = context.model_copy(
+            update={
+                "actor_principal": run.executor_principal,
+                "authority_instance_id": origin,
+            }
+        )
     return _run(
         lambda: _governance(request).ingest_provider_progress(goal_id, body, context)
     ).model_dump(mode="json")
@@ -609,13 +833,14 @@ class GoalsModule(Module):
     def on_load(self, ctx: AppContext) -> None:
         service = GoalService(ctx.store, ctx.settings.instance_id)
         ctx.register_service("goal_service", service)
+        governance = GoalGovernanceService(
+            ctx.store,
+            ctx.settings.instance_id,
+            service,
+        )
         ctx.register_service(
             "goal_governance",
-            GoalGovernanceService(
-                ctx.store,
-                ctx.settings.instance_id,
-                service,
-            ),
+            governance,
         )
         from pa.mcp.local_api import request_local_pa
 
@@ -635,6 +860,7 @@ class GoalsModule(Module):
             notification_service=ctx.services.get("notifications"),
             dispatch_store=ctx.services.get("dispatch_store"),
             dispatch=dispatch,
+            governance=governance,
         )
         ctx.register_service("goal_supervisor", supervisor)
         self._supervisor_stop: asyncio.Event | None = None
@@ -805,6 +1031,68 @@ class GoalsModule(Module):
                 },
                 headers=headers,
                 json=action.model_dump(mode="json"),
+            )
+
+        @mcp.tool()
+        def apply_goal_action_reservation(
+            goal_id: str,
+            apply: GoalActionApply,
+            expected_autonomy_version: int,
+            goal_version: int,
+            policy_revision: int,
+            idempotency_key: str,
+            authority_instance_id: str,
+            fencing_token: int | None = None,
+        ) -> dict:
+            """Revalidate a durable reservation immediately before its side effect."""
+            headers = {
+                "Idempotency-Key": idempotency_key,
+                "X-PA-Authority-Instance": authority_instance_id,
+            }
+            if fencing_token is not None:
+                headers["X-PA-Goal-Fencing-Token"] = str(fencing_token)
+            return request_local_pa(
+                ctx.settings,
+                "POST",
+                f"/api/goals/{goal_id}/actions/apply",
+                params={
+                    "expected_version": expected_autonomy_version,
+                    "goal_version": goal_version,
+                    "policy_revision": policy_revision,
+                },
+                headers=headers,
+                json=apply.model_dump(mode="json"),
+            )
+
+        @mcp.tool()
+        def release_goal_action_reservation(
+            goal_id: str,
+            release: GoalActionRelease,
+            expected_autonomy_version: int,
+            goal_version: int,
+            policy_revision: int,
+            idempotency_key: str,
+            authority_instance_id: str,
+            fencing_token: int | None = None,
+        ) -> dict:
+            """Release a reservation after success, failure, cancellation, or abort."""
+            headers = {
+                "Idempotency-Key": idempotency_key,
+                "X-PA-Authority-Instance": authority_instance_id,
+            }
+            if fencing_token is not None:
+                headers["X-PA-Goal-Fencing-Token"] = str(fencing_token)
+            return request_local_pa(
+                ctx.settings,
+                "POST",
+                f"/api/goals/{goal_id}/actions/release",
+                params={
+                    "expected_version": expected_autonomy_version,
+                    "goal_version": goal_version,
+                    "policy_revision": policy_revision,
+                },
+                headers=headers,
+                json=release.model_dump(mode="json"),
             )
 
         @mcp.tool()

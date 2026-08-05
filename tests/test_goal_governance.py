@@ -120,6 +120,7 @@ class GoalGovernanceTests(unittest.TestCase):
         actor: str = "agent:supervisor",
         policy_revision: int = 1,
         goal_version: int | None = 1,
+        fence: int | None = None,
     ) -> GovernanceMutationContext:
         return GovernanceMutationContext(
             actor_principal=actor,
@@ -128,6 +129,7 @@ class GoalGovernanceTests(unittest.TestCase):
             expected_version=version,
             policy_revision=policy_revision,
             goal_version=goal_version,
+            fencing_token=fence,
         )
 
     def test_action_policy_reserves_budget_and_enforces_rate_and_risk(self) -> None:
@@ -186,6 +188,17 @@ class GoalGovernanceTests(unittest.TestCase):
             goal = goals.create(
                 self._goal_data("Run natively"), self._goal_ctx("create")
             )
+            goal = goals.acquire_lease(
+                goal.id,
+                GoalMutationContext(
+                    actor_principal="agent:supervisor",
+                    authority_instance_id="instance-a",
+                    idempotency_key="provider-lease",
+                    expected_version=goal.version,
+                    policy_revision=goal.policy.revision,
+                ),
+                ttl_seconds=120,
+            )
 
             state, run, decision = governance.assign_provider(
                 goal.id,
@@ -194,7 +207,12 @@ class GoalGovernanceTests(unittest.TestCase):
                     available_commands=["goal"],
                     estimated_usage=GoalUsage(actions=1, cost_usd=1, tokens=100),
                 ),
-                self._ctx(0, "assign"),
+                self._ctx(
+                    0,
+                    "assign",
+                    goal_version=goal.version,
+                    fence=goal.lease.fencing_token,
+                ),
             )
             self.assertEqual(decision.disposition, GoalActionDisposition.AUTHORIZED)
             assert run is not None
@@ -222,7 +240,13 @@ class GoalGovernanceTests(unittest.TestCase):
                     ),
                     evidence_claims=[{"criterion_id": goal.criteria[0].id}],
                 ),
-                self._ctx(state.version, "progress"),
+                self._ctx(
+                    state.version,
+                    "progress",
+                    actor=run.executor_principal,
+                    goal_version=goal.version,
+                    fence=run.fencing_token,
+                ),
             )
             self.assertEqual(state.usage.cost_usd, 1.25)
             self.assertEqual(len(goal.evidence), 0)
@@ -358,7 +382,7 @@ class GoalGovernanceTests(unittest.TestCase):
                 self._ctx(
                     0,
                     "review",
-                    actor="agent:supervisor",
+                    actor="agent:critic",
                     goal_version=None,
                 ),
             )

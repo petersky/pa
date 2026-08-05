@@ -8,6 +8,7 @@ from pa.domain.models import CardEvent, EventType
 from pa.goals.models import (
     CriterionVerdict,
     Goal,
+    GoalActorRole,
     GoalAudit,
     GoalAuditCreate,
     GoalCreate,
@@ -26,6 +27,7 @@ from pa.goals.projection import (
     get_goal_payload,
     list_goal_events,
     list_goal_payloads,
+    list_goal_projection_conflicts,
 )
 
 _TRANSITIONS: dict[GoalState, set[GoalState]] = {
@@ -73,9 +75,16 @@ class GoalConflict(ValueError):
 
 
 class GoalService:
-    def __init__(self, store, instance_id: str) -> None:
+    def __init__(
+        self,
+        store,
+        instance_id: str,
+        *,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
         self.store = store
         self.instance_id = instance_id
+        self._clock = clock or (lambda: datetime.now(UTC))
 
     def create(self, data: GoalCreate, context: GoalMutationContext) -> Goal:
         if context.expected_version != 0:
@@ -110,6 +119,14 @@ class GoalService:
 
     def events(self, goal_id: str) -> list[dict[str, Any]]:
         return list_goal_events(self.store, goal_id)
+
+    def conflicts(self, goal_id: str) -> list[dict[str, Any]]:
+        goal = self.get(goal_id)
+        return list_goal_projection_conflicts(
+            self.store,
+            realm_id=goal.realm_id if goal else None,
+            entity_id=goal_id,
+        )
 
     def revise(
         self, goal_id: str, change: GoalRevision, context: GoalMutationContext
@@ -156,6 +173,15 @@ class GoalService:
                     raise GoalConflict(
                         "every success criterion must be satisfied before achievement"
                     )
+                findings = self._audit_evidence_findings(
+                    goal,
+                    goal.audit.criterion_verdicts,
+                    goal.audit.evidence_ids,
+                )
+                if findings:
+                    raise GoalConflict(
+                        "completion evidence is no longer valid: " + "; ".join(findings)
+                    )
             previous = goal.state
             goal.state = change.state
             if change.progress_summary is not None:
@@ -172,34 +198,72 @@ class GoalService:
         self, goal_id: str, change: GoalEvidenceCreate, context: GoalMutationContext
     ) -> Goal:
         def mutate(goal: Goal) -> dict[str, Any]:
+            evidence = change.evidence.model_copy(deep=True)
             known = {item.id for item in goal.criteria}
-            if unknown := set(change.evidence.criterion_ids) - known:
+            if unknown := set(evidence.criterion_ids) - known:
                 raise GoalConflict(
                     f"evidence references unknown criteria: {sorted(unknown)}"
                 )
-            if any(item.id == change.evidence.id for item in goal.evidence):
-                raise GoalConflict(
-                    f"evidence id already exists on goal: {change.evidence.id}"
-                )
+            if any(item.id == evidence.id for item in goal.evidence):
+                raise GoalConflict(f"evidence id already exists on goal: {evidence.id}")
             verdict_criteria = set(change.criterion_verdicts)
             if unknown := verdict_criteria - known:
                 raise GoalConflict(
                     f"evidence verdicts reference unknown criteria: {sorted(unknown)}"
                 )
-            if unmapped := verdict_criteria - set(change.evidence.criterion_ids):
+            if unmapped := verdict_criteria - set(evidence.criterion_ids):
                 raise GoalConflict(
                     "evidence verdicts require evidence mapped to each criterion: "
                     f"{sorted(unmapped)}"
                 )
-            goal.evidence.append(change.evidence)
+            now = self._clock()
+            if evidence.observed_at > now + timedelta(minutes=5):
+                raise GoalConflict("evidence observed_at cannot be in the future")
+            if evidence.expires_at and evidence.expires_at <= evidence.observed_at:
+                raise GoalConflict("evidence expiry must follow its observation")
+            evidence.recorded_by_principal = context.actor_principal
+            evidence.recorded_by_instance_id = context.authority_instance_id
+            executor_identities = {
+                item.executor_service_id
+                for item in goal.work_packages
+                if item.executor_service_id
+            }
+            verifier_identities = {
+                item.verifier_service_id
+                for item in goal.work_packages
+                if item.verifier_service_id
+            }
+            if context.actor_principal.startswith("service:goal-verifier:"):
+                if (
+                    context.actor_principal not in verifier_identities
+                    or context.actor_principal in executor_identities
+                ):
+                    raise GoalConflict(
+                        "verifier evidence requires an assigned independent verifier service"
+                    )
+                evidence.producer_role = GoalActorRole.VERIFIER
+                evidence.producer_service_id = context.actor_principal
+            elif context.actor_principal.startswith("service:goal-executor:"):
+                if (
+                    context.actor_principal not in executor_identities
+                    or context.actor_principal in verifier_identities
+                ):
+                    raise GoalConflict(
+                        "executor evidence requires the assigned executor service"
+                    )
+                evidence.producer_role = GoalActorRole.EXECUTOR
+                evidence.producer_service_id = context.actor_principal
+            goal.evidence.append(evidence)
             for criterion in goal.criteria:
-                if criterion.id in change.evidence.criterion_ids:
-                    criterion.evidence_ids.append(change.evidence.id)
+                if criterion.id in evidence.criterion_ids:
+                    criterion.evidence_ids.append(evidence.id)
                 if criterion.id in change.criterion_verdicts:
                     criterion.verdict = change.criterion_verdicts[criterion.id]
             return {
-                "evidence_id": change.evidence.id,
-                "criterion_ids": change.evidence.criterion_ids,
+                "evidence_id": evidence.id,
+                "criterion_ids": evidence.criterion_ids,
+                "recorded_by_principal": evidence.recorded_by_principal,
+                "recorded_by_instance_id": evidence.recorded_by_instance_id,
             }
 
         return self._mutate(goal_id, context, "goal.evidence_recorded", mutate)
@@ -232,18 +296,33 @@ class GoalService:
                 raise GoalConflict(
                     f"audit references unknown evidence: {sorted(unknown)}"
                 )
-            missing_evidence = {
-                criterion_id
-                for criterion_id in known_criteria
-                if not any(
-                    criterion_id in evidence_by_id[evidence_id].criterion_ids
-                    for evidence_id in change.evidence_ids
-                )
-            }
-            if missing_evidence:
+            findings = self._audit_evidence_findings(
+                goal, change.criterion_verdicts, change.evidence_ids
+            )
+            if findings:
                 raise GoalConflict(
-                    "audit must include evidence mapped to every criterion: "
-                    f"{sorted(missing_evidence)}"
+                    "audit evidence policy failed: " + "; ".join(findings)
+                )
+            executor_identities = {
+                item.executor_service_id
+                for item in goal.work_packages
+                if item.executor_service_id
+            }
+            verifier_identities = {
+                item.verifier_service_id
+                for item in goal.work_packages
+                if item.verifier_service_id
+            }
+            if context.actor_principal in executor_identities:
+                raise GoalConflict(
+                    "completion auditor must be distinct from every executor service"
+                )
+            if context.actor_principal.startswith("service:goal-verifier:") and (
+                context.actor_principal not in verifier_identities
+                or context.actor_principal in executor_identities
+            ):
+                raise GoalConflict(
+                    "completion auditor must be an assigned independent verifier service"
                 )
             verdict = (
                 CriterionVerdict.SATISFIED
@@ -255,6 +334,12 @@ class GoalService:
             )
             goal.audit = GoalAudit(
                 auditor_principal=context.actor_principal,
+                auditor_instance_id=context.authority_instance_id,
+                verifier_service_id=(
+                    context.actor_principal
+                    if context.actor_principal.startswith("service:goal-verifier:")
+                    else None
+                ),
                 independent=True,
                 verdict=verdict,
                 criterion_verdicts=change.criterion_verdicts,
@@ -267,11 +352,100 @@ class GoalService:
 
         return self._mutate(goal_id, context, "goal.audited", mutate)
 
+    def _audit_evidence_findings(
+        self,
+        goal: Goal,
+        verdicts: dict[str, CriterionVerdict],
+        evidence_ids: list[str],
+    ) -> list[str]:
+        """Evaluate the criterion policy against one immutable audit snapshot."""
+
+        now = self._clock()
+        selected = {
+            item.id: item for item in goal.evidence if item.id in set(evidence_ids)
+        }
+        findings: list[str] = []
+        for criterion in goal.criteria:
+            mapped = [
+                item for item in selected.values() if criterion.id in item.criterion_ids
+            ]
+            if len(mapped) < criterion.minimum_evidence_count:
+                findings.append(
+                    "audit must include evidence mapped to every criterion; "
+                    f"criterion {criterion.id!r} requires at least "
+                    f"{criterion.minimum_evidence_count} evidence records"
+                )
+            contradictory = [
+                item.id
+                for item in goal.evidence
+                if criterion.id in item.criterion_ids and item.contradictory
+            ]
+            if contradictory:
+                findings.append(
+                    f"criterion {criterion.id!r} has contradictory evidence "
+                    f"{sorted(contradictory)}"
+                )
+            expired = [
+                item.id for item in mapped if item.expires_at and item.expires_at <= now
+            ]
+            if expired:
+                findings.append(
+                    f"criterion {criterion.id!r} has expired evidence {sorted(expired)}"
+                )
+            if criterion.freshness_seconds:
+                stale = [
+                    item.id
+                    for item in mapped
+                    if (now - item.observed_at).total_seconds()
+                    > criterion.freshness_seconds
+                ]
+                if stale:
+                    findings.append(
+                        f"criterion {criterion.id!r} has stale evidence {sorted(stale)}"
+                    )
+            present_kinds = {item.kind for item in mapped}
+            missing_kinds = set(criterion.required_evidence_kinds) - present_kinds
+            if missing_kinds:
+                findings.append(
+                    f"criterion {criterion.id!r} lacks required evidence kinds "
+                    f"{sorted(item.value for item in missing_kinds)}"
+                )
+            if criterion.require_independent_verifier and not any(
+                item.producer_role == GoalActorRole.VERIFIER
+                and item.producer_service_id
+                and item.producer_service_id
+                not in {
+                    package.executor_service_id
+                    for package in goal.work_packages
+                    if package.executor_service_id
+                }
+                for item in mapped
+            ):
+                findings.append(
+                    f"criterion {criterion.id!r} requires independent verifier evidence"
+                )
+            if verdicts.get(criterion.id) == CriterionVerdict.SATISFIED and not mapped:
+                findings.append(
+                    f"criterion {criterion.id!r} cannot be satisfied without evidence"
+                )
+        return list(dict.fromkeys(findings))
+
     def acquire_lease(
         self, goal_id: str, context: GoalMutationContext, *, ttl_seconds: int = 60
     ) -> Goal:
         def mutate(goal: Goal) -> dict[str, Any]:
-            now = datetime.now(UTC)
+            now = self._clock()
+            eligible = sorted(
+                set(
+                    goal.wakeup.eligible_instance_ids
+                    if goal.wakeup and goal.wakeup.eligible_instance_ids
+                    else goal.lease.eligible_instance_ids
+                )
+            )
+            if eligible and context.authority_instance_id not in eligible:
+                raise GoalConflict(
+                    "authority instance is not eligible to claim this goal"
+                )
             if (
                 goal.lease.active(now)
                 and goal.lease.holder_instance_id != context.authority_instance_id
@@ -280,6 +454,12 @@ class GoalService:
             goal.lease.holder_instance_id = context.authority_instance_id
             goal.lease.fencing_token += 1
             goal.lease.expires_at = now + timedelta(seconds=ttl_seconds)
+            goal.lease.claim_id = context.idempotency_key
+            goal.lease.eligible_instance_ids = eligible
+            goal.lease.acquired_at = now
+            if goal.wakeup:
+                goal.wakeup.claimed_by_instance_id = context.authority_instance_id
+                goal.wakeup.claimed_at = now
             return {
                 "holder_instance_id": context.authority_instance_id,
                 "fencing_token": goal.lease.fencing_token,
@@ -296,6 +476,10 @@ class GoalService:
             token = goal.lease.fencing_token
             goal.lease.holder_instance_id = None
             goal.lease.expires_at = None
+            goal.lease.claim_id = None
+            if goal.wakeup:
+                goal.wakeup.claimed_by_instance_id = None
+                goal.wakeup.claimed_at = None
             return {"fencing_token": token}
 
         return self._mutate(
@@ -416,9 +600,15 @@ class GoalService:
             )
         if require_fence and goal.lease.active():
             self._check_fence(goal, context)
+        if require_fence and context.actor_principal.startswith("service:"):
+            if not goal.lease.active(self._clock()):
+                raise GoalConflict(
+                    "service mutations require an active controller lease"
+                )
+            self._check_fence(goal, context)
         payload = mutate(goal)
         goal.version += 1
-        goal.updated_at = datetime.now(UTC)
+        goal.updated_at = self._clock()
         return self._commit(goal, event_type, context, payload)
 
     @staticmethod

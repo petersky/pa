@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, model_validator
 
-from pa.goals.models import GoalCreate, GoalRateLimit
+from pa.goals.models import GoalActorRole, GoalCreate, GoalRateLimit
 
 
 class GoalActionRisk(StrEnum):
@@ -26,6 +26,12 @@ class GoalActionDisposition(StrEnum):
     BUDGET_EXHAUSTED = "budget_exhausted"
     RATE_LIMITED = "rate_limited"
     RESOURCE_CONFLICT = "resource_conflict"
+
+
+class GoalReservationState(StrEnum):
+    RESERVED = "reserved"
+    APPLIED = "applied"
+    RELEASED = "released"
 
 
 class ResourceAccess(StrEnum):
@@ -124,6 +130,7 @@ class GoalActionRequest(BaseModel):
     resource_claims: list[GoalResourceClaim] = Field(default_factory=list)
     operator_approved: bool = False
     approval_principal: str | None = None
+    approval_interaction_id: str | None = None
 
     @model_validator(mode="after")
     def approval_is_attributable(self) -> GoalActionRequest:
@@ -143,7 +150,44 @@ class GoalActionDecision(BaseModel):
     request: GoalActionRequest
     reserved_usage: GoalUsage = Field(default_factory=GoalUsage)
     decided_by: str
+    authority_instance_id: str = ""
+    fencing_token: int | None = Field(default=None, ge=1)
+    reservation_id: str | None = None
     decided_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class GoalActionApply(BaseModel):
+    reservation_id: str = Field(min_length=1)
+    actual_usage: GoalUsage | None = None
+
+
+class GoalActionRelease(BaseModel):
+    reservation_id: str = Field(min_length=1)
+    actual_usage: GoalUsage | None = None
+    reason: str = Field(min_length=1, max_length=500)
+
+
+class GoalActionReservation(BaseModel):
+    """A durable, fenced hold created before an autonomous side effect."""
+
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    decision_id: str
+    goal_id: str
+    action_class: str
+    actor_principal: str
+    authority_instance_id: str
+    policy_revision: int = Field(ge=1)
+    goal_version: int = Field(ge=1)
+    fencing_token: int | None = Field(default=None, ge=1)
+    request: GoalActionRequest
+    reserved_usage: GoalUsage = Field(default_factory=GoalUsage)
+    actual_usage: GoalUsage = Field(default_factory=GoalUsage)
+    resource_claims: list[GoalResourceClaim] = Field(default_factory=list)
+    state: GoalReservationState = GoalReservationState.RESERVED
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    applied_at: datetime | None = None
+    released_at: datetime | None = None
+    release_reason: str = ""
 
 
 class GoalStrategy(BaseModel):
@@ -189,6 +233,9 @@ class ProviderGoalAssignment(BaseModel):
     supports_session_load: bool = True
     strategy_id: str | None = None
     estimated_usage: GoalUsage = Field(default_factory=lambda: GoalUsage(actions=1))
+    role: GoalActorRole = GoalActorRole.EXECUTOR
+    replaces_run_id: str | None = None
+    max_attempts: int = Field(default=3, ge=1, le=20)
 
 
 class ProviderGoalInvocation(BaseModel):
@@ -209,6 +256,14 @@ class ProviderGoalRun(BaseModel):
     provider_id: str
     invocation: ProviderGoalInvocation
     strategy_id: str | None = None
+    role: GoalActorRole = GoalActorRole.EXECUTOR
+    executor_principal: str = ""
+    authority_instance_id: str = "legacy"
+    fencing_token: int | None = Field(default=None, ge=1)
+    reservation_id: str = ""
+    attempt: int = Field(default=1, ge=1)
+    max_attempts: int = Field(default=3, ge=1, le=20)
+    replaces_run_id: str | None = None
     state: ProviderRunState = ProviderRunState.ASSIGNED
     summary: str = ""
     reserved_usage: GoalUsage = Field(default_factory=GoalUsage)
@@ -219,6 +274,17 @@ class ProviderGoalRun(BaseModel):
     evidence_claims: list[dict[str, Any]] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    @model_validator(mode="after")
+    def migrate_service_identity(self) -> ProviderGoalRun:
+        service_role = self.role.value
+        if not self.executor_principal:
+            self.executor_principal = (
+                f"service:goal-{service_role}:{self.provider_id}:{self.id}"
+            )
+        if not self.reservation_id:
+            self.reservation_id = f"legacy-provider-run:{self.id}"
+        return self
 
 
 class ProviderGoalProgress(BaseModel):
@@ -243,6 +309,7 @@ class GoalAutonomyState(BaseModel):
     usage: GoalUsage = Field(default_factory=GoalUsage)
     rate_windows: list[GoalRateWindow] = Field(default_factory=list)
     recent_decisions: list[GoalActionDecision] = Field(default_factory=list)
+    action_reservations: list[GoalActionReservation] = Field(default_factory=list)
     resource_reservations: list[GoalResourceClaim] = Field(default_factory=list)
     derived_goal_ids: list[str] = Field(default_factory=list)
     last_proposal_at: datetime | None = None

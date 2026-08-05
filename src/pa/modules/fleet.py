@@ -344,6 +344,12 @@ class FleetDispatchBody(RemoteAgentStartBody):
     required_capabilities: list[str] = Field(default_factory=list)
     required_mcp_servers: list[str] = Field(default_factory=list)
     optional_mcp_servers: list[str] = Field(default_factory=list)
+    goal_id: str | None = None
+    goal_version: int | None = Field(default=None, ge=1)
+    goal_policy_revision: int | None = Field(default=None, ge=1)
+    goal_fencing_token: int | None = Field(default=None, ge=1)
+    goal_action_reservation_id: str | None = None
+    goal_actor_principal: str | None = None
 
 
 class PlacementDefaultBody(BaseModel):
@@ -6108,6 +6114,82 @@ def _validate_participation_override(user, body: RemoteAgentStartBody) -> None:
         )
 
 
+def _validate_goal_dispatch_fence(
+    ctx: AppContext, body: FleetDispatchBody, selected_authority: str
+) -> None:
+    if not body.goal_id:
+        return
+    required = {
+        "goal_version": body.goal_version,
+        "goal_policy_revision": body.goal_policy_revision,
+        "goal_fencing_token": body.goal_fencing_token,
+        "goal_action_reservation_id": body.goal_action_reservation_id,
+        "goal_actor_principal": body.goal_actor_principal,
+    }
+    missing = sorted(key for key, value in required.items() if value in {None, ""})
+    if missing:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "incomplete_goal_fence",
+                "missing": missing,
+                "recoverable": False,
+            },
+        )
+    goal_service = ctx.services.get("goal_service")
+    governance = ctx.services.get("goal_governance")
+    goal = goal_service.get(body.goal_id) if goal_service else None
+    if goal is None or governance is None:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "goal_authority_unavailable", "recoverable": True},
+        )
+    if (
+        goal.version != body.goal_version
+        or goal.policy.revision != body.goal_policy_revision
+        or not goal.lease.active()
+        or goal.lease.holder_instance_id != selected_authority
+        or goal.lease.fencing_token != body.goal_fencing_token
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "stale_goal_fence", "recoverable": False},
+        )
+    eligible = set(
+        goal.wakeup.eligible_instance_ids
+        if goal.wakeup and goal.wakeup.eligible_instance_ids
+        else goal.lease.eligible_instance_ids
+    )
+    if eligible and selected_authority not in eligible:
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "ineligible_goal_authority", "recoverable": False},
+        )
+    state = governance.get_state(goal.id)
+    reservation = next(
+        (
+            item
+            for item in state.action_reservations
+            if item.id == body.goal_action_reservation_id
+        ),
+        None,
+    )
+    if (
+        reservation is None
+        or reservation.state.value != "applied"
+        or reservation.action_class != "dispatch_work_package"
+        or reservation.goal_version != body.goal_version
+        or reservation.policy_revision != body.goal_policy_revision
+        or reservation.actor_principal != body.goal_actor_principal
+        or reservation.authority_instance_id != selected_authority
+        or reservation.fencing_token != body.goal_fencing_token
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "invalid_goal_reservation", "recoverable": False},
+        )
+
+
 @router.post("/fleet/dispatch", status_code=202)
 async def dispatch_fleet_work(request: Request, body: FleetDispatchBody) -> dict:
     """Resolve a concrete or policy target, then durably admit exactly once."""
@@ -6196,6 +6278,8 @@ async def dispatch_fleet_work(request: Request, body: FleetDispatchBody) -> dict
             "job_id": existing.dispatch_id,
             "dispatch": _dispatch_public(request, existing),
         }
+
+    _validate_goal_dispatch_fence(ctx, body, selected_authority)
 
     store = ctx.store
     realm_id = settings.primary_realm
@@ -7011,12 +7095,16 @@ async def execute_post_turn_action(
             status_code=409,
             detail={"code": "action_not_executable", "status": action.status.value},
         )
-    if action.name == FollowupActionName.PROMPT_SAME_SESSION and not action.human_approval_required:
+    if (
+        action.name == FollowupActionName.PROMPT_SAME_SESSION
+        and not action.human_approval_required
+    ):
         inherited = is_authorized_same_session_continuation(
             action, decision=evaluation.decision, session_id=record.session_id
         )
         automatic_used = sum(
-            1 for prior_evaluation in record.post_turn_evaluations
+            1
+            for prior_evaluation in record.post_turn_evaluations
             for prior_action in prior_evaluation.recommended_actions
             if prior_action.name == FollowupActionName.PROMPT_SAME_SESSION
             and any(event.get("automatic") for event in prior_action.audit)
@@ -7030,12 +7118,17 @@ async def execute_post_turn_action(
                 "to continue."
             )
         else:
-            action.audit.append({
-                "event": "authorized", "at": datetime.now(UTC).isoformat(),
-                "executor": "pa.post-turn", "automatic": True,
-                "authorization_basis": "original_implementation_dispatch",
-                "budget_used": automatic_used + 1, "budget_maximum": budget,
-            })
+            action.audit.append(
+                {
+                    "event": "authorized",
+                    "at": datetime.now(UTC).isoformat(),
+                    "executor": "pa.post-turn",
+                    "automatic": True,
+                    "authorization_basis": "original_implementation_dispatch",
+                    "budget_used": automatic_used + 1,
+                    "budget_maximum": budget,
+                }
+            )
     if action.human_approval_required and not body.approve:
         raise HTTPException(
             status_code=403,
