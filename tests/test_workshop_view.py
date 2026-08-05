@@ -186,7 +186,7 @@ def _snapshot() -> dict:
                 "activity_observed_at": "2026-08-03T09:59:59Z",
                 "health": "healthy",
                 "observed_at": "2026-08-03T10:00:00Z",
-                "capacity": {"consumed": 1, "limit": 4},
+                "capacity": {"consumed": 1, "limit": 4, "queued_prompts": 9},
                 "active": 1,
                 "queued": 0,
                 "providers": [],
@@ -493,21 +493,33 @@ class WorkshopCompactViewBrowserTests(unittest.IsolatedAsyncioTestCase):
                 ],
             )
 
-            accessible_names = await page.evaluate(
-                """(() => ({
-                  sync:document.querySelector('[data-workshop-kind="sync"]').getAttribute("aria-label"),
-                  bay:document.querySelector('[data-workshop-kind="bay"]').getAttribute("aria-label"),
-                  order:document.querySelector('[data-workshop-kind="card"][data-workshop-id="active"]')
-                    .getAttribute("aria-label")
-                }))()"""
+            capacity_contract = await page.evaluate(
+                """(() => {
+                  var bay = document.querySelector('[data-workshop-kind="bay"]');
+                  var result = {
+                    sync:document.querySelector('[data-workshop-kind="sync"]').getAttribute("aria-label"),
+                    bay:bay.getAttribute("aria-label"),
+                    visible:bay.querySelector(".workshop-capacity").textContent,
+                    order:document.querySelector('[data-workshop-kind="card"][data-workshop-id="active"]')
+                      .getAttribute("aria-label")
+                  };
+                  bay.click();
+                  result.inspector = document.querySelector("[data-workshop-inspector]").textContent;
+                  return result;
+                })()"""
             )
-            self.assertIn("Needs attention", accessible_names["sync"])
-            self.assertIn("3 peers", accessible_names["sync"])
-            self.assertIn("2 needing attention", accessible_names["sync"])
-            self.assertIn("Connected", accessible_names["bay"])
-            self.assertIn("1 of 4 slots used", accessible_names["bay"])
+            self.assertIn("Needs attention", capacity_contract["sync"])
+            self.assertIn("3 peers", capacity_contract["sync"])
+            self.assertIn("2 needing attention", capacity_contract["sync"])
+            self.assertIn("Connected", capacity_contract["bay"])
+            for surface in ("bay", "visible", "inspector"):
+                self.assertIn(
+                    "1/4 slots used · 9 prompts queued",
+                    capacity_contract[surface],
+                )
+                self.assertNotIn("1 of 4 slots used", capacity_contract[surface])
             for state in ("Active", "Running", "Working", "Current"):
-                self.assertIn(state, accessible_names["order"])
+                self.assertIn(state, capacity_contract["order"])
 
             exact_attention = await page.evaluate(
                 """(() => {

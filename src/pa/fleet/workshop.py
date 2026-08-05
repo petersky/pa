@@ -832,6 +832,13 @@ def build_workshop_snapshot(
                     "consumed": capacity.get("consumed"),
                     "limit": capacity.get("limit") or node.get("dispatch_capacity"),
                     "source": capacity.get("source"),
+                    "queued_prompts": int(activity.get("queued_prompts") or 0),
+                    "consumer_links": deepcopy(
+                        activity.get("capacity_consumer_links") or []
+                    ),
+                    "consumer_links_omitted": int(
+                        activity.get("capacity_consumer_links_omitted") or 0
+                    ),
                 },
                 "active": len(
                     [worker for worker in workers if worker["state"] == "working"]

@@ -217,10 +217,19 @@
     }
   }
 
+  function queuedPromptLabel(capacity) {
+    var count = Number((capacity || {}).queued_prompts || 0);
+    return count + " prompt" + (count === 1 ? "" : "s") + " queued";
+  }
+
+  function capacityLabel(capacity) {
+    if ((capacity || {}).limit == null) return "Capacity unavailable";
+    return String(capacity.consumed == null ? "Unknown" : capacity.consumed) +
+      "/" + capacity.limit + " slots used · " + queuedPromptLabel(capacity);
+  }
+
   function bayCard(bay, workOrders) {
-    var capacity = bay.capacity.limit == null ? "Capacity unavailable" :
-      String(bay.capacity.consumed == null ? "Unknown" : bay.capacity.consumed) +
-      " of " + bay.capacity.limit + " slots used";
+    var capacity = capacityLabel(bay.capacity);
     var bayAccessible = [bay.name, bay.connectivity_label,
       bay.activity_freshness_label, capacity, bay.active + " active",
       bay.queued + " queued"].join(", ");
@@ -363,8 +372,7 @@
         detailRows([["Connectivity", item.connectivity_label], ["Fleet status", item.freshness_label],
           ["Activity status", item.activity_freshness_label],
           ["Last activity", ageMarkup(item.activity_observed_at, item.activity_age_seconds), true],
-          ["Capacity", (item.capacity.consumed == null ? "Unknown" : item.capacity.consumed) +
-            " of " + (item.capacity.limit == null ? "unknown" : item.capacity.limit)]]) +
+          ["Capacity", capacityLabel(item.capacity)]]) +
         '<p><a data-workshop-focus-key="bay-detail" href="/fleet?instance=' +
         escapeHtml(item.id) + '">Open Fleet details</a></p>';
     } else if (kind === "card") {

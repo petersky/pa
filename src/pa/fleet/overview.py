@@ -20,7 +20,12 @@ from pa.core.async_runtime import AsyncRuntime
 from pa.core.io import atomic_write_json
 from pa.domain.models import FleetInstance
 from pa.execution.dispatch import TERMINAL_DISPATCH_STATES, DispatchStore
-from pa.fleet.capacity import effective_capacity, effective_queue_capacity
+from pa.fleet.capacity import (
+    deduplicate_consumer_links,
+    effective_capacity,
+    effective_queue_capacity,
+    normalize_activity_capacity,
+)
 from pa.fleet.update import TERMINAL_PHASES
 from pa.pr_supervisor.models import (
     PRWatchStatus,
@@ -474,7 +479,7 @@ def _local_activity(ctx: Any) -> dict[str, Any]:
                 "status": semantic_state,
                 "durable_status": session.status,
                 "connected": bool(runtime and runtime.connected),
-                "capacity_consuming": semantic_state in {"working", "queued"},
+                "capacity_consuming": semantic_state == "working",
                 "provider": session.agent_name,
                 "queued": len(runtime._queue) if runtime else 0,
                 "cwd": session.cwd,
@@ -560,7 +565,7 @@ def _local_activity(ctx: Any) -> dict[str, Any]:
             "session_id": item["id"],
             "href": f"/agent?session={item['id']}",
             "state": item["status"],
-            "slots": 1 + int(item.get("queued") or 0),
+            "slots": 1,
         }
         for item in sessions
         if item["capacity_consuming"]
@@ -577,6 +582,7 @@ def _local_activity(ctx: Any) -> dict[str, Any]:
         }
         for item in reservations
     ]
+    capacity_links = deduplicate_consumer_links(capacity_links)
     logger.debug(
         "fleet capacity utilization instance=%s configured=%s effective=%s "
         "source=%s active=%s queued=%s reservations=%s connected=%s idle=%s",
@@ -663,7 +669,6 @@ def _local_activity(ctx: Any) -> dict[str, Any]:
             "configured": ctx.settings.dispatch_capacity,
             "provider_limits": dict(ctx.settings.dispatch_provider_capacities),
             "consumed": progress.get("active_capacity_consumers", 0)
-            + progress.get("queued_prompts", 0)
             + len(reservations),
         },
         "queue_capacity": {
@@ -676,8 +681,9 @@ def _local_activity(ctx: Any) -> dict[str, Any]:
         },
         "capacity_consumer_links": capacity_links,
         "capacity_policy": {
-            "consumes": ["prompting_turns", "queued_prompts", "dispatch_reservations"],
+            "consumes": ["prompting_turns", "dispatch_reservations"],
             "does_not_consume": [
+                "queued_prompts",
                 "idle_sessions",
                 "deferred_sessions",
                 "completion_reconciliation",
@@ -1124,33 +1130,16 @@ def build_overview(
                 ) as exc:
                     dimensions[dimension] = field("error", None, error=str(exc))
         activity = dimensions.get("activity") or {}
-        if dispatch_store and activity.get("state") == "fresh":
-            authority_counts = dispatch_store.capacity_snapshot(inst.instance_id)
-            value = dict(activity.get("value") or {})
-            value["dispatch_reservations"] = max(
-                int(value.get("dispatch_reservations") or 0),
-                authority_counts["dispatch_reservations"],
+        if activity.get("state") == "fresh":
+            authority_snapshot = (
+                dispatch_store.capacity_snapshot(inst.instance_id)
+                if dispatch_store
+                else None
             )
-            value["dispatch_waiting"] = max(
-                int(value.get("dispatch_waiting") or 0),
-                authority_counts["dispatch_waiting"],
+            value = normalize_activity_capacity(
+                dict(activity.get("value") or {}),
+                authority_snapshot=authority_snapshot,
             )
-            if value.get("queue_capacity"):
-                queue_capacity = dict(value["queue_capacity"])
-                queue_capacity["consumed"] = max(
-                    int(queue_capacity.get("consumed") or 0),
-                    authority_counts["dispatch_waiting"],
-                )
-                value["queue_capacity"] = queue_capacity
-            provider_concurrency = {
-                key: dict(counts)
-                for key, counts in (value.get("provider_concurrency") or {}).items()
-            }
-            for provider, counts in authority_counts["provider_concurrency"].items():
-                current = provider_concurrency.setdefault(provider, {})
-                for key, count in counts.items():
-                    current[key] = max(int(current.get(key) or 0), count)
-            value["provider_concurrency"] = provider_concurrency
             dimensions["activity"] = {**activity, "value": value}
         node = {
             "id": inst.instance_id,

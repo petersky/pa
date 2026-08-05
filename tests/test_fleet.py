@@ -491,6 +491,7 @@ class FleetPageLazyLoadTests(unittest.TestCase):
 
         from pa.core.kernel import Kernel
         from pa.domain.store import reset_store
+        from pa.fleet.overview import build_overview as actual_build_overview
         from pa.instance.agent_session import reset_instance_agent
 
         reset_store()
@@ -503,14 +504,44 @@ class FleetPageLazyLoadTests(unittest.TestCase):
             agent_enabled=False,
             peers=[],
         )
+
+        def overview_with_prompt_backlog(ctx, instances, routes):
+            overview = actual_build_overview(ctx, instances, routes)
+            activity = overview["nodes"][0]["dimensions"]["activity"]
+            value = dict(activity.get("value") or {})
+            value.update(
+                {
+                    "state": "working",
+                    "queued_prompts": 9,
+                    "capacity": {
+                        "consumed": 1,
+                        "limit": 4,
+                        "source": "configured",
+                    },
+                }
+            )
+            activity.update({"state": "fresh", "value": value})
+            return overview
+
         try:
             app = Kernel.boot(settings=settings).build_app()
             with TestClient(app) as client:
-                page = client.get("/fleet")
+                with patch(
+                    "pa.modules.fleet.build_overview",
+                    side_effect=overview_with_prompt_backlog,
+                ):
+                    page = client.get("/fleet")
                 self.assertEqual(page.status_code, 200, page.text)
                 self.assertIn("pa-fleet-overview-data", page.text)
                 self.assertIn("pa-fleet-topology", page.text)
                 self.assertNotIn("Checking…", page.text)
+
+                self.assertIn(
+                    'aria-label="1/4 slots used · 9 prompts queued"', page.text
+                )
+                self.assertIn(">1/4 slots used · 9 prompts queued</strong>", page.text)
+                self.assertNotIn(">10/4", page.text)
+                self.assertNotIn(">1/4 used</strong>", page.text)
 
                 dimension = client.get(
                     "/api/fleet/overview/dimension",
@@ -1368,6 +1399,81 @@ class FleetOverviewTests(unittest.IsolatedAsyncioTestCase):
                 {"card-1", "card-2"},
             )
 
+    def test_local_activity_counts_one_backlogged_session_as_one_consumer(self) -> None:
+        from pa.domain.models import AgentSession
+        from pa.fleet.overview import local_dimension
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="local")
+            ctx = MagicMock(settings=settings)
+            session = AgentSession(
+                id="session-backlog",
+                agent_name="codex",
+                card_id="card-backlog",
+                status="working",
+                title="Backlogged session",
+            )
+            runtime = SimpleNamespace(
+                session=session,
+                session_id=session.id,
+                connected=True,
+                prompting=True,
+                _closed=False,
+                _queue=[object() for _ in range(9)],
+            )
+            manager = MagicMock()
+            manager.progress.return_value = SimpleNamespace(
+                model_dump=lambda mode: {
+                    "phase": "prompting",
+                    "active_sessions": 1,
+                    "connected_runtimes": 1,
+                    "idle_sessions": 0,
+                    "prompting_turns": 1,
+                    "active_capacity_consumers": 1,
+                    "queued_prompts": 9,
+                    "provider_concurrency": {
+                        "codex": {
+                            "connected_runtimes": 1,
+                            "idle_sessions": 0,
+                            "prompting_turns": 1,
+                            "active_capacity_consumers": 1,
+                            "queued_prompts": 9,
+                        }
+                    },
+                    "quiescing": False,
+                    "prompting": True,
+                    "message": "1 ACP session working, 9 prompts queued",
+                }
+            )
+            manager.list_runtimes.return_value = [runtime]
+            ctx.services = {"instance_agent": manager}
+            ctx.store.list_sessions_for_workshop.return_value = ([session], 1)
+
+            activity = local_dimension(ctx, "activity")
+
+            self.assertEqual(activity["active_capacity_consumers"], 1)
+            self.assertEqual(activity["queued_prompts"], 9)
+            self.assertEqual(activity["capacity"]["consumed"], 1)
+            self.assertEqual(activity["sessions"][0]["queued"], 9)
+            self.assertTrue(activity["sessions"][0]["capacity_consuming"])
+            self.assertEqual(
+                activity["capacity_consumer_links"],
+                [
+                    {
+                        "kind": "session",
+                        "session_id": "session-backlog",
+                        "href": "/agent?session=session-backlog",
+                        "state": "working",
+                        "slots": 1,
+                        "consumer_id": "session:session-backlog",
+                    }
+                ],
+            )
+            self.assertNotIn("queued_prompts", activity["capacity_policy"]["consumes"])
+            self.assertIn(
+                "queued_prompts", activity["capacity_policy"]["does_not_consume"]
+            )
+
 
 class FleetUpdateUiTests(unittest.TestCase):
     def test_update_form_uses_peer_track_and_rechecks_selected_channel(self) -> None:
@@ -1378,6 +1484,10 @@ class FleetUpdateUiTests(unittest.TestCase):
         self.assertIn("tr.dataset.updateChannel", script)
         self.assertIn("/update-check?channel=", script)
         self.assertIn("refreshFleetUpdateCheck().then", script)
+        self.assertIn('" slots used · " + promptBacklog', script)
+        self.assertIn("escapeHtml(capacityPresentation.summary)", script)
+        self.assertIn('return presentation.summary + " · " + presentation.source', script)
+        self.assertNotIn(' used</strong>', script)
         self.assertIn('name="install_timeout"', template)
 
     def test_update_is_modal_and_restores_isolated_persisted_instance_jobs(self) -> None:
