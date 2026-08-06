@@ -199,3 +199,33 @@ class GoalExecutionIdentityV1(BaseModel):
         if expires_at.tzinfo is None:
             return False
         return expires_at > now
+
+    def without_credential_binding(self) -> GoalExecutionIdentityV1:
+        """Project the immutable execution scope without its later credential grant."""
+
+        return GoalExecutionIdentityV1.model_validate(
+            self.model_dump(
+                mode="python",
+                exclude={
+                    "credential_digest",
+                    "credential_expires_at",
+                    "digest",
+                },
+            )
+        )
+
+    def allows_credential_upgrade_to(
+        self, candidate: GoalExecutionIdentityV1
+    ) -> bool:
+        """Allow equality or the sole monotonic base-to-credential transition."""
+
+        if self == candidate:
+            return True
+        return bool(
+            self.credential_digest is None
+            and self.credential_expires_at is None
+            and candidate.credential_digest is not None
+            and candidate.credential_expires_at is not None
+            and self.without_credential_binding()
+            == candidate.without_credential_binding()
+        )

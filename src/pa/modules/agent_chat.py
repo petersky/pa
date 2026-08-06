@@ -1835,7 +1835,12 @@ async def session_prompt(request: Request, session_id: str, body: PromptBody) ->
         getattr(request.state, "instance_authenticated", False) is True
     )
     session_record = runtime.session if runtime is not None else durable_session
-    linked_dispatch_id = getattr(session_record, "dispatch_id", None)
+    linked_dispatch_value = getattr(session_record, "dispatch_id", None)
+    linked_dispatch_id = (
+        linked_dispatch_value.strip()
+        if isinstance(linked_dispatch_value, str) and linked_dispatch_value.strip()
+        else None
+    )
     dispatch_record = None
     dispatch_store = request.app.state.ctx.services.get("dispatch_store")
     if linked_dispatch_id and dispatch_store:

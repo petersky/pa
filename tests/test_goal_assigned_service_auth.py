@@ -24,6 +24,7 @@ from pa.domain.projection import CardProjection
 from pa.domain.store import reset_store
 from pa.execution.dispatch import (
     DispatchRecord,
+    DispatchStore,
     GoalDispatchProvenance,
 )
 from pa.goals.advanced_models import (
@@ -967,6 +968,8 @@ def test_target_session_capability_is_bound_to_live_durable_dispatch(
         instance_url="http://target-b.test:8080",
     )
     ctx = app.state.ctx
+    dispatch_store = DispatchStore(tmp_path)
+    ctx.services["dispatch_store"] = dispatch_store
     dispatch_id = "dispatch-bound"
     session_id = "session-bound"
     record = DispatchRecord(
@@ -1047,6 +1050,7 @@ def test_target_session_capability_is_bound_to_live_durable_dispatch(
             ctx.require_service("dispatch_store"),
             session,
         )
+    dispatch_store.close()
 
 
 @pytest.mark.asyncio

@@ -214,6 +214,7 @@ FLEET_HEALTH_TIMEOUT = 3.0
 FLEET_DETAIL_TIMEOUT = 5.0
 FLEET_AGGREGATE_TIMEOUT = 9.0
 SESSION_ROUTE_TIMEOUT = 3.0
+ASSIGNED_SERVICE_CREDENTIAL_TTL_SECONDS = 86_400
 
 router = APIRouter()
 router.include_router(credential_router)
@@ -1318,7 +1319,13 @@ def _target_goal_execution_identity_transition(
             incoming,
             recorded_session_id,
         )
-        if incoming_identity != expected:
+        if (
+            not expected.allows_credential_upgrade_to(incoming_identity)
+            or (
+                incoming_identity.credential_digest is not None
+                and not incoming_identity.credential_authenticated()
+            )
+        ):
             raise HTTPException(
                 status_code=409,
                 detail={
@@ -1331,6 +1338,12 @@ def _target_goal_execution_identity_transition(
     if current_identity == incoming_identity:
         return current
     if current_identity is None and incoming_identity is not None:
+        return incoming
+    if (
+        current_identity is not None
+        and incoming_identity is not None
+        and current_identity.allows_credential_upgrade_to(incoming_identity)
+    ):
         return incoming
     if current_identity is not None and incoming_identity is None:
         # The worker deliberately replays the pre-session stage before an
@@ -2534,18 +2547,10 @@ def _assigned_authority_dispatch(
         else None
     )
     try:
-        role = GoalActorRole(getattr(identity, "service_role", ""))
-        scope = GoalAssignedServiceScope(
-            goal_id=provenance.goal_id,
-            work_package_id=identity.work_package_id,
-            run_id=record.dispatch_id,
-            session_id=identity.session_id,
-            provider_id=identity.provider_id,
-            target_instance_id=identity.target_instance_id,
-            authority_instance_id=provenance.authority_instance_id,
-            fencing_token=identity.fencing_token,
-            assigned_service_principal=identity.assigned_service_principal,
-            service_role=role,
+        scope = _goal_dispatch_assigned_service_scope(
+            provenance,
+            identity,
+            record.dispatch_id,
         )
         authorization = ctx.require_service(
             "goal_governance"
@@ -2623,6 +2628,7 @@ def _assigned_goal_projection(
         for item in goal.evidence
         if set(item.criterion_ids) <= criterion_ids
     ]
+    visible_evidence_ids = {item.id for item in all_evidence}
     criteria = [
         {
             **item.model_dump(
@@ -2633,8 +2639,15 @@ def _assigned_goal_projection(
             "verification_method": text(item.verification_method),
             "evidence_requirement": text(item.evidence_requirement),
             "explanation": text(item.explanation),
-            "evidence_ids": item.evidence_ids[:100],
-            "evidence_id_total": len(item.evidence_ids),
+            "evidence_ids": [
+                evidence_id
+                for evidence_id in item.evidence_ids
+                if evidence_id in visible_evidence_ids
+            ][:100],
+            "evidence_id_total": sum(
+                evidence_id in visible_evidence_ids
+                for evidence_id in item.evidence_ids
+            ),
             "required_evidence_kinds": [
                 kind.value for kind in item.required_evidence_kinds[:50]
             ],
@@ -6588,13 +6601,26 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
         )
     record.goal_provenance = await _offload_ctx(
         ctx,
-        "goal.dispatch_execution_identity_bind",
-        _bind_goal_dispatch_execution_identity,
+        "goal.dispatch_assigned_service_identity_bind",
+        _bind_goal_dispatch_assigned_service_identity,
         ctx,
         record.goal_provenance,
         selected_authority=record.authority_instance_id,
+        dispatch_id=record.dispatch_id,
         session_id=session_id,
     )
+    if not goal_dispatch_execution_identity_valid(
+        record,
+        require_authenticated_credential=record.goal_provenance is not None,
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "goal_execution_identity_mismatch",
+                "message": "Assigned session lacks its final credential binding.",
+                "recoverable": False,
+            },
+        )
     await _offload_ctx(ctx, "dispatch.record_write", ledger.put, record)
     await _synchronize_target_goal_execution_identity(
         request,
@@ -8205,6 +8231,27 @@ def _expected_goal_dispatch_execution_identity(
     )
 
 
+def _goal_dispatch_assigned_service_scope(
+    provenance: GoalDispatchProvenance,
+    identity: GoalExecutionIdentityV1,
+    dispatch_id: str,
+) -> GoalAssignedServiceScope:
+    """Derive the sole credential scope from authority-owned dispatch identity."""
+
+    return GoalAssignedServiceScope(
+        goal_id=provenance.goal_id,
+        work_package_id=identity.work_package_id,
+        run_id=dispatch_id,
+        session_id=identity.session_id,
+        provider_id=identity.provider_id,
+        target_instance_id=identity.target_instance_id,
+        authority_instance_id=provenance.authority_instance_id,
+        fencing_token=identity.fencing_token,
+        assigned_service_principal=identity.assigned_service_principal,
+        service_role=GoalActorRole(identity.service_role),
+    )
+
+
 def _bind_goal_dispatch_execution_identity(
     ctx: AppContext,
     provenance: GoalDispatchProvenance | None,
@@ -8212,14 +8259,16 @@ def _bind_goal_dispatch_execution_identity(
     selected_authority: str,
     session_id: str,
 ) -> GoalDispatchProvenance | None:
-    """Persist the exact allocated session identity without fabricating a credential."""
+    """Persist the base session identity or restore its durable final upgrade."""
 
     if provenance is None:
         return None
     identity = _expected_goal_dispatch_execution_identity(provenance, session_id)
     if (
         provenance.execution_identity is not None
-        and provenance.execution_identity != identity
+        and not identity.allows_credential_upgrade_to(
+            provenance.execution_identity
+        )
     ):
         raise HTTPException(
             status_code=409,
@@ -8241,7 +8290,13 @@ def _bind_goal_dispatch_execution_identity(
         ),
         None,
     )
-    if existing is not None and existing.request.execution_identity == identity:
+    if (
+        existing is not None
+        and existing.request.execution_identity is not None
+        and identity.allows_credential_upgrade_to(
+            existing.request.execution_identity
+        )
+    ):
         return provenance.model_copy(
             update={
                 "goal_version": existing.goal_version,
@@ -8269,6 +8324,133 @@ def _bind_goal_dispatch_execution_identity(
             identity=identity,
         )
     except GoalGovernanceConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "goal_execution_identity_mismatch",
+                "message": str(exc),
+                "recoverable": False,
+            },
+        ) from exc
+    return provenance.model_copy(
+        update={
+            "goal_version": reservation.goal_version,
+            "policy_revision": reservation.policy_revision,
+            "fencing_token": reservation.fencing_token,
+            "execution_identity": reservation.request.execution_identity,
+        }
+    )
+
+
+def _bind_goal_dispatch_assigned_service_identity(
+    ctx: AppContext,
+    provenance: GoalDispatchProvenance | None,
+    *,
+    selected_authority: str,
+    dispatch_id: str,
+    session_id: str,
+    issue_if_missing: bool = True,
+) -> GoalDispatchProvenance | None:
+    """Issue and bind the exact server-side grant before provider traffic."""
+
+    provenance = _bind_goal_dispatch_execution_identity(
+        ctx,
+        provenance,
+        selected_authority=selected_authority,
+        session_id=session_id,
+    )
+    if provenance is None or provenance.execution_identity is None:
+        return provenance
+    identity = provenance.execution_identity
+    scope = _goal_dispatch_assigned_service_scope(
+        provenance,
+        identity,
+        dispatch_id,
+    )
+    goal, governance = _goal_dispatch_services(ctx, provenance.goal_id)
+    if identity.credential_digest is not None:
+        try:
+            authorization = governance.resolve_assigned_service_binding(
+                scope,
+                required_roles={GoalActorRole.EXECUTOR, GoalActorRole.VERIFIER},
+            )
+        except GoalAssignedServiceCredentialError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "goal_execution_identity_mismatch",
+                    "message": str(exc),
+                    "recoverable": False,
+                },
+            ) from exc
+        if (
+            authorization.binding.credential_digest != identity.credential_digest
+            or authorization.binding.expires_at != identity.credential_expires_at
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "goal_execution_identity_mismatch",
+                    "message": "Execution identity carries another credential grant.",
+                    "recoverable": False,
+                },
+            )
+        return provenance
+
+    try:
+        recovered = governance.recover_pending_assigned_service_binding(scope)
+        if recovered is None:
+            if not issue_if_missing:
+                return provenance
+            state = governance.get_state(goal.id)
+            binding, credential = governance.issue_assigned_service_credential(
+                scope,
+                GovernanceMutationContext(
+                    actor_principal=provenance.actor_principal,
+                    authority_instance_id=selected_authority,
+                    idempotency_key=(
+                        f"goal-dispatch:{provenance.action_reservation_id}:"
+                        f"assigned-service:{identity.digest}"
+                    )[:200],
+                    expected_version=state.version,
+                    policy_revision=goal.policy.revision,
+                    goal_version=goal.version,
+                    fencing_token=goal.lease.fencing_token,
+                ),
+                ttl_seconds=ASSIGNED_SERVICE_CREDENTIAL_TTL_SECONDS,
+            )
+            # The provider receives only a target-local HMAC capability. PA needs no
+            # plaintext Goal credential after proving this deterministic grant.
+            del credential
+        else:
+            binding = recovered.binding
+        final_identity = GoalExecutionIdentityV1.model_validate(
+            {
+                **identity.model_dump(mode="python", exclude={"digest"}),
+                "credential_digest": binding.credential_digest,
+                "credential_expires_at": binding.expires_at,
+            }
+        )
+        state = governance.get_state(goal.id)
+        _state, reservation = governance.bind_dispatch_execution_identity(
+            goal.id,
+            provenance.action_reservation_id,
+            GovernanceMutationContext(
+                actor_principal=provenance.actor_principal,
+                authority_instance_id=selected_authority,
+                idempotency_key=(
+                    f"goal-dispatch:{provenance.action_reservation_id}:"
+                    f"execution-identity:{final_identity.digest}"
+                )[:200],
+                expected_version=state.version,
+                policy_revision=goal.policy.revision,
+                goal_version=goal.version,
+                fencing_token=goal.lease.fencing_token,
+            ),
+            identity=final_identity,
+            assigned_service_binding=binding,
+        )
+    except (GoalAssignedServiceCredentialError, GoalGovernanceConflict) as exc:
         raise HTTPException(
             status_code=409,
             detail={
@@ -8369,7 +8551,8 @@ def _restore_goal_dispatch_execution_identity(
     session_id = next(iter(session_ids))
     expected = _expected_goal_dispatch_execution_identity(provenance, session_id)
     if any(
-        identity is not None and identity != expected
+        identity is not None
+        and not expected.allows_credential_upgrade_to(identity)
         for identity in (provenance_identity, durable_identity)
     ):
         raise HTTPException(
@@ -8385,6 +8568,22 @@ def _restore_goal_dispatch_execution_identity(
         provenance,
         selected_authority=record.authority_instance_id,
         session_id=session_id,
+    )
+    if restored is None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "goal_execution_identity_mismatch",
+                "recoverable": False,
+            },
+        )
+    restored = _bind_goal_dispatch_assigned_service_identity(
+        ctx,
+        restored,
+        selected_authority=record.authority_instance_id,
+        dispatch_id=record.dispatch_id,
+        session_id=session_id,
+        issue_if_missing=False,
     )
     if restored is None:
         raise HTTPException(

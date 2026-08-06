@@ -355,15 +355,25 @@ class GoalGovernanceService:
                 raise GoalAssignedServiceCredentialError(
                     "materialized execution identity does not match credential scope"
                 )
-            if binding is not None and (
-                self._identity_field(identity, "credential_digest")
-                != binding.credential_digest
-                or self._identity_field(identity, "credential_expires_at")
-                != binding.expires_at
-            ):
-                raise GoalAssignedServiceCredentialError(
-                    "materialized execution identity lacks the exact credential binding"
+            if binding is not None:
+                credential_digest = self._identity_field(
+                    identity, "credential_digest"
                 )
+                credential_expires_at = self._identity_field(
+                    identity, "credential_expires_at"
+                )
+                if (credential_digest is None) != (
+                    credential_expires_at is None
+                ) or (
+                    credential_digest is not None
+                    and (
+                        credential_digest != binding.credential_digest
+                        or credential_expires_at != binding.expires_at
+                    )
+                ):
+                    raise GoalAssignedServiceCredentialError(
+                        "materialized execution identity has another credential binding"
+                    )
 
     def _validate_assigned_service_scope(
         self,
@@ -373,6 +383,7 @@ class GoalGovernanceService:
         *,
         binding: GoalAssignedServiceCredential | None = None,
         require_control_authority: bool,
+        allow_pending_reservation_binding: bool = False,
     ) -> tuple[GoalWorkPackage, ProviderGoalRun | None]:
         if scope.goal_id != goal.id:
             raise GoalAssignedServiceCredentialError(
@@ -543,6 +554,25 @@ class GoalGovernanceService:
             scope=scope,
             binding=binding,
         )
+        if (
+            binding is not None
+            and run is None
+            and not allow_pending_reservation_binding
+            and (
+                reservation_identity is None
+                or self._identity_field(
+                    reservation_identity, "credential_digest"
+                )
+                != binding.credential_digest
+                or self._identity_field(
+                    reservation_identity, "credential_expires_at"
+                )
+                != binding.expires_at
+            )
+        ):
+            raise GoalAssignedServiceCredentialError(
+                "authoritative dispatch identity lacks the exact credential binding"
+            )
         return package, run
 
     @serialized_goal_mutation
@@ -770,6 +800,43 @@ class GoalGovernanceService:
             scope,
             binding=binding,
             require_control_authority=True,
+        )
+        return GoalAssignedServiceAuthorization(
+            binding=binding,
+            goal=goal,
+            work_package=package,
+            run=run,
+        )
+
+    def recover_pending_assigned_service_binding(
+        self,
+        scope: GoalAssignedServiceScope,
+    ) -> GoalAssignedServiceAuthorization | None:
+        """Recover an issued grant while its reservation still has the base identity."""
+
+        goal = self._require_goal(scope.goal_id)
+        entity_id = self._assigned_service_entity_id(scope)
+        payload = get_governance_payload(
+            self.store,
+            goal.realm_id,
+            ASSIGNED_SERVICE_CREDENTIAL_ENTITY,
+            entity_id,
+        )
+        if payload is None:
+            return None
+        binding = GoalAssignedServiceCredential.model_validate(payload)
+        if binding.scope != scope or binding.expires_at <= self._clock():
+            raise GoalAssignedServiceCredentialError(
+                "assigned service credential binding is missing or expired"
+            )
+        state = self.get_state(scope.goal_id)
+        package, run = self._validate_assigned_service_scope(
+            goal,
+            state,
+            scope,
+            binding=binding,
+            require_control_authority=True,
+            allow_pending_reservation_binding=True,
         )
         return GoalAssignedServiceAuthorization(
             binding=binding,
@@ -1562,8 +1629,9 @@ class GoalGovernanceService:
         context: GovernanceMutationContext,
         *,
         identity: GoalExecutionIdentityV1,
+        assigned_service_binding: GoalAssignedServiceCredential | None = None,
     ) -> tuple[GoalAutonomyState, GoalActionReservation]:
-        """Bind the allocated principal/session identity without credential material."""
+        """Bind the allocated identity, then its exact durable credential grant."""
 
         def exact_binding(reservation: GoalActionReservation) -> bool:
             return reservation.request.execution_identity == identity
@@ -1572,6 +1640,9 @@ class GoalGovernanceService:
         operation = {
             "reservation_id": reservation_id,
             "identity": identity,
+            "assigned_service_credential_id": (
+                assigned_service_binding.id if assigned_service_binding else None
+            ),
         }
         fingerprint = operation_fingerprint(
             realm_id=goal.realm_id,
@@ -1581,6 +1652,69 @@ class GoalGovernanceService:
             operation=operation,
             context=context,
         )
+
+        def validate_credential_binding(
+            state: GoalAutonomyState,
+            reservation: GoalActionReservation,
+        ) -> None:
+            credential_bound = identity.credential_digest is not None
+            if not credential_bound:
+                if assigned_service_binding is not None:
+                    raise GoalGovernanceConflict(
+                        "base execution identity cannot carry a credential grant"
+                    )
+                return
+            binding = assigned_service_binding
+            if binding is None:
+                raise GoalGovernanceConflict(
+                    "credential-bound execution identity requires its durable grant"
+                )
+            scope = binding.scope
+            if (
+                binding.realm_id != goal.realm_id
+                or binding.id != self._assigned_service_entity_id(scope)
+                or scope.goal_id != goal.id
+                or scope.work_package_id != identity.work_package_id
+                or scope.session_id != identity.session_id
+                or scope.provider_id != identity.provider_id
+                or scope.target_instance_id != identity.target_instance_id
+                or scope.authority_instance_id != reservation.authority_instance_id
+                or scope.fencing_token != identity.fencing_token
+                or scope.assigned_service_principal
+                != identity.assigned_service_principal
+                or scope.service_role.value != identity.service_role
+                or binding.credential_digest != identity.credential_digest
+                or binding.expires_at != identity.credential_expires_at
+                or binding.expires_at <= self._clock()
+            ):
+                raise GoalGovernanceConflict(
+                    "execution identity does not match its assigned service grant"
+                )
+            persisted = get_governance_payload(
+                self.store,
+                goal.realm_id,
+                ASSIGNED_SERVICE_CREDENTIAL_ENTITY,
+                binding.id,
+            )
+            if (
+                persisted is None
+                or GoalAssignedServiceCredential.model_validate(persisted) != binding
+            ):
+                raise GoalGovernanceConflict(
+                    "assigned service credential grant is not durably authoritative"
+                )
+            package, run = self._validate_assigned_service_scope(
+                goal,
+                state,
+                scope,
+                require_control_authority=True,
+                allow_pending_reservation_binding=True,
+            )
+            if run is not None or package.action_reservation_id != reservation.id:
+                raise GoalGovernanceConflict(
+                    "assigned service grant belongs to another dispatch reservation"
+                )
+
         duplicate = self._duplicate(goal.realm_id, context.idempotency_key)
         if duplicate:
             self._validate_replay(
@@ -1596,6 +1730,7 @@ class GoalGovernanceService:
                 raise GoalGovernanceConflict(
                     "idempotent execution-identity binding no longer matches"
                 )
+            validate_credential_binding(state, reservation)
             return state, reservation
 
         def mutate(goal: Goal, state: GoalAutonomyState) -> dict[str, Any]:
@@ -1633,10 +1768,18 @@ class GoalGovernanceService:
                     "execution identity does not match the reserved execution"
                 )
             existing = reservation.request.execution_identity
-            if existing is not None and existing != identity:
+            if existing is None and identity.credential_digest is not None:
+                raise GoalGovernanceConflict(
+                    "credential grant requires the allocated base execution identity"
+                )
+            if (
+                existing is not None
+                and not existing.allows_credential_upgrade_to(identity)
+            ):
                 raise GoalGovernanceConflict(
                     "dispatch execution identity is already bound to another session"
                 )
+            validate_credential_binding(state, reservation)
             reservation.request.execution_identity = identity
             return {
                 "reservation_id": reservation.id,
