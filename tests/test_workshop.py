@@ -1337,4 +1337,56 @@ def test_workshop_page_and_api_render_from_same_canonical_snapshot():
                 }
         finally:
             reset_instance_agent()
+
             reset_store()
+
+def test_presentation_totals_are_computed_before_work_order_render_limit():
+    ctx = _ctx()
+    ctx.store.cards.extend(
+        Card(
+            id=f"historical-{index}",
+            title=f"Historical outcome {index}",
+            lane=CardLane.DONE,
+        )
+        for index in range(95)
+    )
+
+    snapshot = build_workshop_snapshot(ctx, _overview())
+
+    assert len(snapshot["work_orders"]) == WORKSHOP_PROJECTION_LIMIT
+    assert snapshot["counts"]["presentations"]["outcome"] == 96
+    assert sum(snapshot["counts"]["presentations"].values()) == 99
+
+
+def test_retired_watch_preserves_history_without_driving_attention(tmp_path):
+    ctx = _ctx()
+    supervisor = PRSupervisorStore(tmp_path / "supervisor.db")
+    retired_at = datetime(2026, 8, 4, 12, 0, tzinfo=UTC)
+    supervisor.upsert_watch(
+        PRWatch(
+            id="retired-watch",
+            realm_id="default",
+            card_id="waiting",
+            repository="petersky/pa",
+            pr_number=42,
+            pr_url="https://github.com/petersky/pa/pull/42",
+            status="merged",
+            retired_at=retired_at,
+            last_error="Preserved failure from before merge",
+            state={
+                "gate": {
+                    "actionable": True,
+                    "reasons": ["Historical review gate"],
+                }
+            },
+        ),
+        preserve_lease=False,
+    )
+    ctx.services["pr_supervisor_store"] = supervisor
+
+    snapshot = build_workshop_snapshot(ctx, _overview())
+    row = next(item for item in snapshot["work_orders"] if item["id"] == "waiting")
+
+    assert row["presentation"]["group"] == "quiet"
+    assert row["presentation"]["attention"] is False
+    assert row["card"]["pull_requests"][0]["retired_at"] == retired_at.isoformat()

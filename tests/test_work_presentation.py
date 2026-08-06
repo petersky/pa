@@ -204,3 +204,67 @@ def test_actionable_review_gate_has_contextual_review_link() -> None:
         "href": "https://github.com/petersky/pa/pull/42",
         "external": True,
     }
+
+
+@pytest.mark.parametrize(
+    ("card", "expected"),
+    [
+        (
+            {
+                **CARD,
+                "summary": "Legacy body-derived text",
+                "summary_source": "fallback",
+                "summary_status": "disabled",
+                "summary_stale": True,
+            },
+            "Summary generation is disabled.",
+        ),
+        (
+            {
+                **CARD,
+                "summary": "Stale legacy body-derived text",
+                "summary_source": "fallback",
+                "summary_status": "stale",
+                "summary_stale": True,
+            },
+            "Summary pending.",
+        ),
+        (
+            {
+                **CARD,
+                "summary": "Current authored summary",
+                "summary_source": "manual",
+                "summary_status": "ready",
+                "summary_stale": False,
+            },
+            "Current authored summary",
+        ),
+    ],
+)
+def test_card_summary_lifecycle_outweighs_legacy_fallback_text(card, expected) -> None:
+    result = present(card=card)
+
+    assert result["summary"] == expected
+
+
+@pytest.mark.parametrize(
+    "watch",
+    [
+        {
+            "status": "active",
+            "retired_at": (NOW - timedelta(hours=1)).isoformat(),
+            "last_error": "Preserved historical supervisor failure",
+            "state": {"gate": {"actionable": True, "reasons": ["Old gate"]}},
+        },
+        {
+            "status": "merged",
+            "last_error": "Preserved pre-merge failure",
+            "state": {"gate": {"actionable": True, "reasons": ["Old gate"]}},
+        },
+    ],
+)
+def test_retired_or_terminal_watch_history_never_drives_current_attention(watch) -> None:
+    result = present(watches=[watch])
+
+    assert result["group"] == "quiet"
+    assert result["attention"] is False

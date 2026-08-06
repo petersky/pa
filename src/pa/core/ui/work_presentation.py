@@ -50,6 +50,7 @@ FAILED_DELIVERY_CLASSES = {
     "failed",
 }
 FAILED_RECONCILIATION_STATES = {"blocked", "conflict_requires_resolution", "failed"}
+CURRENT_WATCH_STATES = {"active", "blocked"}
 
 DISPATCH_LABELS = {
     "waiting_capacity": "Waiting for capacity",
@@ -163,6 +164,8 @@ def _operator_prompt(latest: dict[str, Any]) -> str | None:
 
 def _watch_gate(watch: Any) -> tuple[bool, str | None, str | None]:
     status = str(_enum_value(_value(watch, "status", "")) or "")
+    if _value(watch, "retired_at") is not None or status not in CURRENT_WATCH_STATES:
+        return False, None, None
     state = _value(watch, "state", {}) or {}
     gate = state.get("gate") or {}
     reasons = gate.get("reasons") or []
@@ -174,6 +177,21 @@ def _watch_gate(watch: Any) -> tuple[bool, str | None, str | None]:
         last_error or reason,
         _value(watch, "pr_url") or _value(watch, "url"),
     )
+
+
+def _card_summary(card: Any) -> str:
+    """Return only summary text whose lifecycle state permits presentation."""
+    status = str(_enum_value(_value(card, "summary_status", "")) or "")
+    source = str(_enum_value(_value(card, "summary_source", "")) or "")
+    stale = bool(_value(card, "summary_stale", False))
+    summary = _text(_value(card, "summary"))
+    if summary and source != "fallback" and status == "ready" and not stale:
+        return summary
+    if status == "disabled":
+        return "Summary generation is disabled."
+    if status in {"pending", "stale"} or stale:
+        return "Summary pending."
+    return "No current execution signal."
 
 
 def _session_facts(session: dict[str, Any] | None) -> dict[str, Any]:
@@ -272,11 +290,7 @@ def present_work_item(
     group = "quiet"
     state_code = state or lane or "unknown"
     state_label = DISPATCH_LABELS.get(state, "Not in motion")
-    summary = (
-        latest_summary
-        or _text(_value(card, "summary"))
-        or "No current execution signal."
-    )
+    summary = latest_summary or _card_summary(card)
     reason = "No operator-owned next step is recorded."
     tone = "muted"
     priority = 0

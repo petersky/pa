@@ -484,6 +484,7 @@ def build_workshop_snapshot(
                     "pr_url": watch.pr_url,
                     "last_error": watch.last_error,
                     "state": dict(watch.state or {}),
+                    "retired_at": _iso(watch.retired_at),
                 }
             )
 
@@ -623,6 +624,10 @@ def build_workshop_snapshot(
         return {
             "id": card.id,
             "title": card.title,
+            "summary": card.summary,
+            "summary_source": card.summary_source.value,
+            "summary_status": card.summary_status.value,
+            "summary_stale": card.summary_stale,
             "realm_id": card.realm_id,
             "lane": card.lane.value,
             "project": (
@@ -1261,6 +1266,12 @@ def build_workshop_snapshot(
         .get("pr-supervisor", {})
         .get("authority_instance_id")
     )
+    presentation_counts = {
+        group: sum(
+            item["presentation"]["group"] == group for item in work_orders
+        )
+        for group in ("attention", "motion", "outcome", "quiet")
+    }
     work_orders.sort(
         key=lambda item: (
             bool(item["attention"]),
@@ -1301,6 +1312,7 @@ def build_workshop_snapshot(
         "projected": len(work_orders),
         "live": sum(1 for item in work_orders if item["live"]),
         "attention": sum(1 for item in work_orders if item["attention"]),
+        "presentations": presentation_counts,
         "lanes": lane_counts,
         "orphan_sessions": len(orphan_workers),
         "sessions": {

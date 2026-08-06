@@ -12,14 +12,18 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
+from fastapi import Request
 from fastapi.testclient import TestClient
 
 from pa.browser.manager import BrowserManager, _browser_executable
 from pa.browser.session import BrowserScope, BrowserSessionManager
 from pa.config import Settings, reset_settings
 from pa.core.kernel import Kernel
+from pa.core.ui.work_presentation import present_work_item
+from pa.domain.models import CardCreate, CardLane
 from pa.domain.store import reset_store
 from pa.instance.agent_session import reset_instance_agent
+from pa.modules.items import _bounded_attention_cards_context
 
 ROOT = Path(__file__).parents[1]
 
@@ -146,6 +150,82 @@ class HomeAttentionQueueRouteTests(unittest.TestCase):
         )
         self.assertNotIn("Attention 8", response.text)
 
+    def test_home_totals_use_pre_limit_presentation_projection(self) -> None:
+        snapshot = _snapshot()
+        snapshot["inventory"].update(total=250, omitted=221)
+        snapshot["counts"]["presentations"] = {
+            "attention": 109,
+            "motion": 121,
+            "outcome": 9,
+            "quiet": 11,
+        }
+        with (
+            patch(
+                "pa.fleet.workshop.build_workshop_snapshot", return_value=snapshot
+            ),
+            TestClient(self.app) as client,
+        ):
+            response = client.get("/")
+
+        self.assertIn("Showing 6 of 109 actionable cards", response.text)
+        self.assertIn("Showing 8 of 121 cards in motion", response.text)
+
+    def test_attention_filter_pages_body_free_rows_before_hydration(self) -> None:
+        with TestClient(self.app):
+            pass
+        store = self.app.state.ctx.store
+        for index in range(205):
+            store.create_card(
+                CardCreate(
+                    title=f"Scale card {index:03d}",
+                    body=f"Full authored body {index:03d}",
+                    lane=CardLane.ACTIVE,
+                )
+            )
+
+        observed: list[list[str]] = []
+
+        def fake_presentations(request, cards):
+            observed.append([card.body for card in cards])
+            presentations = {}
+            for card in cards:
+                presentation = present_work_item(card)
+                presentation["group"] = "attention"
+                presentation["attention"] = True
+                presentations[card.id] = presentation
+            return {}, {}, presentations, {}
+
+        request = Request(
+            {
+                "type": "http",
+                "http_version": "1.1",
+                "method": "GET",
+                "scheme": "http",
+                "path": "/partials/cards",
+                "raw_path": b"/partials/cards",
+                "query_string": b"attention=actionable",
+                "headers": [],
+                "client": ("testclient", 50000),
+                "server": ("testserver", 80),
+                "app": self.app,
+            }
+        )
+        with patch(
+            "pa.modules.items._presentation_context_for_cards",
+            side_effect=fake_presentations,
+        ):
+            context = _bounded_attention_cards_context(
+                request,
+                kind=None,
+                lane=CardLane.ACTIVE,
+                result_limit=10,
+            )
+
+        self.assertEqual(context["total_cards"], 205)
+        self.assertEqual(len(context["cards"]), 10)
+        self.assertEqual([len(batch) for batch in observed], [100, 100, 5, 10])
+        self.assertTrue(all(not body for batch in observed[:3] for body in batch))
+        self.assertTrue(all(body for body in observed[-1]))
 
 @unittest.skipUnless(_browser_executable(), "managed Chromium is not installed")
 class HomeAttentionQueueManagedBrowserTests(unittest.IsolatedAsyncioTestCase):

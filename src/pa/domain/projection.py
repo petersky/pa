@@ -8,7 +8,7 @@ import sqlite3
 import threading
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from functools import wraps
 from pathlib import Path
 from typing import TypeVar
@@ -1740,6 +1740,91 @@ class CardProjection:
         with self._conn() as conn:
             row = conn.execute(query, params).fetchone()
         return int(row["count"] if row else 0)
+
+    def list_card_work_projections(
+        self,
+        *,
+        realm_id: str,
+        lane: CardLane | None = None,
+        kind: CardKind | None = None,
+        project_id: str | None = None,
+        query: str = "",
+        owner: str = "",
+        instance: str = "",
+        blocked: str = "",
+        tag: str = "",
+        updated_days: int | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[Card]:
+        """Return a fixed-size, body-free page for lifecycle presentation."""
+        clauses = ["realm_id = ?"]
+        params: list[object] = [realm_id]
+        if lane:
+            clauses.append("lane = ?")
+            params.append(lane.value)
+        if kind:
+            clauses.append("kind = ?")
+            params.append(kind.value)
+        if project_id:
+            clauses.append("project_id = ?")
+            params.append(project_id)
+        if query:
+            clauses.append("LOWER(title || ' ' || summary || ' ' || body) LIKE ?")
+            params.append(f"%{query.lower()}%")
+        if owner:
+            clauses.append("owner_principal = ?")
+            params.append(owner)
+        if instance:
+            clauses.append("preferred_instance = ?")
+            params.append(instance)
+        if blocked == "blocked":
+            clauses.append("lane = 'waiting'")
+        elif blocked == "unblocked":
+            clauses.append("lane != 'waiting'")
+        if tag:
+            clauses.append(
+                "EXISTS (SELECT 1 FROM json_each(cards.tags) WHERE value = ?)"
+            )
+            params.append(tag)
+        if updated_days is not None:
+            cutoff = datetime.now(UTC) - timedelta(days=updated_days)
+            clauses.append("updated_at >= ?")
+            params.append(cutoff.isoformat())
+        bounded_limit = max(1, min(int(limit), 100))
+        params.extend([bounded_limit, max(0, int(offset))])
+        columns = """
+            id, realm_id, kind, title, '' AS body,
+            summary, summary_source, summary_status,
+            summary_updated_at, summary_stale, lane, parent_id, project_id, tags,
+            visibility, owner_principal, preferred_instance,
+            preferred_capabilities, lease_holder_instance,
+            lease_holder_principal, lease_expires_at,
+            created_by_principal, created_by_instance,
+            created_at, updated_at
+        """
+        sql = (
+            f"SELECT {columns} FROM cards WHERE {' AND '.join(clauses)} "
+            "ORDER BY updated_at DESC, id LIMIT ? OFFSET ?"
+        )
+        with self._conn() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [self._row_to_card(row) for row in rows]
+
+    def list_cards_by_ids(
+        self, card_ids: list[str], *, realm_id: str
+    ) -> list[Card]:
+        """Hydrate only one already-paginated card-id page."""
+        bounded_ids = list(dict.fromkeys(card_ids))[:100]
+        if not bounded_ids:
+            return []
+        placeholders = ",".join("?" for _ in bounded_ids)
+        with self._conn() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM cards WHERE realm_id = ? AND id IN ({placeholders})",
+                [realm_id, *bounded_ids],
+            ).fetchall()
+        return [self._row_to_card(row) for row in rows]
 
     def get_card(self, card_id: str, realm_id: str | None = None) -> Card | None:
         query = "SELECT * FROM cards WHERE id = ?"

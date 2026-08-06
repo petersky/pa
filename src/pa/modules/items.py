@@ -97,6 +97,7 @@ HOME_MOTION_LIMIT = 8
 HOME_OUTCOME_LIMIT = 6
 HOME_FLEET_LIMIT = 50
 HOME_ROUTE_LIMIT = 200
+WORK_PRESENTATION_PAGE_LIMIT = 100
 
 
 class KnowledgePromotionRequest(BaseModel):
@@ -1167,6 +1168,129 @@ def _card_activity_context(request: Request, card) -> dict:
     }
 
 
+def _bounded_attention_cards_context(
+    request: Request,
+    *,
+    kind: CardKind | None,
+    lane: CardLane | None,
+    result_limit: int,
+) -> dict:
+    """Filter lifecycle groups in fixed-size body-free pages before hydration."""
+    store = get_store()
+    realm = _active_realm(request)
+    project_id = _active_project(request)
+    query = request.query_params.get("q", "").strip()
+    owner = request.query_params.get("owner", "").strip()
+    instance = request.query_params.get("instance", "").strip()
+    blocked = request.query_params.get("blocked", "").strip()
+    tag = request.query_params.get("tag", "").strip()
+    updated = request.query_params.get("updated", "").strip()
+    try:
+        updated_days = int(updated) if updated else None
+    except ValueError:
+        updated = ""
+        updated_days = None
+    attention = request.query_params.get("attention", "").strip()
+    expected_group = {
+        "actionable": "attention",
+        "motion": "motion",
+        "outcome": "outcome",
+    }[attention]
+    matching_ids: list[str] = []
+    total_cards = 0
+    offset = 0
+    while True:
+        projection_page = store.list_card_work_projections(
+            realm_id=realm,
+            lane=lane,
+            kind=kind,
+            project_id=project_id,
+            query=query,
+            owner=owner,
+            instance=instance,
+            blocked=blocked,
+            tag=tag,
+            updated_days=updated_days,
+            limit=WORK_PRESENTATION_PAGE_LIMIT,
+            offset=offset,
+        )
+        if not projection_page:
+            break
+        _, _, page_presentations, _ = _presentation_context_for_cards(
+            request, projection_page
+        )
+        for projection in projection_page:
+            if page_presentations[projection.id]["group"] != expected_group:
+                continue
+            total_cards += 1
+            if len(matching_ids) < result_limit:
+                matching_ids.append(projection.id)
+        offset += len(projection_page)
+        if len(projection_page) < WORK_PRESENTATION_PAGE_LIMIT:
+            break
+
+    cards_by_id = {
+        card.id: card
+        for card in store.list_cards_by_ids(matching_ids, realm_id=realm)
+    }
+    cards = [
+        cards_by_id[card_id]
+        for card_id in matching_ids
+        if card_id in cards_by_id
+    ]
+    projects = store.list_projects(realm_id=realm)
+    project_by_id = {project.id: project for project in projects}
+    card_sessions, card_progress, card_presentations, _ = (
+        _presentation_context_for_cards(request, cards)
+    )
+    filter_params = {
+        "realm": realm,
+        "project": project_id or "",
+        "q": query,
+        "kind": kind.value if kind else "",
+        "owner": owner,
+        "instance": instance,
+        "blocked": blocked,
+        "tag": tag,
+        "updated": updated,
+        "attention": attention,
+    }
+    return {
+        "cards": cards,
+        "total_cards": total_cards,
+        "items": [Item.from_card(card) for card in cards],
+        "kinds": list(CardKind),
+        "lanes": list(CardLane),
+        "projects": projects,
+        "card_projects": {
+            card.id: project_by_id.get(card.project_id) for card in cards
+        },
+        "card_sessions": card_sessions,
+        "card_progress": card_progress,
+        "card_presentations": card_presentations,
+        "owners": [],
+        "instances": [],
+        "tags": [],
+        "filters": {
+            "q": query,
+            "project": project_id or "",
+            "kind": kind.value if kind else "",
+            "owner": owner,
+            "instance": instance,
+            "blocked": blocked,
+            "tag": tag,
+            "updated": updated,
+            "attention": attention,
+        },
+        "filter_query": urlencode(
+            {key: value for key, value in filter_params.items() if value}
+        ),
+        "realms": request.app.state.ctx.settings.subscribed_realms,
+        "active_realm": realm,
+        "active_project": project_id,
+    }
+
+
 def _cards_context(
     request: Request,
     *,
@@ -1183,6 +1307,17 @@ def _cards_context(
             kind = CardKind(request.query_params["kind"])
         except ValueError:
             kind = None
+    attention_filter = (
+        request.query_params.get("attention", "").strip() if apply_filters else ""
+    )
+    if (
+        result_limit is not None
+        and attention_filter in {"actionable", "motion", "outcome"}
+        and hasattr(store, "list_card_work_projections")
+    ):
+        return _bounded_attention_cards_context(
+            request, kind=kind, lane=lane, result_limit=result_limit
+        )
     cards = store.list_cards(
         realm_id=realm,
         kind=kind,
@@ -1412,9 +1547,13 @@ def _home_context(request: Request) -> dict:
     )
     return {
         "needs_attention": attention[:HOME_ATTENTION_LIMIT],
-        "needs_attention_total": len(attention),
+        "needs_attention_total": snapshot["counts"].get("presentations", {}).get(
+            "attention", len(attention)
+        ),
         "active_work": in_motion[:HOME_MOTION_LIMIT],
-        "active_work_total": len(in_motion),
+        "active_work_total": snapshot["counts"].get("presentations", {}).get(
+            "motion", len(in_motion)
+        ),
         "recent_outcomes": outcomes[:HOME_OUTCOME_LIMIT],
         "recent_outcomes_total": snapshot["counts"]["lanes"].get(
             CardLane.DONE.value, len(outcomes)
