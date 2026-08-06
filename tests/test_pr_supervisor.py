@@ -542,6 +542,97 @@ class PRSupervisorStoreTests(unittest.TestCase):
         self.assertTrue(takeover.acquired)
         self.assertGreater(takeover.fence_token, granted.fence_token)
 
+    def test_expired_prepared_effect_is_rebound_to_compatible_takeover(self) -> None:
+        now = utcnow()
+        granted = self.store.try_acquire_lease(
+            "watch-1",
+            "instance-a",
+            ttl_seconds=45,
+            now=now,
+            capability=self.capability,
+        )
+        current = self.store.get_watch("watch-1")
+        current.head_sha = "a" * 40
+        current.condition_fingerprint = "green"
+        current.condition_version = 1
+        self.store.upsert_watch(current, preserve_lease=False)
+        bindings = {
+            "realm_id": "default",
+            "watch_id": "watch-1",
+            "repository": "owner/repo",
+            "pr_number": 17,
+            "head_sha": "a" * 40,
+            "condition_fingerprint": "green",
+            "condition_version": 1,
+            "effect_kind": "green_for_agent_merge",
+            "content_digest": "digest",
+            "owner_instance_id": "instance-a",
+            "fence_token": granted.fence_token,
+            "lease_version": granted.lease_version,
+            "target_instance_id": "instance-a",
+            "target_session_id": "session-1",
+            "policy_digest": "policy",
+            "review_hold_version": 0,
+            "issuer_instance_id": "authority",
+        }
+        _, first = self.store.prepare_effect_authorization(
+            "watch-1",
+            owner_instance_id="instance-a",
+            fence_token=granted.fence_token,
+            lease_version=granted.lease_version,
+            event_key="effect-1",
+            bindings=bindings,
+            ttl_seconds=20,
+            now=now,
+        )
+
+        takeover_at = now + timedelta(seconds=46)
+        takeover = self.store.try_acquire_lease(
+            "watch-1",
+            "instance-b",
+            ttl_seconds=45,
+            now=takeover_at,
+            capability=GitHubCapability(
+                instance_id="instance-b",
+                pr_watch_protocol_version=2,
+                authenticated=True,
+            ),
+        )
+        rebound_bindings = {
+            **bindings,
+            "owner_instance_id": "instance-b",
+            "fence_token": takeover.fence_token,
+            "lease_version": takeover.lease_version,
+        }
+        with self.assertRaises(StaleFenceError):
+            self.store.prepare_effect_authorization(
+                "watch-1",
+                owner_instance_id="instance-b",
+                fence_token=takeover.fence_token,
+                lease_version=takeover.lease_version,
+                event_key="effect-1",
+                bindings={**rebound_bindings, "content_digest": "changed"},
+                ttl_seconds=20,
+                now=takeover_at,
+            )
+        _, rebound = self.store.prepare_effect_authorization(
+            "watch-1",
+            owner_instance_id="instance-b",
+            fence_token=takeover.fence_token,
+            lease_version=takeover.lease_version,
+            event_key="effect-1",
+            bindings=rebound_bindings,
+            ttl_seconds=20,
+            now=takeover_at,
+        )
+
+        self.assertTrue(takeover.acquired)
+        self.assertEqual(rebound["id"], first["id"])
+        self.assertEqual(rebound["state"], "prepared")
+        self.assertEqual(rebound["owner_instance_id"], "instance-b")
+        self.assertEqual(rebound["fence_token"], takeover.fence_token)
+        self.assertEqual(rebound["lease_version"], takeover.lease_version)
+
     def test_always_on_authority_continues_after_macbook_lease_ttl(self) -> None:
         """A sleeping former authority cannot retain or reuse its old fence."""
         now = utcnow()
@@ -1902,6 +1993,125 @@ class PRSupervisorServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(authorization["target_session_id"], "session-1")
         self.assertEqual(len(authorization["content_digest"]), 64)
         self.assertEqual(len(authorization["policy_digest"]), 64)
+
+    async def test_compatible_takeover_recovers_and_delivers_expired_effect(
+        self,
+    ) -> None:
+        service = await self.make_service([snapshot()])
+        now = utcnow()
+        granted = self.store.try_acquire_lease(
+            "watch-1",
+            "instance-a",
+            ttl_seconds=45,
+            now=now,
+            capability=service.capability,
+        )
+        current = self.store.get_watch("watch-1")
+        current.head_sha = "a" * 40
+        current.condition_fingerprint = "green"
+        current.condition_version = 1
+        self.store.upsert_watch(current, preserve_lease=False)
+        prompt = "deliver this effect exactly once"
+        effect_kind = "action_required"
+        event_key = f"watch-1:green:1:session-1:{effect_kind}"
+        policy_digest = hashlib.sha256(
+            current.policy.model_dump_json().encode()
+        ).hexdigest()
+        payload = {
+            "protocol_version": 2,
+            "realm_id": current.realm_id,
+            "watch_id": current.id,
+            "repository": current.repository,
+            "pr_number": current.pr_number,
+            "head_sha": current.head_sha,
+            "condition_fingerprint": current.condition_fingerprint,
+            "condition_version": current.condition_version,
+            "effect_kind": effect_kind,
+            "event_key": event_key,
+            "content_digest": hashlib.sha256(prompt.encode()).hexdigest(),
+            "prompt": prompt,
+            "prompt_audit": [],
+            "owner_instance_id": "instance-a",
+            "fence_token": granted.fence_token,
+            "lease_version": granted.lease_version,
+            "target_instance_id": "instance-a",
+            "target_session_id": "session-1",
+            "policy_digest": policy_digest,
+            "review_hold_version": 0,
+        }
+        initial_bindings = {
+            key: payload.get(key)
+            for key in (
+                "realm_id",
+                "watch_id",
+                "repository",
+                "pr_number",
+                "head_sha",
+                "condition_fingerprint",
+                "condition_version",
+                "effect_kind",
+                "content_digest",
+                "owner_instance_id",
+                "fence_token",
+                "lease_version",
+                "target_instance_id",
+                "target_session_id",
+                "policy_digest",
+                "review_hold_version",
+            )
+        }
+        initial_bindings["issuer_instance_id"] = self.settings.instance_id
+        _, first = self.store.prepare_effect_authorization(
+            "watch-1",
+            owner_instance_id="instance-a",
+            fence_token=granted.fence_token,
+            lease_version=granted.lease_version,
+            event_key=event_key,
+            bindings=initial_bindings,
+            ttl_seconds=20,
+            now=now,
+        )
+        self.store.save_capability(
+            GitHubCapability(
+                instance_id="instance-b",
+                pr_watch_protocol_version=2,
+                authenticated=True,
+            )
+        )
+        takeover_at = now + timedelta(seconds=46)
+        takeover = self.store.try_acquire_lease(
+            "watch-1",
+            "instance-b",
+            ttl_seconds=45,
+            now=takeover_at,
+            capability=GitHubCapability(
+                instance_id="instance-b",
+                pr_watch_protocol_version=2,
+                authenticated=True,
+            ),
+        )
+        payload.update(
+            owner_instance_id="instance-b",
+            fence_token=takeover.fence_token,
+            lease_version=takeover.lease_version,
+        )
+
+        with patch("pa.pr_supervisor.store.utcnow", return_value=takeover_at):
+            state = await service.authorize_and_dispatch_effect(
+                payload, caller_instance_id="instance-b"
+            )
+
+        self.assertTrue(takeover.acquired)
+        self.assertEqual(state, "queued")
+        self.assertEqual(len(self.dispatcher.calls), 1)
+        recovered = self.store.get_watch("watch-1").state[
+            "effect_authorizations"
+        ][event_key]
+        self.assertEqual(recovered["id"], first["id"])
+        self.assertEqual(recovered["state"], "accepted")
+        self.assertEqual(recovered["owner_instance_id"], "instance-b")
+        self.assertEqual(recovered["fence_token"], takeover.fence_token)
+        self.assertEqual(recovered["lease_version"], takeover.lease_version)
 
     async def test_takeover_during_audit_prevents_external_effect(self) -> None:
         service = await self.make_service([snapshot()])

@@ -722,7 +722,22 @@ class PRSupervisorStore:
             prior = authorizations.get(event_key)
             semantic = {**expected, **bindings, "event_key": event_key}
             if isinstance(prior, dict):
-                if {key: prior.get(key) for key in semantic} != semantic:
+                # The event key identifies the external effect, while the lease
+                # tuple identifies which compatible worker may deliver it now.
+                # Once a prepared authorization expires, a successor must be
+                # able to recover the same effect identity under its new fence.
+                # Keep every effect/destination/policy binding immutable, but do
+                # not make an expired worker lease part of the semantic identity.
+                lease_keys = {"owner_instance_id", "fence_token", "lease_version"}
+                stable_semantic = {
+                    key: value
+                    for key, value in semantic.items()
+                    if key not in lease_keys
+                }
+                prior_stable_semantic = {
+                    key: prior.get(key) for key in stable_semantic
+                }
+                if prior_stable_semantic != stable_semantic:
                     raise StaleFenceError(
                         f"event key belongs to different effect for watch {watch_id}"
                     )
