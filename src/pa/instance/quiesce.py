@@ -69,6 +69,7 @@ class QueuedPrompt(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     source: str = "api"
     prompt_audit: list[dict[str, Any]] = Field(default_factory=list)
+    acceptance_result: str | None = None
 
     @model_validator(mode="after")
     def validate_total_image_size(self) -> QueuedPrompt:
@@ -77,7 +78,7 @@ class QueuedPrompt(BaseModel):
         return self
 
     def public_dict(self) -> dict[str, Any]:
-        data = self.model_dump(mode="json", exclude={"images"})
+        data = self.model_dump(mode="json", exclude={"images", "acceptance_result"})
         data["images"] = [image.public_dict() for image in self.images]
         return data
 

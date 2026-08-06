@@ -20,14 +20,16 @@ from pa.pr_supervisor.github import (
 )
 from pa.pr_supervisor.models import (
     GITHUB_TERMINAL_PR_WATCH_STATUSES,
+    PR_WATCH_PROTOCOL_VERSION,
     GitHubCapability,
+    LeaseGrant,
     PRPolicy,
     PRWatch,
     PRWatchEvent,
     PRWatchStatus,
 )
 from pa.pr_supervisor.service import ProvenanceValidationError, PRSupervisor
-from pa.pr_supervisor.store import PRSupervisorStore
+from pa.pr_supervisor.store import PRSupervisorStore, StaleFenceError
 
 router = APIRouter()
 ui_router = APIRouter()
@@ -87,6 +89,7 @@ def _page_context(request: Request) -> dict[str, Any]:
         "capability": service.capability,
         "capabilities": service.store.list_capabilities(),
         "metrics": service.store.metrics(),
+        "supervisor_health": service.authority_health(),
         "active_realm": realm,
         "realms": request.app.state.ctx.settings.subscribed_realms,
     }
@@ -432,6 +435,7 @@ async def ingest_replica(request: Request, body: dict[str, Any]) -> dict[str, An
     except ProvenanceValidationError as exc:
         raise _provenance_http_error(exc) from exc
     stored = _store(request).upsert_watch(watch, preserve_lease=True)
+    _service(request).watch_state_changed(stored)
     return stored.model_dump(mode="json")
 
 
@@ -498,6 +502,7 @@ async def ingest_retirement(request: Request, body: dict[str, Any]) -> dict[str,
             source="fleet_transition",
         )
     )
+    _service(request).watch_state_changed(retired)
     return retired.model_dump(mode="json")
 
 
@@ -505,6 +510,30 @@ async def ingest_retirement(request: Request, body: dict[str, Any]) -> dict[str,
 async def acquire_lease(
     request: Request, watch_id: str, body: dict[str, Any]
 ) -> dict[str, Any]:
+    instance_id = str(body.get("instance_id") or "")
+    capability = GitHubCapability.model_validate(body.get("capability") or {})
+    caller = request.headers.get("X-PA-Origin-Instance-ID", "").strip()
+    if caller != instance_id or capability.instance_id != instance_id:
+        _store(request).save_capability(capability)
+        return LeaseGrant(
+            acquired=False,
+            reason="capability_identity_mismatch",
+            protocol_version=PR_WATCH_PROTOCOL_VERSION,
+        ).model_dump(mode="json")
+    if capability.pr_watch_protocol_version < PR_WATCH_PROTOCOL_VERSION:
+        _store(request).save_capability(capability)
+        return LeaseGrant(
+            acquired=False,
+            reason="protocol_upgrade_required",
+            protocol_version=PR_WATCH_PROTOCOL_VERSION,
+        ).model_dump(mode="json")
+    if not capability.authenticated:
+        _store(request).save_capability(capability)
+        return LeaseGrant(
+            acquired=False,
+            reason="capability_ineligible",
+            protocol_version=PR_WATCH_PROTOCOL_VERSION,
+        ).model_dump(mode="json")
     canonical_id = watch_id
     if body.get("watch"):
         incoming = PRWatch.model_validate(body["watch"])
@@ -512,16 +541,39 @@ async def acquire_lease(
             incoming = await _service(request).validate_replica_provenance(incoming)
         except ProvenanceValidationError as exc:
             raise _provenance_http_error(exc) from exc
-        stored = _store(request).upsert_watch(incoming, preserve_lease=True)
+        if not capability.supports(incoming.repository):
+            _store(request).save_capability(capability)
+            return LeaseGrant(
+                acquired=False,
+                reason="capability_ineligible",
+                protocol_version=PR_WATCH_PROTOCOL_VERSION,
+            ).model_dump(mode="json")
+        store = _store(request)
+        existing = store.find_watch(
+            incoming.realm_id, incoming.repository, incoming.pr_number
+        )
+        if (
+            existing is None
+            or (incoming.fence_token, incoming.lease_version)
+            > (existing.fence_token, existing.lease_version)
+            or (incoming.terminal and not existing.terminal)
+        ):
+            stored = store.upsert_watch(incoming, preserve_lease=True)
+        else:
+            stored = existing
+        _service(request).watch_state_changed(stored)
         canonical_id = stored.id
-    capability = GitHubCapability.model_validate(body.get("capability") or {})
-    _store(request).save_capability(capability)
     grant = _store(request).try_acquire_lease(
         canonical_id,
-        str(body.get("instance_id") or ""),
+        instance_id,
         ttl_seconds=min(max(int(body.get("ttl_seconds") or 45), 10), 300),
+        renewal_window_seconds=min(
+            max(int(body.get("renewal_window_seconds") or 12), 1), 60
+        ),
         capability=capability,
     )
+    if grant.reason != "lease_valid":
+        _store(request).save_capability(capability)
     return grant.model_dump(mode="json")
 
 
@@ -532,8 +584,52 @@ def heartbeat(request: Request, body: dict[str, Any]) -> dict[str, Any]:
     return {"accepted": True}
 
 
+@router.post("/pr-supervisor/effects/dispatch")
+async def dispatch_authorized_effect(
+    request: Request, body: dict[str, Any]
+) -> dict[str, Any]:
+    caller = request.headers.get("X-PA-Origin-Instance-ID", "").strip()
+    if not caller:
+        raise HTTPException(
+            status_code=401,
+            detail={"code": "effect_origin_required"},
+        )
+    try:
+        state = await _service(request).authorize_and_dispatch_effect(
+            body, caller_instance_id=caller
+        )
+    except StaleFenceError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "stale_effect_authorization", "message": str(exc)},
+        ) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": str(exc)},
+        ) from exc
+    return {"state": state}
+
+
 @router.post("/pr-supervisor/dispatch")
 async def dispatch_executor(request: Request, body: dict[str, Any]) -> dict[str, Any]:
+    authorization = body.get("authorization")
+    if not isinstance(authorization, dict):
+        raise HTTPException(
+            status_code=428,
+            detail={"code": "pr_watch_effect_authorization_required"},
+        )
+    if authorization.get("protocol_version") != PR_WATCH_PROTOCOL_VERSION:
+        raise HTTPException(
+            status_code=426,
+            detail={"code": "pr_watch_effect_upgrade_required"},
+        )
+    caller = request.headers.get("X-PA-Origin-Instance-ID", "").strip()
+    if caller != str(authorization.get("issuer_instance_id") or ""):
+        raise HTTPException(
+            status_code=401,
+            detail={"code": "effect_issuer_mismatch"},
+        )
     service = _service(request)
     watch = PRWatch.model_validate(body.get("watch") or {})
     try:
@@ -551,7 +647,11 @@ async def dispatch_executor(request: Request, body: dict[str, Any]) -> dict[str,
     if not isinstance(prompt_audit, list):
         raise HTTPException(status_code=400, detail="prompt_audit must be a list")
     state = await service.dispatcher.dispatch_local(
-        watch, event_key, prompt, prompt_audit=prompt_audit
+        watch,
+        event_key,
+        prompt,
+        prompt_audit=prompt_audit,
+        authorization=authorization,
     )
     return {"state": state}
 

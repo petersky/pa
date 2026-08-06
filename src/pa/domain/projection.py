@@ -3998,6 +3998,25 @@ class CardProjection:
             ).fetchone()
         return self._row_to_transcript(row) if row else None
 
+    def get_queued_prompt_acceptance(
+        self, session_id: str, prompt_id: str
+    ) -> TranscriptEvent | None:
+        """Find the durable queue admission that records its accepted outcome."""
+        with self._conn() as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM agent_transcript_events
+                WHERE session_id = ?
+                  AND event_type = 'queue_enqueued'
+                  AND json_valid(payload)
+                  AND json_extract(payload, '$.id') = ?
+                ORDER BY seq DESC
+                LIMIT 1
+                """,
+                (session_id, prompt_id),
+            ).fetchone()
+        return self._row_to_transcript(row) if row else None
+
     def list_transcript_events_before(
         self,
         session_id: str,

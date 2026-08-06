@@ -167,6 +167,7 @@ class PRWatch(BaseModel):
     status: PRWatchStatus = PRWatchStatus.ACTIVE
     owner_instance_id: str | None = None
     fence_token: int = 0
+    lease_version: int = Field(default=0, ge=0)
     lease_expires_at: datetime | None = None
     state: dict[str, Any] = Field(default_factory=dict)
     condition_fingerprint: str | None = None
@@ -209,6 +210,7 @@ class PRWatchEvent(BaseModel):
 
 class GitHubCapability(BaseModel):
     instance_id: str
+    pr_watch_protocol_version: int = Field(default=1, ge=1)
     authenticated: bool = False
     webhook_configured: bool = False
     token_source: str | None = None
@@ -228,9 +230,10 @@ class GitHubCapability(BaseModel):
             }
         except ValueError:
             return False
-        if allowed and identity not in allowed:
-            return False
-        return True
+        return not (allowed and identity not in allowed)
+
+
+PR_WATCH_PROTOCOL_VERSION = 2
 
 
 class GateResult(BaseModel):
@@ -248,5 +251,9 @@ class LeaseGrant(BaseModel):
     acquired: bool
     owner_instance_id: str | None = None
     fence_token: int = 0
+    lease_version: int = Field(default=0, ge=0)
     expires_at: datetime | None = None
     reason: str | None = None
+    terminal_status: PRWatchStatus | None = None
+    lease_seconds_remaining: float | None = Field(default=None, ge=0)
+    protocol_version: int = Field(default=1, ge=1)

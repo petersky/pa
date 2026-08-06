@@ -30,8 +30,42 @@
       Active watches {{ metrics.get('active_watches', 0) }} ·
       polls {{ metrics.get('polls', 0) }} ·
       prompts {{ metrics.get('executor_prompts', 0) }} ·
-      errors {{ metrics.get('poll_errors', 0) + metrics.get('dispatch_errors', 0) }}
+      historical errors {{ metrics.get('poll_errors', 0) + metrics.get('dispatch_errors', 0) }} ·
+      active renewers {{ supervisor_health.get('active_renewers', 0) }} ·
+      retrying now {{ supervisor_health.get('retrying_renewers', []) | length }} ·
+      stopped now {{ supervisor_health.get('stopped_renewers', []) | length }}
     </p>
+    <p class="muted small">
+      Effect protocol v{{ supervisor_health.get('effect_protocol_version', 1) }} ·
+      coordinated upgrade
+      {% if supervisor_health.get('coordinated_upgrade_ready') %}ready{% else %}blocked{% endif %}
+      {% if supervisor_health.get('incompatible_effect_instances') %} · incompatible {{ supervisor_health.get('incompatible_effect_instances') | join(', ') }}{% endif %}
+    </p>
+    {% if supervisor_health.get('retrying_renewers') %}
+    <ul class="item-list">
+      {% for renewer in supervisor_health.get('retrying_renewers', []) %}
+      <li class="item">
+        <strong>{{ renewer.watch_id }}</strong>
+        <span class="badge">retrying</span>
+        <p class="muted">
+          Next attempt in {{ '%.1f' | format(renewer.retry_in_seconds) }}s ·
+          last response {{ (renewer.last_response or {}).get('reason') or 'transport failure' }}
+        </p>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    {% if supervisor_health.get('stopped_renewers') %}
+    <ul class="item-list">
+      {% for renewer in supervisor_health.get('stopped_renewers', []) %}
+      <li class="item">
+        <strong>{{ renewer.watch_id }}</strong>
+        <span class="badge">stopped</span>
+        <p class="muted">{{ renewer.reason }}</p>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
   </div>
 
   {% if watch %}
