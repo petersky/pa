@@ -649,6 +649,17 @@ class RealmConvergenceTests(unittest.IsolatedAsyncioTestCase):
             self.authority.settings.data_dir / "conflict-restart.db",
             self.authority.log,
         )
+        pending = restarted.get_operation_outcome(
+            "manual-resolution-crash", realm_id="default"
+        )
+        self.assertEqual(pending["status"], "resumable")
+        self.assertTrue(pending["durable"])
+        self.assertEqual(
+            pending["recovery_state"], "durable_append_resume_required"
+        )
+        self.assertEqual(
+            pending["recovery_action"], "retry_same_operation_with_same_key"
+        )
         self.authority.engine.on_head_advanced(restarted.rebuild_from_log)
         with patch("pa.modules.sync.get_store", return_value=restarted):
             recovered_response = Response()

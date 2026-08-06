@@ -822,6 +822,58 @@ class EventLog:
             "common_ancestors": sorted(common),
         }
 
+    def validate_operation_event_origin(
+        self,
+        commit_hash: str,
+        event_hash: str,
+        event: CardEvent,
+    ) -> None:
+        """Validate the first durable receipt for an operation key."""
+        commit = self.get_commit(commit_hash)
+        result = event.operation_result or {}
+        valid = (
+            commit is not None
+            and commit.realm_id == event.realm_id
+            and commit.author_principal == event.author_principal
+            and event_hash in commit.event_hashes
+        )
+        if event.source_operation == "sync.resolve_conflicts":
+            valid = (
+                valid
+                and commit.instance_id == event.author_instance
+                and not event.operation_result_complete
+                and event.type == EventType.CARD_UPDATED
+                and event.card_id is None
+                and event.project_id is None
+                and event.causal_parent is None
+                and event.field_intent == []
+                and set(event.payload)
+                == {"merge", "resolution", "parents", "resolved_events"}
+                and event.payload.get("merge") is True
+                and event.payload.get("resolution") == "manual"
+                and len(commit.parent_hashes) == 2
+                and commit.parent_hashes == sorted(set(commit.parent_hashes))
+                and event.payload.get("parents") == commit.parent_hashes
+                and isinstance(event.payload.get("resolved_events"), list)
+                and set(result) == {"realm_id", "resolved", "durable"}
+                and result.get("realm_id") == event.realm_id
+                and isinstance(result.get("resolved"), int)
+                and result.get("resolved")
+                == len(event.payload["resolved_events"])
+                and result.get("durable") is True
+                and commit.event_hashes[-1:] == [event_hash]
+            )
+        else:
+            valid = valid and event.operation_result_complete
+        if not valid:
+            raise EventHistoryError(
+                "invalid_operation_origin",
+                "durable operation receipt has an invalid initial event",
+                idempotency_key=event.idempotency_key,
+                commit_hash=commit_hash,
+                event_hash=event_hash,
+            )
+
     def validate_operation_event_revision(
         self,
         previous_commit_hash: str,
@@ -860,8 +912,12 @@ class EventLog:
                 for field in invariant_fields
             )
             and outcome_commit is not None
+            and outcome_commit.realm_id == event.realm_id
+            and outcome_commit.instance_id == event.author_instance
+            and outcome_commit.author_principal == event.author_principal
             and outcome_commit.parent_hashes == [event.causal_parent]
             and outcome_commit.event_hashes == [event_hash]
+            and self.is_ancestor(previous_commit_hash, commit_hash)
             and event.field_intent == expected_intent
             and event.payload
             == {
@@ -919,7 +975,11 @@ class EventLog:
                     )
                 if event.idempotency_key != idempotency_key:
                     continue
-                if found:
+                if not found:
+                    self.validate_operation_event_origin(
+                        commit_hash, event_hash, event
+                    )
+                else:
                     if found[2].id != event.id:
                         raise EventHistoryError(
                             "duplicate_idempotency_key",

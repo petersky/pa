@@ -47,6 +47,94 @@ class MutationReceiptCrashTests(unittest.TestCase):
         self.log.append_event(event)
         raise SimulatedProcessCrash("after durable append")
 
+    def _put_raw_commit(
+        self,
+        log: EventLog,
+        events: list[CardEvent],
+        *,
+        parents: list[str],
+        author_principal: str = "user:test",
+        instance_id: str = "instance",
+    ) -> str:
+        event_hashes = [
+            log.store.put_json(event.model_dump(mode="json")) for event in events
+        ]
+        commit = SyncCommit(
+            hash="",
+            realm_id="default",
+            instance_id=instance_id,
+            parent_hashes=parents,
+            event_hashes=event_hashes,
+            author_principal=author_principal,
+        )
+        return log.store.put_json(commit.model_dump(mode="json"))
+
+    def _put_conflict_origin(
+        self, log: EventLog, key: str
+    ) -> tuple[CardEvent, str, list[str]]:
+        base_heads = sorted(
+            [
+                self._put_raw_commit(log, [], parents=[]),
+                self._put_raw_commit(
+                    log, [], parents=[], author_principal="user:peer"
+                ),
+            ]
+        )
+        origin = CardEvent(
+            type=EventType.CARD_UPDATED,
+            realm_id="default",
+            author_principal="user:test",
+            author_instance="instance",
+            payload={
+                "merge": True,
+                "resolution": "manual",
+                "parents": base_heads,
+                "resolved_events": [],
+            },
+            source_operation="sync.resolve_conflicts",
+            idempotency_key=key,
+            request_fingerprint=f"fingerprint-{key}",
+            operation_result={
+                "realm_id": "default",
+                "resolved": 0,
+                "durable": True,
+            },
+            operation_result_complete=False,
+        )
+        return (
+            origin,
+            self._put_raw_commit(log, [origin], parents=base_heads),
+            base_heads,
+        )
+
+    @staticmethod
+    def _conflict_outcome(
+        origin: CardEvent, resolution_head: str, causal_parent: str
+    ) -> CardEvent:
+        payload = {
+            "operation_outcome": True,
+            "resolution_head": resolution_head,
+        }
+        return origin.model_copy(
+            update={
+                "payload": payload,
+                "causal_parent": causal_parent,
+                "field_intent": sorted(payload),
+                "operation_result": {
+                    "realm_id": "default",
+                    "head": {"$pa_commit_hash": True},
+                    "resolution_head": resolution_head,
+                    "resolved": 0,
+                    "convergence": {
+                        "realm_id": "default",
+                        "head": {"$pa_commit_hash": True},
+                        "phase": "converged",
+                    },
+                },
+                "operation_result_complete": True,
+            }
+        )
+
     def test_create_recovers_after_crash_between_append_and_receipt(self) -> None:
         key = "create-after-append"
         fingerprint = "create-fingerprint"
@@ -168,6 +256,118 @@ class MutationReceiptCrashTests(unittest.TestCase):
             self.projection.get_card(created.id).title,
             "Canonical durable event",
         )
+
+    def test_conflict_outcome_requires_an_incomplete_origin(self) -> None:
+        key = "lone-conflict-outcome"
+        outcome = CardEvent(
+            type=EventType.CARD_UPDATED,
+            realm_id="default",
+            author_principal="user:test",
+            author_instance="instance",
+            payload={
+                "operation_outcome": True,
+                "resolution_head": "missing-origin",
+            },
+            source_operation="sync.resolve_conflicts",
+            idempotency_key=key,
+            request_fingerprint="lone-outcome-fingerprint",
+            operation_result={
+                "realm_id": "default",
+                "head": {"$pa_commit_hash": True},
+                "resolution_head": "missing-origin",
+                "resolved": 0,
+                "convergence": {
+                    "realm_id": "default",
+                    "head": {"$pa_commit_hash": True},
+                },
+            },
+            operation_result_complete=True,
+        )
+        self.log.append_event(outcome)
+
+        with self.assertRaises(EventHistoryError) as invalid:
+            self.log.find_operation_event("default", key)
+        self.assertEqual(invalid.exception.code, "invalid_operation_origin")
+        with self.assertRaises(MutationOperationConflict):
+            CardProjection(self.root / "lone-outcome.db", self.log)
+
+    def test_conflict_outcome_requires_origin_ancestry(self) -> None:
+        log = EventLog(
+            ObjectStore(self.root / "unrelated-objects"),
+            self.root / "unrelated-log",
+            "instance",
+        )
+        origin, origin_head, base_heads = self._put_conflict_origin(
+            log, "unrelated-conflict-outcome"
+        )
+        outcome = self._conflict_outcome(
+            origin, origin_head, base_heads[0]
+        )
+        outcome_head = self._put_raw_commit(
+            log, [outcome], parents=[base_heads[0]]
+        )
+        merge_head = self._put_raw_commit(
+            log, [], parents=[origin_head, outcome_head]
+        )
+        log.advance_ref("default", merge_head, expected_head=None)
+
+        with self.assertRaises(EventHistoryError) as invalid:
+            log.find_operation_event("default", origin.idempotency_key or "")
+        self.assertEqual(invalid.exception.code, "invalid_operation_revision")
+        with self.assertRaises(MutationOperationConflict):
+            CardProjection(self.root / "unrelated-outcome.db", log)
+
+    def test_conflict_outcome_requires_matching_commit_metadata(self) -> None:
+        log = EventLog(
+            ObjectStore(self.root / "metadata-objects"),
+            self.root / "metadata-log",
+            "instance",
+        )
+        origin, origin_head, _base_heads = self._put_conflict_origin(
+            log, "metadata-conflict-outcome"
+        )
+        outcome = self._conflict_outcome(origin, origin_head, origin_head)
+        outcome_head = self._put_raw_commit(
+            log,
+            [outcome],
+            parents=[origin_head],
+            author_principal="user:altered",
+        )
+        log.advance_ref("default", outcome_head, expected_head=None)
+
+        with self.assertRaises(EventHistoryError) as invalid:
+            log.find_operation_event("default", origin.idempotency_key or "")
+        self.assertEqual(invalid.exception.code, "invalid_operation_revision")
+        with self.assertRaises(MutationOperationConflict):
+            CardProjection(self.root / "metadata-outcome.db", log)
+
+    def test_rebuild_rejects_repeated_operation_event_object(self) -> None:
+        key = "repeated-operation-object"
+        fingerprint = "repeated-operation-fingerprint"
+        self._claim(key, "card.create", fingerprint)
+        self.projection.create_card(
+            CardCreate(title="One object"),
+            idempotency_key=key,
+            request_fingerprint=fingerprint,
+        )
+        first = self.log.find_operation_event("default", key)
+        assert first is not None
+        repeated_head = self._put_raw_commit(
+            self.log, [], parents=[first[0]]
+        )
+        repeated_commit = self.log.get_commit(repeated_head)
+        assert repeated_commit is not None
+        repeated_commit.event_hashes = [first[1]]
+        repeated_head = self.log.store.put_json(
+            repeated_commit.model_dump(mode="json")
+        )
+        self.log.advance_ref("default", repeated_head, expected_head=first[0])
+
+        with self.assertRaises(EventHistoryError) as invalid:
+            self.log.find_operation_event("default", key)
+        self.assertEqual(invalid.exception.code, "invalid_operation_revision")
+        with self.assertRaises(MutationOperationConflict):
+            CardProjection(self.root / "repeated-object.db", self.log)
 
     def test_deep_log_rebuild_restores_exact_create_receipt(self) -> None:
         key = "deep-rebuild-create"

@@ -1239,6 +1239,19 @@ class CardProjection:
             ):
                 raise MutationOperationConflict(event.idempotency_key)
             if (
+                not existing
+                or first_replay_event
+                or existing["event_id"] is None
+            ):
+                try:
+                    self.event_log.validate_operation_event_origin(
+                        commit_hash, event_hash or "", event
+                    )
+                except EventHistoryError as exc:
+                    raise MutationOperationConflict(
+                        event.idempotency_key
+                    ) from exc
+            if (
                 existing
                 and not first_replay_event
                 and existing["event_id"] == event.id
@@ -1407,6 +1420,13 @@ class CardProjection:
             and not record.get("commit_hash")
             and record["owner_token"] != self._operation_owner
         )
+        durable_resumable = bool(record.get("commit_hash")) and (
+            record["state"] == "committed"
+            or (
+                record["state"] in {"pending", "failed"}
+                and record["owner_token"] != self._operation_owner
+            )
+        )
         result = (
             json.loads(record["result_json"])
             if record.get("result_json")
@@ -1415,7 +1435,13 @@ class CardProjection:
         return {
             "idempotency_key": idempotency_key,
             "operation": record["operation"],
-            "status": "retryable" if stale_pending else record["state"],
+            "status": (
+                "retryable"
+                if stale_pending
+                else "resumable"
+                if durable_resumable
+                else record["state"]
+            ),
             "durable": bool(record.get("commit_hash")),
             "event_id": record.get("event_id"),
             "commit_hash": record.get("commit_hash"),
@@ -1423,13 +1449,15 @@ class CardProjection:
             "recovery_state": (
                 "safe_to_retry_with_same_key"
                 if stale_pending
+                else "durable_append_resume_required"
+                if durable_resumable
                 else "in_progress"
                 if record["state"] == "pending"
                 else record["recovery_state"]
             ),
             "recovery_action": (
                 "retry_same_operation_with_same_key"
-                if stale_pending
+                if stale_pending or durable_resumable
                 else "get_operation_outcome"
                 if record["state"] == "pending"
                 else None
