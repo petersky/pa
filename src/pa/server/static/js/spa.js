@@ -1,5 +1,6 @@
 (function () {
   var VERSION_POLL_MS = 45000;
+  var homeRefreshFocusKey = null;
 
   function normalizePath(path) {
     if (!path) return "/";
@@ -58,6 +59,30 @@
     showToast._timer = window.setTimeout(function () {
       toast.classList.remove("visible");
     }, 4000);
+  }
+
+  function restoreHomeRefreshFocus(message) {
+    if (!homeRefreshFocusKey) return;
+    var action = document.querySelector(
+      '[data-home-action-key="' + CSS.escape(homeRefreshFocusKey) + '"]'
+    );
+    var status = document.querySelector("[data-home-refresh-status]");
+    if (status) {
+      status.textContent = message || "Home attention queue refreshed.";
+    }
+    if (action) {
+      action.disabled = false;
+      action.removeAttribute("aria-busy");
+      action.focus();
+    } else if (status) {
+      status.focus();
+    }
+    homeRefreshFocusKey = null;
+  }
+
+  function isHomeRefreshSource(source) {
+    return source && typeof source.closest === "function" &&
+      Boolean(source.closest("[data-home-attention-queue]"));
   }
 
   function csrfHeader() {
@@ -1658,9 +1683,13 @@
       if (window.PAAgentChat && typeof window.PAAgentChat.mount === "function") {
         window.PAAgentChat.mount(target);
       }
+      restoreHomeRefreshFocus("Home attention queue refreshed.");
     }
-    if (target && target.classList.contains("board-column-body")) {
-      initBoardDragDrop(target.closest(".board-grid") || document);
+    var boardBody = target && typeof target.closest === "function"
+      ? target.closest(".board-column-body")
+      : null;
+    if (boardBody) {
+      initBoardDragDrop(boardBody.closest(".board-grid") || document);
     }
     if (target && target.id === "card-detail-dialog-content") {
       if (!target.querySelector("[data-card-detail]")) {
@@ -1721,6 +1750,9 @@
     }
     if (operation) message = operation + " — " + message;
     showToast(message, "error");
+    if (homeRefreshFocusKey && isHomeRefreshSource(source)) {
+      restoreHomeRefreshFocus("Home attention queue refresh failed.");
+    }
   });
 
   document.body.addEventListener("pa:navigationError", function (event) {
@@ -1852,6 +1884,50 @@
       return;
     }
     var detail = event.target.closest("[data-card-detail], [data-card-dispatch-context]");
+    var dispatchRetry = event.target.closest("[data-card-dispatch-retry]");
+    if (dispatchRetry) {
+      var retryId = dispatchRetry.dataset.cardDispatchRetry;
+      var homeQueue = dispatchRetry.closest("[data-home-attention-queue]");
+      if (homeQueue) {
+        homeRefreshFocusKey = dispatchRetry.dataset.homeActionKey ||
+          ("retry:" + retryId);
+      }
+      dispatchRetry.disabled = true;
+      dispatchRetry.setAttribute("aria-busy", "true");
+      fetch("/api/fleet/dispatch-jobs/" + encodeURIComponent(retryId) + "/retry", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: Object.assign({"Content-Type": "application/json"}, csrfHeader()),
+        body: JSON.stringify({idempotency_key: dispatchOperationKey("dispatch-retry:" + retryId)}),
+      })
+        .then(function (response) {
+          return response.json().then(function (data) {
+            if (!response.ok) throw data;
+            return data;
+          });
+        })
+        .then(function (dispatch) {
+          if (detail) {
+            renderCardDispatch(detail, dispatch);
+            pollCardDispatch(detail, retryId, 300);
+          } else {
+            showToast("Retry requested. Refreshing current work state.", "success");
+            document.body.dispatchEvent(
+              new CustomEvent(homeQueue ? "homeRefresh" : "boardRefresh")
+            );
+          }
+        })
+        .catch(function (error) {
+          if (detail) renderCardDispatchError(detail, error);
+          else showToast((error && (error.message || error.detail)) || "Retry failed", "error");
+          dispatchRetry.disabled = false;
+          dispatchRetry.removeAttribute("aria-busy");
+          if (homeQueue) {
+            restoreHomeRefreshFocus("Retry failed. Home attention queue was not refreshed.");
+          }
+        });
+      return;
+    }
     if (!detail) return;
     var cardTab = event.target.closest("[data-card-tab]");
     if (cardTab) {
@@ -1885,32 +1961,6 @@
         markdownTab.closest("[data-markdown-editor]"),
         markdownTab.dataset.markdownTab
       );
-      return;
-    }
-    var dispatchRetry = event.target.closest("[data-card-dispatch-retry]");
-    if (dispatchRetry) {
-      var retryId = dispatchRetry.dataset.cardDispatchRetry;
-      dispatchRetry.disabled = true;
-      fetch("/api/fleet/dispatch-jobs/" + encodeURIComponent(retryId) + "/retry", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: Object.assign({"Content-Type": "application/json"}, csrfHeader()),
-        body: JSON.stringify({idempotency_key: dispatchOperationKey("dispatch-retry:" + retryId)}),
-      })
-        .then(function (response) {
-          return response.json().then(function (data) {
-            if (!response.ok) throw data;
-            return data;
-          });
-        })
-        .then(function (dispatch) {
-          renderCardDispatch(detail, dispatch);
-          pollCardDispatch(detail, retryId, 300);
-        })
-        .catch(function (error) {
-          renderCardDispatchError(detail, error);
-          dispatchRetry.disabled = false;
-        });
       return;
     }
     var agentButton = event.target.closest("[data-card-agent-start-new], [data-card-agent-select]");
