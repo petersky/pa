@@ -29,12 +29,14 @@ from pa.execution.dispatch import (
     GoalDispatchProvenance,
 )
 from pa.execution.progress import CompletionReportV1
+from pa.execution.reconciliation import CompletionReconciler
 from pa.goals.materialization import (
     GoalMaterializationEnvelopeV1,
     GoalMaterializationReceiptV1,
     GoalMaterializationResourceClaimV1,
     canonical_materialization_digest,
 )
+from pa.instance.agent_session import AgentSessionManager
 from pa.modules.fleet import (
     DispatchCompletionBody,
     DispatchControlBody,
@@ -917,6 +919,241 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(persisted.completion_payload, completion_payload)
             self.assertEqual(persisted.completion_envelope, completion_envelope)
             self.assertEqual(persisted.completion_delivery_class, "acknowledged")
+
+    def test_target_terminal_evidence_fences_runtime_publication_race(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="target")
+            ledger = DispatchStore(Path(tmp))
+            record = DispatchRecord(
+                dispatch_id="dispatch-target-runtime-race",
+                mutation_id="mutation-target-runtime-race",
+                card_id="card-done",
+                authority_instance_id="authority",
+                authority_url="http://authority",
+                target_instance_id="target",
+                session_id="session-target-runtime-race",
+                state="running",
+                recoverable=False,
+            )
+            ledger.put(record)
+            session = AgentSession(
+                id=record.session_id or "",
+                agent_name="codex",
+                origin_instance_id="target",
+                authority_instance_id="authority",
+                dispatch_id=record.dispatch_id,
+                status="closed",
+            )
+            domain = MagicMock()
+            domain.get_session.return_value = session
+            manager = AgentSessionManager(settings, domain)
+            live_runtime = SimpleNamespace(_closed=False)
+            original_get = manager.get
+            first_read = True
+
+            def racing_get(session_id: str):
+                nonlocal first_read
+                if first_read:
+                    first_read = False
+                    # Model provider startup publishing immediately after the
+                    # first empty observation. The atomic acquisition must
+                    # observe it before a proof can be returned.
+                    manager._runtimes[session_id] = live_runtime
+                    return None
+                return original_get(session_id)
+
+            manager.get = MagicMock(side_effect=racing_get)
+            request = request_for(
+                settings,
+                domain,
+                {"dispatch_store": ledger, "instance_agent": manager},
+            )
+            request.state.instance_authenticated = True
+            request.headers = {
+                "X-PA-Origin-Instance-ID": "authority",
+                "Idempotency-Key": "repair-target-runtime-race",
+            }
+            body = DispatchTerminalRepairEvidenceRequest(
+                mutation_id=record.mutation_id,
+                authority_instance_id="authority",
+                target_instance_id="target",
+                session_id=session.id,
+                idempotency_key="repair-target-runtime-race",
+                expected_state="running",
+            )
+
+            with self.assertRaises(HTTPException) as raised:
+                target_terminal_repair_evidence(request, record.dispatch_id, body)
+
+            self.assertEqual(raised.exception.status_code, 409)
+            self.assertEqual(
+                raised.exception.detail["code"], "linked_session_not_terminal"
+            )
+            self.assertTrue(raised.exception.detail["runtime_live"])
+            self.assertIsNone(manager.terminal_repair_fence_id(session.id))
+
+    async def test_runtime_started_before_terminal_fence_cannot_publish_after_it(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            manager = AgentSessionManager(
+                Settings(data_dir=Path(tmp), instance_id="target"), MagicMock()
+            )
+            self.assertIsNone(
+                manager.acquire_terminal_repair_fence(
+                    "session-fenced", fence_id="dispatch:repair"
+                )
+            )
+            runtime = MagicMock()
+            runtime.session_id = "session-fenced"
+            runtime.close = AsyncMock(return_value=True)
+
+            with self.assertRaisesRegex(RuntimeError, "terminal dispatch repair"):
+                await manager._publish_runtime(runtime)
+
+            runtime.close.assert_awaited_once_with(
+                reason="terminal_dispatch_repair_fenced",
+                reconcile_workspace=False,
+            )
+            self.assertIsNone(manager.get("session-fenced"))
+
+    async def test_remote_repair_collects_target_proof_after_slow_snapshot(
+        self,
+    ) -> None:
+        with (
+            tempfile.TemporaryDirectory() as authority_tmp,
+            tempfile.TemporaryDirectory() as target_tmp,
+        ):
+            authority_ledger, record, authority_request, body = (
+                remote_terminal_repair_context(authority_tmp, "late-completion")
+            )
+            target_ledger = DispatchStore(Path(target_tmp))
+            target_ledger.put(record.model_copy(deep=True))
+            target_session = AgentSession(
+                id=record.session_id or "",
+                agent_name="codex",
+                origin_instance_id="target",
+                authority_instance_id="authority",
+                dispatch_id=record.dispatch_id,
+                status="closed",
+            )
+            target_domain = MagicMock()
+            target_domain.get_session.return_value = target_session
+            target_manager = MagicMock()
+            target_manager.get.return_value = None
+            target_request = request_for(
+                Settings(data_dir=Path(target_tmp), instance_id="target"),
+                target_domain,
+                {
+                    "dispatch_store": target_ledger,
+                    "instance_agent": target_manager,
+                },
+            )
+            target_request.state.instance_authenticated = True
+            target_request.headers = {
+                "X-PA-Origin-Instance-ID": "authority",
+                "Idempotency-Key": body.idempotency_key,
+            }
+
+            def slow_card_snapshot(*_args, **_kwargs):
+                completed = target_ledger.get(record.dispatch_id)
+                assert completed is not None
+                if completed.state != "completed":
+                    now = datetime.now(UTC)
+                    completed.acknowledged_at = now
+                    completed.completion_received_at = now
+                    completed.completion_delivery_class = "acknowledged"
+                    completed.completion_payload = {
+                        "outcome": "Completion won during the slow card snapshot."
+                    }
+                    target_ledger.transition(
+                        completed,
+                        "completed",
+                        "Target completion was acknowledged before final proof.",
+                    )
+                return SimpleNamespace(lane=CardLane.DONE)
+
+            authority_request.app.state.ctx.store.get_card.side_effect = (
+                slow_card_snapshot
+            )
+
+            async def final_target_proof(_request, _target, dispatch_id, proof_body):
+                return target_terminal_repair_evidence(
+                    target_request, dispatch_id, proof_body
+                )
+
+            with (
+                patch("pa.modules.fleet.require_user"),
+                patch(
+                    "pa.modules.fleet._peer_terminal_repair_evidence",
+                    AsyncMock(side_effect=final_target_proof),
+                ) as peer,
+                self.assertRaises(HTTPException),
+            ):
+                await repair_terminal_dispatch(
+                    authority_request, record.dispatch_id, body
+                )
+
+            peer.assert_awaited_once()
+            authority = authority_ledger.get(record.dispatch_id)
+            target = target_ledger.get(record.dispatch_id)
+            assert authority is not None and target is not None
+            self.assertEqual(authority.state, "running")
+            self.assertEqual(target.state, "completed")
+            self.assertEqual(target.completion_delivery_class, "acknowledged")
+
+    async def test_completion_callback_supersedes_local_terminal_repair(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = DispatchStore(Path(tmp))
+            session_id = "session-late-after-repair"
+            repair_key = "repair-local-late-completion"
+            ledger.put(
+                DispatchRecord(
+                    dispatch_id="dispatch-local-late-completion",
+                    mutation_id="mutation-local-late-completion",
+                    card_id="card-done",
+                    authority_instance_id="target",
+                    authority_url="http://target",
+                    target_instance_id="target",
+                    session_id=session_id,
+                    state="cancelled",
+                    recoverable=False,
+                    error_code="legacy_abandoned_dispatch_retired",
+                    control_operations={
+                        repair_key: (
+                            "repair_terminal:abandoned_without_acknowledgement"
+                        )
+                    },
+                )
+            )
+            outbox = CompletionOutbox(ledger, "")
+            agent = MagicMock()
+            agent.async_runtime = None
+            reconciler = CompletionReconciler(
+                ledger,
+                agent,
+                outbox,
+                MagicMock(),
+                lambda: None,
+            )
+            payload = {
+                "stop_reason": "end_turn",
+                "outcome": "Late immutable completion must win.",
+            }
+
+            accepted = await reconciler.handle_completion(session_id, payload)
+
+            self.assertTrue(accepted)
+            persisted = ledger.by_session(session_id)
+            assert persisted is not None
+            self.assertEqual(persisted.state, "completion_pending")
+            self.assertEqual(persisted.completion_payload, payload)
+            self.assertEqual(persisted.completion_delivery_class, "pending")
+            self.assertIsNone(persisted.error_code)
+            self.assertEqual(
+                persisted.lifecycle_inconsistencies[-1]["kind"],
+                "terminal_repair_superseded_by_completion",
+            )
 
     async def test_remote_target_closed_proof_repairs_without_local_replica_use(
         self,

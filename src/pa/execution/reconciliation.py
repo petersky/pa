@@ -193,6 +193,11 @@ class CompletionReconciler:
             # Ordinary follow-up turns have their own durable delivery and
             # evaluation path. They never reopen or replay the dispatch envelope.
             return await self._queue_delivery(session_id, payload)
+        if record and record.accepts_late_completion_after_terminal_repair:
+            # A completion callback already existed when a closed-session repair
+            # won its local race. The immutable completion must reopen delivery
+            # instead of being discarded because the interim state is cancelled.
+            return await self._queue_delivery(session_id, payload)
         if (
             not record
             or not record.card_id

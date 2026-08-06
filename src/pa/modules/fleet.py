@@ -11109,6 +11109,8 @@ def _raise_nonterminal_repair_evidence(
 def _local_terminal_repair_session_evidence(
     request: Request,
     record: DispatchRecord,
+    *,
+    fence_id: str | None = None,
 ) -> tuple[AgentSession, bool]:
     session = (
         request.app.state.ctx.store.get_session(record.session_id)
@@ -11117,6 +11119,20 @@ def _local_terminal_repair_session_evidence(
     )
     manager = request.app.state.ctx.services.get("instance_agent")
     runtime = manager.get(record.session_id) if manager and record.session_id else None
+    # A provider can finish starting after ``get`` returns. The real manager's
+    # lifecycle fence races atomically with runtime publication; lightweight
+    # test/fallback managers receive a final immediate re-read instead.
+    if (
+        manager
+        and record.session_id
+        and fence_id
+        and not (runtime and not getattr(runtime, "_closed", False))
+    ):
+        acquire = getattr(type(manager), "acquire_terminal_repair_fence", None)
+        if callable(acquire):
+            runtime = acquire(manager, record.session_id, fence_id=fence_id)
+        else:
+            runtime = manager.get(record.session_id)
     runtime_live = bool(runtime and not getattr(runtime, "_closed", False))
     session_status = str(getattr(session, "status", "missing") or "missing")
     _raise_nonterminal_repair_evidence(
@@ -11287,7 +11303,9 @@ def target_terminal_repair_evidence(
                 },
             )
         session, runtime_live = _local_terminal_repair_session_evidence(
-            request, current
+            request,
+            current,
+            fence_id=f"{current.dispatch_id}:{body.idempotency_key}",
         )
         session_expected = {
             "id": current.session_id,
@@ -11352,12 +11370,10 @@ def target_terminal_repair_evidence(
     return captured[0]
 
 
-def _repair_terminal_dispatch(
+async def _repair_terminal_dispatch(
     request: Request,
     dispatch_id: str,
     body: DispatchTerminalRepairBody | DispatchControlBody | None = None,
-    *,
-    remote_evidence: DispatchTerminalRepairEvidenceV1 | None = None,
 ) -> dict[str, Any]:
     """Audited terminal repair without inventing completion evidence."""
     require_user(request)
@@ -11486,14 +11502,59 @@ def _repair_terminal_dispatch(
                     "card_lane": card.lane.value if card else None,
                 },
             )
+        # Preserve the prior final card-lane revalidation, but perform it before
+        # collecting target evidence. Card projection reads can block on a slow
+        # snapshot; target completion/runtime state must be sampled afterward.
+        card = request.app.state.ctx.store.get_card(
+            record.card_id, realm_id=record.realm_id
+        )
+        if card is None or card.lane != CardLane.DONE:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "canonical_card_not_done",
+                    "message": "Abandoned repair requires the canonical card to be Done.",
+                    "card_id": record.card_id,
+                    "card_lane": card.lane.value if card else None,
+                },
+            )
         if record.target_instance_id == request.app.state.ctx.settings.instance_id:
             _session, _runtime_live = _local_terminal_repair_session_evidence(
-                request, record
+                request,
+                record,
+                fence_id=f"{record.dispatch_id}:{key}",
             )
             evidence_source = "target_local_atomic_check"
             evidence_observed_at = datetime.now(UTC)
             evidence_digest = None
         else:
+            if not record.session_id:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "target_terminal_evidence_required",
+                        "message": "Remote repair requires an exact linked target session.",
+                        "target_instance_id": record.target_instance_id,
+                        "recoverable": True,
+                    },
+                )
+            # Collect target state only after the potentially slow canonical-card
+            # snapshot. The following compare-and-mutate performs no remote or
+            # card reads, so this is the final target generation/state check
+            # immediately preceding the authority terminal write.
+            remote_evidence = await _peer_terminal_repair_evidence(
+                request,
+                record.target_instance_id,
+                record.dispatch_id,
+                DispatchTerminalRepairEvidenceRequest(
+                    mutation_id=record.mutation_id,
+                    authority_instance_id=record.authority_instance_id,
+                    target_instance_id=record.target_instance_id,
+                    session_id=record.session_id,
+                    idempotency_key=key,
+                    expected_state=record.state,
+                ),
+            )
             validated = _validate_remote_terminal_repair_evidence(
                 record, remote_evidence, idempotency_key=key
             )
@@ -11549,26 +11610,13 @@ def _repair_terminal_dispatch(
                         ),
                     },
                 )
-            current_card = (
-                request.app.state.ctx.store.get_card(
-                    current.card_id, realm_id=current.realm_id
-                )
-                if current.card_id
-                else None
-            )
-            if current_card is None or current_card.lane != CardLane.DONE:
-                raise HTTPException(
-                    status_code=409,
-                    detail={
-                        "code": "canonical_card_not_done",
-                        "message": "Abandoned repair requires the canonical card to be Done.",
-                        "card_id": current.card_id,
-                        "card_lane": current_card.lane.value if current_card else None,
-                    },
-                )
             if current.target_instance_id == request.app.state.ctx.settings.instance_id:
                 current_session, _current_runtime_live = (
-                    _local_terminal_repair_session_evidence(request, current)
+                    _local_terminal_repair_session_evidence(
+                        request,
+                        current,
+                        fence_id=f"{current.dispatch_id}:{key}",
+                    )
                 )
                 current_session_status = current_session.status
             else:
@@ -11609,7 +11657,7 @@ def _repair_terminal_dispatch(
                     "reason": reason,
                     "evidence": {
                         "card_id": current.card_id,
-                        "card_lane": current_card.lane.value,
+                        "card_lane": card.lane.value,
                         "session_id": current.session_id,
                         "session_status": current_session_status,
                         "runtime_live": False,
@@ -11736,60 +11784,7 @@ async def repair_terminal_dispatch(
     body: DispatchTerminalRepairBody | DispatchControlBody | None = None,
 ) -> dict[str, Any]:
     """Collect target evidence, then atomically apply an audited terminal repair."""
-    require_user(request)
-    record = _dispatch_store(request).get(dispatch_id)
-    if record is None:
-        raise HTTPException(status_code=404, detail="Dispatch not found")
-    mode = str(getattr(body, "mode", "acknowledged_completion"))
-    remote_evidence = None
-    if mode == "abandoned_without_acknowledgement":
-        key = _dispatch_control_key(request, body)
-        operation = "repair_terminal:abandoned_without_acknowledgement"
-        if record.goal_provenance is not None and not _goal_dispatch_lifecycle_owned(
-            request.app.state.ctx, record
-        ):
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "code": "terminal_repair_wrong_authority",
-                    "message": (
-                        "Governed dispatch repair must run on its recorded authority."
-                    ),
-                    "authority_instance_id": record.authority_instance_id,
-                },
-            )
-        if _repeat_dispatch_control(record, operation, key):
-            return _repair_terminal_dispatch(request, dispatch_id, body)
-        if record.target_instance_id != request.app.state.ctx.settings.instance_id:
-            if not record.session_id:
-                raise HTTPException(
-                    status_code=409,
-                    detail={
-                        "code": "target_terminal_evidence_required",
-                        "message": "Remote repair requires an exact linked target session.",
-                        "target_instance_id": record.target_instance_id,
-                        "recoverable": True,
-                    },
-                )
-            remote_evidence = await _peer_terminal_repair_evidence(
-                request,
-                record.target_instance_id,
-                record.dispatch_id,
-                DispatchTerminalRepairEvidenceRequest(
-                    mutation_id=record.mutation_id,
-                    authority_instance_id=record.authority_instance_id,
-                    target_instance_id=record.target_instance_id,
-                    session_id=record.session_id,
-                    idempotency_key=key,
-                    expected_state=record.state,
-                ),
-            )
-    return _repair_terminal_dispatch(
-        request,
-        dispatch_id,
-        body,
-        remote_evidence=remote_evidence,
-    )
+    return await _repair_terminal_dispatch(request, dispatch_id, body)
 
 
 def _require_dispatch_access(request: Request, record: DispatchRecord) -> None:

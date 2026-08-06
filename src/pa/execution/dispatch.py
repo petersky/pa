@@ -261,6 +261,20 @@ class DispatchRecord(BaseModel):
             default=None,
         )
 
+    @property
+    def accepts_late_completion_after_terminal_repair(self) -> bool:
+        """Whether immutable completion may supersede an abandonment repair."""
+        return bool(
+            self.state == "cancelled"
+            and self.error_code == "legacy_abandoned_dispatch_retired"
+            and self.acknowledged_at is None
+            and self.completion_payload is None
+            and any(
+                operation == "repair_terminal:abandoned_without_acknowledgement"
+                for operation in self.control_operations.values()
+            )
+        )
+
     def public_dict(self) -> dict[str, Any]:
         data = self.model_dump(
             mode="json",
@@ -4417,8 +4431,27 @@ class CompletionOutbox:
             self.store.put(record)
             self._wake.set()
             return True
-        if not record or record.state not in {"running", "completion_pending"}:
+        late_repair_completion = bool(
+            record and record.accepts_late_completion_after_terminal_repair
+        )
+        if not record or (
+            record.state not in {"running", "completion_pending"}
+            and not late_repair_completion
+        ):
             return False
+        if late_repair_completion:
+            record.lifecycle_inconsistencies.append(
+                {
+                    "kind": "terminal_repair_superseded_by_completion",
+                    "observed_at": datetime.now(UTC).isoformat(),
+                    "reason": (
+                        "Immutable completion arrived after abandonment repair and "
+                        "was preserved for authority acknowledgement."
+                    ),
+                }
+            )
+            record.lifecycle_inconsistencies = record.lifecycle_inconsistencies[-50:]
+            record.error_code = None
         record.completion_payload = payload
         record.last_error = None
         record.completion_delivery_class = "pending"

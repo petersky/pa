@@ -9,6 +9,7 @@ import os
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
+from threading import RLock
 from typing import TYPE_CHECKING, Any, Literal
 from uuid import uuid4
 
@@ -2073,6 +2074,11 @@ class AgentSessionManager:
         self._default_label = "default"
         self._lock = asyncio.Lock()
         self._reconnect_lock = asyncio.Lock()
+        # Runtime publication also happens after awaited provider startup. A
+        # synchronous fleet repair probe must be able to fence that final
+        # publication atomically with its no-live-runtime observation.
+        self._runtime_lifecycle_lock = RLock()
+        self._terminal_repair_fences: dict[str, str] = {}
         self._reconnect_task: asyncio.Task[bool] | None = None
         self._label_locks: dict[str, asyncio.Lock] = {}
         self.async_runtime: AsyncRuntime | None = None
@@ -2485,13 +2491,54 @@ class AgentSessionManager:
         return self._quiescing or is_shutting_down()
 
     def get(self, session_id: str) -> AgentSessionRuntime | None:
-        return self._runtimes.get(session_id)
+        with self._runtime_lifecycle_lock:
+            return self._runtimes.get(session_id)
+
+    def acquire_terminal_repair_fence(
+        self, session_id: str, *, fence_id: str
+    ) -> AgentSessionRuntime | None:
+        """Fence future runtime publication after observing no live runtime.
+
+        Provider startup is asynchronous and used to publish directly into the
+        runtime map after its final await. The lifecycle lock makes that
+        publication race with this check instead of racing after it. A fence is
+        intentionally retained: terminal repair is only valid for a closed,
+        nonrecoverable dispatch, so publishing a later runtime for that exact PA
+        session would invalidate the evidence used to retire it.
+        """
+        with self._runtime_lifecycle_lock:
+            runtime = self._runtimes.get(session_id)
+            if runtime is not None and not getattr(runtime, "_closed", False):
+                return runtime
+            self._terminal_repair_fences.setdefault(session_id, fence_id)
+            return None
+
+    def terminal_repair_fence_id(self, session_id: str) -> str | None:
+        with self._runtime_lifecycle_lock:
+            return self._terminal_repair_fences.get(session_id)
+
+    async def _publish_runtime(self, runtime: AgentSessionRuntime) -> None:
+        """Publish a started runtime unless terminal evidence fenced its session."""
+        with self._runtime_lifecycle_lock:
+            fence_id = self._terminal_repair_fences.get(runtime.session_id)
+            if fence_id is None:
+                self._runtimes[runtime.session_id] = runtime
+                return
+        await runtime.close(
+            reason="terminal_dispatch_repair_fenced",
+            reconcile_workspace=False,
+        )
+        raise RuntimeError(
+            "session runtime publication was fenced by terminal dispatch repair"
+        )
 
     def list_sessions(self) -> list[AgentSession]:
-        return [rt.session for rt in self._runtimes.values()]
+        with self._runtime_lifecycle_lock:
+            return [rt.session for rt in self._runtimes.values()]
 
     def list_runtimes(self) -> list[AgentSessionRuntime]:
-        return list(self._runtimes.values())
+        with self._runtime_lifecycle_lock:
+            return list(self._runtimes.values())
 
     async def reconcile_closed_sessions(self, session_ids: list[str]) -> None:
         """Expire closed-session leases, then reconcile and collect once."""
@@ -3171,7 +3218,7 @@ class AgentSessionManager:
             queue_paused=snap.queue_paused,
             provider_spec=provider_spec,
         )
-        self._runtimes[runtime.session_id] = runtime
+        await self._publish_runtime(runtime)
         self._invalidate_provider_overview()
         return runtime
 
@@ -3439,7 +3486,7 @@ class AgentSessionManager:
                     session.id,
                 )
             raise
-        self._runtimes[runtime.session_id] = runtime
+        await self._publish_runtime(runtime)
         self._invalidate_provider_overview()
         return runtime
 
