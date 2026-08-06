@@ -58,10 +58,17 @@ only. It requires an exact expected state, an operator reason and explicit
 no-outcome-inference confirmation, a canonical Done card, no preserved
 completion envelope, and a missing or terminal linked session with no live ACP
 runtime. Governed records must be repaired on their recorded authority so PA
-can release the reservation through its existing fence. This mode normalizes
-to `cancelled`, leaves completion unacknowledged, preserves all prior evidence,
-and appends the qualifying evidence to lifecycle diagnostics. The operation can
-be peer-routed by supplying `authority_instance_id` to the MCP tool.
+can release the reservation through its existing fence. Authority ownership is
+required even when the recorded reservation was already released.
+
+Both repair modes commit through one ledger compare-and-mutate operation. PA
+re-reads and revalidates the complete durable record under the ledger writer
+lock immediately before mutation. Any concurrent lifecycle, completion,
+progress, provenance, or event change rejects the repair without overwriting
+the newer evidence. Abandoned repair normalizes to `cancelled`, leaves
+completion unacknowledged, preserves all prior evidence, and appends the
+qualifying evidence to lifecycle diagnostics. The operation can be peer-routed
+by supplying `authority_instance_id` to the MCP tool.
 
 Legacy PR discovery accepts only an explicit line such as:
 

@@ -66,9 +66,11 @@ from pa.domain.notifications import (
     NotificationVisibility,
 )
 from pa.execution.dispatch import (
+    CAPACITY_RESERVATION_STATES,
     CapacityAdmission,
     CompletionOutbox,
     ConcurrentCardDispatch,
+    DispatchCompareConflict,
     DispatchCapacityExhausted,
     DispatchEvent,
     DispatchIdempotencyConflict,
@@ -10959,6 +10961,21 @@ def repair_terminal_dispatch(
         if mode == "acknowledged_completion"
         else "repair_terminal:abandoned_without_acknowledgement"
     )
+
+    def require_recorded_authority(current: DispatchRecord) -> None:
+        if current.goal_provenance is not None and not _goal_dispatch_lifecycle_owned(
+            request.app.state.ctx, current
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "terminal_repair_wrong_authority",
+                    "message": "Governed dispatch repair must run on its recorded authority.",
+                    "authority_instance_id": current.authority_instance_id,
+                },
+            )
+
+    require_recorded_authority(record)
     if _repeat_dispatch_control(record, operation, key):
         return _dispatch_public(request, record)
     acknowledged = bool(
@@ -11072,91 +11089,251 @@ def repair_terminal_dispatch(
                     "runtime_live": runtime_live,
                 },
             )
-        if (
-            record.goal_provenance is not None
-            and record.goal_provenance.released_at is None
-        ):
-            if not _goal_dispatch_lifecycle_owned(request.app.state.ctx, record):
+
+        def abandon(current: DispatchRecord) -> bool:
+            if _repeat_dispatch_control(current, operation, key):
+                return False
+            require_recorded_authority(current)
+            current_acknowledged = bool(
+                current.acknowledged_at
+                or current.completion_delivery_class == "acknowledged"
+            )
+            if expected_state != current.state:
                 raise HTTPException(
                     status_code=409,
                     detail={
-                        "code": "terminal_repair_wrong_authority",
-                        "message": (
-                            "Governed dispatch repair must run on its recorded authority."
-                        ),
-                        "authority_instance_id": record.authority_instance_id,
+                        "code": "stale_dispatch_state",
+                        "expected_state": expected_state or None,
+                        "observed_state": current.state,
                     },
                 )
-            record = _release_goal_dispatch_reservation(
-                request.app.state.ctx,
-                ledger,
-                record,
-                outcome="legacy-abandoned-retired",
-                applied=_goal_dispatch_was_applied(record),
+            if current.state != "running":
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "dispatch_not_abandoned_repairable",
+                        "message": "Only a legacy running row can use abandoned repair.",
+                    },
+                )
+            if current_acknowledged:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "acknowledged_completion_requires_completion_repair",
+                        "message": "Acknowledged completion must normalize to completed.",
+                    },
+                )
+            if (
+                current.completion_payload is not None
+                or current.completion_envelope is not None
+                or current.completion_received_at is not None
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "completion_evidence_requires_delivery_repair",
+                        "message": (
+                            "Preserved completion evidence must use completion delivery "
+                            "or acknowledged repair, not abandonment."
+                        ),
+                    },
+                )
+            current_card = (
+                request.app.state.ctx.store.get_card(
+                    current.card_id, realm_id=current.realm_id
+                )
+                if current.card_id
+                else None
             )
-        previous = record.state
-        now = datetime.now(UTC)
-        record.control_operations[key] = operation
-        record.recoverable = False
-        record.error_code = "legacy_abandoned_dispatch_retired"
-        record.last_error = (
-            "Legacy running dispatch retired without completion acknowledgement; "
-            "no dispatch or card outcome was inferred."
-        )
-        record.completion_next_retry_at = None
-        record.capacity_released_at = now
-        record.capacity_release_reason = "legacy-abandoned-retired"
-        record.lifecycle_inconsistencies.append(
-            {
-                "kind": "legacy_abandoned_dispatch_retired",
-                "previous_state": previous,
-                "normalized_state": "cancelled",
-                "observed_at": now.isoformat(),
-                "idempotency_key": key,
-                "reason": reason,
-                "evidence": {
-                    "card_id": record.card_id,
-                    "card_lane": card.lane.value,
-                    "session_id": record.session_id,
-                    "session_status": session_status,
-                    "runtime_live": False,
-                    "completion_acknowledged": False,
+            if current_card is None or current_card.lane != CardLane.DONE:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "canonical_card_not_done",
+                        "message": "Abandoned repair requires the canonical card to be Done.",
+                        "card_id": current.card_id,
+                        "card_lane": current_card.lane.value if current_card else None,
+                    },
+                )
+            current_session = (
+                request.app.state.ctx.store.get_session(current.session_id)
+                if current.session_id
+                else None
+            )
+            current_runtime = (
+                manager.get(current.session_id)
+                if manager and current.session_id
+                else None
+            )
+            current_runtime_live = bool(
+                current_runtime and not getattr(current_runtime, "_closed", False)
+            )
+            current_session_status = str(
+                getattr(current_session, "status", "missing") or "missing"
+            )
+            if current_runtime_live or current_session_status not in {
+                "missing",
+                "closed",
+                "quiesced",
+            }:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "linked_session_not_terminal",
+                        "message": (
+                            "Close or cancel the linked session before retiring its "
+                            "dispatch row."
+                        ),
+                        "session_id": current.session_id,
+                        "session_status": current_session_status,
+                        "runtime_live": current_runtime_live,
+                    },
+                )
+            if (
+                current.goal_provenance is not None
+                and current.goal_provenance.released_at is None
+            ):
+                current.goal_provenance = _release_goal_action_provenance(
+                    request.app.state.ctx,
+                    current.goal_provenance,
+                    operation_id=current.dispatch_id,
+                    outcome="legacy-abandoned-retired",
+                    applied=_goal_dispatch_was_applied(current),
+                )
+            previous = current.state
+            now = datetime.now(UTC)
+            current.control_operations[key] = operation
+            current.recoverable = False
+            current.error_code = "legacy_abandoned_dispatch_retired"
+            current.last_error = (
+                "Legacy running dispatch retired without completion acknowledgement; "
+                "no dispatch or card outcome was inferred."
+            )
+            current.completion_next_retry_at = None
+            current.capacity_released_at = now
+            current.capacity_release_reason = "legacy-abandoned-retired"
+            current.lifecycle_inconsistencies.append(
+                {
+                    "kind": "legacy_abandoned_dispatch_retired",
+                    "previous_state": previous,
+                    "normalized_state": "cancelled",
+                    "observed_at": now.isoformat(),
+                    "idempotency_key": key,
+                    "reason": reason,
+                    "evidence": {
+                        "card_id": current.card_id,
+                        "card_lane": current_card.lane.value,
+                        "session_id": current.session_id,
+                        "session_status": current_session_status,
+                        "runtime_live": False,
+                        "completion_acknowledged": False,
+                    },
+                    "outcome_inferred": False,
                 },
-                "outcome_inferred": False,
+            )
+            current.state = "cancelled"
+            current.events.append(
+                DispatchEvent(
+                    seq=(current.events[-1].seq + 1 if current.events else 1),
+                    state="cancelled",
+                    message=(
+                        "Abandoned legacy running dispatch retired without outcome "
+                        "inference."
+                    ),
+                    detail={
+                        "previous_state": previous,
+                        "repair": True,
+                        "mode": mode,
+                        "outcome_inferred": False,
+                    },
+                )
+            )
+            return True
+
+        try:
+            record = ledger.compare_and_mutate(record, abandon)
+        except DispatchCompareConflict as exc:
+            current = ledger.get(dispatch_id)
+            if current:
+                require_recorded_authority(current)
+            if current and _repeat_dispatch_control(current, operation, key):
+                return _dispatch_public(request, current)
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "terminal_repair_concurrent_change",
+                    "message": (
+                        "Dispatch lifecycle or evidence changed during repair; no "
+                        "repair mutation was committed."
+                    ),
+                    "changed_fields": exc.changed_fields,
+                },
+            ) from exc
+        return _dispatch_public(request, record)
+
+    def normalize_acknowledged(current: DispatchRecord) -> bool:
+        if _repeat_dispatch_control(current, operation, key):
+            return False
+        require_recorded_authority(current)
+        if not (
+            current.acknowledged_at
+            or current.completion_delivery_class == "acknowledged"
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "completion_not_acknowledged"},
+            )
+        previous = current.state
+        current.control_operations[key] = operation
+        current.completion_delivery_class = "acknowledged"
+        current.completion_next_retry_at = None
+        current.last_error = None
+        if (
+            previous in CAPACITY_RESERVATION_STATES
+            and current.capacity_reserved_at
+            and not current.capacity_released_at
+        ):
+            current.capacity_released_at = datetime.now(UTC)
+            current.capacity_release_reason = "completed"
+        current.lifecycle_inconsistencies.append(
+            {
+                "kind": "legacy_terminal_record_repaired",
+                "previous_state": previous,
+                "normalized_state": "completed",
+                "observed_at": datetime.now(UTC).isoformat(),
+                "idempotency_key": key,
             }
         )
-        record = ledger.transition(
-            record,
-            "cancelled",
-            "Abandoned legacy running dispatch retired without outcome inference.",
-            detail={
-                "previous_state": previous,
-                "repair": True,
-                "mode": mode,
-                "outcome_inferred": False,
-            },
+        current.state = "completed"
+        current.events.append(
+            DispatchEvent(
+                seq=(current.events[-1].seq + 1 if current.events else 1),
+                state="completed",
+                message="Acknowledged legacy completion normalized to terminal state.",
+                detail={"previous_state": previous, "repair": True},
+            )
         )
-        return _dispatch_public(request, record)
-    previous = record.state
-    record.control_operations[key] = operation
-    record.completion_delivery_class = "acknowledged"
-    record.completion_next_retry_at = None
-    record.last_error = None
-    record.lifecycle_inconsistencies.append(
-        {
-            "kind": "legacy_terminal_record_repaired",
-            "previous_state": previous,
-            "normalized_state": "completed",
-            "observed_at": datetime.now(UTC).isoformat(),
-            "idempotency_key": key,
-        }
-    )
-    record = ledger.transition(
-        record,
-        "completed",
-        "Acknowledged legacy completion normalized to terminal state.",
-        detail={"previous_state": previous, "repair": True},
-    )
+        return True
+
+    try:
+        record = ledger.compare_and_mutate(record, normalize_acknowledged)
+    except DispatchCompareConflict as exc:
+        current = ledger.get(dispatch_id)
+        if current:
+            require_recorded_authority(current)
+        if current and _repeat_dispatch_control(current, operation, key):
+            return _dispatch_public(request, current)
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "terminal_repair_concurrent_change",
+                "message": (
+                    "Dispatch lifecycle or evidence changed during repair; no repair "
+                    "mutation was committed."
+                ),
+                "changed_fields": exc.changed_fields,
+            },
+        ) from exc
     return _dispatch_public(request, record)
 
 

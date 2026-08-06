@@ -2495,6 +2495,48 @@ class DispatchStore:
             self._save(record, durability="full")
             return self._snapshot(self._records[record.dispatch_id])
 
+    def compare_and_mutate(
+        self,
+        expected: DispatchRecord,
+        mutate: Callable[[DispatchRecord], bool | None],
+    ) -> DispatchRecord:
+        """Mutate one fresh record only if its complete durable snapshot is unchanged.
+
+        ``get()`` returns a detached snapshot, so callers that perform external
+        evidence checks must not later pass that snapshot to ``put()``. This
+        operation re-reads under the writer lock, compares every durable field
+        except the derived write timestamp, and gives the mutator a fresh copy.
+        A concurrent lifecycle, completion, progress, provenance, or event write
+        therefore fails closed instead of being overwritten.
+        """
+
+        with self._lock:
+            self._require_writer()
+            stored = self._records.get(expected.dispatch_id)
+            if stored is None:
+                raise ValueError("dispatch not found")
+            if stored.mutation_id != expected.mutation_id:
+                raise ValueError("dispatch id already belongs to another mutation")
+            expected_payload = expected.model_dump(mode="json", exclude={"updated_at"})
+            current_payload = stored.model_dump(mode="json", exclude={"updated_at"})
+            changed_fields = sorted(
+                field
+                for field in set(expected_payload) | set(current_payload)
+                if expected_payload.get(field) != current_payload.get(field)
+            )
+            if changed_fields:
+                raise DispatchCompareConflict(
+                    dispatch_id=expected.dispatch_id,
+                    changed_fields=changed_fields,
+                )
+            current = self._snapshot(stored)
+            changed = mutate(current)
+            if changed is False:
+                return self._snapshot(stored)
+            current.updated_at = datetime.now(UTC)
+            self._save(current, durability="full")
+            return self._snapshot(self._records[current.dispatch_id])
+
     def begin_admission(
         self,
         record: DispatchRecord,
@@ -3838,6 +3880,15 @@ class DispatchIdempotencyConflict(ValueError):
     def __init__(self, existing: DispatchRecord) -> None:
         super().__init__("idempotency key already belongs to different remote work")
         self.existing = existing
+
+
+class DispatchCompareConflict(ValueError):
+    """A detached dispatch snapshot changed before its atomic mutation."""
+
+    def __init__(self, *, dispatch_id: str, changed_fields: list[str]) -> None:
+        super().__init__("dispatch changed before atomic mutation")
+        self.dispatch_id = dispatch_id
+        self.changed_fields = list(changed_fields)
 
 
 class DispatchReceiptConflict(ValueError):
