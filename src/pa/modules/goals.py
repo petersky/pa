@@ -32,6 +32,7 @@ from pa.goals.advanced_models import (
     ProviderGoalAssignment,
     ProviderGoalProgress,
 )
+from pa.goals.assigned_projection import assigned_goal_mutation_response
 from pa.goals.governance import (
     GoalAssignedServiceAuthorization,
     GoalAssignedServiceCredentialError,
@@ -133,6 +134,35 @@ def _assigned_goal_context(
         policy_revision=policy_revision,
         fencing_token=scope.fencing_token,
     )
+
+
+def _assigned_mutation_response(
+    authorization: GoalAssignedServiceAuthorization,
+    result,
+    *,
+    operation: str,
+) -> dict:
+    """Project a committed mutation through its assigned package only."""
+
+    package = next(
+        (
+            item
+            for item in result.work_packages
+            if item.id == authorization.scope.work_package_id
+        ),
+        None,
+    )
+    if package is None:
+        raise GoalConflict(
+            "assigned Goal mutation lost its authorized work-package scope"
+        )
+    projected = GoalAssignedServiceAuthorization(
+        binding=authorization.binding,
+        goal=result,
+        work_package=package,
+        run=authorization.run,
+    )
+    return assigned_goal_mutation_response(projected, operation=operation)
 
 
 def _assigned_scope_violation(message: str) -> None:
@@ -636,12 +666,20 @@ def apply_assigned_service_goal_proposal(
             lambda: _service(request).submit_proposal(
                 scope.goal_id, proposal, context
             ),
-            operation_payload=proposal,
+            # The canonical proposal can contain server-generated nested
+            # evidence defaults. Fingerprint the identity-free request so an
+            # exact raw retry keeps the same governed operation.
+            operation_payload=body,
             delegated=proposal.action.kind == "dispatch_work_package",
         )
     )
+    response = _assigned_mutation_response(
+        authorization,
+        result,
+        operation="proposal",
+    )
     _wake_supervisor(request)
-    return result.model_dump(mode="json")
+    return response
 
 
 @router.post("/goal-assigned-service/proposals", status_code=202)
@@ -683,16 +721,23 @@ def apply_assigned_service_goal_evidence(
         idempotency_key=idempotency_key,
     )
     change = _assigned_goal_evidence_change(authorization, body)
-    return _run(
+    result = _run(
         lambda: _governed_goal_mutation(
             request,
             scope.goal_id,
             "record_evidence",
             context,
             lambda: _service(request).add_evidence(scope.goal_id, change, context),
-            operation_payload=change,
+            # Fingerprint the identity-free request rather than server-generated
+            # evidence defaults so an exact raw retry remains idempotent.
+            operation_payload=body,
         )
-    ).model_dump(mode="json")
+    )
+    return _assigned_mutation_response(
+        authorization,
+        result,
+        operation="evidence",
+    )
 
 
 @router.post("/goal-assigned-service/evidence")
@@ -734,7 +779,7 @@ def apply_assigned_service_goal_audit(
         idempotency_key=idempotency_key,
     )
     change = _assigned_goal_audit_change(authorization, body)
-    return _run(
+    result = _run(
         lambda: _governed_goal_mutation(
             request,
             scope.goal_id,
@@ -743,7 +788,12 @@ def apply_assigned_service_goal_audit(
             lambda: _service(request).audit(scope.goal_id, change, context),
             operation_payload=change,
         )
-    ).model_dump(mode="json")
+    )
+    return _assigned_mutation_response(
+        authorization,
+        result,
+        operation="audit",
+    )
 
 
 @router.post("/goal-assigned-service/audit")

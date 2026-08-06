@@ -785,7 +785,9 @@ async def _exercise_live_target_proxy_commits_once_on_authority_and_never_on_tar
             policy_revision=goal.policy.revision,
             idempotency_key="live-target-authority-evidence",
         )
-        assert response["evidence"][-1]["summary"] == (
+        assert response["accepted"] is True
+        assert response["operation"] == "evidence"
+        assert response["goal"]["evidence"][-1]["summary"] == (
             "The live target-to-authority proxy passed."
         )
 

@@ -102,6 +102,45 @@ class _FakeMcp:
         return register
 
 
+def _assert_assigned_mutation_projection(payload: dict, operation: str) -> dict:
+    assert set(payload) == {"accepted", "operation", "goal"}
+    assert payload["accepted"] is True
+    assert payload["operation"] == operation
+    projection = payload["goal"]
+    forbidden = {
+        "owner_principal",
+        "control_authority_instance_id",
+        "lease",
+        "linked_card_ids",
+        "linked_dispatch_ids",
+        "proposals",
+        "audit",
+        "operator_interactions",
+        "supervision",
+        "work_packages",
+        "session_id",
+        "executor_service_id",
+        "verifier_service_id",
+        "action_reservation_id",
+        "dispatch_ids",
+        "materialization_envelope",
+        "materialization_receipt",
+        "execution_identity",
+        "credential_digest",
+        "credential_expires_at",
+    }
+
+    def keys(value) -> set[str]:
+        if isinstance(value, dict):
+            return set(value).union(*(keys(item) for item in value.values()))
+        if isinstance(value, list):
+            return set().union(*(keys(item) for item in value))
+        return set()
+
+    assert not (keys(projection) & forbidden)
+    return projection
+
+
 def _goal_context(goal, key: str, *, actor: str = "user:operator"):
     return GoalMutationContext(
         actor_principal=actor,
@@ -420,11 +459,15 @@ def test_assigned_routes_derive_executor_and_verifier_identity() -> None:
             },
         )
         assert proposal.status_code == 202, proposal.text
-        persisted = proposal.json()["proposals"][-1]
-        assert persisted["proposer_principal"] == (
+        proposal_projection = _assert_assigned_mutation_projection(
+            proposal.json(), "proposal"
+        )
+        assert proposal_projection["version"] == goal.version + 1
+        persisted = goals.get(seeded.goal_id).proposals[-1]
+        assert persisted.proposer_principal == (
             seeded.executor_scope.assigned_service_principal
         )
-        assert persisted["proposer_role"] == "executor"
+        assert persisted.proposer_role.value == "executor"
 
         # The proposal wake is intentional; wait for that bounded supervision
         # checkpoint before starting the next separately idempotent mutation.
@@ -447,34 +490,58 @@ def test_assigned_routes_derive_executor_and_verifier_identity() -> None:
         )
         assert cross_package.status_code == 403, cross_package.text
 
+        evidence_body = {
+            "evidence": {
+                "criterion_ids": [seeded.criterion_id],
+                "kind": "test",
+                "summary": "The exact assigned-service probe passed.",
+                "provenance": {
+                    "authority_instance_id": "forged-authority",
+                    "provider_id": "forged-provider",
+                },
+            },
+            "criterion_verdicts": {seeded.criterion_id: "satisfied"},
+        }
+        evidence_params = {
+            "expected_version": goal.version,
+            "policy_revision": 1,
+        }
+        evidence_headers = {
+            "Authorization": f"GoalRun {seeded.executor_token}",
+            "Idempotency-Key": "assigned-executor-evidence",
+        }
         evidence = client.post(
             "/api/goal-assigned-service/evidence",
-            params={"expected_version": goal.version, "policy_revision": 1},
-            headers={
-                "Authorization": f"GoalRun {seeded.executor_token}",
-                "Idempotency-Key": "assigned-executor-evidence",
-            },
-            json={
-                "evidence": {
-                    "criterion_ids": [seeded.criterion_id],
-                    "kind": "test",
-                    "summary": "The exact assigned-service probe passed.",
-                    "provenance": {
-                        "authority_instance_id": "forged-authority",
-                        "provider_id": "forged-provider",
-                    },
-                },
-                "criterion_verdicts": {seeded.criterion_id: "satisfied"},
-            },
+            params=evidence_params,
+            headers=evidence_headers,
+            json=evidence_body,
         )
         assert evidence.status_code == 200, evidence.text
-        recorded = evidence.json()["evidence"][-1]
-        assert recorded["producer_role"] == "executor"
-        assert recorded["producer_service_id"] == (
+        evidence_projection = _assert_assigned_mutation_projection(
+            evidence.json(), "evidence"
+        )
+        assert evidence_projection["evidence"][-1]["summary"] == (
+            "The exact assigned-service probe passed."
+        )
+        recorded = goals.get(seeded.goal_id).evidence[-1]
+        assert recorded.producer_role.value == "executor"
+        assert recorded.producer_service_id == (
             seeded.executor_scope.assigned_service_principal
         )
-        assert recorded["provenance"]["authority_instance_id"] == "authority-a"
-        assert recorded["provenance"]["provider_id"] == "codex"
+        assert recorded.provenance["authority_instance_id"] == "authority-a"
+        assert recorded.provenance["provider_id"] == "codex"
+        event_count = len(goals.events(seeded.goal_id))
+        replayed_evidence = client.post(
+            "/api/goal-assigned-service/evidence",
+            params=evidence_params,
+            headers=evidence_headers,
+            json=evidence_body,
+        )
+        assert replayed_evidence.status_code == 200, replayed_evidence.text
+        _assert_assigned_mutation_projection(
+            replayed_evidence.json(), "evidence"
+        )
+        assert len(goals.events(seeded.goal_id)) == event_count
 
         goal = goals.get(seeded.goal_id)
         goal = goals.add_evidence(
@@ -495,7 +562,7 @@ def test_assigned_routes_derive_executor_and_verifier_identity() -> None:
                 seeded.criterion_id: "satisfied",
                 seeded.other_criterion_id: "satisfied",
             },
-            "evidence_ids": [recorded["id"], other_evidence.id],
+            "evidence_ids": [recorded.id, other_evidence.id],
             "explanation": "Independently verify the assigned executor evidence.",
         }
         executor_audit = client.post(
@@ -519,11 +586,16 @@ def test_assigned_routes_derive_executor_and_verifier_identity() -> None:
             json=audit_body,
         )
         assert verifier_audit.status_code == 200, verifier_audit.text
-        audit = verifier_audit.json()["audit"]
-        assert audit["auditor_principal"] == (
+        audit_projection = _assert_assigned_mutation_projection(
+            verifier_audit.json(), "audit"
+        )
+        assert audit_projection["version"] == goal.version + 1
+        audit = goals.get(seeded.goal_id).audit
+        assert audit is not None
+        assert audit.auditor_principal == (
             seeded.verifier_scope.assigned_service_principal
         )
-        assert audit["verifier_service_id"] == (
+        assert audit.verifier_service_id == (
             seeded.verifier_scope.assigned_service_principal
         )
 
@@ -586,15 +658,66 @@ def test_strict_assigned_proposal_actions_reach_canonical_route(action: dict) ->
         )
 
         assert response.status_code == 202, response.text
-        persisted = response.json()["proposals"][-1]
-        assert persisted["action"]["kind"] == payload["kind"]
-        assert persisted["proposer_principal"] == (
+        _assert_assigned_mutation_projection(response.json(), "proposal")
+        persisted = goals.get(seeded.goal_id).proposals[-1]
+        assert persisted.action.kind == payload["kind"]
+        assert persisted.proposer_principal == (
             seeded.executor_scope.assigned_service_principal
         )
         if payload["kind"] == "record_evidence":
-            assert persisted["action"]["evidence"]["provenance"][
-                "work_package_id"
-            ] == seeded.executor_scope.work_package_id
+            assert persisted.action.evidence.provenance["work_package_id"] == (
+                seeded.executor_scope.work_package_id
+            )
+
+
+def test_raw_nested_evidence_proposal_replays_without_generated_default_drift() -> None:
+    with tempfile.TemporaryDirectory() as tmp, TestClient(_app(Path(tmp))) as client:
+        goals = client.app.state.ctx.require_service("goal_service")
+        governance = client.app.state.ctx.require_service("goal_governance")
+        seeded = _seed_assigned_services(goals, governance)
+        goal = goals.get(seeded.goal_id)
+        payload = {
+            "action": {
+                "kind": "record_evidence",
+                "evidence": {
+                    "criterion_ids": [seeded.criterion_id],
+                    "kind": "test",
+                    "summary": "Raw retries must not regenerate their fingerprint.",
+                },
+            },
+            "rationale": "Prove exact raw proposal replay.",
+            "expected_goal_version": goal.version,
+            "policy_revision": goal.policy.revision,
+        }
+        params = {
+            "expected_version": goal.version,
+            "policy_revision": goal.policy.revision,
+        }
+        headers = {
+            "Authorization": f"GoalRun {seeded.executor_token}",
+            "Idempotency-Key": "raw-nested-evidence-proposal",
+        }
+        proposal_count = len(goal.proposals)
+        with patch("pa.modules.goals._wake_supervisor"):
+            first = client.post(
+                "/api/goal-assigned-service/proposals",
+                params=params,
+                headers=headers,
+                json=payload,
+            )
+            event_count = len(goals.events(seeded.goal_id))
+            replay = client.post(
+                "/api/goal-assigned-service/proposals",
+                params=params,
+                headers=headers,
+                json=payload,
+            )
+
+        assert first.status_code == replay.status_code == 202
+        _assert_assigned_mutation_projection(first.json(), "proposal")
+        _assert_assigned_mutation_projection(replay.json(), "proposal")
+        assert len(goals.events(seeded.goal_id)) == event_count
+        assert len(goals.get(seeded.goal_id).proposals) == proposal_count + 1
 
 
 def test_assigned_credential_rejects_cross_scope_and_terminal_run() -> None:
@@ -684,8 +807,12 @@ def test_assigned_goal_read_is_scoped_bounded_and_paginated() -> None:
 
         first = _assigned_goal_projection(authorization, offset=0, limit=1)
         second = _assigned_goal_projection(authorization, offset=1, limit=1)
+        with pytest.raises(HTTPException) as invalid_page:
+            _assigned_goal_projection(authorization, offset=-1, limit=1)
 
         assert len(first["criteria"]) == len(second["criteria"]) == 1
+        assert invalid_page.value.status_code == 422
+        assert invalid_page.value.detail["code"] == "invalid_assigned_goal_page"
         assert first["page"] == {
             "offset": 0,
             "limit": 1,
