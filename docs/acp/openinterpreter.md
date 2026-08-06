@@ -63,6 +63,12 @@ stored separately in `<PA_DATA_DIR>/integrations/openinterpreter.json` with
 mode `0600`, injected only into the spawned process, and never returned by
 status APIs.
 
+Built-in model backends (for example `minimax-coding-plan`, `anthropic`,
+`deepseek`) must be selected with `--model-provider` / `model_provider` only.
+PA writes a custom `[model_providers.<id>]` table solely when both
+`model_provider_name` and `model_provider_base_url` are supplied. Incomplete
+overrides crash `interpreter acp` during initialize; PA auto-repairs those.
+
 ## Capabilities
 
 The upstream ACP server documents:

@@ -61,6 +61,7 @@ class RemoteInstallRequest:
     host_key_fingerprint: str = ""
     release_ref: str = ""
     proxy_jump: str = ""
+    pa_executable: str = ""
 
 
 @dataclass
@@ -242,14 +243,23 @@ def build_remote_command(
     env = build_remote_env(settings, req, fleet_token=fleet_token)
     exports = _shell_export(env)
     if req.join_only:
+        if req.pa_executable:
+            resolve_pa = f"PA_BIN={shlex.quote(req.pa_executable)}"
+        else:
+            resolve_pa = (
+                'PA_BIN="$(command -v pa 2>/dev/null || true)"; '
+                'if [ -z "$PA_BIN" ] && [ -x "$HOME/.local/bin/pa" ]; '
+                'then PA_BIN="$HOME/.local/bin/pa"; fi'
+            )
         return (
-            f"{exports} && "
-            f"command -v pa >/dev/null || {{ echo 'pa not installed; use full install' >&2; exit 1; }} && "
+            f"{exports} && {{ {resolve_pa}; "
+            "if [ -z \"$PA_BIN\" ] || [ ! -x \"$PA_BIN\" ]; then "
+            "echo 'pa not installed; use full install' >&2; exit 1; fi; "
             f"PA_FLEET_OWNER_URL={shlex.quote(env['PA_FLEET_OWNER_URL'])} "
-            f"pa fleet join {shlex.quote(fleet_token)} "
+            f'"$PA_BIN" fleet join {shlex.quote(fleet_token)} '
             f"--url {shlex.quote(req.instance_url.rstrip('/'))} "
             f"--name {shlex.quote(req.instance_name)} "
-            f"--owner {shlex.quote(env['PA_FLEET_OWNER_URL'])}"
+            f"--owner {shlex.quote(env['PA_FLEET_OWNER_URL'])}; }}"
         )
     local_script = _local_install_script()
     if local_script:

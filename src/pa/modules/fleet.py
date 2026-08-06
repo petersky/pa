@@ -9122,8 +9122,37 @@ def _merge_dispatch_followup_operation(
                 status_code=409,
                 detail={"code": "idempotency_conflict", "recoverable": False},
             )
-        if existing and existing.get("response") and not source.get("response"):
-            return False
+        if existing and existing.get("response"):
+            existing_response = dict(existing.get("response") or {})
+            source_response = dict(source.get("response") or {})
+            if not source_response:
+                return False
+            receipt_fields = {
+                "accepted",
+                "accepted_event",
+                "dispatch_id",
+                "prompt_id",
+                "queued",
+                "session_id",
+                "started",
+                "stop_reason",
+            }
+            if any(
+                existing_response.get(field) != source_response.get(field)
+                for field in receipt_fields
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "followup_receipt_conflict",
+                        "recoverable": False,
+                    },
+                )
+            source["response"] = existing_response
+            if existing == source:
+                return False
+            current.followup_operations[idempotency_key] = copy.deepcopy(source)
+            return True
         current.followup_operations[idempotency_key] = copy.deepcopy(source)
         if event_message is not None:
             current.events.append(
@@ -12358,6 +12387,7 @@ async def _repair_terminal_dispatch(
                         request,
                         current,
                         fence_id=f"{current.dispatch_id}:{key}",
+                        fence_acquisition_id=local_fence_acquisition_id,
                     )
                 )
                 current_session_status = current_session.status
@@ -12705,8 +12735,15 @@ async def prompt_dispatch_session(
             key,
             {"fingerprint": fingerprint},
         )
+        ambiguous_delivery = (
+            not isinstance(exc, HTTPException) or exc.status_code >= 500
+        )
         operation["state"] = (
-            "failed_pending_release" if operation.get("goal_provenance") else "failed"
+            "delivery_ambiguous"
+            if operation.get("goal_provenance") and ambiguous_delivery
+            else "failed_pending_release"
+            if operation.get("goal_provenance")
+            else "failed"
         )
         detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
         operation["error"] = {
@@ -12721,6 +12758,7 @@ async def prompt_dispatch_session(
                 else str(detail)
             )[:1000],
             "status_code": exc.status_code if isinstance(exc, HTTPException) else 502,
+            "recoverable": ambiguous_delivery,
         }
         await _offload_request(
             request,
@@ -12730,7 +12768,7 @@ async def prompt_dispatch_session(
             record,
             key,
         )
-        if operation.get("goal_provenance"):
+        if operation.get("goal_provenance") and not ambiguous_delivery:
             await _offload_request(
                 request,
                 "goal.dispatch_followup_release_failed",

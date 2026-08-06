@@ -1144,8 +1144,39 @@ class AgentSessionRuntime:
         source: str = "api",
         prompt_audit: list[dict[str, Any]] | None = None,
         prompt_id: str | None = None,
+        acceptance_result: str | None = None,
     ) -> QueuedPrompt:
         cwd = self._validated_cwd(cwd)
+        requested_images = [image.public_dict() for image in (images or [])]
+        if prompt_id:
+            accepted = ([self._in_flight] if self._in_flight else []) + self._queue
+            for queued in accepted:
+                if queued.id != prompt_id:
+                    continue
+                queued_images = [image.public_dict() for image in queued.images]
+                if queued.message != message or queued_images != requested_images:
+                    raise RuntimeError(
+                        f"Prompt id {prompt_id} was already accepted with different content"
+                    )
+                if acceptance_result is not None:
+                    accepted_result = queued.acceptance_result or acceptance_result
+                    position = (
+                        self._queue.index(queued) if queued in self._queue else 0
+                    )
+                    self._append_transcript(
+                        "queue_enqueued",
+                        {
+                            "id": queued.id,
+                            "message": queued.message,
+                            "images": queued_images,
+                            "action": "append",
+                            "position": position,
+                            "source": source,
+                            "acceptance_result": accepted_result,
+                        },
+                    )
+                    self._flush_transcript()
+                return queued
         item = QueuedPrompt(
             id=prompt_id or str(uuid4()),
             message=message,
@@ -1158,6 +1189,7 @@ class AgentSessionRuntime:
             agent_env=self._merged_agent_env(agent_env),
             source=source,
             prompt_audit=list(prompt_audit or []),
+            acceptance_result=acceptance_result,
         )
         if action == "prepend":
             self._queue.insert(0, item)
@@ -1171,6 +1203,8 @@ class AgentSessionRuntime:
                 "images": [image.public_dict() for image in item.images],
                 "action": action,
                 "position": 0 if action == "prepend" else len(self._queue) - 1,
+                "source": source,
+                "acceptance_result": item.acceptance_result,
             },
         )
         try:
@@ -1441,12 +1475,29 @@ class AgentSessionRuntime:
                         cwd=item.cwd,
                     )
                 except Exception as exc:
+                    from pa.acp.errors import classify_acp_failure, format_acp_error
+
                     if self._is_connection_loss(exc):
                         self._finish_turn_state()
                         self._notify_connection_lost(item, exc)
                         await self._drain_transcripts()
                         return "connection_lost"
-                    raise
+                    classified = classify_acp_failure(
+                        exc,
+                        provider_id=self.session.agent_name,
+                        stage="prompt",
+                    )
+                    self._append_transcript(
+                        "prompt_failed",
+                        {
+                            "id": item.id,
+                            "error": format_acp_error(exc)[:1000],
+                            "failure": classified,
+                        },
+                    )
+                    self._flush_transcript()
+                    await self._drain_transcripts()
+                    raise RuntimeError(classified.get("message") or str(exc)) from exc
                 usage = self.connection.last_usage if self.connection else None
                 if usage:
                     metrics = dict(self.session.metrics_json or {})
@@ -2564,12 +2615,18 @@ class AgentSessionManager:
             )
         )
         if fence_id is not None and repair_lost:
-            self.release_terminal_repair_fence(
+            released = self.release_terminal_repair_fence(
                 session_id,
                 fence_id=fence_id,
                 acquisition_id=fence_acquisition_id,
             )
-            return None
+            if released:
+                return None
+            # A same-key retry may have installed a newer acquisition between
+            # the snapshot above and the generation-checked release. Never tell
+            # admission that the session is unfenced after losing that race.
+            with self._runtime_lifecycle_lock:
+                return self._terminal_repair_fences.get(session_id)
         return fence_id
 
     def release_terminal_repair_fence(
@@ -3451,11 +3508,42 @@ class AgentSessionManager:
             if existing
             else None
         )
+        requested_model_provider = (
+            initial_configuration.model_provider
+            if initial_configuration is not None
+            else None
+        )
+        requested_model = (
+            initial_configuration.model_id
+            if initial_configuration is not None
+            else None
+        )
         if provider_id == "codex" and requested_mode:
             # codex-acp chooses its sandbox before ACP initialize/session-new.
             # Applying the mode later is too late and can silently start a
             # workspace-write provider for an agent-full-access dispatch.
             resolved_spec.env["INITIAL_AGENT_MODE"] = requested_mode
+        if provider_id == "openinterpreter":
+            from pa.acp.errors import ProviderStartError
+            from pa.acp.providers.openinterpreter import (
+                _spawn_args,
+                preflight_session_start,
+            )
+
+            failure = preflight_session_start(
+                self.settings.data_dir,
+                model_provider=requested_model_provider,
+                model_id=requested_model,
+            )
+            if failure:
+                raise ProviderStartError(failure)
+            # Session overrides / explicit defaults must reach the process before
+            # initialize; host config.toml alone cannot express per-session picks.
+            if requested_model_provider or requested_model:
+                resolved_spec.args = _spawn_args(
+                    model_provider=requested_model_provider,
+                    model=requested_model,
+                )
 
         session = existing or AgentSession(
             id=session_id or str(uuid4()),
@@ -3546,10 +3634,26 @@ class AgentSessionManager:
             await runtime.start(**start_kwargs)
             self._last_error = None
         except Exception as exc:
-            self._last_error = str(exc)
+            from pa.acp.errors import classify_acp_failure, format_acp_error
+
+            self._last_error = format_acp_error(exc)
             configuration = dict(
                 ((session.config_json or {}).get("configuration") or {})
             )
+            classified = classify_acp_failure(
+                exc,
+                provider_id=provider_id,
+                stage=(
+                    "session_configuration"
+                    if configuration.get("state") == "failed"
+                    else "provider_startup"
+                ),
+            )
+            config = dict(session.config_json or {})
+            diagnostics = dict(config.get("diagnostics") or {})
+            diagnostics["last_startup_failure"] = classified
+            config["diagnostics"] = diagnostics
+            session.config_json = config
             session.status = (
                 "configuration_failed"
                 if configuration.get("state") == "failed"
@@ -3566,7 +3670,7 @@ class AgentSessionManager:
                     stage="session_configuration"
                     if configuration.get("state") == "failed"
                     else "provider_startup",
-                    error=str(exc),
+                    error=classified.get("message") or str(exc),
                     timeout=30.0,
                 )
             except Exception:
@@ -3574,7 +3678,7 @@ class AgentSessionManager:
                     "Could not fence workspace after session startup failure for %s",
                     session.id,
                 )
-            raise
+            raise RuntimeError(classified.get("message") or str(exc)) from exc
         await self._publish_runtime(runtime)
         self._invalidate_provider_overview()
         return runtime

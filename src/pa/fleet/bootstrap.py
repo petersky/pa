@@ -1153,6 +1153,7 @@ async def run_bootstrap_job(
             return cancelled
 
     phase = BootstrapPhase.PREFLIGHT_HOST
+    preflight = job.checkpoints.get(phase.value, {})
     if job.phase_record(phase).state != PhaseState.SUCCEEDED:
         _phase_start(store, job, phase)
         try:
@@ -1240,6 +1241,7 @@ async def run_bootstrap_job(
             host_key_fingerprint=job.request.host_key_fingerprint,
             release_ref=job.request.release_ref,
             proxy_jump=job.request.proxy_jump,
+            pa_executable=str(preflight.get("pa") or ""),
         )
         legacy_store = InstallJobStore(store.directory / "legacy")
         legacy = legacy_store.create(remote)

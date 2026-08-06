@@ -141,8 +141,37 @@ async def enrich_card(
                 principal_id=current.created_by_principal or "user:local",
                 instance_id=settings.instance_id,
             )
-    except Exception:
-        logger.exception("Card auto-enrichment failed for %s", card_id)
+    except Exception as exc:
+        from pa.acp.errors import classify_acp_failure, format_acp_error
+
+        classified = classify_acp_failure(
+            exc,
+            provider_id=getattr(settings, "agent_provider", None),
+            stage="card_enrichment",
+        )
+        logger.exception(
+            "Card auto-enrichment failed for %s (%s): %s",
+            card_id,
+            classified.get("code"),
+            format_acp_error(exc),
+        )
+        if runtime is not None and getattr(runtime, "session", None) is not None:
+            try:
+                config = dict(runtime.session.config_json or {})
+                diagnostics = dict(config.get("diagnostics") or {})
+                diagnostics["enrichment_failure"] = classified
+                config["diagnostics"] = diagnostics
+                runtime.session.config_json = config
+                save = getattr(
+                    runtime, "_save_session_preserving_external_browser_async", None
+                )
+                if callable(save):
+                    await save()
+            except Exception:
+                logger.exception(
+                    "Could not persist enrichment diagnostics for session %s",
+                    getattr(runtime, "session_id", None),
+                )
     finally:
         if runtime is not None:
             try:

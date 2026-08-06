@@ -2,7 +2,12 @@
 {% if cards %}
 <div class="compact-card-list">
   {% for card in cards %}
-    {{ compact_card(card, card_projects.get(card.id), card_sessions.get(card.id)) }}
+    {{ compact_card(
+      card,
+      card_projects.get(card.id),
+      card_sessions.get(card.id),
+      presentation=card_presentations.get(card.id)
+    ) }}
   {% endfor %}
 </div>
 {% else %}

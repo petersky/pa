@@ -53,6 +53,7 @@ from pa.modules.fleet import (
     _assert_dispatch_sync_health,
     _expected_goal_dispatch_execution_identity,
     _goal_materialization_stage_provenance,
+    _merge_dispatch_followup_operation,
     _peer_terminal_repair_evidence,
     _process_remote_dispatch,
     _release_terminal_repair_fence_if_uncommitted,
@@ -328,6 +329,137 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
             persisted = DispatchStore(Path(tmp)).get("dispatch-1")
             self.assertNotIn("continue", str(persisted.followup_operations))
 
+    def test_concurrent_same_key_receipts_append_one_authority_event(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = DispatchStore(Path(tmp))
+            ledger.put(
+                DispatchRecord(
+                    dispatch_id="dispatch-concurrent-followup",
+                    mutation_id="mutation-concurrent-followup",
+                    authority_instance_id="authority",
+                    authority_url="http://authority",
+                    target_instance_id="target",
+                    session_id="session-concurrent-followup",
+                    state="running",
+                )
+            )
+            first = ledger.get("dispatch-concurrent-followup")
+            second = ledger.get("dispatch-concurrent-followup")
+            assert first is not None and second is not None
+            receipt = {
+                "accepted": True,
+                "accepted_event": "queue_enqueued",
+                "dispatch_id": first.dispatch_id,
+                "prompt_id": "prompt-concurrent-followup",
+                "queued": True,
+                "session_id": first.session_id,
+                "started": False,
+                "stop_reason": "queued",
+                "duplicate": False,
+            }
+            for snapshot, duplicate in ((first, False), (second, True)):
+                snapshot.followup_operations["same-key"] = {
+                    "fingerprint": "same-fingerprint",
+                    "response": {**receipt, "duplicate": duplicate},
+                    "state": "accepted",
+                }
+
+            _merge_dispatch_followup_operation(
+                ledger,
+                first,
+                "same-key",
+                event_message="Linked session follow-up durably acknowledged.",
+            )
+            _merge_dispatch_followup_operation(
+                ledger,
+                second,
+                "same-key",
+                event_message="Linked session follow-up durably acknowledged.",
+            )
+
+            persisted = ledger.get(first.dispatch_id)
+            assert persisted is not None
+            self.assertEqual(
+                [
+                    event.message
+                    for event in persisted.events
+                    if event.message == "Linked session follow-up durably acknowledged."
+                ],
+                ["Linked session follow-up durably acknowledged."],
+            )
+            self.assertFalse(
+                persisted.followup_operations["same-key"]["response"]["duplicate"]
+            )
+
+    async def test_governed_ambiguous_followup_keeps_receipt_recovery_open(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="authority")
+            ledger = DispatchStore(Path(tmp))
+            record = DispatchRecord(
+                dispatch_id="dispatch-ambiguous-followup",
+                mutation_id="mutation-ambiguous-followup",
+                authority_instance_id="authority",
+                authority_url="http://authority",
+                target_instance_id="target",
+                session_id="session-ambiguous-followup",
+                state="running",
+            )
+            ledger.put(record)
+            request = request_for(settings, MagicMock(), {"dispatch_store": ledger})
+            request.state.instance_authenticated = True
+            provenance = GoalDispatchProvenance(
+                goal_id="goal-ambiguous-followup",
+                goal_version=1,
+                policy_revision=1,
+                authority_instance_id="authority",
+                fencing_token=1,
+                action_reservation_id="reservation-ambiguous-followup",
+                actor_principal="service:goal-supervisor:authority",
+            )
+
+            def reserve(_ctx, _ledger, current, *, idempotency_key, fingerprint):
+                current.followup_operations[idempotency_key] = {
+                    "fingerprint": fingerprint,
+                    "state": "reservation_applied",
+                    "goal_provenance": provenance.model_dump(mode="json"),
+                }
+                return provenance
+
+            with (
+                patch(
+                    "pa.modules.fleet._reserve_goal_dispatch_followup",
+                    side_effect=reserve,
+                ),
+                patch(
+                    "pa.modules.fleet._validate_goal_dispatch_provenance",
+                    return_value=provenance,
+                ),
+                patch(
+                    "pa.modules.fleet._peer_agent_json",
+                    AsyncMock(side_effect=TimeoutError("response lost")),
+                ),
+                patch("pa.modules.fleet._release_goal_dispatch_followup") as release,
+                self.assertRaises(TimeoutError),
+            ):
+                await prompt_dispatch_session(
+                    request,
+                    record.dispatch_id,
+                    DispatchFollowupBody(
+                        message="continue",
+                        idempotency_key="ambiguous-key",
+                    ),
+                )
+
+            release.assert_not_called()
+            persisted = ledger.get(record.dispatch_id)
+            assert persisted is not None
+            operation = persisted.followup_operations["ambiguous-key"]
+            self.assertEqual(operation["state"], "delivery_ambiguous")
+            self.assertTrue(operation["error"]["recoverable"])
+            self.assertIsNone(operation["goal_provenance"].get("released_at"))
+
     async def test_followup_on_completed_dispatch_retains_terminal_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), instance_id="monica")
@@ -405,6 +537,57 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
                 repaired.lifecycle_inconsistencies[-1]["kind"],
                 "legacy_terminal_record_repaired",
             )
+
+    async def test_acknowledged_repair_rejects_stale_put(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="authority")
+            ledger = DispatchStore(Path(tmp))
+            acknowledged_at = datetime.now(UTC)
+            ledger.put(
+                DispatchRecord(
+                    dispatch_id="dispatch-acknowledged-stale-put",
+                    mutation_id="mutation-acknowledged-stale-put",
+                    authority_instance_id="authority",
+                    authority_url="http://authority",
+                    target_instance_id="target",
+                    session_id="session-acknowledged-stale-put",
+                    state="running",
+                    acknowledged_at=acknowledged_at,
+                    completion_payload={"outcome": "durably received"},
+                    completion_envelope={
+                        "completion_id": "completion-acknowledged-stale-put",
+                        "payload_digest": "a" * 64,
+                    },
+                    completion_received_at=acknowledged_at,
+                    completion_delivery_class="acknowledged",
+                    capacity_reserved_at=acknowledged_at,
+                )
+            )
+            stale = ledger.get("dispatch-acknowledged-stale-put")
+            assert stale is not None
+            request = request_for(settings, MagicMock(), {"dispatch_store": ledger})
+            with patch("pa.modules.fleet.require_user"):
+                repaired = await repair_terminal_dispatch(
+                    request,
+                    stale.dispatch_id,
+                    DispatchControlBody(idempotency_key="repair-acknowledged-stale"),
+                )
+
+            self.assertEqual(repaired["state"], "completed")
+            with self.assertRaises(DispatchCompareConflict):
+                ledger.put(stale)
+            persisted = ledger.get(stale.dispatch_id)
+            assert persisted is not None
+            self.assertEqual(persisted.state, "completed")
+            self.assertEqual(
+                persisted.control_operations["repair-acknowledged-stale"],
+                "repair_terminal",
+            )
+            self.assertEqual(
+                persisted.lifecycle_inconsistencies[-1]["kind"],
+                "legacy_terminal_record_repaired",
+            )
+            self.assertEqual(persisted.completion_payload, stale.completion_payload)
 
     async def test_acknowledged_repair_releases_queued_capacity_atomically(
         self,
@@ -1425,6 +1608,138 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
                 await manager.recover_session(session_id)
             with self.assertRaises(AgentSessionRecoveryError):
                 await manager.prompt("must not run", session_id=session_id)
+
+    def test_lost_release_cannot_report_newer_fence_as_absent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="target")
+            ledger = DispatchStore(Path(tmp))
+            session_id = "session-newer-repair-fence"
+            fence_id = "dispatch:newer-repair-fence"
+            ledger.put(
+                DispatchRecord(
+                    dispatch_id="dispatch-newer-repair-fence",
+                    mutation_id="mutation-newer-repair-fence",
+                    authority_instance_id="target",
+                    authority_url="http://target",
+                    target_instance_id="target",
+                    session_id=session_id,
+                    state="completed",
+                    acknowledged_at=datetime.now(UTC),
+                )
+            )
+            manager = AgentSessionManager(
+                settings, MagicMock(), dispatch_store=ledger
+            )
+            manager.acquire_terminal_repair_fence(
+                session_id,
+                fence_id=fence_id,
+                acquisition_id="old-acquisition",
+            )
+            original_release = manager.release_terminal_repair_fence
+
+            def replace_before_release(
+                current_session_id,
+                *,
+                fence_id,
+                acquisition_id=None,
+            ):
+                manager.acquire_terminal_repair_fence(
+                    current_session_id,
+                    fence_id=fence_id,
+                    acquisition_id="new-acquisition",
+                )
+                return original_release(
+                    current_session_id,
+                    fence_id=fence_id,
+                    acquisition_id=acquisition_id,
+                )
+
+            with patch.object(
+                manager,
+                "release_terminal_repair_fence",
+                side_effect=replace_before_release,
+            ):
+                with self.assertRaises(AgentSessionRecoveryError):
+                    manager._require_not_terminal_repair_fenced(session_id)
+
+            self.assertEqual(
+                manager._terminal_repair_fence_acquisitions[session_id],
+                "new-acquisition",
+            )
+
+    async def test_local_compare_conflict_releases_exact_fence_acquisition(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="target")
+            ledger = DispatchStore(Path(tmp))
+            record = DispatchRecord(
+                dispatch_id="dispatch-local-fence-conflict",
+                mutation_id="mutation-local-fence-conflict",
+                card_id="card-done",
+                authority_instance_id="target",
+                authority_url="http://target",
+                target_instance_id="target",
+                session_id="session-local-fence-conflict",
+                state="running",
+                recoverable=False,
+            )
+            ledger.put(record)
+            session = AgentSession(
+                id=record.session_id or "",
+                agent_name="codex",
+                origin_instance_id="target",
+                authority_instance_id="target",
+                dispatch_id=record.dispatch_id,
+                status="closed",
+            )
+            domain = MagicMock()
+            domain.get_card.return_value = SimpleNamespace(lane=CardLane.DONE)
+            reads = 0
+
+            def mutate_on_revalidation(_session_id):
+                nonlocal reads
+                reads += 1
+                if reads == 2:
+                    concurrent = ledger.get(record.dispatch_id)
+                    assert concurrent is not None
+                    ledger.transition(
+                        concurrent,
+                        "running",
+                        "Concurrent same-state lifecycle evidence.",
+                    )
+                return session
+
+            domain.get_session.side_effect = mutate_on_revalidation
+            manager = AgentSessionManager(settings, domain, dispatch_store=ledger)
+            request = request_for(
+                settings,
+                domain,
+                {"dispatch_store": ledger, "instance_agent": manager},
+            )
+            body = DispatchTerminalRepairBody(
+                idempotency_key="repair-local-fence-conflict",
+                mode="abandoned_without_acknowledgement",
+                expected_state="running",
+                reason="Exercise the exact local fence generation cleanup.",
+                confirm_no_outcome_inference=True,
+            )
+
+            with (
+                patch("pa.modules.fleet.require_user"),
+                self.assertRaises(HTTPException) as raised,
+            ):
+                await repair_terminal_dispatch(request, record.dispatch_id, body)
+
+            self.assertEqual(
+                raised.exception.detail["code"],
+                "terminal_repair_concurrent_change",
+            )
+            persisted = ledger.get(record.dispatch_id)
+            assert persisted is not None
+            self.assertEqual(persisted.state, "running")
+            self.assertIsNone(persisted.terminal_repair_reservation)
+            self.assertIsNone(manager.terminal_repair_fence_id(session.id))
 
     async def test_losing_same_key_repair_cannot_release_newer_fence(
         self,

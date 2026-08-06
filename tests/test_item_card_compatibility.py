@@ -159,7 +159,7 @@ class ItemCardHttpCompatibilityTests(unittest.TestCase):
                 moved = client.patch(
                     f"/api/cards/{card_id}",
                     json={"status": "active"},
-                    headers=headers,
+                    headers={**headers, "Idempotency-Key": "compat-move"},
                 )
                 self.assertEqual(moved.status_code, 200, moved.text)
                 self.assertEqual(moved.json()["lane"], "active")
@@ -171,7 +171,7 @@ class ItemCardHttpCompatibilityTests(unittest.TestCase):
                 conflict = client.patch(
                     f"/api/cards/{card_id}",
                     json={"lane": "done", "status": "blocked"},
-                    headers=headers,
+                    headers={**headers, "Idempotency-Key": "compat-conflict"},
                 )
                 self.assertEqual(conflict.status_code, 422)
 

@@ -51,6 +51,25 @@ class OpenAPIContractTests(TestCase):
         self.assertEqual(sync["security"], [{"instanceBearer": []}])
         self.assertNotIn("403", sync["responses"])
 
+    def test_mutation_recovery_contract_requires_idempotency_headers(self) -> None:
+        for path, method in (
+            ("/api/cards", "post"),
+            ("/api/cards/{card_id}", "patch"),
+            ("/api/sync/reconcile", "post"),
+            ("/api/sync/conflicts/resolve", "post"),
+        ):
+            with self.subTest(path=path):
+                operation = self.schema["paths"][path][method]
+                header = next(
+                    item
+                    for item in operation["parameters"]
+                    if item["name"] == "Idempotency-Key"
+                )
+                self.assertTrue(header["required"])
+                self.assertEqual(header["schema"]["minLength"], 1)
+                self.assertEqual(header["schema"]["maxLength"], 300)
+
+
     def test_remote_dispatch_documents_linkage_idempotency_and_examples(self) -> None:
         operation = self.schema["paths"][
             "/api/fleet/instances/{instance_id}/agent/start"

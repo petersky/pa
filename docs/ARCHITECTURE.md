@@ -176,6 +176,17 @@ reloads refs and rebuilds a stale projection without restarting the server.
 Ref reads also refresh from disk, and ref mutations use a file lock plus CAS as
 defense against older utilities or accidental concurrent processes.
 
+Card creation, card updates/transitions, sync reconciliation, and manual conflict
+resolution require an `Idempotency-Key` header. Their MCP equivalents require the
+same `idempotency_key` field. A retry must reuse the exact key and payload; a key
+reused for a different payload fails with a typed conflict. Successful responses
+include `X-PA-Operation-ID`, while an interrupted caller can use MCP
+`get_operation_outcome` or `GET /api/operations/{idempotency_key}` to distinguish a
+durable success, an operation still in progress, and a request that is safe to
+retry with the same key. Projection startup and lookup both recover a durable
+event that was appended before a process stopped, so callers do not need to issue
+an un-attributable duplicate mutation.
+
 Do not share one `PA_DATA_DIR` over NFS, mount it into multiple containers, run
 two servers against it, or use Python scripts that call `Store`, `EventLog`, or
 `rebuild_from_log` beside a live server. High availability uses separate PA

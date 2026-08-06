@@ -28,6 +28,7 @@ from pa.instance.agent_session import reset_instance_agent
 from pa.mcp.local_api import (
     LocalPARequestError,
     LocalPAServerUnavailable,
+    LocalPAUnknownOutcome,
     request_local_pa,
 )
 from pa.modules.items import ItemsModule
@@ -481,13 +482,120 @@ class LocalMcpApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), agent_enabled=False)
             with (
-                patch("httpx.request", side_effect=httpx.ReadTimeout("slow owner")),
-                self.assertRaises(LocalPAServerUnavailable) as raised,
+                patch(
+                    "httpx.request",
+                    side_effect=httpx.ReadTimeout("slow owner"),
+                ) as request,
+                self.assertRaises(LocalPAUnknownOutcome) as raised,
             ):
                 request_local_pa(settings, "POST", "/api/fleet/dispatch", json={})
             self.assertIn("operation=POST", str(raised.exception))
             self.assertNotIn("has no attribute", str(raised.exception))
             self.assertIn("same idempotency key", str(raised.exception))
+            self.assertEqual(raised.exception.recovery_action, "get_operation_outcome")
+            self.assertEqual(raised.exception.recovery_state, "lookup_required")
+            sent_key = request.call_args.kwargs["headers"]["Idempotency-Key"]
+            self.assertEqual(raised.exception.idempotency_key, sent_key)
+
+    def test_mutation_server_errors_are_unknown_without_noncommit_proof(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), agent_enabled=False)
+            for status in (500, 503):
+                with self.subTest(status=status):
+                    detail = {
+                        "code": "server_failure",
+                        "message": "failure after an unknown boundary",
+                    }
+                    response = httpx.Response(
+                        status,
+                        json={"detail": detail},
+                        headers={"X-Request-ID": f"server-{status}"},
+                        request=httpx.Request(
+                            "POST", "http://127.0.0.1/api/cards"
+                        ),
+                    )
+                    with (
+                        patch("httpx.request", return_value=response) as request,
+                        self.assertRaises(LocalPAUnknownOutcome) as raised,
+                    ):
+                        request_local_pa(
+                            settings,
+                            "POST",
+                            "/api/cards",
+                            json={"title": "Ambiguous"},
+                            headers={"Idempotency-Key": "stable-mutation-key"},
+                        )
+                    error = raised.exception
+                    self.assertEqual(error.status, status)
+                    self.assertEqual(error.detail, detail)
+                    self.assertEqual(error.idempotency_key, "stable-mutation-key")
+                    self.assertEqual(error.correlation_id, f"server-{status}")
+                    self.assertEqual(
+                        error.recovery_action, "get_operation_outcome"
+                    )
+                    self.assertEqual(error.recovery_state, "lookup_required")
+                    self.assertIn("same idempotency key", str(error))
+                    self.assertEqual(
+                        request.call_args.kwargs["headers"]["Idempotency-Key"],
+                        "stable-mutation-key",
+                    )
+
+    def test_lost_mutation_response_preserves_supplied_key(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), agent_enabled=False)
+            with (
+                patch(
+                    "httpx.request",
+                    side_effect=httpx.ReadError("response stream lost"),
+                ),
+                self.assertRaises(LocalPAUnknownOutcome) as raised,
+            ):
+                request_local_pa(
+                    settings,
+                    "PATCH",
+                    "/api/cards/card-1",
+                    json={"title": "Possibly committed"},
+                    headers={"Idempotency-Key": "lost-response-key"},
+                )
+            self.assertEqual(
+                raised.exception.idempotency_key, "lost-response-key"
+            )
+            self.assertEqual(
+                raised.exception.recovery_action, "get_operation_outcome"
+            )
+            self.assertIn("same idempotency key", str(raised.exception))
+
+    def test_malformed_success_response_is_a_recoverable_unknown_outcome(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), agent_enabled=False)
+            response = httpx.Response(
+                200,
+                content=b'{"committed":',
+                headers={"X-Request-ID": "server-correlation"},
+                request=httpx.Request("POST", "http://127.0.0.1/api/cards"),
+            )
+            with (
+                patch("httpx.request", return_value=response),
+                self.assertRaises(LocalPAUnknownOutcome) as raised,
+            ):
+                request_local_pa(
+                    settings,
+                    "POST",
+                    "/api/cards",
+                    json={"title": "Possibly committed"},
+                    headers={"Idempotency-Key": "malformed-success-key"},
+                )
+
+            error = raised.exception
+            self.assertEqual(error.idempotency_key, "malformed-success-key")
+            self.assertEqual(error.status, 200)
+            self.assertEqual(error.correlation_id, "server-correlation")
+            self.assertEqual(error.recovery_state, "lookup_required")
+            self.assertEqual(error.recovery_action, "get_operation_outcome")
+            self.assertEqual(error.detail["code"], "invalid_success_response")
+            self.assertNotIn('{"committed":', str(error))
 
     def test_request_timeout_can_be_extended_for_durable_admission(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -649,6 +757,8 @@ class LocalMcpApiTests(unittest.TestCase):
                 "dispatch_id": "dispatch-1",
                 "target_instance_id": "target-1",
                 "target_correlation_id": "target-correlation",
+                "committed": False,
+                "recovery_state": "safe_to_retry_with_same_key",
             }
             response = httpx.Response(
                 503,
@@ -750,7 +860,11 @@ class LocalMcpApiTests(unittest.TestCase):
                     self.assertEqual(ready.status_code, 200, ready.text)
                     self.assertEqual(ready.json()["instance_id"], "owner")
                     card = client.post(
-                        "/api/cards", json={"title": "owner card"}, headers=headers
+                        "/api/cards",
+                        json={"title": "owner card"},
+                        headers={
+                            **headers, "Idempotency-Key": "owner-card-create"
+                        },
                     )
                     self.assertEqual(card.status_code, 201, card.text)
                     item = client.post(

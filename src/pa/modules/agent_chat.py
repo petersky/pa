@@ -242,6 +242,7 @@ class CreateSessionBody(BaseModel):
     attach_default: bool = False
     provider: str | None = None
     surface: str | None = None
+    model_provider: str | None = None
     model_id: str | None = None
     mode_id: str | None = None
     effort: str | None = None
@@ -289,6 +290,8 @@ def _configuration_request(
         model_id=body.model_id or (defaults.model_id if defaults else None),
         mode_id=body.mode_id or (defaults.mode_id if defaults else None),
         reasoning=body.effort or (defaults.effort if defaults else None),
+        model_provider=body.model_provider
+        or (defaults.model_provider if defaults else None),
         config=config,
     )
 
@@ -815,7 +818,12 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
     except HTTPException:
         raise
     except Exception as exc:
+        from pa.acp.errors import classify_acp_failure
+
         provider_id = str(body.provider or settings.agent_provider).strip().lower()
+        classified = classify_acp_failure(
+            exc, provider_id=provider_id, stage="session_admission"
+        )
         health = sandbox_health_registry.failure(
             provider_id,
             "workspace-write",
@@ -824,6 +832,7 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                 "stage": "session_admission",
                 "session_level": True,
                 "dispatch_id": dispatch_record.dispatch_id if dispatch_record else None,
+                "failure": classified,
             },
         )
         if dispatch_record and dispatch_store:
@@ -832,12 +841,13 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                 "dispatch.sandbox_admission_failure",
                 dispatch_store.fail,
                 dispatch_record,
-                "Provider sandbox/session admission failed before prompt delivery.",
-                code=health["classification"],
-                recoverable=True,
-                detail={"sandbox_health": health},
+                classified.get("message")
+                or "Provider sandbox/session admission failed before prompt delivery.",
+                code=classified.get("code") or health["classification"],
+                recoverable=bool(classified.get("recoverable", True)),
+                detail={"sandbox_health": health, "failure": classified},
             )
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=503, detail=classified) from exc
     if dispatch_record:
         if (
             dispatch_record.session_id
@@ -1255,12 +1265,16 @@ def _session_list_item(
 
 
 @router.get("/provider-options/{provider_id}")
-def get_provider_options(request: Request, provider_id: str) -> dict:
+def get_provider_options(
+    request: Request,
+    provider_id: str,
+    model_provider: str | None = None,
+) -> dict:
     """Return live or durably cached session options for a provider."""
     from pa.acp.providers.registry import get_provider
 
     try:
-        get_provider(provider_id)
+        provider = get_provider(provider_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     mgr = _manager(request)
@@ -1279,31 +1293,100 @@ def get_provider_options(request: Request, provider_id: str) -> dict:
             and not getattr(runtime, "_closed", False)
             and runtime.connection
         ):
-            return {
+            payload = {
                 "provider": provider_id,
                 "models": runtime.connection.models,
                 "modes": runtime.connection.modes,
                 "config_options": runtime.connection.config_options,
                 "cached": False,
+                "source": "live_session",
             }
+            if provider_id == "openinterpreter":
+                from pa.acp.providers.openinterpreter import provider_options_snapshot
+
+                catalog = provider_options_snapshot(
+                    request.app.state.ctx.settings.data_dir,
+                    model_provider=model_provider,
+                )
+                payload["model_providers"] = catalog.get("model_providers")
+                payload["supports_model_provider"] = True
+                payload["model_provider"] = catalog.get("model_provider")
+                if model_provider:
+                    # Selecting a different backend refreshes models before start.
+                    payload["models"] = catalog.get("models")
+                    payload["config_options"] = catalog.get("config_options")
+                    payload["source"] = "openinterpreter_catalog"
+            return payload
     for session in mgr.store.list_sessions():
         if session.agent_name != provider_id or not session_is_visible(session):
             continue
         config = dict(session.config_json or {})
         if any(key in config for key in ("models", "modes", "options")):
-            return {
+            payload = {
                 "provider": provider_id,
                 "models": config.get("models"),
                 "modes": config.get("modes"),
                 "config_options": config.get("options"),
                 "cached": True,
+                "source": "session_cache",
             }
+            if provider_id == "openinterpreter":
+                from pa.acp.providers.openinterpreter import provider_options_snapshot
+
+                catalog = provider_options_snapshot(
+                    request.app.state.ctx.settings.data_dir,
+                    model_provider=model_provider
+                    or (config.get("configuration") or {})
+                    .get("requested", {})
+                    .get("model_provider")
+                    or (config.get("configuration") or {})
+                    .get("effective", {})
+                    .get("model_provider"),
+                )
+                payload["model_providers"] = catalog.get("model_providers")
+                payload["supports_model_provider"] = True
+                payload["model_provider"] = catalog.get("model_provider")
+                if model_provider or not payload["models"]:
+                    payload["models"] = catalog.get("models")
+                    payload["modes"] = payload["modes"] or catalog.get("modes")
+                    payload["config_options"] = (
+                        payload["config_options"] or catalog.get("config_options")
+                    )
+            return payload
+    if provider_id == "openinterpreter":
+        from pa.acp.providers.openinterpreter import provider_options_snapshot
+
+        return provider_options_snapshot(
+            request.app.state.ctx.settings.data_dir,
+            model_provider=model_provider,
+        )
+    # Prefer provider status metadata options when a host cached them.
+    status_meta = {}
+    try:
+        status = provider.status(request.app.state.ctx.settings.data_dir)
+        status_meta = dict(getattr(status, "meta", None) or {})
+    except Exception:
+        status_meta = {}
+    options = status_meta.get("options") if isinstance(status_meta, dict) else None
+    if isinstance(options, dict) and any(
+        options.get(key) for key in ("models", "modes", "config_options")
+    ):
+        return {
+            "provider": provider_id,
+            "models": options.get("models"),
+            "modes": options.get("modes"),
+            "config_options": options.get("config_options"),
+            "model_providers": status_meta.get("model_providers"),
+            "cached": True,
+            "source": "provider_status",
+        }
     return {
         "provider": provider_id,
         "models": None,
         "modes": None,
         "config_options": None,
         "cached": True,
+        "source": "empty",
     }
 
 
