@@ -104,6 +104,7 @@ class Kernel:
             get_instance_agent,
             self.ctx.settings,
             self.ctx.store,
+            self.ctx.services.get("dispatch_store"),
             timeout=120.0,
         )
         agent.async_runtime = async_runtime

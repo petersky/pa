@@ -1047,7 +1047,7 @@ class CoreWorkUiRouteTests(unittest.TestCase):
         memory = (root / "pages" / "knowledge.html").read_text()
         fleet = (root / "pages" / "fleet.html").read_text()
 
-        self.assertIn('aria-label="Reconnect agent"', chrome)
+        self.assertIn('aria-label="Open Sessions; agent is', chrome)
         self.assertIn('aria-label="Toggle theme appearance"', chrome)
         self.assertIn('aria-label="Settings"', chrome)
         self.assertIn('aria-label="Tool activity"', agent)

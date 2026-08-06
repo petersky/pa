@@ -25,7 +25,9 @@
     {% if action.kind == 'retry' %}
     <button type="button" class="small"
             data-card-dispatch-retry="{{ action.dispatch_id }}">{{ action.label }}</button>
-    {% elif action.kind in ('respond', 'review', 'open_agent') %}
+    {% elif action.kind == 'open_agent' %}
+    <a class="button small" href="{{ action.href }}">{{ action.label or 'Open exact session' }}</a>
+    {% elif action.kind in ('respond', 'review') %}
     <a class="button small" href="{{ action.href }}"
        {% if action.external %}target="_blank" rel="noopener"{% endif %}>{{ action.label }}</a>
     {% elif presentation.action_explanation %}

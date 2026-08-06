@@ -9,6 +9,7 @@ import os
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
+from threading import RLock
 from typing import TYPE_CHECKING, Any, Literal
 from uuid import uuid4
 
@@ -2103,9 +2104,15 @@ class AgentSessionRuntime:
 class AgentSessionManager:
     """Tracks many concurrent ACP sessions (one subprocess each)."""
 
-    def __init__(self, settings: Settings, store: Store) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        store: Store,
+        dispatch_store: Any | None = None,
+    ) -> None:
         self.settings = settings
         self.store = store
+        self.dispatch_store = dispatch_store
         self._runtimes: dict[str, AgentSessionRuntime] = {}
         self._quiescing = False
         self._accepting = True
@@ -2124,6 +2131,12 @@ class AgentSessionManager:
         self._default_label = "default"
         self._lock = asyncio.Lock()
         self._reconnect_lock = asyncio.Lock()
+        # Runtime publication also happens after awaited provider startup. A
+        # synchronous fleet repair probe must be able to fence that final
+        # publication atomically with its no-live-runtime observation.
+        self._runtime_lifecycle_lock = RLock()
+        self._terminal_repair_fences: dict[str, str] = {}
+        self._terminal_repair_fence_acquisitions: dict[str, str] = {}
         self._reconnect_task: asyncio.Task[bool] | None = None
         self._label_locks: dict[str, asyncio.Lock] = {}
         self.async_runtime: AsyncRuntime | None = None
@@ -2536,13 +2549,142 @@ class AgentSessionManager:
         return self._quiescing or is_shutting_down()
 
     def get(self, session_id: str) -> AgentSessionRuntime | None:
-        return self._runtimes.get(session_id)
+        with self._runtime_lifecycle_lock:
+            return self._runtimes.get(session_id)
+
+    def acquire_terminal_repair_fence(
+        self,
+        session_id: str,
+        *,
+        fence_id: str,
+        acquisition_id: str | None = None,
+    ) -> AgentSessionRuntime | None:
+        """Fence future runtime publication after observing no live runtime.
+
+        Provider startup is asynchronous and used to publish directly into the
+        runtime map after its final await. The lifecycle lock makes that
+        publication race with this check instead of racing after it. A fence is
+        intentionally retained: terminal repair is only valid for a closed,
+        nonrecoverable dispatch, so publishing a later runtime for that exact PA
+        session would invalidate the evidence used to retire it.
+        """
+        with self._runtime_lifecycle_lock:
+            runtime = self._runtimes.get(session_id)
+            if runtime is not None and not getattr(runtime, "_closed", False):
+                return runtime
+            self._terminal_repair_fences[session_id] = fence_id
+            self._terminal_repair_fence_acquisitions[session_id] = (
+                acquisition_id or str(uuid4())
+            )
+            return None
+
+    def terminal_repair_fence_id(self, session_id: str) -> str | None:
+        ledger = self.dispatch_store
+        with self._runtime_lifecycle_lock:
+            fence_acquisition_id = self._terminal_repair_fence_acquisitions.get(
+                session_id
+            )
+            fence_id = self._terminal_repair_fences.get(session_id)
+        if ledger is None:
+            return fence_id
+        record = ledger.by_session(session_id)
+        reservation = record.terminal_repair_reservation if record else None
+        reservation_state = reservation.get("state") if reservation else None
+        if (
+            record
+            and record.target_instance_id == self.settings.instance_id
+            and reservation
+            and reservation_state in {"prepared", "committed"}
+        ):
+            durable_fence_id = str(reservation.get("reservation_id") or "").strip()
+            if durable_fence_id:
+                with self._runtime_lifecycle_lock:
+                    if session_id not in self._terminal_repair_fences:
+                        self._terminal_repair_fences[session_id] = durable_fence_id
+                        self._terminal_repair_fence_acquisitions[session_id] = (
+                            f"durable:{uuid4()}"
+                        )
+                    return self._terminal_repair_fences[session_id]
+        repair_lost = bool(
+            record
+            and (
+                reservation_state in {"superseded_by_completion", "aborted"}
+                or record.state not in {"queued", "dispatching", "running"}
+                or record.completion_payload is not None
+                or record.acknowledged_at is not None
+            )
+        )
+        if fence_id is not None and repair_lost:
+            released = self.release_terminal_repair_fence(
+                session_id,
+                fence_id=fence_id,
+                acquisition_id=fence_acquisition_id,
+            )
+            if released:
+                return None
+            # A same-key retry may have installed a newer acquisition between
+            # the snapshot above and the generation-checked release. Never tell
+            # admission that the session is unfenced after losing that race.
+            with self._runtime_lifecycle_lock:
+                return self._terminal_repair_fences.get(session_id)
+        return fence_id
+
+    def release_terminal_repair_fence(
+        self,
+        session_id: str,
+        *,
+        fence_id: str,
+        acquisition_id: str | None = None,
+    ) -> bool:
+        """Release only the exact losing ephemeral repair fence."""
+        with self._runtime_lifecycle_lock:
+            if self._terminal_repair_fences.get(session_id) != fence_id:
+                return False
+            if (
+                acquisition_id is not None
+                and self._terminal_repair_fence_acquisitions.get(session_id)
+                != acquisition_id
+            ):
+                return False
+            self._terminal_repair_fences.pop(session_id, None)
+            self._terminal_repair_fence_acquisitions.pop(session_id, None)
+            return True
+
+    def bind_dispatch_store(self, dispatch_store: Any | None) -> None:
+        """Bind the canonical ledger used to restore durable repair fences."""
+        self.dispatch_store = dispatch_store
+
+    def _require_not_terminal_repair_fenced(self, session_id: str) -> None:
+        fence_id = self.terminal_repair_fence_id(session_id)
+        if fence_id is not None:
+            raise AgentSessionRecoveryError(
+                "PA session admission is fenced by terminal dispatch repair"
+            )
+
+    async def _publish_runtime(self, runtime: AgentSessionRuntime) -> None:
+        """Publish a started runtime unless terminal evidence fenced its session."""
+        durable_fence_id = self.terminal_repair_fence_id(runtime.session_id)
+        with self._runtime_lifecycle_lock:
+            fence_id = self._terminal_repair_fences.get(runtime.session_id)
+            fence_id = fence_id or durable_fence_id
+            if fence_id is None:
+                self._runtimes[runtime.session_id] = runtime
+                return
+        await runtime.close(
+            reason="terminal_dispatch_repair_fenced",
+            reconcile_workspace=False,
+        )
+        raise RuntimeError(
+            "session runtime publication was fenced by terminal dispatch repair"
+        )
 
     def list_sessions(self) -> list[AgentSession]:
-        return [rt.session for rt in self._runtimes.values()]
+        with self._runtime_lifecycle_lock:
+            return [rt.session for rt in self._runtimes.values()]
 
     def list_runtimes(self) -> list[AgentSessionRuntime]:
-        return list(self._runtimes.values())
+        with self._runtime_lifecycle_lock:
+            return list(self._runtimes.values())
 
     async def reconcile_closed_sessions(self, session_ids: list[str]) -> None:
         """Expire closed-session leases, then reconcile and collect once."""
@@ -3222,7 +3364,7 @@ class AgentSessionManager:
             queue_paused=snap.queue_paused,
             provider_spec=provider_spec,
         )
-        self._runtimes[runtime.session_id] = runtime
+        await self._publish_runtime(runtime)
         self._invalidate_provider_overview()
         return runtime
 
@@ -3537,7 +3679,7 @@ class AgentSessionManager:
                     session.id,
                 )
             raise RuntimeError(classified.get("message") or str(exc)) from exc
-        self._runtimes[runtime.session_id] = runtime
+        await self._publish_runtime(runtime)
         self._invalidate_provider_overview()
         return runtime
 
@@ -3595,6 +3737,7 @@ class AgentSessionManager:
         """Reconnect one durable PA session without creating a second PA identity."""
         self.require_startup_complete()
         async with self.label_lock(f"recover:{session_id}"):
+            self._require_not_terminal_repair_fenced(session_id)
             runtime = self.get(session_id)
             if runtime and not runtime._closed:
                 return runtime
@@ -3670,7 +3813,8 @@ class AgentSessionManager:
     ) -> QueuedPrompt:
         runtime = None
         if session_id:
-            runtime = self._runtimes.get(session_id)
+            self._require_not_terminal_repair_fenced(session_id)
+            runtime = self.get(session_id)
         if runtime is None:
             # Best-effort: use default if present
             for rt in self._runtimes.values():
@@ -3720,7 +3864,8 @@ class AgentSessionManager:
     ) -> str:
         self.require_startup_complete()
         if session_id:
-            runtime = self._runtimes.get(session_id)
+            self._require_not_terminal_repair_fenced(session_id)
+            runtime = self.get(session_id)
             if not runtime:
                 runtime = await self.recover_session(session_id)
         else:
@@ -3944,10 +4089,18 @@ InstanceAgent = AgentSessionManager
 _instance_agent: AgentSessionManager | None = None
 
 
-def get_instance_agent(settings: Settings, store: Store) -> AgentSessionManager:
+def get_instance_agent(
+    settings: Settings,
+    store: Store,
+    dispatch_store: Any | None = None,
+) -> AgentSessionManager:
     global _instance_agent
     if _instance_agent is None:
-        _instance_agent = AgentSessionManager(settings, store)
+        _instance_agent = AgentSessionManager(
+            settings, store, dispatch_store=dispatch_store
+        )
+    elif dispatch_store is not None:
+        _instance_agent.bind_dispatch_store(dispatch_store)
     return _instance_agent
 
 
