@@ -17,8 +17,10 @@ from pa.fleet.bootstrap import (
     TargetDiscovery,
     accept_bootstrap_input,
     build_bootstrap_plan,
+    run_bootstrap_job,
 )
 from pa.fleet.remote_install import (
+    InstallJobStatus,
     InstallJobStore,
     RemoteInstallRequest,
     _connect_ssh,
@@ -200,6 +202,63 @@ class BootstrapJobStoreTests(unittest.TestCase):
 
 
 class SecureRemoteInstallTests(unittest.IsolatedAsyncioTestCase):
+    async def test_resumed_join_uses_persisted_preflight_executable(self) -> None:
+        from pa.config import Settings
+        from pa.fleet.registry import FleetRegistry
+
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp)
+            settings = Settings(
+                data_dir=data_dir,
+                instance_url="http://owner:8080",
+                subscribed_realms=["default"],
+                sync_token="sync-token",
+            )
+            fleet = FleetRegistry(data_dir, settings.fleet_id)
+            store = BootstrapJobStore(data_dir)
+            job, _ = store.create(
+                _request(existing_install_action="join_only"),
+                idempotency_key="resume-join",
+                actor="user:local",
+                authority_instance_id="authority-1",
+                authority_url="http://owner:8080",
+                discovery=_discovery(),
+            )
+            job.phase_record(BootstrapPhase.RESOLVE_TARGET).state = PhaseState.SUCCEEDED
+            job.phase_record(BootstrapPhase.PREFLIGHT_HOST).state = PhaseState.SUCCEEDED
+            job.checkpoints[BootstrapPhase.PREFLIGHT_HOST.value] = {
+                "pa": "/home/peter/.local/bin/pa",
+            }
+            store.save(job)
+            captured: list[RemoteInstallRequest] = []
+
+            async def fail_after_capture(
+                settings, fleet, legacy_store, legacy_job, remote, **kwargs
+            ):
+                captured.append(remote)
+                legacy_job.status = InstallJobStatus.FAILED
+                legacy_job.error = "captured"
+                return legacy_job
+
+            with patch(
+                "pa.fleet.bootstrap.run_install_job",
+                side_effect=fail_after_capture,
+            ):
+                await run_bootstrap_job(
+                    settings,
+                    fleet,
+                    store,
+                    job,
+                    domain_store=MagicMock(),
+                    author_instance_id="authority-1",
+                )
+
+            self.assertEqual(len(captured), 1)
+            self.assertEqual(
+                captured[0].pa_executable,
+                "/home/peter/.local/bin/pa",
+            )
+
     async def test_strict_connection_does_not_disable_known_hosts(self) -> None:
         request = RemoteInstallRequest(
             host="mini",
