@@ -2,22 +2,22 @@ from __future__ import annotations
 
 import asyncio
 import base64
-from typing import Any, Callable
+from typing import Annotated, Any, Callable
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Header, HTTPException, Request, Response
 
 from pa.auth.middleware import get_principal_id
 from pa.core.contracts import Module
 from pa.core.context import AppContext
-from pa.domain.store import get_store
 from pa.domain.models import Card, CardEvent, EventType, Project
+from pa.domain.store import get_store
 from pa.fleet.membership import MembershipStore
 from pa.intake.models import IdentityBinding, IntakeEnvelope
 from pa.intake.projection import get_envelope_payload, get_identity_payload_by_id
+from pa.modules.items import _begin_operation, _replay_operation
 from pa.sync.compaction import SyncMetrics
 from pa.sync.engine import SyncEngine
-from pa.sync.event_log import EventLog
-from pa.sync.event_log import StaleSyncHeadError
+from pa.sync.event_log import EventLog, StaleSyncHeadError
 from pa.sync.infrastructure import get_event_log, get_object_store
 from pa.sync.object_store import ObjectStore
 
@@ -331,7 +331,13 @@ def sync_audit(request: Request, realm: str | None = None) -> dict:
 
 
 @router.post("/sync/conflicts/resolve")
-async def resolve_sync_conflicts(request: Request, body: dict) -> dict:
+async def resolve_sync_conflicts(
+    request: Request, body: dict, response: Response,
+    _idempotency_key: Annotated[
+        str,
+        Header(alias="Idempotency-Key", min_length=1, max_length=300),
+    ],
+) -> dict:
     """Resolve divergent fields by recording an auditable merge commit."""
     realm_id = body.get("realm_id") or request.app.state.ctx.settings.primary_realm
     remote_head = body.get("remote_head", "")
@@ -341,6 +347,19 @@ async def resolve_sync_conflicts(request: Request, body: dict) -> dict:
             status_code=413, detail="resolutions must contain at most 1000 entries"
         )
     _check_realm_access(request, realm_id)
+    store = get_store()
+    key, fingerprint, replay = _replay_operation(
+        request,
+        operation="sync.resolve_conflicts",
+        realm_id=realm_id,
+        payload={"remote_head": remote_head, "resolutions": resolutions},
+        store=store,
+    )
+    response.headers["X-PA-Operation-ID"] = key
+    if replay is not None:
+        response.headers["X-PA-Operation-Replayed"] = "true"
+        return replay
+
     ctx: AppContext = request.app.state.ctx
     log: EventLog = ctx.require_service("event_log")
     local_head, remote_commit = await _offload(
@@ -353,7 +372,6 @@ async def resolve_sync_conflicts(request: Request, body: dict) -> dict:
     )
     if not local_head or not remote_commit or remote_commit.realm_id != realm_id:
         raise HTTPException(status_code=400, detail="valid remote_head required")
-    store = get_store()
 
     def prepare_resolution() -> tuple[bool, dict]:
         with store.mutation():
@@ -573,15 +591,36 @@ async def resolve_sync_conflicts(request: Request, body: dict) -> dict:
                 )
             )
 
+    key, fingerprint, replay = _begin_operation(
+        request,
+        operation="sync.resolve_conflicts",
+        realm_id=realm_id,
+        payload={"remote_head": remote_head, "resolutions": resolutions},
+        store=store,
+    )
+    if response is not None:
+        response.headers["X-PA-Operation-ID"] = key
+    if replay is not None:
+        if response is not None:
+            response.headers["X-PA-Operation-Replayed"] = "true"
+        return replay
+
     def commit_resolution():
         try:
             with store.mutation():
                 merge = log.resolve_heads(
-                    realm_id, local_head, remote_head, events, principal
+                    realm_id,
+                    local_head,
+                    remote_head,
+                    events,
+                    principal,
+                    idempotency_key=key,
+                    request_fingerprint=fingerprint,
                 )
                 store.rebuild_from_log(realm_id)
             return merge
         except StaleSyncHeadError as exc:
+            store.fail_operation(key, "stale_sync_head")
             raise HTTPException(
                 status_code=409,
                 detail={"code": "stale_sync_head", "actual_head": exc.actual},
@@ -593,13 +632,15 @@ async def resolve_sync_conflicts(request: Request, body: dict) -> dict:
     )
     engine: SyncEngine = ctx.require_service("sync_engine")
     convergence = await engine.converge_realm(realm_id)
-    return {
+    result = {
         "realm_id": realm_id,
         "head": convergence["head"],
         "resolution_head": merge.hash,
         "resolved": len(events),
         "convergence": convergence,
     }
+    store.complete_operation(key, result)
+    return result
 
 
 @router.get("/sync/status")
@@ -614,35 +655,59 @@ async def sync_status(request: Request, realm: str | None = None) -> dict:
 
 
 @router.post("/sync/reconcile")
-def sync_reconcile(request: Request, body: dict) -> dict:
+def sync_reconcile(
+    request: Request,
+    response: Response,
+    body: dict,
+    _idempotency_key: Annotated[
+        str,
+        Header(alias="Idempotency-Key", min_length=1, max_length=300),
+    ],
+) -> dict:
     """Reload durable refs and repair a stale SQLite projection safely."""
     realm_id = body.get("realm_id") or request.app.state.ctx.settings.primary_realm
     _check_realm_access(request, realm_id)
+    key, _fingerprint, replay = _begin_operation(
+        request,
+        operation="sync.reconcile",
+        realm_id=realm_id,
+        payload={"realm_id": realm_id},
+    )
+    response.headers["X-PA-Operation-ID"] = key
+    if replay is not None:
+        response.headers["X-PA-Operation-Replayed"] = "true"
+        return replay
     log: EventLog = request.app.state.ctx.require_service("event_log")
     store = get_store()
-    log.reload_refs()
-    durable_head = log.get_head(realm_id)
-    projection_head = store.get_projection_head(realm_id)
-    rebuilt = False
-    if durable_head and projection_head != durable_head:
-        if not log.get_commit(durable_head):
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "code": "missing_head_object",
-                    "realm_id": realm_id,
-                    "head": durable_head,
-                },
-            )
-        store.rebuild_from_log(realm_id)
-        rebuilt = True
-    return {
-        "realm_id": realm_id,
-        "head": durable_head,
-        "projection_head": store.get_projection_head(realm_id),
-        "rebuilt": rebuilt,
-        "consistent": durable_head == store.get_projection_head(realm_id),
-    }
+    try:
+        log.reload_refs()
+        durable_head = log.get_head(realm_id)
+        projection_head = store.get_projection_head(realm_id)
+        rebuilt = False
+        if durable_head and projection_head != durable_head:
+            if not log.get_commit(durable_head):
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "missing_head_object",
+                        "realm_id": realm_id,
+                        "head": durable_head,
+                    },
+                )
+            store.rebuild_from_log(realm_id)
+            rebuilt = True
+        result = {
+            "realm_id": realm_id,
+            "head": durable_head,
+            "projection_head": store.get_projection_head(realm_id),
+            "rebuilt": rebuilt,
+            "consistent": durable_head == store.get_projection_head(realm_id),
+        }
+        store.complete_operation(key, result)
+        return result
+    except Exception as exc:
+        store.fail_operation(key, type(exc).__name__)
+        raise
 
 
 class SyncModule(Module):
@@ -773,8 +838,13 @@ class SyncModule(Module):
             )
 
         @mcp.tool()
-        async def sync_reconcile(realm: str = "default") -> dict:
+        async def sync_reconcile(
+            idempotency_key: str, realm: str = "default"
+        ) -> dict:
             """Repair a stale local projection from its durable event-log head."""
+            key = idempotency_key.strip()
+            if not key:
+                raise ValueError("idempotency_key cannot be empty")
             return await _offload(
                 ctx,
                 "mcp.sync_reconcile_http",
@@ -783,12 +853,14 @@ class SyncModule(Module):
                 "POST",
                 "/api/sync/reconcile",
                 json={"realm_id": realm},
+                headers={"Idempotency-Key": key},
             )
 
         @mcp.tool()
         async def resolve_sync_conflicts(
             remote_head: str,
             resolutions: list[dict],
+            idempotency_key: str,
             realm: str = "default",
         ) -> dict:
             """Resolve divergent histories with an explicit auditable merge.
@@ -797,6 +869,9 @@ class SyncModule(Module):
             update for field conflicts; delete/archive or a full upsert for a
             delete-vs-edit conflict. Include every field reported as conflicting.
             """
+            key = idempotency_key.strip()
+            if not key:
+                raise ValueError("idempotency_key cannot be empty")
             return await _offload(
                 ctx,
                 "mcp.sync_resolve_http",
@@ -809,4 +884,5 @@ class SyncModule(Module):
                     "remote_head": remote_head,
                     "resolutions": resolutions,
                 },
+                headers={"Idempotency-Key": key},
             )

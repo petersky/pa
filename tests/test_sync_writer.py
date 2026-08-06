@@ -28,6 +28,7 @@ from pa.instance.agent_session import reset_instance_agent
 from pa.mcp.local_api import (
     LocalPARequestError,
     LocalPAServerUnavailable,
+    LocalPAUnknownOutcome,
     request_local_pa,
 )
 from pa.modules.items import ItemsModule
@@ -481,13 +482,20 @@ class LocalMcpApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), agent_enabled=False)
             with (
-                patch("httpx.request", side_effect=httpx.ReadTimeout("slow owner")),
-                self.assertRaises(LocalPAServerUnavailable) as raised,
+                patch(
+                    "httpx.request",
+                    side_effect=httpx.ReadTimeout("slow owner"),
+                ) as request,
+                self.assertRaises(LocalPAUnknownOutcome) as raised,
             ):
                 request_local_pa(settings, "POST", "/api/fleet/dispatch", json={})
             self.assertIn("operation=POST", str(raised.exception))
             self.assertNotIn("has no attribute", str(raised.exception))
             self.assertIn("same idempotency key", str(raised.exception))
+            self.assertEqual(raised.exception.recovery_action, "get_operation_outcome")
+            self.assertEqual(raised.exception.recovery_state, "lookup_required")
+            sent_key = request.call_args.kwargs["headers"]["Idempotency-Key"]
+            self.assertEqual(raised.exception.idempotency_key, sent_key)
 
     def test_request_timeout_can_be_extended_for_durable_admission(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -750,7 +758,11 @@ class LocalMcpApiTests(unittest.TestCase):
                     self.assertEqual(ready.status_code, 200, ready.text)
                     self.assertEqual(ready.json()["instance_id"], "owner")
                     card = client.post(
-                        "/api/cards", json={"title": "owner card"}, headers=headers
+                        "/api/cards",
+                        json={"title": "owner card"},
+                        headers={
+                            **headers, "Idempotency-Key": "owner-card-create"
+                        },
                     )
                     self.assertEqual(card.status_code, 201, card.text)
                     item = client.post(

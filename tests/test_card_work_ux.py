@@ -775,7 +775,10 @@ class CoreWorkUiRouteTests(unittest.TestCase):
 
             created = client.post(
                 "/api/cards",
-                headers={"X-CSRF-Token": token},
+                headers={
+                    "X-CSRF-Token": token,
+                    "Idempotency-Key": "first-load-create",
+                },
                 json={"title": "First-load mutation", "body": "Works safely."},
             )
             self.assertEqual(created.status_code, 201, created.text)

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import fcntl
 import json
 import os
@@ -10,7 +12,9 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
+
+from pydantic import BaseModel, ValidationError
 
 from pa.core.io import atomic_write_json
 from pa.domain.models import CardEvent, EventType, SyncCommit, SyncRef
@@ -18,6 +22,10 @@ from pa.sync.object_store import ObjectStore, object_hash
 
 _AUTOMATIC_METADATA_FIELDS = {("card", "updated_at")}
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+MAX_HISTORY_COMMITS = 100_000
+HISTORY_PAGE_LIMIT = 500
+_SUPPORTED_OBJECT_SCHEMA_VERSION = 1
+_ObjectModel = TypeVar("_ObjectModel", bound=BaseModel)
 _FLEET_EVENT_ENTITY = {
     EventType.INTAKE_ENVELOPE_UPSERTED: "intake",
     EventType.CHANNEL_IDENTITY_UPSERTED: "channel_identity",
@@ -290,17 +298,53 @@ class EventLog:
 
         return event, commit
 
-    def get_event(self, event_hash: str) -> CardEvent | None:
-        data = self.store.get_json(event_hash)
-        if not data:
+    def _get_object(
+        self,
+        object_hash_value: str,
+        model: type[_ObjectModel],
+        object_kind: str,
+    ) -> _ObjectModel | None:
+        raw = self.store.get(object_hash_value)
+        if raw is None:
             return None
-        return CardEvent.model_validate(data)
+        if object_hash(raw) != object_hash_value:
+            raise EventHistoryObjectError(
+                "corrupt_object", object_hash_value, object_kind
+            )
+        try:
+            data = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise EventHistoryObjectError(
+                "corrupt_object", object_hash_value, object_kind
+            ) from exc
+        if not isinstance(data, dict):
+            raise EventHistoryObjectError(
+                "corrupt_object", object_hash_value, object_kind
+            )
+        version = data.get("schema_version", 1)
+        if (
+            not isinstance(version, int)
+            or isinstance(version, bool)
+            or version != _SUPPORTED_OBJECT_SCHEMA_VERSION
+        ):
+            raise EventHistoryObjectError(
+                "unsupported_object_version",
+                object_hash_value,
+                object_kind,
+                schema_version=version,
+            )
+        try:
+            return model.model_validate(data)
+        except ValidationError as exc:
+            raise EventHistoryObjectError(
+                "corrupt_object", object_hash_value, object_kind
+            ) from exc
+
+    def get_event(self, event_hash: str) -> CardEvent | None:
+        return self._get_object(event_hash, CardEvent, "event")
 
     def get_commit(self, commit_hash: str) -> SyncCommit | None:
-        data = self.store.get_json(commit_hash)
-        if not data:
-            return None
-        return SyncCommit.model_validate(data)
+        return self._get_object(commit_hash, SyncCommit, "commit")
 
     def _iter_commits_parent_first(
         self,
@@ -308,17 +352,13 @@ class EventLog:
         *,
         seen: set[str] | None = None,
         stop: set[str] | None = None,
+        max_commits: int = MAX_HISTORY_COMMITS,
     ) -> Iterator[tuple[str, SyncCommit]]:
-        """Walk a commit DAG parent-first without using the Python call stack.
-
-        Parent hashes are visited in their stored order, matching the former
-        recursive depth-first traversal. ``active`` distinguishes a genuine
-        ancestry cycle from an already replayed merge parent so corrupt graphs
-        fail explicitly instead of recursing forever.
-        """
+        """Walk a commit DAG parent-first with deterministic bounded state."""
         visited = seen if seen is not None else set()
         excluded = stop if stop is not None else set()
         active: set[str] = set()
+        max_commits = max(1, min(int(max_commits), MAX_HISTORY_COMMITS))
         stack: list[tuple[str, SyncCommit | None]] = [(commit_hash, None)]
 
         while stack:
@@ -333,14 +373,21 @@ class EventLog:
             if current_hash in excluded or current_hash in visited:
                 continue
 
-            # Mark commits as soon as they are discovered. This preserves the
-            # caller-visible ``seen`` contract and bounds missing/cyclic input.
             active.add(current_hash)
             visited.add(current_hash)
+            if len(visited) > max_commits:
+                raise EventHistoryLimitError(len(visited), max_commits)
             commit = self.get_commit(current_hash)
             if not commit:
-                active.remove(current_hash)
-                continue
+                raise EventHistoryObjectError(
+                    "missing_parent", current_hash, "commit"
+                )
+            if any(not parent for parent in commit.parent_hashes):
+                raise EventHistoryObjectError(
+                    "corrupt_object", current_hash, "commit"
+                )
+            if len(stack) + len(commit.parent_hashes) + 1 > max_commits:
+                raise EventHistoryLimitError(len(visited), max_commits)
 
             stack.append((current_hash, commit))
             stack.extend((parent, None) for parent in reversed(commit.parent_hashes))
@@ -351,12 +398,18 @@ class EventLog:
         handler: Callable[[CardEvent], None],
         *,
         seen: set[str] | None = None,
+        max_commits: int = MAX_HISTORY_COMMITS,
     ) -> None:
-        for _, commit in self._iter_commits_parent_first(commit_hash, seen=seen):
+        for _, commit in self._iter_commits_parent_first(
+            commit_hash, seen=seen, max_commits=max_commits
+        ):
             for event_hash in commit.event_hashes:
                 event = self.get_event(event_hash)
-                if event:
-                    handler(event)
+                if not event:
+                    raise EventHistoryObjectError(
+                        "missing_event", event_hash, "event"
+                    )
+                handler(event)
 
     def merge_heads(
         self,
@@ -495,6 +548,9 @@ class EventLog:
         remote_head: str,
         events: list[CardEvent],
         author_principal: str,
+        *,
+        idempotency_key: str | None = None,
+        request_fingerprint: str | None = None,
     ) -> SyncCommit:
         """Create a merge commit carrying explicit operator resolutions."""
         parents = sorted({local_head, remote_head})
@@ -534,6 +590,14 @@ class EventLog:
                     }
                     for event in events
                 ],
+            },
+            source_operation="sync.resolve_conflicts",
+            idempotency_key=idempotency_key,
+            request_fingerprint=request_fingerprint,
+            operation_result={
+                "realm_id": realm_id,
+                "resolved": len(events),
+                "durable": True,
             },
         )
         event_hashes = [
@@ -737,6 +801,40 @@ class EventLog:
             "common_ancestors": sorted(common),
         }
 
+    def find_operation_event(
+        self,
+        realm_id: str,
+        idempotency_key: str,
+        *,
+        max_commits: int = MAX_HISTORY_COMMITS,
+    ) -> tuple[str, str, CardEvent] | None:
+        """Find the single durable event attributable to an operation key."""
+        head = self.get_head(realm_id)
+        if not head:
+            return None
+        found: tuple[str, str, CardEvent] | None = None
+        for commit_hash, commit in self._iter_commits_parent_first(
+            head, max_commits=max_commits
+        ):
+            for event_hash in commit.event_hashes:
+                event = self.get_event(event_hash)
+                if not event:
+                    raise EventHistoryObjectError(
+                        "missing_event", event_hash, "event"
+                    )
+                if event.idempotency_key != idempotency_key:
+                    continue
+                if found and found[2].id != event.id:
+                    raise EventHistoryError(
+                        "duplicate_idempotency_key",
+                        "multiple durable events claim the same idempotency key",
+                        idempotency_key=idempotency_key,
+                        first_event_id=found[2].id,
+                        second_event_id=event.id,
+                    )
+                found = (commit_hash, event_hash, event)
+        return found
+
     def entity_snapshot(self, head: str, entity: str, entity_id: str) -> dict | None:
         """Materialize one entity at an arbitrary immutable history head."""
         state: dict | None = None
@@ -797,50 +895,169 @@ class EventLog:
         self.apply_commit_chain(head, apply)
         return state
 
+    @staticmethod
+    def _history_cursor(
+        head: str, entity: str, entity_id: str, offset: int
+    ) -> str:
+        payload = json.dumps(
+            {
+                "version": 1,
+                "head": head,
+                "entity": entity,
+                "entity_id": entity_id,
+                "offset": offset,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+        return base64.urlsafe_b64encode(payload).decode().rstrip("=")
+
+    @staticmethod
+    def _decode_history_cursor(
+        cursor: str, entity: str, entity_id: str
+    ) -> tuple[str, int]:
+        try:
+            padded = cursor + "=" * (-len(cursor) % 4)
+            payload = json.loads(base64.urlsafe_b64decode(padded).decode())
+            if (
+                not isinstance(payload, dict)
+                or payload.get("version") != 1
+                or payload.get("entity") != entity
+                or payload.get("entity_id") != entity_id
+                or not isinstance(payload.get("head"), str)
+                or not isinstance(payload.get("offset"), int)
+                or payload["offset"] < 0
+            ):
+                raise ValueError
+            return payload["head"], payload["offset"]
+        except (
+            binascii.Error,
+            ValueError,
+            TypeError,
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+        ) as exc:
+            raise EventHistoryCursorError() from exc
+
+    def entity_history_page(
+        self,
+        realm_id: str,
+        entity: str,
+        entity_id: str,
+        *,
+        limit: int = 100,
+        cursor: str | None = None,
+        max_commits: int = MAX_HISTORY_COMMITS,
+    ) -> dict[str, Any]:
+        """Return one stable page from an immutable head snapshot."""
+        head = self.get_head(realm_id)
+        offset = 0
+        if cursor:
+            head, offset = self._decode_history_cursor(cursor, entity, entity_id)
+        limit = max(1, min(int(limit), MAX_HISTORY_COMMITS))
+        if not head:
+            return {
+                "head": None,
+                "events": [],
+                "next_cursor": None,
+                "has_more": False,
+                "scanned_commits": 0,
+            }
+
+        records: list[dict[str, Any]] = []
+        seen_commits: set[str] = set()
+        entity_present = False
+        entity_seen_since_delete = False
+        matching_index = 0
+        has_more = False
+
+        try:
+            commits = self._iter_commits_parent_first(
+                head, seen=seen_commits, max_commits=max_commits
+            )
+            for commit_hash, commit in commits:
+                for event_hash in commit.event_hashes:
+                    event = self.get_event(event_hash)
+                    if not event:
+                        raise EventHistoryObjectError(
+                            "missing_event", event_hash, "event"
+                        )
+                    if _event_entity(event) != (entity, entity_id):
+                        continue
+                    duplicate_create = event.type == EventType.CARD_CREATED and (
+                        entity_present or entity_seen_since_delete
+                    )
+                    if event.type in {
+                        EventType.CARD_CREATED,
+                        EventType.CARD_UPSERTED,
+                    }:
+                        entity_present = True
+                        entity_seen_since_delete = True
+                    elif event.type == EventType.CARD_DELETED:
+                        entity_present = False
+                        entity_seen_since_delete = False
+                    else:
+                        entity_seen_since_delete = True
+
+                    if matching_index >= offset:
+                        if len(records) >= limit:
+                            has_more = True
+                            break
+                        records.append(
+                            {
+                                "event_hash": event_hash,
+                                "event": event.model_dump(mode="json"),
+                                "commit_hash": commit_hash,
+                                "parent_hashes": list(commit.parent_hashes),
+                                "commit_instance": commit.instance_id,
+                                "commit_principal": commit.author_principal,
+                                "commit_timestamp": commit.timestamp.isoformat(),
+                                "projection_effect": (
+                                    "ignored_duplicate_create"
+                                    if duplicate_create
+                                    else "applied"
+                                ),
+                            }
+                        )
+                    matching_index += 1
+                if has_more:
+                    break
+        except EventHistoryLimitError as exc:
+            exc.partial_records = records
+            exc.next_cursor = self._history_cursor(
+                head, entity, entity_id, offset + len(records)
+            )
+            raise
+
+        next_cursor = (
+            self._history_cursor(head, entity, entity_id, offset + len(records))
+            if has_more
+            else None
+        )
+        return {
+            "head": head,
+            "events": records,
+            "next_cursor": next_cursor,
+            "has_more": has_more,
+            "scanned_commits": len(seen_commits),
+        }
+
     def entity_history(
         self, realm_id: str, entity: str, entity_id: str
     ) -> list[dict[str, Any]]:
-        """Return immutable entity events with commit and causal provenance."""
-        head = self.get_head(realm_id)
-        if not head:
-            return []
-        records: list[dict[str, Any]] = []
-        entity_present = False
-        entity_seen_since_delete = False
-
-        for commit_hash, commit in self._iter_commits_parent_first(head):
-            for event_hash in commit.event_hashes:
-                event = self.get_event(event_hash)
-                if not event or _event_entity(event) != (entity, entity_id):
-                    continue
-                duplicate_create = event.type == EventType.CARD_CREATED and (
-                    entity_present or entity_seen_since_delete
-                )
-                if event.type in {EventType.CARD_CREATED, EventType.CARD_UPSERTED}:
-                    entity_present = True
-                    entity_seen_since_delete = True
-                elif event.type == EventType.CARD_DELETED:
-                    entity_present = False
-                    entity_seen_since_delete = False
-                else:
-                    entity_seen_since_delete = True
-                records.append(
-                    {
-                        "event_hash": event_hash,
-                        "event": event.model_dump(mode="json"),
-                        "commit_hash": commit_hash,
-                        "parent_hashes": list(commit.parent_hashes),
-                        "commit_instance": commit.instance_id,
-                        "commit_principal": commit.author_principal,
-                        "commit_timestamp": commit.timestamp.isoformat(),
-                        "projection_effect": (
-                            "ignored_duplicate_create"
-                            if duplicate_create
-                            else "applied"
-                        ),
-                    }
-                )
-        return records
+        """Compatibility helper returning bounded complete entity history."""
+        page = self.entity_history_page(
+            realm_id,
+            entity,
+            entity_id,
+            limit=MAX_HISTORY_COMMITS,
+            max_commits=MAX_HISTORY_COMMITS,
+        )
+        if page["has_more"]:
+            raise EventHistoryLimitError(
+                page["scanned_commits"], MAX_HISTORY_COMMITS
+            )
+        return page["events"]
 
     def merge_audit(self, realm_id: str, *, limit: int = 50) -> list[dict]:
         """Return merge decisions embedded in the immutable realm history."""
@@ -848,23 +1065,18 @@ class EventLog:
         if not head:
             return []
         records: list[dict] = []
-        seen: set[str] = set()
-        stack = [head]
-        while stack and len(records) < limit:
-            commit_hash = stack.pop()
-            if commit_hash in seen:
-                continue
-            seen.add(commit_hash)
-            commit = self.get_commit(commit_hash)
-            if not commit:
-                continue
+        for commit_hash, commit in self._iter_commits_parent_first(head):
             for event_hash in commit.event_hashes:
                 event = self.get_event(event_hash)
-                if not event or not event.payload.get("merge"):
+                if not event:
+                    raise EventHistoryObjectError(
+                        "missing_event", event_hash, "event"
+                    )
+                if not event.payload.get("merge"):
                     continue
                 records.append(
                     {
-                        "head": commit.hash,
+                        "head": commit_hash,
                         "parents": commit.parent_hashes,
                         "mode": event.payload.get("resolution", "automatic"),
                         "author_principal": commit.author_principal,
@@ -876,22 +1088,15 @@ class EventLog:
                         ),
                     }
                 )
-            stack.extend(reversed(commit.parent_hashes))
-        records.sort(key=lambda item: item["timestamp"], reverse=True)
-        return records[:limit]
+        records.sort(
+            key=lambda item: (item["timestamp"], item["head"]), reverse=True
+        )
+        return records[: max(1, min(int(limit), HISTORY_PAGE_LIMIT))]
 
     def _ancestors(self, head: str) -> set[str]:
-        result: set[str] = set()
-        stack = [head]
-        while stack:
-            current = stack.pop()
-            if current in result:
-                continue
-            result.add(current)
-            commit = self.get_commit(current)
-            if commit:
-                stack.extend(commit.parent_hashes)
-        return result
+        return {
+            commit_hash for commit_hash, _ in self._iter_commits_parent_first(head)
+        }
 
     def advance_ref(
         self,
@@ -912,24 +1117,13 @@ class EventLog:
                 self._save_refs()
 
     def is_ancestor(self, ancestor: str, descendant: str) -> bool:
-        """Return True if ancestor is on the parent chain of descendant."""
+        """Return True if ancestor is on the bounded parent DAG of descendant."""
         if ancestor == descendant:
             return True
-        seen: set[str] = set()
-        stack = [descendant]
-        while stack:
-            commit_hash = stack.pop()
-            if commit_hash in seen:
-                continue
-            seen.add(commit_hash)
-            commit = self.get_commit(commit_hash)
-            if not commit:
-                continue
-            for parent in commit.parent_hashes:
-                if parent == ancestor:
-                    return True
-                stack.append(parent)
-        return False
+        return any(
+            commit_hash == ancestor
+            for commit_hash, _ in self._iter_commits_parent_first(descendant)
+        )
 
     @staticmethod
     def compute_hash(data: dict) -> str:
@@ -957,9 +1151,90 @@ class DuplicateCardCreateError(RuntimeError):
         self.parent = parent
 
 
-class EventHistoryCycleError(RuntimeError):
+class EventHistoryError(RuntimeError):
+    """Bounded machine-readable failure for immutable history traversal."""
+
+    def __init__(self, code: str, message: str, **diagnostic: Any) -> None:
+        super().__init__(message)
+        self.code = code
+        self.diagnostic = diagnostic
+
+    def as_detail(self) -> dict[str, Any]:
+        return {
+            "code": self.code,
+            "message": str(self),
+            "recoverable": False,
+            "recovery_state": "operator_action_required",
+            **self.diagnostic,
+        }
+
+
+class EventHistoryObjectError(EventHistoryError):
+    def __init__(
+        self,
+        code: str,
+        object_hash_value: str,
+        object_kind: str,
+        *,
+        schema_version: object | None = None,
+    ) -> None:
+        message = {
+            "missing_parent": "event history references a missing parent commit",
+            "missing_event": "event history references a missing event object",
+            "corrupt_object": (
+                "event history contains a corrupt content-addressed object"
+            ),
+            "unsupported_object_version": (
+                "event history contains an unsupported object schema version"
+            ),
+        }.get(code, "event history object validation failed")
+        diagnostic: dict[str, Any] = {
+            "object_hash": object_hash_value,
+            "object_kind": object_kind,
+        }
+        if schema_version is not None:
+            diagnostic["schema_version"] = schema_version
+            diagnostic["supported_schema_version"] = (
+                _SUPPORTED_OBJECT_SCHEMA_VERSION
+            )
+        super().__init__(code, message, **diagnostic)
+
+
+class EventHistoryLimitError(EventHistoryError):
+    def __init__(self, visited: int, limit: int) -> None:
+        super().__init__(
+            "history_limit_exceeded",
+            f"event history traversal exceeded the bounded limit of {limit} commits",
+            visited=visited,
+            limit=limit,
+        )
+        self.visited = visited
+        self.limit = limit
+        self.partial_records: list[dict[str, Any]] = []
+        self.next_cursor: str | None = None
+
+    def as_detail(self) -> dict[str, Any]:
+        return {
+            **super().as_detail(),
+            "partial": bool(self.partial_records),
+            "events": self.partial_records,
+            "next_cursor": self.next_cursor,
+        }
+
+
+class EventHistoryCursorError(EventHistoryError):
+    def __init__(self) -> None:
+        super().__init__(
+            "invalid_history_cursor",
+            "history cursor is invalid or belongs to another entity",
+        )
+
+
+class EventHistoryCycleError(EventHistoryError):
     def __init__(self, commit_hash: str) -> None:
         super().__init__(
-            f"event history contains a parent cycle at commit {commit_hash}"
+            "history_cycle",
+            f"event history contains a parent cycle at commit {commit_hash}",
+            commit_hash=commit_hash,
         )
         self.commit_hash = commit_hash

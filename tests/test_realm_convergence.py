@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from urllib.parse import urlsplit
 
+from fastapi import Response
 import httpx
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
@@ -522,21 +523,40 @@ class RealmConvergenceTests(unittest.IsolatedAsyncioTestCase):
         request = MagicMock()
         request.state = SimpleNamespace(principal_id="user:local")
         request.app.state.ctx = ctx
+        request.headers = {"Idempotency-Key": "manual-resolution-update"}
+        resolution = {
+            "realm_id": "default",
+            "remote_head": remote_head,
+            "resolutions": [
+                {
+                    "entity": "card",
+                    "id": card.id,
+                    "action": "update",
+                    "fields": {"title": "Remote title"},
+                }
+            ],
+        }
+        self.assertEqual(
+            projection.get_operation_outcome("manual-resolution-update")["status"],
+            "not_found",
+        )
         with patch("pa.modules.sync.get_store", return_value=projection):
             result = await resolve_sync_conflicts(
                 request,
-                {
-                    "realm_id": "default",
-                    "remote_head": remote_head,
-                    "resolutions": [
-                        {
-                            "entity": "card",
-                            "id": card.id,
-                            "action": "update",
-                            "fields": {"title": "Remote title"},
-                        }
-                    ],
-                },
+                resolution,
+                Response(),
+                "manual-resolution-update",
+            )
+            replay_response = Response()
+            replayed = await resolve_sync_conflicts(
+                request,
+                resolution,
+                replay_response,
+                "manual-resolution-update",
+            )
+            self.assertEqual(replayed, result)
+            self.assertEqual(
+                replay_response.headers["X-PA-Operation-Replayed"], "true"
             )
 
         self.assertEqual(result["convergence"]["phase"], "converged")
@@ -636,6 +656,8 @@ class RealmConvergenceTests(unittest.IsolatedAsyncioTestCase):
                         }
                     ],
                 },
+                Response(),
+                "manual-resolution-upsert",
             )
 
         restored = projection.get_card(card.id)

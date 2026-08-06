@@ -555,6 +555,7 @@ class EventType(StrEnum):
 
 
 class CardEvent(BaseModel):
+    schema_version: int = Field(default=1, ge=1)
     id: str = Field(default_factory=lambda: str(uuid4()))
     type: EventType
     realm_id: str
@@ -567,10 +568,14 @@ class CardEvent(BaseModel):
     causal_parent: str | None = None
     causal_card_version: str | None = None
     field_intent: list[str] = Field(default_factory=list)
+    idempotency_key: str | None = None
+    request_fingerprint: str | None = None
+    operation_result: dict | None = None
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class SyncCommit(BaseModel):
+    schema_version: int = Field(default=1, ge=1)
     hash: str
     realm_id: str
     instance_id: str

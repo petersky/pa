@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import mimetypes
 import os
@@ -9,7 +10,7 @@ import shutil
 from datetime import UTC, datetime, timedelta
 from itertools import zip_longest
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 from urllib.parse import quote, urlencode, urlsplit
 from uuid import uuid4
 
@@ -19,6 +20,7 @@ from fastapi import (
     BackgroundTasks,
     File,
     Form,
+    Header,
     HTTPException,
     Request,
     Response,
@@ -66,7 +68,11 @@ from pa.domain.models import (
     KnowledgeStatus,
     KnowledgeUpdate,
 )
-from pa.domain.projection import CardVersionConflict
+from pa.domain.projection import (
+    CardVersionConflict,
+    MutationOperationConflict,
+    MutationOperationInProgress,
+)
 from pa.domain.session_selection import preferred_sessions_by_card
 from pa.domain.store import get_store
 from pa.knowledge.capture import (
@@ -75,6 +81,7 @@ from pa.knowledge.capture import (
     record_lifecycle_change,
     regenerate_knowledge,
 )
+from pa.sync.event_log import HISTORY_PAGE_LIMIT, EventHistoryError
 
 router = APIRouter()
 ui_router = APIRouter()
@@ -1341,28 +1348,205 @@ def card_summary_diagnostics_api(request: Request) -> dict:
     return request.app.state.ctx.require_service("card_summary_service").diagnostics()
 
 
+def _operation_key(request: Request) -> str:
+    supplied = request.headers.get("Idempotency-Key", "")
+    key = supplied.strip() if isinstance(supplied, str) else ""
+    if not key:
+        key = f"server-generated:{uuid4()}"
+    if len(key) > 300:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "idempotency_key_too_long", "max_length": 300},
+        )
+    return key
+
+
+def _operation_fingerprint(request: Request, operation: str, payload: dict) -> str:
+    canonical = {
+        "operation": operation,
+        "principal": get_principal_id(request),
+        "payload": payload,
+    }
+    return hashlib.sha256(
+        json.dumps(
+            canonical, sort_keys=True, separators=(",", ":"), default=str
+        ).encode()
+    ).hexdigest()
+
+
+def _replay_operation(
+    request: Request,
+    *,
+    operation: str,
+    realm_id: str,
+    payload: dict,
+    store=None,
+) -> tuple[str, str, dict | None]:
+    """Replay a known receipt before validating state that may have advanced."""
+    key = _operation_key(request)
+    fingerprint = _operation_fingerprint(request, operation, payload)
+    operation_store = store or get_store()
+    try:
+        replay = operation_store.replay_operation(
+            idempotency_key=key,
+            operation=operation,
+            request_fingerprint=fingerprint,
+            realm_id=realm_id,
+        )
+    except MutationOperationConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "idempotency_conflict",
+                "message": str(exc),
+                "idempotency_key": key,
+                "recovery_state": "new_key_required",
+            },
+        ) from exc
+    except MutationOperationInProgress as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "operation_in_progress",
+                "message": str(exc),
+                "idempotency_key": key,
+                "correlation_id": exc.correlation_id,
+                "recoverable": True,
+                "recovery_state": "lookup_required",
+                "recovery_action": "get_operation_outcome",
+            },
+        ) from exc
+    return key, fingerprint, replay
+
+
+def _begin_operation(
+    request: Request,
+    *,
+    operation: str,
+    realm_id: str,
+    payload: dict,
+    store=None,
+) -> tuple[str, str, dict | None]:
+    key = _operation_key(request)
+    fingerprint = _operation_fingerprint(request, operation, payload)
+    operation_store = store or get_store()
+    supplied_correlation = request.headers.get("X-Request-ID")
+    correlation_id = (
+        supplied_correlation
+        if isinstance(supplied_correlation, str)
+        else None
+    )
+    try:
+        replay = operation_store.begin_operation(
+            idempotency_key=key,
+            operation=operation,
+            request_fingerprint=fingerprint,
+            realm_id=realm_id,
+            correlation_id=correlation_id,
+        )
+    except MutationOperationConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "idempotency_conflict",
+                "message": str(exc),
+                "idempotency_key": key,
+                "recovery_state": "new_key_required",
+            },
+        ) from exc
+    except MutationOperationInProgress as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "operation_in_progress",
+                "message": str(exc),
+                "idempotency_key": key,
+                "correlation_id": exc.correlation_id,
+                "recoverable": True,
+                "recovery_state": "lookup_required",
+                "recovery_action": "get_operation_outcome",
+            },
+        ) from exc
+    return key, fingerprint, replay
+
+
 @router.post("/cards", status_code=201)
 def create_card_api(
-    request: Request, data: CardCreate, background_tasks: BackgroundTasks
+    request: Request,
+    response: Response,
+    data: CardCreate,
+    background_tasks: BackgroundTasks,
+    _idempotency_key: Annotated[
+        str,
+        Header(alias="Idempotency-Key", min_length=1, max_length=300),
+    ],
 ) -> dict:
     store = get_store()
     settings = request.app.state.ctx.settings
-    card = store.create_card(
-        data,
-        principal_id=get_principal_id(request),
-        instance_id=settings.instance_id,
+    payload = data.model_dump(mode="json") | {"auto_enrich": data.auto_enrich}
+    key, fingerprint, replay = _begin_operation(
+        request, operation="card.create", realm_id=data.realm_id, payload=payload
     )
-    if data.auto_enrich:
-        background_tasks.add_task(
-            enrich_card,
-            request.app.state.ctx,
-            card.id,
-            card.realm_id,
-            explicit_enrichment_fields(data),
+    response.headers["X-PA-Operation-ID"] = key
+    if replay is not None:
+        response.headers["X-PA-Operation-Replayed"] = "true"
+        return replay
+    try:
+        card = store.create_card(
+            data,
+            principal_id=get_principal_id(request),
+            instance_id=settings.instance_id,
+            idempotency_key=key,
+            request_fingerprint=fingerprint,
         )
-    if not data.summary.strip():
-        card = _schedule_card_summary(request, background_tasks, card)
-    return card.model_dump(mode="json")
+        if data.auto_enrich:
+            background_tasks.add_task(
+                enrich_card,
+                request.app.state.ctx,
+                card.id,
+                card.realm_id,
+                explicit_enrichment_fields(data),
+            )
+        if not data.summary.strip():
+            card = _schedule_card_summary(request, background_tasks, card)
+        result = card.model_dump(mode="json")
+        store.complete_operation(key, result)
+        return result
+    except Exception as exc:
+        store.fail_operation(key, type(exc).__name__)
+        raise
+
+
+@router.get("/operations/{idempotency_key}")
+def operation_outcome_api(
+    request: Request, idempotency_key: str, realm: str | None = None
+) -> dict:
+    realm_id = realm or request.app.state.ctx.settings.primary_realm
+    outcome = get_store().get_operation_outcome(
+        idempotency_key, realm_id=realm_id
+    )
+    if outcome["status"] != "not_found":
+        return outcome
+    dispatch_store = request.app.state.ctx.services.get("dispatch_store")
+    if dispatch_store is None:
+        return outcome
+    dispatch = dispatch_store.find_operation_by_idempotency(idempotency_key)
+    if dispatch is None:
+        return outcome
+    operation, record = dispatch
+    return {
+        "idempotency_key": idempotency_key,
+        "operation": operation,
+        "status": "succeeded",
+        "durable": True,
+        "recovery_state": "durable_dispatch_record_found",
+        "result": {
+            "dispatch_id": record.dispatch_id,
+            "state": record.state,
+            "card_id": record.card_id,
+            "session_id": record.session_id,
+        },
+    }
 
 
 @router.get("/cards/{card_id}")
@@ -1375,15 +1559,30 @@ def get_card_api(request: Request, card_id: str, realm: str | None = None) -> di
 
 
 @router.get("/cards/{card_id}/history")
-def card_history_api(request: Request, card_id: str, realm: str | None = None) -> dict:
+def card_history_api(
+    request: Request,
+    card_id: str,
+    realm: str | None = None,
+    limit: int = 100,
+    cursor: str | None = None,
+) -> dict:
     realm_id = realm or request.app.state.ctx.settings.primary_realm
     log = request.app.state.ctx.require_service("event_log")
-    return {
-        "card_id": card_id,
-        "realm_id": realm_id,
-        "head": log.get_head(realm_id),
-        "events": log.entity_history(realm_id, "card", card_id),
-    }
+    if limit < 1 or limit > HISTORY_PAGE_LIMIT:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "invalid_history_limit",
+                "message": f"limit must be between 1 and {HISTORY_PAGE_LIMIT}",
+            },
+        )
+    try:
+        page = log.entity_history_page(
+            realm_id, "card", card_id, limit=limit, cursor=cursor
+        )
+    except EventHistoryError as exc:
+        raise HTTPException(status_code=422, detail=exc.as_detail()) from exc
+    return {"card_id": card_id, "realm_id": realm_id, **page}
 
 
 @router.post("/cards/repair-legacy-history")
@@ -1411,22 +1610,46 @@ def repair_legacy_card_history_api(request: Request, body: CardRepairRequest) ->
 @router.patch("/cards/{card_id}")
 def update_card_api(
     request: Request,
+    response: Response,
     card_id: str,
     data: CardUpdate,
     background_tasks: BackgroundTasks,
+    _idempotency_key: Annotated[
+        str,
+        Header(alias="Idempotency-Key", min_length=1, max_length=300),
+    ],
     realm: str | None = None,
 ) -> dict:
     settings = request.app.state.ctx.settings
     realm_id = realm or settings.primary_realm
+    payload = {
+        "card_id": card_id,
+        **data.model_dump(mode="json", exclude_unset=True),
+        "expected_version": (
+            data.expected_version.isoformat() if data.expected_version else None
+        ),
+        "field_intent": data.field_intent,
+    }
+    key, fingerprint, replay = _begin_operation(
+        request, operation="card.update", realm_id=realm_id, payload=payload
+    )
+    response.headers["X-PA-Operation-ID"] = key
+    if replay is not None:
+        response.headers["X-PA-Operation-Replayed"] = "true"
+        return replay
+    store = get_store()
     try:
-        card = get_store().update_card(
+        card = store.update_card(
             card_id,
             data,
             realm_id=realm_id,
             principal_id=get_principal_id(request),
             instance_id=settings.instance_id,
+            idempotency_key=key,
+            request_fingerprint=fingerprint,
         )
     except CardVersionConflict as exc:
+        store.fail_operation(key, "stale_card_version")
         raise HTTPException(
             status_code=409,
             detail={
@@ -1437,11 +1660,17 @@ def update_card_api(
                 "message": "The card changed after this snapshot was read. Retry with field_intent or the current updated_at.",
             },
         ) from exc
+    except Exception as exc:
+        store.fail_operation(key, type(exc).__name__)
+        raise
     if not card:
+        store.fail_operation(key, "card_not_found")
         raise HTTPException(status_code=404, detail="Card not found")
     if {"title", "body"} & data.model_fields_set:
         card = _schedule_card_summary(request, background_tasks, card)
-    return card.model_dump(mode="json")
+    result = card.model_dump(mode="json")
+    store.complete_operation(key, result)
+    return result
 
 
 @router.post("/cards/{card_id}/summary/regenerate", status_code=202)
@@ -2717,6 +2946,7 @@ class ItemsModule(Module):
         @mcp.tool()
         def create_card(
             title: str,
+            idempotency_key: str,
             kind: CardKind | None = None,
             body: str = "",
             lane: CardLane = CardLane.INBOX,
@@ -2727,6 +2957,9 @@ class ItemsModule(Module):
             auto_enrich: bool = True,
         ) -> dict:
             """Create a canonical card. Use lane: inbox, active, waiting, or done."""
+            key = idempotency_key.strip()
+            if not key:
+                raise ValueError("idempotency_key cannot be empty")
             return request_local_pa(
                 ctx.settings,
                 "POST",
@@ -2742,11 +2975,13 @@ class ItemsModule(Module):
                     "auto_enrich": auto_enrich,
                     **({"kind": kind} if kind is not None else {}),
                 },
+                headers={"Idempotency-Key": key},
             )
 
         @mcp.tool()
         def update_card(
             card_id: str,
+            idempotency_key: str,
             title: str | None = None,
             body: str | None = None,
             lane: CardLane | None = None,
@@ -2756,6 +2991,9 @@ class ItemsModule(Module):
             field_intent: list[str] | None = None,
         ) -> dict | None:
             """Update a canonical card. Omitted fields remain unchanged."""
+            key = idempotency_key.strip()
+            if not key:
+                raise ValueError("idempotency_key cannot be empty")
             changes = {
                 key: value
                 for key, value in {
@@ -2777,16 +3015,26 @@ class ItemsModule(Module):
                 params={"realm": realm},
                 json=changes,
                 allow_not_found=True,
+                headers={"Idempotency-Key": key},
             )
 
         @mcp.tool()
-        def get_card_history(card_id: str, realm: str = "default") -> dict:
-            """Inspect immutable card mutations with actor, instance, parents, intent, and timestamps."""
+        def get_card_history(
+            card_id: str,
+            realm: str = "default",
+            limit: int = 100,
+            cursor: str | None = None,
+        ) -> dict:
+            """Inspect one stable cursor page of immutable card mutations."""
             return request_local_pa(
                 ctx.settings,
                 "GET",
                 f"/api/cards/{card_id}/history",
-                params={"realm": realm},
+                params={
+                    "realm": realm,
+                    "limit": limit,
+                    "cursor": cursor,
+                },
             )
 
         @mcp.tool()
@@ -2844,18 +3092,23 @@ class ItemsModule(Module):
         def update_card_preferred_instance(
             card_id: str,
             instance_id: str,
+            idempotency_key: str,
             realm: str = "default",
         ) -> dict | None:
             """Set a card's preferred fleet instance and return its new authority version."""
             instance_id = instance_id.strip()
+            key = idempotency_key.strip()
             if not instance_id:
                 raise ValueError("instance_id cannot be empty")
+            if not key:
+                raise ValueError("idempotency_key cannot be empty")
             return request_local_pa(
                 ctx.settings,
                 "PATCH",
                 f"/api/cards/{card_id}",
                 params={"realm": realm},
                 json={"preferred_instance": instance_id},
+                headers={"Idempotency-Key": key},
                 allow_not_found=True,
             )
 
@@ -2910,6 +3163,7 @@ class ItemsModule(Module):
         @mcp.tool()
         def create_card(
             title: str,
+            idempotency_key: str,
             kind: CardKind | None = None,
             body: str = "",
             lane: CardLane = CardLane.INBOX,
@@ -2919,6 +3173,9 @@ class ItemsModule(Module):
             auto_enrich: bool = True,
         ) -> dict:
             """Create a card in a realm."""
+            key = idempotency_key.strip()
+            if not key:
+                raise ValueError("idempotency_key cannot be empty")
             return request_local_pa(
                 ctx.settings,
                 "POST",
@@ -2933,11 +3190,13 @@ class ItemsModule(Module):
                     "auto_enrich": auto_enrich,
                     **({"kind": kind} if kind is not None else {}),
                 },
+                headers={"Idempotency-Key": key},
             )
 
         @mcp.tool()
         def update_card(
             card_id: str,
+            idempotency_key: str,
             title: str | None = None,
             body: str | None = None,
             lane: CardLane | None = None,
@@ -2949,6 +3208,9 @@ class ItemsModule(Module):
             field_intent: list[str] | None = None,
         ) -> dict | None:
             """Update a card's mutable fields."""
+            key = idempotency_key.strip()
+            if not key:
+                raise ValueError("idempotency_key cannot be empty")
             changes = {
                 key: value
                 for key, value in {
@@ -2972,6 +3234,7 @@ class ItemsModule(Module):
                 params={"realm": realm},
                 json=changes,
                 allow_not_found=True,
+                headers={"Idempotency-Key": key},
             )
 
         @mcp.tool()
@@ -3035,4 +3298,19 @@ class ItemsModule(Module):
                 "POST",
                 f"/api/knowledge/{entry_id}/regenerate",
                 json={},
+            )
+
+        @mcp.tool()
+        def get_operation_outcome(
+            idempotency_key: str, realm: str = "default"
+        ) -> dict:
+            """Look up the authoritative durable outcome of a mutation."""
+            key = idempotency_key.strip()
+            if not key:
+                raise ValueError("idempotency_key cannot be empty")
+            return request_local_pa(
+                ctx.settings,
+                "GET",
+                f"/api/operations/{quote(key, safe='')}",
+                params={"realm": realm},
             )

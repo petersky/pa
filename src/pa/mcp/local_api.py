@@ -26,6 +26,28 @@ class LocalPAServerUnavailable(RuntimeError):
     pass
 
 
+class LocalPAUnknownOutcome(LocalPAServerUnavailable):
+    """A mutation may have committed; recovery is an authoritative lookup."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        operation_id: str,
+        correlation_id: str,
+        endpoint: str,
+    ) -> None:
+        super().__init__(message)
+        self.code = "mutation_outcome_unknown"
+        self.operation_id = operation_id
+        self.idempotency_key = operation_id
+        self.correlation_id = correlation_id
+        self.endpoint = endpoint
+        self.recoverable = True
+        self.recovery_state = "lookup_required"
+        self.recovery_action = "get_operation_outcome"
+
+
 _ASSIGNED_MCP_ENDPOINTS = frozenset(
     {
         ("GET", "/api/goal-assigned-session/goal"),
@@ -201,6 +223,20 @@ def request_local_pa(
 ):
     method = method.upper()
     assigned_mode = os.environ.get(ASSIGNED_SERVICE_MODE_ENV, "") == "1"
+    operation_id: str | None = None
+    if method in {"POST", "PUT", "PATCH", "DELETE"}:
+        operation_id = next(
+            (
+                value.strip()
+                for key, value in (headers or {}).items()
+                if key.lower() == "idempotency-key" and value.strip()
+            ),
+            None,
+        )
+        operation_id = operation_id or str(
+            (json or {}).get("idempotency_key") or ""
+        ).strip()
+        operation_id = operation_id or str(uuid4())
     assigned_dispatch_id = os.environ.get(
         ASSIGNED_SERVICE_DISPATCH_ENV, ""
     ).strip()
@@ -247,6 +283,7 @@ def request_local_pa(
         "x-pa-mcp-instance-id",
         "x-pa-assigned-dispatch-id",
         "x-pa-assigned-session-id",
+        "idempotency-key",
     }
     request_headers.update(
         {
@@ -257,6 +294,8 @@ def request_local_pa(
     )
     if expected_instance_id:
         request_headers["X-PA-MCP-Instance-ID"] = expected_instance_id
+    if operation_id:
+        request_headers["Idempotency-Key"] = operation_id
     now = time.monotonic()
     with _circuit_lock:
         retry_at = _circuit.retry_at
@@ -348,9 +387,19 @@ def request_local_pa(
                     correlation_id=correlation_id,
                     expected_instance_id=expected_instance_id,
                 ) from exc
+            if operation_id:
+                raise LocalPAUnknownOutcome(
+                    f"The PA API request failed (operation={method.upper()} "
+                    f"endpoint={path} correlation_id={correlation_id} "
+                    f"operation_id={operation_id}). The mutation outcome is "
+                    "unknown. Call get_operation_outcome with the same "
+                    "idempotency key; if it reports safe_to_retry_with_same_key, "
+                    "retry with that exact key.",
+                    operation_id=operation_id,
+                    correlation_id=correlation_id,
+                    endpoint=path,
+                ) from exc
             raise LocalPAServerUnavailable(
                 f"The PA API request failed (operation={method.upper()} "
-                f"endpoint={path} correlation_id={correlation_id}). "
-                "The request outcome is unknown; retry mutations only with the "
-                "same idempotency key."
+                f"endpoint={path} correlation_id={correlation_id})."
             ) from exc

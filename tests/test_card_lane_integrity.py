@@ -456,8 +456,13 @@ class CardLaneIntegrityHttpTests(unittest.TestCase):
             with TestClient(Kernel.boot(settings=settings).build_app()) as client:
                 created = client.post(
                     "/api/cards",
-                    json={"title": "API fence", "lane": "done"},
-                    headers=headers,
+                    json={
+                        "title": "API fence",
+                        "lane": "done",
+                        "summary": "Stable fixture summary",
+                        "auto_enrich": False,
+                    },
+                    headers={**headers, "Idempotency-Key": "lane-create"},
                 )
                 self.assertEqual(created.status_code, 201, created.text)
                 stale = created.json()
@@ -465,14 +470,14 @@ class CardLaneIntegrityHttpTests(unittest.TestCase):
                 advanced = client.patch(
                     f"/api/cards/{card_id}",
                     json={"body": "new body"},
-                    headers=headers,
+                    headers={**headers, "Idempotency-Key": "lane-advance"},
                 )
                 self.assertEqual(advanced.status_code, 200, advanced.text)
 
                 rejected = client.patch(
                     f"/api/cards/{card_id}",
                     json={**stale, "title": "stale title", "lane": "inbox"},
-                    headers=headers,
+                    headers={**headers, "Idempotency-Key": "lane-stale"},
                 )
                 self.assertEqual(rejected.status_code, 409, rejected.text)
                 self.assertEqual(
@@ -488,7 +493,7 @@ class CardLaneIntegrityHttpTests(unittest.TestCase):
                         "lane": "inbox",
                         "field_intent": ["title"],
                     },
-                    headers=headers,
+                    headers={**headers, "Idempotency-Key": "lane-intent"},
                 )
                 self.assertEqual(intentional.status_code, 200, intentional.text)
                 self.assertEqual(intentional.json()["lane"], "done")
