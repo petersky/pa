@@ -580,6 +580,14 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
                     ],
                 )
             )
+            session = AgentSession(
+                id="session-race",
+                agent_name="codex",
+                origin_instance_id="target",
+                authority_instance_id="target",
+                dispatch_id="dispatch-race",
+                status="closed",
+            )
             domain = MagicMock()
             domain.get_card.return_value = SimpleNamespace(lane=CardLane.DONE)
             session_reads = 0
@@ -609,10 +617,15 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
                         "completed",
                         "Concurrent completion durably acknowledged.",
                     )
-                return SimpleNamespace(status="closed")
+                return session
 
             domain.get_session.side_effect = get_session
-            request = request_for(settings, domain, {"dispatch_store": ledger})
+            manager = AgentSessionManager(settings, domain, dispatch_store=ledger)
+            request = request_for(
+                settings,
+                domain,
+                {"dispatch_store": ledger, "instance_agent": manager},
+            )
             body = DispatchTerminalRepairBody(
                 idempotency_key="repair-race-1",
                 mode="abandoned_without_acknowledgement",
@@ -654,6 +667,16 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
                     for item in repaired.lifecycle_inconsistencies
                 )
             )
+            self.assertIsNone(manager.terminal_repair_fence_id(session.id))
+            queued = manager.enqueue_prompt(
+                "completion won, so admission is no longer repair-fenced",
+                session_id=session.id,
+            )
+            self.assertEqual(queued.session_id, session.id)
+            with self.assertRaisesRegex(
+                AgentSessionRecoveryError, "closed and has no resumable"
+            ):
+                await manager.recover_session(session.id)
 
     async def test_governed_repairs_require_recorded_authority_after_release(
         self,
@@ -1510,10 +1533,12 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
             )
             target_domain = MagicMock()
             target_domain.get_session.return_value = session
-            target_manager = MagicMock()
-            target_manager.get.return_value = None
+            target_settings = Settings(data_dir=Path(target_tmp), instance_id="target")
+            target_manager = AgentSessionManager(
+                target_settings, target_domain, dispatch_store=target_ledger
+            )
             target_request = request_for(
-                Settings(data_dir=Path(target_tmp), instance_id="target"),
+                target_settings,
                 target_domain,
                 {
                     "dispatch_store": target_ledger,
@@ -1576,6 +1601,16 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
             reservation = target.terminal_repair_reservation
             assert reservation is not None
             self.assertEqual(reservation["state"], "superseded_by_completion")
+            self.assertIsNone(target_manager.terminal_repair_fence_id(session.id))
+            queued = target_manager.enqueue_prompt(
+                "completion superseded the target repair reservation",
+                session_id=session.id,
+            )
+            self.assertEqual(queued.session_id, session.id)
+            with self.assertRaisesRegex(
+                AgentSessionRecoveryError, "closed and has no resumable"
+            ):
+                await target_manager.recover_session(session.id)
 
     async def test_completion_callback_supersedes_local_terminal_repair(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1841,6 +1876,87 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
                 )
             with self.assertRaises(AgentSessionRecoveryError):
                 await restarted.recover_session(record.session_id or "")
+            kinds = {item["kind"] for item in persisted.lifecycle_inconsistencies}
+            self.assertIn("legacy_abandoned_dispatch_retired", kinds)
+            self.assertIn("terminal_repair_superseded_by_completion", kinds)
+
+    async def test_missing_disposition_save_queues_after_concurrent_repair(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="target")
+            ledger = DispatchStore(Path(tmp))
+            record = DispatchRecord(
+                dispatch_id="dispatch-missing-disposition-race",
+                mutation_id="mutation-missing-disposition-race",
+                card_id="card-done",
+                authority_instance_id="target",
+                authority_url="http://target",
+                target_instance_id="target",
+                session_id="session-missing-disposition-race",
+                state="running",
+                recoverable=False,
+            )
+            ledger.put(record)
+            domain = MagicMock()
+            domain.get_card.return_value = SimpleNamespace(lane=CardLane.DONE)
+            domain.get_session.return_value = SimpleNamespace(status="closed")
+            request = request_for(settings, domain, {"dispatch_store": ledger})
+            body = DispatchTerminalRepairBody(
+                idempotency_key="repair-missing-disposition-race",
+                mode="abandoned_without_acknowledgement",
+                expected_state="running",
+                reason="Fence a missing-disposition completion metadata save.",
+                confirm_no_outcome_inference=True,
+            )
+            agent = MagicMock()
+            agent.store = domain
+            agent.get.return_value = None
+            agent.async_runtime = None
+            reconciler = CompletionReconciler(
+                ledger, agent, CompletionOutbox(ledger, ""), domain, lambda: None
+            )
+            save_started = asyncio.Event()
+            resume_save = asyncio.Event()
+            original_save = reconciler._save
+
+            async def delayed_save(stale: DispatchRecord):
+                save_started.set()
+                await resume_save.wait()
+                return await original_save(stale)
+
+            reconciler._save = delayed_save
+            payload = {
+                "stop_reason": "end_turn",
+                "outcome": "Missing disposition completion won the repair race.",
+            }
+            completion = asyncio.create_task(
+                reconciler.handle_completion(record.session_id or "", payload)
+            )
+            await asyncio.wait_for(save_started.wait(), timeout=5)
+            try:
+                with patch("pa.modules.fleet.require_user"):
+                    repaired = await repair_terminal_dispatch(
+                        request, record.dispatch_id, body
+                    )
+                self.assertEqual(repaired["state"], "cancelled")
+            finally:
+                resume_save.set()
+
+            self.assertTrue(await asyncio.wait_for(completion, timeout=5))
+            persisted = ledger.get(record.dispatch_id)
+            assert persisted is not None
+            self.assertEqual(persisted.state, "completion_pending")
+            self.assertEqual(persisted.completion_payload, payload)
+            self.assertEqual(persisted.completion_delivery_class, "pending")
+            self.assertEqual(persisted.reconciliation_state, "pending")
+            self.assertEqual(
+                persisted.control_operations[body.idempotency_key],
+                "repair_terminal:abandoned_without_acknowledgement",
+            )
+            reservation = persisted.terminal_repair_reservation
+            assert reservation is not None
+            self.assertEqual(reservation["state"], "committed")
             kinds = {item["kind"] for item in persisted.lifecycle_inconsistencies}
             self.assertIn("legacy_abandoned_dispatch_retired", kinds)
             self.assertIn("terminal_repair_superseded_by_completion", kinds)

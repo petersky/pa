@@ -2520,29 +2520,47 @@ class AgentSessionManager:
             return None
 
     def terminal_repair_fence_id(self, session_id: str) -> str | None:
+        ledger = self.dispatch_store
         with self._runtime_lifecycle_lock:
             fence_id = self._terminal_repair_fences.get(session_id)
-        if fence_id is not None:
-            return fence_id
-        ledger = self.dispatch_store
         if ledger is None:
-            return None
+            return fence_id
         record = ledger.by_session(session_id)
         reservation = record.terminal_repair_reservation if record else None
+        reservation_state = reservation.get("state") if reservation else None
         if (
-            not record
-            or record.target_instance_id != self.settings.instance_id
-            or not reservation
-            or reservation.get("state") not in {"prepared", "committed"}
+            record
+            and record.target_instance_id == self.settings.instance_id
+            and reservation
+            and reservation_state in {"prepared", "committed"}
         ):
-            return None
-        durable_fence_id = str(reservation.get("reservation_id") or "").strip()
-        if not durable_fence_id:
-            return None
-        with self._runtime_lifecycle_lock:
-            return self._terminal_repair_fences.setdefault(
-                session_id, durable_fence_id
+            durable_fence_id = str(reservation.get("reservation_id") or "").strip()
+            if durable_fence_id:
+                with self._runtime_lifecycle_lock:
+                    return self._terminal_repair_fences.setdefault(
+                        session_id, durable_fence_id
+                    )
+        repair_lost = bool(
+            record
+            and (
+                reservation_state in {"superseded_by_completion", "aborted"}
+                or record.state not in {"queued", "dispatching", "running"}
+                or record.completion_payload is not None
+                or record.acknowledged_at is not None
             )
+        )
+        if fence_id is not None and repair_lost:
+            self.release_terminal_repair_fence(session_id, fence_id=fence_id)
+            return None
+        return fence_id
+
+    def release_terminal_repair_fence(self, session_id: str, *, fence_id: str) -> bool:
+        """Release only the exact losing ephemeral repair fence."""
+        with self._runtime_lifecycle_lock:
+            if self._terminal_repair_fences.get(session_id) != fence_id:
+                return False
+            self._terminal_repair_fences.pop(session_id, None)
+            return True
 
     def bind_dispatch_store(self, dispatch_store: Any | None) -> None:
         """Bind the canonical ledger used to restore durable repair fences."""

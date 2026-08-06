@@ -11358,20 +11358,6 @@ def _local_terminal_repair_session_evidence(
     )
     manager = request.app.state.ctx.services.get("instance_agent")
     runtime = manager.get(record.session_id) if manager and record.session_id else None
-    # A provider can finish starting after ``get`` returns. The real manager's
-    # lifecycle fence races atomically with runtime publication; lightweight
-    # test/fallback managers receive a final immediate re-read instead.
-    if (
-        manager
-        and record.session_id
-        and fence_id
-        and not (runtime and not getattr(runtime, "_closed", False))
-    ):
-        acquire = getattr(type(manager), "acquire_terminal_repair_fence", None)
-        if callable(acquire):
-            runtime = acquire(manager, record.session_id, fence_id=fence_id)
-        else:
-            runtime = manager.get(record.session_id)
     runtime_live = bool(runtime and not getattr(runtime, "_closed", False))
     session_status = str(getattr(session, "status", "missing") or "missing")
     _raise_nonterminal_repair_evidence(
@@ -11381,7 +11367,39 @@ def _local_terminal_repair_session_evidence(
     )
     assert session is not None
     _validate_terminal_repair_session_binding(record, session)
+    # A provider can finish starting after ``get`` returns. The real manager's
+    # lifecycle fence races atomically with runtime publication; lightweight
+    # test/fallback managers receive a final immediate re-read instead.
+    if manager and record.session_id and fence_id:
+        acquire = getattr(type(manager), "acquire_terminal_repair_fence", None)
+        if callable(acquire):
+            runtime = acquire(manager, record.session_id, fence_id=fence_id)
+        else:
+            runtime = manager.get(record.session_id)
+        runtime_live = bool(runtime and not getattr(runtime, "_closed", False))
+        _raise_nonterminal_repair_evidence(
+            record,
+            session_status=session_status,
+            runtime_live=runtime_live,
+        )
     return session, runtime_live
+
+
+def _release_terminal_repair_fence_if_uncommitted(
+    request: Request,
+    record: DispatchRecord,
+    *,
+    fence_id: str,
+) -> None:
+    manager = request.app.state.ctx.services.get("instance_agent")
+    release = getattr(type(manager), "release_terminal_repair_fence", None)
+    if not callable(release) or not record.session_id:
+        return
+    current = _dispatch_store(request).by_session(record.session_id)
+    reservation = current.terminal_repair_reservation if current else None
+    if reservation and reservation.get("state") in {"prepared", "committed"}:
+        return
+    release(manager, record.session_id, fence_id=fence_id)
 
 
 def _validate_remote_terminal_repair_evidence(
@@ -11549,6 +11567,7 @@ def target_terminal_repair_evidence(
     supplied = body.model_dump()
     captured: list[DispatchTerminalRepairEvidenceV1] = []
     reservation_id = _terminal_repair_reservation_id(record, body.idempotency_key)
+    fence_id = f"{record.dispatch_id}:{body.idempotency_key}"
     reservation = record.terminal_repair_reservation or {}
     if (
         reservation.get("reservation_id") == reservation_id
@@ -11665,7 +11684,7 @@ def target_terminal_repair_evidence(
         session, runtime_live = _local_terminal_repair_session_evidence(
             request,
             current,
-            fence_id=f"{current.dispatch_id}:{body.idempotency_key}",
+            fence_id=fence_id,
         )
         observed_at = datetime.now(UTC)
         evidence = DispatchTerminalRepairEvidenceV1(
@@ -11716,6 +11735,9 @@ def target_terminal_repair_evidence(
     try:
         ledger.compare_and_mutate(record, capture)
     except DispatchCompareConflict as exc:
+        _release_terminal_repair_fence_if_uncommitted(
+            request, record, fence_id=fence_id
+        )
         raise HTTPException(
             status_code=409,
             detail={
@@ -11724,6 +11746,11 @@ def target_terminal_repair_evidence(
                 "recoverable": True,
             },
         ) from exc
+    except Exception:
+        _release_terminal_repair_fence_if_uncommitted(
+            request, record, fence_id=fence_id
+        )
+        raise
     return captured[0]
 
 
@@ -12128,11 +12155,13 @@ async def _repair_terminal_dispatch(
                     "card_lane": card.lane.value if card else None,
                 },
             )
+        local_fence_id: str | None = None
         if record.target_instance_id == request.app.state.ctx.settings.instance_id:
+            local_fence_id = f"{record.dispatch_id}:{key}"
             _session, _runtime_live = _local_terminal_repair_session_evidence(
                 request,
                 record,
-                fence_id=f"{record.dispatch_id}:{key}",
+                fence_id=local_fence_id,
             )
             evidence_source = "target_local_atomic_check"
             evidence_observed_at = datetime.now(UTC)
@@ -12347,6 +12376,10 @@ async def _repair_terminal_dispatch(
             record = ledger.compare_and_mutate(record, abandon)
         except DispatchCompareConflict as exc:
             current = ledger.get(dispatch_id)
+            if local_fence_id is not None:
+                _release_terminal_repair_fence_if_uncommitted(
+                    request, record, fence_id=local_fence_id
+                )
             if current:
                 require_recorded_authority(current)
             if current and _repeat_dispatch_control(current, operation, key):
@@ -12362,6 +12395,12 @@ async def _repair_terminal_dispatch(
                     "changed_fields": exc.changed_fields,
                 },
             ) from exc
+        except Exception:
+            if local_fence_id is not None:
+                _release_terminal_repair_fence_if_uncommitted(
+                    request, record, fence_id=local_fence_id
+                )
+            raise
         return _dispatch_public(request, record)
 
     def normalize_acknowledged(current: DispatchRecord) -> bool:
