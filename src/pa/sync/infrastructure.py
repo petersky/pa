@@ -13,11 +13,11 @@ _object_store: ObjectStore | None = None
 _event_log: EventLog | None = None
 _membership: MembershipStore | None = None
 _peer_table: PeerTable | None = None
-_cached_key: tuple[str, str] | None = None
+_cached_key: tuple[str, str, str] | None = None
 
 
-def _make_key(settings: Settings) -> tuple[str, str]:
-    return (str(settings.data_dir), settings.instance_id)
+def _make_key(settings: Settings) -> tuple[str, str, str]:
+    return (str(settings.data_dir), settings.instance_id, settings.session_secret)
 
 
 def _reset_if_key_changed(settings: Settings) -> None:
@@ -43,7 +43,12 @@ def get_event_log(settings: Settings) -> EventLog:
     global _event_log
     _reset_if_key_changed(settings)
     if _event_log is None:
-        _event_log = EventLog(get_object_store(settings), settings.data_dir, settings.instance_id)
+        _event_log = EventLog(
+            get_object_store(settings),
+            settings.data_dir,
+            settings.instance_id,
+            cursor_secret=settings.session_secret,
+        )
     return _event_log
 
 

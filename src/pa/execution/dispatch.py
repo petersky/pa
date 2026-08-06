@@ -2088,6 +2088,32 @@ class DispatchStore:
             )
             return self._snapshot(record) if record else None
 
+    def find_operation_by_idempotency(
+        self, idempotency_key: str, *, realm_id: str | None = None
+    ) -> tuple[str, DispatchRecord] | None:
+        """Find a durable dispatch admission or control operation by its key."""
+        self._require_readable()
+        self._yield_to_index_writer()
+        with self._index_lock:
+            matches: list[tuple[str, DispatchRecord]] = []
+            for record in self._records.values():
+                if realm_id is not None and record.realm_id != realm_id:
+                    continue
+                if record.idempotency_key == idempotency_key:
+                    matches.append(("dispatch.create", record))
+                control = record.control_operations.get(idempotency_key)
+                if control:
+                    matches.append((f"dispatch.{control}", record))
+                if idempotency_key in record.followup_operations:
+                    matches.append(("dispatch.followup", record))
+            if not matches:
+                return None
+            operation, record = max(
+                matches,
+                key=lambda item: item[1].updated_at,
+            )
+            return operation, self._snapshot(record)
+
     @staticmethod
     def _class_key(record: DispatchRecord) -> str:
         return "|".join(

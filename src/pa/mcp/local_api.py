@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json as jsonlib
 import os
 import threading
 import time
@@ -24,6 +25,50 @@ from pa.config import Settings
 
 class LocalPAServerUnavailable(RuntimeError):
     pass
+
+
+class LocalPAUnknownOutcome(LocalPAServerUnavailable):
+    """A mutation may have committed; recovery is an authoritative lookup."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        operation_id: str,
+        correlation_id: str,
+        endpoint: str,
+        status: int | None = None,
+        detail: dict[str, Any] | list[dict[str, Any]] | str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = "mutation_outcome_unknown"
+        self.operation_id = operation_id
+        self.idempotency_key = operation_id
+        self.correlation_id = correlation_id
+        self.endpoint = endpoint
+        self.status = status
+        self.detail = detail
+        self.recoverable = True
+        self.recovery_state = "lookup_required"
+        self.recovery_action = "get_operation_outcome"
+
+
+def _response_proves_non_commit(
+    response: httpx.Response,
+    detail: dict[str, Any] | list[dict[str, Any]] | str | None,
+) -> bool:
+    """Accept only explicit server evidence that a mutation did not commit."""
+    committed_header = response.headers.get(
+        "X-PA-Mutation-Committed", ""
+    ).strip().lower()
+    if committed_header == "false":
+        return True
+    if not isinstance(detail, dict):
+        return False
+    return detail.get("committed") is False or detail.get("outcome") in {
+        "not_committed",
+        "rejected_before_commit",
+    }
 
 
 _ASSIGNED_MCP_ENDPOINTS = frozenset(
@@ -201,6 +246,20 @@ def request_local_pa(
 ):
     method = method.upper()
     assigned_mode = os.environ.get(ASSIGNED_SERVICE_MODE_ENV, "") == "1"
+    operation_id: str | None = None
+    if method in {"POST", "PUT", "PATCH", "DELETE"}:
+        operation_id = next(
+            (
+                value.strip()
+                for key, value in (headers or {}).items()
+                if key.lower() == "idempotency-key" and value.strip()
+            ),
+            None,
+        )
+        operation_id = operation_id or str(
+            (json or {}).get("idempotency_key") or ""
+        ).strip()
+        operation_id = operation_id or str(uuid4())
     assigned_dispatch_id = os.environ.get(
         ASSIGNED_SERVICE_DISPATCH_ENV, ""
     ).strip()
@@ -247,6 +306,7 @@ def request_local_pa(
         "x-pa-mcp-instance-id",
         "x-pa-assigned-dispatch-id",
         "x-pa-assigned-session-id",
+        "idempotency-key",
     }
     request_headers.update(
         {
@@ -257,6 +317,8 @@ def request_local_pa(
     )
     if expected_instance_id:
         request_headers["X-PA-MCP-Instance-ID"] = expected_instance_id
+    if operation_id:
+        request_headers["Idempotency-Key"] = operation_id
     now = time.monotonic()
     with _circuit_lock:
         retry_at = _circuit.retry_at
@@ -317,7 +379,40 @@ def request_local_pa(
                 _circuit.last_success = time.time()
             if response.status_code == 204:
                 return None
-            return response.json()
+            try:
+                return response.json()
+            except (jsonlib.JSONDecodeError, UnicodeDecodeError) as exc:
+                response_correlation_id = (
+                    response.headers.get("X-Request-ID", "").strip()
+                    or correlation_id
+                )
+                if operation_id:
+                    raise LocalPAUnknownOutcome(
+                        "The PA API returned an unreadable success response "
+                        f"(operation={method.upper()} endpoint={path} "
+                        f"status={response.status_code} "
+                        f"correlation_id={response_correlation_id} "
+                        f"operation_id={operation_id}). The mutation outcome is "
+                        "unknown. Call get_operation_outcome with the same "
+                        "idempotency key; if it reports "
+                        "safe_to_retry_with_same_key, retry with that exact key.",
+                        operation_id=operation_id,
+                        correlation_id=response_correlation_id,
+                        endpoint=path,
+                        status=response.status_code,
+                        detail={
+                            "code": "invalid_success_response",
+                            "message": (
+                                "The PA API success response was not valid JSON."
+                            ),
+                        },
+                    ) from exc
+                raise LocalPAServerUnavailable(
+                    f"The PA API returned an unreadable response "
+                    f"(operation={method.upper()} endpoint={path} "
+                    f"status={response.status_code} "
+                    f"correlation_id={response_correlation_id})."
+                ) from exc
         except httpx.ConnectError as exc:
             if time.monotonic() >= deadline:
                 with _circuit_lock:
@@ -341,16 +436,47 @@ def request_local_pa(
             # ``response``.  Do not let diagnostics mask the real failure.
             response = getattr(exc, "response", None)
             if response is not None:
-                raise _http_error(
+                error = _http_error(
                     response,
                     method=method,
                     path=path,
                     correlation_id=correlation_id,
                     expected_instance_id=expected_instance_id,
+                )
+                if (
+                    operation_id
+                    and response.status_code >= 500
+                    and not _response_proves_non_commit(response, error.detail)
+                ):
+                    raise LocalPAUnknownOutcome(
+                        "The PA API returned an ambiguous server failure "
+                        f"(operation={method.upper()} endpoint={path} "
+                        f"status={response.status_code} "
+                        f"correlation_id={error.correlation_id} "
+                        f"operation_id={operation_id}). The mutation outcome is "
+                        "unknown. Call get_operation_outcome with the same "
+                        "idempotency key; if it reports "
+                        "safe_to_retry_with_same_key, retry with that exact key.",
+                        operation_id=operation_id,
+                        correlation_id=error.correlation_id,
+                        endpoint=path,
+                        status=response.status_code,
+                        detail=error.detail,
+                    ) from exc
+                raise error from exc
+            if operation_id:
+                raise LocalPAUnknownOutcome(
+                    f"The PA API request failed (operation={method.upper()} "
+                    f"endpoint={path} correlation_id={correlation_id} "
+                    f"operation_id={operation_id}). The mutation outcome is "
+                    "unknown. Call get_operation_outcome with the same "
+                    "idempotency key; if it reports safe_to_retry_with_same_key, "
+                    "retry with that exact key.",
+                    operation_id=operation_id,
+                    correlation_id=correlation_id,
+                    endpoint=path,
                 ) from exc
             raise LocalPAServerUnavailable(
                 f"The PA API request failed (operation={method.upper()} "
-                f"endpoint={path} correlation_id={correlation_id}). "
-                "The request outcome is unknown; retry mutations only with the "
-                "same idempotency key."
+                f"endpoint={path} correlation_id={correlation_id})."
             ) from exc
