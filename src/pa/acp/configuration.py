@@ -54,6 +54,7 @@ class SessionConfigurationRequest:
     model_id: str | None = None
     mode_id: str | None = None
     reasoning: str | None = None
+    model_provider: str | None = None
     config: dict[str, str | bool] = field(default_factory=dict)
 
     @classmethod
@@ -63,6 +64,7 @@ class SessionConfigurationRequest:
         model_id: str | None = None,
         mode_id: str | None = None,
         reasoning: str | None = None,
+        model_provider: str | None = None,
         config: dict[str, str | bool] | None = None,
     ) -> SessionConfigurationRequest:
         parsed_model, selector_reasoning = parse_model_selector(model_id)
@@ -78,6 +80,20 @@ class SessionConfigurationRequest:
                 f"{explicit_reasoning!r} was also requested. Choose one value."
             )
         remaining = dict(config or {})
+        resolved_provider = str(model_provider).strip() if model_provider else None
+        for key in list(remaining):
+            if _normalized(key) not in {"modelprovider", "provider"}:
+                continue
+            # Reserved for multi-backend ACP agents (e.g. OpenInterpreter).
+            # Strip from generic ACP config options so it is not sent as an
+            # unknown set_config_option id.
+            value = str(remaining.pop(key)).strip()
+            if resolved_provider and value and value != resolved_provider:
+                raise ACPConfigurationError(
+                    "ACP configuration compatibility error: conflicting "
+                    f"model_provider values {resolved_provider!r} and {value!r}."
+                )
+            resolved_provider = value or resolved_provider
         resolved_reasoning = explicit_reasoning or selector_reasoning
         for key in list(remaining):
             if _normalized(key) not in _SEMANTIC_ALIASES["reasoning"]:
@@ -93,6 +109,7 @@ class SessionConfigurationRequest:
             model_id=parsed_model,
             mode_id=str(mode_id).strip() if mode_id else None,
             reasoning=resolved_reasoning,
+            model_provider=resolved_provider,
             config=remaining,
         )
 
@@ -103,18 +120,26 @@ class SessionConfigurationRequest:
             model_id=value.get("model_id"),
             mode_id=value.get("mode_id"),
             reasoning=value.get("reasoning"),
+            model_provider=value.get("model_provider"),
             config=value.get("config") or {},
         )
 
     @property
     def empty(self) -> bool:
-        return not (self.model_id or self.mode_id or self.reasoning or self.config)
+        return not (
+            self.model_id
+            or self.mode_id
+            or self.reasoning
+            or self.model_provider
+            or self.config
+        )
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "model_id": self.model_id,
             "mode_id": self.mode_id,
             "reasoning": self.reasoning,
+            "model_provider": self.model_provider,
             "config": dict(sorted(self.config.items())),
         }
 
@@ -125,6 +150,7 @@ class SessionConfigurationRequest:
             model_id=patch.model_id or self.model_id,
             mode_id=patch.mode_id or self.mode_id,
             reasoning=patch.reasoning or self.reasoning,
+            model_provider=patch.model_provider or self.model_provider,
             config=config,
         )
 

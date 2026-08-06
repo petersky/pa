@@ -105,6 +105,13 @@
         <option value="">Instance default</option>
       </select>
     </label>
+    <label data-agent-new-model-provider-wrap hidden>
+      <span>Model provider</span>
+      <select name="model_provider" data-agent-new-model-provider aria-describedby="agent-new-model-provider-help">
+        <option value="">Host default</option>
+      </select>
+      <small class="muted" id="agent-new-model-provider-help">Required for multi-backend agents such as OpenInterpreter. Secrets stay in Settings.</small>
+    </label>
     <label>
       <span>Model</span>
       <select name="model_id" data-agent-new-model aria-describedby="agent-new-model-help">
