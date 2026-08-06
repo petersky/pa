@@ -78,6 +78,12 @@ def _is_sync_path(path: str) -> bool:
 
 
 def _is_fleet_instance_route(request: Request) -> bool:
+    if request.method == "POST" and re.fullmatch(
+        r"/api/fleet/dispatch-jobs/[A-Za-z0-9-]{1,80}/assigned-service/"
+        r"(?:goal|dispatch|proposals|evidence|audit|progress)",
+        request.url.path,
+    ):
+        return True
     if request.url.path.startswith("/api/telemetry/") and request.method in {
         "GET",
         "POST",
@@ -123,6 +129,42 @@ def _is_fleet_instance_route(request: Request) -> bool:
     )
 
 
+def _is_provider_progress_route(request: Request) -> bool:
+    return request.method == "POST" and bool(
+        re.fullmatch(
+            r"/api/goals/[A-Za-z0-9-]{1,80}/providers/progress",
+            request.url.path,
+        )
+    )
+
+
+def _is_assigned_service_route(request: Request) -> bool:
+    return request.method == "POST" and request.url.path in {
+        "/api/goal-assigned-service/proposals",
+        "/api/goal-assigned-service/evidence",
+        "/api/goal-assigned-service/audit",
+        "/api/goal-assigned-service/progress",
+    }
+
+
+def _is_assigned_session_route(request: Request) -> bool:
+    return (request.method, request.url.path) in {
+        ("GET", "/api/goal-assigned-session/goal"),
+        ("GET", "/api/goal-assigned-session/dispatch"),
+        ("POST", "/api/goal-assigned-session/proposals"),
+        ("POST", "/api/goal-assigned-session/evidence"),
+        ("POST", "/api/goal-assigned-session/audit"),
+        ("POST", "/api/goal-assigned-session/progress"),
+    }
+
+
+def _is_goal_run_credential_route(request: Request) -> bool:
+    return (
+        _is_provider_progress_route(request)
+        or _is_assigned_service_route(request)
+    )
+
+
 def _sync_auth_required(settings: Settings) -> bool:
     """Peer sync endpoints require a bearer when a sync token (or auth_required) is set."""
     return bool(settings.sync_token) or settings.auth_required
@@ -133,6 +175,8 @@ def _needs_csrf(request: Request) -> bool:
         return False
     path = request.url.path
     if _is_public(path) or path in CSRF_EXEMPT_PATHS:
+        return False
+    if _is_goal_run_credential_route(request) or _is_assigned_session_route(request):
         return False
     return not (
         path.startswith("/api/")
@@ -175,6 +219,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
         request.state.user = None
         request.state.user_authenticated = False
         request.state.instance_authenticated = False
+        request.state.authenticated_instance_id = None
+        request.state.provider_run_credential = None
+        request.state.assigned_session_capability = None
         cookie_csrf = request.cookies.get(COOKIE_NAME)
         csrf_status = inspect_token(cookie_csrf, self.settings.session_secret)
         rotate_csrf = csrf_status != "valid"
@@ -187,6 +234,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
         is_fleet_instance_route = _is_fleet_instance_route(request)
 
         auth_header = request.headers.get("authorization", "")
+        provider_run_credential_supplied = auth_header.startswith("GoalRun ")
+        if provider_run_credential_supplied:
+            request.state.provider_run_credential = auth_header[8:].strip()
+        assigned_session_capability_supplied = auth_header.startswith("GoalSession ")
+        if assigned_session_capability_supplied:
+            request.state.assigned_session_capability = auth_header[12:].strip()
         bearer_supplied = auth_header.startswith("Bearer ")
         bearer_valid = False
         if auth_header.startswith("Bearer "):
@@ -240,6 +293,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 and path.startswith("/api/")
                 and not is_public
                 and not _is_sync_path(path)
+                and not (
+                    _is_goal_run_credential_route(request)
+                    and provider_run_credential_supplied
+                )
+                and not (
+                    _is_assigned_session_route(request)
+                    and assigned_session_capability_supplied
+                )
                 and not (
                     is_fleet_instance_route and request.state.instance_authenticated
                 )

@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import RLock
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
 import httpx
@@ -43,10 +43,17 @@ from pa.execution.progress import (
     sanitize_progress_event,
     sanitize_text,
 )
+from pa.goals.materialization import (
+    GoalExecutionIdentityV1,
+    GoalMaterializationEnvelopeV1,
+    GoalMaterializationReceiptV1,
+    canonical_materialization_digest,
+)
 
 logger = logging.getLogger(__name__)
 
 DISPATCH_STAGES = {
+    "admission_pending",
     "waiting_capacity",
     "blocked",
     "queued",
@@ -94,6 +101,41 @@ class DispatchEvent(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
+class GoalDispatchProvenance(BaseModel):
+    """Durable governance authority carried to every dispatch side-effect sink."""
+
+    goal_id: str = Field(min_length=1, max_length=80)
+    goal_version: int = Field(ge=1)
+    policy_revision: int = Field(ge=1)
+    authority_instance_id: str = Field(min_length=1, max_length=80)
+    fencing_token: int = Field(ge=1)
+    action_reservation_id: str = Field(min_length=1, max_length=80)
+    operation_key: str | None = Field(default=None, min_length=1, max_length=200)
+    requested_placement_target: str | None = Field(
+        default=None, min_length=1, max_length=200
+    )
+    placement_input_digest: str | None = Field(
+        default=None, min_length=64, max_length=64
+    )
+    resolved_target_instance_id: str | None = Field(
+        default=None, min_length=1, max_length=80
+    )
+    placement_decision_digest: str | None = Field(
+        default=None, min_length=64, max_length=64
+    )
+    materialization_envelope: GoalMaterializationEnvelopeV1 | None = None
+    materialization_receipt: GoalMaterializationReceiptV1 | None = None
+    execution_identity: GoalExecutionIdentityV1 | None = None
+    actor_principal: str = Field(min_length=1, max_length=300)
+    action_class: Literal["dispatch_work_package"] = "dispatch_work_package"
+    provider_id: str | None = Field(default=None, min_length=1, max_length=100)
+    reservation_attempt: int = Field(default=1, ge=1, le=20)
+    max_reservation_attempts: int = Field(default=1, ge=1, le=20)
+    retry_idempotency_key: str | None = Field(default=None, max_length=200)
+    released_at: datetime | None = None
+    release_reason: str | None = Field(default=None, max_length=500)
+
+
 class DispatchRecord(BaseModel):
     dispatch_id: str = Field(default_factory=lambda: str(uuid4()))
     mutation_id: str
@@ -109,6 +151,17 @@ class DispatchRecord(BaseModel):
     attachment_evidence: dict[str, Any] | None = None
     materialization_plan: dict[str, Any] | None = None
     request_payload: dict[str, Any] = Field(default_factory=dict)
+    goal_provenance: GoalDispatchProvenance | None = None
+    goal_placement_input: dict[str, Any] | None = None
+    goal_placement_input_digest: str | None = Field(
+        default=None, min_length=64, max_length=64
+    )
+    goal_admission_validation_state: Literal[
+        "not_required", "pending", "validated", "rejected"
+    ] = "not_required"
+    goal_admission_validated_at: datetime | None = None
+    goal_admission_validation_proof: str | None = None
+    goal_admission_validation_error: str | None = None
     principal_id: str = "user:local"
     authority_instance_id: str
     authority_instance_name: str | None = None
@@ -342,8 +395,7 @@ class DispatchRecord(BaseModel):
                 latest_evaluation
                 and any(
                     action.status.value in {"approved", "executed"}
-                    and action.name.value
-                    not in {"no_action", "record_turn_outcome"}
+                    and action.name.value not in {"no_action", "record_turn_outcome"}
                     for action in latest_evaluation.recommended_actions
                 )
             ),
@@ -403,6 +455,179 @@ class DispatchRecord(BaseModel):
             ),
         }
         return data
+
+
+def _canonical_digest(payload: Any) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode()
+    ).hexdigest()
+
+
+def goal_dispatch_placement_input_snapshot(
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Normalize only the inputs that can affect governed fleet placement."""
+
+    def selector(name: str) -> Any:
+        value = payload.get(name)
+        return value.value if hasattr(value, "value") else value
+
+    return {
+        "card_id": selector("card_id"),
+        "project_id": selector("project_id"),
+        "target_instance_id": selector("target_instance_id"),
+        "placement_policy": selector("placement_policy"),
+        "group_id": selector("group_id"),
+        "provider": str(selector("provider") or "").strip().lower() or None,
+        "model_id": selector("model_id"),
+        "mode_id": selector("mode_id"),
+        "required_capabilities": sorted(
+            {str(item) for item in (payload.get("required_capabilities") or [])}
+        ),
+        "required_mcp_servers": sorted(
+            {str(item) for item in (payload.get("required_mcp_servers") or [])}
+        ),
+        "optional_mcp_servers": sorted(
+            {str(item) for item in (payload.get("optional_mcp_servers") or [])}
+        ),
+        "execution_contract": payload.get("execution_contract"),
+        "capacity_override": bool(payload.get("capacity_override")),
+        "participation_override": bool(payload.get("participation_override")),
+    }
+
+
+def goal_dispatch_placement_input_digest(payload: dict[str, Any]) -> str:
+    """Hash the server-canonical governed placement input."""
+
+    return _canonical_digest(goal_dispatch_placement_input_snapshot(payload))
+
+
+def goal_dispatch_record_placement_input_valid(record: DispatchRecord) -> bool:
+    """Reject mutation of any placement-affecting launch field after binding."""
+
+    snapshot = record.goal_placement_input
+    digest = record.goal_placement_input_digest
+    if snapshot is None or not digest:
+        return False
+    canonical_snapshot = goal_dispatch_placement_input_snapshot(snapshot)
+    if _canonical_digest(canonical_snapshot) != digest:
+        return False
+    current = dict(canonical_snapshot)
+    for field in canonical_snapshot:
+        if field in record.request_payload:
+            current[field] = record.request_payload[field]
+    return goal_dispatch_placement_input_digest(current) == digest
+
+
+def goal_dispatch_materialization_binding_valid(record: DispatchRecord) -> bool:
+    """Verify the immutable envelope and receipt against this exact launch plan."""
+
+    provenance = record.goal_provenance
+    if provenance is None:
+        return True
+    envelope = provenance.materialization_envelope
+    receipt = provenance.materialization_receipt
+    plan = record.materialization_plan
+    if envelope is None or receipt is None or plan is None:
+        return False
+    provider_id = str(record.request_payload.get("provider") or "").strip().lower()
+    if not provider_id:
+        return False
+    if (
+        canonical_materialization_digest(
+            record.request_payload.get("execution_contract")
+        )
+        != envelope.execution_contract_digest
+    ):
+        return False
+    if str(plan.get("target_instance_id") or "") != record.target_instance_id:
+        return False
+    expected = GoalMaterializationReceiptV1(
+        envelope_digest=str(envelope.digest),
+        target_instance_id=record.target_instance_id,
+        provider_id=provider_id,
+        model_id=record.request_payload.get("model_id"),
+        mode_id=record.request_payload.get("mode_id"),
+        materialization_plan_digest=canonical_materialization_digest(plan),
+    )
+    return bool(
+        receipt == expected
+        and receipt.envelope_digest == envelope.digest
+        and provenance.resolved_target_instance_id == receipt.target_instance_id
+    )
+
+
+def goal_dispatch_execution_identity_valid(
+    record: DispatchRecord,
+    *,
+    require_authenticated_credential: bool = False,
+) -> bool:
+    """Bind an allocated governed session to its exact execution identity."""
+
+    provenance = record.goal_provenance
+    if provenance is None:
+        return True
+    identity = provenance.execution_identity
+    if record.session_id is None:
+        return identity is None
+    receipt = provenance.materialization_receipt
+    envelope = provenance.materialization_envelope
+    if identity is None or receipt is None or envelope is None:
+        return False
+    valid = bool(
+        identity.materialization_receipt_digest == receipt.digest
+        and identity.work_package_id == envelope.work_package_id
+        and identity.service_role == envelope.service_role
+        and identity.provider_id.strip().lower()
+        == str(record.request_payload.get("provider") or "").strip().lower()
+        and identity.target_instance_id == record.target_instance_id
+        and identity.session_id == record.session_id
+        and identity.fencing_token == provenance.fencing_token
+    )
+    if require_authenticated_credential:
+        return valid and identity.credential_authenticated()
+    return valid
+
+
+def goal_dispatch_placement_decision_digest(
+    decision: dict[str, Any] | None,
+) -> str:
+    """Hash the complete resolved placement decision, including its evidence."""
+
+    return _canonical_digest(decision)
+
+
+def goal_admission_validation_proof(record: DispatchRecord) -> str:
+    """Bind durable validation to one operation, target, and placement result."""
+
+    provenance = record.goal_provenance
+    return _canonical_digest(
+        {
+            "dispatch_id": record.dispatch_id,
+            "mutation_id": record.mutation_id,
+            "idempotency_key": record.idempotency_key,
+            "placement_request_fingerprint": record.placement_request_fingerprint,
+            "placement_input": record.goal_placement_input,
+            "placement_input_digest": record.goal_placement_input_digest,
+            "target_instance_id": record.target_instance_id,
+            "placement_policy": record.placement_policy,
+            "placement_decision_digest": goal_dispatch_placement_decision_digest(
+                record.placement_decision
+            ),
+            "provider": record.request_payload.get("provider"),
+            "materialization_plan": record.materialization_plan,
+            "goal_provenance": (
+                provenance.model_dump(mode="json", exclude={"execution_identity"})
+                if provenance is not None
+                else None
+            ),
+        }
+    )
 
 
 def _evaluated_outcome(evaluation: PostTurnEvaluationV1) -> str:
@@ -488,9 +713,8 @@ class DispatchStore:
         self._latest_session_records: dict[tuple[str, str], DispatchRecord] = {}
         self._latest_session_records_global: dict[str, DispatchRecord] = {}
         self._history_counts: dict[tuple[str, str], int] = {}
-        self._capacity_records_by_target: dict[
-            str, tuple[DispatchRecord, ...]
-        ] = {}
+        self._capacity_records_by_target: dict[str, tuple[DispatchRecord, ...]] = {}
+        self._goal_lifecycle_records: dict[str, DispatchRecord] = {}
         self._lock = RLock()
         # Database writers are serialized by ``_lock``. Indexed readers only
         # need to exclude the very short post-commit publication window, not a
@@ -518,7 +742,7 @@ class DispatchStore:
                 else json.loads(self.metrics_path.read_text())
             )
             self._queue_rejections = max(0, int(metrics.get("rejections") or 0))
-        except (OSError, ValueError, TypeError):
+        except OSError, ValueError, TypeError:
             self._queue_rejections = 0
         if not self._deferred_read_only:
             self._load()
@@ -1008,12 +1232,11 @@ class DispatchStore:
             "running",
             "completion_pending",
         }
-        return (
-            (candidate.state in active_states) > (current.state in active_states)
-            or (
-                (candidate.state in active_states) == (current.state in active_states)
-                and candidate.updated_at > current.updated_at
-            )
+        return (candidate.state in active_states) > (
+            current.state in active_states
+        ) or (
+            (candidate.state in active_states) == (current.state in active_states)
+            and candidate.updated_at > current.updated_at
         )
 
     def _rebuild_latest_card_records_locked(self) -> None:
@@ -1148,6 +1371,57 @@ class DispatchStore:
             for target, records in indexed.items()
         }
 
+    @staticmethod
+    def _goal_lifecycle_record_pending(record: DispatchRecord) -> bool:
+        lifecycle_states = {
+            "admission_pending",
+            "running",
+            "completion_pending",
+            "completed",
+            "failed",
+            "cancelled",
+        }
+        execution_identity_check_pending = bool(
+            record.goal_provenance is not None
+            and record.goal_provenance.released_at is None
+            and record.state in RECOVERABLE_DISPATCH_STATES
+            and (
+                record.session_id is not None
+                or record.goal_provenance.execution_identity is not None
+            )
+        )
+        base_pending = bool(
+            record.goal_provenance is not None
+            and record.goal_provenance.released_at is None
+            and record.goal_admission_validation_state != "rejected"
+            and record.state in lifecycle_states
+        )
+        followup_pending = any(
+            operation.get("state") == "governance_pending"
+            or (
+                operation.get("goal_provenance") is not None
+                and not (operation.get("goal_provenance") or {}).get("released_at")
+            )
+            for operation in record.followup_operations.values()
+        )
+        return base_pending or followup_pending or execution_identity_check_pending
+
+    def _rebuild_goal_lifecycle_records_locked(self) -> None:
+        self._goal_lifecycle_records = {
+            record.dispatch_id: record
+            for record in self._records.values()
+            if self._goal_lifecycle_record_pending(record)
+        }
+
+    def _update_goal_lifecycle_record_locked(
+        self,
+        candidate: DispatchRecord,
+    ) -> None:
+        if self._goal_lifecycle_record_pending(candidate):
+            self._goal_lifecycle_records[candidate.dispatch_id] = candidate
+        else:
+            self._goal_lifecycle_records.pop(candidate.dispatch_id, None)
+
     def _update_history_count_locked(
         self,
         record: DispatchRecord,
@@ -1209,6 +1483,7 @@ class DispatchStore:
                     self._update_latest_card_record_locked(candidate, previous)
                     self._update_latest_session_record_locked(candidate, previous)
                     self._update_capacity_record_locked(candidate, previous)
+                    self._update_goal_lifecycle_record_locked(candidate)
                 self._refresh_queue_positions_locked()
         finally:
             self._index_writer_waiting = False
@@ -1229,7 +1504,10 @@ class DispatchStore:
         self._queue_rejections += 1
         atomic_write_json(
             self.metrics_path,
-            {"rejections": self._queue_rejections, "updated_at": datetime.now(UTC).isoformat()},
+            {
+                "rejections": self._queue_rejections,
+                "updated_at": datetime.now(UTC).isoformat(),
+            },
         )
 
     def _load_legacy_snapshot(self) -> dict[str, DispatchRecord]:
@@ -1252,9 +1530,9 @@ class DispatchStore:
             self._rebuild_latest_session_records_locked()
             self._rebuild_history_counts_locked()
             self._rebuild_capacity_records_locked()
+            self._rebuild_goal_lifecycle_records_locked()
             self._refresh_queue_positions_locked()
             return
-
         if self._read_only:
             try:
                 schema = self._conn.execute(
@@ -1266,6 +1544,7 @@ class DispatchStore:
                 self._rebuild_latest_session_records_locked()
                 self._rebuild_history_counts_locked()
                 self._rebuild_capacity_records_locked()
+                self._rebuild_goal_lifecycle_records_locked()
                 self._refresh_queue_positions_locked()
                 return
             if schema and int(schema["value"]) > self.SCHEMA_VERSION:
@@ -1316,6 +1595,7 @@ class DispatchStore:
         self._rebuild_latest_session_records_locked()
         self._rebuild_history_counts_locked()
         self._rebuild_capacity_records_locked()
+        self._rebuild_goal_lifecycle_records_locked()
         self._refresh_queue_positions_locked()
         for record in self._records.values():
             if (
@@ -1637,6 +1917,25 @@ class DispatchStore:
             )[:limit]
         ]
 
+    def pending_goal_lifecycle(
+        self, authority_instance_id: str, *, limit: int = 100
+    ) -> list[DispatchRecord]:
+        """Return bounded indexed authority-owned goal lifecycle work."""
+
+        self._require_readable()
+        self._yield_to_index_writer()
+        with self._index_lock:
+            records = [
+                self._snapshot(record)
+                for record in self._goal_lifecycle_records.values()
+                if record.authority_instance_id == authority_instance_id
+                and record.goal_provenance is not None
+                and record.goal_provenance.authority_instance_id
+                == authority_instance_id
+            ]
+        records.sort(key=lambda record: record.updated_at)
+        return records[: max(1, min(limit, 1000))]
+
     def latest_by_card(
         self, card_ids: set[str], *, realm_id: str | None = None
     ) -> dict[str, DispatchRecord]:
@@ -1743,9 +2042,7 @@ class DispatchStore:
                     }
                     for record in projected
                 ],
-                "reservation_links_omitted": max(
-                    0, len(reservations) - len(projected)
-                ),
+                "reservation_links_omitted": max(0, len(reservations) - len(projected)),
             }
 
     def by_session(self, session_id: str) -> DispatchRecord | None:
@@ -1857,31 +2154,25 @@ class DispatchStore:
             provider_only=True
         )
         global_limit = capacity.global_limit or capacity.limit
-        global_consumed = (
-            max(
-                capacity.observed_global_active
-                if capacity.observed_global_active is not None
-                else capacity.observed_active,
-                global_running,
-            )
-            + max(
-                capacity.observed_global_reservations
-                if capacity.observed_global_reservations is not None
-                else capacity.observed_reservations,
-                global_reservations,
-            )
+        global_consumed = max(
+            capacity.observed_global_active
+            if capacity.observed_global_active is not None
+            else capacity.observed_active,
+            global_running,
+        ) + max(
+            capacity.observed_global_reservations
+            if capacity.observed_global_reservations is not None
+            else capacity.observed_reservations,
+            global_reservations,
         )
         provider_consumed = 0
         if capacity.provider_limit is not None:
-            provider_consumed = (
-                max(
-                    capacity.observed_provider_active or 0,
-                    provider_running,
-                )
-                + max(
-                    capacity.observed_provider_reservations or 0,
-                    provider_reservations,
-                )
+            provider_consumed = max(
+                capacity.observed_provider_active or 0,
+                provider_running,
+            ) + max(
+                capacity.observed_provider_reservations or 0,
+                provider_reservations,
             )
         execution_full = global_consumed >= global_limit or (
             capacity.provider_limit is not None
@@ -1905,8 +2196,7 @@ class DispatchStore:
             provider_waiting,
         )
         queue_full = bool(
-            global_queue_limit is not None
-            and global_queue_count >= global_queue_limit
+            global_queue_limit is not None and global_queue_count >= global_queue_limit
         ) or bool(
             provider_queue_limit is not None
             and provider_queue_count >= provider_queue_limit
@@ -1969,10 +2259,58 @@ class DispatchStore:
                     ),
                     None,
                 )
+            pending_existing: DispatchRecord | None = None
             if existing:
-                if existing.request_fingerprint != record.request_fingerprint:
-                    raise DispatchIdempotencyConflict(existing)
-                return self._snapshot(existing), True
+                if (
+                    existing.state == "admission_pending"
+                    and existing.dispatch_id == record.dispatch_id
+                    and existing.mutation_id == record.mutation_id
+                ):
+                    if (
+                        existing.placement_request_fingerprint
+                        != record.placement_request_fingerprint
+                    ):
+                        raise DispatchIdempotencyConflict(existing)
+                    pending_existing = existing
+                else:
+                    if existing.request_fingerprint != record.request_fingerprint:
+                        raise DispatchIdempotencyConflict(existing)
+                    return self._snapshot(existing), True
+
+            if pending_existing is not None and pending_existing.goal_provenance:
+                provenance = record.goal_provenance
+                if (
+                    pending_existing.goal_admission_validation_state != "validated"
+                    or not pending_existing.goal_admission_validation_proof
+                    or pending_existing.goal_admission_validation_proof
+                    != goal_admission_validation_proof(pending_existing)
+                    or not goal_dispatch_record_placement_input_valid(pending_existing)
+                    or not goal_dispatch_materialization_binding_valid(pending_existing)
+                    or not goal_dispatch_execution_identity_valid(pending_existing)
+                    or provenance is None
+                    or provenance != pending_existing.goal_provenance
+                    or record.goal_admission_validation_state != "validated"
+                    or record.goal_admission_validated_at
+                    != pending_existing.goal_admission_validated_at
+                    or record.goal_admission_validation_proof
+                    != pending_existing.goal_admission_validation_proof
+                    or record.goal_admission_validation_proof
+                    != goal_admission_validation_proof(record)
+                    or not goal_dispatch_record_placement_input_valid(record)
+                    or not goal_dispatch_materialization_binding_valid(record)
+                    or not goal_dispatch_execution_identity_valid(record)
+                    or provenance.resolved_target_instance_id
+                    != record.target_instance_id
+                    or provenance.placement_input_digest
+                    != record.goal_placement_input_digest
+                    or provenance.placement_decision_digest
+                    != goal_dispatch_placement_decision_digest(
+                        record.placement_decision
+                    )
+                ):
+                    raise ValueError(
+                        "governed admission trace must be canonically validated before promotion"
+                    )
 
             self.expire_capacity_reservations()
             record = self._snapshot(record)
@@ -1982,7 +2320,8 @@ class DispatchStore:
                     (
                         item
                         for item in self._records.values()
-                        if item.card_id == record.card_id
+                        if item.dispatch_id != record.dispatch_id
+                        and item.card_id == record.card_id
                         and item.realm_id == record.realm_id
                         and item.state
                         not in {"failed", "completed", "cancelled", "acknowledged"}
@@ -1996,7 +2335,15 @@ class DispatchStore:
             if capacity:
                 now = datetime.now(UTC)
                 execution_full, queue_full, queue_count, reserved, queue_max = (
-                    self._constraint_counts_locked(record, capacity)
+                    self._constraint_counts_locked(
+                        record,
+                        capacity,
+                        exclude_dispatch_id=(
+                            pending_existing.dispatch_id
+                            if pending_existing is not None
+                            else None
+                        ),
+                    )
                 )
                 record.capacity_limit = capacity.limit
                 record.capacity_source = capacity.source
@@ -2035,7 +2382,9 @@ class DispatchStore:
                     if queue_full:
                         self._record_queue_rejection_locked()
                         raise DispatchQueueFull(
-                            limit=queue_max if queue_max is not None else capacity.queue_limit,
+                            limit=queue_max
+                            if queue_max is not None
+                            else capacity.queue_limit,
                             source=capacity.queue_source,
                             provider=capacity.provider,
                             current=queue_count,
@@ -2065,7 +2414,7 @@ class DispatchStore:
             record.state = admission_state
             record.events.append(
                 DispatchEvent(
-                    seq=1,
+                    seq=(record.events[-1].seq + 1 if record.events else 1),
                     state=admission_state,
                     message=(
                         "Dispatch durably queued until execution capacity is available."
@@ -2146,6 +2495,48 @@ class DispatchStore:
             self._save(record, durability="full")
             return self._snapshot(self._records[record.dispatch_id])
 
+    def begin_admission(
+        self,
+        record: DispatchRecord,
+        *,
+        idempotency_scope: str,
+    ) -> tuple[DispatchRecord, bool]:
+        """Atomically create or replay one scoped pre-admission trace."""
+
+        with self._lock:
+            self._require_writer()
+            if idempotency_scope == "target":
+                existing = next(
+                    (
+                        item
+                        for item in self._records.values()
+                        if item.target_instance_id == record.target_instance_id
+                        and item.idempotency_key == record.idempotency_key
+                    ),
+                    None,
+                )
+            else:
+                existing = next(
+                    (
+                        item
+                        for item in self._records.values()
+                        if item.authority_instance_id == record.authority_instance_id
+                        and item.idempotency_key == record.idempotency_key
+                    ),
+                    None,
+                )
+            if existing is not None:
+                if (
+                    existing.placement_request_fingerprint
+                    != record.placement_request_fingerprint
+                ):
+                    raise DispatchIdempotencyConflict(existing)
+                return self._snapshot(existing), False
+            record = self._snapshot(record)
+            record.updated_at = datetime.now(UTC)
+            self._save(record, durability="full")
+            return self._snapshot(self._records[record.dispatch_id]), True
+
     def retry_with_capacity(
         self,
         record: DispatchRecord,
@@ -2214,7 +2605,9 @@ class DispatchStore:
                 if queue_full:
                     self._record_queue_rejection_locked()
                     raise DispatchQueueFull(
-                        limit=queue_max if queue_max is not None else capacity.queue_limit,
+                        limit=queue_max
+                        if queue_max is not None
+                        else capacity.queue_limit,
                         source=capacity.queue_source,
                         provider=capacity.provider,
                         current=queue_count,
@@ -2223,13 +2616,13 @@ class DispatchStore:
                     )
                 current.state = "waiting_capacity"
                 current.queue_admitted_at = current.queue_admitted_at or now
-                current.queue_wait_reason = "Waiting for execution capacity after retry."
+                current.queue_wait_reason = (
+                    "Waiting for execution capacity after retry."
+                )
             else:
                 current.state = "queued"
                 current.capacity_reserved_at = now
-                current.capacity_reservation_expires_at = (
-                    now + CAPACITY_RESERVATION_TTL
-                )
+                current.capacity_reservation_expires_at = now + CAPACITY_RESERVATION_TTL
             current.events.append(
                 DispatchEvent(
                     seq=(current.events[-1].seq + 1 if current.events else 1),
@@ -2999,9 +3392,7 @@ class DispatchStore:
                     created_at=now,
                 )
             )
-            current.queue_audit.append(
-                {"action": "promoted", "at": now.isoformat()}
-            )
+            current.queue_audit.append({"action": "promoted", "at": now.isoformat()})
             current.updated_at = now
             self._save(current, durability="full")
             return True
@@ -3078,13 +3469,18 @@ class DispatchStore:
         now = datetime.now(UTC)
         blocked = sum(item.state == "blocked" for item in waiting)
         ages = [
-            max(0.0, (now - (item.queue_admitted_at or item.created_at)).total_seconds())
+            max(
+                0.0, (now - (item.queue_admitted_at or item.created_at)).total_seconds()
+            )
             for item in waiting
         ]
         wait_times = [
             max(
                 0.0,
-                ((item.queue_launched_at or now) - (item.queue_admitted_at or item.created_at)).total_seconds(),
+                (
+                    (item.queue_launched_at or now)
+                    - (item.queue_admitted_at or item.created_at)
+                ).total_seconds(),
             )
             for item in self.list(limit=1000)
             if item.queue_admitted_at
@@ -3113,7 +3509,9 @@ class DispatchStore:
                 "wait_time_average_seconds": (
                     round(sum(wait_times) / len(wait_times), 3) if wait_times else 0.0
                 ),
-                "wait_time_max_seconds": round(max(wait_times), 3) if wait_times else 0.0,
+                "wait_time_max_seconds": round(max(wait_times), 3)
+                if wait_times
+                else 0.0,
                 "starvation_count": starvation,
             },
             "alerts": (["dispatch_queue_starvation"] if starvation else []),
@@ -3545,6 +3943,8 @@ class DispatchWorker:
         rng: random.Random | None = None,
         readiness: Callable[[DispatchRecord], Awaitable[CapacityAdmission]]
         | None = None,
+        terminal: Callable[[DispatchRecord, str], Awaitable[None]] | None = None,
+        lifecycle_recovery: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self.store, self.handler = store, handler
         self.concurrency, self.async_runtime = max(1, concurrency), async_runtime
@@ -3560,6 +3960,9 @@ class DispatchWorker:
         self.retry_max_seconds = max(self.retry_seconds, retry_max_seconds)
         self.rng = rng or random.Random()
         self.readiness = readiness
+        self.terminal = terminal
+        self.lifecycle_recovery = lifecycle_recovery
+        self._last_lifecycle_recovery_at: float | None = None
         self._runner: asyncio.Task[None] | None = None
         self._active: dict[str, asyncio.Task[None]] = {}
         self._wake, self._closing = asyncio.Event(), False
@@ -3670,6 +4073,32 @@ class DispatchWorker:
             }
             available = self.concurrency - len(self._active)
             try:
+                expired = await self._offload(
+                    "dispatch.expire_capacity_reservations",
+                    self.store.expire_capacity_reservations,
+                )
+                if self.terminal:
+                    for expired_record in expired:
+                        try:
+                            await self.terminal(expired_record, "capacity-expired")
+                        except Exception:
+                            logger.exception(
+                                "Dispatch %s capacity-expiry lifecycle callback failed",
+                                expired_record.dispatch_id,
+                            )
+                if self.lifecycle_recovery:
+                    loop_now = asyncio.get_running_loop().time()
+                    if (
+                        self._last_lifecycle_recovery_at is None
+                        or loop_now - self._last_lifecycle_recovery_at >= 30.0
+                    ):
+                        self._last_lifecycle_recovery_at = loop_now
+                        try:
+                            await self.lifecycle_recovery()
+                        except Exception:
+                            logger.exception(
+                                "Dispatch goal-lifecycle recovery pass failed"
+                            )
                 if self.readiness:
                     waiting = await self._offload(
                         "dispatch.waiting_read", self.store.waiting
@@ -3700,7 +4129,10 @@ class DispatchWorker:
                                 reason = str(detail.get("message") or detail)
                             else:
                                 code = type(exc).__name__
-                                reason = str(exc) or "Target readiness could not be confirmed."
+                                reason = (
+                                    str(exc)
+                                    or "Target readiness could not be confirmed."
+                                )
                             await self._offload(
                                 "dispatch.block_waiting",
                                 self.store.block_waiting,
@@ -3810,7 +4242,7 @@ class DispatchWorker:
                     bool(detail.get("recoverable", True)),
                     str(detail.get("message") or detail),
                 )
-            await self._offload(
+            failed = await self._offload(
                 "dispatch.record_fail",
                 self.store.fail,
                 record,
@@ -3819,6 +4251,14 @@ class DispatchWorker:
                 recoverable=recoverable,
                 detail=detail if isinstance(detail, dict) else {},
             )
+            if self.terminal:
+                try:
+                    await self.terminal(failed, "failed")
+                except Exception:
+                    logger.exception(
+                        "Dispatch %s terminal lifecycle callback failed",
+                        record.dispatch_id,
+                    )
 
 
 class CompletionOutbox:
@@ -3953,14 +4393,11 @@ class CompletionOutbox:
 
     async def drain(self, timeout: float = 5.0) -> None:
         async def wait_empty() -> None:
-            while (
-                await self._offload(
-                    "dispatch.completion_pending_read", self.store.pending
-                )
-                or await self._offload(
-                    "dispatch.followup_pending_read",
-                    self.store.pending_followup_turns,
-                )
+            while await self._offload(
+                "dispatch.completion_pending_read", self.store.pending
+            ) or await self._offload(
+                "dispatch.followup_pending_read",
+                self.store.pending_followup_turns,
             ):
                 self._wake.set()
                 await asyncio.sleep(0.05)

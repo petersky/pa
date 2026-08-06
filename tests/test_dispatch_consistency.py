@@ -17,8 +17,15 @@ from pa.execution.dispatch import (
     DispatchRecord,
     DispatchStore,
     DispatchWorker,
+    GoalDispatchProvenance,
 )
 from pa.execution.progress import CompletionReportV1
+from pa.goals.materialization import (
+    GoalMaterializationEnvelopeV1,
+    GoalMaterializationReceiptV1,
+    GoalMaterializationResourceClaimV1,
+    canonical_materialization_digest,
+)
 from pa.modules.fleet import (
     DispatchCompletionBody,
     DispatchControlBody,
@@ -26,6 +33,8 @@ from pa.modules.fleet import (
     DispatchMaterializeBody,
     RemoteAgentStartBody,
     _assert_dispatch_sync_health,
+    _expected_goal_dispatch_execution_identity,
+    _goal_materialization_stage_provenance,
     _process_remote_dispatch,
     _wait_for_dispatch_sync_health,
     cancel_dispatch,
@@ -225,6 +234,171 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
 
 
 class MaterializationTests(unittest.TestCase):
+    def test_target_identity_upgrade_is_monotonic_idempotent_and_session_exact(
+        self,
+    ) -> None:
+        session_id = "99999999-9999-4999-8999-999999999999"
+        forged_session_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        plan = {
+            "contract_version": 1,
+            "profile": "research",
+            "profile_source": "dispatch_override",
+            "requirements": {
+                "repository_required": False,
+                "repositories": [],
+                "attachments": False,
+                "browser": False,
+                "external_tools": [],
+                "required_capabilities": [],
+                "writable_artifact_workspace": True,
+                "network_policy": "provider-default",
+                "expected_deliverables": [],
+            },
+            "target_instance_id": TARGET_ID,
+            "repositories": [],
+            "workspace": {"kind": "artifact"},
+            "missing_dependencies": [],
+            "stale_dependencies": [],
+            "confirmation_required": False,
+            "summary": "Canonical target identity transition.",
+        }
+        envelope = GoalMaterializationEnvelopeV1(
+            work_package_id="work-package-a",
+            service_role="executor",
+            resource_claims=(
+                GoalMaterializationResourceClaimV1(key=f"fleet-dispatch:{TARGET_ID}"),
+            ),
+            execution_contract_digest=canonical_materialization_digest(None),
+        )
+        receipt = GoalMaterializationReceiptV1(
+            envelope_digest=str(envelope.digest),
+            target_instance_id=TARGET_ID,
+            provider_id="codex",
+            materialization_plan_digest=canonical_materialization_digest(plan),
+        )
+        stage = GoalDispatchProvenance(
+            goal_id="goal-a",
+            goal_version=1,
+            policy_revision=1,
+            authority_instance_id=AUTHORITY_ID,
+            fencing_token=1,
+            action_reservation_id="reservation-a",
+            operation_key="dispatch-operation-a",
+            requested_placement_target=TARGET_ID,
+            placement_input_digest="a" * 64,
+            resolved_target_instance_id=TARGET_ID,
+            placement_decision_digest="b" * 64,
+            materialization_envelope=envelope,
+            materialization_receipt=receipt,
+            actor_principal="service:goal-supervisor:authority",
+            provider_id="codex",
+            max_reservation_attempts=2,
+        )
+        identity = _expected_goal_dispatch_execution_identity(stage, session_id)
+        bound = stage.model_copy(update={"execution_identity": identity})
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id=TARGET_ID)
+            ledger = DispatchStore(settings.data_dir)
+            ledger.put(
+                DispatchRecord(
+                    dispatch_id=DISPATCH_ONE,
+                    mutation_id=MUTATION_ONE,
+                    realm_id="default",
+                    authority_instance_id=AUTHORITY_ID,
+                    authority_url="http://authority",
+                    target_instance_id=TARGET_ID,
+                    session_id=session_id,
+                    state="starting_session",
+                    request_payload={
+                        "provider": "codex",
+                        "model_id": None,
+                        "mode_id": None,
+                        "execution_contract": None,
+                    },
+                    materialization_plan=plan,
+                    goal_provenance=stage,
+                )
+            )
+            request = request_for(
+                settings,
+                MagicMock(),
+                {"dispatch_store": ledger},
+            )
+            request.state.instance_authenticated = True
+            request.headers = {"X-PA-Origin-Instance-ID": AUTHORITY_ID}
+
+            def body(provenance, session: str | None = session_id):
+                return DispatchMaterializeBody(
+                    dispatch_id=DISPATCH_ONE,
+                    mutation_id=MUTATION_ONE,
+                    realm_id="default",
+                    authority_instance_id=AUTHORITY_ID,
+                    authority_url="http://authority",
+                    target_instance_id=TARGET_ID,
+                    provider="codex",
+                    execution_contract=None,
+                    session_id=session,
+                    materialization_plan=plan,
+                    goal_provenance=provenance,
+                )
+
+            crash_replay = materialize_dispatch(request, body(stage, None))
+            self.assertIsNone(crash_replay["execution_identity_digest"])
+            upgraded = materialize_dispatch(request, body(bound))
+            self.assertEqual(upgraded["execution_identity_digest"], identity.digest)
+            persisted = ledger.get(DISPATCH_ONE)
+            assert persisted is not None and persisted.goal_provenance is not None
+            self.assertEqual(persisted.goal_provenance.execution_identity, identity)
+
+            # A retry replays the pre-session stage first, then the same full
+            # binding. Neither request may downgrade or rewrite the target copy.
+            retry_stage = stage.model_copy(
+                update={
+                    "goal_version": stage.goal_version + 1,
+                    "action_reservation_id": "reservation-b",
+                    "reservation_attempt": stage.reservation_attempt + 1,
+                    "retry_idempotency_key": "retry-existing-session",
+                }
+            )
+            retry_bound = retry_stage.model_copy(
+                update={"execution_identity": identity}
+            )
+            stage_replay = materialize_dispatch(
+                request,
+                body(_goal_materialization_stage_provenance(retry_bound)),
+            )
+            self.assertEqual(stage_replay["execution_identity_digest"], identity.digest)
+            replayed = materialize_dispatch(request, body(retry_bound))
+            self.assertEqual(replayed["execution_identity_digest"], identity.digest)
+            persisted = ledger.get(DISPATCH_ONE)
+            assert persisted is not None and persisted.goal_provenance is not None
+            self.assertEqual(persisted.goal_provenance.execution_identity, identity)
+            self.assertEqual(
+                persisted.goal_provenance.action_reservation_id,
+                "reservation-b",
+            )
+
+            forged_identity = _expected_goal_dispatch_execution_identity(
+                retry_stage,
+                forged_session_id,
+            )
+            forged = retry_stage.model_copy(
+                update={"execution_identity": forged_identity}
+            )
+            with self.assertRaises(HTTPException) as mismatch:
+                materialize_dispatch(
+                    request,
+                    body(forged, forged_session_id),
+                )
+            self.assertEqual(
+                mismatch.exception.detail["code"],
+                "goal_execution_identity_mismatch",
+            )
+            persisted = ledger.get(DISPATCH_ONE)
+            assert persisted is not None and persisted.goal_provenance is not None
+            self.assertEqual(persisted.goal_provenance.execution_identity, identity)
+
     def test_missing_target_card_waits_for_projection_instead_of_side_loading(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), instance_id=TARGET_ID)

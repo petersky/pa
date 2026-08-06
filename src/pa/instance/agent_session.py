@@ -19,6 +19,11 @@ from pa.acp.client import (
     permission_selected,
 )
 from pa.acp.configuration import SessionConfigurationRequest
+from pa.acp.environment import (
+    ASSIGNED_SERVICE_DISPATCH_ENV,
+    ASSIGNED_SERVICE_MODE_ENV,
+    ASSIGNED_SERVICE_SESSION_ENV,
+)
 from pa.acp.final_message import (
     assemble_final_assistant_message,
     is_agent_message_type,
@@ -137,6 +142,7 @@ class AgentSessionRuntime:
         session: AgentSession,
         *,
         agent_env: dict[str, str] | None = None,
+        mcp_private_env: dict[str, str] | None = None,
         initial_transcript_seq: int | None = None,
     ) -> None:
         self.manager = manager
@@ -148,6 +154,10 @@ class AgentSessionRuntime:
         self.session = session
         self.agent_env = dict(agent_env or {})
         self.agent_env.setdefault("PA_BROWSER_SESSION_ID", session.id)
+        # This mapping is never merged into the provider OS environment, prompt
+        # snapshots, execution context, or transcripts. Values passed through an
+        # ACP MCP server descriptor must nevertheless be non-secret.
+        self.mcp_private_env = dict(mcp_private_env or {})
         self.connection: AgentConnection | None = None
         self._prompt_lock = asyncio.Lock()
         self._prompt_admission_lock = asyncio.Lock()
@@ -910,6 +920,7 @@ class AgentSessionRuntime:
             auto_approve=False,
             async_runtime=self.async_runtime,
             extra_env=self.agent_env,
+            mcp_private_env=self.mcp_private_env,
         )
         try:
             self.session = await self.connection.connect(
@@ -2073,6 +2084,9 @@ class AgentSessionManager:
         self.progress_handler: (
             Callable[[str, dict[str, Any]], Awaitable[Any] | Any] | None
         ) = None
+        self.assigned_mcp_environment_resolver: (
+            Callable[[AgentSession], dict[str, str] | None] | None
+        ) = None
 
     def _invalidate_provider_overview(self) -> None:
         """Discard local provider evidence after an ACP runtime lifecycle change."""
@@ -2146,7 +2160,35 @@ class AgentSessionManager:
         session: AgentSession,
         *,
         agent_env: dict[str, str] | None = None,
+        mcp_private_env: dict[str, str] | None = None,
     ) -> AgentSessionRuntime:
+        supplied_mcp_environment = dict(mcp_private_env or {})
+        derived_mcp_environment: dict[str, str] = {}
+        if self.assigned_mcp_environment_resolver is not None:
+            derived_mcp_environment = dict(
+                self.assigned_mcp_environment_resolver(session) or {}
+            )
+        assigned_names = {
+            ASSIGNED_SERVICE_MODE_ENV,
+            ASSIGNED_SERVICE_DISPATCH_ENV,
+            ASSIGNED_SERVICE_SESSION_ENV,
+        }
+        supplied_assignment = assigned_names & supplied_mcp_environment.keys()
+        if supplied_assignment and not derived_mcp_environment:
+            raise AgentSessionRecoveryError(
+                "assigned MCP environment is not backed by the durable dispatch ledger"
+            )
+        mismatched = {
+            name
+            for name, value in derived_mcp_environment.items()
+            if name in supplied_mcp_environment
+            and supplied_mcp_environment[name] != value
+        }
+        if mismatched:
+            raise AgentSessionRecoveryError(
+                "assigned MCP environment conflicts with the durable dispatch binding"
+            )
+        supplied_mcp_environment.update(derived_mcp_environment)
         initial_seq = await self._offload(
             "sqlite.transcript_sequence",
             lambda: self.store.next_transcript_seq(session.id) - 1,
@@ -2155,6 +2197,7 @@ class AgentSessionManager:
             self,
             session,
             agent_env=agent_env,
+            mcp_private_env=supplied_mcp_environment,
             initial_transcript_seq=initial_seq,
         )
 
@@ -3187,6 +3230,7 @@ class AgentSessionManager:
         dispatch_id: str | None = None,
         realm_id: str | None = None,
         agent_env: dict[str, str] | None = None,
+        mcp_private_env: dict[str, str] | None = None,
         resume_external_id: str | None = None,
         existing: AgentSession | None = None,
         surface: str | None = None,
@@ -3202,6 +3246,9 @@ class AgentSessionManager:
             self.require_startup_complete()
         if self._should_abort_admission():
             raise RuntimeError("Agent is quiescing")
+
+        agent_env = dict(agent_env or {})
+        mcp_private_env = dict(mcp_private_env or {})
 
         effective_principal_id = (
             principal_id
@@ -3348,7 +3395,11 @@ class AgentSessionManager:
         effective_agent_env.update(workspace_env)
         resolved_spec.env.update(workspace_env)
 
-        runtime = await self._new_runtime(session, agent_env=effective_agent_env)
+        runtime = await self._new_runtime(
+            session,
+            agent_env=effective_agent_env,
+            mcp_private_env=mcp_private_env,
+        )
         try:
             start_kwargs: dict[str, Any] = {
                 "resume_external_id": resume_external_id,

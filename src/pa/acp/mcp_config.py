@@ -20,6 +20,14 @@ from acp.schema import EnvVariable, McpServerStdio
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
+from pa.acp.environment import (
+    ASSIGNED_SERVICE_AUTHORITY_INSTANCE_ENV,
+    ASSIGNED_SERVICE_AUTHORITY_URL_ENV,
+    ASSIGNED_SERVICE_CREDENTIAL_ENV,
+    ASSIGNED_SERVICE_DISPATCH_ENV,
+    ASSIGNED_SERVICE_MODE_ENV,
+    ASSIGNED_SERVICE_SESSION_ENV,
+)
 from pa.auth.users import UserDirectory
 from pa.config import Settings
 from pa.core.logging import redact_log_text
@@ -249,36 +257,72 @@ def pa_mcp_servers(
     *,
     owner_environment: Mapping[str, str] | None = None,
     session_environment: Mapping[str, str] | None = None,
+    private_environment: Mapping[str, str] | None = None,
 ) -> list[McpServerStdio]:
     """Stdio MCP bridge so ACP agents get PA tools in-session."""
     # The ACP provider may have a different cwd, PATH, or inherited PA_* set.
     # Pin both the bridge executable and its owner API target to this server.
-    # The server creates and forwards the CLI bearer token so the MCP child
-    # never needs to create auth state. Mutations go through PA_LOCAL_API_URL.
-    cli_token = UserDirectory(settings.data_dir).ensure_default_user().cli_token
+    private_environment = dict(private_environment or {})
+    forbidden_assigned_secrets = {
+        ASSIGNED_SERVICE_CREDENTIAL_ENV,
+        ASSIGNED_SERVICE_AUTHORITY_URL_ENV,
+        ASSIGNED_SERVICE_AUTHORITY_INSTANCE_ENV,
+    }
+    if forbidden_assigned_secrets & private_environment.keys():
+        raise ValueError(
+            "assigned MCP configuration must not serialize credentials or authority data"
+        )
+    assigned_mode = private_environment.get(ASSIGNED_SERVICE_MODE_ENV) == "1"
+    assigned_service_env = {
+        name: private_environment.get(name, "").strip()
+        for name in (
+            ASSIGNED_SERVICE_MODE_ENV,
+            ASSIGNED_SERVICE_DISPATCH_ENV,
+            ASSIGNED_SERVICE_SESSION_ENV,
+        )
+    }
+    if assigned_mode and not all(assigned_service_env.values()):
+        raise ValueError("assigned MCP session binding is incomplete")
+    if not assigned_mode and any(assigned_service_env.values()):
+        raise ValueError("assigned MCP session binding requires assigned mode")
+    if not assigned_mode:
+        assigned_service_env = {}
     endpoint = owner_endpoint(settings, owner_environment)
     owner_env = {
         "PA_DATA_DIR": str(settings.data_dir),
         "PA_LOCAL_API_URL": endpoint.url,
         "PA_LOCAL_API_ENDPOINT_TYPE": endpoint.kind,
         **({"PA_LOCAL_API_SOCKET": endpoint.uds} if endpoint.uds else {}),
-        "PA_LOCAL_API_TOKEN": cli_token,
         "PA_INSTANCE_ID": settings.instance_id,
     }
-    browser_source = os.environ if session_environment is None else session_environment
-    browser_env = {
-        name: browser_source[name]
-        for name in (
-            "PA_BROWSER_CDP_URL",
-            "PA_BROWSER_TARGET_ID",
-            "PA_BROWSER_ATTACHMENT_ID",
-            "PA_BROWSER_SESSION_ID",
+    if not assigned_mode:
+        # Ordinary MCP bridges retain the owner bearer contract. Assigned bridges
+        # have a server-enforced tool surface and never receive this broad token.
+        owner_env["PA_LOCAL_API_TOKEN"] = (
+            UserDirectory(settings.data_dir).ensure_default_user().cli_token
         )
-        if browser_source.get(name)
-    }
+    browser_env: dict[str, str] = {}
+    if not assigned_mode:
+        browser_source = (
+            os.environ if session_environment is None else session_environment
+        )
+        browser_env = {
+            name: browser_source[name]
+            for name in (
+                "PA_BROWSER_CDP_URL",
+                "PA_BROWSER_TARGET_ID",
+                "PA_BROWSER_ATTACHMENT_ID",
+                "PA_BROWSER_SESSION_ID",
+            )
+            if browser_source.get(name)
+        }
     forwarded_env = [
         EnvVariable(name=name, value=value)
-        for name, value in {**owner_env, **browser_env}.items()
+        for name, value in {
+            **owner_env,
+            **browser_env,
+            **assigned_service_env,
+        }.items()
     ]
     return [
         McpServerStdio(
@@ -296,11 +340,13 @@ async def _probe_pa_mcp_stdio_async(
     timeout: float,
     owner_environment: Mapping[str, str] | None,
     session_environment: Mapping[str, str] | None,
+    private_environment: Mapping[str, str] | None = None,
 ) -> dict[str, str | int]:
     server = pa_mcp_servers(
         settings,
         owner_environment=owner_environment,
         session_environment=session_environment,
+        private_environment=private_environment,
     )[0]
     environment = {item.name: item.value for item in server.env}
     context = _bootstrap_context(settings, server, owner_environment=owner_environment)
@@ -368,6 +414,7 @@ def probe_pa_mcp_stdio(
     timeout: float = 10.0,
     owner_environment: Mapping[str, str] | None = None,
     session_environment: Mapping[str, str] | None = None,
+    private_environment: Mapping[str, str] | None = None,
 ) -> dict[str, str | int]:
     """Exercise initialize/tools-list/clean shutdown against the pinned MCP child."""
     return asyncio.run(
@@ -376,5 +423,6 @@ def probe_pa_mcp_stdio(
             timeout=timeout,
             owner_environment=owner_environment,
             session_environment=session_environment,
+            private_environment=private_environment,
         )
     )

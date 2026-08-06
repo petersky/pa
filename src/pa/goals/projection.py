@@ -1,6 +1,42 @@
 from __future__ import annotations
 
+import hashlib
 import json
+from typing import Any
+
+
+def _canonical_goal_projection_id(
+    goal: Any, fallback_goal_id: Any = None
+) -> str | None:
+    if not isinstance(goal, dict):
+        return None
+    candidate = goal.get("id") or fallback_goal_id
+    if not isinstance(candidate, str) or not candidate.strip():
+        return None
+    return candidate
+
+
+def _canonical_governance_projection_id(
+    entity_type: str,
+    raw_entity_id: Any,
+    entity: Any,
+) -> str | None:
+    if not isinstance(entity, dict):
+        return None
+    if raw_entity_id is not None and not isinstance(raw_entity_id, str):
+        return None
+    raw = raw_entity_id or ""
+    if entity_type == "goal_autonomy":
+        candidate = entity.get("goal_id") or raw
+    elif entity_type == "goal_governance_policy":
+        candidate = "organization"
+    elif entity_type == "goal_portfolio_review":
+        candidate = "current"
+    else:
+        candidate = entity.get("id") or raw
+    if not isinstance(candidate, str) or not candidate.strip():
+        return None
+    return candidate
 
 
 def init_goal_schema(conn) -> None:
@@ -23,6 +59,7 @@ def init_goal_schema(conn) -> None:
             actor_principal TEXT NOT NULL, authority_instance_id TEXT NOT NULL,
             policy_revision INTEGER NOT NULL, idempotency_key TEXT NOT NULL,
             version INTEGER NOT NULL, payload TEXT NOT NULL DEFAULT '{}',
+            operation_fingerprint TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL, UNIQUE(realm_id, idempotency_key)
         );
         CREATE INDEX IF NOT EXISTS idx_durable_goal_events_goal
@@ -34,6 +71,8 @@ def init_goal_schema(conn) -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_goal_governance_entities_type
             ON durable_goal_governance_entities(realm_id, entity_type, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_goal_governance_entities_type_id
+            ON durable_goal_governance_entities(entity_type, id);
         CREATE TABLE IF NOT EXISTS durable_goal_governance_events (
             id TEXT PRIMARY KEY, realm_id TEXT NOT NULL,
             entity_type TEXT NOT NULL, entity_id TEXT NOT NULL,
@@ -41,26 +80,272 @@ def init_goal_schema(conn) -> None:
             authority_instance_id TEXT NOT NULL, policy_revision INTEGER NOT NULL,
             idempotency_key TEXT NOT NULL, version INTEGER NOT NULL,
             payload TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL,
+            operation_fingerprint TEXT NOT NULL DEFAULT '',
             UNIQUE(realm_id, idempotency_key)
         );
         CREATE INDEX IF NOT EXISTS idx_goal_governance_events_entity
             ON durable_goal_governance_events(
                 realm_id, entity_type, entity_id, version
             );
+        CREATE TABLE IF NOT EXISTS durable_goal_projection_heads (
+            realm_id TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL,
+            version INTEGER NOT NULL, payload_hash TEXT NOT NULL,
+            event_id TEXT NOT NULL, event_timestamp TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY (realm_id, entity_type, entity_id)
+        );
+        CREATE TABLE IF NOT EXISTS durable_goal_projection_conflicts (
+            id TEXT PRIMARY KEY, realm_id TEXT NOT NULL,
+            entity_type TEXT NOT NULL, entity_id TEXT NOT NULL,
+            version INTEGER NOT NULL, canonical_hash TEXT NOT NULL,
+            competing_hash TEXT NOT NULL, canonical_payload TEXT NOT NULL,
+            competing_payload TEXT NOT NULL, first_event_id TEXT NOT NULL,
+            second_event_id TEXT NOT NULL, detected_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_goal_projection_conflicts_entity
+            ON durable_goal_projection_conflicts(
+                realm_id, entity_type, entity_id, version
+            );
         """
     )
+    head_columns = {
+        row[1]
+        for row in conn.execute(
+            "PRAGMA table_info(durable_goal_projection_heads)"
+        ).fetchall()
+    }
+    if "event_timestamp" not in head_columns:
+        conn.execute(
+            "ALTER TABLE durable_goal_projection_heads "
+            "ADD COLUMN event_timestamp TEXT NOT NULL DEFAULT ''"
+        )
+    for table in ("durable_goal_events", "durable_goal_governance_events"):
+        columns = {
+            row[1]
+            for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+        }
+        if "operation_fingerprint" not in columns:
+            conn.execute(
+                f"ALTER TABLE {table} ADD COLUMN "
+                "operation_fingerprint TEXT NOT NULL DEFAULT ''"
+            )
+
+
+def goal_projection_requires_legacy_id_rebuild(conn) -> bool:
+    """Detect projected payloads whose canonical legacy identifiers would change."""
+
+    from pa.goals.advanced_models import normalize_legacy_governance_payload
+    from pa.goals.models import normalize_legacy_goal_payload
+
+    for row in conn.execute("SELECT id, payload FROM durable_goals").fetchall():
+        try:
+            payload = json.loads(row["payload"])
+        except TypeError, json.JSONDecodeError:
+            continue
+        first_event = conn.execute(
+            """SELECT authority_instance_id FROM durable_goal_events
+               WHERE goal_id=? ORDER BY version, created_at, id LIMIT 1""",
+            (row["id"],),
+        ).fetchone()
+        control_authority = payload.get("control_authority_instance_id")
+        if first_event and not (
+            isinstance(control_authority, str) and control_authority.strip()
+        ):
+            # Rebuild from the immutable CardEvent so a SQLite-coerced legacy
+            # authority value is never mistaken for authenticated provenance.
+            return True
+        normalized = normalize_legacy_goal_payload(
+            payload,
+            fallback_goal_id=row["id"],
+        )
+        if (
+            normalized != payload
+            or _canonical_goal_projection_id(normalized, row["id"]) != row["id"]
+        ):
+            return True
+    for row in conn.execute(
+        """SELECT realm_id, entity_type, id, payload
+           FROM durable_goal_governance_entities"""
+    ).fetchall():
+        try:
+            payload = json.loads(row["payload"])
+        except TypeError, json.JSONDecodeError:
+            continue
+        entity_type = str(row["entity_type"])
+        normalized = normalize_legacy_governance_payload(
+            entity_type,
+            row["id"],
+            payload,
+            realm_id=str(row["realm_id"]),
+        )
+        if (
+            normalized != payload
+            or _canonical_governance_projection_id(entity_type, row["id"], normalized)
+            != row["id"]
+        ):
+            return True
+    return False
+
+
+def _encoded_payload(payload: dict) -> tuple[str, str]:
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return encoded, hashlib.sha256(encoded.encode()).hexdigest()
+
+
+def _accept_projection_payload(
+    conn,
+    *,
+    realm_id: str,
+    entity_type: str,
+    entity_id: str,
+    version: int,
+    payload: dict,
+    event_id: str,
+    detected_at: str,
+    existing_payload: str | None,
+    existing_version: int | None,
+) -> bool:
+    """Choose equal-version state deterministically and persist every conflict."""
+
+    encoded, payload_hash = _encoded_payload(payload)
+    head = conn.execute(
+        """SELECT version, payload_hash, event_id, event_timestamp
+           FROM durable_goal_projection_heads
+           WHERE realm_id=? AND entity_type=? AND entity_id=?""",
+        (realm_id, entity_type, entity_id),
+    ).fetchone()
+    if head is None and existing_payload is not None:
+        canonical_existing, existing_hash = _encoded_payload(
+            json.loads(existing_payload)
+        )
+        existing_version = existing_version if existing_version is not None else version
+        conn.execute(
+            """INSERT INTO durable_goal_projection_heads
+               (realm_id, entity_type, entity_id, version, payload_hash, event_id,
+                event_timestamp)
+               VALUES (?, ?, ?, ?, ?, '', '')""",
+            (realm_id, entity_type, entity_id, existing_version, existing_hash),
+        )
+        head = {
+            "version": existing_version,
+            "payload_hash": existing_hash,
+            "event_id": "",
+            "event_timestamp": "",
+        }
+        existing_payload = canonical_existing
+    if head is not None and version < int(head["version"]):
+        return False
+    if head is not None and version == int(head["version"]):
+        current_hash = str(head["payload_hash"])
+        if current_hash == payload_hash:
+            return False
+        hashes = sorted((current_hash, payload_hash))
+        conflict_id = hashlib.sha256(
+            f"{realm_id}\0{entity_type}\0{entity_id}\0{version}\0{hashes[0]}\0{hashes[1]}".encode()
+        ).hexdigest()
+        current_payload = existing_payload or "{}"
+        canonical_is_incoming = payload_hash < current_hash
+        canonical_payload = encoded if canonical_is_incoming else current_payload
+        competing_payload = current_payload if canonical_is_incoming else encoded
+        event_ids = sorted((str(head["event_id"]), event_id))
+        event_timestamps = sorted(
+            value for value in (str(head["event_timestamp"]), detected_at) if value
+        )
+        conn.execute(
+            """INSERT OR IGNORE INTO durable_goal_projection_conflicts
+               (id, realm_id, entity_type, entity_id, version, canonical_hash,
+                competing_hash, canonical_payload, competing_payload,
+                first_event_id, second_event_id, detected_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                conflict_id,
+                realm_id,
+                entity_type,
+                entity_id,
+                version,
+                hashes[0],
+                hashes[1],
+                canonical_payload,
+                competing_payload,
+                event_ids[0],
+                event_ids[1],
+                event_timestamps[-1] if event_timestamps else detected_at,
+            ),
+        )
+        if not canonical_is_incoming:
+            return False
+    conn.execute(
+        """INSERT INTO durable_goal_projection_heads
+           (realm_id, entity_type, entity_id, version, payload_hash, event_id,
+            event_timestamp)
+           VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(realm_id, entity_type, entity_id) DO UPDATE SET
+               version=excluded.version, payload_hash=excluded.payload_hash,
+               event_id=excluded.event_id,
+               event_timestamp=excluded.event_timestamp""",
+        (
+            realm_id,
+            entity_type,
+            entity_id,
+            version,
+            payload_hash,
+            event_id,
+            detected_at,
+        ),
+    )
+    return True
 
 
 def apply_goal_event(projection, event) -> None:
-    goal = event.payload.get("goal") or {}
     record = event.payload.get("goal_event") or {}
-    goal_id = str(goal.get("id") or record.get("goal_id") or "")
-    if not goal_id:
+    from pa.goals.models import normalize_legacy_goal_payload
+
+    claimed_authority = record.get("authority_instance_id")
+    event_authority = (
+        claimed_authority
+        if isinstance(claimed_authority, str) and claimed_authority.strip()
+        else event.author_instance
+    )
+    raw_goal = event.payload.get("goal") or {}
+    has_explicit_control_authority = bool(
+        isinstance(raw_goal, dict)
+        and isinstance(raw_goal.get("control_authority_instance_id"), str)
+        and raw_goal["control_authority_instance_id"].strip()
+    )
+    goal = normalize_legacy_goal_payload(
+        raw_goal,
+        fallback_goal_id=record.get("goal_id"),
+        legacy_entity_seed=event.id,
+        legacy_authority_instance_id=event_authority,
+    )
+    goal_id = _canonical_goal_projection_id(goal, record.get("goal_id"))
+    if goal_id is None:
         return
     wakeup = goal.get("wakeup") or {}
+    version = int(goal.get("version", 1))
     with projection._conn() as conn:
-        conn.execute(
-            """
+        existing = conn.execute(
+            "SELECT version, payload FROM durable_goals WHERE id=?", (goal_id,)
+        ).fetchone()
+        if not has_explicit_control_authority:
+            legacy_holder = (goal.get("lease") or {}).get("holder_instance_id")
+            if isinstance(legacy_holder, str) and legacy_holder.strip():
+                # A legacy lease takeover was the only durable authority signal.
+                goal["control_authority_instance_id"] = legacy_holder
+        accepted = _accept_projection_payload(
+            conn,
+            realm_id=event.realm_id,
+            entity_type="goal",
+            entity_id=goal_id,
+            version=version,
+            payload=goal,
+            event_id=event.id,
+            detected_at=event.timestamp.isoformat(),
+            existing_payload=str(existing["payload"]) if existing else None,
+            existing_version=int(existing["version"]) if existing else None,
+        )
+        if accepted:
+            conn.execute(
+                """
             INSERT INTO durable_goals
                 (id, realm_id, project_id, state, owner_principal, revision,
                  version, policy_revision, next_wake_at, updated_at, payload)
@@ -72,29 +357,28 @@ def apply_goal_event(projection, event) -> None:
                 policy_revision=excluded.policy_revision,
                 next_wake_at=excluded.next_wake_at,
                 updated_at=excluded.updated_at, payload=excluded.payload
-            WHERE excluded.version >= durable_goals.version
             """,
-            (
-                goal_id,
-                event.realm_id,
-                goal.get("project_id"),
-                goal.get("state", "draft"),
-                goal.get("owner_principal", ""),
-                int(goal.get("revision", 1)),
-                int(goal.get("version", 1)),
-                int((goal.get("policy") or {}).get("revision", 1)),
-                wakeup.get("wake_at"),
-                goal.get("updated_at") or event.timestamp.isoformat(),
-                json.dumps(goal),
-            ),
-        )
+                (
+                    goal_id,
+                    event.realm_id,
+                    goal.get("project_id"),
+                    goal.get("state", "draft"),
+                    goal.get("owner_principal", ""),
+                    int(goal.get("revision", 1)),
+                    version,
+                    int((goal.get("policy") or {}).get("revision", 1)),
+                    wakeup.get("wake_at"),
+                    goal.get("updated_at") or event.timestamp.isoformat(),
+                    _encoded_payload(goal)[0],
+                ),
+            )
         conn.execute(
             """
             INSERT OR IGNORE INTO durable_goal_events
                 (id, realm_id, goal_id, event_type, actor_principal,
                  authority_instance_id, policy_revision, idempotency_key,
-                 version, payload, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 version, payload, operation_fingerprint, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 event.id,
@@ -102,22 +386,39 @@ def apply_goal_event(projection, event) -> None:
                 goal_id,
                 record.get("event_type", "goal.updated"),
                 record.get("actor_principal", event.author_principal),
-                record.get("authority_instance_id", event.author_instance),
+                event_authority,
                 int(record.get("policy_revision", 1)),
                 record.get("idempotency_key", event.id),
                 int(record.get("version", goal.get("version", 1))),
                 json.dumps(record.get("payload") or {}),
+                record.get("operation_fingerprint", ""),
                 event.timestamp.isoformat(),
             ),
         )
 
 
 def apply_goal_governance_event(projection, event) -> None:
-    entity_type = str(event.payload.get("entity_type") or "")
-    entity_id = str(event.payload.get("entity_id") or "")
-    entity = event.payload.get("entity") or {}
+    raw_entity_type = event.payload.get("entity_type")
+    if not isinstance(raw_entity_type, str) or not raw_entity_type.strip():
+        return
+    entity_type = raw_entity_type
+    raw_entity_id = event.payload.get("entity_id")
+    if raw_entity_id is None:
+        raw_entity_id = ""
+    if not isinstance(raw_entity_id, str):
+        return
+    from pa.goals.advanced_models import normalize_legacy_governance_payload
+
+    entity = normalize_legacy_governance_payload(
+        entity_type,
+        raw_entity_id,
+        event.payload.get("entity") or {},
+        realm_id=event.realm_id,
+        legacy_entity_seed=event.id,
+    )
+    entity_id = _canonical_governance_projection_id(entity_type, raw_entity_id, entity)
     record = event.payload.get("governance_event") or {}
-    if not entity_type or not entity_id or not entity:
+    if entity_id is None or not entity:
         return
     version = int(entity.get("version", record.get("version", 1)))
     updated_at = str(
@@ -126,32 +427,50 @@ def apply_goal_governance_event(projection, event) -> None:
         or event.timestamp.isoformat()
     )
     with projection._conn() as conn:
-        conn.execute(
-            """
+        existing = conn.execute(
+            """SELECT version, payload FROM durable_goal_governance_entities
+               WHERE realm_id=? AND entity_type=? AND id=?""",
+            (event.realm_id, entity_type, entity_id),
+        ).fetchone()
+        accepted = _accept_projection_payload(
+            conn,
+            realm_id=event.realm_id,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            version=version,
+            payload=entity,
+            event_id=event.id,
+            detected_at=event.timestamp.isoformat(),
+            existing_payload=str(existing["payload"]) if existing else None,
+            existing_version=int(existing["version"]) if existing else None,
+        )
+        if accepted:
+            conn.execute(
+                """
             INSERT INTO durable_goal_governance_entities
                 (realm_id, entity_type, id, version, updated_at, payload)
             VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(realm_id, entity_type, id) DO UPDATE SET
                 version=excluded.version, updated_at=excluded.updated_at,
                 payload=excluded.payload
-            WHERE excluded.version >= durable_goal_governance_entities.version
             """,
-            (
-                event.realm_id,
-                entity_type,
-                entity_id,
-                version,
-                updated_at,
-                json.dumps(entity),
-            ),
-        )
+                (
+                    event.realm_id,
+                    entity_type,
+                    entity_id,
+                    version,
+                    updated_at,
+                    _encoded_payload(entity)[0],
+                ),
+            )
         conn.execute(
             """
             INSERT OR IGNORE INTO durable_goal_governance_events
                 (id, realm_id, entity_type, entity_id, event_type,
                  actor_principal, authority_instance_id, policy_revision,
-                 idempotency_key, version, payload, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 idempotency_key, version, payload, operation_fingerprint,
+                 created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 event.id,
@@ -165,6 +484,7 @@ def apply_goal_governance_event(projection, event) -> None:
                 record.get("idempotency_key", event.id),
                 version,
                 json.dumps(record.get("payload") or {}),
+                record.get("operation_fingerprint", ""),
                 event.timestamp.isoformat(),
             ),
         )
@@ -173,20 +493,44 @@ def apply_goal_governance_event(projection, event) -> None:
 def get_goal_payload(
     projection, goal_id: str, realm_id: str | None = None
 ) -> dict | None:
-    query = "SELECT payload FROM durable_goals WHERE id=?"
+    query = "SELECT id, payload FROM durable_goals WHERE id=?"
     params: list[object] = [goal_id]
     if realm_id:
         query += " AND realm_id=?"
         params.append(realm_id)
     with projection._conn() as conn:
         row = conn.execute(query, params).fetchone()
-    return json.loads(row["payload"]) if row else None
+    from pa.goals.models import normalize_legacy_goal_payload
+
+    if row:
+        return normalize_legacy_goal_payload(
+            json.loads(row["payload"]),
+            fallback_goal_id=str(row["id"] or "") or None,
+        )
+    # A projection created by an older build may have indexed a whitespace
+    # top-level id before decoding it. Keep that legacy row addressable until
+    # the automatic event-log rebuild canonicalizes its primary key.
+    fallback_query = "SELECT id, payload FROM durable_goals"
+    fallback_params: list[object] = []
+    if realm_id:
+        fallback_query += " WHERE realm_id=?"
+        fallback_params.append(realm_id)
+    with projection._conn() as conn:
+        rows = conn.execute(fallback_query, fallback_params).fetchall()
+    for candidate in rows:
+        payload = normalize_legacy_goal_payload(
+            json.loads(candidate["payload"]),
+            fallback_goal_id=str(candidate["id"] or "") or None,
+        )
+        if payload.get("id") == goal_id:
+            return payload
+    return None
 
 
 def list_goal_payloads(
     projection, realm_id: str | None = None, state: str | None = None
 ) -> list[dict]:
-    query = "SELECT payload FROM durable_goals WHERE 1=1"
+    query = "SELECT id, payload FROM durable_goals WHERE 1=1"
     params: list[object] = []
     if realm_id:
         query += " AND realm_id=?"
@@ -197,13 +541,22 @@ def list_goal_payloads(
     query += " ORDER BY updated_at DESC"
     with projection._conn() as conn:
         rows = conn.execute(query, params).fetchall()
-    return [json.loads(row["payload"]) for row in rows]
+    from pa.goals.models import normalize_legacy_goal_payload
+
+    return [
+        normalize_legacy_goal_payload(
+            json.loads(row["payload"]),
+            fallback_goal_id=str(row["id"] or "") or None,
+        )
+        for row in rows
+    ]
 
 
 def list_goal_events(projection, goal_id: str) -> list[dict]:
     with projection._conn() as conn:
         rows = conn.execute(
-            "SELECT * FROM durable_goal_events WHERE goal_id=? ORDER BY version, created_at",
+            """SELECT * FROM durable_goal_events WHERE goal_id=?
+               ORDER BY version, created_at, id""",
             (goal_id,),
         ).fetchall()
     result = []
@@ -220,7 +573,11 @@ def find_goal_event_by_idempotency(projection, realm_id: str, key: str) -> dict 
             "SELECT * FROM durable_goal_events WHERE realm_id=? AND idempotency_key=?",
             (realm_id, key),
         ).fetchone()
-    return dict(row) if row else None
+    if not row:
+        return None
+    result = dict(row)
+    result["payload"] = json.loads(result["payload"] or "{}")
+    return result
 
 
 def get_governance_payload(
@@ -232,17 +589,80 @@ def get_governance_payload(
                WHERE realm_id=? AND entity_type=? AND id=?""",
             (realm_id, entity_type, entity_id),
         ).fetchone()
-    return json.loads(row["payload"]) if row else None
+    if not row:
+        return None
+    from pa.goals.advanced_models import normalize_legacy_governance_payload
+
+    return normalize_legacy_governance_payload(
+        entity_type,
+        entity_id,
+        json.loads(row["payload"]),
+        realm_id=realm_id,
+    )
 
 
 def list_governance_payloads(projection, realm_id: str, entity_type: str) -> list[dict]:
     with projection._conn() as conn:
         rows = conn.execute(
-            """SELECT payload FROM durable_goal_governance_entities
+            """SELECT id, payload FROM durable_goal_governance_entities
                WHERE realm_id=? AND entity_type=? ORDER BY updated_at DESC, id""",
             (realm_id, entity_type),
         ).fetchall()
-    return [json.loads(row["payload"]) for row in rows]
+    from pa.goals.advanced_models import normalize_legacy_governance_payload
+
+    return [
+        normalize_legacy_governance_payload(
+            entity_type,
+            str(row["id"]),
+            json.loads(row["payload"]),
+            realm_id=realm_id,
+        )
+        for row in rows
+    ]
+
+
+def find_governance_payloads_by_entity_id(
+    projection, entity_type: str, entity_id: str
+) -> list[dict]:
+    """Find a globally unique governance entity without scanning JSON payloads."""
+
+    with projection._conn() as conn:
+        rows = conn.execute(
+            """SELECT realm_id, payload
+               FROM durable_goal_governance_entities
+               WHERE entity_type=? AND id=?
+               ORDER BY realm_id""",
+            (entity_type, entity_id),
+        ).fetchall()
+    from pa.goals.advanced_models import normalize_legacy_governance_payload
+
+    return [
+        normalize_legacy_governance_payload(
+            entity_type,
+            entity_id,
+            json.loads(row["payload"]),
+            realm_id=str(row["realm_id"]),
+        )
+        for row in rows
+    ]
+
+
+def list_governance_events(
+    projection, realm_id: str, entity_type: str, entity_id: str
+) -> list[dict]:
+    with projection._conn() as conn:
+        rows = conn.execute(
+            """SELECT * FROM durable_goal_governance_events
+               WHERE realm_id=? AND entity_type=? AND entity_id=?
+               ORDER BY version, created_at, id""",
+            (realm_id, entity_type, entity_id),
+        ).fetchall()
+    result = []
+    for row in rows:
+        item = dict(row)
+        item["payload"] = json.loads(item["payload"] or "{}")
+        result.append(item)
+    return result
 
 
 def find_governance_event_by_idempotency(
@@ -254,4 +674,25 @@ def find_governance_event_by_idempotency(
                WHERE realm_id=? AND idempotency_key=?""",
             (realm_id, key),
         ).fetchone()
-    return dict(row) if row else None
+    if not row:
+        return None
+    result = dict(row)
+    result["payload"] = json.loads(result["payload"] or "{}")
+    return result
+
+
+def list_goal_projection_conflicts(
+    projection, *, realm_id: str | None = None, entity_id: str | None = None
+) -> list[dict]:
+    query = "SELECT * FROM durable_goal_projection_conflicts WHERE 1=1"
+    params: list[object] = []
+    if realm_id:
+        query += " AND realm_id=?"
+        params.append(realm_id)
+    if entity_id:
+        query += " AND entity_id=?"
+        params.append(entity_id)
+    query += " ORDER BY detected_at, id"
+    with projection._conn() as conn:
+        rows = conn.execute(query, params).fetchall()
+    return [dict(row) for row in rows]

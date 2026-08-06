@@ -109,6 +109,9 @@ class Kernel:
         agent.async_runtime = async_runtime
         agent.browser.async_runtime = async_runtime
         agent.notification_service = self.ctx.services.get("notifications")
+        agent.assigned_mcp_environment_resolver = self.ctx.services.get(
+            "assigned_mcp_environment_resolver"
+        )
         import os
 
         from pa.instance.quiesce import consume_skip_resume
@@ -362,13 +365,14 @@ class Kernel:
         return app
 
     def _install_runtime_error_handlers(self, app: FastAPI) -> None:
+        from starlette.requests import Request
+        from starlette.responses import JSONResponse
+
         from pa.core.async_runtime import (
             AsyncRuntimeClosed,
             BlockingOperationTimeout,
             BlockingQueueFull,
         )
-        from starlette.requests import Request
-        from starlette.responses import JSONResponse
 
         async def overloaded(
             _request: Request, exc: BlockingQueueFull | AsyncRuntimeClosed
