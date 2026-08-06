@@ -387,28 +387,87 @@ class ExecutorDispatcher:
                     surface="execution",
                 )
                 delivery = "fallback"
-            runtime.enqueue(
-                prompt,
-                action="append",
-                card_id=watch.card_id,
-                project_id=watch.project_id,
-                principal_id=runtime.session.principal_id or "user:local",
-                cwd=runtime.session.cwd,
-                source="pr-supervisor",
-                prompt_audit=prompt_audit,
-                prompt_id=(str(authorization["id"]) if authorization else None),
-            )
-            drain = getattr(runtime, "_drain_transcripts", None)
-            if drain:
-                drained = drain()
-                if inspect.isawaitable(drained):
-                    await drained
+            dispatch_state = f"{delivery}_queued"
+            valid_dispatch_states = {
+                "live_queued",
+                "resumed_queued",
+                "fallback_queued",
+            }
+            prompt_id = str(authorization["id"]) if authorization else None
+            new_admission = True
+
+            async def persist_enqueue() -> None:
+                nonlocal dispatch_state
+                admitted = runtime.enqueue(
+                    prompt,
+                    action="append",
+                    card_id=watch.card_id,
+                    project_id=watch.project_id,
+                    principal_id=runtime.session.principal_id or "user:local",
+                    cwd=runtime.session.cwd,
+                    source="pr-supervisor",
+                    prompt_audit=prompt_audit,
+                    prompt_id=prompt_id,
+                    acceptance_result=dispatch_state if prompt_id else None,
+                )
+                if prompt_id:
+                    accepted_result = admitted.acceptance_result or dispatch_state
+                    if accepted_result not in valid_dispatch_states:
+                        raise RuntimeError(
+                            f"Prompt id {prompt_id} has an invalid acceptance result"
+                        )
+                    dispatch_state = accepted_result
+                drain = getattr(runtime, "_drain_transcripts", None)
+                if drain:
+                    drained = drain()
+                    if inspect.isawaitable(drained):
+                        await drained
+
+            if prompt_id:
+                admission_lock = runtime.__dict__.get("_prompt_admission_lock")
+                if admission_lock is None:
+                    admission_lock = asyncio.Lock()
+                    runtime._prompt_admission_lock = admission_lock
+                async with admission_lock:
+                    accepted = await self._offload(
+                        "sqlite.prompt_acceptance",
+                        self.domain_store.get_queued_prompt_acceptance,
+                        runtime.session_id,
+                        prompt_id,
+                    )
+                    if accepted:
+                        payload = accepted.payload or {}
+                        if (
+                            accepted.event_type != "queue_enqueued"
+                            or payload.get("message") != prompt
+                            or payload.get("images") not in (None, [])
+                            or payload.get("source") not in (None, "pr-supervisor")
+                        ):
+                            raise RuntimeError(
+                                f"Prompt id {prompt_id} was already accepted with "
+                                "different content"
+                            )
+                        accepted_result = str(
+                            payload.get("acceptance_result") or dispatch_state
+                        )
+                        if accepted_result not in valid_dispatch_states:
+                            raise RuntimeError(
+                                f"Prompt id {prompt_id} has an invalid acceptance result"
+                            )
+                        dispatch_state = accepted_result
+                        new_admission = False
+                    else:
+                        await persist_enqueue()
+            else:
+                await persist_enqueue()
             detail = json.dumps(
                 {
                     "session_id": runtime.session_id,
                     "originating_session_id": watch.originating_session_id,
                     "originating_agent": watch.originating_agent,
-                    "resume_state": delivery,
+                    "resume_state": dispatch_state.removesuffix("_queued"),
+                    "acceptance_replayed": not new_admission,
+                    "attempt_resume_state": delivery,
                     "fallback_reason": failure_reason,
                 },
                 sort_keys=True,
@@ -417,13 +476,16 @@ class ExecutorDispatcher:
                 "pr_supervisor.dispatch_finish",
                 self.store.finish_dispatch,
                 event_key,
-                state=f"{delivery}_queued",
+                state=dispatch_state,
                 detail=detail,
             )
-            await self._offload(
-                "pr_supervisor.metric", self.store.increment_metric, "executor_prompts"
-            )
-            return f"{delivery}_queued"
+            if new_admission:
+                await self._offload(
+                    "pr_supervisor.metric",
+                    self.store.increment_metric,
+                    "executor_prompts",
+                )
+            return dispatch_state
         except Exception as exc:  # noqa: BLE001
             await self._offload(
                 "pr_supervisor.dispatch_finish",

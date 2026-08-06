@@ -1143,8 +1143,39 @@ class AgentSessionRuntime:
         source: str = "api",
         prompt_audit: list[dict[str, Any]] | None = None,
         prompt_id: str | None = None,
+        acceptance_result: str | None = None,
     ) -> QueuedPrompt:
         cwd = self._validated_cwd(cwd)
+        requested_images = [image.public_dict() for image in (images or [])]
+        if prompt_id:
+            accepted = ([self._in_flight] if self._in_flight else []) + self._queue
+            for queued in accepted:
+                if queued.id != prompt_id:
+                    continue
+                queued_images = [image.public_dict() for image in queued.images]
+                if queued.message != message or queued_images != requested_images:
+                    raise RuntimeError(
+                        f"Prompt id {prompt_id} was already accepted with different content"
+                    )
+                if acceptance_result is not None:
+                    accepted_result = queued.acceptance_result or acceptance_result
+                    position = (
+                        self._queue.index(queued) if queued in self._queue else 0
+                    )
+                    self._append_transcript(
+                        "queue_enqueued",
+                        {
+                            "id": queued.id,
+                            "message": queued.message,
+                            "images": queued_images,
+                            "action": "append",
+                            "position": position,
+                            "source": source,
+                            "acceptance_result": accepted_result,
+                        },
+                    )
+                    self._flush_transcript()
+                return queued
         item = QueuedPrompt(
             id=prompt_id or str(uuid4()),
             message=message,
@@ -1157,6 +1188,7 @@ class AgentSessionRuntime:
             agent_env=self._merged_agent_env(agent_env),
             source=source,
             prompt_audit=list(prompt_audit or []),
+            acceptance_result=acceptance_result,
         )
         if action == "prepend":
             self._queue.insert(0, item)
@@ -1170,6 +1202,8 @@ class AgentSessionRuntime:
                 "images": [image.public_dict() for image in item.images],
                 "action": action,
                 "position": 0 if action == "prepend" else len(self._queue) - 1,
+                "source": source,
+                "acceptance_result": item.acceptance_result,
             },
         )
         try:

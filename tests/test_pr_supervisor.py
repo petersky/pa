@@ -25,9 +25,11 @@ from pa.domain.models import (
     ProjectCreate,
     RepositoryCreate,
 )
+from pa.domain.projection import CardProjection
 from pa.domain.store import reset_store
 from pa.execution.dispatch import DispatchRecord
 from pa.instance.agent_session import AgentSessionRuntime, reset_instance_agent
+from pa.instance.quiesce import QueuedPrompt
 from pa.pr_supervisor.gating import build_executor_prompt, evaluate_gate
 from pa.pr_supervisor.github import (
     GitHubClient,
@@ -478,6 +480,33 @@ class PRSupervisorStoreTests(unittest.TestCase):
                 target_session_id="session-1",
             )
         )
+
+    def test_stale_unfinished_dispatch_claim_is_recoverable(self) -> None:
+        claimed_at = utcnow()
+        with patch("pa.pr_supervisor.store.utcnow", return_value=claimed_at):
+            self.assertTrue(
+                self.store.claim_dispatch(
+                    "stale-unfinished",
+                    "watch-1",
+                    target_instance_id="instance-a",
+                    target_session_id="session-1",
+                )
+            )
+
+        with patch(
+            "pa.pr_supervisor.store.utcnow",
+            return_value=claimed_at + timedelta(seconds=31),
+        ):
+            self.assertTrue(
+                self.store.claim_dispatch(
+                    "stale-unfinished",
+                    "watch-1",
+                    target_instance_id="instance-a",
+                    target_session_id="session-1",
+                )
+            )
+        dispatch = self.store.list_dispatches("watch-1")[0]
+        self.assertEqual(dispatch["state"], "claimed")
 
     def test_terminal_replica_cannot_be_resurrected_by_stale_active_copy(self) -> None:
         terminal = self.store.set_terminal("watch-1", PRWatchStatus.MERGED)
@@ -2042,6 +2071,220 @@ class PRSupervisorServiceTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ExecutorWakeReplacementTests(unittest.IsolatedAsyncioTestCase):
+    def test_queue_checkpoint_recovers_original_acceptance_after_restart(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="instance-a", peers=[])
+            domain = CardProjection(Path(tmp) / "pa.db")
+            session = AgentSession(
+                id="session-1",
+                agent_name="codex",
+                status="idle",
+                principal_id="user:local",
+                cwd="/tmp/worktree",
+            )
+            domain.save_session(session)
+            manager = SimpleNamespace(
+                settings=settings,
+                store=domain,
+                async_runtime=None,
+                quiescing=False,
+            )
+            runtime = AgentSessionRuntime(manager, session)
+            runtime._queue_paused = True
+            with patch.object(runtime, "_flush_transcript"):
+                runtime.enqueue(
+                    "deliver once",
+                    source="pr-supervisor",
+                    prompt_id="authorization-1",
+                    acceptance_result="resumed_queued",
+                )
+
+            self.assertIsNone(
+                domain.get_queued_prompt_acceptance(
+                    session.id, "authorization-1"
+                )
+            )
+            persisted = domain.get_session(session.id)
+            self.assertIsNotNone(persisted)
+            durable = persisted.config_json["durable_runtime"]
+            restarted = AgentSessionRuntime(manager, persisted)
+            restarted._queue_paused = True
+            restarted._queue = [
+                QueuedPrompt.model_validate(item) for item in durable["queued_prompts"]
+            ]
+
+            accepted = restarted.enqueue(
+                "deliver once",
+                source="pr-supervisor",
+                prompt_id="authorization-1",
+                acceptance_result="live_queued",
+            )
+
+            self.assertEqual(len(restarted._queue), 1)
+            self.assertEqual(accepted.acceptance_result, "resumed_queued")
+            acceptance = domain.get_queued_prompt_acceptance(
+                session.id, "authorization-1"
+            )
+            self.assertIsNotNone(acceptance)
+            self.assertEqual(
+                acceptance.payload["acceptance_result"], "resumed_queued"
+            )
+            self.assertNotIn("acceptance_result", accepted.public_dict())
+
+    async def test_authorized_enqueue_crash_replays_once_after_restart_and_race(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="instance-a", peers=[])
+            supervisor = PRSupervisorStore(Path(tmp) / "supervisor.db")
+            domain = CardProjection(Path(tmp) / "pa.db")
+            target = watch()
+            target.head_sha = "a" * 40
+            target.condition_fingerprint = "condition-1"
+            target.condition_version = 1
+            target.owner_instance_id = "instance-a"
+            target.fence_token = 1
+            target.lease_version = 1
+            target.lease_expires_at = utcnow() + timedelta(seconds=90)
+            target.state = {"review_hold_version": 0}
+            supervisor.upsert_watch(target, preserve_lease=False)
+            prompt = "merge only after the exact green head is revalidated"
+            event_key = "authorized-crash-window"
+            bindings = {
+                "realm_id": target.realm_id,
+                "watch_id": target.id,
+                "repository": target.repository,
+                "pr_number": target.pr_number,
+                "head_sha": target.head_sha,
+                "condition_fingerprint": target.condition_fingerprint,
+                "condition_version": target.condition_version,
+                "owner_instance_id": target.owner_instance_id,
+                "fence_token": target.fence_token,
+                "lease_version": target.lease_version,
+                "effect_kind": "executor_prompt",
+                "content_digest": hashlib.sha256(prompt.encode()).hexdigest(),
+                "target_instance_id": "instance-a",
+                "target_session_id": "session-1",
+                "policy_digest": hashlib.sha256(
+                    target.policy.model_dump_json().encode()
+                ).hexdigest(),
+                "review_hold_version": 0,
+                "issuer_instance_id": "authority-a",
+            }
+            _prepared, authorization = supervisor.prepare_effect_authorization(
+                target.id,
+                owner_instance_id="instance-a",
+                fence_token=1,
+                lease_version=1,
+                event_key=event_key,
+                bindings=bindings,
+                ttl_seconds=120,
+            )
+            session = AgentSession(
+                id="session-1",
+                agent_name="codex",
+                status="idle",
+                card_id="card-1",
+                project_id="project-1",
+                principal_id="user:local",
+                cwd="/tmp/worktree",
+            )
+            domain.save_session(session)
+            manager = SimpleNamespace(
+                settings=settings,
+                store=domain,
+                async_runtime=None,
+                quiescing=False,
+            )
+            runtime = AgentSessionRuntime(manager, session)
+            runtime._queue_paused = True
+            agent = MagicMock()
+            agent.get.return_value = runtime
+            dispatcher = ExecutorDispatcher(
+                settings, domain, supervisor, agent_manager=agent
+            )
+
+            with patch.object(
+                supervisor,
+                "finish_dispatch",
+                side_effect=SystemExit("simulated process death"),
+            ), self.assertRaises(SystemExit):
+                await dispatcher.dispatch_local(
+                    supervisor.get_watch(target.id),
+                    event_key,
+                    prompt,
+                    authorization=authorization,
+                )
+
+            accepted = domain.get_prompt_acceptance(
+                session.id, str(authorization["id"])
+            )
+            self.assertIsNotNone(accepted)
+            self.assertEqual(len(runtime._queue), 1)
+            self.assertEqual(runtime._queue[0].id, authorization["id"])
+            self.assertEqual(
+                supervisor.list_dispatches(target.id)[0]["state"], "claimed"
+            )
+
+            persisted = domain.get_session(session.id)
+            self.assertIsNotNone(persisted)
+            durable = persisted.config_json["durable_runtime"]
+            restarted = AgentSessionRuntime(manager, persisted)
+            restarted._queue_paused = True
+            restarted._queue = [
+                QueuedPrompt.model_validate(item) for item in durable["queued_prompts"]
+            ]
+            self.assertEqual(
+                restarted._queue[0].acceptance_result, "live_queued"
+            )
+            restarted_agent = MagicMock()
+            restarted_agent.get.return_value = restarted
+            restarted_dispatcher = ExecutorDispatcher(
+                settings, domain, supervisor, agent_manager=restarted_agent
+            )
+            stale_time = utcnow() + timedelta(seconds=31)
+            with patch("pa.pr_supervisor.store.utcnow", return_value=stale_time):
+                raced = await asyncio.gather(
+                    restarted_dispatcher.dispatch_local(
+                        supervisor.get_watch(target.id),
+                        event_key,
+                        prompt,
+                        authorization=authorization,
+                    ),
+                    restarted_dispatcher.dispatch_local(
+                        supervisor.get_watch(target.id),
+                        event_key,
+                        prompt,
+                        authorization=authorization,
+                    ),
+                )
+
+            self.assertCountEqual(raced, ["live_queued", "deduplicated"])
+            self.assertEqual(len(restarted._queue), 1)
+            self.assertEqual(restarted._queue[0].id, authorization["id"])
+            acceptances = [
+                event
+                for event in domain.list_transcript_events(session.id)
+                if event.event_type == "queue_enqueued"
+                and event.payload.get("id") == authorization["id"]
+            ]
+            self.assertEqual(len(acceptances), 1)
+            dispatch = supervisor.list_dispatches(target.id)[0]
+            self.assertEqual(dispatch["state"], "live_queued")
+            detail = json.loads(dispatch["detail"])
+            self.assertEqual(detail["resume_state"], "live")
+            self.assertTrue(detail["acceptance_replayed"])
+            self.assertEqual(detail["attempt_resume_state"], "live")
+
+            post_finish = await restarted_dispatcher.dispatch_local(
+                supervisor.get_watch(target.id),
+                event_key,
+                prompt,
+                authorization=authorization,
+            )
+            self.assertEqual(post_finish, "deduplicated")
+            self.assertEqual(len(restarted._queue), 1)
+
     async def test_ambiguous_remote_failure_never_falls_back_locally(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), instance_id="instance-b")
