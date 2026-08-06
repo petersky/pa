@@ -14,7 +14,28 @@
     ) }}
   {% endfor %}
 </div>
-{% if done_show_more_query %}
+{% if filtered_pagination %}
+<div class="done-list-actions card-page-continuation"
+     data-filtered-card-continuation
+     role="status" aria-live="polite">
+  <span class="muted">Showing {{ filtered_visible }} of {{ filtered_total }}</span>
+  {% if filtered_show_more_query %}
+  <button type="button"
+          id="filtered-continuation-{{ lane.value if lane else 'all' }}"
+          class="ghost"
+          data-filter-show-more
+          hx-get="/partials/cards?{{ filtered_show_more_query }}"
+          hx-target="closest .card-page-continuation"
+          hx-swap="outerHTML"
+          aria-label="Show {{ filtered_show_more_count }} more {{ filters.attention }} cards{% if lane %} in {{ lane.value }}{% endif %}">
+    Show {{ filtered_show_more_count }} more
+  </button>
+  {% else %}
+  <span id="filtered-continuation-{{ lane.value if lane else 'all' }}"
+        class="sr-only" tabindex="-1">All filtered cards are shown.</span>
+  {% endif %}
+</div>
+{% elif done_show_more_query %}
 <div class="done-list-actions">
   <span class="muted">Showing {{ done_visible }} of {{ done_total }}</span>
   <button type="button"

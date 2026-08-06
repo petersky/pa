@@ -1168,12 +1168,37 @@ def _card_activity_context(request: Request, card) -> dict:
     }
 
 
+def _canonical_presentation_counts(request: Request) -> dict[str, int]:
+    """Count every lifecycle group from fixed-size, body-free cached pages."""
+    store = get_store()
+    realm = _active_realm(request)
+    counts = {group: 0 for group in ("attention", "motion", "outcome", "quiet")}
+    offset = 0
+    while True:
+        page = store.list_card_work_projections(
+            realm_id=realm,
+            limit=WORK_PRESENTATION_PAGE_LIMIT,
+            offset=offset,
+        )
+        if not page:
+            break
+        _, _, presentations, _ = _presentation_context_for_cards(request, page)
+        for card in page:
+            group = presentations[card.id]["group"]
+            counts[group] = counts.get(group, 0) + 1
+        offset += len(page)
+        if len(page) < WORK_PRESENTATION_PAGE_LIMIT:
+            break
+    return counts
+
+
 def _bounded_attention_cards_context(
     request: Request,
     *,
     kind: CardKind | None,
     lane: CardLane | None,
     result_limit: int,
+    result_offset: int = 0,
 ) -> dict:
     """Filter lifecycle groups in fixed-size body-free pages before hydration."""
     store = get_store()
@@ -1223,7 +1248,11 @@ def _bounded_attention_cards_context(
             if page_presentations[projection.id]["group"] != expected_group:
                 continue
             total_cards += 1
-            if len(matching_ids) < result_limit:
+            match_index = total_cards - 1
+            if (
+                match_index >= result_offset
+                and len(matching_ids) < result_limit
+            ):
                 matching_ids.append(projection.id)
         offset += len(projection_page)
         if len(projection_page) < WORK_PRESENTATION_PAGE_LIMIT:
@@ -1258,6 +1287,7 @@ def _bounded_attention_cards_context(
     return {
         "cards": cards,
         "total_cards": total_cards,
+        "page_offset": result_offset,
         "items": [Item.from_card(card) for card in cards],
         "kinds": list(CardKind),
         "lanes": list(CardLane),
@@ -1298,6 +1328,7 @@ def _cards_context(
     lane: CardLane | None = None,
     apply_filters: bool = True,
     result_limit: int | None = None,
+    result_offset: int = 0,
 ) -> dict:
     store = get_store()
     realm = _active_realm(request)
@@ -1316,7 +1347,11 @@ def _cards_context(
         and hasattr(store, "list_card_work_projections")
     ):
         return _bounded_attention_cards_context(
-            request, kind=kind, lane=lane, result_limit=result_limit
+            request,
+            kind=kind,
+            lane=lane,
+            result_limit=result_limit,
+            result_offset=result_offset,
         )
     cards = store.list_cards(
         realm_id=realm,
@@ -1374,7 +1409,7 @@ def _cards_context(
         ]
     total_cards = len(cards)
     if result_limit is not None:
-        cards = cards[:result_limit]
+        cards = cards[result_offset : result_offset + result_limit]
     projects = store.list_projects(realm_id=realm)
     project_by_id = {project.id: project for project in projects}
     card_sessions, card_progress, card_presentations, _ = (
@@ -1520,6 +1555,31 @@ def _home_context(request: Request) -> dict:
         else {"nodes": [], "edges": []}
     )
     snapshot = build_workshop_snapshot(ctx, overview, realm_id=realm)
+    canonical_counts = _canonical_presentation_counts(request)
+    snapshot_total = snapshot["counts"].get(
+        "total", snapshot.get("inventory", {}).get("total", 0)
+    )
+    if sum(canonical_counts.values()) != snapshot_total:
+        projected_counts = snapshot["counts"].get("presentations", {})
+        rendered_counts = {
+            group: sum(
+                1
+                for item in snapshot.get("work_orders", ())
+                if item.get("presentation", {}).get("group") == group
+            )
+            for group in ("attention", "motion", "outcome", "quiet")
+        }
+        canonical_counts = {
+            "attention": projected_counts.get(
+                "attention", rendered_counts["attention"]
+            ),
+            "motion": projected_counts.get("motion", rendered_counts["motion"]),
+            "outcome": snapshot["counts"].get("lanes", {}).get(
+                CardLane.DONE.value,
+                projected_counts.get("outcome", rendered_counts["outcome"]),
+            ),
+            "quiet": projected_counts.get("quiet", rendered_counts["quiet"]),
+        }
     work_orders = list(snapshot["work_orders"])
 
     def sort_key(item: dict) -> tuple[int, str, str]:
@@ -1547,17 +1607,11 @@ def _home_context(request: Request) -> dict:
     )
     return {
         "needs_attention": attention[:HOME_ATTENTION_LIMIT],
-        "needs_attention_total": snapshot["counts"].get("presentations", {}).get(
-            "attention", len(attention)
-        ),
+        "needs_attention_total": canonical_counts["attention"],
         "active_work": in_motion[:HOME_MOTION_LIMIT],
-        "active_work_total": snapshot["counts"].get("presentations", {}).get(
-            "motion", len(in_motion)
-        ),
+        "active_work_total": canonical_counts["motion"],
         "recent_outcomes": outcomes[:HOME_OUTCOME_LIMIT],
-        "recent_outcomes_total": snapshot["counts"]["lanes"].get(
-            CardLane.DONE.value, len(outcomes)
-        ),
+        "recent_outcomes_total": canonical_counts["outcome"],
         "home_inventory": snapshot["inventory"],
         "agent_connected": bool(agent and agent.connected),
         "fleet_instances": fleet_instances,
@@ -2472,14 +2526,43 @@ def cards_partial(
     realm: str | None = None,
     project: str | None = None,
     limit: int = 10,
+    offset: int = 0,
 ) -> HTMLResponse:
     page_limit = min(100, max(10, limit))
-    context = _cards_context(request, lane=lane, result_limit=page_limit)
+    attention_filter = request.query_params.get("attention", "").strip()
+    filtered_pagination = attention_filter in {
+        "actionable",
+        "motion",
+        "outcome",
+    }
+    page_offset = max(0, offset) if filtered_pagination else 0
+    context = _cards_context(
+        request,
+        lane=lane,
+        result_limit=page_limit,
+        result_offset=page_offset,
+    )
+    filtered_total = context["total_cards"] if filtered_pagination else 0
+    filtered_visible = min(
+        filtered_total, page_offset + len(context["cards"])
+    )
+    filtered_show_more_count = min(
+        page_limit, max(0, filtered_total - filtered_visible)
+    )
+    filtered_show_more_query = ""
+    if filtered_show_more_count:
+        continuation_params = dict(request.query_params)
+        if lane:
+            continuation_params["lane"] = lane.value
+        continuation_params["limit"] = str(page_limit)
+        continuation_params["offset"] = str(filtered_visible)
+        filtered_show_more_query = urlencode(continuation_params)
+
     done_total = 0
     done_visible = 0
     done_show_more_count = 0
     done_show_more_query = ""
-    if lane == CardLane.DONE:
+    if lane == CardLane.DONE and not filtered_pagination:
         done_total = context["total_cards"]
         done_visible = len(context["cards"])
         done_show_more_count = min(10, done_total - done_visible)
@@ -2494,6 +2577,11 @@ def cards_partial(
         {
             **context,
             "lane": lane,
+            "filtered_pagination": filtered_pagination and filtered_total > 0,
+            "filtered_total": filtered_total,
+            "filtered_visible": filtered_visible,
+            "filtered_show_more_count": filtered_show_more_count,
+            "filtered_show_more_query": filtered_show_more_query,
             "done_total": done_total,
             "done_visible": done_visible,
             "done_show_more_count": done_show_more_count,

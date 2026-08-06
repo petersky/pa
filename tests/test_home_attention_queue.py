@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import shutil
 import tempfile
 import threading
@@ -24,6 +25,7 @@ from pa.domain.models import CardCreate, CardLane
 from pa.domain.store import reset_store
 from pa.instance.agent_session import reset_instance_agent
 from pa.modules.items import _bounded_attention_cards_context
+from pa.pr_supervisor.models import PRWatch
 
 ROOT = Path(__file__).parents[1]
 
@@ -174,6 +176,137 @@ class HomeAttentionQueueRouteTests(unittest.TestCase):
         self.assertIn("Showing 6 of 109 actionable cards", response.text)
         self.assertIn("Showing 8 of 121 cards in motion", response.text)
 
+    def test_home_totals_count_all_durable_actionable_watch_cards(self) -> None:
+        with TestClient(self.app) as client:
+            store = self.app.state.ctx.store
+            supervisor = self.app.state.ctx.require_service("pr_supervisor_store")
+            for index in range(250):
+                card = store.create_card(
+                    CardCreate(
+                        title=f"Canonical attention {index:03d}",
+                        lane=CardLane.WAITING,
+                    )
+                )
+                supervisor.upsert_watch(
+                    PRWatch(
+                        card_id=card.id,
+                        repository="petersky/pa",
+                        pr_number=index + 1,
+                        pr_url=(
+                            "https://github.com/petersky/pa/pull/"
+                            f"{index + 1}"
+                        ),
+                        status="blocked",
+                        state={
+                            "gate": {
+                                "actionable": True,
+                                "reasons": ["Review required"],
+                            }
+                        },
+                    ),
+                    preserve_lease=False,
+                )
+
+            response = client.get("/")
+
+        self.assertEqual(store.count_cards(realm_id="default"), 250)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.text.count('data-attention-group="attention"'), 6
+        )
+        self.assertIn("Showing 6 of 250 actionable cards", response.text)
+
+    def test_actionable_and_motion_filters_page_all_body_free_results(self) -> None:
+        with TestClient(self.app) as client:
+            store = self.app.state.ctx.store
+            for index in range(25):
+                store.create_card(
+                    CardCreate(
+                        title=f"Filtered row {index:02d}",
+                        body=f"Full authored body {index:02d} must stay off Work.",
+                        lane=CardLane.WAITING,
+                    )
+                )
+
+            def fake_presentations(request, cards):
+                attention = request.query_params.get("attention")
+                group = "attention" if attention == "actionable" else "motion"
+                presentations = {}
+                for candidate in cards:
+                    presentation = present_work_item(candidate)
+                    presentation.update(
+                        {
+                            "group": group,
+                            "attention": group == "attention",
+                            "state": (
+                                "review_required"
+                                if group == "attention"
+                                else "working"
+                            ),
+                            "state_label": (
+                                "Review needed"
+                                if group == "attention"
+                                else "Working"
+                            ),
+                            "summary": "Canonical bounded row.",
+                            "reason": "Current lifecycle evidence.",
+                            "action": {
+                                "kind": (
+                                    "review"
+                                    if group == "attention"
+                                    else "open_card"
+                                ),
+                                "label": (
+                                    "Review"
+                                    if group == "attention"
+                                    else "Open card"
+                                ),
+                                "href": f"/?card={candidate.id}",
+                            },
+                        }
+                    )
+                    presentations[candidate.id] = presentation
+                return {}, {}, presentations, {}
+
+            for attention in ("actionable", "motion"):
+                pages = []
+                with patch(
+                    "pa.modules.items._presentation_context_for_cards",
+                    side_effect=fake_presentations,
+                ):
+                    for offset in (0, 10, 20):
+                        pages.append(
+                            client.get(
+                                "/partials/cards?lane=waiting"
+                                f"&attention={attention}&offset={offset}"
+                            )
+                        )
+
+                expected_sizes = (10, 10, 5)
+                page_ids = []
+                for page, expected_size in zip(pages, expected_sizes, strict=True):
+                    self.assertEqual(page.status_code, 200)
+                    ids = re.findall(
+                        r'<article class="compact-card[^>]+data-card-id="([^"]+)"',
+                        page.text,
+                    )
+                    self.assertEqual(len(ids), expected_size)
+                    page_ids.append(set(ids))
+                    self.assertNotIn("Full authored body", page.text)
+
+                self.assertEqual(len(set().union(*page_ids)), 25)
+                self.assertTrue(page_ids[0].isdisjoint(page_ids[1]))
+                self.assertTrue(page_ids[1].isdisjoint(page_ids[2]))
+                self.assertIn("Showing 10 of 25", pages[0].text)
+                self.assertIn("Showing 20 of 25", pages[1].text)
+                self.assertIn("Showing 25 of 25", pages[2].text)
+                self.assertIn(f"attention={attention}", pages[0].text)
+                self.assertIn("offset=10", pages[0].text)
+                self.assertIn("offset=20", pages[1].text)
+                self.assertIn("data-filter-show-more", pages[0].text)
+                self.assertIn("data-filter-show-more", pages[1].text)
+                self.assertNotIn("data-filter-show-more", pages[2].text)
+
     def test_attention_filter_pages_body_free_rows_before_hydration(self) -> None:
         with TestClient(self.app):
             pass
@@ -308,6 +441,16 @@ class HomeAttentionQueueManagedBrowserTests(unittest.IsolatedAsyncioTestCase):
             html = client.get("/").text
         (root / "index.html").write_text(html)
         shutil.copytree(ROOT / "src/pa/server/static", root / "static")
+        (root / "pagination-next.html").write_text(
+            '<div class="compact-card-list">'
+            '<article class="compact-card" data-card-id="page-two">'
+            '<h3>Second bounded row — 超長い Unicode 🧭</h3></article></div>'
+            '<div class="done-list-actions card-page-continuation" '
+            'data-filtered-card-continuation role="status" aria-live="polite">'
+            '<span class="muted">Showing 20 of 20</span>'
+            '<span id="filtered-continuation-waiting" class="sr-only" '
+            'tabindex="-1">All filtered cards are shown.</span></div>'
+        )
         for group in ("attention", "motion", "outcome"):
             for index in range(9 if group != "motion" else 11):
                 detail = (
@@ -494,3 +637,54 @@ class HomeAttentionQueueManagedBrowserTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(zoomed["cards"], zoomed)
         self.assertTrue(zoomed["preserved"])
+
+    async def test_filtered_continuation_appends_and_restores_focus(self) -> None:
+        session = self.manager.resolve(self.scope)
+        await session.page.evaluate(
+            """(() => {
+              const view = document.getElementById('app-view');
+              view.innerHTML = `
+                <section class="board-column-body">
+                  <div class="compact-card-list">
+                    <article class="compact-card" data-card-id="page-one">
+                      <h3>First bounded row</h3>
+                    </article>
+                  </div>
+                  <div class="done-list-actions card-page-continuation"
+                       data-filtered-card-continuation role="status"
+                       aria-live="polite">
+                    <span class="muted">Showing 10 of 20</span>
+                    <button type="button" id="filtered-continuation-waiting"
+                            data-filter-show-more
+                            hx-get="/pagination-next.html"
+                            hx-target="closest .card-page-continuation"
+                            hx-swap="outerHTML"
+                            aria-label="Show 10 more actionable cards in waiting">
+                      Show 10 more
+                    </button>
+                  </div>
+                </section>`;
+              htmx.process(view);
+              document.getElementById('filtered-continuation-waiting').focus();
+            })()"""
+        )
+        await session.page.evaluate(
+            "document.getElementById('filtered-continuation-waiting').click()"
+        )
+        await asyncio.sleep(0.3)
+        state = await session.page.evaluate(
+            """(() => ({
+              ids: Array.from(document.querySelectorAll('[data-card-id]'))
+                .map(node => node.dataset.cardId),
+              showing: document.querySelector('[data-filtered-card-continuation]')
+                .textContent.includes('Showing 20 of 20'),
+              focused: document.activeElement.id === 'filtered-continuation-waiting',
+              finalStatus: document.activeElement.textContent.trim(),
+              noOverflow: document.documentElement.scrollWidth <= innerWidth
+            }))()"""
+        )
+        self.assertEqual(state["ids"], ["page-one", "page-two"])
+        self.assertTrue(state["showing"])
+        self.assertTrue(state["focused"])
+        self.assertEqual(state["finalStatus"], "All filtered cards are shown.")
+        self.assertTrue(state["noOverflow"])

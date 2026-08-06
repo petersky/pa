@@ -1685,8 +1685,11 @@
       }
       restoreHomeRefreshFocus("Home attention queue refreshed.");
     }
-    if (target && target.classList.contains("board-column-body")) {
-      initBoardDragDrop(target.closest(".board-grid") || document);
+    var boardBody = target && typeof target.closest === "function"
+      ? target.closest(".board-column-body")
+      : null;
+    if (boardBody) {
+      initBoardDragDrop(boardBody.closest(".board-grid") || document);
     }
     if (target && target.id === "card-detail-dialog-content") {
       if (!target.querySelector("[data-card-detail]")) {
