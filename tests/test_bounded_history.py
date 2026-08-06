@@ -136,6 +136,56 @@ class BoundedHistoryTests(unittest.TestCase):
             )
             self.assertEqual(history[-1]["parent_hashes"], branch_heads)
 
+    def test_history_cursor_is_bound_to_realm_before_log_access(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            log = EventLog(
+                ObjectStore(Path(tmp) / "objects"), Path(tmp), "instance"
+            )
+            commits = {
+                "head": SyncCommit(
+                    hash="head",
+                    realm_id="realm-a",
+                    instance_id="instance",
+                    parent_hashes=["parent"],
+                    event_hashes=["event-head"],
+                    author_principal="user:test",
+                ),
+                "parent": SyncCommit(
+                    hash="parent",
+                    realm_id="realm-a",
+                    instance_id="instance",
+                    event_hashes=["event-parent"],
+                    author_principal="user:test",
+                ),
+            }
+            events = {
+                "event-head": _update_event("event-head"),
+                "event-parent": _update_event("event-parent"),
+            }
+            with (
+                patch.object(log, "get_head", return_value="head"),
+                patch.object(log, "get_commit", side_effect=commits.get),
+                patch.object(log, "get_event", side_effect=events.get),
+            ):
+                page = log.entity_history_page(
+                    "realm-a", "card", "history-card", limit=1
+                )
+            self.assertTrue(page["has_more"])
+            with (
+                patch.object(
+                    log,
+                    "get_head",
+                    side_effect=AssertionError("realm B must not be read"),
+                ),
+                self.assertRaises(EventHistoryCursorError),
+            ):
+                log.entity_history_page(
+                    "realm-b",
+                    "card",
+                    "history-card",
+                    cursor=page["next_cursor"],
+                )
+
     def test_missing_parent_is_a_typed_bounded_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             log = EventLog(

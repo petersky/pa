@@ -571,6 +571,7 @@ class CardEvent(BaseModel):
     idempotency_key: str | None = None
     request_fingerprint: str | None = None
     operation_result: dict | None = None
+    operation_result_complete: bool = True
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 

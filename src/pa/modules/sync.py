@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+from datetime import UTC, datetime
 from typing import Annotated, Any, Callable
 
 from fastapi import APIRouter, Header, HTTPException, Request, Response
@@ -41,6 +42,85 @@ async def _offload(
     # Unit/embedded contexts created without a Kernel keep compatibility. Every
     # real ASGI/MCP Kernel installs the bounded runtime before modules load.
     return await asyncio.to_thread(call, *args, **kwargs)
+
+
+def _replace_convergence_head(value, previous_head: str | None):
+    if isinstance(value, dict):
+        return {
+            key: (
+                {"$pa_commit_hash": True}
+                if key == "head" and item == previous_head
+                else _replace_convergence_head(item, previous_head)
+            )
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [
+            _replace_convergence_head(item, previous_head) for item in value
+        ]
+    return value
+
+
+def _hydrate_commit_hash(value, commit_hash: str):
+    if isinstance(value, dict):
+        if value == {"$pa_commit_hash": True}:
+            return commit_hash
+        return {
+            key: _hydrate_commit_hash(item, commit_hash)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_hydrate_commit_hash(item, commit_hash) for item in value]
+    return value
+
+
+async def _finalize_conflict_operation(
+    ctx: AppContext,
+    store,
+    log: EventLog,
+    *,
+    realm_id: str,
+    key: str,
+    resolution_head: str,
+    operation_event: CardEvent,
+) -> dict:
+    """Persist and replicate an exact, self-reconstructing operation outcome."""
+    engine: SyncEngine = ctx.require_service("sync_engine")
+    convergence = await engine.converge_realm(realm_id)
+    result_template = {
+        "realm_id": realm_id,
+        "head": {"$pa_commit_hash": True},
+        "resolution_head": resolution_head,
+        "resolved": int((operation_event.operation_result or {}).get("resolved", 0)),
+        "convergence": _replace_convergence_head(
+            convergence, convergence.get("head")
+        ),
+    }
+    outcome_event = operation_event.model_copy(
+        update={
+            "payload": {
+                "operation_outcome": True,
+                "resolution_head": resolution_head,
+            },
+            "operation_result": result_template,
+            "operation_result_complete": True,
+            "timestamp": datetime.now(UTC),
+        }
+    )
+
+    def persist_outcome():
+        with store.mutation():
+            return store.commit_event(outcome_event)
+
+    outcome_commit = await _offload(
+        ctx, "sync.resolve_outcome", persist_outcome, timeout=120.0
+    )
+    result = _hydrate_commit_hash(result_template, outcome_commit.hash)
+    store.complete_operation(key, result)
+    # Replicate the receipt-bearing outcome commit. The commit callback also
+    # schedules convergence, so a process loss at this boundary remains safe.
+    await engine.converge_realm(realm_id)
+    return result
 
 
 def _membership_principal(request: Request) -> str:
@@ -362,6 +442,36 @@ async def resolve_sync_conflicts(
 
     ctx: AppContext = request.app.state.ctx
     log: EventLog = ctx.require_service("event_log")
+    durable_operation = await _offload(
+        ctx,
+        "sync.resolve_operation_lookup",
+        log.find_operation_event,
+        realm_id,
+        key,
+    )
+    if durable_operation and not durable_operation[2].operation_result_complete:
+        _key, _fingerprint, claimed_replay = _begin_operation(
+            request,
+            operation="sync.resolve_conflicts",
+            realm_id=realm_id,
+            payload={"remote_head": remote_head, "resolutions": resolutions},
+            store=store,
+        )
+        if claimed_replay is not None:
+            response.headers["X-PA-Operation-Replayed"] = "true"
+            return claimed_replay
+        result = await _finalize_conflict_operation(
+            ctx,
+            store,
+            log,
+            realm_id=realm_id,
+            key=key,
+            resolution_head=durable_operation[0],
+            operation_event=durable_operation[2],
+        )
+        response.headers["X-PA-Operation-Replayed"] = "true"
+        return result
+
     local_head, remote_commit = await _offload(
         ctx,
         "sync.resolve_heads_read",
@@ -630,17 +740,24 @@ async def resolve_sync_conflicts(
         ctx,
         "sync.resolve_commit", commit_resolution, timeout=120.0
     )
-    engine: SyncEngine = ctx.require_service("sync_engine")
-    convergence = await engine.converge_realm(realm_id)
-    result = {
-        "realm_id": realm_id,
-        "head": convergence["head"],
-        "resolution_head": merge.hash,
-        "resolved": len(events),
-        "convergence": convergence,
-    }
-    store.complete_operation(key, result)
-    return result
+    durable_operation = await _offload(
+        ctx,
+        "sync.resolve_operation_lookup",
+        log.find_operation_event,
+        realm_id,
+        key,
+    )
+    if not durable_operation:
+        raise RuntimeError("resolution commit is missing its operation receipt")
+    return await _finalize_conflict_operation(
+        ctx,
+        store,
+        log,
+        realm_id=realm_id,
+        key=key,
+        resolution_head=merge.hash,
+        operation_event=durable_operation[2],
+    )
 
 
 @router.get("/sync/status")

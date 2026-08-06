@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import binascii
 import fcntl
+import hashlib
 import json
 import os
 import threading
@@ -397,10 +398,11 @@ class EventLog:
         commit_hash: str,
         handler: Callable[[CardEvent], None],
         *,
+        provenance_handler: Callable[[str, str, CardEvent], None] | None = None,
         seen: set[str] | None = None,
         max_commits: int = MAX_HISTORY_COMMITS,
     ) -> None:
-        for _, commit in self._iter_commits_parent_first(
+        for current_hash, commit in self._iter_commits_parent_first(
             commit_hash, seen=seen, max_commits=max_commits
         ):
             for event_hash in commit.event_hashes:
@@ -409,6 +411,8 @@ class EventLog:
                     raise EventHistoryObjectError(
                         "missing_event", event_hash, "event"
                     )
+                if provenance_handler is not None:
+                    provenance_handler(current_hash, event_hash, event)
                 handler(event)
 
     def merge_heads(
@@ -599,6 +603,7 @@ class EventLog:
                 "resolved": len(events),
                 "durable": True,
             },
+            operation_result_complete=False,
         )
         event_hashes = [
             self.store.put_json(event.model_dump(mode="json"))
@@ -896,12 +901,25 @@ class EventLog:
         return state
 
     @staticmethod
+    def _history_query_digest(realm_id: str, entity: str, entity_id: str) -> str:
+        canonical = json.dumps(
+            {"realm_id": realm_id, "entity": entity, "entity_id": entity_id},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+        return hashlib.sha256(canonical).hexdigest()
+
+    @classmethod
     def _history_cursor(
-        head: str, entity: str, entity_id: str, offset: int
+        cls, realm_id: str, head: str, entity: str, entity_id: str, offset: int
     ) -> str:
         payload = json.dumps(
             {
-                "version": 1,
+                "version": 2,
+                "realm_id": realm_id,
+                "query_digest": cls._history_query_digest(
+                    realm_id, entity, entity_id
+                ),
                 "head": head,
                 "entity": entity,
                 "entity_id": entity_id,
@@ -912,18 +930,21 @@ class EventLog:
         ).encode()
         return base64.urlsafe_b64encode(payload).decode().rstrip("=")
 
-    @staticmethod
+    @classmethod
     def _decode_history_cursor(
-        cursor: str, entity: str, entity_id: str
+        cls, cursor: str, realm_id: str, entity: str, entity_id: str
     ) -> tuple[str, int]:
         try:
             padded = cursor + "=" * (-len(cursor) % 4)
             payload = json.loads(base64.urlsafe_b64decode(padded).decode())
             if (
                 not isinstance(payload, dict)
-                or payload.get("version") != 1
+                or payload.get("version") != 2
+                or payload.get("realm_id") != realm_id
                 or payload.get("entity") != entity
                 or payload.get("entity_id") != entity_id
+                or payload.get("query_digest")
+                != cls._history_query_digest(realm_id, entity, entity_id)
                 or not isinstance(payload.get("head"), str)
                 or not isinstance(payload.get("offset"), int)
                 or payload["offset"] < 0
@@ -950,10 +971,14 @@ class EventLog:
         max_commits: int = MAX_HISTORY_COMMITS,
     ) -> dict[str, Any]:
         """Return one stable page from an immutable head snapshot."""
-        head = self.get_head(realm_id)
         offset = 0
         if cursor:
-            head, offset = self._decode_history_cursor(cursor, entity, entity_id)
+            # Validate cursor scope before touching the requested realm's log.
+            head, offset = self._decode_history_cursor(
+                cursor, realm_id, entity, entity_id
+            )
+        else:
+            head = self.get_head(realm_id)
         limit = max(1, min(int(limit), MAX_HISTORY_COMMITS))
         if not head:
             return {
@@ -1025,12 +1050,14 @@ class EventLog:
         except EventHistoryLimitError as exc:
             exc.partial_records = records
             exc.next_cursor = self._history_cursor(
-                head, entity, entity_id, offset + len(records)
+                realm_id, head, entity, entity_id, offset + len(records)
             )
             raise
 
         next_cursor = (
-            self._history_cursor(head, entity, entity_id, offset + len(records))
+            self._history_cursor(
+                realm_id, head, entity, entity_id, offset + len(records)
+            )
             if has_more
             else None
         )

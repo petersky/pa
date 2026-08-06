@@ -10,9 +10,9 @@ from fastapi.testclient import TestClient
 from pa.auth.users import UserDirectory
 from pa.config import Settings, reset_settings
 from pa.core.kernel import Kernel
-from pa.domain.models import CardCreate, CardUpdate
+from pa.domain.models import CardCreate, CardEvent, CardUpdate, EventType, SyncCommit
 from pa.execution.dispatch import DispatchRecord, DispatchStore
-from pa.domain.projection import CardProjection
+from pa.domain.projection import CardProjection, MutationOperationConflict
 from pa.domain.store import reset_store
 from pa.instance.agent_session import reset_instance_agent
 from pa.sync.event_log import EventLog
@@ -80,6 +80,109 @@ class MutationReceiptCrashTests(unittest.TestCase):
         history = self.log.entity_history("default", "card", replay["id"])
         self.assertEqual(len(history), 1)
         self.assertEqual(history[0]["event"]["idempotency_key"], key)
+
+    def test_fresh_projection_replays_create_without_a_duplicate(self) -> None:
+        key = "fresh-projection-create"
+        fingerprint = "fresh-projection-fingerprint"
+        self._claim(key, "card.create", fingerprint)
+        created = self.projection.create_card(
+            CardCreate(title="Only one durable card"),
+            idempotency_key=key,
+            request_fingerprint=fingerprint,
+        )
+        result = created.model_dump(mode="json")
+        self.projection.complete_operation(key, result)
+
+        fresh = CardProjection(self.root / "fresh.db", self.log)
+        replay = fresh.begin_operation(
+            idempotency_key=key,
+            operation="card.create",
+            request_fingerprint=fingerprint,
+            realm_id="default",
+        )
+
+        self.assertEqual(replay, result)
+        self.assertEqual([card.id for card in fresh.list_cards()], [created.id])
+        attributable = [
+            item
+            for item in self.log.entity_history(
+                "default", "card", created.id
+            )
+            if item["event"]["idempotency_key"] == key
+        ]
+        self.assertEqual(len(attributable), 1)
+
+    def test_rebuild_rejects_distinct_events_with_the_same_key(self) -> None:
+        key = "duplicate-durable-key"
+        fingerprint = "duplicate-durable-fingerprint"
+        self._claim(key, "card.create", fingerprint)
+        created = self.projection.create_card(
+            CardCreate(title="First durable event"),
+            idempotency_key=key,
+            request_fingerprint=fingerprint,
+        )
+        durable = self.log.find_operation_event("default", key)
+        assert durable is not None
+        duplicate = durable[2].model_copy(
+            update={
+                "id": "distinct-duplicate-event",
+                "card_id": created.id,
+                "type": EventType.CARD_UPDATED,
+                "payload": {"title": "Duplicate durable event"},
+            }
+        )
+        self.log.append_event(duplicate)
+
+        with self.assertRaises(MutationOperationConflict):
+            CardProjection(self.root / "duplicate-rebuild.db", self.log)
+
+    def test_deep_log_rebuild_restores_exact_create_receipt(self) -> None:
+        key = "deep-rebuild-create"
+        fingerprint = "deep-rebuild-fingerprint"
+        self._claim(key, "card.create", fingerprint)
+        created = self.projection.create_card(
+            CardCreate(title="Original"),
+            idempotency_key=key,
+            request_fingerprint=fingerprint,
+        )
+        original = created.model_dump(mode="json")
+        self.projection.complete_operation(key, original)
+        original_head = self.log.get_head("default")
+        parent = original_head
+        assert parent is not None
+        for index in range(2_100):
+            event = CardEvent(
+                type=EventType.CARD_UPDATED,
+                realm_id="default",
+                card_id=created.id,
+                author_principal="user:test",
+                author_instance="instance",
+                payload={"title": f"Update {index}"},
+            )
+            event_hash = self.log.store.put_json(event.model_dump(mode="json"))
+            commit = SyncCommit(
+                hash="",
+                realm_id="default",
+                instance_id="instance",
+                parent_hashes=[parent],
+                event_hashes=[event_hash],
+                author_principal="user:test",
+            )
+            parent = self.log.store.put_json(commit.model_dump(mode="json"))
+        self.log.advance_ref("default", parent, expected_head=original_head)
+
+        rebuilt = CardProjection(self.root / "deep-rebuilt.db", self.log)
+        rebuilt.rebuild_from_log("default")
+        replay = rebuilt.begin_operation(
+            idempotency_key=key,
+            operation="card.create",
+            request_fingerprint=fingerprint,
+            realm_id="default",
+        )
+
+        self.assertEqual(replay, original)
+        self.assertEqual(rebuilt.get_card(created.id).title, "Update 2099")
+        self.assertEqual(len(rebuilt.list_cards()), 1)
 
     def test_create_recovers_after_crash_during_projection_apply(self) -> None:
         key = "create-during-apply"
@@ -190,6 +293,16 @@ class MutationReceiptCrashTests(unittest.TestCase):
         durable_head = self.log.get_head("default")
 
         restarted = CardProjection(self.root / "pa.db", self.log)
+        pending = restarted.get_operation_outcome(key)
+        self.assertEqual(pending["status"], "retryable")
+        self.assertFalse(pending["durable"])
+        self.assertEqual(
+            pending["recovery_state"], "safe_to_retry_with_same_key"
+        )
+        self.assertEqual(
+            pending["recovery_action"], "retry_same_operation_with_same_key"
+        )
+
         replay = restarted.begin_operation(
             idempotency_key=key,
             operation="sync.reconcile",

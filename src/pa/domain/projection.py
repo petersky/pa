@@ -969,7 +969,19 @@ class CardProjection:
                 (key,),
             ).fetchone()
         if row is None:
-            return None
+            self._restore_operation_from_log(
+                idempotency_key=key,
+                operation=operation,
+                request_fingerprint=request_fingerprint,
+                realm_id=realm_id,
+            )
+            with self._conn() as conn:
+                row = conn.execute(
+                    "SELECT * FROM mutation_operations WHERE idempotency_key=?",
+                    (key,),
+                ).fetchone()
+            if row is None:
+                return None
         record = dict(row)
         if (
             record["operation"] != operation
@@ -1005,6 +1017,18 @@ class CardProjection:
         if not key:
             raise ValueError("Idempotency-Key cannot be empty")
         now = datetime.now(UTC).isoformat()
+        with self._conn() as conn:
+            has_receipt = conn.execute(
+                "SELECT 1 FROM mutation_operations WHERE idempotency_key=?",
+                (key,),
+            ).fetchone()
+        if has_receipt is None:
+            self._restore_operation_from_log(
+                idempotency_key=key,
+                operation=operation,
+                request_fingerprint=request_fingerprint,
+                realm_id=realm_id,
+            )
         with self._conn() as conn:
             conn.execute("BEGIN IMMEDIATE")
             row = conn.execute(
@@ -1081,6 +1105,29 @@ class CardProjection:
                 )
         return None
 
+    def _restore_operation_from_log(
+        self,
+        *,
+        idempotency_key: str,
+        operation: str,
+        request_fingerprint: str,
+        realm_id: str,
+    ) -> None:
+        """Restore a durable receipt before admitting a same-key mutation."""
+        if not self.event_log:
+            return
+        found = self.event_log.find_operation_event(realm_id, idempotency_key)
+        if not found:
+            return
+        commit_hash, event_hash, event = found
+        if (
+            event.source_operation != operation
+            or event.request_fingerprint != request_fingerprint
+            or event.realm_id != realm_id
+        ):
+            raise MutationOperationConflict(idempotency_key)
+        self.mark_operation_durable(event, commit_hash, event_hash=event_hash)
+
     def _recover_operation(self, record: dict) -> dict | None:
         if not self.event_log:
             return None
@@ -1090,11 +1137,17 @@ class CardProjection:
         if not found:
             return None
         commit_hash, event_hash, event = found
-        if event.request_fingerprint != record["request_fingerprint"]:
+        if (
+            event.source_operation != record["operation"]
+            or event.request_fingerprint != record["request_fingerprint"]
+            or event.realm_id != record["realm_id"]
+        ):
             raise MutationOperationConflict(record["idempotency_key"])
         self.mark_operation_durable(event, commit_hash, event_hash=event_hash)
 
-        result = event.operation_result
+        result = self._hydrate_operation_result(
+            event.operation_result, commit_hash
+        )
         if result is None and event.card_id:
             result = self.event_log.entity_snapshot(
                 commit_hash, "card", event.card_id
@@ -1117,12 +1170,30 @@ class CardProjection:
             and self.get_projection_head(record["realm_id"]) != durable_head
         ):
             self.rebuild_from_log(record["realm_id"])
+        if not event.operation_result_complete:
+            return None
         self.complete_operation(
             record["idempotency_key"],
             result,
             recovery_state="recovered_after_durable_append",
         )
         return result
+
+    @staticmethod
+    def _hydrate_operation_result(value, commit_hash: str):
+        if isinstance(value, dict):
+            if value == {"$pa_commit_hash": True}:
+                return commit_hash
+            return {
+                key: CardProjection._hydrate_operation_result(item, commit_hash)
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [
+                CardProjection._hydrate_operation_result(item, commit_hash)
+                for item in value
+            ]
+        return value
 
     @serialized_mutation
     def mark_operation_durable(
@@ -1142,13 +1213,22 @@ class CardProjection:
         )
         with self._conn() as conn:
             existing = conn.execute(
-                "SELECT operation, request_fingerprint FROM mutation_operations "
-                "WHERE idempotency_key=?",
+                "SELECT operation, request_fingerprint, realm_id, event_id "
+                "FROM mutation_operations WHERE idempotency_key=?",
                 (event.idempotency_key,),
             ).fetchone()
             if (
                 existing
-                and existing["request_fingerprint"] != event.request_fingerprint
+                and (
+                    existing["operation"] != event.source_operation
+                    or existing["request_fingerprint"]
+                    != event.request_fingerprint
+                    or existing["realm_id"] != event.realm_id
+                    or (
+                        existing["event_id"] is not None
+                        and existing["event_id"] != event.id
+                    )
+                )
             ):
                 raise MutationOperationConflict(event.idempotency_key)
             conn.execute(
@@ -1160,11 +1240,30 @@ class CardProjection:
                 VALUES (?, ?, ?, ?, 'committed', ?, ?, ?, ?, ?,
                         'durable_append_complete', ?, ?)
                 ON CONFLICT(idempotency_key) DO UPDATE SET
-                    state='committed', event_id=excluded.event_id,
+                    state=CASE
+                        WHEN mutation_operations.state='succeeded'
+                             AND mutation_operations.result_json IS NOT NULL
+                        THEN mutation_operations.state
+                        ELSE 'committed'
+                    END,
+                    event_id=excluded.event_id,
                     event_hash=COALESCE(excluded.event_hash, event_hash),
                     commit_hash=excluded.commit_hash,
-                    result_json=COALESCE(excluded.result_json, result_json),
-                    recovery_state='durable_append_complete',
+                    result_json=CASE
+                        WHEN mutation_operations.state='succeeded'
+                             AND mutation_operations.result_json IS NOT NULL
+                        THEN mutation_operations.result_json
+                        ELSE COALESCE(
+                            excluded.result_json,
+                            mutation_operations.result_json
+                        )
+                    END,
+                    recovery_state=CASE
+                        WHEN mutation_operations.state='succeeded'
+                             AND mutation_operations.result_json IS NOT NULL
+                        THEN mutation_operations.recovery_state
+                        ELSE 'durable_append_complete'
+                    END,
                     updated_at=excluded.updated_at
                 """,
                 (
@@ -1249,6 +1348,13 @@ class CardProjection:
                 "recovery_state": "safe_to_retry_with_same_key",
             }
         record = dict(row)
+        if record["realm_id"] != realm_id:
+            return {
+                "idempotency_key": idempotency_key,
+                "status": "not_found",
+                "durable": False,
+                "recovery_state": "safe_to_retry_with_same_key",
+            }
         if record["state"] in {"pending", "committed", "failed"}:
             recovered = self._recover_operation(record)
             if recovered is not None:
@@ -1258,6 +1364,11 @@ class CardProjection:
                         (idempotency_key,),
                     ).fetchone()
                 record = dict(row)
+        stale_pending = (
+            record["state"] in {"pending", "failed"}
+            and not record.get("commit_hash")
+            and record["owner_token"] != self._operation_owner
+        )
         result = (
             json.loads(record["result_json"])
             if record.get("result_json")
@@ -1266,12 +1377,25 @@ class CardProjection:
         return {
             "idempotency_key": idempotency_key,
             "operation": record["operation"],
-            "status": record["state"],
+            "status": "retryable" if stale_pending else record["state"],
             "durable": bool(record.get("commit_hash")),
             "event_id": record.get("event_id"),
             "commit_hash": record.get("commit_hash"),
             "correlation_id": record.get("correlation_id"),
-            "recovery_state": record["recovery_state"],
+            "recovery_state": (
+                "safe_to_retry_with_same_key"
+                if stale_pending
+                else "in_progress"
+                if record["state"] == "pending"
+                else record["recovery_state"]
+            ),
+            "recovery_action": (
+                "retry_same_operation_with_same_key"
+                if stale_pending
+                else "get_operation_outcome"
+                if record["state"] == "pending"
+                else None
+            ),
             "result": result,
             "error_code": record.get("error_code"),
         }
@@ -4108,9 +4232,20 @@ class CardProjection:
                     present_cards.add(key)
             self.apply_event(event)
 
+        def restore_receipt(
+            commit_hash: str, event_hash: str, event: CardEvent
+        ) -> None:
+            self.mark_operation_durable(
+                event, commit_hash, event_hash=event_hash
+            )
+
         self._replaying_from_log = True
         try:
-            self.event_log.apply_commit_chain(head, apply_replay_event)
+            self.event_log.apply_commit_chain(
+                head,
+                apply_replay_event,
+                provenance_handler=restore_receipt,
+            )
         finally:
             self._replaying_from_log = False
         self._record_projection_head(realm_id, head)
