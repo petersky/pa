@@ -1493,6 +1493,7 @@ class AgentConnection:
                     "model_id": effective_model,
                     "mode_id": effective_mode,
                     "reasoning": effective_reasoning,
+                    "model_provider": desired.model_provider,
                     "config": effective_values,
                 }
                 config = dict(self.session.config_json or {})
@@ -1637,10 +1638,9 @@ def _agent_supports_load(init_response: Any) -> bool:
 
 
 def _format_acp_error(exc: BaseException) -> str:
-    data = getattr(exc, "data", None)
-    if data is None:
-        return str(exc)
-    return f"{exc} ({data})"
+    from pa.acp.errors import format_acp_error
+
+    return format_acp_error(exc)
 
 
 def _agent_supports_session_list(init_response: Any) -> bool:

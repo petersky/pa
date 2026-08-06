@@ -19,6 +19,7 @@ class SurfaceAgentPrefs(BaseModel):
     """Per-surface ACP overrides (provider and optional session defaults)."""
 
     provider: str | None = None
+    model_provider: str | None = None
     model_id: str | None = None
     mode_id: str | None = None
     effort: str | None = None

@@ -3129,6 +3129,26 @@
   }
 
   function populateNewSessionOptions(dialog, snap) {
+    const modelProviderWrap = dialog.querySelector("[data-agent-new-model-provider-wrap]");
+    const modelProviderSelect = dialog.querySelector("[data-agent-new-model-provider]");
+    const modelProviders = (snap && snap.model_providers) || [];
+    const supportsModelProvider = !!(snap && (snap.supports_model_provider || modelProviders.length));
+    if (modelProviderWrap) modelProviderWrap.hidden = !supportsModelProvider;
+    if (modelProviderSelect) {
+      const previous = modelProviderSelect.value;
+      populateSelect(modelProviderSelect, modelProviders, ["id"], "Host default");
+      const preferred = previous || (snap && snap.model_provider) || "";
+      if (preferred) {
+        modelProviderSelect.value = preferred;
+        if (modelProviderSelect.value !== preferred) {
+          const option = document.createElement("option");
+          option.value = preferred;
+          option.textContent = preferred;
+          option.selected = true;
+          modelProviderSelect.appendChild(option);
+        }
+      }
+    }
     const models = snap && snap.models && (snap.models.availableModels || snap.models.available_models);
     const modes = snap && snap.modes && (snap.modes.availableModes || snap.modes.available_modes);
     populateSelect(dialog.querySelector("[data-agent-new-model]"), models, ["modelId", "model_id", "id"]);
@@ -3143,7 +3163,11 @@
     const related = dialog.querySelector("[data-agent-new-related]");
     if (!related) return;
     related.innerHTML = "";
-    raw.filter(function (option) { return option && option !== effort; }).forEach(function (option) {
+    raw.filter(function (option) {
+      if (!option || option === effort) return false;
+      const id = String(option.id || option.configId || option.config_id || "").toLowerCase();
+      return id !== "model";
+    }).forEach(function (option) {
       const id = option.id || option.configId || option.config_id;
       const choices = option.options || option.choices || option.values || [];
       if (!id || !choices.length) return;
@@ -3161,23 +3185,29 @@
     related.hidden = !related.children.length;
   }
 
-  function newSessionSnapshotForProvider(widget, providerId) {
+  function newSessionSnapshotForProvider(widget, providerId, modelProvider) {
     const snap = widget && widget._acw && widget._acw.lastSnapshot;
     const activeProvider = snap && snap.session && snap.session.agent_name;
-    if (providerId && providerId === activeProvider) return Promise.resolve(snap);
+    if (providerId && providerId === activeProvider && !modelProvider) return Promise.resolve(snap);
     if (!providerId) return Promise.resolve(null);
-    return csrfFetch("/provider-options/" + encodeURIComponent(providerId));
+    let path = "/provider-options/" + encodeURIComponent(providerId);
+    if (modelProvider) path += "?model_provider=" + encodeURIComponent(modelProvider);
+    return csrfFetch(path);
   }
 
   function refreshNewSessionOptions(dialog, widget) {
     const provider = dialog.querySelector("[data-agent-new-provider]");
+    const modelProvider = dialog.querySelector("[data-agent-new-model-provider]");
     const providerId = provider ? provider.value : "";
+    const modelProviderId = modelProvider && !modelProvider.hidden && modelProvider.value
+      ? modelProvider.value
+      : "";
     const requestId = Number(dialog._acwOptionsRequest || 0) + 1;
     dialog._acwOptionsRequest = requestId;
-    dialog.querySelectorAll("[data-agent-new-model], [data-agent-new-mode], [data-agent-new-effort]").forEach(function (select) {
+    dialog.querySelectorAll("[data-agent-new-model-provider], [data-agent-new-model], [data-agent-new-mode], [data-agent-new-effort]").forEach(function (select) {
       select.disabled = true;
     });
-    return newSessionSnapshotForProvider(widget, providerId)
+    return newSessionSnapshotForProvider(widget, providerId, modelProviderId)
       .then(function (snap) {
         if (dialog._acwOptionsRequest === requestId) populateNewSessionOptions(dialog, snap);
       })
@@ -3186,7 +3216,7 @@
       })
       .finally(function () {
         if (dialog._acwOptionsRequest !== requestId) return;
-        dialog.querySelectorAll("[data-agent-new-model], [data-agent-new-mode], [data-agent-new-effort]").forEach(function (select) {
+        dialog.querySelectorAll("[data-agent-new-model-provider], [data-agent-new-model], [data-agent-new-mode], [data-agent-new-effort]").forEach(function (select) {
           select.disabled = false;
         });
       });
@@ -3195,6 +3225,7 @@
   function applyNewSessionDefaults(dialog, defaults) {
     defaults = defaults || {};
     const values = {
+      "[data-agent-new-model-provider]": defaults.model_provider || "",
       "[data-agent-new-model]": defaults.model_id || "",
       "[data-agent-new-mode]": defaults.mode_id || "",
       "[data-agent-new-effort]": defaults.effort || "",
@@ -3234,6 +3265,7 @@
         const globalDefaults = globalSurfaces["chat.default"] || {};
         const defaults = {
           provider: userDefaults.provider || globalDefaults.provider || prefs.agent_provider || activeProvider || "",
+          model_provider: userDefaults.model_provider || globalDefaults.model_provider || "",
           model_id: userDefaults.model_id || globalDefaults.model_id || "",
           mode_id: userDefaults.mode_id || globalDefaults.mode_id || "",
           effort: userDefaults.effort || globalDefaults.effort || "",
@@ -3380,9 +3412,18 @@
       const provider = dialog.querySelector("[data-agent-new-provider]");
       if (provider) {
         provider.addEventListener("change", function () {
-          dialog.querySelectorAll("[data-agent-new-model], [data-agent-new-mode], [data-agent-new-effort]").forEach(function (select) {
+          dialog.querySelectorAll("[data-agent-new-model-provider], [data-agent-new-model], [data-agent-new-mode], [data-agent-new-effort]").forEach(function (select) {
             select.value = "";
           });
+          refreshNewSessionOptions(dialog, document.querySelector("[data-agent-chat]"));
+        });
+      }
+      const modelProvider = dialog.querySelector("[data-agent-new-model-provider]");
+      if (modelProvider && !modelProvider._acwBound) {
+        modelProvider._acwBound = true;
+        modelProvider.addEventListener("change", function () {
+          const model = dialog.querySelector("[data-agent-new-model]");
+          if (model) model.value = "";
           refreshNewSessionOptions(dialog, document.querySelector("[data-agent-chat]"));
         });
       }
@@ -3394,7 +3435,7 @@
         event.preventDefault();
         const data = new FormData(form);
         const body = {};
-        ["title", "provider", "model_id", "mode_id", "effort", "cwd"].forEach(function (key) {
+        ["title", "provider", "model_provider", "model_id", "mode_id", "effort", "cwd"].forEach(function (key) {
           const value = String(data.get(key) || "").trim();
           if (value) body[key] = value;
         });

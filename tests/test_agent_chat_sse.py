@@ -280,6 +280,44 @@ class AgentChatSseTests(unittest.TestCase):
         runtime.set_config.assert_any_await("sandbox", "workspace")
         runtime.set_config.assert_any_await("reasoningEffort", "high")
 
+    def test_provider_options_synthesizes_openinterpreter_catalog(self) -> None:
+        manager = MagicMock()
+        manager.list_runtimes.return_value = []
+        manager.store.list_sessions.return_value = []
+        request = MagicMock()
+        request.app.state.ctx.settings.auth_required = False
+        request.app.state.ctx.settings.data_dir = Path(tempfile.mkdtemp())
+
+        with (
+            patch("pa.modules.agent_chat._manager", return_value=manager),
+            patch("pa.modules.agent_chat.get_principal_id", return_value="user:local"),
+            patch(
+                "pa.acp.providers.registry.get_provider",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "pa.acp.providers.openinterpreter.provider_options_snapshot",
+                return_value={
+                    "provider": "openinterpreter",
+                    "model_provider": "minimax-coding-plan",
+                    "model_providers": [{"id": "minimax-coding-plan", "name": "MiniMax"}],
+                    "models": {"availableModels": [{"modelId": "MiniMax-M2.5"}]},
+                    "modes": {"availableModes": [{"id": "workspace-write"}]},
+                    "config_options": [{"id": "reasoning_effort"}],
+                    "supports_model_provider": True,
+                    "cached": True,
+                    "source": "openinterpreter_catalog",
+                },
+            ),
+        ):
+            result = get_provider_options(request, "openinterpreter")
+
+        self.assertTrue(result["supports_model_provider"])
+        self.assertEqual(result["model_provider"], "minimax-coding-plan")
+        self.assertEqual(
+            result["models"]["availableModels"][0]["modelId"], "MiniMax-M2.5"
+        )
+
     def test_provider_options_fall_back_to_persisted_capability_catalog(self) -> None:
         session = AgentSession(
             agent_name="codex",

@@ -11,6 +11,7 @@ import typer
 from pa.acp.providers.base import ProviderConfigureBody
 from pa.acp.providers.codex_auth import get_codex_login_store, resolve_codex_cli
 from pa.acp.providers.codex import install_codex_cli
+from pa.acp.providers.openinterpreter import builtin_model_provider_env_key
 from pa.acp.providers.registry import get_provider, list_providers
 from pa.acp.providers.resolve import list_provider_summaries
 from pa.config import get_settings
@@ -19,17 +20,6 @@ from pa.fleet.registry import FleetRegistry
 agent_provider_app = typer.Typer(
     help="Manage ACP agent providers (Cursor, Codex, OpenInterpreter, …)"
 )
-
-_OPENINTERPRETER_ENV_KEYS = {
-    "openai": "OPENAI_API_KEY",
-    "anthropic": "ANTHROPIC_API_KEY",
-    "kimi-for-coding": "KIMI_API_KEY",
-    "moonshotai": "MOONSHOT_API_KEY",
-    "deepseek": "DEEPSEEK_API_KEY",
-    "zai": "ZAI_API_KEY",
-    "zhipu": "ZHIPU_API_KEY",
-    "groq": "GROQ_API_KEY",
-}
 
 
 def _remote(
@@ -182,7 +172,7 @@ def configure_cmd(
         if provider == "codex":
             api_key_name = "CODEX_API_KEY"
         elif provider == "openinterpreter":
-            api_key_name = model_provider_env_key or _OPENINTERPRETER_ENV_KEYS.get(
+            api_key_name = model_provider_env_key or builtin_model_provider_env_key(
                 model_provider or "openai"
             )
             if not api_key_name:
