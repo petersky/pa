@@ -11,16 +11,20 @@ import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from urllib.parse import quote
 from uuid import UUID, uuid4
 
 import httpx
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from pa.acp.configuration import SessionConfigurationRequest
+from pa.acp.environment import (
+    assigned_service_mcp_environment,
+    assigned_service_session_capability,
+)
 from pa.acp.providers.registry import get_provider
 from pa.attachments import (
     CHUNK_BYTES,
@@ -41,6 +45,7 @@ from pa.core.ui.instance_identity import (
 )
 from pa.core.ui.pages import PageDefinition, PageRegistry
 from pa.domain.models import (
+    AgentSession,
     CardAttachment,
     CardCreate,
     CardKind,
@@ -176,19 +181,30 @@ from pa.fleet.workshop import build_workshop_snapshot, workshop_semantic_snapsho
 from pa.goals.advanced_models import (
     GoalActionDisposition,
     GoalActionRequest,
+    GoalAssignedServiceScope,
     GoalReservationState,
     GoalResourceClaim,
     GoalUsage,
     GovernanceMutationContext,
     ResourceAccess,
 )
-from pa.goals.governance import GoalGovernanceConflict
+from pa.goals.governance import (
+    GoalAssignedServiceAuthorization,
+    GoalAssignedServiceCredentialError,
+    GoalGovernanceConflict,
+)
 from pa.goals.materialization import (
     GoalExecutionIdentityV1,
     GoalMaterializationEnvelopeV1,
     GoalMaterializationReceiptV1,
     GoalMaterializationResourceClaimV1,
     canonical_materialization_digest,
+)
+from pa.goals.models import (
+    AssignedServiceGoalAuditCreate,
+    AssignedServiceGoalEvidenceCreate,
+    AssignedServiceGoalProposalCreate,
+    GoalActorRole,
 )
 from pa.network.peer_table import PeerTable
 
@@ -205,6 +221,17 @@ ui_router = APIRouter()
 _peer_update_task: asyncio.Task[Any] | None = None
 _peer_update_task_operation_id: str | None = None
 _bootstrap_tasks: dict[str, asyncio.Task[Any]] = {}
+
+
+class AssignedServiceProxyRequest(BaseModel):
+    """Identity-free payload forwarded only between authenticated PA instances."""
+
+    model_config = {"extra": "forbid"}
+
+    payload: dict[str, Any] = Field(default_factory=dict)
+    expected_version: int | None = Field(default=None, ge=0)
+    policy_revision: int | None = Field(default=None, ge=1)
+    idempotency_key: str | None = Field(default=None, min_length=1, max_length=200)
 
 
 @router.get("/fleet/control-plane/status")
@@ -559,6 +586,39 @@ def _dispatch_store(request: Request) -> DispatchStore:
     )
     request.app.state.ctx.register_service("dispatch_store", service)
     return service
+
+
+def _assigned_mcp_environment_for_session(
+    settings,
+    ledger: DispatchStore,
+    session: AgentSession,
+) -> dict[str, str] | None:
+    """Derive a restricted MCP binding from target-local durable ownership."""
+
+    dispatch_id = str(session.dispatch_id or "").strip()
+    if not dispatch_id:
+        return None
+    record = ledger.get(dispatch_id)
+    if record is None or record.goal_provenance is None:
+        return None
+    provenance = record.goal_provenance
+    if (
+        record.dispatch_id != dispatch_id
+        or record.session_id != session.id
+        or record.target_instance_id != settings.instance_id
+        or record.authority_instance_id != session.authority_instance_id
+        or provenance.authority_instance_id != record.authority_instance_id
+        or provenance.resolved_target_instance_id != record.target_instance_id
+        or record.state in {"failed", "cancelled", "completed", "acknowledged"}
+        or record.acknowledged_at is not None
+    ):
+        raise RuntimeError(
+            "governed session does not match its durable assigned dispatch binding"
+        )
+    return assigned_service_mcp_environment(
+        dispatch_id=record.dispatch_id,
+        session_id=session.id,
+    )
 
 
 def _dispatch_public(request: Request, record: DispatchRecord) -> dict[str, Any]:
@@ -2252,6 +2312,575 @@ def progress_capabilities(request: Request) -> dict[str, Any]:
     }
 
 
+def _assigned_local_dispatch(request: Request) -> DispatchRecord:
+    """Authenticate one restricted local session capability and derive its dispatch."""
+
+    capability = getattr(request.state, "assigned_session_capability", None) or ""
+    session_id = request.headers.get("X-PA-Assigned-Session-ID", "").strip()
+    asserted_dispatch_id = request.headers.get(
+        "X-PA-Assigned-Dispatch-ID", ""
+    ).strip()
+    ctx = request.app.state.ctx
+    session = ctx.store.get_session(session_id) if session_id else None
+    durable_dispatch_id = str(getattr(session, "dispatch_id", None) or "").strip()
+    ledger = _dispatch_store(request)
+    record = ledger.get(durable_dispatch_id) if durable_dispatch_id else None
+    manager = ctx.services.get("instance_agent")
+    runtime = manager.get(session_id) if manager is not None and session_id else None
+    expected = ""
+    if session is not None and record is not None:
+        expected = assigned_service_session_capability(
+            secret=ctx.settings.session_secret,
+            dispatch_id=record.dispatch_id,
+            session_id=session.id,
+            target_instance_id=ctx.settings.instance_id,
+        )
+    if (
+        not capability
+        or not expected
+        or not hmac.compare_digest(capability, expected)
+        or asserted_dispatch_id != durable_dispatch_id
+        or record is None
+        or record.dispatch_id != durable_dispatch_id
+        or record.session_id != session.id
+        or record.target_instance_id != ctx.settings.instance_id
+        or session.authority_instance_id != record.authority_instance_id
+        or session.status in {"closed", "quiesced", "configuration_failed"}
+        or runtime is None
+        or getattr(runtime, "_closed", False)
+        or not getattr(runtime, "connected", False)
+        or record.state in {"failed", "cancelled", "completed", "acknowledged"}
+        or record.acknowledged_at is not None
+        or record.goal_provenance is None
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "invalid_assigned_session_capability",
+                "message": (
+                    "This tool requires the live restricted capability for its "
+                    "exact local dispatch session."
+                ),
+            },
+        )
+    return record
+
+
+async def _proxy_assigned_session_operation(
+    request: Request,
+    operation: str,
+    *,
+    payload: dict[str, Any] | None = None,
+    expected_version: int | None = None,
+    policy_revision: int | None = None,
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
+    record = _assigned_local_dispatch(request)
+    proxy_body = AssignedServiceProxyRequest(
+        payload=payload or {},
+        expected_version=expected_version,
+        policy_revision=policy_revision,
+        idempotency_key=idempotency_key,
+    )
+    if record.authority_instance_id == request.app.state.ctx.settings.instance_id:
+        return await _apply_assigned_service_operation(
+            request,
+            record.dispatch_id,
+            operation,
+            proxy_body,
+            trusted_caller_instance_id=request.app.state.ctx.settings.instance_id,
+        )
+    return await _peer_authority_json(
+        request,
+        record.authority_instance_id,
+        "POST",
+        f"dispatch-jobs/{quote(record.dispatch_id, safe='')}/assigned-service/{operation}",
+        body=proxy_body.model_dump(mode="json"),
+    )
+
+
+@router.get("/goal-assigned-session/goal")
+async def get_assigned_session_goal(
+    request: Request,
+    offset: Annotated[int, Query(ge=0, le=100_000)] = 0,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+) -> dict[str, Any]:
+    return await _proxy_assigned_session_operation(
+        request,
+        "goal",
+        payload={"offset": offset, "limit": limit},
+    )
+
+
+@router.get("/goal-assigned-session/dispatch")
+async def get_assigned_session_dispatch(request: Request) -> dict[str, Any]:
+    return await _proxy_assigned_session_operation(request, "dispatch")
+
+
+@router.post("/goal-assigned-session/proposals")
+async def proxy_assigned_session_proposal(
+    request: Request,
+    body: AssignedServiceGoalProposalCreate,
+    expected_version: int,
+    policy_revision: int,
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+) -> dict[str, Any]:
+    return await _proxy_assigned_session_operation(
+        request,
+        "proposals",
+        payload=body.model_dump(mode="json"),
+        expected_version=expected_version,
+        policy_revision=policy_revision,
+        idempotency_key=idempotency_key,
+    )
+
+
+@router.post("/goal-assigned-session/evidence")
+async def proxy_assigned_session_evidence(
+    request: Request,
+    body: AssignedServiceGoalEvidenceCreate,
+    expected_version: int,
+    policy_revision: int,
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+) -> dict[str, Any]:
+    return await _proxy_assigned_session_operation(
+        request,
+        "evidence",
+        payload=body.model_dump(mode="json"),
+        expected_version=expected_version,
+        policy_revision=policy_revision,
+        idempotency_key=idempotency_key,
+    )
+
+
+@router.post("/goal-assigned-session/audit")
+async def proxy_assigned_session_audit(
+    request: Request,
+    body: AssignedServiceGoalAuditCreate,
+    expected_version: int,
+    policy_revision: int,
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+) -> dict[str, Any]:
+    return await _proxy_assigned_session_operation(
+        request,
+        "audit",
+        payload=body.model_dump(mode="json"),
+        expected_version=expected_version,
+        policy_revision=policy_revision,
+        idempotency_key=idempotency_key,
+    )
+
+
+@router.post("/goal-assigned-session/progress")
+async def proxy_assigned_session_progress(
+    request: Request,
+    body: ExplicitProgressCheckpointV1,
+) -> dict[str, Any]:
+    return await _proxy_assigned_session_operation(
+        request,
+        "progress",
+        payload=body.model_dump(mode="json"),
+        idempotency_key=body.idempotency_key,
+    )
+
+
+def _assigned_authority_dispatch(
+    request: Request,
+    dispatch_id: str,
+    *,
+    required_roles: set[GoalActorRole],
+    sink: str,
+    trusted_caller_instance_id: str | None = None,
+) -> tuple[GoalAssignedServiceAuthorization, DispatchRecord]:
+    """Derive the complete assigned identity from authority-owned durable state."""
+
+    ctx = request.app.state.ctx
+    ledger = _dispatch_store(request)
+    record = ledger.get(dispatch_id)
+    if trusted_caller_instance_id is None:
+        _require_instance(request)
+        caller = request.headers.get("X-PA-Origin-Instance-ID", "").strip()
+        _fleet_instance_or_404(request, caller)
+    else:
+        caller = trusted_caller_instance_id
+        if caller != ctx.settings.instance_id:
+            raise HTTPException(
+                status_code=403,
+                detail={"code": "untrusted_assigned_dispatch_caller"},
+            )
+    if record is None:
+        raise HTTPException(status_code=404, detail="Dispatch not found")
+    if (
+        record.authority_instance_id != ctx.settings.instance_id
+        or record.target_instance_id != caller
+        or record.session_id is None
+        or record.state in {"failed", "cancelled", "completed", "acknowledged"}
+        or record.acknowledged_at is not None
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "assigned_dispatch_caller_mismatch"},
+        )
+    record = _validate_goal_dispatch_record(ctx, ledger, record, sink=sink)
+    provenance = record.goal_provenance
+    identity = (
+        getattr(provenance, "execution_identity", None)
+        if provenance is not None
+        else None
+    )
+    envelope = (
+        getattr(provenance, "materialization_envelope", None)
+        if provenance is not None
+        else None
+    )
+    try:
+        role = GoalActorRole(getattr(identity, "service_role", ""))
+        scope = GoalAssignedServiceScope(
+            goal_id=provenance.goal_id,
+            work_package_id=identity.work_package_id,
+            run_id=record.dispatch_id,
+            session_id=identity.session_id,
+            provider_id=identity.provider_id,
+            target_instance_id=identity.target_instance_id,
+            authority_instance_id=provenance.authority_instance_id,
+            fencing_token=identity.fencing_token,
+            assigned_service_principal=identity.assigned_service_principal,
+            service_role=role,
+        )
+        authorization = ctx.require_service(
+            "goal_governance"
+        ).resolve_assigned_service_binding(scope, required_roles=required_roles)
+    except (
+        AttributeError,
+        GoalAssignedServiceCredentialError,
+        KeyError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "invalid_assigned_dispatch_binding"},
+        ) from exc
+    envelope_role = getattr(envelope, "service_role", None)
+    envelope_role = (
+        envelope_role.value if isinstance(envelope_role, GoalActorRole) else envelope_role
+    )
+    if (
+        authorization.run is not None
+        or provenance is None
+        or envelope is None
+        or getattr(envelope, "work_package_id", None) != scope.work_package_id
+        or envelope_role != scope.service_role.value
+        or provenance.action_reservation_id
+        != authorization.work_package.action_reservation_id
+        or provenance.fencing_token != scope.fencing_token
+        or getattr(provenance, "resolved_target_instance_id", None)
+        != scope.target_instance_id
+        or str(getattr(provenance, "provider_id", None) or "").strip().lower()
+        != scope.provider_id.strip().lower()
+        or record.session_id != scope.session_id
+        or record.target_instance_id != scope.target_instance_id
+        or getattr(identity, "credential_digest", None)
+        != authorization.binding.credential_digest
+        or getattr(identity, "credential_expires_at", None)
+        != authorization.binding.expires_at
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "assigned_dispatch_provenance_mismatch"},
+        )
+    request.state.principal_id = scope.assigned_service_principal
+    request.state.authenticated_instance_id = scope.authority_instance_id
+    return authorization, record
+
+
+def _assigned_goal_projection(
+    authorization: GoalAssignedServiceAuthorization,
+    *,
+    offset: int = 0,
+    limit: int = 50,
+) -> dict[str, Any]:
+    """Expose only the assigned package and its criterion-scoped evidence."""
+
+    if not 0 <= offset <= 100_000 or not 1 <= limit <= 100:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "invalid_assigned_goal_page"},
+        )
+
+    def text(value: Any, maximum: int = 8_000) -> str:
+        return str(value or "")[:maximum]
+
+    def text_list(values: list[str], maximum: int = 50) -> list[str]:
+        return [text(value, 2_000) for value in values[:maximum]]
+
+    goal = authorization.goal
+    package = authorization.work_package
+    criterion_ids = set(package.criterion_ids)
+    all_criteria = [item for item in goal.criteria if item.id in criterion_ids]
+    all_evidence = [
+        item
+        for item in goal.evidence
+        if set(item.criterion_ids) <= criterion_ids
+    ]
+    criteria = [
+        {
+            **item.model_dump(
+                mode="json",
+                exclude={"evidence_ids", "required_evidence_kinds"},
+            ),
+            "description": text(item.description),
+            "verification_method": text(item.verification_method),
+            "evidence_requirement": text(item.evidence_requirement),
+            "explanation": text(item.explanation),
+            "evidence_ids": item.evidence_ids[:100],
+            "evidence_id_total": len(item.evidence_ids),
+            "required_evidence_kinds": [
+                kind.value for kind in item.required_evidence_kinds[:50]
+            ],
+            "required_evidence_kind_total": len(item.required_evidence_kinds),
+        }
+        for item in all_criteria[offset : offset + limit]
+    ]
+    evidence = [
+        {
+            **item.model_dump(
+                mode="json",
+                exclude={
+                    "criterion_ids",
+                    "provenance",
+                    "recorded_by_principal",
+                    "recorded_by_instance_id",
+                    "producer_role",
+                    "producer_service_id",
+                },
+            ),
+            "criterion_ids": item.criterion_ids[:100],
+            "criterion_id_total": len(item.criterion_ids),
+            "uri": text(item.uri, 2_000),
+            "summary": text(item.summary),
+            "content_hash": text(item.content_hash, 256),
+            "sensitivity": text(item.sensitivity, 100),
+        }
+        for item in all_evidence[offset : offset + limit]
+    ]
+    page_end = offset + limit
+    next_offset = (
+        page_end
+        if page_end < max(len(all_criteria), len(all_evidence))
+        else None
+    )
+    return {
+        "objective": text(goal.objective, 16_000),
+        "motivation": text(goal.motivation),
+        "constraints": text_list(goal.constraints),
+        "non_goals": text_list(goal.non_goals),
+        "assumptions": text_list(goal.assumptions),
+        "risks": text_list(goal.risks),
+        "context_totals": {
+            "constraints": len(goal.constraints),
+            "non_goals": len(goal.non_goals),
+            "assumptions": len(goal.assumptions),
+            "risks": len(goal.risks),
+        },
+        "state": goal.state.value,
+        "version": goal.version,
+        "policy_revision": goal.policy.revision,
+        "progress_summary": text(goal.progress_summary),
+        "work_package": {
+            "title": text(package.title, 2_000),
+            "objective": text(package.objective, 16_000),
+            "state": package.state.value,
+            "criterion_count": len(package.criterion_ids),
+            "attempts": package.attempts,
+            "max_attempts": package.max_attempts,
+            "result_summary": text(package.result_summary),
+        },
+        "criteria": criteria,
+        "evidence": evidence,
+        "page": {
+            "offset": offset,
+            "limit": limit,
+            "next_offset": next_offset,
+            "criteria_total": len(all_criteria),
+            "evidence_total": len(all_evidence),
+        },
+    }
+
+
+def _assigned_dispatch_projection(record: DispatchRecord) -> dict[str, Any]:
+    """Return bounded execution state without internal routing or identity data."""
+
+    latest = record.latest_progress
+    latest_progress = None
+    if latest is not None:
+        latest_progress = {
+            "kind": latest.kind.value,
+            "sequence": latest.sequence,
+            "occurred_at": latest.occurred_at.isoformat(),
+            "last_activity_at": latest.last_activity_at.isoformat(),
+            "phase": latest.phase.value,
+            "summary": latest.summary,
+            "branch": latest.branch,
+            "commit_sha": latest.commit_sha,
+            "pr_url": latest.pr_url,
+            "pr_number": latest.pr_number,
+            "changed_file_count": latest.changed_file_count,
+            "validations": [
+                item.model_dump(mode="json") for item in latest.validations
+            ],
+            "blockers": latest.blockers,
+            "retry_reason": latest.retry_reason,
+        }
+    return {
+        "state": record.state,
+        "stage_attempts": record.stage_attempts,
+        "attempts": record.attempts,
+        "last_error": str(record.last_error or "")[:8_000] or None,
+        "error_code": record.error_code,
+        "recoverable": record.recoverable,
+        "progress": latest_progress,
+        "created_at": record.created_at.isoformat(),
+        "updated_at": record.updated_at.isoformat(),
+    }
+
+
+async def _apply_assigned_service_operation(
+    request: Request,
+    dispatch_id: str,
+    operation: Literal[
+        "goal", "dispatch", "proposals", "evidence", "audit", "progress"
+    ],
+    body: AssignedServiceProxyRequest,
+    *,
+    trusted_caller_instance_id: str | None = None,
+) -> dict[str, Any]:
+    required_roles = (
+        {GoalActorRole.VERIFIER}
+        if operation == "audit"
+        else {GoalActorRole.EXECUTOR, GoalActorRole.VERIFIER}
+    )
+    authorization, record = _assigned_authority_dispatch(
+        request,
+        dispatch_id,
+        required_roles=required_roles,
+        sink=f"assigned-service-{operation}",
+        trusted_caller_instance_id=trusted_caller_instance_id,
+    )
+    if operation == "goal":
+        try:
+            offset = int(body.payload.get("offset", 0))
+            limit = int(body.payload.get("limit", 50))
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "invalid_assigned_goal_page"},
+            ) from exc
+        return {
+            "goal": _assigned_goal_projection(
+                authorization,
+                offset=offset,
+                limit=limit,
+            )
+        }
+    if operation == "dispatch":
+        return {"dispatch": _assigned_dispatch_projection(record)}
+    if operation == "progress":
+        checkpoint = ExplicitProgressCheckpointV1.model_validate(body.payload)
+        service = request.app.state.ctx.services.get("progress_service")
+        if not service:
+            raise HTTPException(
+                status_code=503,
+                detail={"code": "progress_reporting_unavailable"},
+            )
+        try:
+            result = await service.explicit(
+                record.dispatch_id,
+                checkpoint,
+                originating_instance_id=authorization.scope.target_instance_id,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if checkpoint.operator_input:
+            # Progress itself is inert telemetry. Any operator-facing side effect
+            # gets a fresh scope/fence decision after the asynchronous write.
+            _, record = _assigned_authority_dispatch(
+                request,
+                dispatch_id,
+                required_roles=required_roles,
+                sink="assigned-service-progress-operator-input",
+                trusted_caller_instance_id=trusted_caller_instance_id,
+            )
+            await _create_operator_input_notification(
+                request,
+                record,
+                checkpoint.operator_input,
+                idempotency_key=checkpoint.idempotency_key
+                or f"checkpoint:{record.dispatch_id}:{result.sequence}",
+                kind=InteractionKind.MCP_OPERATOR_INPUT,
+            )
+        return result.model_dump(mode="json")
+    if (
+        body.expected_version is None
+        or body.policy_revision is None
+        or not body.idempotency_key
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "assigned_mutation_context_missing"},
+        )
+    from pa.modules.goals import (
+        apply_assigned_service_goal_audit,
+        apply_assigned_service_goal_evidence,
+        apply_assigned_service_goal_proposal,
+    )
+
+    common = {
+        "expected_version": body.expected_version,
+        "policy_revision": body.policy_revision,
+        "idempotency_key": body.idempotency_key,
+    }
+    if operation == "proposals":
+        return apply_assigned_service_goal_proposal(
+            request,
+            AssignedServiceGoalProposalCreate.model_validate(body.payload),
+            authorization,
+            **common,
+        )
+    if operation == "evidence":
+        return apply_assigned_service_goal_evidence(
+            request,
+            AssignedServiceGoalEvidenceCreate.model_validate(body.payload),
+            authorization,
+            **common,
+        )
+    return apply_assigned_service_goal_audit(
+        request,
+        AssignedServiceGoalAuditCreate.model_validate(body.payload),
+        authorization,
+        **common,
+    )
+
+
+@router.post(
+    "/fleet/dispatch-jobs/{dispatch_id}/assigned-service/{operation}"
+)
+async def apply_assigned_service_operation(
+    request: Request,
+    dispatch_id: str,
+    operation: Literal[
+        "goal", "dispatch", "proposals", "evidence", "audit", "progress"
+    ],
+    body: AssignedServiceProxyRequest,
+) -> dict[str, Any]:
+    return await _apply_assigned_service_operation(
+        request,
+        dispatch_id,
+        operation,
+        body,
+    )
+
+
 @router.post("/fleet/dispatch/{dispatch_id}/progress")
 def ingest_dispatch_progress(
     request: Request,
@@ -2339,8 +2968,6 @@ async def report_dispatch_checkpoint(
             kind=InteractionKind.MCP_OPERATOR_INPUT,
         )
     return result.model_dump(mode="json")
-
-
 async def _create_operator_input_notification(
     request: Request,
     record: DispatchRecord,
@@ -4912,6 +5539,16 @@ async def _peer_authority_json(
     finally:
         if owns_client:
             await client.aclose()
+    actual_authority = response.headers.get("X-PA-Instance-ID", "").strip()
+    if actual_authority != authority_instance_id:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "authority_identity_mismatch",
+                "message": "The authority response did not prove the expected instance identity.",
+                "recoverable": False,
+            },
+        )
     if response.status_code >= 400:
         try:
             decoded = await _response_json(request, response)
@@ -11618,12 +12255,16 @@ class FleetModule(Module):
             "fleet_update_job_store", FleetUpdateJobStore(settings.data_dir)
         )
         auxiliary = "writer_lock" not in ctx.services
+        dispatch_store = DispatchStore(
+            settings.data_dir,
+            read_only=auxiliary,
+            deferred_read_only=auxiliary,
+        )
+        ctx.register_service("dispatch_store", dispatch_store)
         ctx.register_service(
-            "dispatch_store",
-            DispatchStore(
-                settings.data_dir,
-                read_only=auxiliary,
-                deferred_read_only=auxiliary,
+            "assigned_mcp_environment_resolver",
+            lambda session: _assigned_mcp_environment_for_session(
+                settings, dispatch_store, session
             ),
         )
         ctx.register_service(
@@ -12342,6 +12983,15 @@ class FleetModule(Module):
             )
 
         @mcp.tool()
+        def get_assigned_dispatch() -> dict:
+            """Read the dispatch bound to this assigned PA session."""
+            return request_local_pa(
+                ctx.settings,
+                "GET",
+                "/api/goal-assigned-session/dispatch",
+            )
+
+        @mcp.tool()
         def get_dispatch_queue() -> dict:
             """Return waiting, blocked, active, and queue-capacity state."""
             return request_local_pa(ctx.settings, "GET", "/api/fleet/dispatch-queue")
@@ -12397,6 +13047,57 @@ class FleetModule(Module):
                 ctx.settings,
                 "POST",
                 f"/api/fleet/dispatch-jobs/{dispatch_id}/checkpoint",
+                json={
+                    "schema_version": PROGRESS_SCHEMA_VERSION,
+                    "phase": phase,
+                    "summary": summary,
+                    "branch": branch,
+                    "commit_sha": commit_sha,
+                    "pr_url": pr_url,
+                    "pr_number": pr_number,
+                    "changed_file_count": changed_file_count,
+                    "blockers": blockers or [],
+                    "retry_reason": retry_reason,
+                    "operator_input": operator_input,
+                    "idempotency_key": key,
+                },
+            )
+
+        @mcp.tool()
+        def report_assigned_dispatch_progress(
+            phase: Literal[
+                "investigating",
+                "planning",
+                "implementing",
+                "testing",
+                "opening_pr",
+                "waiting_ci",
+                "addressing_review",
+                "merging",
+                "blocked",
+                "retrying",
+                "turn_ended",
+                "completed",
+            ],
+            summary: str,
+            idempotency_key: str,
+            branch: str | None = None,
+            commit_sha: str | None = None,
+            pr_url: str | None = None,
+            pr_number: int | None = None,
+            changed_file_count: int | None = None,
+            blockers: list[str] | None = None,
+            retry_reason: str | None = None,
+            operator_input: str | dict[str, Any] | None = None,
+        ) -> dict:
+            """Report progress for the dispatch bound to this assigned session."""
+            key = idempotency_key.strip()
+            if not key:
+                raise ValueError("idempotency_key cannot be empty")
+            return request_local_pa(
+                ctx.settings,
+                "POST",
+                "/api/goal-assigned-session/progress",
                 json={
                     "schema_version": PROGRESS_SCHEMA_VERSION,
                     "phase": phase,

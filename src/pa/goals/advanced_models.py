@@ -585,6 +585,66 @@ class ProviderGoalProgress(BaseModel):
     evidence_claims: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class AssignedServiceProviderProgress(BaseModel):
+    """Provider progress whose run identity is resolved from authentication."""
+
+    state: ProviderRunState
+    summary: str = Field(min_length=1)
+    cumulative_usage: GoalUsage = Field(default_factory=GoalUsage)
+    blocker_refs: list[GoalReferenceId] = Field(default_factory=list)
+    interaction_refs: list[GoalReferenceId] = Field(default_factory=list)
+    artifact_refs: list[GoalReferenceId] = Field(default_factory=list)
+    evidence_claims: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class GoalAssignedServiceScope(BaseModel):
+    """Exact execution identity authorized to receive one private credential."""
+
+    goal_id: GoalReferenceId
+    work_package_id: GoalReferenceId
+    run_id: GoalReferenceId
+    session_id: GoalReferenceId
+    provider_id: GoalReferenceId
+    target_instance_id: GoalReferenceId
+    authority_instance_id: GoalReferenceId
+    fencing_token: int = Field(ge=1)
+    assigned_service_principal: GoalReferenceId
+    service_role: GoalActorRole
+
+    @model_validator(mode="after")
+    def validate_assigned_role(self) -> GoalAssignedServiceScope:
+        if self.service_role not in {
+            GoalActorRole.EXECUTOR,
+            GoalActorRole.VERIFIER,
+        }:
+            raise ValueError("assigned service credentials require executor or verifier role")
+        expected = f"service:goal-{self.service_role.value}:"
+        if not self.assigned_service_principal.startswith(expected):
+            raise ValueError(
+                "assigned service principal does not match its executor/verifier role"
+            )
+        return self
+
+
+class GoalAssignedServiceCredential(BaseModel):
+    """Durable credential digest and its complete, immutable authorization scope."""
+
+    id: GoalReferenceId
+    version: int = Field(default=1, ge=1)
+    realm_id: GoalReferenceId
+    scope: GoalAssignedServiceScope
+    credential_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expires_at: datetime
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    @model_validator(mode="after")
+    def validate_expiry(self) -> GoalAssignedServiceCredential:
+        if self.expires_at.tzinfo is None:
+            raise ValueError("assigned service credential expiry must include a timezone")
+        return self
+
+
 class GoalAutonomyState(BaseModel):
     goal_id: GoalReferenceId
     realm_id: GoalReferenceId = "default"

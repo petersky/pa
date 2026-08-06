@@ -580,6 +580,7 @@ class AgentConnection:
         auto_approve: bool = False,
         async_runtime: AsyncRuntime | None = None,
         extra_env: dict[str, str] | None = None,
+        mcp_private_env: dict[str, str] | None = None,
     ) -> None:
         self.settings = settings
         self.store = store
@@ -592,6 +593,7 @@ class AgentConnection:
         self.auto_approve = auto_approve
         self.async_runtime = async_runtime
         self.extra_env = dict(extra_env or {})
+        self.mcp_private_env = dict(mcp_private_env or {})
         self._ctx = None
         self._conn: Any = None
         self._proc: Any = None
@@ -731,6 +733,7 @@ class AgentConnection:
         mcp = pa_mcp_servers(
             self.settings,
             session_environment=self.extra_env,
+            private_environment=self.mcp_private_env,
         )
         provider_id = self.agent_name or DEFAULT_PROVIDER_ID
         if provider_id in {"instance", ""}:
@@ -789,6 +792,7 @@ class AgentConnection:
                         self.settings,
                         timeout=12.0,
                         session_environment=self.extra_env,
+                        private_environment=self.mcp_private_env,
                     ),
                     timeout=15.0,
                 )

@@ -71,6 +71,8 @@ def init_goal_schema(conn) -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_goal_governance_entities_type
             ON durable_goal_governance_entities(realm_id, entity_type, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_goal_governance_entities_type_id
+            ON durable_goal_governance_entities(entity_type, id);
         CREATE TABLE IF NOT EXISTS durable_goal_governance_events (
             id TEXT PRIMARY KEY, realm_id TEXT NOT NULL,
             entity_type TEXT NOT NULL, entity_id TEXT NOT NULL,
@@ -614,6 +616,32 @@ def list_governance_payloads(projection, realm_id: str, entity_type: str) -> lis
             str(row["id"]),
             json.loads(row["payload"]),
             realm_id=realm_id,
+        )
+        for row in rows
+    ]
+
+
+def find_governance_payloads_by_entity_id(
+    projection, entity_type: str, entity_id: str
+) -> list[dict]:
+    """Find a globally unique governance entity without scanning JSON payloads."""
+
+    with projection._conn() as conn:
+        rows = conn.execute(
+            """SELECT realm_id, payload
+               FROM durable_goal_governance_entities
+               WHERE entity_type=? AND id=?
+               ORDER BY realm_id""",
+            (entity_type, entity_id),
+        ).fetchall()
+    from pa.goals.advanced_models import normalize_legacy_governance_payload
+
+    return [
+        normalize_legacy_governance_payload(
+            entity_type,
+            entity_id,
+            json.loads(row["payload"]),
+            realm_id=str(row["realm_id"]),
         )
         for row in rows
     ]

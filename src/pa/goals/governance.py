@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 from collections.abc import Callable
-from datetime import UTC, datetime
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from fnmatch import fnmatchcase
 from typing import Any
-from uuid import uuid4
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from pa.domain.models import CardEvent, EventType
 from pa.goals.advanced_models import (
@@ -18,6 +20,8 @@ from pa.goals.advanced_models import (
     GoalActionRequest,
     GoalActionReservation,
     GoalActionRisk,
+    GoalAssignedServiceCredential,
+    GoalAssignedServiceScope,
     GoalAutonomyState,
     GoalGovernancePolicy,
     GoalPortfolioEntry,
@@ -48,13 +52,17 @@ from pa.goals.materialization import (
 )
 from pa.goals.models import (
     Goal,
+    GoalActorRole,
     GoalCreate,
     GoalInteractionState,
     GoalMutationContext,
     GoalState,
+    GoalWorkPackage,
+    WorkPackageState,
 )
 from pa.goals.projection import (
     find_governance_event_by_idempotency,
+    find_governance_payloads_by_entity_id,
     get_governance_payload,
     list_governance_events,
     list_governance_payloads,
@@ -66,6 +74,7 @@ AUTONOMY_ENTITY = "goal_autonomy"
 POLICY_ENTITY = "goal_governance_policy"
 PROPOSAL_ENTITY = "goal_proposal"
 REVIEW_ENTITY = "goal_portfolio_review"
+ASSIGNED_SERVICE_CREDENTIAL_ENTITY = "goal_assigned_service_credential"
 CURRENT_REVIEW_ID = "current"
 _RISK_RANK = {
     GoalActionRisk.LOW: 1,
@@ -78,6 +87,11 @@ _TERMINAL_PROVIDER_STATES = {
     ProviderRunState.COMPLETED,
     ProviderRunState.FAILED,
     ProviderRunState.CANCELLED,
+}
+_TERMINAL_WORK_PACKAGE_STATES = {
+    WorkPackageState.VERIFIED,
+    WorkPackageState.FAILED,
+    WorkPackageState.CANCELLED,
 }
 _PROVIDER_TRANSITIONS = {
     ProviderRunState.ASSIGNED: {
@@ -120,6 +134,22 @@ _USAGE_METRICS = (
 
 class GoalGovernanceConflict(ValueError):
     pass
+
+
+class GoalAssignedServiceCredentialError(GoalGovernanceConflict):
+    """An opaque assigned-service credential failed exact live-scope validation."""
+
+
+@dataclass(frozen=True)
+class GoalAssignedServiceAuthorization:
+    binding: GoalAssignedServiceCredential
+    goal: Goal
+    work_package: GoalWorkPackage
+    run: ProviderGoalRun | None
+
+    @property
+    def scope(self) -> GoalAssignedServiceScope:
+        return self.binding.scope
 
 
 def _matches(value: str, patterns: list[str]) -> bool:
@@ -208,6 +238,545 @@ class GoalGovernanceService:
             return False
         candidate = hashlib.sha256(credential.encode()).hexdigest()
         return hmac.compare_digest(candidate, run.progress_credential_hash)
+
+    @staticmethod
+    def _assigned_service_entity_id(scope: GoalAssignedServiceScope) -> str:
+        encoded = json.dumps(
+            scope.model_dump(mode="json"),
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return str(uuid5(NAMESPACE_URL, f"pa:goal-assigned-service:{encoded}"))
+
+    def _assigned_service_token(
+        self,
+        *,
+        credential_id: str,
+        scope: GoalAssignedServiceScope,
+        expires_at: datetime,
+    ) -> str:
+        if not self._progress_token_secret:
+            raise GoalGovernanceConflict(
+                "assigned service credentials are unavailable on this authority"
+            )
+        payload = json.dumps(
+            {
+                "credential_id": credential_id,
+                "scope": scope.model_dump(mode="json"),
+                "expires_at": expires_at.isoformat(),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        signature = hmac.new(
+            self._progress_token_secret.encode(),
+            payload.encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        return f"paas1.{credential_id}.{signature}"
+
+    def assigned_service_credential(
+        self, binding: GoalAssignedServiceCredential
+    ) -> str:
+        """Reconstitute a token on its issuing authority without persisting plaintext."""
+
+        credential = self._assigned_service_token(
+            credential_id=binding.id,
+            scope=binding.scope,
+            expires_at=binding.expires_at,
+        )
+        candidate = hashlib.sha256(credential.encode()).hexdigest()
+        if not hmac.compare_digest(candidate, binding.credential_digest):
+            raise GoalGovernanceConflict(
+                "assigned service credential binding does not match this authority"
+            )
+        return credential
+
+    @staticmethod
+    def _assigned_package_principal(
+        package: GoalWorkPackage, role: GoalActorRole
+    ) -> str | None:
+        if role == GoalActorRole.VERIFIER:
+            return package.verifier_service_id
+        if role == GoalActorRole.EXECUTOR:
+            return package.executor_service_id
+        return None
+
+    @staticmethod
+    def _identity_field(identity: Any, name: str) -> Any:
+        return getattr(identity, name, None) if identity is not None else None
+
+    def _validate_materialized_scope(
+        self,
+        *,
+        package: GoalWorkPackage,
+        run: ProviderGoalRun | None,
+        reservation_identity: Any = None,
+        scope: GoalAssignedServiceScope,
+        binding: GoalAssignedServiceCredential | None = None,
+    ) -> None:
+        """Cross-check optional materialization identities without trusting either copy."""
+
+        identities = [
+            identity
+            for identity in (
+                getattr(package, "execution_identity", None),
+                getattr(run, "execution_identity", None) if run is not None else None,
+                reservation_identity,
+            )
+            if identity is not None
+        ]
+        for identity in identities:
+            role = self._identity_field(identity, "service_role")
+            role = role.value if isinstance(role, GoalActorRole) else role
+            expected = {
+                "work_package_id": scope.work_package_id,
+                "service_role": scope.service_role.value,
+                "assigned_service_principal": scope.assigned_service_principal,
+                "provider_id": scope.provider_id,
+                "target_instance_id": scope.target_instance_id,
+                "session_id": scope.session_id,
+                "fencing_token": scope.fencing_token,
+            }
+            actual = {
+                "work_package_id": self._identity_field(identity, "work_package_id"),
+                "service_role": role,
+                "assigned_service_principal": self._identity_field(
+                    identity, "assigned_service_principal"
+                ),
+                "provider_id": self._identity_field(identity, "provider_id"),
+                "target_instance_id": self._identity_field(
+                    identity, "target_instance_id"
+                ),
+                "session_id": self._identity_field(identity, "session_id"),
+                "fencing_token": self._identity_field(identity, "fencing_token"),
+            }
+            if actual != expected:
+                raise GoalAssignedServiceCredentialError(
+                    "materialized execution identity does not match credential scope"
+                )
+            if binding is not None and (
+                self._identity_field(identity, "credential_digest")
+                != binding.credential_digest
+                or self._identity_field(identity, "credential_expires_at")
+                != binding.expires_at
+            ):
+                raise GoalAssignedServiceCredentialError(
+                    "materialized execution identity lacks the exact credential binding"
+                )
+
+    def _validate_assigned_service_scope(
+        self,
+        goal: Goal,
+        state: GoalAutonomyState,
+        scope: GoalAssignedServiceScope,
+        *,
+        binding: GoalAssignedServiceCredential | None = None,
+        require_control_authority: bool,
+    ) -> tuple[GoalWorkPackage, ProviderGoalRun | None]:
+        if scope.goal_id != goal.id:
+            raise GoalAssignedServiceCredentialError(
+                "assigned service credential belongs to another goal"
+            )
+        if goal.state in _TERMINAL_STATES:
+            raise GoalAssignedServiceCredentialError(
+                "terminal goals reject assigned service credentials"
+            )
+        control_authority = getattr(goal, "control_authority_instance_id", None)
+        if not control_authority:
+            control_authority = goal.lease.holder_instance_id
+        if control_authority != scope.authority_instance_id:
+            raise GoalAssignedServiceCredentialError(
+                "assigned service credential belongs to another control authority"
+            )
+        if (
+            not goal.lease.active(self._clock())
+            or goal.lease.holder_instance_id != scope.authority_instance_id
+            or goal.lease.fencing_token != scope.fencing_token
+        ):
+            raise GoalAssignedServiceCredentialError(
+                "assigned service credential has a stale controller fence"
+            )
+        if require_control_authority and scope.authority_instance_id != self.instance_id:
+            raise GoalAssignedServiceCredentialError(
+                "assigned service mutations must be served by the control authority"
+            )
+        package = next(
+            (item for item in goal.work_packages if item.id == scope.work_package_id),
+            None,
+        )
+        if package is None or package.state in _TERMINAL_WORK_PACKAGE_STATES:
+            raise GoalAssignedServiceCredentialError(
+                "assigned service work package is missing or terminal"
+            )
+        if package.role != scope.service_role:
+            raise GoalAssignedServiceCredentialError(
+                "assigned service credential no longer matches its package role"
+            )
+        executor_principals = {
+            item.executor_service_id
+            for item in goal.work_packages
+            if item.executor_service_id
+        }
+        verifier_principals = {
+            item.verifier_service_id
+            for item in goal.work_packages
+            if item.verifier_service_id
+        }
+        if (
+            scope.service_role == GoalActorRole.EXECUTOR
+            and scope.assigned_service_principal in verifier_principals
+        ) or (
+            scope.service_role == GoalActorRole.VERIFIER
+            and scope.assigned_service_principal in executor_principals
+        ):
+            raise GoalAssignedServiceCredentialError(
+                "executor and verifier service identities must remain independent"
+            )
+        run = next((item for item in state.provider_runs if item.id == scope.run_id), None)
+        reservation_identity = None
+        if run is not None:
+            if (
+                package.session_id != scope.session_id
+                or self._assigned_package_principal(package, scope.service_role)
+                != scope.assigned_service_principal
+            ):
+                raise GoalAssignedServiceCredentialError(
+                    "assigned service credential belongs to another package session"
+                )
+            if (
+                run.goal_id != scope.goal_id
+                or run.provider_id != scope.provider_id
+                or run.role != scope.service_role
+                or run.executor_principal != scope.assigned_service_principal
+                or run.authority_instance_id != scope.authority_instance_id
+                or run.fencing_token != scope.fencing_token
+                or run.launched_at is None
+                or run.state in _TERMINAL_PROVIDER_STATES
+            ):
+                raise GoalAssignedServiceCredentialError(
+                    "assigned service credential no longer matches its provider run"
+                )
+        else:
+            reservation_id = getattr(package, "action_reservation_id", None)
+            reservation = next(
+                (
+                    item
+                    for item in state.action_reservations
+                    if item.id == reservation_id
+                ),
+                None,
+            )
+            if scope.run_id not in package.dispatch_ids or reservation is None:
+                raise GoalAssignedServiceCredentialError(
+                    "assigned service credential no longer matches its dispatch run"
+                )
+            request = reservation.request
+            envelope = getattr(request, "materialization_envelope", None)
+            receipt = getattr(request, "materialization_receipt", None)
+            reservation_identity = getattr(request, "execution_identity", None)
+            envelope_role = self._identity_field(envelope, "service_role")
+            envelope_role = (
+                envelope_role.value
+                if isinstance(envelope_role, GoalActorRole)
+                else envelope_role
+            )
+            attempt = getattr(package, "dispatch_attempt", None)
+            attempt_reservation_id = self._identity_field(attempt, "reservation_id")
+            if (
+                reservation.state != GoalReservationState.APPLIED
+                or reservation.goal_id != scope.goal_id
+                or reservation.action_class != "dispatch_work_package"
+                or reservation.authority_instance_id != scope.authority_instance_id
+                or reservation.fencing_token != scope.fencing_token
+                or getattr(request, "provider_id", None) != scope.provider_id
+                or getattr(request, "resolved_target_instance_id", None)
+                != scope.target_instance_id
+                or envelope is None
+                or self._identity_field(envelope, "work_package_id")
+                != scope.work_package_id
+                or envelope_role != scope.service_role.value
+                or receipt is None
+                or self._identity_field(receipt, "target_instance_id")
+                != scope.target_instance_id
+                or str(self._identity_field(receipt, "provider_id") or "")
+                .strip()
+                .lower()
+                != scope.provider_id.strip().lower()
+                or self._identity_field(receipt, "envelope_digest")
+                != self._identity_field(envelope, "digest")
+                or reservation_identity is None
+                or self._identity_field(
+                    reservation_identity, "materialization_receipt_digest"
+                )
+                != self._identity_field(receipt, "digest")
+                or (
+                    attempt_reservation_id is not None
+                    and attempt_reservation_id != reservation.id
+                )
+            ):
+                raise GoalAssignedServiceCredentialError(
+                    "assigned service credential no longer matches its applied dispatch"
+                )
+            if package.session_id not in {None, scope.session_id}:
+                raise GoalAssignedServiceCredentialError(
+                    "assigned service credential belongs to another package session"
+                )
+            package_principal = self._assigned_package_principal(
+                package, scope.service_role
+            )
+            if package_principal not in {None, scope.assigned_service_principal}:
+                raise GoalAssignedServiceCredentialError(
+                    "assigned service credential no longer matches its package principal"
+                )
+            if (
+                scope.service_role == GoalActorRole.EXECUTOR
+                and package.state == WorkPackageState.AWAITING_VERIFICATION
+            ):
+                raise GoalAssignedServiceCredentialError(
+                    "terminal executor dispatches reject assigned service credentials"
+                )
+        self._validate_materialized_scope(
+            package=package,
+            run=run,
+            reservation_identity=reservation_identity,
+            scope=scope,
+            binding=binding,
+        )
+        return package, run
+
+    @serialized_goal_mutation
+    def issue_assigned_service_credential(
+        self,
+        scope: GoalAssignedServiceScope,
+        context: GovernanceMutationContext,
+        *,
+        ttl_seconds: int = 3600,
+    ) -> tuple[GoalAssignedServiceCredential, str]:
+        """Persist a complete scoped digest and return plaintext only to PA internals."""
+
+        if not 1 <= ttl_seconds <= 86_400:
+            raise GoalGovernanceConflict(
+                "assigned service credential ttl must be between 1 and 86400 seconds"
+            )
+        goal = self._require_goal(scope.goal_id)
+        operation = {"scope": scope, "ttl_seconds": ttl_seconds}
+        entity_id = self._assigned_service_entity_id(scope)
+        fingerprint = operation_fingerprint(
+            realm_id=goal.realm_id,
+            entity_type=ASSIGNED_SERVICE_CREDENTIAL_ENTITY,
+            entity_id=entity_id,
+            event_type="goal_governance.assigned_service_credential_issued",
+            operation=operation,
+            context=context,
+        )
+        duplicate = self._duplicate(goal.realm_id, context.idempotency_key)
+        if duplicate:
+            self._validate_replay(
+                duplicate,
+                entity_type=ASSIGNED_SERVICE_CREDENTIAL_ENTITY,
+                entity_id=entity_id,
+                event_type="goal_governance.assigned_service_credential_issued",
+                fingerprint=fingerprint,
+            )
+            payload = get_governance_payload(
+                self.store,
+                goal.realm_id,
+                ASSIGNED_SERVICE_CREDENTIAL_ENTITY,
+                entity_id,
+            )
+            if payload is None:
+                raise GoalGovernanceConflict(
+                    "idempotent assigned service issuance lost its durable binding"
+                )
+            binding = GoalAssignedServiceCredential.model_validate(payload)
+            return binding, self.assigned_service_credential(binding)
+        if (
+            context.authority_instance_id != scope.authority_instance_id
+            or context.fencing_token != scope.fencing_token
+        ):
+            raise GoalGovernanceConflict(
+                "assigned service issuance requires its exact controller authority and fence"
+            )
+        self._validate_goal_context(goal, context)
+        state = self.get_state(goal.id)
+        if context.expected_version != state.version:
+            raise GoalGovernanceConflict(
+                f"expected autonomy version {context.expected_version}, "
+                f"current version {state.version}"
+            )
+        self._validate_assigned_service_scope(
+            goal,
+            state,
+            scope,
+            require_control_authority=True,
+        )
+        existing = get_governance_payload(
+            self.store,
+            goal.realm_id,
+            ASSIGNED_SERVICE_CREDENTIAL_ENTITY,
+            entity_id,
+        )
+        if existing is not None:
+            raise GoalGovernanceConflict(
+                "assigned service execution identity already has a durable credential"
+            )
+        now = self._clock()
+        expires_at = now + timedelta(seconds=ttl_seconds)
+        credential = self._assigned_service_token(
+            credential_id=entity_id,
+            scope=scope,
+            expires_at=expires_at,
+        )
+        binding = GoalAssignedServiceCredential(
+            id=entity_id,
+            realm_id=goal.realm_id,
+            scope=scope,
+            credential_digest=hashlib.sha256(credential.encode()).hexdigest(),
+            expires_at=expires_at,
+            created_at=now,
+            updated_at=now,
+        )
+        self._commit_entity(
+            goal.realm_id,
+            ASSIGNED_SERVICE_CREDENTIAL_ENTITY,
+            binding.id,
+            binding,
+            "goal_governance.assigned_service_credential_issued",
+            context,
+            {
+                "credential_id": binding.id,
+                "goal_id": scope.goal_id,
+                "work_package_id": scope.work_package_id,
+                "run_id": scope.run_id,
+                "session_id": scope.session_id,
+                "expires_at": expires_at.isoformat(),
+            },
+            operation_fingerprint_value=fingerprint,
+        )
+        return binding, credential
+
+    @staticmethod
+    def _assigned_service_credential_id(credential: str) -> str:
+        parts = credential.split(".")
+        if len(parts) != 3 or parts[0] != "paas1" or len(parts[2]) != 64:
+            raise GoalAssignedServiceCredentialError(
+                "invalid assigned service credential"
+            )
+        try:
+            parsed = UUID(parts[1])
+        except ValueError as exc:
+            raise GoalAssignedServiceCredentialError(
+                "invalid assigned service credential"
+            ) from exc
+        if str(parsed) != parts[1]:
+            raise GoalAssignedServiceCredentialError(
+                "invalid assigned service credential"
+            )
+        return parts[1]
+
+    def resolve_assigned_service_credential(
+        self,
+        credential: str,
+        *,
+        required_roles: set[GoalActorRole] | None = None,
+        expected_goal_id: str | None = None,
+        expected_run_id: str | None = None,
+    ) -> GoalAssignedServiceAuthorization:
+        """Authenticate one opaque token and derive every execution identity field."""
+
+        credential_id = self._assigned_service_credential_id(credential)
+        payloads = find_governance_payloads_by_entity_id(
+            self.store,
+            ASSIGNED_SERVICE_CREDENTIAL_ENTITY,
+            credential_id,
+        )
+        if len(payloads) != 1:
+            raise GoalAssignedServiceCredentialError(
+                "invalid assigned service credential"
+            )
+        binding = GoalAssignedServiceCredential.model_validate(payloads[0])
+        candidate = hashlib.sha256(credential.encode()).hexdigest()
+        if not hmac.compare_digest(candidate, binding.credential_digest):
+            raise GoalAssignedServiceCredentialError(
+                "invalid assigned service credential"
+            )
+        if binding.expires_at <= self._clock():
+            raise GoalAssignedServiceCredentialError(
+                "assigned service credential has expired"
+            )
+        scope = binding.scope
+        if expected_goal_id is not None and expected_goal_id != scope.goal_id:
+            raise GoalAssignedServiceCredentialError(
+                "assigned service credential belongs to another goal"
+            )
+        if expected_run_id is not None and expected_run_id != scope.run_id:
+            raise GoalAssignedServiceCredentialError(
+                "assigned service credential belongs to another run"
+            )
+        if required_roles is not None and scope.service_role not in required_roles:
+            raise GoalAssignedServiceCredentialError(
+                "assigned service role is not authorized for this operation"
+            )
+        goal = self._require_goal(scope.goal_id)
+        state = self.get_state(scope.goal_id)
+        package, run = self._validate_assigned_service_scope(
+            goal,
+            state,
+            scope,
+            binding=binding,
+            require_control_authority=True,
+        )
+        return GoalAssignedServiceAuthorization(
+            binding=binding,
+            goal=goal,
+            work_package=package,
+            run=run,
+        )
+
+    def resolve_assigned_service_binding(
+        self,
+        scope: GoalAssignedServiceScope,
+        *,
+        required_roles: set[GoalActorRole] | None = None,
+    ) -> GoalAssignedServiceAuthorization:
+        """Resolve a PA-server-derived scope against its exact durable binding."""
+
+        goal = self._require_goal(scope.goal_id)
+        entity_id = self._assigned_service_entity_id(scope)
+        payload = get_governance_payload(
+            self.store,
+            goal.realm_id,
+            ASSIGNED_SERVICE_CREDENTIAL_ENTITY,
+            entity_id,
+        )
+        if payload is None:
+            raise GoalAssignedServiceCredentialError(
+                "assigned service execution has no durable credential binding"
+            )
+        binding = GoalAssignedServiceCredential.model_validate(payload)
+        if binding.scope != scope or binding.expires_at <= self._clock():
+            raise GoalAssignedServiceCredentialError(
+                "assigned service credential binding is missing or expired"
+            )
+        if required_roles is not None and scope.service_role not in required_roles:
+            raise GoalAssignedServiceCredentialError(
+                "assigned service role is not authorized for this operation"
+            )
+        state = self.get_state(scope.goal_id)
+        package, run = self._validate_assigned_service_scope(
+            goal,
+            state,
+            scope,
+            binding=binding,
+            require_control_authority=True,
+        )
+        return GoalAssignedServiceAuthorization(
+            binding=binding,
+            goal=goal,
+            work_package=package,
+            run=run,
+        )
 
     def get_state(self, goal_id: str) -> GoalAutonomyState:
         goal = self._require_goal(goal_id)

@@ -931,7 +931,11 @@ class ProgressService:
         await self._heartbeat(record, phase_for_update(update), "Agent active.")
 
     async def explicit(
-        self, dispatch_id: str, checkpoint: ExplicitProgressCheckpointV1
+        self,
+        dispatch_id: str,
+        checkpoint: ExplicitProgressCheckpointV1,
+        *,
+        originating_instance_id: str | None = None,
     ) -> ProgressIngestResult:
         record = await self._offload(
             "progress.dispatch_read", self.store.get, dispatch_id
@@ -952,6 +956,7 @@ class ProgressService:
             retry_reason=checkpoint.retry_reason,
             operator_input=checkpoint.operator_input,
             explicit_key=checkpoint.idempotency_key,
+            originating_instance_id=originating_instance_id,
             final=checkpoint.phase
             in {ProgressPhase.TURN_ENDED, ProgressPhase.COMPLETED},
         )
@@ -973,6 +978,7 @@ class ProgressService:
         operator_input: str | OperatorInputRequestV1 | None = None,
         tool_details: list[ProgressToolDetailV1] | None = None,
         explicit_key: str | None = None,
+        originating_instance_id: str | None = None,
         final: bool = False,
         result: dict[str, Any] | None = None,
     ) -> ProgressIngestResult:
@@ -1025,7 +1031,7 @@ class ProgressService:
             card_id=record.card_id,
             dispatch_id=record.dispatch_id,
             acp_session_id=record.session_id or "",
-            originating_instance_id=self.instance_id,
+            originating_instance_id=originating_instance_id or self.instance_id,
             authority_instance_id=record.authority_instance_id,
             authority_version=record.card_version,
             sequence=sequence,

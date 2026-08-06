@@ -2,7 +2,55 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 from collections.abc import Mapping
+
+ASSIGNED_SERVICE_CREDENTIAL_ENV = "PA_ASSIGNED_SERVICE_CREDENTIAL"
+ASSIGNED_SERVICE_AUTHORITY_URL_ENV = "PA_ASSIGNED_SERVICE_AUTHORITY_URL"
+ASSIGNED_SERVICE_AUTHORITY_INSTANCE_ENV = (
+    "PA_ASSIGNED_SERVICE_AUTHORITY_INSTANCE_ID"
+)
+ASSIGNED_SERVICE_MODE_ENV = "PA_ASSIGNED_SERVICE_MODE"
+ASSIGNED_SERVICE_DISPATCH_ENV = "PA_ASSIGNED_SERVICE_DISPATCH_ID"
+ASSIGNED_SERVICE_SESSION_ENV = "PA_ASSIGNED_SERVICE_SESSION_ID"
+
+
+def assigned_service_session_capability(
+    *,
+    secret: str,
+    dispatch_id: str,
+    session_id: str,
+    target_instance_id: str,
+) -> str:
+    """Derive one restart-stable capability for an exact local dispatch session."""
+
+    if not all(
+        value.strip()
+        for value in (secret, dispatch_id, session_id, target_instance_id)
+    ):
+        raise ValueError("assigned service session capability scope is incomplete")
+    scope = (
+        f"pa-assigned-session:v1:{dispatch_id}:{session_id}:{target_instance_id}"
+    )
+    digest = hmac.new(secret.encode(), scope.encode(), hashlib.sha256).hexdigest()
+    return f"pas1.{digest}"
+
+
+def assigned_service_mcp_environment(
+    *,
+    dispatch_id: str,
+    session_id: str,
+) -> dict[str, str]:
+    """Build the non-secret binding for an assigned PA MCP tool surface."""
+
+    if not dispatch_id.strip() or not session_id.strip():
+        raise ValueError("assigned service MCP session binding is incomplete")
+    return {
+        ASSIGNED_SERVICE_MODE_ENV: "1",
+        ASSIGNED_SERVICE_DISPATCH_ENV: dispatch_id,
+        ASSIGNED_SERVICE_SESSION_ENV: session_id,
+    }
 
 # These values belong to the PA service or to the dedicated PA MCP bridge.  ACP
 # providers are general-purpose agent processes and must never inherit them from
@@ -15,6 +63,12 @@ PRIVATE_PROVIDER_ENVIRONMENT = frozenset(
         "PA_AGENT_COMMAND",
         "PA_AGENT_ENABLED",
         "PA_AGENT_PROVIDER",
+        ASSIGNED_SERVICE_AUTHORITY_INSTANCE_ENV,
+        ASSIGNED_SERVICE_AUTHORITY_URL_ENV,
+        ASSIGNED_SERVICE_CREDENTIAL_ENV,
+        ASSIGNED_SERVICE_DISPATCH_ENV,
+        ASSIGNED_SERVICE_MODE_ENV,
+        ASSIGNED_SERVICE_SESSION_ENV,
         "PA_AUTH_REQUIRED",
         "PA_CAPABILITIES",
         "PA_CLI_TOKEN",

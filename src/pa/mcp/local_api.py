@@ -12,12 +12,30 @@ from uuid import uuid4
 
 import httpx
 
+from pa.acp.environment import (
+    ASSIGNED_SERVICE_DISPATCH_ENV,
+    ASSIGNED_SERVICE_MODE_ENV,
+    ASSIGNED_SERVICE_SESSION_ENV,
+    assigned_service_session_capability,
+)
 from pa.auth.users import UserDirectory
 from pa.config import Settings
 
 
 class LocalPAServerUnavailable(RuntimeError):
     pass
+
+
+_ASSIGNED_MCP_ENDPOINTS = frozenset(
+    {
+        ("GET", "/api/goal-assigned-session/goal"),
+        ("GET", "/api/goal-assigned-session/dispatch"),
+        ("POST", "/api/goal-assigned-session/proposals"),
+        ("POST", "/api/goal-assigned-session/evidence"),
+        ("POST", "/api/goal-assigned-session/audit"),
+        ("POST", "/api/goal-assigned-session/progress"),
+    }
+)
 
 
 @dataclass
@@ -181,16 +199,55 @@ def request_local_pa(
     allow_not_found: bool = False,
     timeout_seconds: float = 2.0,
 ):
-    token = os.environ.get("PA_LOCAL_API_TOKEN", "").strip()
-    if not token:
-        token = UserDirectory(settings.data_dir).ensure_default_user().cli_token
+    method = method.upper()
+    assigned_mode = os.environ.get(ASSIGNED_SERVICE_MODE_ENV, "") == "1"
+    assigned_dispatch_id = os.environ.get(
+        ASSIGNED_SERVICE_DISPATCH_ENV, ""
+    ).strip()
+    assigned_session_id = os.environ.get(ASSIGNED_SERVICE_SESSION_ENV, "").strip()
+    if assigned_mode and (not assigned_dispatch_id or not assigned_session_id):
+        raise LocalPAServerUnavailable(
+            "The assigned Goal MCP session binding is incomplete; reload the session."
+        )
+    if assigned_mode and (method, path) not in _ASSIGNED_MCP_ENDPOINTS:
+        raise LocalPAServerUnavailable(
+            "Assigned Goal sessions cannot invoke this ordinary PA tool."
+        )
+    token = ""
+    if not assigned_mode:
+        token = os.environ.get("PA_LOCAL_API_TOKEN", "").strip()
+        if not token:
+            token = UserDirectory(settings.data_dir).ensure_default_user().cli_token
     expected_instance_id = os.environ.get("PA_INSTANCE_ID", "").strip()
+    assigned_capability = (
+        assigned_service_session_capability(
+            secret=settings.session_secret,
+            dispatch_id=assigned_dispatch_id,
+            session_id=assigned_session_id,
+            target_instance_id=expected_instance_id,
+        )
+        if assigned_mode
+        else ""
+    )
     correlation_id = str(uuid4())
     request_headers = {
-        "Authorization": f"Bearer {token}",
+        "Authorization": (
+            f"GoalSession {assigned_capability}"
+            if assigned_mode
+            else f"Bearer {token}"
+        ),
         "X-Request-ID": correlation_id,
     }
-    reserved_headers = {"authorization", "x-request-id", "x-pa-mcp-instance-id"}
+    if assigned_mode:
+        request_headers["X-PA-Assigned-Dispatch-ID"] = assigned_dispatch_id
+        request_headers["X-PA-Assigned-Session-ID"] = assigned_session_id
+    reserved_headers = {
+        "authorization",
+        "x-request-id",
+        "x-pa-mcp-instance-id",
+        "x-pa-assigned-dispatch-id",
+        "x-pa-assigned-session-id",
+    }
     request_headers.update(
         {
             key: value
@@ -218,6 +275,7 @@ def request_local_pa(
     while True:
         try:
             socket_path = os.environ.get("PA_LOCAL_API_SOCKET", "").strip()
+            request_base_url = local_pa_url(settings)
             request_args = {
                 "params": _normalized_query_params(params),
                 "json": json,
@@ -230,11 +288,11 @@ def request_local_pa(
                     transport=httpx.HTTPTransport(uds=socket_path)
                 ) as client:
                     response = client.request(
-                        method, f"{local_pa_url(settings)}{path}", **request_args
+                        method, f"{request_base_url}{path}", **request_args
                     )
             else:
                 response = httpx.request(
-                    method, f"{local_pa_url(settings)}{path}", **request_args
+                    method, f"{request_base_url}{path}", **request_args
                 )
             if allow_not_found and response.status_code == 404:
                 return None

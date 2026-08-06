@@ -6,7 +6,7 @@ from enum import StrEnum
 from typing import Annotated, Any, Literal
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from pa.goals.materialization import (
     GoalExecutionIdentityV1,
@@ -432,6 +432,24 @@ class GoalEvidence(BaseModel):
     producer_service_id: GoalReferenceId | None = None
 
 
+class AssignedServiceGoalEvidence(BaseModel):
+    """Evidence payload without caller-asserted producer or recorder identity."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: GoalReferenceId = Field(default_factory=lambda: str(uuid4()))
+    criterion_ids: list[GoalReferenceId] = Field(min_length=1)
+    kind: EvidenceKind
+    uri: str = ""
+    summary: str = Field(min_length=1)
+    provenance: dict[str, Any] = Field(default_factory=dict)
+    content_hash: str = ""
+    observed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    expires_at: datetime | None = None
+    sensitivity: str = "internal"
+    contradictory: bool = False
+
+
 class GoalRateLimit(BaseModel):
     """A rolling hard limit evaluated before an autonomous action is reserved."""
 
@@ -608,6 +626,91 @@ class RecordEvidenceAction(BaseModel):
     )
 
 
+class AssignedServiceRecordEvidenceAction(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["record_evidence"] = "record_evidence"
+    evidence: AssignedServiceGoalEvidence
+    criterion_verdicts: dict[GoalReferenceId, CriterionVerdict] = Field(
+        default_factory=dict
+    )
+
+
+class AssignedServiceCreateWorkPackageAction(BaseModel):
+    """Create package proposal without caller-selected service or placement identity."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["create_work_package"] = "create_work_package"
+    title: str = Field(min_length=1, max_length=300)
+    objective: str = Field(min_length=1, max_length=16_000)
+    criterion_ids: list[GoalReferenceId] = Field(min_length=1)
+    preferred_capabilities: list[str] = Field(default_factory=list)
+    max_attempts: int = Field(default=3, ge=1, le=20)
+    dispatch_when_ready: bool = True
+
+
+class AssignedServiceDispatchWorkPackageAction(BaseModel):
+    """Redispatch proposal whose package, provider, and placement are server-derived."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["dispatch_work_package"] = "dispatch_work_package"
+    message: str = ""
+    model_id: GoalReferenceId | None = None
+    mode_id: GoalReferenceId | None = None
+    priority: int = Field(default=0, ge=-10, le=10)
+
+
+class AssignedServiceGoalOperatorChoice(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: GoalReferenceId
+    label: str = Field(min_length=1, max_length=300)
+    description: str | None = Field(default=None, max_length=1000)
+    value: Any = None
+
+
+class AssignedServiceRequestOperatorAction(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["request_operator"] = "request_operator"
+    prompt: str = Field(min_length=1, max_length=8000)
+    response_schema: dict[str, Any] | None = None
+    choices: list[AssignedServiceGoalOperatorChoice] = Field(
+        default_factory=list, max_length=100
+    )
+    allow_freeform: bool = False
+    allow_cancel: bool = True
+    deadline: datetime | None = None
+
+    @model_validator(mode="after")
+    def validate_response_contract(self) -> AssignedServiceRequestOperatorAction:
+        if not self.response_schema and not self.choices and not self.allow_freeform:
+            raise ValueError(
+                "operator request needs a response schema, choices, or freeform input"
+            )
+        return self
+
+
+class AssignedServiceReviseStrategyAction(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["revise_strategy"] = "revise_strategy"
+    summary: str = Field(min_length=1, max_length=8000)
+    assumptions: list[str] = Field(default_factory=list)
+    risks: list[str] = Field(default_factory=list)
+
+
+class AssignedServiceTransitionGoalAction(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["transition_goal"] = "transition_goal"
+    state: GoalState
+    reason: str = Field(min_length=1)
+    progress_summary: str | None = None
+
+
 class TransitionGoalAction(BaseModel):
     kind: Literal["transition_goal"] = "transition_goal"
     state: GoalState
@@ -622,6 +725,16 @@ GoalProposalAction = Annotated[
     | ReviseStrategyAction
     | RecordEvidenceAction
     | TransitionGoalAction,
+    Field(discriminator="kind"),
+]
+
+AssignedServiceGoalProposalAction = Annotated[
+    AssignedServiceCreateWorkPackageAction
+    | AssignedServiceDispatchWorkPackageAction
+    | AssignedServiceRequestOperatorAction
+    | AssignedServiceReviseStrategyAction
+    | AssignedServiceRecordEvidenceAction
+    | AssignedServiceTransitionGoalAction,
     Field(discriminator="kind"),
 ]
 
@@ -656,6 +769,17 @@ class GoalProposalCreate(BaseModel):
     proposer_principal: GoalReferenceId
     proposer_role: GoalActorRole
     action: GoalProposalAction
+    rationale: str = Field(min_length=1, max_length=8000)
+    expected_goal_version: int = Field(ge=1)
+    policy_revision: int = Field(ge=1)
+
+
+class AssignedServiceGoalProposalCreate(BaseModel):
+    """Proposal payload with every principal and role field removed."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    action: AssignedServiceGoalProposalAction
     rationale: str = Field(min_length=1, max_length=8000)
     expected_goal_version: int = Field(ge=1)
     policy_revision: int = Field(ge=1)
@@ -1031,6 +1155,15 @@ class GoalEvidenceCreate(BaseModel):
     )
 
 
+class AssignedServiceGoalEvidenceCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    evidence: AssignedServiceGoalEvidence
+    criterion_verdicts: dict[GoalReferenceId, CriterionVerdict] = Field(
+        default_factory=dict
+    )
+
+
 class GoalAuditCreate(BaseModel):
     auditor_principal: GoalReferenceId | None = Field(
         default=None,
@@ -1039,6 +1172,17 @@ class GoalAuditCreate(BaseModel):
             "authoritative."
         ),
     )
+    independent: bool = True
+    criterion_verdicts: dict[GoalReferenceId, CriterionVerdict]
+    evidence_ids: list[GoalReferenceId] = Field(default_factory=list)
+    explanation: str = Field(min_length=1)
+
+
+class AssignedServiceGoalAuditCreate(BaseModel):
+    """Audit payload whose verifier identity comes only from authentication."""
+
+    model_config = ConfigDict(extra="forbid")
+
     independent: bool = True
     criterion_verdicts: dict[GoalReferenceId, CriterionVerdict]
     evidence_ids: list[GoalReferenceId] = Field(default_factory=list)

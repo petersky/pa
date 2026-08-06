@@ -16,6 +16,7 @@ from pa.core.context import AppContext
 from pa.core.contracts import Module
 from pa.core.ui.pages import PageDefinition
 from pa.goals.advanced_models import (
+    AssignedServiceProviderProgress,
     GoalActionApply,
     GoalActionDisposition,
     GoalActionRelease,
@@ -31,10 +32,21 @@ from pa.goals.advanced_models import (
     ProviderGoalAssignment,
     ProviderGoalProgress,
 )
-from pa.goals.governance import GoalGovernanceService
+from pa.goals.governance import (
+    GoalAssignedServiceAuthorization,
+    GoalAssignedServiceCredentialError,
+    GoalGovernanceService,
+)
 from pa.goals.models import (
+    AssignedServiceGoalAuditCreate,
+    AssignedServiceGoalEvidenceCreate,
+    AssignedServiceGoalProposalCreate,
+    CreateWorkPackageAction,
+    DispatchWorkPackageAction,
+    GoalActorRole,
     GoalAuditCreate,
     GoalCreate,
+    GoalEvidence,
     GoalEvidenceCreate,
     GoalMutationContext,
     GoalProposalCreate,
@@ -42,6 +54,10 @@ from pa.goals.models import (
     GoalState,
     GoalTransition,
     GoalWakeup,
+    RecordEvidenceAction,
+    RequestOperatorAction,
+    ReviseStrategyAction,
+    TransitionGoalAction,
 )
 from pa.goals.projection import find_goal_event_by_idempotency
 from pa.goals.providers import list_goal_adapter_capabilities
@@ -67,6 +83,190 @@ def _service(request: Request) -> GoalService:
 
 def _governance(request: Request) -> GoalGovernanceService:
     return request.app.state.ctx.require_service("goal_governance")
+
+
+def _assigned_service_authorization(
+    request: Request,
+    *,
+    required_roles: set[GoalActorRole] | None = None,
+    expected_goal_id: str | None = None,
+    expected_run_id: str | None = None,
+) -> GoalAssignedServiceAuthorization:
+    credential = getattr(request.state, "provider_run_credential", None) or ""
+    try:
+        authorization = _governance(request).resolve_assigned_service_credential(
+            credential,
+            required_roles=required_roles,
+            expected_goal_id=expected_goal_id,
+            expected_run_id=expected_run_id,
+        )
+    except (GoalAssignedServiceCredentialError, KeyError, ValueError) as exc:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "invalid_assigned_service_credential",
+                "message": (
+                    "This operation requires a live credential for its exact "
+                    "assigned Goal execution identity."
+                ),
+            },
+        ) from exc
+    scope = authorization.scope
+    request.state.principal_id = scope.assigned_service_principal
+    request.state.authenticated_instance_id = scope.authority_instance_id
+    return authorization
+
+
+def _assigned_goal_context(
+    authorization: GoalAssignedServiceAuthorization,
+    *,
+    expected_version: int,
+    policy_revision: int,
+    idempotency_key: str,
+) -> GoalMutationContext:
+    scope = authorization.scope
+    return GoalMutationContext(
+        actor_principal=scope.assigned_service_principal,
+        authority_instance_id=scope.authority_instance_id,
+        idempotency_key=idempotency_key,
+        expected_version=expected_version,
+        policy_revision=policy_revision,
+        fencing_token=scope.fencing_token,
+    )
+
+
+def _assigned_scope_violation(message: str) -> None:
+    raise HTTPException(
+        status_code=403,
+        detail={
+            "code": "assigned_work_package_scope_violation",
+            "message": message,
+        },
+    )
+
+
+def _require_assigned_criteria(
+    authorization: GoalAssignedServiceAuthorization,
+    criterion_ids,
+    *,
+    allow_empty: bool = False,
+) -> None:
+    allowed = set(authorization.work_package.criterion_ids)
+    requested = set(criterion_ids)
+    if (not requested and not allow_empty) or not requested.issubset(allowed):
+        _assigned_scope_violation(
+            "Assigned services may reference only criteria in their work package."
+        )
+
+
+def _assigned_evidence_provenance(
+    authorization: GoalAssignedServiceAuthorization,
+) -> dict[str, str | int]:
+    scope = authorization.scope
+    return {
+        "source": "pa-assigned-service",
+        "goal_id": scope.goal_id,
+        "work_package_id": scope.work_package_id,
+        "run_id": scope.run_id,
+        "session_id": scope.session_id,
+        "provider_id": scope.provider_id,
+        "target_instance_id": scope.target_instance_id,
+        "authority_instance_id": scope.authority_instance_id,
+        "fencing_token": scope.fencing_token,
+        "service_role": scope.service_role.value,
+        "assigned_service_principal": scope.assigned_service_principal,
+    }
+
+
+def _assigned_goal_evidence(
+    authorization: GoalAssignedServiceAuthorization,
+    evidence,
+) -> GoalEvidence:
+    _require_assigned_criteria(authorization, evidence.criterion_ids)
+    payload = evidence.model_dump(mode="python")
+    # Caller provenance is deliberately discarded: this binding is evidence
+    # about the exact governed execution, not an agent-authored identity claim.
+    payload["provenance"] = _assigned_evidence_provenance(authorization)
+    return GoalEvidence.model_validate(payload)
+
+
+def _assigned_goal_proposal(
+    authorization: GoalAssignedServiceAuthorization,
+    body: AssignedServiceGoalProposalCreate,
+) -> GoalProposalCreate:
+    scope = authorization.scope
+    action = body.action
+    if action.kind == "record_evidence":
+        _require_assigned_criteria(
+            authorization, action.criterion_verdicts, allow_empty=True
+        )
+        action = RecordEvidenceAction(
+            evidence=_assigned_goal_evidence(authorization, action.evidence),
+            criterion_verdicts=action.criterion_verdicts,
+        )
+    elif action.kind == "create_work_package":
+        _require_assigned_criteria(authorization, action.criterion_ids)
+        action = CreateWorkPackageAction(
+            **action.model_dump(mode="python"),
+            role=scope.service_role,
+        )
+    elif action.kind == "dispatch_work_package":
+        action = DispatchWorkPackageAction(
+            **action.model_dump(mode="python"),
+            work_package_id=scope.work_package_id,
+            placement_policy="best_match",
+            provider=scope.provider_id,
+        )
+    elif action.kind == "request_operator":
+        action = RequestOperatorAction.model_validate(action.model_dump(mode="python"))
+    elif action.kind == "revise_strategy":
+        action = ReviseStrategyAction.model_validate(action.model_dump(mode="python"))
+    elif action.kind == "transition_goal":
+        action = TransitionGoalAction.model_validate(action.model_dump(mode="python"))
+    return GoalProposalCreate(
+        proposer_principal=scope.assigned_service_principal,
+        proposer_role=scope.service_role,
+        action=action,
+        rationale=body.rationale,
+        expected_goal_version=body.expected_goal_version,
+        policy_revision=body.policy_revision,
+    )
+
+
+def _assigned_goal_evidence_change(
+    authorization: GoalAssignedServiceAuthorization,
+    body: AssignedServiceGoalEvidenceCreate,
+) -> GoalEvidenceCreate:
+    _require_assigned_criteria(
+        authorization, body.criterion_verdicts, allow_empty=True
+    )
+    return GoalEvidenceCreate(
+        evidence=_assigned_goal_evidence(authorization, body.evidence),
+        criterion_verdicts=body.criterion_verdicts,
+    )
+
+
+def _assigned_goal_audit_change(
+    authorization: GoalAssignedServiceAuthorization,
+    body: AssignedServiceGoalAuditCreate,
+) -> GoalAuditCreate:
+    _require_assigned_criteria(
+        authorization, body.criterion_verdicts, allow_empty=True
+    )
+    allowed = set(authorization.work_package.criterion_ids)
+    evidence_by_id = {item.id: item for item in authorization.goal.evidence}
+    if any(
+        evidence_id not in evidence_by_id
+        or not set(evidence_by_id[evidence_id].criterion_ids).issubset(allowed)
+        for evidence_id in body.evidence_ids
+    ):
+        _assigned_scope_violation(
+            "Assigned verifier audits may cite only evidence for their work-package criteria."
+        )
+    return GoalAuditCreate(
+        auditor_principal=None,
+        **body.model_dump(mode="python"),
+    )
 
 
 def _governance_context(
@@ -408,6 +608,209 @@ def _governed_goal_mutation(
         reconcile_terminal=goal_mutation_exists,
     )
     return result
+
+
+def apply_assigned_service_goal_proposal(
+    request: Request,
+    body: AssignedServiceGoalProposalCreate,
+    authorization: GoalAssignedServiceAuthorization,
+    *,
+    expected_version: int,
+    policy_revision: int,
+    idempotency_key: str,
+) -> dict:
+    scope = authorization.scope
+    context = _assigned_goal_context(
+        authorization,
+        expected_version=expected_version,
+        policy_revision=policy_revision,
+        idempotency_key=idempotency_key,
+    )
+    proposal = _assigned_goal_proposal(authorization, body)
+    result = _run(
+        lambda: _governed_goal_mutation(
+            request,
+            scope.goal_id,
+            proposal.action.kind,
+            context,
+            lambda: _service(request).submit_proposal(
+                scope.goal_id, proposal, context
+            ),
+            operation_payload=proposal,
+            delegated=proposal.action.kind == "dispatch_work_package",
+        )
+    )
+    _wake_supervisor(request)
+    return result.model_dump(mode="json")
+
+
+@router.post("/goal-assigned-service/proposals", status_code=202)
+def submit_assigned_service_goal_proposal(
+    request: Request,
+    body: AssignedServiceGoalProposalCreate,
+    expected_version: int,
+    policy_revision: int,
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+):
+    authorization = _assigned_service_authorization(
+        request,
+        required_roles={GoalActorRole.EXECUTOR, GoalActorRole.VERIFIER},
+    )
+    return apply_assigned_service_goal_proposal(
+        request,
+        body,
+        authorization,
+        expected_version=expected_version,
+        policy_revision=policy_revision,
+        idempotency_key=idempotency_key,
+    )
+
+
+def apply_assigned_service_goal_evidence(
+    request: Request,
+    body: AssignedServiceGoalEvidenceCreate,
+    authorization: GoalAssignedServiceAuthorization,
+    *,
+    expected_version: int,
+    policy_revision: int,
+    idempotency_key: str,
+) -> dict:
+    scope = authorization.scope
+    context = _assigned_goal_context(
+        authorization,
+        expected_version=expected_version,
+        policy_revision=policy_revision,
+        idempotency_key=idempotency_key,
+    )
+    change = _assigned_goal_evidence_change(authorization, body)
+    return _run(
+        lambda: _governed_goal_mutation(
+            request,
+            scope.goal_id,
+            "record_evidence",
+            context,
+            lambda: _service(request).add_evidence(scope.goal_id, change, context),
+            operation_payload=change,
+        )
+    ).model_dump(mode="json")
+
+
+@router.post("/goal-assigned-service/evidence")
+def record_assigned_service_goal_evidence(
+    request: Request,
+    body: AssignedServiceGoalEvidenceCreate,
+    expected_version: int,
+    policy_revision: int,
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+):
+    authorization = _assigned_service_authorization(
+        request,
+        required_roles={GoalActorRole.EXECUTOR, GoalActorRole.VERIFIER},
+    )
+    return apply_assigned_service_goal_evidence(
+        request,
+        body,
+        authorization,
+        expected_version=expected_version,
+        policy_revision=policy_revision,
+        idempotency_key=idempotency_key,
+    )
+
+
+def apply_assigned_service_goal_audit(
+    request: Request,
+    body: AssignedServiceGoalAuditCreate,
+    authorization: GoalAssignedServiceAuthorization,
+    *,
+    expected_version: int,
+    policy_revision: int,
+    idempotency_key: str,
+) -> dict:
+    scope = authorization.scope
+    context = _assigned_goal_context(
+        authorization,
+        expected_version=expected_version,
+        policy_revision=policy_revision,
+        idempotency_key=idempotency_key,
+    )
+    change = _assigned_goal_audit_change(authorization, body)
+    return _run(
+        lambda: _governed_goal_mutation(
+            request,
+            scope.goal_id,
+            "audit_goal",
+            context,
+            lambda: _service(request).audit(scope.goal_id, change, context),
+            operation_payload=change,
+        )
+    ).model_dump(mode="json")
+
+
+@router.post("/goal-assigned-service/audit")
+def audit_assigned_service_goal(
+    request: Request,
+    body: AssignedServiceGoalAuditCreate,
+    expected_version: int,
+    policy_revision: int,
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+):
+    authorization = _assigned_service_authorization(
+        request,
+        required_roles={GoalActorRole.VERIFIER},
+    )
+    return apply_assigned_service_goal_audit(
+        request,
+        body,
+        authorization,
+        expected_version=expected_version,
+        policy_revision=policy_revision,
+        idempotency_key=idempotency_key,
+    )
+
+
+@router.post("/goal-assigned-service/progress")
+def ingest_assigned_service_goal_progress(
+    request: Request,
+    body: AssignedServiceProviderProgress,
+    expected_autonomy_version: int,
+    goal_version: int,
+    policy_revision: int,
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+):
+    authorization = _assigned_service_authorization(
+        request,
+        required_roles={GoalActorRole.EXECUTOR, GoalActorRole.VERIFIER},
+    )
+    scope = authorization.scope
+    if authorization.run is None:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "assigned_service_progress_not_supported",
+                "message": (
+                    "This assigned Fleet run reports progress through its dispatch "
+                    "channel, not the provider-run progress endpoint."
+                ),
+            },
+        )
+    context = GovernanceMutationContext(
+        actor_principal=scope.assigned_service_principal,
+        authority_instance_id=scope.authority_instance_id,
+        idempotency_key=idempotency_key,
+        expected_version=expected_autonomy_version,
+        policy_revision=policy_revision,
+        goal_version=goal_version,
+        fencing_token=scope.fencing_token,
+    )
+    progress = ProviderGoalProgress(
+        run_id=scope.run_id,
+        **body.model_dump(mode="python"),
+    )
+    return _run(
+        lambda: _governance(request).ingest_provider_progress(
+            scope.goal_id, progress, context
+        )
+    ).model_dump(mode="json")
 
 
 @router.get("/goals")
@@ -928,7 +1331,15 @@ def ingest_provider_goal_progress(
     if run is None:
         raise HTTPException(status_code=404, detail="provider run not found")
     credential = getattr(request.state, "provider_run_credential", None) or ""
-    if not _governance(request).verify_provider_progress_credential(run, credential):
+    assigned_authorization = None
+    if credential.startswith("paas1."):
+        assigned_authorization = _assigned_service_authorization(
+            request,
+            required_roles={GoalActorRole.EXECUTOR, GoalActorRole.VERIFIER},
+            expected_goal_id=goal_id,
+            expected_run_id=body.run_id,
+        )
+    elif not _governance(request).verify_provider_progress_credential(run, credential):
         raise HTTPException(
             status_code=403,
             detail={
@@ -936,12 +1347,13 @@ def ingest_provider_goal_progress(
                 "message": "Provider progress requires the run-scoped launch credential.",
             },
         )
-    request.state.authenticated_instance_id = run.authority_instance_id
+    derived_run = assigned_authorization.run if assigned_authorization else run
+    request.state.authenticated_instance_id = derived_run.authority_instance_id
     context = context.model_copy(
         update={
-            "actor_principal": run.executor_principal,
-            "authority_instance_id": run.authority_instance_id,
-            "fencing_token": run.fencing_token,
+            "actor_principal": derived_run.executor_principal,
+            "authority_instance_id": derived_run.authority_instance_id,
+            "fencing_token": derived_run.fencing_token,
         }
     )
     return _run(
@@ -1574,6 +1986,76 @@ class GoalsModule(Module):
                 },
                 headers=headers,
                 json=proposal.model_dump(mode="json"),
+            )
+
+        @mcp.tool()
+        def get_assigned_goal(offset: int = 0, limit: int = 50) -> dict:
+            """Read the Goal bound to this assigned PA session."""
+            return request_local_pa(
+                ctx.settings,
+                "GET",
+                "/api/goal-assigned-session/goal",
+                params={"offset": offset, "limit": limit},
+            )
+
+        @mcp.tool()
+        def propose_assigned_goal_action(
+            proposal: AssignedServiceGoalProposalCreate,
+            expected_version: int,
+            policy_revision: int,
+            idempotency_key: str,
+        ) -> dict:
+            """Submit a proposal as this bridge's exact assigned Goal service."""
+            return request_local_pa(
+                ctx.settings,
+                "POST",
+                "/api/goal-assigned-session/proposals",
+                params={
+                    "expected_version": expected_version,
+                    "policy_revision": policy_revision,
+                },
+                headers={"Idempotency-Key": idempotency_key},
+                json=proposal.model_dump(mode="json"),
+            )
+
+        @mcp.tool()
+        def record_assigned_goal_evidence(
+            change: AssignedServiceGoalEvidenceCreate,
+            expected_version: int,
+            policy_revision: int,
+            idempotency_key: str,
+        ) -> dict:
+            """Record evidence as this bridge's exact assigned Goal service."""
+            return request_local_pa(
+                ctx.settings,
+                "POST",
+                "/api/goal-assigned-session/evidence",
+                params={
+                    "expected_version": expected_version,
+                    "policy_revision": policy_revision,
+                },
+                headers={"Idempotency-Key": idempotency_key},
+                json=change.model_dump(mode="json"),
+            )
+
+        @mcp.tool()
+        def audit_assigned_goal(
+            audit: AssignedServiceGoalAuditCreate,
+            expected_version: int,
+            policy_revision: int,
+            idempotency_key: str,
+        ) -> dict:
+            """Audit a Goal as this bridge's independently assigned verifier."""
+            return request_local_pa(
+                ctx.settings,
+                "POST",
+                "/api/goal-assigned-session/audit",
+                params={
+                    "expected_version": expected_version,
+                    "policy_revision": policy_revision,
+                },
+                headers={"Idempotency-Key": idempotency_key},
+                json=audit.model_dump(mode="json"),
             )
 
         @mcp.tool()
