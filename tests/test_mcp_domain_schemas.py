@@ -64,6 +64,39 @@ class McpDomainSchemaTests(IsolatedAsyncioTestCase):
                     tool_name, tool_property, model, model_property
                 )
 
+    async def test_card_tools_publish_the_complete_canonical_mutation_schema(
+        self,
+    ) -> None:
+        create = self.schemas["create_card"]["properties"]
+        update = self.schemas["update_card"]["properties"]
+        self.assertTrue(
+            {
+                "title",
+                "kind",
+                "body",
+                "lane",
+                "realm",
+                "parent_id",
+                "project_id",
+                "tags",
+                "auto_enrich",
+            }.issubset(create)
+        )
+        self.assertTrue(
+            {
+                "card_id",
+                "title",
+                "body",
+                "lane",
+                "realm",
+                "parent_id",
+                "project_id",
+                "tags",
+                "expected_version",
+                "field_intent",
+            }.issubset(update)
+        )
+
     async def test_repository_mutations_publish_http_lifecycle_enums(self) -> None:
         for tool_name, model in [
             ("create_repository", RepositoryCreate),
