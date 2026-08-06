@@ -40,7 +40,7 @@ from pa.acp.providers.openinterpreter import (
     provider_options_snapshot,
 )
 from pa.acp.errors import ProviderStartError, classify_acp_failure
-from pa.acp.providers.metadata import ProviderMetadata, save_credentials, save_metadata
+from pa.acp.providers.metadata import ProviderMetadata, save_metadata
 from pa.acp.providers.codex_auth import (
     CodexLoginJob,
     CodexLoginJobStore,
