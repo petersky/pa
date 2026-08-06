@@ -1210,9 +1210,10 @@ def test_last_slot_reservation_is_atomic_and_released_on_cancel_and_restart() ->
         )
         restarted.put(replacement)
         assert restarted.runnable() == []
-        assert replacement.state == "failed"
-        assert replacement.error_code == "capacity_reservation_timeout"
-        assert replacement.capacity_release_reason == "timeout"
+        expired = restarted.get(replacement.dispatch_id)
+        assert expired.state == "failed"
+        assert expired.error_code == "capacity_reservation_timeout"
+        assert expired.capacity_release_reason == "timeout"
 
 
 def test_capacity_override_is_durable_and_auditable() -> None:

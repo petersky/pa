@@ -90,6 +90,19 @@ class InstanceConfig(BaseModel):
     agent_session_idle_retention_hours: float = Field(default=24.0, ge=0.01, le=8760)
     agent_session_sweep_seconds: float = Field(default=30.0, ge=1.0, le=3600)
     memory_auto_capture_enabled: bool = False
+    card_summary_provider: str = "openai"
+    card_summary_model: str = "gpt-5-mini"
+    card_summary_base_url: str = "https://api.openai.com/v1"
+    card_summary_api_key: str = ""
+    card_summary_auth_source: Literal["dedicated", "codex"] = "dedicated"
+    card_summary_timeout_seconds: float = Field(default=20.0, gt=0, le=120)
+    card_summary_max_concurrency: int = Field(default=2, ge=1, le=16)
+    card_summary_max_retries: int = Field(default=2, ge=0, le=4)
+    card_summary_retry_base_seconds: float = Field(default=15.0, ge=1, le=3600)
+    card_summary_retry_max_seconds: float = Field(default=300.0, ge=1, le=86400)
+    card_summary_retry_jitter_ratio: float = Field(default=0.2, ge=0, le=1)
+    card_summary_worker_interval_seconds: float = Field(default=10.0, ge=1, le=300)
+    card_summary_migration_batch: int = Field(default=20, ge=0, le=500)
     post_turn_evaluator_max_attempts: int = Field(default=2, ge=1, le=5)
     post_turn_max_automatic_followups: int = Field(default=2, ge=0, le=10)
     post_turn_evaluation_timeout_seconds: float = Field(default=60.0, gt=0, le=600)

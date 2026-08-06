@@ -30,9 +30,17 @@
      aria-label="Open live agent session for {{ card.title }}">Open agent</a>
   {% endif %}
   {% if not title_only %}
+  {% if card.summary and card.summary_source.value != 'fallback' %}
   <div class="card-markdown compact-card-summary" data-card-markdown>
     <span hidden data-card-markdown-source>{{ card.summary | tojson }}</span>
   </div>
+  {% elif card.summary_status.value in ('pending', 'stale') %}
+  <p class="compact-card-summary muted" role="status">Summary pending.</p>
+  {% elif card.summary_status.value == 'disabled' %}
+  <p class="compact-card-summary muted" role="status">Summary generation is disabled.</p>
+  {% else %}
+  <p class="compact-card-summary muted" role="status">Summary unavailable.</p>
+  {% endif %}
   {% if progress and progress.latest %}
   <div class="compact-card-progress progress-{{ progress.freshness.state }}"
        data-card-progress

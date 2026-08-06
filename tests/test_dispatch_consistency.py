@@ -58,7 +58,10 @@ CARD_ONE = "45cd58e9-1dd7-44b9-9e07-2ae58d12e685"
 
 def request_for(settings: Settings, store: MagicMock, services: dict | None = None):
     ctx = MagicMock(settings=settings, store=store)
-    ctx.services = services or {}
+    ctx.services = dict(services or {})
+    # These direct route tests model a running server, whose lifespan owns the
+    # data-dir writer lock before dispatch mutations are accepted.
+    ctx.services.setdefault("writer_lock", MagicMock())
     ctx.require_service.side_effect = lambda name: ctx.services[name]
     ctx.register_service.side_effect = lambda name, value: ctx.services.__setitem__(
         name, value
@@ -1134,7 +1137,9 @@ class RetryAndConflictTests(unittest.IsolatedAsyncioTestCase):
             outbox = CompletionOutbox(ledger, "", retry_seconds=60)
 
             self.assertTrue(outbox.queue("session-1", {"stop_reason": "end_turn"}))
-            self.assertEqual(current.state, "completion_pending")
+            self.assertEqual(
+                ledger.get(current.dispatch_id).state, "completion_pending"
+            )
             self.assertEqual(old.state, "completed")
 
     async def test_unacknowledged_session_cannot_enqueue_completion(self) -> None:

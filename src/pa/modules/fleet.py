@@ -551,7 +551,12 @@ def _dispatch_store(request: Request) -> DispatchStore:
     service = request.app.state.ctx.services.get("dispatch_store")
     if isinstance(service, DispatchStore):
         return service
-    service = DispatchStore(request.app.state.ctx.settings.data_dir)
+    auxiliary = "writer_lock" not in request.app.state.ctx.services
+    service = DispatchStore(
+        request.app.state.ctx.settings.data_dir,
+        read_only=auxiliary,
+        deferred_read_only=auxiliary,
+    )
     request.app.state.ctx.register_service("dispatch_store", service)
     return service
 
@@ -1667,7 +1672,7 @@ def _record_post_turn_evaluation(
     watches: list[Any],
     result_override: dict[str, Any] | None = None,
     turn_id_override: str | None = None,
-) -> None:
+) -> DispatchRecord:
     """Persist the neutral snapshot before running the read-only evaluator."""
     result = dict(
         result_override
@@ -1683,7 +1688,7 @@ def _record_post_turn_evaluation(
         or f"{record.dispatch_id}:turn:{len(record.turn_end_snapshots) + 1}"
     )
     if any(item.turn_id == turn_id for item in record.turn_end_snapshots):
-        return
+        return record
     evidence: list[EvidenceReferenceV1] = []
     if report:
         for kind, reference in (
@@ -1826,7 +1831,7 @@ def _record_post_turn_evaluation(
     record.turn_end_snapshots = record.turn_end_snapshots[-20:]
     # The snapshot is the durable evaluation boundary. Do not combine this write
     # with the later recommendation write.
-    ledger.put(record)
+    record = ledger.put(record)
 
     evaluator = PostTurnEvaluator()
     project = (
@@ -1859,7 +1864,7 @@ def _record_post_turn_evaluation(
     record.post_turn_context_digests = dict(
         list(record.post_turn_context_digests.items())[-20:]
     )
-    ledger.put(record)
+    record = ledger.put(record)
     evaluation = evaluator.evaluate(context)
     evaluation = evaluator.validate_result(
         evaluation,
@@ -1869,7 +1874,7 @@ def _record_post_turn_evaluation(
     mark_record_only_actions(evaluation)
     record.post_turn_evaluations.append(evaluation)
     record.post_turn_evaluations = record.post_turn_evaluations[-20:]
-    ledger.put(record)
+    return ledger.put(record)
 
 
 @router.post("/fleet/dispatch/{dispatch_id}/complete")
@@ -1936,7 +1941,7 @@ def complete_dispatch(
     record.reconciliation_state = "pending" if body.card_id else "not_applicable"
     record.reconciliation_reason = "Immutable agent-turn completion acknowledged."
     record.reconciliation_updated_at = record.completion_received_at
-    ledger.transition(
+    record = ledger.transition(
         record,
         "completed",
         "Agent turn ended and was durably acknowledged; card outcome is separate.",
@@ -1963,8 +1968,10 @@ def complete_dispatch(
         record.final_report = body.final_report or ledger.build_final_report(
             dispatch_id, body.result
         )
-        ledger.put(record)
-        _record_post_turn_evaluation(request, ledger, record, card=None, watches=[])
+        record = ledger.put(record)
+        record = _record_post_turn_evaluation(
+            request, ledger, record, card=None, watches=[]
+        )
         return _completion_ack(record, duplicate=False)
 
     watches = []
@@ -2094,8 +2101,10 @@ def complete_dispatch(
             }
         )
     record.final_report = sanitize_completion_report(report) if report else None
-    ledger.put(record)
-    _record_post_turn_evaluation(request, ledger, record, card=card, watches=watches)
+    record = ledger.put(record)
+    record = _record_post_turn_evaluation(
+        request, ledger, record, card=card, watches=watches
+    )
     return _completion_ack(record, duplicate=False)
 
 
@@ -2177,7 +2186,7 @@ def complete_followup_turn(
                 "session_id": body.session_id,
             }
         )
-    ledger.transition(
+    record = ledger.transition(
         record,
         record.state,
         "Follow-up agent turn ended; immutable dispatch completion retained.",
@@ -2186,7 +2195,7 @@ def complete_followup_turn(
             "dispatch_state_retained": record.state,
         },
     )
-    _record_post_turn_evaluation(
+    record = _record_post_turn_evaluation(
         request,
         ledger,
         record,
@@ -10217,7 +10226,7 @@ def repair_terminal_dispatch(
             "idempotency_key": key,
         }
     )
-    ledger.transition(
+    record = ledger.transition(
         record,
         "completed",
         "Acknowledged legacy completion normalized to terminal state.",
@@ -10747,7 +10756,9 @@ def retry_dispatch(
         record.last_error = None
         record.error_code = None
         record.control_operations[idempotency_key] = "retry"
-        ledger.transition(record, "queued", "Operator queued a safe retry.")
+        record = ledger.transition(
+            record, "queued", "Operator queued a safe retry."
+        )
     worker = request.app.state.ctx.services.get("dispatch_worker")
     if worker:
         worker.wake()
@@ -10812,8 +10823,10 @@ def cancel_dispatch(
         return _dispatch_public(request, record)
     if record.state in {"waiting_capacity", "blocked", "queued"}:
         record.control_operations[idempotency_key] = "cancel"
-        ledger.transition(record, "cancelled", "Operator cancelled queued dispatch.")
-        _release_goal_dispatch_reservation(
+        record = ledger.transition(
+            record, "cancelled", "Operator cancelled queued dispatch."
+        )
+        record = _release_goal_dispatch_reservation(
             request.app.state.ctx,
             ledger,
             record,
@@ -10836,7 +10849,7 @@ def cancel_dispatch(
         )
     record.cancel_requested = True
     record.control_operations[idempotency_key] = "cancel"
-    ledger.transition(
+    record = ledger.transition(
         record,
         record.state,
         "Cancellation requested; the worker will stop at the next safe boundary.",
@@ -11604,7 +11617,15 @@ class FleetModule(Module):
         ctx.register_service(
             "fleet_update_job_store", FleetUpdateJobStore(settings.data_dir)
         )
-        ctx.register_service("dispatch_store", DispatchStore(settings.data_dir))
+        auxiliary = "writer_lock" not in ctx.services
+        ctx.register_service(
+            "dispatch_store",
+            DispatchStore(
+                settings.data_dir,
+                read_only=auxiliary,
+                deferred_read_only=auxiliary,
+            ),
+        )
         ctx.register_service(
             "placement_service",
             PlacementService(RoundRobinCursorStore(settings.data_dir)),
@@ -11755,6 +11776,9 @@ class FleetModule(Module):
         client = ctx.services.get("fleet_http_client")
         if client:
             await client.aclose()
+        dispatch_store = ctx.services.get("dispatch_store")
+        if dispatch_store:
+            await asyncio.to_thread(dispatch_store.close)
 
     def api_routers(self):
         return [("/api", router, ["fleet"])]

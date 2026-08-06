@@ -294,6 +294,9 @@ async def async_runtime_status(request: Request) -> dict:
     progress_service = request.app.state.ctx.services.get("progress_service")
     if progress_service:
         snapshot["progress_backpressure"] = progress_service.snapshot()
+    dispatch_store = request.app.state.ctx.services.get("dispatch_store")
+    if dispatch_store and hasattr(dispatch_store, "storage_metrics"):
+        snapshot["dispatch_storage"] = dispatch_store.storage_metrics()
     provider_gate = request.app.state.ctx.services.get("provider_action_gate")
     if provider_gate:
         snapshot["queues"]["provider_actions"] = provider_gate.snapshot()
