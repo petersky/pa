@@ -10,7 +10,7 @@ import logging
 import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Literal
 from urllib.parse import quote
 from uuid import UUID, uuid4
@@ -478,6 +478,41 @@ class DispatchTerminalRepairBody(BaseModel):
     expected_state: str | None = None
     reason: str | None = Field(default=None, min_length=1, max_length=1_000)
     confirm_no_outcome_inference: bool = False
+
+
+class DispatchTerminalRepairEvidenceRequest(BaseModel):
+    """Exact target binding for one read-only terminal repair probe."""
+
+    mutation_id: str
+    authority_instance_id: str
+    target_instance_id: str
+    session_id: str
+    idempotency_key: str
+    expected_state: str
+
+
+class DispatchTerminalRepairEvidenceV1(BaseModel):
+    """Fresh target-local proof that a dispatch/session cannot recover or run."""
+
+    contract: Literal["pa.dispatch-terminal-repair-evidence/v1"] = (
+        "pa.dispatch-terminal-repair-evidence/v1"
+    )
+    dispatch_id: str
+    mutation_id: str
+    authority_instance_id: str
+    target_instance_id: str
+    session_id: str
+    idempotency_key: str
+    dispatch_state: str
+    dispatch_recoverable: bool
+    dispatch_updated_at: datetime
+    session_status: str
+    session_updated_at: datetime
+    runtime_live: bool
+    completion_acknowledged: bool
+    completion_evidence_present: bool
+    observed_at: datetime
+    evidence_digest: str = Field(min_length=64, max_length=64)
 
 
 class DispatchPriorityBody(BaseModel):
@@ -5482,6 +5517,91 @@ async def _peer_authority_json(
             detail = response.text[:500]
         raise HTTPException(status_code=response.status_code, detail=detail)
     return await _response_json(request, response)
+
+
+async def _peer_terminal_repair_evidence(
+    request: Request,
+    target_instance_id: str,
+    dispatch_id: str,
+    body: DispatchTerminalRepairEvidenceRequest,
+) -> DispatchTerminalRepairEvidenceV1:
+    """Read fresh terminal proof from the exact authenticated target instance."""
+    inst = _fleet_instance_or_404(request, target_instance_id)
+    client = request.app.state.ctx.services.get("fleet_http_client")
+    owns_client = client is None
+    client = client or httpx.AsyncClient(timeout=10.0)
+    try:
+        response = await _fleet_http(
+            request,
+            "http.fleet_terminal_repair_evidence",
+            client.post(
+                (
+                    f"{inst.url.rstrip('/')}/api/fleet/dispatch-jobs/"
+                    f"{quote(dispatch_id, safe='')}/terminal-repair-evidence"
+                ),
+                headers={
+                    **_peer_headers(request),
+                    "Idempotency-Key": body.idempotency_key,
+                },
+                json=body.model_dump(mode="json"),
+                timeout=10.0,
+            ),
+            timeout=10.0,
+        )
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "target_terminal_evidence_unavailable",
+                "message": str(exc),
+                "target_instance_id": target_instance_id,
+                "recoverable": True,
+            },
+        ) from exc
+    finally:
+        if owns_client:
+            await client.aclose()
+    actual_target = response.headers.get("X-PA-Instance-ID", "").strip()
+    if actual_target != target_instance_id:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "target_terminal_evidence_identity_mismatch",
+                "message": "Terminal proof did not come from the expected target.",
+                "target_instance_id": target_instance_id,
+                "recoverable": False,
+            },
+        )
+    if response.status_code >= 400:
+        try:
+            decoded = await _response_json(request, response)
+            detail = decoded.get("detail")
+        except ValueError, AttributeError:
+            detail = response.text[:500]
+        if response.status_code == 404:
+            detail = {
+                "code": "target_terminal_evidence_unsupported",
+                "message": (
+                    "The target does not expose fenced terminal repair evidence."
+                ),
+                "target_instance_id": target_instance_id,
+                "upgrade_required": True,
+                "recoverable": True,
+            }
+        raise HTTPException(status_code=response.status_code, detail=detail)
+    try:
+        return DispatchTerminalRepairEvidenceV1.model_validate(
+            await _response_json(request, response)
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "target_terminal_evidence_malformed",
+                "target_instance_id": target_instance_id,
+                "recoverable": False,
+            },
+        ) from exc
 
 
 async def _transfer_missing_attachments(
@@ -10934,11 +11054,310 @@ async def execute_post_turn_action(
     }
 
 
-@router.post("/fleet/dispatch-jobs/{dispatch_id}/repair-terminal")
-def repair_terminal_dispatch(
+_TERMINAL_REPAIR_EVIDENCE_MAX_AGE = timedelta(seconds=10)
+_TERMINAL_REPAIR_EVIDENCE_FUTURE_SKEW = timedelta(seconds=2)
+
+
+def _terminal_repair_evidence_digest(
+    evidence: DispatchTerminalRepairEvidenceV1,
+) -> str:
+    payload = evidence.model_dump(mode="json", exclude={"evidence_digest"})
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
+def _raise_nonterminal_repair_evidence(
+    record: DispatchRecord,
+    *,
+    session_status: str,
+    runtime_live: bool,
+) -> None:
+    if record.recoverable:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "dispatch_still_recoverable",
+                "message": (
+                    "Abandoned repair requires a nonrecoverable dispatch; retryable "
+                    "work must remain available for recovery."
+                ),
+                "dispatch_id": record.dispatch_id,
+                "recoverable": True,
+                "session_id": record.session_id,
+                "session_status": session_status,
+                "runtime_live": runtime_live,
+            },
+        )
+    if runtime_live or session_status != "closed":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "linked_session_not_terminal",
+                "message": (
+                    "Abandoned repair requires a genuinely terminal closed session "
+                    "with no retained or live runtime."
+                ),
+                "session_id": record.session_id,
+                "session_status": session_status,
+                "runtime_live": runtime_live,
+                "recoverable": session_status != "closed",
+            },
+        )
+
+
+def _local_terminal_repair_session_evidence(
+    request: Request,
+    record: DispatchRecord,
+) -> tuple[AgentSession, bool]:
+    session = (
+        request.app.state.ctx.store.get_session(record.session_id)
+        if record.session_id
+        else None
+    )
+    manager = request.app.state.ctx.services.get("instance_agent")
+    runtime = manager.get(record.session_id) if manager and record.session_id else None
+    runtime_live = bool(runtime and not getattr(runtime, "_closed", False))
+    session_status = str(getattr(session, "status", "missing") or "missing")
+    _raise_nonterminal_repair_evidence(
+        record,
+        session_status=session_status,
+        runtime_live=runtime_live,
+    )
+    assert session is not None
+    return session, runtime_live
+
+
+def _validate_remote_terminal_repair_evidence(
+    current: DispatchRecord,
+    evidence: DispatchTerminalRepairEvidenceV1 | None,
+    *,
+    idempotency_key: str,
+) -> DispatchTerminalRepairEvidenceV1:
+    if evidence is None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "target_terminal_evidence_required",
+                "message": (
+                    "Remote-target abandonment requires current proof from the "
+                    "target instance; authority-local session replicas are not proof."
+                ),
+                "target_instance_id": current.target_instance_id,
+                "recoverable": True,
+            },
+        )
+    expected = {
+        "dispatch_id": current.dispatch_id,
+        "mutation_id": current.mutation_id,
+        "authority_instance_id": current.authority_instance_id,
+        "target_instance_id": current.target_instance_id,
+        "session_id": current.session_id,
+        "idempotency_key": idempotency_key,
+        "dispatch_state": current.state,
+        "dispatch_recoverable": current.recoverable,
+        "completion_acknowledged": False,
+        "completion_evidence_present": False,
+    }
+    observed = evidence.model_dump()
+    mismatched = sorted(
+        field for field, value in expected.items() if observed.get(field) != value
+    )
+    if mismatched:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "target_terminal_evidence_fence_mismatch",
+                "message": "Target proof does not match the current dispatch fence.",
+                "mismatched_fields": mismatched,
+                "recoverable": True,
+            },
+        )
+    now = datetime.now(UTC)
+    age = now - evidence.observed_at
+    if (
+        age > _TERMINAL_REPAIR_EVIDENCE_MAX_AGE
+        or age < -_TERMINAL_REPAIR_EVIDENCE_FUTURE_SKEW
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "target_terminal_evidence_stale",
+                "message": "Target-local terminal proof is outside the freshness window.",
+                "observed_at": evidence.observed_at.isoformat(),
+                "maximum_age_seconds": int(
+                    _TERMINAL_REPAIR_EVIDENCE_MAX_AGE.total_seconds()
+                ),
+                "recoverable": True,
+            },
+        )
+    if not hmac.compare_digest(
+        evidence.evidence_digest, _terminal_repair_evidence_digest(evidence)
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "target_terminal_evidence_digest_mismatch",
+                "recoverable": False,
+            },
+        )
+    _raise_nonterminal_repair_evidence(
+        current,
+        session_status=evidence.session_status,
+        runtime_live=evidence.runtime_live,
+    )
+    if evidence.dispatch_recoverable:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "dispatch_still_recoverable", "recoverable": True},
+        )
+    return evidence
+
+
+@router.post(
+    "/fleet/dispatch-jobs/{dispatch_id}/terminal-repair-evidence",
+    response_model=DispatchTerminalRepairEvidenceV1,
+)
+def target_terminal_repair_evidence(
+    request: Request,
+    dispatch_id: str,
+    body: DispatchTerminalRepairEvidenceRequest,
+) -> DispatchTerminalRepairEvidenceV1:
+    """Return fresh target-local evidence bound to one authority repair attempt."""
+    _require_instance(request)
+    caller = request.headers.get("X-PA-Origin-Instance-ID", "").strip()
+    header_key = request.headers.get("Idempotency-Key", "").strip()
+    ledger = _dispatch_store(request)
+    record = ledger.get(dispatch_id)
+    if record is None:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "target_dispatch_not_found", "recoverable": True},
+        )
+    settings = request.app.state.ctx.settings
+    supplied = body.model_dump()
+    captured: list[DispatchTerminalRepairEvidenceV1] = []
+
+    def capture(current: DispatchRecord) -> bool:
+        expected = {
+            "mutation_id": current.mutation_id,
+            "authority_instance_id": current.authority_instance_id,
+            "target_instance_id": current.target_instance_id,
+            "session_id": current.session_id,
+            "expected_state": current.state,
+        }
+        mismatched = sorted(
+            field for field, value in expected.items() if supplied.get(field) != value
+        )
+        if header_key != body.idempotency_key:
+            mismatched.append("idempotency_key_header")
+        if (
+            caller != current.authority_instance_id
+            or current.target_instance_id != settings.instance_id
+            or mismatched
+        ):
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "terminal_repair_evidence_provenance_mismatch",
+                    "caller_instance_id": caller or None,
+                    "authority_instance_id": current.authority_instance_id,
+                    "target_instance_id": current.target_instance_id,
+                    "mismatched_fields": mismatched,
+                    "recoverable": False,
+                },
+            )
+        completion_acknowledged = bool(
+            current.acknowledged_at
+            or current.completion_delivery_class == "acknowledged"
+        )
+        completion_evidence_present = bool(
+            current.completion_payload is not None
+            or current.completion_envelope is not None
+            or current.completion_received_at is not None
+        )
+        if completion_acknowledged or completion_evidence_present:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "target_completion_evidence_present",
+                    "completion_acknowledged": completion_acknowledged,
+                    "completion_evidence_present": completion_evidence_present,
+                    "recoverable": True,
+                },
+            )
+        session, runtime_live = _local_terminal_repair_session_evidence(
+            request, current
+        )
+        session_expected = {
+            "id": current.session_id,
+            "dispatch_id": current.dispatch_id,
+            "origin_instance_id": current.target_instance_id,
+            "authority_instance_id": current.authority_instance_id,
+        }
+        session_mismatched = sorted(
+            field
+            for field, expected_value in session_expected.items()
+            if (
+                (observed_value := getattr(session, field, None)) not in {None, ""}
+                and observed_value != expected_value
+            )
+        )
+        if session_mismatched:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "linked_session_provenance_mismatch",
+                    "message": (
+                        "Target-local session does not match the dispatch fence."
+                    ),
+                    "mismatched_fields": session_mismatched,
+                    "recoverable": True,
+                },
+            )
+        observed_at = datetime.now(UTC)
+        evidence = DispatchTerminalRepairEvidenceV1(
+            dispatch_id=current.dispatch_id,
+            mutation_id=current.mutation_id,
+            authority_instance_id=current.authority_instance_id,
+            target_instance_id=current.target_instance_id,
+            session_id=current.session_id or "",
+            idempotency_key=body.idempotency_key,
+            dispatch_state=current.state,
+            dispatch_recoverable=current.recoverable,
+            dispatch_updated_at=current.updated_at,
+            session_status=session.status,
+            session_updated_at=session.updated_at,
+            runtime_live=runtime_live,
+            completion_acknowledged=False,
+            completion_evidence_present=False,
+            observed_at=observed_at,
+            evidence_digest="0" * 64,
+        )
+        evidence.evidence_digest = _terminal_repair_evidence_digest(evidence)
+        captured.append(evidence)
+        return False
+
+    try:
+        ledger.compare_and_mutate(record, capture)
+    except DispatchCompareConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "target_terminal_evidence_changed",
+                "changed_fields": exc.changed_fields,
+                "recoverable": True,
+            },
+        ) from exc
+    return captured[0]
+
+
+def _repair_terminal_dispatch(
     request: Request,
     dispatch_id: str,
     body: DispatchTerminalRepairBody | DispatchControlBody | None = None,
+    *,
+    remote_evidence: DispatchTerminalRepairEvidenceV1 | None = None,
 ) -> dict[str, Any]:
     """Audited terminal repair without inventing completion evidence."""
     require_user(request)
@@ -11067,28 +11486,20 @@ def repair_terminal_dispatch(
                     "card_lane": card.lane.value if card else None,
                 },
             )
-        session = (
-            request.app.state.ctx.store.get_session(record.session_id)
-            if record.session_id
-            else None
-        )
-        manager = request.app.state.ctx.services.get("instance_agent")
-        runtime = manager.get(record.session_id) if manager and record.session_id else None
-        runtime_live = bool(runtime and not getattr(runtime, "_closed", False))
-        session_status = str(getattr(session, "status", "missing") or "missing")
-        if runtime_live or session_status not in {"missing", "closed", "quiesced"}:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "code": "linked_session_not_terminal",
-                    "message": (
-                        "Close or cancel the linked session before retiring its dispatch row."
-                    ),
-                    "session_id": record.session_id,
-                    "session_status": session_status,
-                    "runtime_live": runtime_live,
-                },
+        if record.target_instance_id == request.app.state.ctx.settings.instance_id:
+            _session, _runtime_live = _local_terminal_repair_session_evidence(
+                request, record
             )
+            evidence_source = "target_local_atomic_check"
+            evidence_observed_at = datetime.now(UTC)
+            evidence_digest = None
+        else:
+            validated = _validate_remote_terminal_repair_evidence(
+                record, remote_evidence, idempotency_key=key
+            )
+            evidence_source = "authenticated_remote_target"
+            evidence_observed_at = validated.observed_at
+            evidence_digest = validated.evidence_digest
 
         def abandon(current: DispatchRecord) -> bool:
             if _repeat_dispatch_control(current, operation, key):
@@ -11155,40 +11566,16 @@ def repair_terminal_dispatch(
                         "card_lane": current_card.lane.value if current_card else None,
                     },
                 )
-            current_session = (
-                request.app.state.ctx.store.get_session(current.session_id)
-                if current.session_id
-                else None
-            )
-            current_runtime = (
-                manager.get(current.session_id)
-                if manager and current.session_id
-                else None
-            )
-            current_runtime_live = bool(
-                current_runtime and not getattr(current_runtime, "_closed", False)
-            )
-            current_session_status = str(
-                getattr(current_session, "status", "missing") or "missing"
-            )
-            if current_runtime_live or current_session_status not in {
-                "missing",
-                "closed",
-                "quiesced",
-            }:
-                raise HTTPException(
-                    status_code=409,
-                    detail={
-                        "code": "linked_session_not_terminal",
-                        "message": (
-                            "Close or cancel the linked session before retiring its "
-                            "dispatch row."
-                        ),
-                        "session_id": current.session_id,
-                        "session_status": current_session_status,
-                        "runtime_live": current_runtime_live,
-                    },
+            if current.target_instance_id == request.app.state.ctx.settings.instance_id:
+                current_session, _current_runtime_live = (
+                    _local_terminal_repair_session_evidence(request, current)
                 )
+                current_session_status = current_session.status
+            else:
+                current_evidence = _validate_remote_terminal_repair_evidence(
+                    current, remote_evidence, idempotency_key=key
+                )
+                current_session_status = current_evidence.session_status
             if (
                 current.goal_provenance is not None
                 and current.goal_provenance.released_at is None
@@ -11227,6 +11614,11 @@ def repair_terminal_dispatch(
                         "session_status": current_session_status,
                         "runtime_live": False,
                         "completion_acknowledged": False,
+                        "target_instance_id": current.target_instance_id,
+                        "source": evidence_source,
+                        "target_observed_at": evidence_observed_at.isoformat(),
+                        "target_evidence_digest": evidence_digest,
+                        "dispatch_recoverable": False,
                     },
                     "outcome_inferred": False,
                 },
@@ -11335,6 +11727,69 @@ def repair_terminal_dispatch(
             },
         ) from exc
     return _dispatch_public(request, record)
+
+
+@router.post("/fleet/dispatch-jobs/{dispatch_id}/repair-terminal")
+async def repair_terminal_dispatch(
+    request: Request,
+    dispatch_id: str,
+    body: DispatchTerminalRepairBody | DispatchControlBody | None = None,
+) -> dict[str, Any]:
+    """Collect target evidence, then atomically apply an audited terminal repair."""
+    require_user(request)
+    record = _dispatch_store(request).get(dispatch_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Dispatch not found")
+    mode = str(getattr(body, "mode", "acknowledged_completion"))
+    remote_evidence = None
+    if mode == "abandoned_without_acknowledgement":
+        key = _dispatch_control_key(request, body)
+        operation = "repair_terminal:abandoned_without_acknowledgement"
+        if record.goal_provenance is not None and not _goal_dispatch_lifecycle_owned(
+            request.app.state.ctx, record
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "terminal_repair_wrong_authority",
+                    "message": (
+                        "Governed dispatch repair must run on its recorded authority."
+                    ),
+                    "authority_instance_id": record.authority_instance_id,
+                },
+            )
+        if _repeat_dispatch_control(record, operation, key):
+            return _repair_terminal_dispatch(request, dispatch_id, body)
+        if record.target_instance_id != request.app.state.ctx.settings.instance_id:
+            if not record.session_id:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "target_terminal_evidence_required",
+                        "message": "Remote repair requires an exact linked target session.",
+                        "target_instance_id": record.target_instance_id,
+                        "recoverable": True,
+                    },
+                )
+            remote_evidence = await _peer_terminal_repair_evidence(
+                request,
+                record.target_instance_id,
+                record.dispatch_id,
+                DispatchTerminalRepairEvidenceRequest(
+                    mutation_id=record.mutation_id,
+                    authority_instance_id=record.authority_instance_id,
+                    target_instance_id=record.target_instance_id,
+                    session_id=record.session_id,
+                    idempotency_key=key,
+                    expected_state=record.state,
+                ),
+            )
+    return _repair_terminal_dispatch(
+        request,
+        dispatch_id,
+        body,
+        remote_evidence=remote_evidence,
+    )
 
 
 def _require_dispatch_access(request: Request, record: DispatchRecord) -> None:
@@ -11996,7 +12451,7 @@ async def authority_dispatch_mutation(
                 request, dispatch_id, DispatchFollowupBody.model_validate(body)
             )
         if operation == "repair-terminal":
-            return repair_terminal_dispatch(
+            return await repair_terminal_dispatch(
                 request, dispatch_id, DispatchTerminalRepairBody.model_validate(body)
             )
         control = DispatchControlBody.model_validate(body)
