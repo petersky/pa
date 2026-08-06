@@ -8,6 +8,7 @@ import shutil
 import tempfile
 import threading
 import unittest
+from datetime import UTC, datetime
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -215,6 +216,71 @@ class HomeAttentionQueueRouteTests(unittest.TestCase):
             response.text.count('data-attention-group="attention"'), 6
         )
         self.assertIn("Showing 6 of 250 actionable cards", response.text)
+
+    def test_home_promotes_actionable_watch_past_non_actionable_saturation(
+        self,
+    ) -> None:
+        with TestClient(self.app) as client:
+            store = self.app.state.ctx.store
+            supervisor = self.app.state.ctx.require_service("pr_supervisor_store")
+            actionable = store.create_card(
+                CardCreate(
+                    title="Older blocked review still needs action",
+                    lane=CardLane.WAITING,
+                )
+            )
+            supervisor.upsert_watch(
+                PRWatch(
+                    card_id=actionable.id,
+                    repository="petersky/pa",
+                    pr_number=1,
+                    pr_url="https://github.com/petersky/pa/pull/1",
+                    status="blocked",
+                    state={
+                        "gate": {
+                            "actionable": True,
+                            "reasons": ["Independent review is required"],
+                        }
+                    },
+                    next_poll_at=datetime(2100, 1, 1, tzinfo=UTC),
+                ),
+                preserve_lease=False,
+            )
+            for index in range(120):
+                card = store.create_card(
+                    CardCreate(title=f"Newer quiet card {index:03d}")
+                )
+                if index < 81:
+                    supervisor.upsert_watch(
+                        PRWatch(
+                            card_id=card.id,
+                            repository="petersky/pa",
+                            pr_number=index + 2,
+                            pr_url=(
+                                "https://github.com/petersky/pa/pull/"
+                                f"{index + 2}"
+                            ),
+                            status="active",
+                            state={"gate": {"actionable": False}},
+                            next_poll_at=datetime(2100, 1, 1, tzinfo=UTC),
+                        ),
+                        preserve_lease=False,
+                    )
+
+            promoted = supervisor.list_actionable_card_ids(
+                realm_id="default", limit=80
+            )
+            response = client.get("/")
+
+        self.assertEqual(promoted, [actionable.id])
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Older blocked review still needs action", response.text)
+        self.assertIn("Independent review is required", response.text)
+        self.assertIn('data-contextual-work-action="review"', response.text)
+        self.assertIn(
+            'aria-label="Showing 1 of 1 actionable cards"', response.text
+        )
+        self.assertNotIn("No operator action is waiting", response.text)
 
     def test_actionable_and_motion_filters_page_all_body_free_results(self) -> None:
         with TestClient(self.app) as client:

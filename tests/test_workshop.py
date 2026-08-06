@@ -945,6 +945,7 @@ def test_pr_watch_projection_is_card_scoped_and_bounded(tmp_path):
                 repository="petersky/pa",
                 pr_number=index + 1,
                 pr_url=f"https://github.com/petersky/pa/pull/{index + 1}",
+                last_error="Current supervisor failure" if index == 0 else None,
             ),
             preserve_lease=False,
         )
@@ -956,6 +957,7 @@ def test_pr_watch_projection_is_card_scoped_and_bounded(tmp_path):
             repository="petersky/pa",
             pr_number=99,
             pr_url="https://github.com/petersky/pa/pull/99",
+            state={"gate": {"actionable": True}},
         ),
         preserve_lease=False,
     )
@@ -968,8 +970,10 @@ def test_pr_watch_projection_is_card_scoped_and_bounded(tmp_path):
     assert all(watch.card_id == "active" for watch in watches)
     assert all(watch.id != "unrelated" for watch in watches)
     actionable_card_ids = store.list_actionable_card_ids(realm_id="default", limit=1)
-    assert len(actionable_card_ids) == 1
-    assert actionable_card_ids[0] in {"active", "other-card"}
+    assert actionable_card_ids == ["other-card"]
+    assert set(
+        store.list_actionable_card_ids(realm_id="default", limit=80)
+    ) == {"active", "other-card"}
 
 
 def test_session_projection_queries_only_bounded_active_realm_rows(tmp_path):

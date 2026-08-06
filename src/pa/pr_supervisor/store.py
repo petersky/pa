@@ -378,6 +378,11 @@ class PRSupervisorStore:
                   AND card_id IS NOT NULL
                   AND retired_at IS NULL
                   AND status IN ('active', 'blocked')
+                  AND (
+                    status = 'blocked'
+                    OR json_extract(state_json, '$.gate.actionable') = 1
+                    OR NULLIF(last_error, '') IS NOT NULL
+                  )
                 GROUP BY card_id
                 ORDER BY latest DESC, card_id
                 LIMIT ?
