@@ -26,6 +26,9 @@
         method="get" action="/work"
         hx-get="/work" hx-target="#app-view" hx-push-url="true" hx-swap="innerHTML">
     <input type="hidden" name="realm" value="{{ active_realm }}">
+    {% if filters.attention %}
+    <input type="hidden" name="attention" value="{{ filters.attention }}">
+    {% endif %}
     <label class="filter-search">
       <span>Search</span>
       <input type="search" name="q" value="{{ filters.q }}" placeholder="Title, summary, or details">

@@ -133,6 +133,10 @@ class HomeAttentionQueueRouteTests(unittest.TestCase):
             response = client.get("/?q=no-match&blocked=blocked&kind=concern")
 
         self.assertEqual(response.status_code, 200)
+        self.assertIn("data-home-attention-queue", response.text)
+        self.assertIn('hx-trigger="homeRefresh from:body"', response.text)
+        self.assertIn("data-home-refresh-status", response.text)
+        self.assertIn('data-contextual-work-action="respond"', response.text)
         self.assertEqual(response.text.count('data-attention-group="attention"'), 6)
         self.assertEqual(response.text.count('data-attention-group="motion"'), 8)
         self.assertEqual(response.text.count('data-attention-group="outcome"'), 6)
@@ -144,7 +148,7 @@ class HomeAttentionQueueRouteTests(unittest.TestCase):
         self.assertIn("attention=motion", response.text)
         self.assertIn("attention=outcome", response.text)
         self.assertIn("Respond for Attention 0", response.text)
-        self.assertIn("Retry Attention 1", response.text)
+        self.assertIn("Retry for Attention 1", response.text)
         self.assertLess(
             response.text.index("Attention 0"), response.text.index("Attention 5")
         )
@@ -226,6 +230,59 @@ class HomeAttentionQueueRouteTests(unittest.TestCase):
         self.assertEqual([len(batch) for batch in observed], [100, 100, 5, 10])
         self.assertTrue(all(not body for batch in observed[:3] for body in batch))
         self.assertTrue(all(body for body in observed[-1]))
+
+    def test_work_uses_canonical_action_and_preserves_attention_filter(self) -> None:
+        with TestClient(self.app) as client:
+            self.app.state.ctx.store.create_card(
+                CardCreate(title="Watch-only review gate")
+            )
+
+            def fake_presentations(_request, cards):
+                presentations = {}
+                for candidate in cards:
+                    presentation = present_work_item(candidate)
+                    presentation.update(
+                        {
+                            "group": "attention",
+                            "attention": True,
+                            "state": "review_required",
+                            "state_label": "Review needed",
+                            "summary": "Review gate is the current operator-owned step.",
+                            "reason": "The supervised pull request requires review.",
+                            "action": {
+                                "kind": "review",
+                                "label": "Review",
+                                "href": "https://github.com/petersky/pa/pull/257",
+                                "external": True,
+                            },
+                        }
+                    )
+                    presentations[candidate.id] = presentation
+                return {}, {}, presentations, {}
+
+            with patch(
+                "pa.modules.items._presentation_context_for_cards",
+                side_effect=fake_presentations,
+            ):
+                cards = client.get(
+                    "/partials/cards?lane=inbox&attention=actionable"
+                )
+
+            work = client.get("/work?attention=actionable&q=review")
+
+        self.assertEqual(cards.status_code, 200)
+        self.assertIn("Review needed", cards.text)
+        self.assertIn('data-contextual-work-action="review"', cards.text)
+        self.assertIn(">Review</a>", cards.text)
+        self.assertNotIn("data-card-dispatch-open", cards.text)
+        self.assertNotIn(">Dispatch</button>", cards.text)
+        self.assertEqual(work.status_code, 200)
+        self.assertRegex(
+            work.text,
+            r'<input type="hidden" name="attention" value="actionable">',
+        )
+        self.assertIn("attention=actionable", work.text)
+
 
 @unittest.skipUnless(_browser_executable(), "managed Chromium is not installed")
 class HomeAttentionQueueManagedBrowserTests(unittest.IsolatedAsyncioTestCase):
@@ -329,6 +386,15 @@ class HomeAttentionQueueManagedBrowserTests(unittest.IsolatedAsyncioTestCase):
             """(() => {
               const originalFetch = window.fetch.bind(window);
               window.__homeRetryCalls = [];
+              window.__homeRefreshCalls = 0;
+              window.__boardRefreshCalls = 0;
+              document.body.addEventListener('homeRefresh', event => {
+                window.__homeRefreshCalls += 1;
+                event.stopImmediatePropagation();
+              }, {capture:true});
+              document.body.addEventListener('boardRefresh', () => {
+                window.__boardRefreshCalls += 1;
+              }, {capture:true});
               window.fetch = (url, options) => {
                 if (String(url).includes('/api/fleet/dispatch-jobs/')) {
                   window.__homeRetryCalls.push({url:String(url), options});
@@ -342,19 +408,39 @@ class HomeAttentionQueueManagedBrowserTests(unittest.IsolatedAsyncioTestCase):
               const button = document.querySelector(
                 '[data-card-dispatch-retry="dispatch-1"]'
               );
+              button.focus();
               button.click();
-              return new Promise(resolve => setTimeout(() => resolve({
-                calls: window.__homeRetryCalls.length,
-                url: window.__homeRetryCalls[0] && window.__homeRetryCalls[0].url,
-                method: window.__homeRetryCalls[0] && window.__homeRetryCalls[0].options.method,
-                disabled: button.disabled
-              }), 50));
+              return new Promise(resolve => setTimeout(() => {
+                const pending = {
+                  disabled: button.disabled,
+                  busy: button.getAttribute('aria-busy')
+                };
+                document.body.dispatchEvent(new CustomEvent('htmx:afterSwap', {
+                  detail: {target: document.getElementById('app-view')}
+                }));
+                setTimeout(() => resolve({
+                  calls: window.__homeRetryCalls.length,
+                  url: window.__homeRetryCalls[0] && window.__homeRetryCalls[0].url,
+                  method: window.__homeRetryCalls[0] && window.__homeRetryCalls[0].options.method,
+                  homeRefreshCalls: window.__homeRefreshCalls,
+                  boardRefreshCalls: window.__boardRefreshCalls,
+                  pending,
+                  disabled: button.disabled,
+                  busy: button.hasAttribute('aria-busy'),
+                  focused: document.activeElement === button
+                }), 20);
+              }, 50));
             })()"""
         )
         self.assertEqual(retry["calls"], 1)
         self.assertTrue(retry["url"].endswith("/dispatch-1/retry"))
         self.assertEqual(retry["method"], "POST")
-        self.assertTrue(retry["disabled"])
+        self.assertEqual(retry["homeRefreshCalls"], 1)
+        self.assertEqual(retry["boardRefreshCalls"], 0)
+        self.assertEqual(retry["pending"], {"disabled": True, "busy": "true"})
+        self.assertFalse(retry["disabled"])
+        self.assertFalse(retry["busy"])
+        self.assertTrue(retry["focused"])
 
         opener = '[data-attention-group="attention"] [data-card-detail-link]'
         await session.page.evaluate(f"document.querySelector('{opener}').focus()")

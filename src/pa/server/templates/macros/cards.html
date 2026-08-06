@@ -1,4 +1,24 @@
 {% from "macros/instance_identity.html" import instance_identity %}
+{% macro presentation_action(action, title, card_id, realm_id, classes="ghost small compact-card-dispatch") %}
+  {% if action.kind == 'retry' %}
+  <button type="button" class="{{ classes }}"
+          data-contextual-work-action="{{ action.kind }}"
+          data-card-dispatch-retry="{{ action.dispatch_id }}"
+          data-home-action-key="retry:{{ action.dispatch_id }}"
+          aria-label="{{ action.label }} for {{ title }}">{{ action.label }}</button>
+  {% else %}
+  <a class="{{ classes }}"
+     href="{{ action.href }}"
+     data-contextual-work-action="{{ action.kind }}"
+     data-home-action-key="{{ action.kind }}:{{ card_id }}"
+     {% if action.kind in ('open_card', 'inspect') %}
+     data-card-detail-link data-card-id="{{ card_id }}"
+     data-card-realm="{{ realm_id }}"
+     {% endif %}
+     {% if action.external %}target="_blank" rel="noopener"{% endif %}
+     aria-label="{{ action.label }} for {{ title }}">{{ action.label }}</a>
+  {% endif %}
+{% endmacro %}
 {% macro compact_card(card, project=None, session=None, progress=None, presentation=None, movable=false, lanes=[], title_only=false) %}
 <article class="compact-card item-{{ card.kind.value }}{% if title_only %} is-title-only{% endif %}"
          {% if movable %}draggable="true"{% endif %}
@@ -25,7 +45,9 @@
        data-card-id="{{ card.id }}"
        data-card-realm="{{ card.realm_id }}">{{ card.title }}</a>
   </h3>
-  {% if not progress and (not session or session.status in ('closed', 'quiesced')) %}
+  {% if presentation and presentation.action %}
+  {{ presentation_action(presentation.action, card.title, card.id, card.realm_id) }}
+  {% elif not progress and (not session or session.status in ('closed', 'quiesced')) %}
   <button type="button" class="ghost small compact-card-dispatch" data-card-dispatch-open
           data-card-id="{{ card.id }}" data-card-realm="{{ card.realm_id }}"
           aria-label="Dispatch {{ card.title }}">Dispatch</button>
@@ -136,20 +158,7 @@
     <div><dt>Target</dt><dd>{{ presentation.target_instance_name }}</dd></div>
   </dl>
   <footer class="attention-card-actions">
-    {% if action.kind == 'retry' %}
-    <button type="button" class="small"
-            data-card-dispatch-retry="{{ action.dispatch_id }}"
-            aria-label="Retry {{ order.title }}">{{ action.label }}</button>
-    {% else %}
-    <a class="button small"
-       href="{{ action.href }}"
-       {% if action.kind in ('open_card', 'inspect') %}
-       data-card-detail-link data-card-id="{{ order.id }}"
-       data-card-realm="{{ order.card.realm_id or 'default' }}"
-       {% endif %}
-       {% if action.external %}target="_blank" rel="noopener"{% endif %}
-       aria-label="{{ action.label }} for {{ order.title }}">{{ action.label }}</a>
-    {% endif %}
+    {{ presentation_action(action, order.title, order.id, order.card.realm_id or 'default', "button small") }}
     {% if presentation.action_explanation %}
     <span class="muted small">{{ presentation.action_explanation }}</span>
     {% endif %}

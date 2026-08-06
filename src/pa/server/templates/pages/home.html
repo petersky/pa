@@ -3,7 +3,14 @@
 {% from "macros/cards.html" import attention_queue_card %}
 
 {% set main %}
-<div class="command-center">
+<div class="command-center"
+     data-home-attention-queue
+     hx-get="/?realm={{ active_realm }}"
+     hx-trigger="homeRefresh from:body"
+     hx-target="#app-view"
+     hx-swap="innerHTML">
+  <p class="sr-only" role="status" tabindex="-1"
+     data-home-refresh-status aria-live="polite">Home attention queue refreshed.</p>
   <header class="page-heading">
     <div>
       <p class="eyebrow">{{ active_realm }}</p>
