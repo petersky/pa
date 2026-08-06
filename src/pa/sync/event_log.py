@@ -822,6 +822,80 @@ class EventLog:
             "common_ancestors": sorted(common),
         }
 
+    def validate_operation_event_revision(
+        self,
+        previous_commit_hash: str,
+        previous_event_hash: str,
+        previous: CardEvent,
+        commit_hash: str,
+        event_hash: str,
+        event: CardEvent,
+    ) -> None:
+        """Allow only the canonical incomplete-to-complete receipt transition."""
+        invariant_fields = (
+            "schema_version",
+            "id",
+            "type",
+            "realm_id",
+            "card_id",
+            "project_id",
+            "author_principal",
+            "author_instance",
+            "source_operation",
+            "causal_card_version",
+            "idempotency_key",
+            "request_fingerprint",
+        )
+        resolution_head = event.payload.get("resolution_head")
+        previous_result = previous.operation_result or {}
+        result = event.operation_result or {}
+        outcome_commit = self.get_commit(commit_hash)
+        expected_intent = sorted(event.payload)
+        convergence = result.get("convergence")
+        valid = (
+            not previous.operation_result_complete
+            and event.operation_result_complete
+            and all(
+                getattr(previous, field) == getattr(event, field)
+                for field in invariant_fields
+            )
+            and outcome_commit is not None
+            and outcome_commit.parent_hashes == [event.causal_parent]
+            and outcome_commit.event_hashes == [event_hash]
+            and event.field_intent == expected_intent
+            and event.payload
+            == {
+                "operation_outcome": True,
+                "resolution_head": previous_commit_hash,
+            }
+            and resolution_head == previous_commit_hash
+            and result.get("realm_id") == previous.realm_id
+            and result.get("resolution_head") == previous_commit_hash
+            and result.get("resolved") == previous_result.get("resolved")
+            and set(result)
+            == {
+                "realm_id",
+                "head",
+                "resolution_head",
+                "resolved",
+                "convergence",
+            }
+            and result.get("head") == {"$pa_commit_hash": True}
+            and isinstance(convergence, dict)
+            and convergence.get("realm_id") == previous.realm_id
+            and convergence.get("head") == {"$pa_commit_hash": True}
+        )
+        if not valid:
+            raise EventHistoryError(
+                "invalid_operation_revision",
+                "durable operation receipt has an invalid outcome revision",
+                idempotency_key=event.idempotency_key,
+                first_commit_hash=previous_commit_hash,
+                first_event_hash=previous_event_hash,
+                second_commit_hash=commit_hash,
+                second_event_hash=event_hash,
+            )
+
     def find_operation_event(
         self,
         realm_id: str,
@@ -845,13 +919,22 @@ class EventLog:
                     )
                 if event.idempotency_key != idempotency_key:
                     continue
-                if found and found[2].id != event.id:
-                    raise EventHistoryError(
-                        "duplicate_idempotency_key",
-                        "multiple durable events claim the same idempotency key",
-                        idempotency_key=idempotency_key,
-                        first_event_id=found[2].id,
-                        second_event_id=event.id,
+                if found:
+                    if found[2].id != event.id:
+                        raise EventHistoryError(
+                            "duplicate_idempotency_key",
+                            "multiple durable events claim the same idempotency key",
+                            idempotency_key=idempotency_key,
+                            first_event_id=found[2].id,
+                            second_event_id=event.id,
+                        )
+                    self.validate_operation_event_revision(
+                        found[0],
+                        found[1],
+                        found[2],
+                        commit_hash,
+                        event_hash,
+                        event,
                     )
                 found = (commit_hash, event_hash, event)
         return found

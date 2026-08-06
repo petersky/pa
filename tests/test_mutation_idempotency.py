@@ -15,7 +15,7 @@ from pa.execution.dispatch import DispatchRecord, DispatchStore
 from pa.domain.projection import CardProjection, MutationOperationConflict
 from pa.domain.store import reset_store
 from pa.instance.agent_session import reset_instance_agent
-from pa.sync.event_log import EventLog
+from pa.sync.event_log import EventHistoryError, EventLog
 from pa.sync.object_store import ObjectStore
 
 
@@ -135,6 +135,39 @@ class MutationReceiptCrashTests(unittest.TestCase):
 
         with self.assertRaises(MutationOperationConflict):
             CardProjection(self.root / "duplicate-rebuild.db", self.log)
+
+    def test_rebuild_rejects_same_id_complete_operation_revision(self) -> None:
+        key = "same-id-complete-revision"
+        fingerprint = "same-id-complete-fingerprint"
+        self._claim(key, "card.create", fingerprint)
+        created = self.projection.create_card(
+            CardCreate(title="Canonical durable event"),
+            idempotency_key=key,
+            request_fingerprint=fingerprint,
+        )
+        durable = self.log.find_operation_event("default", key)
+        assert durable is not None
+        duplicate = durable[2].model_copy(
+            update={
+                "type": EventType.CARD_UPDATED,
+                "payload": {**durable[2].payload, "title": "Altered result"},
+                "operation_result": {
+                    **(durable[2].operation_result or {}),
+                    "title": "Altered result",
+                },
+            }
+        )
+        self.log.append_event(duplicate)
+
+        with self.assertRaises(EventHistoryError) as invalid:
+            self.log.find_operation_event("default", key)
+        self.assertEqual(invalid.exception.code, "invalid_operation_revision")
+        with self.assertRaises(MutationOperationConflict):
+            CardProjection(self.root / "same-id-revision.db", self.log)
+        self.assertEqual(
+            self.projection.get_card(created.id).title,
+            "Canonical durable event",
+        )
 
     def test_deep_log_rebuild_restores_exact_create_receipt(self) -> None:
         key = "deep-rebuild-create"

@@ -682,6 +682,111 @@ class RealmConvergenceTests(unittest.IsolatedAsyncioTestCase):
             recovered,
         )
 
+    async def test_conflict_resolution_fences_overlapping_same_key_retry(self) -> None:
+        card = self._shared_card()
+        local = CardProjection(
+            self.authority.settings.db_path, self.authority.log
+        )
+        local.rebuild_from_log("default")
+        local.update_card(card.id, CardUpdate(title="Local overlap title"))
+        remote_head = self._update(
+            self.target, card.id, title="Remote overlap title"
+        )
+        state = await self.authority.engine.converge_realm("default")
+        conflict = state["conflicts"][0]
+
+        ctx = MagicMock()
+        ctx.settings = self.authority.settings
+        ctx.services = {
+            "membership": self.authority.membership,
+            "event_log": self.authority.log,
+            "sync_engine": self.authority.engine,
+        }
+        ctx.require_service.side_effect = lambda name: ctx.services[name]
+        request = MagicMock()
+        request.state = SimpleNamespace(principal_id="user:local")
+        request.app.state.ctx = ctx
+        request.headers = {"Idempotency-Key": "manual-resolution-overlap"}
+        resolution = {
+            "realm_id": "default",
+            "remote_head": remote_head,
+            "resolutions": [
+                {
+                    "entity": "card",
+                    "id": card.id,
+                    "action": "update",
+                    "fields": {"title": conflict["remote"]["value"]},
+                }
+            ],
+        }
+        first_convergence = asyncio.Event()
+        release_convergence = asyncio.Event()
+        real_converge = self.authority.engine.converge_realm
+        convergence_calls = 0
+
+        async def fenced_convergence(realm_id: str):
+            nonlocal convergence_calls
+            convergence_calls += 1
+            if convergence_calls == 1:
+                first_convergence.set()
+                await release_convergence.wait()
+            return await real_converge(realm_id)
+
+        with (
+            patch("pa.modules.sync.get_store", return_value=local),
+            patch.object(
+                self.authority.engine,
+                "converge_realm",
+                side_effect=fenced_convergence,
+            ),
+        ):
+            first = asyncio.create_task(
+                resolve_sync_conflicts(
+                    request,
+                    resolution,
+                    Response(),
+                    "manual-resolution-overlap",
+                )
+            )
+            await asyncio.wait_for(first_convergence.wait(), timeout=5)
+            with self.assertRaises(HTTPException) as retry:
+                await resolve_sync_conflicts(
+                    request,
+                    resolution,
+                    Response(),
+                    "manual-resolution-overlap",
+                )
+            self.assertEqual(retry.exception.status_code, 409)
+            self.assertEqual(retry.exception.detail["code"], "operation_in_progress")
+            release_convergence.set()
+            result = await asyncio.wait_for(first, timeout=10)
+
+        durable = self.authority.log.find_operation_event(
+            "default", "manual-resolution-overlap"
+        )
+        assert durable is not None
+        self.assertTrue(durable[2].operation_result_complete)
+        self.assertEqual(
+            local.get_operation_outcome(
+                "manual-resolution-overlap", realm_id="default"
+            )["result"],
+            result,
+        )
+        attributable = []
+        head = self.authority.log.get_head("default")
+        assert head is not None
+        for _commit_hash, commit in self.authority.log._iter_commits_parent_first(
+            head
+        ):
+            for event_hash in commit.event_hashes:
+                event = self.authority.log.get_event(event_hash)
+                if event and event.idempotency_key == "manual-resolution-overlap":
+                    attributable.append(event)
+        self.assertEqual(len(attributable), 2)
+        self.assertEqual(
+            sum(event.operation_result_complete for event in attributable), 1
+        )
+
     async def test_conflicts_from_every_divergent_peer_remain_reported(self) -> None:
         card = self._shared_card()
         self._update(self.authority, card.id, title="Authority")

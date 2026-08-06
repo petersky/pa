@@ -64,7 +64,7 @@ from pa.fleet.policy import (
     PlacementDefault,
     default_scope_key,
 )
-from pa.sync.event_log import EventLog
+from pa.sync.event_log import EventHistoryError, EventLog
 
 T = TypeVar("T")
 
@@ -1211,10 +1211,17 @@ class CardProjection:
             if event.operation_result is not None
             else None
         )
+        replay_keys = getattr(self, "_replay_operation_keys_seen", None)
+        first_replay_event = (
+            replay_keys is not None and event.idempotency_key not in replay_keys
+        )
+        if replay_keys is not None:
+            replay_keys.add(event.idempotency_key)
         with self._conn() as conn:
             existing = conn.execute(
-                "SELECT operation, request_fingerprint, realm_id, event_id "
-                "FROM mutation_operations WHERE idempotency_key=?",
+                "SELECT operation, request_fingerprint, realm_id, state, "
+                "event_id, event_hash, commit_hash FROM mutation_operations "
+                "WHERE idempotency_key=?",
                 (event.idempotency_key,),
             ).fetchone()
             if (
@@ -1231,6 +1238,35 @@ class CardProjection:
                 )
             ):
                 raise MutationOperationConflict(event.idempotency_key)
+            if (
+                existing
+                and not first_replay_event
+                and existing["event_id"] == event.id
+                and existing["event_hash"]
+                and event_hash
+                and (
+                    existing["event_hash"] != event_hash
+                    or existing["commit_hash"] != commit_hash
+                )
+            ):
+                if existing["event_hash"] == event_hash:
+                    raise MutationOperationConflict(event.idempotency_key)
+                previous = self.event_log.get_event(existing["event_hash"])
+                if previous is None or not existing["commit_hash"]:
+                    raise MutationOperationConflict(event.idempotency_key)
+                try:
+                    self.event_log.validate_operation_event_revision(
+                        existing["commit_hash"],
+                        existing["event_hash"],
+                        previous,
+                        commit_hash,
+                        event_hash,
+                        event,
+                    )
+                except EventHistoryError as exc:
+                    raise MutationOperationConflict(
+                        event.idempotency_key
+                    ) from exc
             conn.execute(
                 """
                 INSERT INTO mutation_operations
@@ -1243,6 +1279,8 @@ class CardProjection:
                     state=CASE
                         WHEN mutation_operations.state='succeeded'
                              AND mutation_operations.result_json IS NOT NULL
+                        THEN mutation_operations.state
+                        WHEN mutation_operations.state='pending'
                         THEN mutation_operations.state
                         ELSE 'committed'
                     END,
@@ -1408,7 +1446,9 @@ class CardProjection:
         event, commit = self.event_log.append_event(
             event, on_commit=self._on_commit
         )
-        self.mark_operation_durable(event, commit.hash)
+        self.mark_operation_durable(
+            event, commit.hash, event_hash=commit.event_hashes[-1]
+        )
         try:
             self.apply_event(event)
             self._record_projection_head(event.realm_id, commit.hash)
@@ -4240,6 +4280,7 @@ class CardProjection:
             )
 
         self._replaying_from_log = True
+        self._replay_operation_keys_seen: set[str] = set()
         try:
             self.event_log.apply_commit_chain(
                 head,
@@ -4248,6 +4289,7 @@ class CardProjection:
             )
         finally:
             self._replaying_from_log = False
+            del self._replay_operation_keys_seen
         self._record_projection_head(realm_id, head)
 
     def _row_to_project(self, row: sqlite3.Row) -> Project:
