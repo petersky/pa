@@ -49,6 +49,24 @@ class SyncTokenAuthSeparationTests(unittest.TestCase):
                     "/api/cards/repair-legacy-history", _ok, methods=["POST"]
                 ),
                 Route("/api/fleet/dispatch-jobs", _ok, methods=["GET"]),
+                Route(
+                    "/api/fleet/dispatch-jobs/{dispatch_id}/repair-terminal",
+                    _ok,
+                    methods=["GET", "POST"],
+                ),
+                Route(
+                    (
+                        "/api/fleet/dispatch-jobs/{dispatch_id}/"
+                        "terminal-repair-evidence"
+                    ),
+                    _ok,
+                    methods=["GET", "POST"],
+                ),
+                Route(
+                    "/api/fleet/dispatch-jobs/{dispatch_id}/unknown-repair",
+                    _ok,
+                    methods=["POST"],
+                ),
                 Route("/api/fleet/peer-update/{operation_id}", _ok, methods=["GET"]),
                 Route("/api/config", _ok, methods=["GET"]),
                 Route("/api/agent/prompt", _ok, methods=["POST"]),
@@ -148,6 +166,17 @@ class SyncTokenAuthSeparationTests(unittest.TestCase):
             ("POST", "/api/cards/repair-legacy-history"),
             ("GET", "/api/fleet/dispatch-jobs"),
             ("GET", "/api/fleet/peer-update/job-123"),
+            (
+                "POST",
+                "/api/fleet/dispatch-jobs/dispatch-123/repair-terminal",
+            ),
+            (
+                "POST",
+                (
+                    "/api/fleet/dispatch-jobs/dispatch-123/"
+                    "terminal-repair-evidence"
+                ),
+            ),
         ]
         for method, path in routes:
             with self.subTest(method=method, path=path):
@@ -161,6 +190,21 @@ class SyncTokenAuthSeparationTests(unittest.TestCase):
             ("GET", "/api/config"),
             ("POST", "/api/agent/prompt"),
             ("POST", "/api/fleet/join-token"),
+            (
+                "GET",
+                "/api/fleet/dispatch-jobs/dispatch-123/repair-terminal",
+            ),
+            (
+                "GET",
+                (
+                    "/api/fleet/dispatch-jobs/dispatch-123/"
+                    "terminal-repair-evidence"
+                ),
+            ),
+            (
+                "POST",
+                "/api/fleet/dispatch-jobs/dispatch-123/unknown-repair",
+            ),
         ]:
             with self.subTest(method=method, path=path):
                 response = self.client.request(method, path, headers=headers, json={})
