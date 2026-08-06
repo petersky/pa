@@ -733,7 +733,7 @@ class PRSupervisorStore:
                     return watch, prior
             authorization = {
                 **semantic,
-                "id": str(uuid4()),
+                "id": str((prior or {}).get("id") or uuid4()),
                 "state": "prepared",
                 "protocol_version": 2,
                 "issued_at": now.isoformat(),

@@ -2315,6 +2315,7 @@ class ExecutorWakeReplacementTests(unittest.IsolatedAsyncioTestCase):
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
+            started_at = utcnow()
             settings = Settings(data_dir=Path(tmp), instance_id="instance-a", peers=[])
             supervisor = PRSupervisorStore(Path(tmp) / "supervisor.db")
             domain = CardProjection(Path(tmp) / "pa.db")
@@ -2325,7 +2326,7 @@ class ExecutorWakeReplacementTests(unittest.IsolatedAsyncioTestCase):
             target.owner_instance_id = "instance-a"
             target.fence_token = 1
             target.lease_version = 1
-            target.lease_expires_at = utcnow() + timedelta(seconds=90)
+            target.lease_expires_at = started_at + timedelta(seconds=90)
             target.state = {"review_hold_version": 0}
             supervisor.upsert_watch(target, preserve_lease=False)
             prompt = "merge only after the exact green head is revalidated"
@@ -2358,7 +2359,8 @@ class ExecutorWakeReplacementTests(unittest.IsolatedAsyncioTestCase):
                 lease_version=1,
                 event_key=event_key,
                 bindings=bindings,
-                ttl_seconds=120,
+                ttl_seconds=20,
+                now=started_at,
             )
             session = AgentSession(
                 id="session-1",
@@ -2385,6 +2387,8 @@ class ExecutorWakeReplacementTests(unittest.IsolatedAsyncioTestCase):
             )
 
             with (
+                patch("pa.pr_supervisor.store.utcnow", return_value=started_at),
+                patch("pa.pr_supervisor.service.utcnow", return_value=started_at),
                 patch.object(
                     supervisor,
                     "finish_dispatch",
@@ -2423,20 +2427,35 @@ class ExecutorWakeReplacementTests(unittest.IsolatedAsyncioTestCase):
             restarted_dispatcher = ExecutorDispatcher(
                 settings, domain, supervisor, agent_manager=restarted_agent
             )
-            stale_time = utcnow() + timedelta(seconds=31)
-            with patch("pa.pr_supervisor.store.utcnow", return_value=stale_time):
+            stale_time = started_at + timedelta(seconds=31)
+            _renewed_watch, renewed = supervisor.prepare_effect_authorization(
+                target.id,
+                owner_instance_id="instance-a",
+                fence_token=1,
+                lease_version=1,
+                event_key=event_key,
+                bindings=bindings,
+                ttl_seconds=20,
+                now=stale_time,
+            )
+            self.assertEqual(renewed["id"], authorization["id"])
+            self.assertNotEqual(renewed["expires_at"], authorization["expires_at"])
+            with (
+                patch("pa.pr_supervisor.store.utcnow", return_value=stale_time),
+                patch("pa.pr_supervisor.service.utcnow", return_value=stale_time),
+            ):
                 raced = await asyncio.gather(
                     restarted_dispatcher.dispatch_local(
                         supervisor.get_watch(target.id),
                         event_key,
                         prompt,
-                        authorization=authorization,
+                        authorization=renewed,
                     ),
                     restarted_dispatcher.dispatch_local(
                         supervisor.get_watch(target.id),
                         event_key,
                         prompt,
-                        authorization=authorization,
+                        authorization=renewed,
                     ),
                 )
 
@@ -2461,7 +2480,7 @@ class ExecutorWakeReplacementTests(unittest.IsolatedAsyncioTestCase):
                 supervisor.get_watch(target.id),
                 event_key,
                 prompt,
-                authorization=authorization,
+                authorization=renewed,
             )
             self.assertEqual(post_finish, "deduplicated")
             self.assertEqual(len(restarted._queue), 1)
