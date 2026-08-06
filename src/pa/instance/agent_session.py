@@ -2517,6 +2517,13 @@ class AgentSessionManager:
         with self._runtime_lifecycle_lock:
             return self._terminal_repair_fences.get(session_id)
 
+    def _require_not_terminal_repair_fenced(self, session_id: str) -> None:
+        fence_id = self.terminal_repair_fence_id(session_id)
+        if fence_id is not None:
+            raise AgentSessionRecoveryError(
+                "PA session admission is fenced by terminal dispatch repair"
+            )
+
     async def _publish_runtime(self, runtime: AgentSessionRuntime) -> None:
         """Publish a started runtime unless terminal evidence fenced its session."""
         with self._runtime_lifecycle_lock:
@@ -3544,6 +3551,7 @@ class AgentSessionManager:
         """Reconnect one durable PA session without creating a second PA identity."""
         self.require_startup_complete()
         async with self.label_lock(f"recover:{session_id}"):
+            self._require_not_terminal_repair_fenced(session_id)
             runtime = self.get(session_id)
             if runtime and not runtime._closed:
                 return runtime
@@ -3619,7 +3627,8 @@ class AgentSessionManager:
     ) -> QueuedPrompt:
         runtime = None
         if session_id:
-            runtime = self._runtimes.get(session_id)
+            self._require_not_terminal_repair_fenced(session_id)
+            runtime = self.get(session_id)
         if runtime is None:
             # Best-effort: use default if present
             for rt in self._runtimes.values():
@@ -3669,7 +3678,8 @@ class AgentSessionManager:
     ) -> str:
         self.require_startup_complete()
         if session_id:
-            runtime = self._runtimes.get(session_id)
+            self._require_not_terminal_repair_fenced(session_id)
+            runtime = self.get(session_id)
             if not runtime:
                 runtime = await self.recover_session(session_id)
         else:

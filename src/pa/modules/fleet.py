@@ -481,7 +481,7 @@ class DispatchTerminalRepairBody(BaseModel):
 
 
 class DispatchTerminalRepairEvidenceRequest(BaseModel):
-    """Exact target binding for one read-only terminal repair probe."""
+    """Exact target binding for one terminal repair reservation prepare."""
 
     mutation_id: str
     authority_instance_id: str
@@ -503,6 +503,8 @@ class DispatchTerminalRepairEvidenceV1(BaseModel):
     target_instance_id: str
     session_id: str
     idempotency_key: str
+    reservation_id: str
+    reservation_state: Literal["prepared", "committed"] = "prepared"
     dispatch_state: str
     dispatch_recoverable: bool
     dispatch_updated_at: datetime
@@ -513,6 +515,39 @@ class DispatchTerminalRepairEvidenceV1(BaseModel):
     completion_evidence_present: bool
     observed_at: datetime
     evidence_digest: str = Field(min_length=64, max_length=64)
+
+
+class DispatchTerminalRepairCommitRequest(BaseModel):
+    """Consume one exact target-side repair reservation."""
+
+    mutation_id: str
+    authority_instance_id: str
+    target_instance_id: str
+    session_id: str
+    idempotency_key: str
+    reservation_id: str
+    evidence_digest: str = Field(min_length=64, max_length=64)
+    expected_state: str
+
+
+class DispatchTerminalRepairCommitV1(BaseModel):
+    """Target receipt proving its reservation committed terminally."""
+
+    contract: Literal["pa.dispatch-terminal-repair-commit/v1"] = (
+        "pa.dispatch-terminal-repair-commit/v1"
+    )
+    dispatch_id: str
+    mutation_id: str
+    authority_instance_id: str
+    target_instance_id: str
+    session_id: str
+    idempotency_key: str
+    reservation_id: str
+    evidence_digest: str = Field(min_length=64, max_length=64)
+    target_state: Literal["cancelled"]
+    session_status: Literal["closed"]
+    committed_at: datetime
+    receipt_digest: str = Field(min_length=64, max_length=64)
 
 
 class DispatchPriorityBody(BaseModel):
@@ -5525,7 +5560,7 @@ async def _peer_terminal_repair_evidence(
     dispatch_id: str,
     body: DispatchTerminalRepairEvidenceRequest,
 ) -> DispatchTerminalRepairEvidenceV1:
-    """Read fresh terminal proof from the exact authenticated target instance."""
+    """Prepare a fenced repair reservation on the authenticated target."""
     inst = _fleet_instance_or_404(request, target_instance_id)
     client = request.app.state.ctx.services.get("fleet_http_client")
     owns_client = client is None
@@ -5598,6 +5633,87 @@ async def _peer_terminal_repair_evidence(
             status_code=502,
             detail={
                 "code": "target_terminal_evidence_malformed",
+                "target_instance_id": target_instance_id,
+                "recoverable": False,
+            },
+        ) from exc
+
+
+async def _peer_terminal_repair_commit(
+    request: Request,
+    target_instance_id: str,
+    dispatch_id: str,
+    body: DispatchTerminalRepairCommitRequest,
+) -> DispatchTerminalRepairCommitV1:
+    """Consume the exact target reservation before authority mutation."""
+    inst = _fleet_instance_or_404(request, target_instance_id)
+    client = request.app.state.ctx.services.get("fleet_http_client")
+    owns_client = client is None
+    client = client or httpx.AsyncClient(timeout=10.0)
+    try:
+        response = await _fleet_http(
+            request,
+            "http.fleet_terminal_repair_commit",
+            client.post(
+                (
+                    f"{inst.url.rstrip('/')}/api/fleet/dispatch-jobs/"
+                    f"{quote(dispatch_id, safe='')}/terminal-repair-commit"
+                ),
+                headers={
+                    **_peer_headers(request),
+                    "Idempotency-Key": body.idempotency_key,
+                },
+                json=body.model_dump(mode="json"),
+                timeout=10.0,
+            ),
+            timeout=10.0,
+        )
+    except (httpx.HTTPError, TimeoutError) as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "target_terminal_commit_unavailable",
+                "message": str(exc),
+                "target_instance_id": target_instance_id,
+                "recoverable": True,
+            },
+        ) from exc
+    finally:
+        if owns_client:
+            await client.aclose()
+    actual_target = response.headers.get("X-PA-Instance-ID", "").strip()
+    if actual_target != target_instance_id:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "target_terminal_commit_identity_mismatch",
+                "target_instance_id": target_instance_id,
+                "recoverable": False,
+            },
+        )
+    if response.status_code >= 400:
+        try:
+            decoded = await _response_json(request, response)
+            detail = decoded.get("detail")
+        except ValueError, AttributeError:
+            detail = response.text[:500]
+        if response.status_code == 404:
+            detail = {
+                "code": "target_terminal_commit_unsupported",
+                "target_instance_id": target_instance_id,
+                "upgrade_required": True,
+                "recoverable": True,
+            }
+        raise HTTPException(status_code=response.status_code, detail=detail)
+    try:
+        return DispatchTerminalRepairCommitV1.model_validate(
+            await _response_json(request, response)
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "target_terminal_commit_malformed",
                 "target_instance_id": target_instance_id,
                 "recoverable": False,
             },
@@ -11067,6 +11183,31 @@ def _terminal_repair_evidence_digest(
     ).hexdigest()
 
 
+def _terminal_repair_reservation_id(
+    record: DispatchRecord, idempotency_key: str
+) -> str:
+    payload = {
+        "dispatch_id": record.dispatch_id,
+        "mutation_id": record.mutation_id,
+        "authority_instance_id": record.authority_instance_id,
+        "target_instance_id": record.target_instance_id,
+        "session_id": record.session_id,
+        "idempotency_key": idempotency_key,
+    }
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
+def _terminal_repair_commit_digest(
+    receipt: DispatchTerminalRepairCommitV1,
+) -> str:
+    payload = receipt.model_dump(mode="json", exclude={"receipt_digest"})
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
 def _raise_nonterminal_repair_evidence(
     record: DispatchRecord,
     *,
@@ -11170,6 +11311,7 @@ def _validate_remote_terminal_repair_evidence(
         "target_instance_id": current.target_instance_id,
         "session_id": current.session_id,
         "idempotency_key": idempotency_key,
+        "reservation_id": _terminal_repair_reservation_id(current, idempotency_key),
         "dispatch_state": current.state,
         "dispatch_recoverable": current.recoverable,
         "completion_acknowledged": False,
@@ -11192,9 +11334,9 @@ def _validate_remote_terminal_repair_evidence(
     now = datetime.now(UTC)
     age = now - evidence.observed_at
     if (
-        age > _TERMINAL_REPAIR_EVIDENCE_MAX_AGE
-        or age < -_TERMINAL_REPAIR_EVIDENCE_FUTURE_SKEW
-    ):
+        evidence.reservation_state == "prepared"
+        and age > _TERMINAL_REPAIR_EVIDENCE_MAX_AGE
+    ) or age < -_TERMINAL_REPAIR_EVIDENCE_FUTURE_SKEW:
         raise HTTPException(
             status_code=409,
             detail={
@@ -11230,6 +11372,60 @@ def _validate_remote_terminal_repair_evidence(
     return evidence
 
 
+def _validate_remote_terminal_repair_commit(
+    current: DispatchRecord,
+    evidence: DispatchTerminalRepairEvidenceV1,
+    receipt: DispatchTerminalRepairCommitV1 | None,
+    *,
+    idempotency_key: str,
+) -> DispatchTerminalRepairCommitV1:
+    if receipt is None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "target_terminal_commit_required",
+                "target_instance_id": current.target_instance_id,
+                "recoverable": True,
+            },
+        )
+    expected = {
+        "dispatch_id": current.dispatch_id,
+        "mutation_id": current.mutation_id,
+        "authority_instance_id": current.authority_instance_id,
+        "target_instance_id": current.target_instance_id,
+        "session_id": current.session_id,
+        "idempotency_key": idempotency_key,
+        "reservation_id": evidence.reservation_id,
+        "evidence_digest": evidence.evidence_digest,
+        "target_state": "cancelled",
+        "session_status": "closed",
+    }
+    observed = receipt.model_dump()
+    mismatched = sorted(
+        field for field, value in expected.items() if observed.get(field) != value
+    )
+    if mismatched:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "target_terminal_commit_fence_mismatch",
+                "mismatched_fields": mismatched,
+                "recoverable": True,
+            },
+        )
+    if not hmac.compare_digest(
+        receipt.receipt_digest, _terminal_repair_commit_digest(receipt)
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "target_terminal_commit_digest_mismatch",
+                "recoverable": False,
+            },
+        )
+    return receipt
+
+
 @router.post(
     "/fleet/dispatch-jobs/{dispatch_id}/terminal-repair-evidence",
     response_model=DispatchTerminalRepairEvidenceV1,
@@ -11239,7 +11435,7 @@ def target_terminal_repair_evidence(
     dispatch_id: str,
     body: DispatchTerminalRepairEvidenceRequest,
 ) -> DispatchTerminalRepairEvidenceV1:
-    """Return fresh target-local evidence bound to one authority repair attempt."""
+    """Prepare target-local evidence and a durable fenced repair reservation."""
     _require_instance(request)
     caller = request.headers.get("X-PA-Origin-Instance-ID", "").strip()
     header_key = request.headers.get("Idempotency-Key", "").strip()
@@ -11253,6 +11449,71 @@ def target_terminal_repair_evidence(
     settings = request.app.state.ctx.settings
     supplied = body.model_dump()
     captured: list[DispatchTerminalRepairEvidenceV1] = []
+    reservation_id = _terminal_repair_reservation_id(record, body.idempotency_key)
+    reservation = record.terminal_repair_reservation or {}
+    if (
+        reservation.get("reservation_id") == reservation_id
+        and reservation.get("idempotency_key") == body.idempotency_key
+        and reservation.get("state") in {"prepared", "committed"}
+        and isinstance(reservation.get("evidence"), dict)
+    ):
+        replay = DispatchTerminalRepairEvidenceV1.model_validate(
+            reservation["evidence"]
+        )
+        mismatched = sorted(
+            field
+            for field, expected_value in {
+                "mutation_id": record.mutation_id,
+                "authority_instance_id": record.authority_instance_id,
+                "target_instance_id": record.target_instance_id,
+                "session_id": record.session_id,
+                "expected_state": replay.dispatch_state,
+            }.items()
+            if supplied.get(field) != expected_value
+        )
+        if header_key != body.idempotency_key:
+            mismatched.append("idempotency_key_header")
+        if (
+            caller != record.authority_instance_id
+            or record.target_instance_id != settings.instance_id
+            or mismatched
+        ):
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "terminal_repair_evidence_provenance_mismatch",
+                    "mismatched_fields": mismatched,
+                    "recoverable": False,
+                },
+            )
+        completion_present = bool(
+            record.acknowledged_at
+            or record.completion_payload is not None
+            or record.completion_envelope is not None
+            or record.completion_received_at is not None
+        )
+        if completion_present:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "target_completion_evidence_present",
+                    "recoverable": True,
+                },
+            )
+        if reservation.get("state") == "committed":
+            if record.state != "cancelled":
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "target_terminal_reservation_not_replayable",
+                        "observed_state": record.state,
+                        "recoverable": True,
+                    },
+                )
+            replay.reservation_state = "committed"
+            replay.observed_at = datetime.now(UTC)
+            replay.evidence_digest = _terminal_repair_evidence_digest(replay)
+        return replay
 
     def capture(current: DispatchRecord) -> bool:
         expected = {
@@ -11341,6 +11602,8 @@ def target_terminal_repair_evidence(
             target_instance_id=current.target_instance_id,
             session_id=current.session_id or "",
             idempotency_key=body.idempotency_key,
+            reservation_id=reservation_id,
+            reservation_state="prepared",
             dispatch_state=current.state,
             dispatch_recoverable=current.recoverable,
             dispatch_updated_at=current.updated_at,
@@ -11353,8 +11616,29 @@ def target_terminal_repair_evidence(
             evidence_digest="0" * 64,
         )
         evidence.evidence_digest = _terminal_repair_evidence_digest(evidence)
+        existing = current.terminal_repair_reservation
+        if existing and (
+            existing.get("reservation_id") != reservation_id
+            or existing.get("state") != "prepared"
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "target_terminal_reservation_conflict",
+                    "reservation_state": existing.get("state"),
+                    "recoverable": True,
+                },
+            )
+        current.terminal_repair_reservation = {
+            "reservation_id": reservation_id,
+            "idempotency_key": body.idempotency_key,
+            "state": "prepared",
+            "prepared_at": observed_at.isoformat(),
+            "evidence_digest": evidence.evidence_digest,
+            "evidence": evidence.model_dump(mode="json"),
+        }
         captured.append(evidence)
-        return False
+        return True
 
     try:
         ledger.compare_and_mutate(record, capture)
@@ -11368,6 +11652,259 @@ def target_terminal_repair_evidence(
             },
         ) from exc
     return captured[0]
+
+
+@router.post(
+    "/fleet/dispatch-jobs/{dispatch_id}/terminal-repair-commit",
+    response_model=DispatchTerminalRepairCommitV1,
+)
+def target_terminal_repair_commit(
+    request: Request,
+    dispatch_id: str,
+    body: DispatchTerminalRepairCommitRequest,
+) -> DispatchTerminalRepairCommitV1:
+    """Atomically consume a prepared target reservation into terminal state."""
+    _require_instance(request)
+    caller = request.headers.get("X-PA-Origin-Instance-ID", "").strip()
+    header_key = request.headers.get("Idempotency-Key", "").strip()
+    ledger = _dispatch_store(request)
+    record = ledger.get(dispatch_id)
+    if record is None:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "target_dispatch_not_found", "recoverable": True},
+        )
+    settings = request.app.state.ctx.settings
+    supplied = body.model_dump()
+    reservation = record.terminal_repair_reservation or {}
+    if (
+        reservation.get("state") == "committed"
+        and isinstance(reservation.get("evidence"), dict)
+        and isinstance(reservation.get("receipt"), dict)
+    ):
+        prepared = DispatchTerminalRepairEvidenceV1.model_validate(
+            reservation["evidence"]
+        )
+        mismatched = sorted(
+            field
+            for field, expected_value in {
+                "mutation_id": record.mutation_id,
+                "authority_instance_id": record.authority_instance_id,
+                "target_instance_id": record.target_instance_id,
+                "session_id": record.session_id,
+                "idempotency_key": reservation.get("idempotency_key"),
+                "reservation_id": reservation.get("reservation_id"),
+                "expected_state": prepared.dispatch_state,
+            }.items()
+            if supplied.get(field) != expected_value
+        )
+        if header_key != body.idempotency_key:
+            mismatched.append("idempotency_key_header")
+        if (
+            caller != record.authority_instance_id
+            or record.target_instance_id != settings.instance_id
+            or mismatched
+        ):
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "terminal_repair_commit_provenance_mismatch",
+                    "mismatched_fields": mismatched,
+                    "recoverable": False,
+                },
+            )
+        completion_present = bool(
+            record.acknowledged_at
+            or record.completion_payload is not None
+            or record.completion_envelope is not None
+            or record.completion_received_at is not None
+        )
+        if record.state != "cancelled" or completion_present:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "target_terminal_reservation_not_replayable",
+                    "observed_state": record.state,
+                    "completion_evidence_present": completion_present,
+                    "recoverable": True,
+                },
+            )
+        replay = DispatchTerminalRepairCommitV1.model_validate(reservation["receipt"])
+        replay.evidence_digest = body.evidence_digest
+        replay.receipt_digest = _terminal_repair_commit_digest(replay)
+        return replay
+
+    committed: list[DispatchTerminalRepairCommitV1] = []
+
+    def consume(current: DispatchRecord) -> bool:
+        expected = {
+            "mutation_id": current.mutation_id,
+            "authority_instance_id": current.authority_instance_id,
+            "target_instance_id": current.target_instance_id,
+            "session_id": current.session_id,
+        }
+        mismatched = sorted(
+            field for field, value in expected.items() if supplied.get(field) != value
+        )
+        if header_key != body.idempotency_key:
+            mismatched.append("idempotency_key_header")
+        if (
+            caller != current.authority_instance_id
+            or current.target_instance_id != settings.instance_id
+            or mismatched
+        ):
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "terminal_repair_commit_provenance_mismatch",
+                    "caller_instance_id": caller or None,
+                    "authority_instance_id": current.authority_instance_id,
+                    "target_instance_id": current.target_instance_id,
+                    "mismatched_fields": mismatched,
+                    "recoverable": False,
+                },
+            )
+        if body.expected_state != current.state:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "target_terminal_reservation_not_consumable",
+                    "expected_state": body.expected_state,
+                    "observed_state": current.state,
+                    "recoverable": True,
+                },
+            )
+        reservation = current.terminal_repair_reservation or {}
+        reservation_mismatched = sorted(
+            field
+            for field, expected_value in {
+                "reservation_id": body.reservation_id,
+                "idempotency_key": body.idempotency_key,
+                "evidence_digest": body.evidence_digest,
+                "state": "prepared",
+            }.items()
+            if reservation.get(field) != expected_value
+        )
+        if reservation_mismatched:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "target_terminal_reservation_not_consumable",
+                    "mismatched_fields": reservation_mismatched,
+                    "reservation_state": reservation.get("state"),
+                    "recoverable": True,
+                },
+            )
+        completion_acknowledged = bool(
+            current.acknowledged_at
+            or current.completion_delivery_class == "acknowledged"
+        )
+        completion_evidence_present = bool(
+            current.completion_payload is not None
+            or current.completion_envelope is not None
+            or current.completion_received_at is not None
+        )
+        if completion_acknowledged or completion_evidence_present:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "target_completion_evidence_present",
+                    "completion_acknowledged": completion_acknowledged,
+                    "completion_evidence_present": completion_evidence_present,
+                    "recoverable": True,
+                },
+            )
+        session, runtime_live = _local_terminal_repair_session_evidence(
+            request,
+            current,
+            fence_id=body.reservation_id,
+        )
+        if runtime_live:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "linked_session_not_terminal", "recoverable": True},
+            )
+        previous = current.state
+        now = datetime.now(UTC)
+        operation = "repair_terminal:abandoned_without_acknowledgement"
+        current.control_operations[body.idempotency_key] = operation
+        current.recoverable = False
+        current.error_code = "legacy_abandoned_dispatch_retired"
+        current.last_error = (
+            "Target reservation committed without completion acknowledgement; "
+            "no dispatch or card outcome was inferred."
+        )
+        current.completion_next_retry_at = None
+        current.capacity_released_at = now
+        current.capacity_release_reason = "legacy-abandoned-retired"
+        current.state = "cancelled"
+        current.lifecycle_inconsistencies.append(
+            {
+                "kind": "target_terminal_repair_reservation_committed",
+                "previous_state": previous,
+                "normalized_state": "cancelled",
+                "observed_at": now.isoformat(),
+                "reservation_id": body.reservation_id,
+                "idempotency_key": body.idempotency_key,
+                "outcome_inferred": False,
+            }
+        )
+        current.lifecycle_inconsistencies = current.lifecycle_inconsistencies[-50:]
+        current.events.append(
+            DispatchEvent(
+                seq=(current.events[-1].seq + 1 if current.events else 1),
+                state="cancelled",
+                message=(
+                    "Target-side terminal repair reservation committed without "
+                    "outcome inference."
+                ),
+                detail={
+                    "previous_state": previous,
+                    "repair": True,
+                    "reservation_id": body.reservation_id,
+                    "outcome_inferred": False,
+                },
+            )
+        )
+        receipt = DispatchTerminalRepairCommitV1(
+            dispatch_id=current.dispatch_id,
+            mutation_id=current.mutation_id,
+            authority_instance_id=current.authority_instance_id,
+            target_instance_id=current.target_instance_id,
+            session_id=current.session_id or "",
+            idempotency_key=body.idempotency_key,
+            reservation_id=body.reservation_id,
+            evidence_digest=body.evidence_digest,
+            target_state="cancelled",
+            session_status=session.status,
+            committed_at=now,
+            receipt_digest="0" * 64,
+        )
+        receipt.receipt_digest = _terminal_repair_commit_digest(receipt)
+        reservation = dict(reservation)
+        reservation.update(
+            {
+                "state": "committed",
+                "committed_at": now.isoformat(),
+                "receipt": receipt.model_dump(mode="json"),
+            }
+        )
+        current.terminal_repair_reservation = reservation
+        committed.append(receipt)
+        return True
+
+    try:
+        ledger.compare_and_mutate(record, consume)
+    except DispatchCompareConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "target_terminal_commit_changed",
+                "changed_fields": exc.changed_fields,
+                "recoverable": True,
+            },
+        ) from exc
+    return committed[0]
 
 
 async def _repair_terminal_dispatch(
@@ -11527,6 +12064,7 @@ async def _repair_terminal_dispatch(
             evidence_source = "target_local_atomic_check"
             evidence_observed_at = datetime.now(UTC)
             evidence_digest = None
+            commit_digest = None
         else:
             if not record.session_id:
                 raise HTTPException(
@@ -11558,9 +12096,31 @@ async def _repair_terminal_dispatch(
             validated = _validate_remote_terminal_repair_evidence(
                 record, remote_evidence, idempotency_key=key
             )
+            remote_commit = await _peer_terminal_repair_commit(
+                request,
+                record.target_instance_id,
+                record.dispatch_id,
+                DispatchTerminalRepairCommitRequest(
+                    mutation_id=record.mutation_id,
+                    authority_instance_id=record.authority_instance_id,
+                    target_instance_id=record.target_instance_id,
+                    session_id=record.session_id,
+                    idempotency_key=key,
+                    reservation_id=validated.reservation_id,
+                    evidence_digest=validated.evidence_digest,
+                    expected_state=record.state,
+                ),
+            )
+            validated_commit = _validate_remote_terminal_repair_commit(
+                record,
+                validated,
+                remote_commit,
+                idempotency_key=key,
+            )
             evidence_source = "authenticated_remote_target"
             evidence_observed_at = validated.observed_at
             evidence_digest = validated.evidence_digest
+            commit_digest = validated_commit.receipt_digest
 
         def abandon(current: DispatchRecord) -> bool:
             if _repeat_dispatch_control(current, operation, key):
@@ -11623,7 +12183,13 @@ async def _repair_terminal_dispatch(
                 current_evidence = _validate_remote_terminal_repair_evidence(
                     current, remote_evidence, idempotency_key=key
                 )
-                current_session_status = current_evidence.session_status
+                current_commit = _validate_remote_terminal_repair_commit(
+                    current,
+                    current_evidence,
+                    remote_commit,
+                    idempotency_key=key,
+                )
+                current_session_status = current_commit.session_status
             if (
                 current.goal_provenance is not None
                 and current.goal_provenance.released_at is None
@@ -11666,6 +12232,7 @@ async def _repair_terminal_dispatch(
                         "source": evidence_source,
                         "target_observed_at": evidence_observed_at.isoformat(),
                         "target_evidence_digest": evidence_digest,
+                        "target_commit_receipt_digest": commit_digest,
                         "dispatch_recoverable": False,
                     },
                     "outcome_inferred": False,

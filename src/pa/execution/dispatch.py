@@ -208,6 +208,7 @@ class DispatchRecord(BaseModel):
     recoverable: bool = True
     cancel_requested: bool = False
     control_operations: dict[str, str] = Field(default_factory=dict)
+    terminal_repair_reservation: dict[str, Any] | None = None
     followup_operations: dict[str, dict[str, Any]] = Field(default_factory=dict)
     prompt_acknowledged_at: datetime | None = None
     prompt_ack: dict[str, Any] | None = None
@@ -2115,6 +2116,30 @@ class DispatchStore:
                 and not late_repair_completion
             ):
                 return False
+            reservation = record.terminal_repair_reservation if record else None
+            if reservation and reservation.get("state") == "prepared":
+                reservation = copy.deepcopy(reservation)
+                reservation.update(
+                    {
+                        "state": "superseded_by_completion",
+                        "superseded_at": datetime.now(UTC).isoformat(),
+                    }
+                )
+                record.terminal_repair_reservation = reservation
+                record.lifecycle_inconsistencies.append(
+                    {
+                        "kind": "terminal_repair_reservation_superseded",
+                        "observed_at": datetime.now(UTC).isoformat(),
+                        "reason": (
+                            "Immutable completion arrived before the target-side "
+                            "repair reservation was consumed."
+                        ),
+                        "reservation_id": reservation.get("reservation_id"),
+                    }
+                )
+                record.lifecycle_inconsistencies = record.lifecycle_inconsistencies[
+                    -50:
+                ]
             if late_repair_completion:
                 record.lifecycle_inconsistencies.append(
                     {

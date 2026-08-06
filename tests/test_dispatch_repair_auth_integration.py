@@ -88,7 +88,7 @@ class _RecordingASGITransport(httpx.AsyncBaseTransport):
 
 
 @pytest.mark.anyio
-async def test_hardened_auth_allows_full_authority_to_target_terminal_proof_flow(
+async def test_hardened_auth_allows_full_authority_to_target_terminal_commit_flow(
     tmp_path: Path,
 ) -> None:
     origin_app = _hardened_app(
@@ -220,7 +220,7 @@ async def test_hardened_auth_allows_full_authority_to_target_terminal_proof_flow
     )
     target_after = target_ledger.get(authority_record.dispatch_id)
     assert target_after is not None
-    assert target_after.state == "running"
+    assert target_after.state == "cancelled"
 
     assert origin_to_authority.requests == [
         {
@@ -243,5 +243,15 @@ async def test_hardened_auth_allows_full_authority_to_target_terminal_proof_flow
             ),
             "authorization": "Bearer fleet-secret",
             "origin_instance_id": "authority",
-        }
+        },
+        {
+            "host": "target.test",
+            "method": "POST",
+            "path": (
+                "/api/fleet/dispatch-jobs/dispatch-two-hop-repair/"
+                "terminal-repair-commit"
+            ),
+            "authorization": "Bearer fleet-secret",
+            "origin_instance_id": "authority",
+        },
     ]

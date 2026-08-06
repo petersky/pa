@@ -63,6 +63,14 @@ class SyncTokenAuthSeparationTests(unittest.TestCase):
                     methods=["GET", "POST"],
                 ),
                 Route(
+                    (
+                        "/api/fleet/dispatch-jobs/{dispatch_id}/"
+                        "terminal-repair-commit"
+                    ),
+                    _ok,
+                    methods=["GET", "POST"],
+                ),
+                Route(
                     "/api/fleet/dispatch-jobs/{dispatch_id}/unknown-repair",
                     _ok,
                     methods=["POST"],
@@ -177,6 +185,13 @@ class SyncTokenAuthSeparationTests(unittest.TestCase):
                     "terminal-repair-evidence"
                 ),
             ),
+            (
+                "POST",
+                (
+                    "/api/fleet/dispatch-jobs/dispatch-123/"
+                    "terminal-repair-commit"
+                ),
+            ),
         ]
         for method, path in routes:
             with self.subTest(method=method, path=path):
@@ -199,6 +214,13 @@ class SyncTokenAuthSeparationTests(unittest.TestCase):
                 (
                     "/api/fleet/dispatch-jobs/dispatch-123/"
                     "terminal-repair-evidence"
+                ),
+            ),
+            (
+                "GET",
+                (
+                    "/api/fleet/dispatch-jobs/dispatch-123/"
+                    "terminal-repair-commit"
                 ),
             ),
             (

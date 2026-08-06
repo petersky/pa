@@ -37,13 +37,15 @@ from pa.goals.materialization import (
     GoalMaterializationResourceClaimV1,
     canonical_materialization_digest,
 )
-from pa.instance.agent_session import AgentSessionManager
+from pa.instance.agent_session import AgentSessionManager, AgentSessionRecoveryError
 from pa.modules.fleet import (
     DispatchCompletionBody,
     DispatchControlBody,
     DispatchFollowupBody,
     DispatchMaterializeBody,
     DispatchTerminalRepairBody,
+    DispatchTerminalRepairCommitRequest,
+    DispatchTerminalRepairCommitV1,
     DispatchTerminalRepairEvidenceRequest,
     DispatchTerminalRepairEvidenceV1,
     RemoteAgentStartBody,
@@ -52,7 +54,9 @@ from pa.modules.fleet import (
     _goal_materialization_stage_provenance,
     _peer_terminal_repair_evidence,
     _process_remote_dispatch,
+    _terminal_repair_commit_digest,
     _terminal_repair_evidence_digest,
+    _terminal_repair_reservation_id,
     _wait_for_dispatch_sync_health,
     cancel_dispatch,
     complete_dispatch,
@@ -61,6 +65,7 @@ from pa.modules.fleet import (
     repair_terminal_dispatch,
     retry_dispatch,
     start_remote_agent_work,
+    target_terminal_repair_commit,
     target_terminal_repair_evidence,
 )
 from pa.pr_supervisor.models import PRWatch
@@ -106,6 +111,7 @@ def terminal_repair_evidence(
         target_instance_id=record.target_instance_id,
         session_id=record.session_id or "",
         idempotency_key=idempotency_key,
+        reservation_id=_terminal_repair_reservation_id(record, idempotency_key),
         dispatch_state=record.state,
         dispatch_recoverable=record.recoverable,
         dispatch_updated_at=record.updated_at,
@@ -119,6 +125,28 @@ def terminal_repair_evidence(
     )
     evidence.evidence_digest = _terminal_repair_evidence_digest(evidence)
     return evidence
+
+
+def terminal_repair_commit(
+    record: DispatchRecord,
+    evidence: DispatchTerminalRepairEvidenceV1,
+) -> DispatchTerminalRepairCommitV1:
+    receipt = DispatchTerminalRepairCommitV1(
+        dispatch_id=record.dispatch_id,
+        mutation_id=record.mutation_id,
+        authority_instance_id=record.authority_instance_id,
+        target_instance_id=record.target_instance_id,
+        session_id=record.session_id or "",
+        idempotency_key=evidence.idempotency_key,
+        reservation_id=evidence.reservation_id,
+        evidence_digest=evidence.evidence_digest,
+        target_state="cancelled",
+        session_status="closed",
+        committed_at=datetime.now(UTC),
+        receipt_digest="0" * 64,
+    )
+    receipt.receipt_digest = _terminal_repair_commit_digest(receipt)
+    return receipt
 
 
 def remote_terminal_repair_context(
@@ -703,6 +731,77 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(raised.exception.detail["runtime_live"])
             self.assertEqual(ledger.get("dispatch-live-runtime").state, "running")
 
+    async def test_local_repair_runtime_install_race_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="target")
+            ledger = DispatchStore(Path(tmp))
+            record = DispatchRecord(
+                dispatch_id="dispatch-local-runtime-race",
+                mutation_id="mutation-local-runtime-race",
+                card_id="card-done",
+                authority_instance_id="target",
+                authority_url="http://target",
+                target_instance_id="target",
+                session_id="session-local-runtime-race",
+                state="running",
+                recoverable=False,
+            )
+            ledger.put(record)
+            session = AgentSession(
+                id=record.session_id or "",
+                agent_name="codex",
+                origin_instance_id="target",
+                authority_instance_id="target",
+                dispatch_id=record.dispatch_id,
+                status="closed",
+            )
+            domain = MagicMock()
+            domain.get_card.return_value = SimpleNamespace(lane=CardLane.DONE)
+            domain.get_session.return_value = session
+            manager = AgentSessionManager(settings, domain)
+            live_runtime = SimpleNamespace(_closed=False)
+            original_get = manager.get
+            first_read = True
+
+            def racing_get(session_id: str):
+                nonlocal first_read
+                if first_read:
+                    first_read = False
+                    manager._runtimes[session_id] = live_runtime
+                    return None
+                return original_get(session_id)
+
+            manager.get = MagicMock(side_effect=racing_get)
+            request = request_for(
+                settings,
+                domain,
+                {"dispatch_store": ledger, "instance_agent": manager},
+            )
+            body = DispatchTerminalRepairBody(
+                idempotency_key="repair-local-runtime-race",
+                mode="abandoned_without_acknowledgement",
+                expected_state="running",
+                reason="Exercise runtime publication during local repair.",
+                confirm_no_outcome_inference=True,
+            )
+
+            with (
+                patch("pa.modules.fleet.require_user"),
+                self.assertRaises(HTTPException) as raised,
+            ):
+                await repair_terminal_dispatch(request, record.dispatch_id, body)
+
+            self.assertEqual(raised.exception.status_code, 409)
+            self.assertEqual(
+                raised.exception.detail["code"], "linked_session_not_terminal"
+            )
+            self.assertTrue(raised.exception.detail["runtime_live"])
+            persisted = ledger.get(record.dispatch_id)
+            assert persisted is not None
+            self.assertEqual(persisted.state, "running")
+            self.assertNotIn(body.idempotency_key, persisted.control_operations)
+            self.assertIsNone(manager.terminal_repair_fence_id(session.id))
+
     async def test_abandoned_repair_rejects_recoverable_and_quiesced_sessions(
         self,
     ) -> None:
@@ -759,7 +858,7 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(persisted.recoverable, recoverable)
                 self.assertNotIn(body.idempotency_key, persisted.control_operations)
 
-    def test_target_terminal_evidence_is_current_fenced_and_read_only(self) -> None:
+    def test_target_terminal_evidence_acquires_durable_reservation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), instance_id="target")
             ledger = DispatchStore(Path(tmp))
@@ -824,7 +923,107 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
             )
             stored_after = ledger.get(record.dispatch_id)
             assert stored_after is not None
-            self.assertEqual(stored_after, stored_before)
+            self.assertEqual(stored_after.state, stored_before.state)
+            reservation = stored_after.terminal_repair_reservation
+            assert reservation is not None
+            self.assertEqual(reservation["state"], "prepared")
+            self.assertEqual(reservation["reservation_id"], evidence.reservation_id)
+            self.assertEqual(reservation["evidence_digest"], evidence.evidence_digest)
+
+    def test_target_terminal_commit_replays_after_lost_response(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="target")
+            ledger = DispatchStore(Path(tmp))
+            record = DispatchRecord(
+                dispatch_id="dispatch-target-commit-replay",
+                mutation_id="mutation-target-commit-replay",
+                authority_instance_id="authority",
+                authority_url="http://authority",
+                target_instance_id="target",
+                session_id="session-target-commit-replay",
+                state="running",
+                recoverable=False,
+            )
+            ledger.put(record)
+            session = AgentSession(
+                id=record.session_id or "",
+                agent_name="codex",
+                origin_instance_id="target",
+                authority_instance_id="authority",
+                dispatch_id=record.dispatch_id,
+                status="closed",
+            )
+            domain = MagicMock()
+            domain.get_session.return_value = session
+            manager = MagicMock()
+            manager.get.return_value = None
+            request = request_for(
+                settings,
+                domain,
+                {"dispatch_store": ledger, "instance_agent": manager},
+            )
+            request.state.instance_authenticated = True
+            request.headers = {
+                "X-PA-Origin-Instance-ID": "authority",
+                "Idempotency-Key": "repair-target-commit-replay",
+            }
+            proof_body = DispatchTerminalRepairEvidenceRequest(
+                mutation_id=record.mutation_id,
+                authority_instance_id="authority",
+                target_instance_id="target",
+                session_id=session.id,
+                idempotency_key="repair-target-commit-replay",
+                expected_state="running",
+            )
+            prepared = target_terminal_repair_evidence(
+                request, record.dispatch_id, proof_body
+            )
+            first = target_terminal_repair_commit(
+                request,
+                record.dispatch_id,
+                DispatchTerminalRepairCommitRequest(
+                    mutation_id=record.mutation_id,
+                    authority_instance_id="authority",
+                    target_instance_id="target",
+                    session_id=session.id,
+                    idempotency_key=proof_body.idempotency_key,
+                    reservation_id=prepared.reservation_id,
+                    evidence_digest=prepared.evidence_digest,
+                    expected_state="running",
+                ),
+            )
+
+            replayed_proof = target_terminal_repair_evidence(
+                request, record.dispatch_id, proof_body
+            )
+            replayed = target_terminal_repair_commit(
+                request,
+                record.dispatch_id,
+                DispatchTerminalRepairCommitRequest(
+                    mutation_id=record.mutation_id,
+                    authority_instance_id="authority",
+                    target_instance_id="target",
+                    session_id=session.id,
+                    idempotency_key=proof_body.idempotency_key,
+                    reservation_id=replayed_proof.reservation_id,
+                    evidence_digest=replayed_proof.evidence_digest,
+                    expected_state="running",
+                ),
+            )
+
+            self.assertEqual(replayed_proof.reservation_state, "committed")
+            self.assertEqual(replayed.reservation_id, first.reservation_id)
+            self.assertEqual(replayed.evidence_digest, replayed_proof.evidence_digest)
+            self.assertEqual(
+                replayed.receipt_digest, _terminal_repair_commit_digest(replayed)
+            )
+            persisted = ledger.get(record.dispatch_id)
+            assert persisted is not None
+            self.assertEqual(persisted.state, "cancelled")
+            self.assertEqual(
+                persisted.terminal_repair_reservation["state"], "committed"
+            )
+            self.assertEqual(len(persisted.events), 1)
 
     def test_target_terminal_evidence_fails_closed_on_concurrent_completion(
         self,
@@ -1018,6 +1217,27 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertIsNone(manager.get("session-fenced"))
 
+    async def test_terminal_repair_fence_blocks_recovery_and_prompt_admission(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            manager = AgentSessionManager(
+                Settings(data_dir=Path(tmp), instance_id="target"), MagicMock()
+            )
+            session_id = "session-repair-admission-fence"
+            self.assertIsNone(
+                manager.acquire_terminal_repair_fence(
+                    session_id, fence_id="dispatch:repair"
+                )
+            )
+
+            with self.assertRaises(AgentSessionRecoveryError):
+                manager.enqueue_prompt("must not queue", session_id=session_id)
+            with self.assertRaises(AgentSessionRecoveryError):
+                await manager.recover_session(session_id)
+            with self.assertRaises(AgentSessionRecoveryError):
+                await manager.prompt("must not run", session_id=session_id)
+
     async def test_remote_repair_collects_target_proof_after_slow_snapshot(
         self,
     ) -> None:
@@ -1102,6 +1322,97 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(authority.state, "running")
             self.assertEqual(target.state, "completed")
             self.assertEqual(target.completion_delivery_class, "acknowledged")
+
+    async def test_remote_completion_after_prepare_prevents_authority_commit(
+        self,
+    ) -> None:
+        with (
+            tempfile.TemporaryDirectory() as authority_tmp,
+            tempfile.TemporaryDirectory() as target_tmp,
+        ):
+            authority_ledger, record, authority_request, body = (
+                remote_terminal_repair_context(
+                    authority_tmp, "completion-after-prepare"
+                )
+            )
+            target_ledger = DispatchStore(Path(target_tmp))
+            target_ledger.put(record.model_copy(deep=True))
+            session = AgentSession(
+                id=record.session_id or "",
+                agent_name="codex",
+                origin_instance_id="target",
+                authority_instance_id="authority",
+                dispatch_id=record.dispatch_id,
+                status="closed",
+            )
+            target_domain = MagicMock()
+            target_domain.get_session.return_value = session
+            target_manager = MagicMock()
+            target_manager.get.return_value = None
+            target_request = request_for(
+                Settings(data_dir=Path(target_tmp), instance_id="target"),
+                target_domain,
+                {
+                    "dispatch_store": target_ledger,
+                    "instance_agent": target_manager,
+                },
+            )
+            target_request.state.instance_authenticated = True
+            target_request.headers = {
+                "X-PA-Origin-Instance-ID": "authority",
+                "Idempotency-Key": body.idempotency_key,
+            }
+            payload = {
+                "stop_reason": "end_turn",
+                "outcome": "Completion won after reservation preparation.",
+            }
+
+            async def prepare(_request, _target, dispatch_id, proof_body):
+                return target_terminal_repair_evidence(
+                    target_request, dispatch_id, proof_body
+                )
+
+            async def complete_then_consume(
+                _request, _target, dispatch_id, commit_body
+            ):
+                self.assertTrue(
+                    target_ledger.queue_completion_payload(session.id, payload)
+                )
+                return target_terminal_repair_commit(
+                    target_request, dispatch_id, commit_body
+                )
+
+            with (
+                patch("pa.modules.fleet.require_user"),
+                patch(
+                    "pa.modules.fleet._peer_terminal_repair_evidence",
+                    AsyncMock(side_effect=prepare),
+                ),
+                patch(
+                    "pa.modules.fleet._peer_terminal_repair_commit",
+                    AsyncMock(side_effect=complete_then_consume),
+                ),
+                self.assertRaises(HTTPException) as raised,
+            ):
+                await repair_terminal_dispatch(
+                    authority_request, record.dispatch_id, body
+                )
+
+            self.assertEqual(raised.exception.status_code, 409)
+            self.assertEqual(
+                raised.exception.detail["code"],
+                "target_terminal_reservation_not_consumable",
+            )
+            authority = authority_ledger.get(record.dispatch_id)
+            target = target_ledger.get(record.dispatch_id)
+            assert authority is not None and target is not None
+            self.assertEqual(authority.state, "running")
+            self.assertNotIn(body.idempotency_key, authority.control_operations)
+            self.assertEqual(target.state, "completion_pending")
+            self.assertEqual(target.completion_payload, payload)
+            reservation = target.terminal_repair_reservation
+            assert reservation is not None
+            self.assertEqual(reservation["state"], "superseded_by_completion")
 
     async def test_completion_callback_supersedes_local_terminal_repair(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1284,12 +1595,17 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
                 tmp, "closed"
             )
             proof = terminal_repair_evidence(record, body.idempotency_key)
+            commit = terminal_repair_commit(record, proof)
             with (
                 patch("pa.modules.fleet.require_user"),
                 patch(
                     "pa.modules.fleet._peer_terminal_repair_evidence",
                     AsyncMock(return_value=proof),
                 ) as peer,
+                patch(
+                    "pa.modules.fleet._peer_terminal_repair_commit",
+                    AsyncMock(return_value=commit),
+                ) as peer_commit,
             ):
                 result = await repair_terminal_dispatch(
                     request, record.dispatch_id, body
@@ -1297,6 +1613,7 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
 
             self.assertEqual(result["state"], "cancelled")
             peer.assert_awaited_once()
+            peer_commit.assert_awaited_once()
             request.app.state.ctx.store.get_session.assert_not_called()
             request.app.state.ctx.services["instance_agent"].get.assert_not_called()
             persisted = ledger.get(record.dispatch_id)
