@@ -70,8 +70,8 @@ from pa.execution.dispatch import (
     CapacityAdmission,
     CompletionOutbox,
     ConcurrentCardDispatch,
-    DispatchCompareConflict,
     DispatchCapacityExhausted,
+    DispatchCompareConflict,
     DispatchEvent,
     DispatchIdempotencyConflict,
     DispatchQueueFull,
@@ -2041,73 +2041,142 @@ def complete_dispatch(
 ) -> dict:
     """Acknowledge immutable completion, then reconcile mutable card intent."""
     ledger = _dispatch_store(request)
-    record = ledger.get(dispatch_id)
-    if not record:
-        raise HTTPException(
-            status_code=409, detail={"code": "unknown_dispatch", "recoverable": True}
-        )
-    if (
-        record.mutation_id != body.mutation_id
-        or request.headers.get("idempotency-key") != body.mutation_id
-    ):
-        raise HTTPException(status_code=409, detail={"code": "idempotency_conflict"})
-    if (
-        body.source_instance_id != record.target_instance_id
-        or body.card_id != record.card_id
-        or body.card_version != record.card_version
-        or body.realm_id != record.realm_id
-    ):
-        raise HTTPException(
-            status_code=409,
-            detail={"code": "completion_dispatch_mismatch", "recoverable": False},
-        )
-    if record.session_id and body.session_id != record.session_id:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code": "completion_session_mismatch",
-                "expected": record.session_id,
-                "actual": body.session_id,
-                "recoverable": False,
-            },
-        )
-
     envelope = body.model_dump(mode="json")
-    if record.acknowledged_at:
-        if record.completion_envelope and record.completion_envelope != envelope:
+    duplicate = [False]
+
+    def acknowledge(current: DispatchRecord) -> bool:
+        if (
+            current.mutation_id != body.mutation_id
+            or request.headers.get("idempotency-key") != body.mutation_id
+        ):
+            raise HTTPException(
+                status_code=409, detail={"code": "idempotency_conflict"}
+            )
+        if (
+            body.source_instance_id != current.target_instance_id
+            or body.card_id != current.card_id
+            or body.card_version != current.card_version
+            or body.realm_id != current.realm_id
+        ):
             raise HTTPException(
                 status_code=409,
-                detail={"code": "completion_payload_conflict", "recoverable": False},
+                detail={
+                    "code": "completion_dispatch_mismatch",
+                    "recoverable": False,
+                },
             )
-        return _completion_ack(record, duplicate=True)
+        if current.session_id and body.session_id != current.session_id:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "completion_session_mismatch",
+                    "expected": current.session_id,
+                    "actual": body.session_id,
+                    "recoverable": False,
+                },
+            )
+        if current.acknowledged_at:
+            if (
+                current.completion_envelope
+                and current.completion_envelope != envelope
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "completion_payload_conflict",
+                        "recoverable": False,
+                    },
+                )
+            duplicate[0] = True
+            return False
 
-    # This write is intentionally before every mutable card read or update.
-    record.session_id = body.session_id
-    record.completion_payload = body.result
-    record.completion_envelope = envelope
-    record.completion_received_at = datetime.now(UTC)
-    record.acknowledged_at = record.completion_received_at
-    record.completion_delivery_class = "acknowledged"
-    record.card_disposition_payload = (
-        body.disposition if isinstance(body.disposition, dict) else None
-    )
-    record.card_disposition_error = (
-        None
-        if record.card_disposition_payload
-        else str(body.result.get("card_disposition_error") or "")[:1000] or None
-    )
-    record.reconciliation_state = "pending" if body.card_id else "not_applicable"
-    record.reconciliation_reason = "Immutable agent-turn completion acknowledged."
-    record.reconciliation_updated_at = record.completion_received_at
-    record = ledger.transition(
-        record,
-        "completed",
-        "Agent turn ended and was durably acknowledged; card outcome is separate.",
-        detail={
-            "agent_turn_ended": True,
-            "reconciliation": record.reconciliation_state,
-        },
-    )
+        now = datetime.now(UTC)
+        reservation = current.terminal_repair_reservation
+        if reservation and reservation.get("state") == "prepared":
+            reservation = dict(reservation)
+            reservation.update(
+                {"state": "superseded_by_completion", "superseded_at": now.isoformat()}
+            )
+            current.terminal_repair_reservation = reservation
+            current.lifecycle_inconsistencies.append(
+                {
+                    "kind": "terminal_repair_reservation_superseded",
+                    "observed_at": now.isoformat(),
+                    "reason": (
+                        "Immutable completion was acknowledged before the target-side "
+                        "repair reservation was consumed."
+                    ),
+                    "reservation_id": reservation.get("reservation_id"),
+                }
+            )
+        previous = current.state
+        if previous == "cancelled" and reservation:
+            current.lifecycle_inconsistencies.append(
+                {
+                    "kind": "terminal_repair_superseded_by_completion",
+                    "observed_at": now.isoformat(),
+                    "reservation_id": reservation.get("reservation_id"),
+                    "preserved_repair_evidence": True,
+                }
+            )
+        current.lifecycle_inconsistencies = current.lifecycle_inconsistencies[-50:]
+        current.session_id = body.session_id
+        current.completion_payload = body.result
+        current.completion_envelope = envelope
+        current.completion_received_at = now
+        current.acknowledged_at = now
+        current.completion_delivery_class = "acknowledged"
+        current.card_disposition_payload = (
+            body.disposition if isinstance(body.disposition, dict) else None
+        )
+        current.card_disposition_error = (
+            None
+            if current.card_disposition_payload
+            else str(body.result.get("card_disposition_error") or "")[:1000] or None
+        )
+        current.reconciliation_state = (
+            "pending" if body.card_id else "not_applicable"
+        )
+        current.reconciliation_reason = (
+            "Immutable agent-turn completion acknowledged."
+        )
+        current.reconciliation_updated_at = now
+        current.error_code = None
+        current.last_error = None
+        current.state = "completed"
+        if (
+            previous in CAPACITY_RESERVATION_STATES
+            and current.capacity_reserved_at
+            and not current.capacity_released_at
+        ):
+            current.capacity_released_at = now
+            current.capacity_release_reason = "completed"
+        current.events.append(
+            DispatchEvent(
+                seq=(current.events[-1].seq + 1 if current.events else 1),
+                state="completed",
+                message=(
+                    "Agent turn ended and was durably acknowledged; card outcome "
+                    "is separate."
+                ),
+                detail={
+                    "agent_turn_ended": True,
+                    "reconciliation": current.reconciliation_state,
+                    "previous_state": previous,
+                },
+            )
+        )
+        return True
+
+    try:
+        record = ledger.mutate_current(dispatch_id, mutate=acknowledge)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "unknown_dispatch", "recoverable": True},
+        ) from exc
+    if duplicate[0]:
+        return _completion_ack(record, duplicate=True)
 
     card = (
         request.app.state.ctx.store.get_card(body.card_id, realm_id=body.realm_id)
@@ -11247,6 +11316,35 @@ def _raise_nonterminal_repair_evidence(
         )
 
 
+def _validate_terminal_repair_session_binding(
+    record: DispatchRecord, session: AgentSession
+) -> None:
+    expected = {
+        "id": record.session_id,
+        "dispatch_id": record.dispatch_id,
+        "origin_instance_id": record.target_instance_id,
+        "authority_instance_id": record.authority_instance_id,
+    }
+    mismatched = sorted(
+        field
+        for field, expected_value in expected.items()
+        if (
+            (observed_value := getattr(session, field, None)) not in {None, ""}
+            and observed_value != expected_value
+        )
+    )
+    if mismatched:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "linked_session_provenance_mismatch",
+                "message": "Target-local session does not match the dispatch fence.",
+                "mismatched_fields": mismatched,
+                "recoverable": True,
+            },
+        )
+
+
 def _local_terminal_repair_session_evidence(
     request: Request,
     record: DispatchRecord,
@@ -11282,6 +11380,7 @@ def _local_terminal_repair_session_evidence(
         runtime_live=runtime_live,
     )
     assert session is not None
+    _validate_terminal_repair_session_binding(record, session)
     return session, runtime_live
 
 
@@ -11454,7 +11553,7 @@ def target_terminal_repair_evidence(
     if (
         reservation.get("reservation_id") == reservation_id
         and reservation.get("idempotency_key") == body.idempotency_key
-        and reservation.get("state") in {"prepared", "committed"}
+        and reservation.get("state") == "committed"
         and isinstance(reservation.get("evidence"), dict)
     ):
         replay = DispatchTerminalRepairEvidenceV1.model_validate(
@@ -11568,32 +11667,6 @@ def target_terminal_repair_evidence(
             current,
             fence_id=f"{current.dispatch_id}:{body.idempotency_key}",
         )
-        session_expected = {
-            "id": current.session_id,
-            "dispatch_id": current.dispatch_id,
-            "origin_instance_id": current.target_instance_id,
-            "authority_instance_id": current.authority_instance_id,
-        }
-        session_mismatched = sorted(
-            field
-            for field, expected_value in session_expected.items()
-            if (
-                (observed_value := getattr(session, field, None)) not in {None, ""}
-                and observed_value != expected_value
-            )
-        )
-        if session_mismatched:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "code": "linked_session_provenance_mismatch",
-                    "message": (
-                        "Target-local session does not match the dispatch fence."
-                    ),
-                    "mismatched_fields": session_mismatched,
-                    "recoverable": True,
-                },
-            )
         observed_at = datetime.now(UTC)
         evidence = DispatchTerminalRepairEvidenceV1(
             dispatch_id=current.dispatch_id,
@@ -12213,6 +12286,19 @@ async def _repair_terminal_dispatch(
             current.completion_next_retry_at = None
             current.capacity_released_at = now
             current.capacity_release_reason = "legacy-abandoned-retired"
+            if (
+                current.target_instance_id
+                == request.app.state.ctx.settings.instance_id
+            ):
+                reservation_id = _terminal_repair_reservation_id(current, key)
+                current.terminal_repair_reservation = {
+                    "reservation_id": reservation_id,
+                    "idempotency_key": key,
+                    "state": "committed",
+                    "prepared_at": evidence_observed_at.isoformat(),
+                    "committed_at": now.isoformat(),
+                    "source": "target_local_atomic_check",
+                }
             current.lifecycle_inconsistencies.append(
                 {
                     "kind": "legacy_abandoned_dispatch_retired",

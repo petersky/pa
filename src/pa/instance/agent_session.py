@@ -2053,9 +2053,15 @@ class AgentSessionRuntime:
 class AgentSessionManager:
     """Tracks many concurrent ACP sessions (one subprocess each)."""
 
-    def __init__(self, settings: Settings, store: Store) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        store: Store,
+        dispatch_store: Any | None = None,
+    ) -> None:
         self.settings = settings
         self.store = store
+        self.dispatch_store = dispatch_store
         self._runtimes: dict[str, AgentSessionRuntime] = {}
         self._quiescing = False
         self._accepting = True
@@ -2515,7 +2521,32 @@ class AgentSessionManager:
 
     def terminal_repair_fence_id(self, session_id: str) -> str | None:
         with self._runtime_lifecycle_lock:
-            return self._terminal_repair_fences.get(session_id)
+            fence_id = self._terminal_repair_fences.get(session_id)
+        if fence_id is not None:
+            return fence_id
+        ledger = self.dispatch_store
+        if ledger is None:
+            return None
+        record = ledger.by_session(session_id)
+        reservation = record.terminal_repair_reservation if record else None
+        if (
+            not record
+            or record.target_instance_id != self.settings.instance_id
+            or not reservation
+            or reservation.get("state") not in {"prepared", "committed"}
+        ):
+            return None
+        durable_fence_id = str(reservation.get("reservation_id") or "").strip()
+        if not durable_fence_id:
+            return None
+        with self._runtime_lifecycle_lock:
+            return self._terminal_repair_fences.setdefault(
+                session_id, durable_fence_id
+            )
+
+    def bind_dispatch_store(self, dispatch_store: Any | None) -> None:
+        """Bind the canonical ledger used to restore durable repair fences."""
+        self.dispatch_store = dispatch_store
 
     def _require_not_terminal_repair_fenced(self, session_id: str) -> None:
         fence_id = self.terminal_repair_fence_id(session_id)
@@ -2526,8 +2557,10 @@ class AgentSessionManager:
 
     async def _publish_runtime(self, runtime: AgentSessionRuntime) -> None:
         """Publish a started runtime unless terminal evidence fenced its session."""
+        durable_fence_id = self.terminal_repair_fence_id(runtime.session_id)
         with self._runtime_lifecycle_lock:
             fence_id = self._terminal_repair_fences.get(runtime.session_id)
+            fence_id = fence_id or durable_fence_id
             if fence_id is None:
                 self._runtimes[runtime.session_id] = runtime
                 return
@@ -3903,10 +3936,18 @@ InstanceAgent = AgentSessionManager
 _instance_agent: AgentSessionManager | None = None
 
 
-def get_instance_agent(settings: Settings, store: Store) -> AgentSessionManager:
+def get_instance_agent(
+    settings: Settings,
+    store: Store,
+    dispatch_store: Any | None = None,
+) -> AgentSessionManager:
     global _instance_agent
     if _instance_agent is None:
-        _instance_agent = AgentSessionManager(settings, store)
+        _instance_agent = AgentSessionManager(
+            settings, store, dispatch_store=dispatch_store
+        )
+    elif dispatch_store is not None:
+        _instance_agent.bind_dispatch_store(dispatch_store)
     return _instance_agent
 
 

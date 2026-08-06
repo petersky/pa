@@ -192,6 +192,60 @@ def remote_terminal_repair_context(
     return ledger, record, request, body
 
 
+def target_terminal_repair_context(data_dir: str, suffix: str) -> SimpleNamespace:
+    settings = Settings(data_dir=Path(data_dir), instance_id="target")
+    ledger = DispatchStore(Path(data_dir))
+    record = DispatchRecord(
+        dispatch_id=f"dispatch-target-{suffix}",
+        mutation_id=f"mutation-target-{suffix}",
+        authority_instance_id="authority",
+        authority_url="http://authority",
+        target_instance_id="target",
+        session_id=f"session-target-{suffix}",
+        state="running",
+        recoverable=False,
+    )
+    ledger.put(record)
+    session = AgentSession(
+        id=record.session_id or "",
+        agent_name="codex",
+        origin_instance_id="target",
+        authority_instance_id="authority",
+        dispatch_id=record.dispatch_id,
+        status="closed",
+    )
+    domain = MagicMock()
+    domain.get_session.return_value = session
+    manager = AgentSessionManager(settings, domain, dispatch_store=ledger)
+    request = request_for(
+        settings, domain, {"dispatch_store": ledger, "instance_agent": manager}
+    )
+    request.state.instance_authenticated = True
+    key = f"repair-target-{suffix}"
+    request.headers = {
+        "X-PA-Origin-Instance-ID": "authority",
+        "Idempotency-Key": key,
+    }
+    proof_body = DispatchTerminalRepairEvidenceRequest(
+        mutation_id=record.mutation_id,
+        authority_instance_id="authority",
+        target_instance_id="target",
+        session_id=session.id,
+        idempotency_key=key,
+        expected_state="running",
+    )
+    return SimpleNamespace(
+        settings=settings,
+        ledger=ledger,
+        record=record,
+        session=session,
+        domain=domain,
+        manager=manager,
+        request=request,
+        proof_body=proof_body,
+    )
+
+
 class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
     async def test_start_routes_to_explicit_peer_authority(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -930,6 +984,115 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(reservation["reservation_id"], evidence.reservation_id)
             self.assertEqual(reservation["evidence_digest"], evidence.evidence_digest)
 
+    def test_prepared_terminal_reservation_can_refresh_after_timeout(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = target_terminal_repair_context(tmp, "refresh")
+            first = target_terminal_repair_evidence(
+                ctx.request, ctx.record.dispatch_id, ctx.proof_body
+            )
+            stale = ctx.ledger.get(ctx.record.dispatch_id)
+            assert stale is not None
+            reservation = dict(stale.terminal_repair_reservation or {})
+            evidence_payload = dict(reservation["evidence"])
+            evidence_payload["observed_at"] = (
+                datetime.now(UTC) - timedelta(seconds=30)
+            ).isoformat()
+            reservation["evidence"] = evidence_payload
+            reservation["prepared_at"] = evidence_payload["observed_at"]
+            stale.terminal_repair_reservation = reservation
+            ctx.ledger.put(stale)
+
+            refreshed = target_terminal_repair_evidence(
+                ctx.request, ctx.record.dispatch_id, ctx.proof_body
+            )
+
+            self.assertEqual(refreshed.reservation_id, first.reservation_id)
+            self.assertGreater(refreshed.observed_at, first.observed_at)
+            self.assertEqual(
+                refreshed.evidence_digest,
+                _terminal_repair_evidence_digest(refreshed),
+            )
+            persisted = ctx.ledger.get(ctx.record.dispatch_id)
+            assert persisted is not None
+            self.assertEqual(persisted.terminal_repair_reservation["state"], "prepared")
+            self.assertEqual(
+                persisted.terminal_repair_reservation["evidence_digest"],
+                refreshed.evidence_digest,
+            )
+
+    def test_target_commit_revalidates_current_session_provenance(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = target_terminal_repair_context(tmp, "session-binding")
+            prepared = target_terminal_repair_evidence(
+                ctx.request, ctx.record.dispatch_id, ctx.proof_body
+            )
+            ctx.domain.get_session.return_value = ctx.session.model_copy(
+                update={"dispatch_id": "different-dispatch"}
+            )
+            commit_body = DispatchTerminalRepairCommitRequest(
+                mutation_id=ctx.record.mutation_id,
+                authority_instance_id="authority",
+                target_instance_id="target",
+                session_id=ctx.session.id,
+                idempotency_key=ctx.proof_body.idempotency_key,
+                reservation_id=prepared.reservation_id,
+                evidence_digest=prepared.evidence_digest,
+                expected_state="running",
+            )
+
+            with self.assertRaises(HTTPException) as raised:
+                target_terminal_repair_commit(
+                    ctx.request, ctx.record.dispatch_id, commit_body
+                )
+
+            self.assertEqual(
+                raised.exception.detail["code"],
+                "linked_session_provenance_mismatch",
+            )
+            self.assertIn("dispatch_id", raised.exception.detail["mismatched_fields"])
+            persisted = ctx.ledger.get(ctx.record.dispatch_id)
+            assert persisted is not None
+            self.assertEqual(persisted.state, "running")
+            self.assertEqual(persisted.terminal_repair_reservation["state"], "prepared")
+
+    async def test_durable_terminal_repair_fence_survives_manager_restart(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = target_terminal_repair_context(tmp, "restart-fence")
+            prepared = target_terminal_repair_evidence(
+                ctx.request, ctx.record.dispatch_id, ctx.proof_body
+            )
+            target_terminal_repair_commit(
+                ctx.request,
+                ctx.record.dispatch_id,
+                DispatchTerminalRepairCommitRequest(
+                    mutation_id=ctx.record.mutation_id,
+                    authority_instance_id="authority",
+                    target_instance_id="target",
+                    session_id=ctx.session.id,
+                    idempotency_key=ctx.proof_body.idempotency_key,
+                    reservation_id=prepared.reservation_id,
+                    evidence_digest=prepared.evidence_digest,
+                    expected_state="running",
+                ),
+            )
+            restarted = AgentSessionManager(
+                ctx.settings, ctx.domain, dispatch_store=ctx.ledger
+            )
+
+            self.assertEqual(
+                restarted.terminal_repair_fence_id(ctx.session.id),
+                prepared.reservation_id,
+            )
+            with self.assertRaises(AgentSessionRecoveryError):
+                restarted.enqueue_prompt("must remain fenced", session_id=ctx.session.id)
+            with self.assertRaises(AgentSessionRecoveryError):
+                await restarted.recover_session(ctx.session.id)
+            runtime = MagicMock(session_id=ctx.session.id)
+            runtime.close = AsyncMock(return_value=True)
+            with self.assertRaisesRegex(RuntimeError, "terminal dispatch repair"):
+                await restarted._publish_runtime(runtime)
+            runtime.close.assert_awaited_once()
+
     def test_target_terminal_commit_replays_after_lost_response(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), instance_id="target")
@@ -1587,6 +1750,101 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(replayed.events, persisted.events)
             reopened.close()
 
+    async def test_reconciliation_save_cannot_erase_concurrent_repair(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="target")
+            ledger = DispatchStore(Path(tmp))
+            record = DispatchRecord(
+                dispatch_id="dispatch-reconciliation-race",
+                mutation_id="mutation-reconciliation-race",
+                card_id="card-done",
+                authority_instance_id="target",
+                authority_url="http://target",
+                target_instance_id="target",
+                session_id="session-reconciliation-race",
+                state="running",
+                recoverable=False,
+            )
+            ledger.put(record)
+            domain = MagicMock()
+            domain.get_card.return_value = SimpleNamespace(lane=CardLane.DONE)
+            domain.get_session.return_value = SimpleNamespace(status="closed")
+            request = request_for(settings, domain, {"dispatch_store": ledger})
+            body = DispatchTerminalRepairBody(
+                idempotency_key="repair-reconciliation-race",
+                mode="abandoned_without_acknowledgement",
+                expected_state="running",
+                reason="Fence a stale reconciliation metadata save.",
+                confirm_no_outcome_inference=True,
+            )
+            agent = MagicMock()
+            agent.store = domain
+            agent.get.return_value = None
+            agent.async_runtime = None
+            reconciler = CompletionReconciler(
+                ledger, agent, CompletionOutbox(ledger, ""), domain, lambda: None
+            )
+            save_started = asyncio.Event()
+            resume_save = asyncio.Event()
+            original_save = reconciler._save
+
+            async def delayed_save(stale: DispatchRecord) -> None:
+                save_started.set()
+                await resume_save.wait()
+                await original_save(stale)
+
+            reconciler._save = delayed_save
+            payload = {
+                "card_disposition": {
+                    "contract": "pa.card-disposition/v1",
+                    "lane": "active",
+                    "outcome": "Completion won the reconciliation race.",
+                    "evidence": {"integration_required": False},
+                }
+            }
+            completion = asyncio.create_task(
+                reconciler.handle_completion(record.session_id or "", payload)
+            )
+            await asyncio.wait_for(save_started.wait(), timeout=5)
+            try:
+                with patch("pa.modules.fleet.require_user"):
+                    repaired = await repair_terminal_dispatch(
+                        request, record.dispatch_id, body
+                    )
+                self.assertEqual(repaired["state"], "cancelled")
+            finally:
+                resume_save.set()
+            self.assertTrue(await asyncio.wait_for(completion, timeout=5))
+            await original_save(record)
+
+            persisted = ledger.get(record.dispatch_id)
+            assert persisted is not None
+            self.assertEqual(persisted.state, "completion_pending")
+            self.assertEqual(persisted.completion_payload, payload)
+            self.assertEqual(
+                persisted.control_operations[body.idempotency_key],
+                "repair_terminal:abandoned_without_acknowledgement",
+            )
+            reservation = persisted.terminal_repair_reservation
+            assert reservation is not None
+            self.assertEqual(reservation["state"], "committed")
+            restarted = AgentSessionManager(
+                settings, domain, dispatch_store=ledger
+            )
+            self.assertEqual(
+                restarted.terminal_repair_fence_id(record.session_id or ""),
+                reservation["reservation_id"],
+            )
+            with self.assertRaises(AgentSessionRecoveryError):
+                restarted.enqueue_prompt(
+                    "must remain fenced", session_id=record.session_id
+                )
+            with self.assertRaises(AgentSessionRecoveryError):
+                await restarted.recover_session(record.session_id or "")
+            kinds = {item["kind"] for item in persisted.lifecycle_inconsistencies}
+            self.assertIn("legacy_abandoned_dispatch_retired", kinds)
+            self.assertIn("terminal_repair_superseded_by_completion", kinds)
+
     async def test_remote_target_closed_proof_repairs_without_local_replica_use(
         self,
     ) -> None:
@@ -2192,6 +2450,78 @@ class CompletionTests(unittest.TestCase):
                 ledger.get("dispatch-1").post_turn_evaluations[-1].decision.value,
                 "outcome_achieved",
             )
+
+    def test_acknowledged_completion_preserves_concurrent_repair_commit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = target_terminal_repair_context(tmp, "ack-race")
+            card = Card(id="card-ack-race", title="Completion race")
+            current = ctx.ledger.get(ctx.record.dispatch_id)
+            assert current is not None
+            current.card_id = card.id
+            current.card_version = card.updated_at.isoformat()
+            current.card_snapshot = card.model_dump(mode="json")
+            ctx.ledger.put(current)
+            domain = MagicMock()
+            domain.get_card.return_value = card
+            complete_request = request_for(
+                ctx.settings, domain, {"dispatch_store": ctx.ledger}
+            )
+            complete_request.headers = {"idempotency-key": ctx.record.mutation_id}
+            body = DispatchCompletionBody(
+                mutation_id=ctx.record.mutation_id,
+                card_id=card.id,
+                card_version=card.updated_at.isoformat(),
+                realm_id="default",
+                source_instance_id="target",
+                session_id=ctx.session.id,
+                result={"outcome": "Concurrent immutable completion won."},
+            )
+            original_mutate = ctx.ledger.mutate_current
+
+            def commit_then_ack(dispatch_id: str, *, mutate):
+                prepared = target_terminal_repair_evidence(
+                    ctx.request, ctx.record.dispatch_id, ctx.proof_body
+                )
+                target_terminal_repair_commit(
+                    ctx.request,
+                    ctx.record.dispatch_id,
+                    DispatchTerminalRepairCommitRequest(
+                        mutation_id=ctx.record.mutation_id,
+                        authority_instance_id="authority",
+                        target_instance_id="target",
+                        session_id=ctx.session.id,
+                        idempotency_key=ctx.proof_body.idempotency_key,
+                        reservation_id=prepared.reservation_id,
+                        evidence_digest=prepared.evidence_digest,
+                        expected_state="running",
+                    ),
+                )
+                return original_mutate(dispatch_id, mutate=mutate)
+
+            ctx.ledger.mutate_current = MagicMock(side_effect=commit_then_ack)
+            result = complete_dispatch(complete_request, ctx.record.dispatch_id, body)
+
+            self.assertTrue(result["acknowledged"])
+            persisted = ctx.ledger.get(ctx.record.dispatch_id)
+            assert persisted is not None
+            self.assertEqual(persisted.state, "completed")
+            self.assertIsNotNone(persisted.acknowledged_at)
+            self.assertEqual(
+                persisted.completion_payload,
+                {"outcome": "Concurrent immutable completion won."},
+            )
+            self.assertEqual(
+                persisted.terminal_repair_reservation["state"], "committed"
+            )
+            self.assertEqual(
+                persisted.control_operations[ctx.proof_body.idempotency_key],
+                "repair_terminal:abandoned_without_acknowledgement",
+            )
+            kinds = {
+                item["kind"] for item in persisted.lifecycle_inconsistencies
+            }
+            self.assertIn("target_terminal_repair_reservation_committed", kinds)
+            self.assertIn("terminal_repair_superseded_by_completion", kinds)
 
     def test_duplicate_completion_updates_card_exactly_once(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

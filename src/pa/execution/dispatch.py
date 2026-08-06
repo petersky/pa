@@ -2612,6 +2612,32 @@ class DispatchStore:
             self._save(record, durability="full")
             return self._snapshot(self._records[record.dispatch_id])
 
+    def mutate_current(
+        self,
+        dispatch_id: str,
+        *,
+        mutate: Callable[[DispatchRecord], bool | None],
+    ) -> DispatchRecord:
+        """Atomically mutate the latest durable record without a detached snapshot.
+
+        The callback must use only evidence already supplied by the caller and must
+        not perform external reads. This is the commit primitive for lifecycle
+        publications, such as completion acknowledgement, that must observe and
+        preserve a concurrently committed terminal-repair reservation.
+        """
+
+        with self._lock:
+            self._require_writer()
+            stored = self._records.get(dispatch_id)
+            if stored is None:
+                raise ValueError("dispatch not found")
+            record = self._snapshot(stored)
+            if mutate(record) is False:
+                return self._snapshot(stored)
+            record.updated_at = datetime.now(UTC)
+            self._save(record, durability="full")
+            return self._snapshot(self._records[dispatch_id])
+
     def compare_and_mutate(
         self,
         expected: DispatchRecord,
