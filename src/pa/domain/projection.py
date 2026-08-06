@@ -2901,6 +2901,8 @@ class CardProjection:
         self,
         realm_id: str | None = None,
         status: ProjectStatus | None = None,
+        limit: int | None = None,
+        offset: int = 0,
     ) -> list[Project]:
         query = "SELECT * FROM projects WHERE 1=1"
         params: list[str] = []
@@ -2911,6 +2913,9 @@ class CardProjection:
             query += " AND status = ?"
             params.append(status.value)
         query += " ORDER BY updated_at DESC"
+        if limit is not None:
+            query += " LIMIT ? OFFSET ?"
+            params.extend([str(max(0, limit)), str(max(0, offset))])
         with self._conn() as conn:
             rows = conn.execute(query, params).fetchall()
         return [self._row_to_project(row) for row in rows]

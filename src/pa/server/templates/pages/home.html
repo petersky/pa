@@ -1,6 +1,6 @@
 {% from "macros/layout.html" import page_layout %}
 {% from "macros/instance_identity.html" import instance_identity %}
-{% from "macros/cards.html" import compact_card %}
+{% from "macros/cards.html" import attention_queue_card %}
 
 {% set main %}
 <div class="command-center">
@@ -8,69 +8,100 @@
     <div>
       <p class="eyebrow">{{ active_realm }}</p>
       <h1>What needs your attention?</h1>
-      <p>Capture work, unblock active agents, and review recent outcomes.</p>
+      <p>Act on concrete blockers while autonomous work stays visibly in motion.</p>
     </div>
     <a class="ghost" href="/work?realm={{ active_realm }}">Open work board</a>
   </header>
 
   <div class="command-center-grid">
-    <section class="panel command-section command-attention" aria-labelledby="needs-attention-title">
+    <section class="panel command-section command-attention"
+             aria-labelledby="needs-attention-title">
       <div class="panel-header">
         <div>
-          <p class="eyebrow">Unblock next</p>
+          <p class="eyebrow">Operator-owned next steps</p>
           <h2 id="needs-attention-title">Needs attention</h2>
         </div>
-        <span class="section-count">{{ needs_attention | length }}</span>
+        <span class="section-count"
+              aria-label="Showing {{ needs_attention | length }} of {{ needs_attention_total }} actionable cards">
+          {{ needs_attention | length }}{% if needs_attention_total > needs_attention | length %} / {{ needs_attention_total }}{% endif %}
+        </span>
       </div>
       {% if needs_attention %}
-      <div class="compact-card-list">
-        {% for card in needs_attention %}
-          {{ compact_card(card, card_projects.get(card.id), card_sessions.get(card.id), card_progress.get(card.id)) }}
+      <div class="attention-card-list">
+        {% for order in needs_attention %}
+          {{ attention_queue_card(order) }}
         {% endfor %}
       </div>
       {% else %}
-      <div class="empty-state compact-empty"><h3>Nothing is blocked</h3><p class="muted">Waiting work and active concerns will appear here.</p></div>
+      <div class="empty-state compact-empty">
+        <h3>No operator action is waiting</h3>
+        <p class="muted">Waiting cards without a concrete request stay in Work and do not create false urgency.</p>
+      </div>
       {% endif %}
+      <a class="section-route"
+         href="/work?realm={{ active_realm }}&attention=actionable">
+        View all actionable work
+      </a>
     </section>
 
     <section class="panel command-section" aria-labelledby="active-work-title">
       <div class="panel-header">
         <div>
-          <p class="eyebrow">In motion</p>
-          <h2 id="active-work-title">Active work</h2>
+          <p class="eyebrow">Autonomous progress</p>
+          <h2 id="active-work-title">In motion</h2>
         </div>
-        <span class="section-count">{{ active_work | length }}</span>
+        <span class="section-count"
+              aria-label="Showing {{ active_work | length }} of {{ active_work_total }} cards in motion">
+          {{ active_work | length }}{% if active_work_total > active_work | length %} / {{ active_work_total }}{% endif %}
+        </span>
       </div>
       <div id="home-active-work">
         {% if active_work %}
-        <div class="compact-card-list">
-          {% for card in active_work %}
-            {{ compact_card(card, card_projects.get(card.id), card_sessions.get(card.id), card_progress.get(card.id)) }}
+        <div class="attention-card-list">
+          {% for order in active_work %}
+            {{ attention_queue_card(order) }}
           {% endfor %}
         </div>
         {% else %}
-        <div class="empty-state compact-empty"><h3>No active work</h3><p class="muted">Move a card to Active when execution begins.</p></div>
+        <div class="empty-state compact-empty">
+          <h3>No autonomous work in motion</h3>
+          <p class="muted">Current dispatch or live-turn evidence will appear here.</p>
+        </div>
         {% endif %}
       </div>
+      <a class="section-route"
+         href="/work?realm={{ active_realm }}&attention=motion">
+        View all work in motion
+      </a>
     </section>
 
     <section class="panel command-section" aria-labelledby="recent-outcomes-title">
       <div class="panel-header">
         <div>
-          <p class="eyebrow">Recently completed</p>
+          <p class="eyebrow">Terminal work</p>
           <h2 id="recent-outcomes-title">Recent outcomes</h2>
         </div>
-        <span class="section-count">{{ recent_outcomes | length }}</span>
+        <span class="section-count"
+              aria-label="Showing {{ recent_outcomes | length }} of {{ recent_outcomes_total }} completed cards">
+          {{ recent_outcomes | length }}{% if recent_outcomes_total > recent_outcomes | length %} / {{ recent_outcomes_total }}{% endif %}
+        </span>
       </div>
       {% if recent_outcomes %}
-      <div class="compact-card-list">
-        {% for card in recent_outcomes %}
-          {{ compact_card(card, card_projects.get(card.id), card_sessions.get(card.id), card_progress.get(card.id)) }}
+      <div class="attention-card-list">
+        {% for order in recent_outcomes %}
+          {{ attention_queue_card(order) }}
         {% endfor %}
       </div>
       {% else %}
-      <div class="empty-state compact-empty"><h3>No outcomes yet</h3><p class="muted">Completed work will collect here for a quick review.</p></div>
+      <div class="empty-state compact-empty">
+        <h3>No recent outcomes</h3>
+        <p class="muted">Terminal results will collect here without masquerading as active work.</p>
+      </div>
       {% endif %}
+      <a class="section-route"
+         href="/work?realm={{ active_realm }}&attention=outcome">
+        View all outcomes
+      </a>
     </section>
 
     <aside class="panel command-health" aria-labelledby="system-health-title">
@@ -79,7 +110,11 @@
         <div><dt>Local agent</dt><dd><span class="status status-{{ 'active' if agent_connected else 'waiting' }}">{{ 'Connected' if agent_connected else 'Offline' }}</span></dd></div>
         <div><dt>This instance</dt><dd>{{ instance_identity(instance_id) }}</dd></div>
         <div><dt>Fleet instances</dt><dd>{{ fleet_instances | length }}</dd></div>
+        <div><dt>Cached inventory</dt><dd>{{ home_inventory.loaded }} / {{ home_inventory.total }}</dd></div>
       </dl>
+      {% if home_inventory.omitted %}
+      <p class="muted small">{{ home_inventory.omitted }} older cards are intentionally omitted from Home.</p>
+      {% endif %}
       <a class="text-btn" href="/fleet">Review fleet health</a>
     </aside>
   </div>

@@ -47,6 +47,7 @@ from pa.core.ui.instance_identity import (
     resolve_instance_identity,
 )
 from pa.core.ui.pages import PageDefinition, PageRegistry
+from pa.core.ui.work_presentation import present_work_item
 from pa.domain.card_enrichment import enrich_card, explicit_enrichment_fields
 from pa.domain.models import (
     CardAttachment,
@@ -90,6 +91,12 @@ SAFE_IMAGE_TYPES = {
     "image/png",
     "image/webp",
 }
+
+HOME_ATTENTION_LIMIT = 6
+HOME_MOTION_LIMIT = 8
+HOME_OUTCOME_LIMIT = 6
+HOME_FLEET_LIMIT = 50
+HOME_ROUTE_LIMIT = 200
 
 
 class KnowledgePromotionRequest(BaseModel):
@@ -453,6 +460,103 @@ def _progress_from_dispatch(ctx: AppContext, record) -> dict:
     return progress
 
 
+def _session_presentation_signal(ctx: AppContext, session) -> dict | None:
+    if session is None:
+        return None
+    agent = ctx.services.get("instance_agent")
+    runtime = agent.get(session.id) if agent and hasattr(agent, "get") else None
+    if runtime and not getattr(runtime, "_closed", False):
+        active = bool(
+            getattr(runtime, "prompting", False) or getattr(runtime, "_in_flight", None)
+        )
+        return {
+            "id": session.id,
+            "session_state": "busy" if active else "connected",
+            "state": "working" if active else "connected",
+            "connected": bool(getattr(runtime, "connected", False)),
+            "turn": {"state": "running"} if active else None,
+            "liveness": {
+                "classification": "live" if active else "completed_idle",
+            },
+        }
+    status = str(session.status or "")
+    failed = status in {"failed", "error", "recovery_blocked"}
+    terminal = status in {"closed", "quiesced"} or failed
+    return {
+        "id": session.id,
+        "session_state": "failed" if failed else "closed" if terminal else "stale",
+        "state": "failed" if failed else "completed" if terminal else "stale",
+        "connected": False,
+        "turn": None,
+        "liveness": {
+            "classification": "failed_closed" if failed else "stale",
+        },
+    }
+
+
+def _watches_for_cards(request: Request, card_ids: set[str]) -> dict[str, list]:
+    if not card_ids:
+        return {}
+    store = request.app.state.ctx.services.get("pr_supervisor_store")
+    if not store:
+        return {}
+    if hasattr(store, "list_watches_for_cards"):
+        watches = store.list_watches_for_cards(
+            card_ids,
+            realm_id=_active_realm(request),
+            include_retired=False,
+            per_card_limit=3,
+        )
+    else:
+        watches = [
+            watch
+            for watch in store.list_watches(include_retired=False)
+            if watch.card_id in card_ids
+        ][: len(card_ids) * 3]
+    result: dict[str, list] = {}
+    for watch in watches:
+        if watch.card_id:
+            result.setdefault(watch.card_id, []).append(watch)
+    return result
+
+
+def _presentation_context_for_cards(
+    request: Request,
+    cards: list,
+) -> tuple[dict, dict, dict, dict]:
+    card_ids = {card.id for card in cards}
+    store = get_store()
+    sessions = preferred_sessions_by_card(store.list_sessions_for_cards(card_ids))
+    dispatch_store = request.app.state.ctx.services.get("dispatch_store")
+    dispatches = dispatch_store.latest_by_card(card_ids) if dispatch_store else {}
+    watches = _watches_for_cards(request, card_ids)
+    progress: dict[str, dict] = {}
+    presentations: dict[str, dict] = {}
+    ctx = request.app.state.ctx
+    for card in cards:
+        record = dispatches.get(card.id)
+        public = canonicalize_dispatch_public(ctx, record) if record else None
+        if record:
+            progress[card.id] = _progress_from_dispatch(ctx, record)
+        presentations[card.id] = present_work_item(
+            card,
+            dispatch=public,
+            session=_session_presentation_signal(ctx, sessions.get(card.id)),
+            watches=watches.get(card.id, ()),
+            target_instance_name=(
+                public.get("target_instance_name") if public else None
+            ),
+        )
+    return sessions, progress, presentations, dispatches
+
+
+def _work_presentation_for_card(request: Request, card) -> dict:
+    _sessions, _progress, presentations, _dispatches = _presentation_context_for_cards(
+        request, [card]
+    )
+    return presentations[card.id]
+
+
 def _card_project_impact(request: Request, card, project_id: str | None) -> dict:
     """Describe project-sensitive relationships without changing their provenance."""
     store = get_store()
@@ -556,6 +660,7 @@ def _card_summary_context(request: Request, card) -> dict:
         ],
         "critical_watch": critical_watch,
         "current_progress": _latest_card_progress(request, card.id),
+        "work_presentation": _work_presentation_for_card(request, card),
         "card_reconciliations": (
             [
                 record.public_dict()["card_reconciliation"]
@@ -1114,21 +1219,32 @@ def _cards_context(
             cards = [card for card in cards if card.updated_at >= cutoff]
         except ValueError:
             updated = ""
+    attention = (
+        request.query_params.get("attention", "").strip() if apply_filters else ""
+    )
+    candidate_presentations: dict[str, dict] = {}
+    if attention in {"actionable", "motion", "outcome"}:
+        _, _, candidate_presentations, _ = _presentation_context_for_cards(
+            request, cards
+        )
+        expected_group = {
+            "actionable": "attention",
+            "motion": "motion",
+            "outcome": "outcome",
+        }[attention]
+        cards = [
+            card
+            for card in cards
+            if candidate_presentations[card.id]["group"] == expected_group
+        ]
     total_cards = len(cards)
     if result_limit is not None:
         cards = cards[:result_limit]
     projects = store.list_projects(realm_id=realm)
     project_by_id = {project.id: project for project in projects}
-    card_ids = {card.id for card in cards}
-    card_sessions = preferred_sessions_by_card(store.list_sessions_for_cards(card_ids))
-    dispatch_store = request.app.state.ctx.services.get("dispatch_store")
-    selected_dispatches = (
-        dispatch_store.latest_by_card(card_ids) if dispatch_store else {}
+    card_sessions, card_progress, card_presentations, _ = (
+        _presentation_context_for_cards(request, cards)
     )
-    card_progress = {
-        card_id: _progress_from_dispatch(request.app.state.ctx, record)
-        for card_id, record in selected_dispatches.items()
-    }
     filter_params = {
         "realm": realm,
         "project": project_id or "",
@@ -1139,6 +1255,7 @@ def _cards_context(
         "blocked": blocked,
         "tag": tag,
         "updated": updated,
+        "attention": attention,
     }
     return {
         "cards": cards,
@@ -1152,6 +1269,7 @@ def _cards_context(
         },
         "card_sessions": card_sessions,
         "card_progress": card_progress,
+        "card_presentations": card_presentations,
         "owners": sorted(
             {card.owner_principal for card in all_cards if card.owner_principal}
         ),
@@ -1180,6 +1298,7 @@ def _cards_context(
             "blocked": blocked,
             "tag": tag,
             "updated": updated,
+            "attention": attention,
         },
         "filter_query": urlencode(
             {key: value for key, value in filter_params.items() if value}
@@ -1209,7 +1328,15 @@ def _work_context(request: Request) -> dict:
         selected_lane = CardLane.ACTIVE.value
     filters = {
         key: request.query_params.get(key, "").strip()
-        for key in ("q", "owner", "instance", "blocked", "tag", "updated")
+        for key in (
+            "q",
+            "owner",
+            "instance",
+            "blocked",
+            "tag",
+            "updated",
+            "attention",
+        )
     }
     filters["project"] = project_id or ""
     filters["kind"] = request.query_params.get("kind", "").strip()
@@ -1241,25 +1368,62 @@ def _work_context(request: Request) -> dict:
 
 
 def _home_context(request: Request) -> dict:
+    """Build Home from one bounded, cached-first operational projection."""
+    from pa.fleet.overview import build_overview
+    from pa.fleet.workshop import build_workshop_snapshot
+
     realm = _active_realm(request)
-    context = _cards_context(request, apply_filters=False)
-    cards = context["cards"]
     ctx = request.app.state.ctx
     agent = ctx.services.get("instance_agent")
     fleet = ctx.services.get("fleet_registry")
+    peer_table = ctx.services.get("peer_table")
+    fleet_instances = list(fleet.list_instances())[:HOME_FLEET_LIMIT] if fleet else []
+    routes = list(peer_table.all_routes())[:HOME_ROUTE_LIMIT] if peer_table else []
+    overview = (
+        build_overview(ctx, fleet_instances, routes)
+        if fleet_instances
+        else {"nodes": [], "edges": []}
+    )
+    snapshot = build_workshop_snapshot(ctx, overview, realm_id=realm)
+    work_orders = list(snapshot["work_orders"])
+
+    def sort_key(item: dict) -> tuple[int, str, str]:
+        presentation = item["presentation"]
+        return (
+            int(presentation["priority"]),
+            str(presentation.get("occurred_at") or item.get("updated_at") or ""),
+            str(item["id"]),
+        )
+
+    attention = sorted(
+        (item for item in work_orders if item["presentation"]["group"] == "attention"),
+        key=sort_key,
+        reverse=True,
+    )
+    in_motion = sorted(
+        (item for item in work_orders if item["presentation"]["group"] == "motion"),
+        key=sort_key,
+        reverse=True,
+    )
+    outcomes = sorted(
+        (item for item in work_orders if item["presentation"]["group"] == "outcome"),
+        key=sort_key,
+        reverse=True,
+    )
     return {
-        **context,
-        "needs_attention": [
-            card
-            for card in cards
-            if card.lane == CardLane.WAITING
-            or (card.kind == CardKind.CONCERN and card.lane != CardLane.DONE)
-        ][:6],
-        "active_work": [card for card in cards if card.lane == CardLane.ACTIVE][:8],
-        "recent_outcomes": [card for card in cards if card.lane == CardLane.DONE][:6],
+        "needs_attention": attention[:HOME_ATTENTION_LIMIT],
+        "needs_attention_total": len(attention),
+        "active_work": in_motion[:HOME_MOTION_LIMIT],
+        "active_work_total": len(in_motion),
+        "recent_outcomes": outcomes[:HOME_OUTCOME_LIMIT],
+        "recent_outcomes_total": snapshot["counts"]["lanes"].get(
+            CardLane.DONE.value, len(outcomes)
+        ),
+        "home_inventory": snapshot["inventory"],
         "agent_connected": bool(agent and agent.connected),
-        "fleet_instances": fleet.list_instances() if fleet else [],
+        "fleet_instances": fleet_instances,
         "instance_name": ctx.settings.instance_name,
+        "realms": ctx.settings.subscribed_realms,
         "active_realm": realm,
     }
 
@@ -2379,6 +2543,7 @@ def card_detail_progress_partial(
         {
             "card": card,
             "current_progress": _latest_card_progress(request, card.id),
+            "work_presentation": _work_presentation_for_card(request, card),
         },
     )
 

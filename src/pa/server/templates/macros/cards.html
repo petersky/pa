@@ -1,5 +1,5 @@
 {% from "macros/instance_identity.html" import instance_identity %}
-{% macro compact_card(card, project=None, session=None, progress=None, movable=false, lanes=[], title_only=false) %}
+{% macro compact_card(card, project=None, session=None, progress=None, presentation=None, movable=false, lanes=[], title_only=false) %}
 <article class="compact-card item-{{ card.kind.value }}{% if title_only %} is-title-only{% endif %}"
          {% if movable %}draggable="true"{% endif %}
          data-card-id="{{ card.id }}"
@@ -8,7 +8,11 @@
   {% if not title_only %}
   <div class="compact-card-meta">
     <span class="badge">{{ card.kind.value }}</span>
+    {% if presentation %}
+    <span class="status status-{{ presentation.tone }}">{{ presentation.state_label }}</span>
+    {% else %}
     <span class="status status-{{ card.lane.value }}">{{ card.lane.value }}</span>
+    {% endif %}
     {% if project %}<span class="compact-card-project">{{ project.title }}</span>{% endif %}
     {% if card.summary_stale %}
     <span class="summary-stale" title="The source details changed after this summary was written">Summary needs review</span>
@@ -30,6 +34,14 @@
      aria-label="Open live agent session for {{ card.title }}">Open agent</a>
   {% endif %}
   {% if not title_only %}
+  {% if presentation %}
+  <div class="compact-card-progress progress-{{ presentation.freshness }}"
+       data-card-progress
+       data-progress-state="{{ presentation.freshness }}">
+    <strong>{{ presentation.summary }}</strong>
+    <span class="muted small">{{ presentation.reason }}</span>
+  </div>
+  {% else %}
   {% if card.summary and card.summary_source.value != 'fallback' %}
   <div class="card-markdown compact-card-summary" data-card-markdown>
     <span hidden data-card-markdown-source>{{ card.summary | tojson }}</span>
@@ -57,7 +69,15 @@
   {% elif progress and progress.reporting == 'lifecycle_only' %}
   <p class="compact-card-progress muted small">Lifecycle-only reporting · {{ progress.dispatch_state | replace('_', ' ') }}</p>
   {% endif %}
+  {% endif %}
   <footer class="compact-card-footer">
+    {% if presentation %}
+    <span>Target {{ presentation.target_instance_name }}</span>
+    <time datetime="{{ presentation.occurred_at or card.updated_at.isoformat() }}"
+          title="{{ presentation.absolute_time }}">
+      {{ presentation.freshness_label }} · {{ presentation.relative_time }}
+    </time>
+    {% else %}
     <span>
       {% if session %}Agent {{ session.status }}
       {% elif card.owner_principal %}{{ card.owner_principal }}
@@ -67,6 +87,7 @@
     <time datetime="{{ card.updated_at.isoformat() }}">
       Updated {{ card.updated_at.strftime('%b %-d, %H:%M') }}
     </time>
+    {% endif %}
     {% if movable %}
     <details class="card-move-menu">
       <summary>Move</summary>
@@ -84,5 +105,54 @@
     {% endif %}
   </footer>
   {% endif %}
+</article>
+{% endmacro %}
+
+
+{% macro attention_queue_card(order) %}
+{% set presentation = order.presentation %}
+{% set action = presentation.action %}
+<article class="attention-queue-card attention-{{ presentation.group }}"
+         data-attention-card
+         data-attention-group="{{ presentation.group }}"
+         data-attention-state="{{ presentation.state }}"
+         aria-label="{{ presentation.accessible_label }}">
+  <div class="attention-card-heading">
+    <span class="status status-{{ presentation.tone }}">{{ presentation.state_label }}</span>
+    <time datetime="{{ presentation.occurred_at or order.updated_at }}"
+          title="{{ presentation.absolute_time }}">
+      {{ presentation.freshness_label }} · {{ presentation.relative_time }}
+    </time>
+  </div>
+  <h3>
+    <a href="/?realm={{ order.card.realm_id or 'default' }}&card={{ order.id }}"
+       data-card-detail-link
+       data-card-id="{{ order.id }}"
+       data-card-realm="{{ order.card.realm_id or 'default' }}">{{ order.title }}</a>
+  </h3>
+  <p class="attention-card-summary">{{ presentation.summary }}</p>
+  <p class="attention-card-reason">{{ presentation.reason }}</p>
+  <dl class="attention-card-context">
+    <div><dt>Target</dt><dd>{{ presentation.target_instance_name }}</dd></div>
+  </dl>
+  <footer class="attention-card-actions">
+    {% if action.kind == 'retry' %}
+    <button type="button" class="small"
+            data-card-dispatch-retry="{{ action.dispatch_id }}"
+            aria-label="Retry {{ order.title }}">{{ action.label }}</button>
+    {% else %}
+    <a class="button small"
+       href="{{ action.href }}"
+       {% if action.kind in ('open_card', 'inspect') %}
+       data-card-detail-link data-card-id="{{ order.id }}"
+       data-card-realm="{{ order.card.realm_id or 'default' }}"
+       {% endif %}
+       {% if action.external %}target="_blank" rel="noopener"{% endif %}
+       aria-label="{{ action.label }} for {{ order.title }}">{{ action.label }}</a>
+    {% endif %}
+    {% if presentation.action_explanation %}
+    <span class="muted small">{{ presentation.action_explanation }}</span>
+    {% endif %}
+  </footer>
 </article>
 {% endmacro %}

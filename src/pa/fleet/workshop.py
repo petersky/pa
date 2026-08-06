@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from heapq import nsmallest
 from typing import Any
 
+from pa.core.ui.work_presentation import present_work_item
 from pa.domain.models import CardLane
 from pa.execution.dispatch import TERMINAL_DISPATCH_STATES as CANONICAL_TERMINAL_STATES
 from pa.fleet.control_plane import build_control_plane_status
@@ -323,9 +324,10 @@ def build_workshop_snapshot(
     overview: dict[str, Any],
     *,
     recent_done_limit: int = 12,
+    realm_id: str | None = None,
 ) -> dict[str, Any]:
     """Derive a bounded Workshop model from canonical server projections."""
-    realm_id = ctx.settings.primary_realm
+    realm_id = realm_id or ctx.settings.primary_realm
     try:
         cards = list(
             ctx.store.list_cards(realm_id=realm_id, limit=WORKSHOP_CARD_READ_LIMIT)
@@ -333,9 +335,15 @@ def build_workshop_snapshot(
     except TypeError:  # Compatibility for small in-memory test/read stores.
         cards = list(ctx.store.list_cards(realm_id=realm_id))[:WORKSHOP_CARD_READ_LIMIT]
     card_by_id = {card.id: card for card in cards}
-    projects = {
-        project.id: project for project in ctx.store.list_projects(realm_id=realm_id)
-    }
+    try:
+        bounded_projects = ctx.store.list_projects(
+            realm_id=realm_id, limit=WORKSHOP_CARD_READ_LIMIT
+        )
+    except TypeError:  # Compatibility for small in-memory test/read stores.
+        bounded_projects = ctx.store.list_projects(realm_id=realm_id)[
+            :WORKSHOP_CARD_READ_LIMIT
+        ]
+    projects = {project.id: project for project in bounded_projects}
 
     def enrich_card(card_id: Any) -> None:
         normalized = str(card_id or "")
@@ -354,6 +362,12 @@ def build_workshop_snapshot(
     dispatch_store = ctx.services.get("dispatch_store")
     if dispatch_store and hasattr(dispatch_store, "current_card_ids"):
         for card_id in dispatch_store.current_card_ids(
+            realm_id=realm_id, limit=WORKSHOP_PROJECTION_LIMIT
+        ):
+            enrich_card(card_id)
+    supervisor = ctx.services.get("pr_supervisor_store")
+    if supervisor and hasattr(supervisor, "list_actionable_card_ids"):
+        for card_id in supervisor.list_actionable_card_ids(
             realm_id=realm_id, limit=WORKSHOP_PROJECTION_LIMIT
         ):
             enrich_card(card_id)
@@ -467,6 +481,9 @@ def build_workshop_snapshot(
                     "status": watch.status.value,
                     "head_sha": watch.head_sha,
                     "url": watch.pr_url,
+                    "pr_url": watch.pr_url,
+                    "last_error": watch.last_error,
+                    "state": dict(watch.state or {}),
                 }
             )
 
@@ -606,6 +623,7 @@ def build_workshop_snapshot(
         return {
             "id": card.id,
             "title": card.title,
+            "realm_id": card.realm_id,
             "lane": card.lane.value,
             "project": (
                 {"id": project.id, "title": project.title} if project else None
@@ -956,11 +974,6 @@ def build_workshop_snapshot(
             if session_worker and session_worker.get("progress_freshness")
             else payload["progress_age_seconds"]
         )
-        live = bool(
-            session_worker
-            and session_worker.get("live")
-            and activity_state not in {"completed", "failed"}
-        )
         attention_details = list(payload["attention_evidence"])
 
         if payload["dispatch_state"] in {"blocked", "failed"}:
@@ -992,17 +1005,6 @@ def build_workshop_snapshot(
                 "activity_state",
                 worker.get("state_label") or ACTIVITY_LABELS.get(activity_state),
             )
-        if card.lane == CardLane.WAITING:
-            _append_evidence(
-                attention_details, "card", "lane_waiting", "Card is waiting"
-            )
-        if card.lane == CardLane.ACTIVE and not payload["dispatch_current"]:
-            _append_evidence(
-                attention_details,
-                "dispatch",
-                "missing_current",
-                "Active card has no current dispatch",
-            )
         if reservation_worker:
             _append_evidence(
                 attention_details,
@@ -1017,8 +1019,22 @@ def build_workshop_snapshot(
                 reservation_worker.get("queue_reason")
                 or reservation_worker.get("latest_progress"),
             )
-        attention_reasons = list(
-            dict.fromkeys(detail["summary"] for detail in attention_details)
+        presentation = present_work_item(
+            payload,
+            dispatch=latest_dispatch_by_card.get(card.id),
+            session=session_worker,
+            watches=payload["pull_requests"],
+            target_instance_name=bay["name"] if bay else None,
+        )
+        attention_reasons = (
+            list(
+                dict.fromkeys(
+                    [presentation["reason"]]
+                    + [detail["summary"] for detail in attention_details]
+                )
+            )
+            if presentation["attention"]
+            else []
         )
         relationship_label = None
         if session_worker:
@@ -1039,11 +1055,7 @@ def build_workshop_snapshot(
                 "dispatch_label": payload["dispatch_label"],
                 "dispatch_current": payload["dispatch_current"],
                 "activity_state": activity_state,
-                "activity_label": (
-                    session_worker.get("state_label")
-                    if session_worker
-                    else "No current session"
-                ),
+                "activity_label": presentation["state_label"],
                 "freshness": freshness,
                 "freshness_label": (
                     session_worker.get("freshness_label")
@@ -1101,10 +1113,13 @@ def build_workshop_snapshot(
                     if bay
                     else None
                 ),
-                "live": live,
-                "attention": bool(attention_details),
+                "live": bool(session_worker and session_worker.get("live")),
+                "attention": presentation["attention"],
                 "attention_reasons": attention_reasons,
-                "attention_details": attention_details,
+                "attention_details": (
+                    attention_details if presentation["attention"] else []
+                ),
+                "presentation": presentation,
                 "updated_at": payload["updated_at"],
             }
         )
@@ -1309,7 +1324,7 @@ def build_workshop_snapshot(
     return {
         "schema": "pa.workshop/v2",
         "generated_at": datetime.now(UTC).isoformat(),
-        "realm_id": ctx.settings.primary_realm,
+        "realm_id": realm_id,
         "authority": {
             "instance_id": authority,
             "current_instance_id": ctx.settings.instance_id,

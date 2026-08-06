@@ -1852,6 +1852,38 @@
       return;
     }
     var detail = event.target.closest("[data-card-detail], [data-card-dispatch-context]");
+    var dispatchRetry = event.target.closest("[data-card-dispatch-retry]");
+    if (dispatchRetry) {
+      var retryId = dispatchRetry.dataset.cardDispatchRetry;
+      dispatchRetry.disabled = true;
+      fetch("/api/fleet/dispatch-jobs/" + encodeURIComponent(retryId) + "/retry", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: Object.assign({"Content-Type": "application/json"}, csrfHeader()),
+        body: JSON.stringify({idempotency_key: dispatchOperationKey("dispatch-retry:" + retryId)}),
+      })
+        .then(function (response) {
+          return response.json().then(function (data) {
+            if (!response.ok) throw data;
+            return data;
+          });
+        })
+        .then(function (dispatch) {
+          if (detail) {
+            renderCardDispatch(detail, dispatch);
+            pollCardDispatch(detail, retryId, 300);
+          } else {
+            showToast("Retry requested. Refreshing current work state.", "success");
+            document.body.dispatchEvent(new CustomEvent("boardRefresh"));
+          }
+        })
+        .catch(function (error) {
+          if (detail) renderCardDispatchError(detail, error);
+          else showToast((error && (error.message || error.detail)) || "Retry failed", "error");
+          dispatchRetry.disabled = false;
+        });
+      return;
+    }
     if (!detail) return;
     var cardTab = event.target.closest("[data-card-tab]");
     if (cardTab) {
@@ -1885,32 +1917,6 @@
         markdownTab.closest("[data-markdown-editor]"),
         markdownTab.dataset.markdownTab
       );
-      return;
-    }
-    var dispatchRetry = event.target.closest("[data-card-dispatch-retry]");
-    if (dispatchRetry) {
-      var retryId = dispatchRetry.dataset.cardDispatchRetry;
-      dispatchRetry.disabled = true;
-      fetch("/api/fleet/dispatch-jobs/" + encodeURIComponent(retryId) + "/retry", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: Object.assign({"Content-Type": "application/json"}, csrfHeader()),
-        body: JSON.stringify({idempotency_key: dispatchOperationKey("dispatch-retry:" + retryId)}),
-      })
-        .then(function (response) {
-          return response.json().then(function (data) {
-            if (!response.ok) throw data;
-            return data;
-          });
-        })
-        .then(function (dispatch) {
-          renderCardDispatch(detail, dispatch);
-          pollCardDispatch(detail, retryId, 300);
-        })
-        .catch(function (error) {
-          renderCardDispatchError(detail, error);
-          dispatchRetry.disabled = false;
-        });
       return;
     }
     var agentButton = event.target.closest("[data-card-agent-start-new], [data-card-agent-select]");

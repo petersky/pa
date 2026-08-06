@@ -1,33 +1,35 @@
-<div class="{% if current_progress %}card-live-progress progress-{{ current_progress.freshness.state }}{% else %}card-live-progress-empty{% endif %}"
+{% set presentation = work_presentation %}
+{% set action = presentation.action %}
+<div class="card-live-progress progress-{{ presentation.freshness }}"
      data-card-live-progress
-     {% if current_progress %}data-progress-state="{{ current_progress.freshness.state }}"{% endif %}
+     data-progress-state="{{ presentation.freshness }}"
+     data-work-state="{{ presentation.state }}"
+     aria-label="{{ presentation.accessible_label }}"
      hx-get="/partials/cards/{{ card.id }}/progress?realm={{ card.realm_id }}"
      hx-trigger="every 15s"
      hx-swap="outerHTML">
-  {% if current_progress %}
-    {% if current_progress.post_turn_evaluation %}
-    <div>
-      <span class="status status-{{ 'active' if current_progress.evaluated_outcome == 'attempt_succeeded' else ('blocked' if current_progress.evaluated_outcome in ['attempt_blocked', 'attempt_failed'] else 'open') }}">{{ current_progress.evaluated_outcome | replace('_', ' ') }}</span>
-      <strong>{{ current_progress.post_turn_evaluation.operator_status_text }}</strong>
-    </div>
-    <div class="muted small">
-      Decision: {{ current_progress.post_turn_evaluation.decision | replace('_', ' ') }}
-      · confidence {{ (current_progress.post_turn_evaluation.confidence * 100) | round | int }}%
-      {% if current_progress.followup_state.scheduled %} · follow-up scheduled{% endif %}
-      {% if current_progress.session_id %} · <a href="/agent?session={{ current_progress.session_id }}&instance={{ current_progress.target_instance_id }}">Open exact session</a>{% endif %}
-    </div>
-    {% elif current_progress.latest %}
-    <div>
-      <span class="status status-{{ 'blocked' if current_progress.latest.phase == 'blocked' else 'open' }}">{{ current_progress.latest.phase | replace('_', ' ') }}</span>
-      <strong>{{ current_progress.latest.summary }}</strong>
-    </div>
-    <div class="muted small">
-      {{ current_progress.freshness.state }}
-      {% if current_progress.freshness.age_seconds is not none %} · active {{ current_progress.freshness.age_seconds }}s ago{% endif %}
-      {% if current_progress.session_id %} · <a href="/agent?session={{ current_progress.session_id }}&instance={{ current_progress.target_instance_id }}">Open exact session</a>{% endif %}
-    </div>
-    {% else %}
-    <span class="muted">Structured progress unavailable; showing {{ current_progress.dispatch_state | replace('_', ' ') }} lifecycle state.</span>
+  <div class="card-work-state-heading">
+    <span class="status status-{{ presentation.tone }}">{{ presentation.state_label }}</span>
+    <time datetime="{{ presentation.occurred_at or card.updated_at.isoformat() }}"
+          title="{{ presentation.absolute_time }}">
+      {{ presentation.freshness_label }} · {{ presentation.relative_time }}
+    </time>
+  </div>
+  <strong>{{ presentation.summary }}</strong>
+  <p class="muted small">{{ presentation.reason }}</p>
+  <div class="card-work-state-context muted small">
+    <span>Target {{ presentation.target_instance_name }}</span>
+    {% if presentation.session_id %}<span>Session {{ presentation.session_id[:8] }}</span>{% endif %}
+  </div>
+  <div class="card-work-state-action">
+    {% if action.kind == 'retry' %}
+    <button type="button" class="small"
+            data-card-dispatch-retry="{{ action.dispatch_id }}">{{ action.label }}</button>
+    {% elif action.kind in ('respond', 'review', 'open_agent') %}
+    <a class="button small" href="{{ action.href }}"
+       {% if action.external %}target="_blank" rel="noopener"{% endif %}>{{ action.label }}</a>
+    {% elif presentation.action_explanation %}
+    <span class="muted small">{{ presentation.action_explanation }}</span>
     {% endif %}
-  {% endif %}
+  </div>
 </div>

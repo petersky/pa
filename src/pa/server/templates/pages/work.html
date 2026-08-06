@@ -11,6 +11,17 @@
     <button type="button" class="ghost" data-new-card-open>New card</button>
   </header>
 
+  {% if filters.attention %}
+  <div class="work-filter-context" role="status">
+    Showing
+    {% if filters.attention == 'actionable' %}work with a concrete operator-owned next step
+    {% elif filters.attention == 'motion' %}work backed by current execution evidence
+    {% else %}terminal outcomes
+    {% endif %}.
+    <a href="/work?realm={{ active_realm }}">Clear this lifecycle filter</a>
+  </div>
+  {% endif %}
+
   <form class="work-filters panel"
         method="get" action="/work"
         hx-get="/work" hx-target="#app-view" hx-push-url="true" hx-swap="innerHTML">

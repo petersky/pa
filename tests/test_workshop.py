@@ -41,6 +41,7 @@ class _Store:
         ]
         self.projects = [Project(id="project", title="PA Core")]
         self.card_read_limits = []
+        self.project_read_limits = []
 
     def list_cards(self, *, realm_id, limit=None):
         self.card_read_limits.append(limit)
@@ -52,8 +53,9 @@ class _Store:
     def get_card(self, card_id, *, realm_id):
         return next((card for card in self.cards if card.id == card_id), None)
 
-    def list_projects(self, *, realm_id):
-        return self.projects
+    def list_projects(self, *, realm_id, limit=None):
+        self.project_read_limits.append(limit)
+        return self.projects[:limit] if limit is not None else self.projects
 
 
 class _Dispatch:
@@ -555,7 +557,7 @@ def test_workshop_excludes_and_counts_missing_realm_activity():
     }
 
 
-def test_pre_session_reservation_is_current_attention_but_not_live_session():
+def test_pre_session_reservation_is_in_motion_but_not_live_or_attention():
     waiting = _Dispatch(
         dispatch_id="waiting",
         session_id=None,
@@ -587,7 +589,8 @@ def test_pre_session_reservation_is_current_attention_but_not_live_session():
 
     assert row["dispatch_current"] is True
     assert row["live"] is False
-    assert row["attention"] is True
+    assert row["attention"] is False
+    assert row["presentation"]["group"] == "motion"
     assert row["session"] is None
     assert row["reservation"] == {
         "id": "dispatch:waiting",
@@ -601,7 +604,7 @@ def test_pre_session_reservation_is_current_attention_but_not_live_session():
     }
 
 
-def test_completion_pending_without_session_is_attention_not_live():
+def test_completion_pending_retry_is_in_motion_not_live_or_attention():
     pending = _Dispatch(
         session_id=None,
         state="completion_pending",
@@ -623,9 +626,9 @@ def test_completion_pending_without_session_is_attention_not_live():
 
     assert row["dispatch_current"] is True
     assert row["live"] is False
-    assert row["attention"] is True
-    assert "Finishing" in row["attention_reasons"]
-    assert "Retrying" in row["attention_reasons"]
+    assert row["attention"] is False
+    assert row["presentation"]["group"] == "motion"
+    assert row["attention_reasons"] == []
 
 
 def test_stale_sync_is_attention_even_when_last_observation_was_consistent():
@@ -869,11 +872,13 @@ def test_work_order_preserves_exact_attention_axes_and_progress_freshness():
 
     ctx = _ctx()
     ctx.services["dispatch_store"] = EvidenceStore()
-    snapshot = build_workshop_snapshot(ctx, _overview())
+    overview = _overview()
+    overview["nodes"][0]["dimensions"]["activity"]["value"]["sessions"] = []
+    snapshot = build_workshop_snapshot(ctx, overview)
     row = next(item for item in snapshot["work_orders"] if item["id"] == "active")
 
-    assert row["live"] is True
-    assert row["freshness_label"] == "Current"
+    assert row["live"] is False
+    assert row["freshness_label"] == "Last known"
     assert row["progress_freshness"] == "stale"
     assert row["progress_freshness_label"] == "Stale"
     assert row["progress_age_seconds"] == 901
@@ -962,6 +967,9 @@ def test_pr_watch_projection_is_card_scoped_and_bounded(tmp_path):
     assert len(watches) == 5
     assert all(watch.card_id == "active" for watch in watches)
     assert all(watch.id != "unrelated" for watch in watches)
+    actionable_card_ids = store.list_actionable_card_ids(realm_id="default", limit=1)
+    assert len(actionable_card_ids) == 1
+    assert actionable_card_ids[0] in {"active", "other-card"}
 
 
 def test_session_projection_queries_only_bounded_active_realm_rows(tmp_path):
@@ -1055,7 +1063,7 @@ def test_no_session_card_keeps_lane_dispatch_activity_and_outcome_separate():
 
     assert row["lane_label"] == "Inbox"
     assert row["dispatch_label"] == "Not dispatched"
-    assert row["activity_label"] == "No current session"
+    assert row["activity_label"] == "Not in motion"
     assert row["freshness_label"] == "No session signal"
     assert row["outcome_label"] == "No outcome yet"
     assert row["card"]["can_dispatch"] is True
@@ -1098,6 +1106,7 @@ def test_production_cardinality_snapshot_keeps_explicit_inventory_counts():
     assert snapshot["inventory"]["omitted"] == 49
     assert all(len(cards) <= 12 for cards in snapshot["areas"].values())
     assert ctx.store.card_read_limits == [120]
+    assert ctx.store.project_read_limits == [120]
     assert snapshot["default_view"] == {
         "filter": "operational",
         "page_size": 20,

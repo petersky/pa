@@ -367,6 +367,25 @@ class PRSupervisorStore:
             rows = conn.execute(query, params).fetchall()
         return [self._row_to_watch(row) for row in rows]
 
+    def list_actionable_card_ids(self, *, realm_id: str, limit: int = 80) -> list[str]:
+        """Return bounded card ids with current PR supervision evidence."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT card_id, MAX(updated_at) AS latest
+                FROM pr_watches
+                WHERE realm_id = ?
+                  AND card_id IS NOT NULL
+                  AND retired_at IS NULL
+                  AND status IN ('active', 'blocked')
+                GROUP BY card_id
+                ORDER BY latest DESC, card_id
+                LIMIT ?
+                """,
+                (realm_id, max(0, limit)),
+            ).fetchall()
+        return [str(row["card_id"]) for row in rows]
+
     def count_project_watches(
         self,
         project_id: str,

@@ -1423,6 +1423,10 @@ button.ghost, .text-btn {
 .status-active { background: color-mix(in srgb, var(--pa-ok) 20%, transparent); color: var(--pa-ok); }
 .status-done { opacity: 0.7; }
 .status-blocked { background: color-mix(in srgb, var(--pa-danger) 20%, transparent); color: var(--pa-danger); }
+.status-success { background: color-mix(in srgb, var(--pa-ok) 20%, transparent); color: var(--pa-ok); }
+.status-warning { background: color-mix(in srgb, var(--pa-warning) 18%, transparent); color: var(--pa-warning); }
+.status-failed { background: color-mix(in srgb, var(--pa-danger) 20%, transparent); color: var(--pa-danger); }
+.status-muted { color: var(--pa-text-muted); }
 
 .pa-toast {
   position: fixed;
@@ -3544,6 +3548,115 @@ a.ghost {
 .health-summary dt { color: var(--pa-text-muted); }
 .health-summary dd { margin: 0; text-align: right; }
 
+.attention-card-list {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+.attention-queue-card {
+  display: grid;
+  min-width: 0;
+  gap: 0.38rem;
+  padding: 0.7rem;
+  overflow: hidden;
+  border: 1px solid var(--pa-border);
+  border-left: 3px solid var(--pa-accent);
+  border-radius: 7px;
+  background: var(--pa-surface-raised);
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+.attention-queue-card.attention-attention { border-left-color: var(--pa-danger); }
+.attention-queue-card.attention-outcome { border-left-color: var(--pa-ok); }
+.attention-card-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  color: var(--pa-text-muted);
+  font-size: 0.72rem;
+}
+.attention-card-heading time { min-width: 0; }
+.attention-queue-card h3 {
+  min-width: 0;
+  margin: 0;
+  font-size: 0.98rem;
+  line-height: 1.32;
+}
+.attention-queue-card h3 a {
+  color: var(--pa-text);
+  overflow-wrap: anywhere;
+}
+.attention-card-summary,
+.attention-card-reason {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.attention-card-summary { font-weight: 650; }
+.attention-card-reason {
+  color: var(--pa-text-muted);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+.attention-card-context {
+  margin: 0;
+  color: var(--pa-text-muted);
+  font-size: 0.75rem;
+}
+.attention-card-context > div {
+  display: flex;
+  min-width: 0;
+  gap: 0.35rem;
+}
+.attention-card-context dt { font-weight: 650; }
+.attention-card-context dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.attention-card-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+.attention-card-actions .button { max-width: 100%; }
+.command-section,
+.command-health,
+.command-section .panel-header,
+.command-section .panel-header > div { min-width: 0; }
+.command-section .panel-header { flex-wrap: wrap; }
+.section-route {
+  display: inline-flex;
+  margin-top: 0.75rem;
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+.work-filter-context {
+  margin-bottom: 0.7rem;
+  padding: 0.55rem 0.7rem;
+  border-left: 3px solid var(--pa-accent);
+  background: color-mix(in srgb, var(--pa-accent) 7%, transparent);
+  overflow-wrap: anywhere;
+}
+.card-work-state-heading,
+.card-work-state-context,
+.card-work-state-action {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.card-work-state-heading { justify-content: space-between; }
+.card-live-progress > p { margin: 0; overflow-wrap: anywhere; }
+.card-live-progress > strong { overflow-wrap: anywhere; }
+
 .compact-card-list { display: flex; flex-direction: column; gap: 0.55rem; }
 .compact-card {
   min-width: 0;
@@ -4161,6 +4274,12 @@ a.ghost {
   .inline-form { align-items: stretch; flex-direction: column; }
   .work-filters { grid-template-columns: 1fr; }
   .command-center-grid { grid-template-columns: 1fr; }
+  .attention-card-heading { align-items: flex-start; flex-direction: column; }
+  .attention-card-actions { align-items: stretch; flex-direction: column; }
+  .attention-card-actions > .button,
+  .attention-card-actions > button { width: 100%; justify-content: center; }
+  .compact-card-footer { align-items: flex-start; flex-direction: column; }
+  .compact-card-footer time { margin-left: 0; }
   .new-card-dialog {
     width: 100vw;
     max-width: none;
