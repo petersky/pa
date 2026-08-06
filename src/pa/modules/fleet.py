@@ -5548,7 +5548,7 @@ async def _peer_terminal_repair_evidence(
             ),
             timeout=10.0,
         )
-    except httpx.HTTPError as exc:
+    except (httpx.HTTPError, TimeoutError) as exc:
         raise HTTPException(
             status_code=502,
             detail={

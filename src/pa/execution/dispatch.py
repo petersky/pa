@@ -2508,6 +2508,9 @@ class DispatchStore:
         except the derived write timestamp, and gives the mutator a fresh copy.
         A concurrent lifecycle, completion, progress, provenance, or event write
         therefore fails closed instead of being overwritten.
+        The backing record is compared again after the callback so re-entrant
+        writes during evidence reads are detected for mutating and read-only
+        callbacks alike.
         """
 
         with self._lock:
@@ -2531,8 +2534,25 @@ class DispatchStore:
                 )
             current = self._snapshot(stored)
             changed = mutate(current)
+            latest = self._records.get(expected.dispatch_id)
+            if latest is None:
+                raise DispatchCompareConflict(
+                    dispatch_id=expected.dispatch_id,
+                    changed_fields=["dispatch_id"],
+                )
+            latest_payload = latest.model_dump(mode="json", exclude={"updated_at"})
+            callback_changed_fields = sorted(
+                field
+                for field in set(current_payload) | set(latest_payload)
+                if current_payload.get(field) != latest_payload.get(field)
+            )
+            if callback_changed_fields:
+                raise DispatchCompareConflict(
+                    dispatch_id=expected.dispatch_id,
+                    changed_fields=callback_changed_fields,
+                )
             if changed is False:
-                return self._snapshot(stored)
+                return self._snapshot(latest)
             current.updated_at = datetime.now(UTC)
             self._save(current, durability="full")
             return self._snapshot(self._records[current.dispatch_id])
