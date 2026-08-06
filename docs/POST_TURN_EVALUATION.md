@@ -51,6 +51,18 @@ POST /api/fleet/dispatch-jobs/{dispatch_id}/repair-terminal
 Fleet activity uses acknowledged completion as the effective terminal state
 while retaining any conflicting stored state as a lifecycle diagnostic.
 
+The default repair mode still requires durable completion acknowledgement and
+normalizes to `completed`. A separate
+`abandoned_without_acknowledgement` mode exists for legacy `running` rows
+only. It requires an exact expected state, an operator reason and explicit
+no-outcome-inference confirmation, a canonical Done card, no preserved
+completion envelope, and a missing or terminal linked session with no live ACP
+runtime. Governed records must be repaired on their recorded authority so PA
+can release the reservation through its existing fence. This mode normalizes
+to `cancelled`, leaves completion unacknowledged, preserves all prior evidence,
+and appends the qualifying evidence to lifecycle diagnostics. The operation can
+be peer-routed by supplying `authority_instance_id` to the MCP tool.
+
 Legacy PR discovery accepts only an explicit line such as:
 
 ```text

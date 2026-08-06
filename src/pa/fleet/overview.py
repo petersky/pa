@@ -624,6 +624,10 @@ def _local_activity(ctx: Any) -> dict[str, Any]:
         for item in dispatches
         if (item.get("progress") or {}).get("latest")
         and item.get("state") in active_dispatch_states
+        and (
+            item.get("state") != "running"
+            or item.get("session_id") in prompting_session_ids
+        )
         and not (item.get("dispatch_completion") or {}).get("completed")
     ]
     if structured:

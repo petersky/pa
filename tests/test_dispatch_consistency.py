@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -31,6 +32,7 @@ from pa.modules.fleet import (
     DispatchControlBody,
     DispatchFollowupBody,
     DispatchMaterializeBody,
+    DispatchTerminalRepairBody,
     RemoteAgentStartBody,
     _assert_dispatch_sync_health,
     _expected_goal_dispatch_execution_identity,
@@ -231,6 +233,116 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
                 repaired.lifecycle_inconsistencies[-1]["kind"],
                 "legacy_terminal_record_repaired",
             )
+
+    def test_abandoned_running_repair_is_terminal_audited_and_idempotent(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="target")
+            ledger = DispatchStore(Path(tmp))
+            ledger.put(
+                DispatchRecord(
+                    dispatch_id="dispatch-abandoned",
+                    mutation_id="mutation-abandoned",
+                    card_id="card-done",
+                    authority_instance_id="target",
+                    authority_url="http://target",
+                    target_instance_id="target",
+                    session_id="session-gone",
+                    state="running",
+                )
+            )
+            domain = MagicMock()
+            domain.get_card.return_value = SimpleNamespace(lane=CardLane.DONE)
+            domain.get_session.return_value = SimpleNamespace(status="closed")
+            request = request_for(
+                settings, domain, {"dispatch_store": ledger}
+            )
+            request.headers = {"idempotency-key": "repair-abandoned-1"}
+            body = DispatchTerminalRepairBody(
+                idempotency_key="repair-abandoned-1",
+                mode="abandoned_without_acknowledgement",
+                expected_state="running",
+                reason="Canonical card is Done and the linked session is gone.",
+                confirm_no_outcome_inference=True,
+            )
+
+            with patch("pa.modules.fleet.require_user"):
+                first = repair_terminal_dispatch(
+                    request, "dispatch-abandoned", body
+                )
+                second = repair_terminal_dispatch(
+                    request, "dispatch-abandoned", body
+                )
+
+            self.assertEqual(first["state"], "cancelled")
+            self.assertEqual(second["state"], "cancelled")
+            self.assertFalse(first["dispatch_completion"]["completed"])
+            self.assertIsNone(first["dispatch_completion"]["acknowledged_at"])
+            self.assertFalse(first["agent_turn"]["ended"])
+            repaired = ledger.get("dispatch-abandoned")
+            self.assertFalse(repaired.recoverable)
+            self.assertIsNone(repaired.acknowledged_at)
+            self.assertIsNone(repaired.completion_payload)
+            self.assertIsNone(repaired.completion_delivery_class)
+            diagnostics = [
+                item
+                for item in repaired.lifecycle_inconsistencies
+                if item["kind"] == "legacy_abandoned_dispatch_retired"
+            ]
+            self.assertEqual(len(diagnostics), 1)
+            self.assertFalse(diagnostics[0]["outcome_inferred"])
+            self.assertEqual(
+                diagnostics[0]["evidence"]["session_status"], "closed"
+            )
+            self.assertEqual(
+                ledger.current_card_ids(realm_id="default", limit=10), []
+            )
+            self.assertEqual(
+                ledger.capacity_snapshot("target")["dispatch_reservations"], 0
+            )
+
+    def test_abandoned_running_repair_requires_terminal_session(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="target")
+            ledger = DispatchStore(Path(tmp))
+            ledger.put(
+                DispatchRecord(
+                    dispatch_id="dispatch-live",
+                    mutation_id="mutation-live",
+                    card_id="card-done",
+                    authority_instance_id="target",
+                    authority_url="http://target",
+                    target_instance_id="target",
+                    session_id="session-live",
+                    state="running",
+                )
+            )
+            domain = MagicMock()
+            domain.get_card.return_value = SimpleNamespace(lane=CardLane.DONE)
+            domain.get_session.return_value = SimpleNamespace(status="idle")
+            request = request_for(
+                settings, domain, {"dispatch_store": ledger}
+            )
+            body = DispatchTerminalRepairBody(
+                idempotency_key="repair-live-1",
+                mode="abandoned_without_acknowledgement",
+                expected_state="running",
+                reason="Attempted stale-row repair.",
+                confirm_no_outcome_inference=True,
+            )
+
+            with (
+                patch("pa.modules.fleet.require_user"),
+                self.assertRaises(HTTPException) as raised,
+            ):
+                repair_terminal_dispatch(request, "dispatch-live", body)
+
+            self.assertEqual(raised.exception.status_code, 409)
+            self.assertEqual(
+                raised.exception.detail["code"], "linked_session_not_terminal"
+            )
+            self.assertEqual(ledger.get("dispatch-live").state, "running")
 
 
 class MaterializationTests(unittest.TestCase):

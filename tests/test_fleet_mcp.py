@@ -78,7 +78,7 @@ class FleetMcpTests(unittest.TestCase):
             ["target", "instance_name", "instance_url", "idempotency_key"],
         )
 
-        for name in ("retry_dispatch", "cancel_dispatch"):
+        for name in ("retry_dispatch", "cancel_dispatch", "repair_terminal_dispatch"):
             signature = inspect.signature(self.mcp.functions[name])
             self.assertEqual(
                 list(signature.parameters)[:2], ["dispatch_id", "idempotency_key"]
@@ -185,6 +185,27 @@ class FleetMcpTests(unittest.TestCase):
                 "message": "Continue",
                 "action": "append",
                 "idempotency_key": "prompt-1",
+            },
+        )
+        self.mcp.functions["repair_terminal_dispatch"](
+            "dispatch-1",
+            "repair-1",
+            authority_instance_id="peer",
+            mode="abandoned_without_acknowledgement",
+            expected_state="running",
+            reason="Done card and terminal linked session verified.",
+            confirm_no_outcome_inference=True,
+        )
+        self.local_api.assert_called_with(
+            self.ctx.settings,
+            "POST",
+            "/api/fleet/instances/peer/dispatch-jobs/dispatch-1/repair-terminal",
+            json={
+                "idempotency_key": "repair-1",
+                "mode": "abandoned_without_acknowledgement",
+                "expected_state": "running",
+                "reason": "Done card and terminal linked session verified.",
+                "confirm_no_outcome_inference": True,
             },
         )
 

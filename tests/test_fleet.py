@@ -1474,6 +1474,48 @@ class FleetOverviewTests(unittest.IsolatedAsyncioTestCase):
                 "queued_prompts", activity["capacity_policy"]["does_not_consume"]
             )
 
+    def test_local_activity_ignores_stale_running_dispatch_without_live_turn(
+        self,
+    ) -> None:
+        from pa.fleet.overview import local_dimension
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="local")
+            ctx = MagicMock(settings=settings)
+            stale = MagicMock(
+                state="running",
+                target_instance_id="local",
+                authority_instance_id="local",
+            )
+            stale.public_dict.return_value = {
+                "dispatch_id": "dispatch-stale",
+                "card_id": "card-done",
+                "session_id": "session-gone",
+                "target_instance_id": "local",
+                "authority_instance_id": "local",
+                "state": "running",
+                "progress": {
+                    "latest": {
+                        "phase": "turn_ended",
+                        "summary": "Historical turn output.",
+                    },
+                    "freshness": {"last_activity_at": "2026-08-04T00:00:00Z"},
+                },
+                "dispatch_completion": {"completed": False},
+                "card_reconciliation": {"state": "not_requested"},
+            }
+            dispatch_store = MagicMock()
+            dispatch_store.list.return_value = [stale]
+            ctx.services = {"dispatch_store": dispatch_store}
+            ctx.store.list_sessions_for_workshop.return_value = ([], 0)
+
+            activity = local_dimension(ctx, "activity")
+
+            self.assertEqual(activity["state"], "idle")
+            self.assertIsNone(activity["current_dispatch"])
+            self.assertEqual(activity["capacity"]["consumed"], 0)
+            self.assertEqual(activity["capacity_consumer_links"], [])
+
 
 class FleetUpdateUiTests(unittest.TestCase):
     def test_update_form_uses_peer_track_and_rechecks_selected_channel(self) -> None:
