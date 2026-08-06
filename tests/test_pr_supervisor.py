@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import json
@@ -127,6 +128,12 @@ class PRSupervisorStoreTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_restart_recovers_watch_and_audit(self) -> None:
+        granted = self.store.try_acquire_lease(
+            "watch-1",
+            "instance-a",
+            ttl_seconds=45,
+            capability=self.capability,
+        )
         self.store.append_event(
             PRWatchEvent(
                 watch_id="watch-1",
@@ -139,6 +146,16 @@ class PRSupervisorStoreTests(unittest.TestCase):
         self.assertIsNotNone(recovered)
         self.assertEqual(recovered.repository, "owner/repo")
         self.assertEqual(restarted.list_events("watch-1")[0].event_key, "event-1")
+        reused = restarted.try_acquire_lease(
+            "watch-1",
+            "instance-a",
+            ttl_seconds=45,
+            renewal_window_seconds=12,
+            capability=self.capability,
+        )
+        self.assertEqual(reused.reason, "lease_valid")
+        self.assertEqual(reused.fence_token, granted.fence_token)
+        self.assertEqual(restarted.metrics().get("leases_acquired"), 1)
 
     def test_repository_identity_is_case_insensitive_for_watches_and_capabilities(
         self,
@@ -255,6 +272,51 @@ class PRSupervisorStoreTests(unittest.TestCase):
                 poll_attempt=0,
             )
 
+    def test_same_owner_safe_lease_reacquisition_is_a_no_write(self) -> None:
+        now = utcnow()
+        first = self.store.try_acquire_lease(
+            "watch-1",
+            "instance-a",
+            ttl_seconds=45,
+            now=now,
+            capability=self.capability,
+        )
+        stored = self.store.get_watch("watch-1")
+
+        reused = self.store.try_acquire_lease(
+            "watch-1",
+            "instance-a",
+            ttl_seconds=45,
+            renewal_window_seconds=12,
+            now=now + timedelta(seconds=2),
+            capability=self.capability,
+        )
+        unchanged = self.store.get_watch("watch-1")
+
+        self.assertTrue(reused.acquired)
+        self.assertEqual(reused.reason, "lease_valid")
+        self.assertEqual(reused.fence_token, first.fence_token)
+        self.assertEqual(reused.expires_at, first.expires_at)
+        self.assertEqual(unchanged.updated_at, stored.updated_at)
+        self.assertEqual(unchanged.lease_expires_at, stored.lease_expires_at)
+        self.assertEqual(self.store.metrics().get("leases_acquired"), 1)
+
+    def test_terminal_lease_attempt_is_an_explicit_terminal_noop(self) -> None:
+        terminal = self.store.set_terminal("watch-1", PRWatchStatus.MERGED)
+
+        grant = self.store.try_acquire_lease(
+            "watch-1",
+            "instance-a",
+            capability=self.capability,
+        )
+
+        self.assertFalse(grant.acquired)
+        self.assertEqual(grant.reason, "watch_terminal")
+        self.assertEqual(grant.terminal_status, PRWatchStatus.MERGED)
+        self.assertEqual(
+            self.store.get_watch("watch-1").updated_at, terminal.updated_at
+        )
+
     def test_capability_required_for_lease(self) -> None:
         result = self.store.try_acquire_lease(
             "watch-1",
@@ -263,6 +325,77 @@ class PRSupervisorStoreTests(unittest.TestCase):
         )
         self.assertFalse(result.acquired)
         self.assertEqual(result.reason, "capability_ineligible")
+
+    def test_prepared_effect_blocks_takeover_until_acceptance(self) -> None:
+        now = utcnow()
+        granted = self.store.try_acquire_lease(
+            "watch-1",
+            "instance-a",
+            ttl_seconds=10,
+            now=now,
+            capability=self.capability,
+        )
+        current = self.store.get_watch("watch-1")
+        current.head_sha = "a" * 40
+        current.condition_fingerprint = "green"
+        current.condition_version = 1
+        self.store.upsert_watch(current, preserve_lease=False)
+        bindings = {
+            "realm_id": "default",
+            "watch_id": "watch-1",
+            "repository": "owner/repo",
+            "pr_number": 17,
+            "head_sha": "a" * 40,
+            "condition_fingerprint": "green",
+            "condition_version": 1,
+            "effect_kind": "green_for_agent_merge",
+            "content_digest": "digest",
+            "owner_instance_id": "instance-a",
+            "fence_token": granted.fence_token,
+            "lease_version": granted.lease_version,
+            "target_instance_id": "instance-a",
+            "target_session_id": "session-1",
+            "policy_digest": "policy",
+            "review_hold_version": 0,
+            "issuer_instance_id": "authority",
+        }
+        _, authorization = self.store.prepare_effect_authorization(
+            "watch-1",
+            owner_instance_id="instance-a",
+            fence_token=granted.fence_token,
+            lease_version=granted.lease_version,
+            event_key="effect-1",
+            bindings=bindings,
+            ttl_seconds=20,
+            now=now,
+        )
+
+        blocked = self.store.try_acquire_lease(
+            "watch-1",
+            "instance-b",
+            ttl_seconds=45,
+            now=now + timedelta(seconds=11),
+            capability=GitHubCapability(instance_id="instance-b", authenticated=True),
+        )
+        self.assertFalse(blocked.acquired)
+        self.assertEqual(blocked.reason, "effect_in_progress")
+
+        self.store.finish_effect_authorization(
+            "watch-1",
+            "effect-1",
+            authorization["id"],
+            accepted=True,
+            detail="queued",
+        )
+        takeover = self.store.try_acquire_lease(
+            "watch-1",
+            "instance-b",
+            ttl_seconds=45,
+            now=now + timedelta(seconds=11),
+            capability=GitHubCapability(instance_id="instance-b", authenticated=True),
+        )
+        self.assertTrue(takeover.acquired)
+        self.assertGreater(takeover.fence_token, granted.fence_token)
 
     def test_always_on_authority_continues_after_macbook_lease_ttl(self) -> None:
         """A sleeping former authority cannot retain or reuse its old fence."""
@@ -312,7 +445,7 @@ class PRSupervisorStoreTests(unittest.TestCase):
                 now=now + timedelta(seconds=92),
             )
 
-    def test_idempotent_events_and_dispatch_failure_is_terminal(self) -> None:
+    def test_idempotent_events_and_dispatch_failure_is_retryable(self) -> None:
         event = PRWatchEvent(
             watch_id="watch-1",
             event_key="same",
@@ -337,12 +470,12 @@ class PRSupervisorStoreTests(unittest.TestCase):
             )
         )
         self.store.finish_dispatch("same", state="failed", detail="offline")
-        self.assertFalse(
+        self.assertTrue(
             self.store.claim_dispatch(
                 "same",
                 "watch-1",
-                target_instance_id="instance-b",
-                target_session_id=None,
+                target_instance_id="instance-a",
+                target_session_id="session-1",
             )
         )
 
@@ -847,6 +980,8 @@ class PRSupervisorServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_authority_loss_and_recovery_are_visible(self) -> None:
         service = await self.make_service([snapshot()])
+        clock = [0.0]
+        service._monotonic = lambda: clock[0]
         self.settings.pr_supervisor_authority_url = "http://always-on-mini"
         self.settings.fleet_owner_url = "http://sleeping-macbook"
         service._post_json = AsyncMock(side_effect=httpx.ConnectError("offline"))
@@ -861,8 +996,11 @@ class PRSupervisorServiceTests(unittest.IsolatedAsyncioTestCase):
                 owner_instance_id="instance-a",
                 fence_token=9,
                 expires_at=utcnow() + timedelta(seconds=45),
+                lease_seconds_remaining=45,
+                protocol_version=2,
             ).model_dump(mode="json")
         )
+        clock[0] = 10.0
         recovered = await service._acquire_lease(
             self.store.get_watch("watch-1"), service.capability
         )
@@ -871,6 +1009,752 @@ class PRSupervisorServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(health["state"], "ready")
         self.assertEqual(health["authority_url"], "http://always-on-mini")
         self.assertIsNotNone(health["last_authority_success_at"])
+
+    async def test_partition_failures_back_off_without_rewriting_each_loop(
+        self,
+    ) -> None:
+        service = await self.make_service([snapshot()])
+        self.settings.pr_supervisor_authority_url = "http://authority"
+        clock = [0.0]
+        service._monotonic = lambda: clock[0]
+        service._post_json = AsyncMock(side_effect=httpx.ConnectError("partition"))
+
+        first = await service._acquire_lease(
+            self.store.get_watch("watch-1"), service.capability
+        )
+        failed = self.store.get_watch("watch-1")
+        second = await service._acquire_lease(failed, service.capability)
+
+        self.assertEqual(first.reason, "authority_unavailable")
+        self.assertEqual(second.reason, "lease_backoff")
+        service._post_json.assert_awaited_once()
+        self.assertEqual(self.store.get_watch("watch-1").updated_at, failed.updated_at)
+
+    async def test_delayed_concurrent_renewals_are_coalesced(self) -> None:
+        service = await self.make_service([snapshot()])
+        self.settings.pr_supervisor_authority_url = "http://authority"
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def delayed_post(_url, _payload):
+            started.set()
+            await release.wait()
+            return LeaseGrant(
+                acquired=True,
+                owner_instance_id="instance-a",
+                fence_token=7,
+                expires_at=utcnow() + timedelta(seconds=45),
+                lease_seconds_remaining=45,
+            ).model_dump(mode="json")
+
+        service._post_json = AsyncMock(side_effect=delayed_post)
+        current = self.store.get_watch("watch-1")
+        first = asyncio.create_task(service._acquire_lease(current, service.capability))
+        await started.wait()
+        second = asyncio.create_task(
+            service._acquire_lease(current, service.capability)
+        )
+        await asyncio.sleep(0)
+        release.set()
+
+        first_grant, second_grant = await asyncio.gather(first, second)
+
+        self.assertEqual(first_grant.fence_token, second_grant.fence_token)
+        service._post_json.assert_awaited_once()
+        self.assertEqual(service._lease_inflight, {})
+
+    async def test_process_pause_renews_instead_of_reusing_expired_grant(self) -> None:
+        service = await self.make_service([snapshot()])
+        self.settings.pr_supervisor_authority_url = "http://authority"
+        clock = [0.0]
+        service._monotonic = lambda: clock[0]
+        service._post_json = AsyncMock(
+            side_effect=[
+                LeaseGrant(
+                    acquired=True,
+                    owner_instance_id="instance-a",
+                    fence_token=3,
+                    expires_at=utcnow() + timedelta(seconds=45),
+                    lease_seconds_remaining=45,
+                ).model_dump(mode="json"),
+                LeaseGrant(
+                    acquired=True,
+                    owner_instance_id="instance-a",
+                    fence_token=4,
+                    expires_at=utcnow() + timedelta(seconds=45),
+                    lease_seconds_remaining=45,
+                ).model_dump(mode="json"),
+            ]
+        )
+
+        first = await service._acquire_lease(
+            self.store.get_watch("watch-1"), service.capability
+        )
+        clock[0] = 60.0
+        renewed = await service._acquire_lease(
+            self.store.get_watch("watch-1"), service.capability
+        )
+
+        self.assertEqual(first.fence_token, 3)
+        self.assertEqual(renewed.fence_token, 4)
+        self.assertEqual(service._post_json.await_count, 2)
+
+    async def test_delayed_observation_cannot_write_after_takeover(self) -> None:
+        service = await self.make_service([snapshot()])
+        self.settings.pr_supervisor_authority_url = "http://authority"
+        clock = [0.0]
+        service._monotonic = lambda: clock[0]
+
+        async def delayed_snapshot(*_args, **_kwargs):
+            clock[0] = 50.0
+            return snapshot()
+
+        service.github.snapshot = AsyncMock(side_effect=delayed_snapshot)
+        service._post_json = AsyncMock(
+            side_effect=[
+                LeaseGrant(
+                    acquired=True,
+                    owner_instance_id="instance-a",
+                    fence_token=1,
+                    expires_at=utcnow() + timedelta(seconds=45),
+                    lease_seconds_remaining=45,
+                ).model_dump(mode="json"),
+                LeaseGrant(
+                    acquired=False,
+                    owner_instance_id="instance-b",
+                    fence_token=2,
+                    expires_at=utcnow() + timedelta(seconds=30),
+                    reason="owned",
+                    lease_seconds_remaining=30,
+                ).model_dump(mode="json"),
+            ]
+        )
+
+        await service.run_once()
+
+        stale = self.store.get_watch("watch-1")
+        self.assertIsNone(stale.head_sha)
+        self.assertIsNone(stale.condition_fingerprint)
+        self.assertEqual(service._post_json.await_count, 2)
+        self.assertFalse(self.dispatcher.calls)
+
+    async def test_authority_change_invalidates_a_safe_local_grant(self) -> None:
+        service = await self.make_service([snapshot()])
+        self.settings.pr_supervisor_authority_url = "http://authority-a"
+        clock = [0.0]
+        service._monotonic = lambda: clock[0]
+        service._post_json = AsyncMock(
+            return_value=LeaseGrant(
+                acquired=True,
+                owner_instance_id="instance-a",
+                fence_token=5,
+                expires_at=utcnow() + timedelta(seconds=45),
+                lease_seconds_remaining=45,
+            ).model_dump(mode="json")
+        )
+
+        await service._acquire_lease(
+            self.store.get_watch("watch-1"), service.capability
+        )
+        self.settings.pr_supervisor_authority_url = "http://authority-b"
+        clock[0] = 1.0
+        await service._acquire_lease(
+            self.store.get_watch("watch-1"), service.capability
+        )
+
+        self.assertEqual(service._post_json.await_count, 2)
+        self.assertTrue(
+            service._post_json.await_args_list[0]
+            .args[0]
+            .startswith("http://authority-a/")
+        )
+        self.assertTrue(
+            service._post_json.await_args_list[1]
+            .args[0]
+            .startswith("http://authority-b/")
+        )
+
+    async def test_clock_skew_uses_authority_duration_for_renewal_and_fencing(
+        self,
+    ) -> None:
+        service = await self.make_service([snapshot()])
+        self.settings.pr_supervisor_authority_url = "http://authority"
+        clock = [0.0]
+        service._monotonic = lambda: clock[0]
+        skewed_expiry = utcnow() + timedelta(hours=5)
+        service._post_json = AsyncMock(
+            return_value=LeaseGrant(
+                acquired=True,
+                owner_instance_id="instance-a",
+                fence_token=6,
+                expires_at=skewed_expiry,
+                lease_seconds_remaining=45,
+            ).model_dump(mode="json")
+        )
+
+        await service._acquire_lease(
+            self.store.get_watch("watch-1"), service.capability
+        )
+        local = self.store.get_watch("watch-1")
+        self.assertLess((local.lease_expires_at - utcnow()).total_seconds(), 60)
+        clock[0] = 40.0
+        await service._acquire_lease(local, service.capability)
+
+        self.assertEqual(service._post_json.await_count, 2)
+
+    async def test_remote_retirement_sync_removes_all_local_lease_state(self) -> None:
+        service = await self.make_service([snapshot()])
+        self.settings.pr_supervisor_authority_url = "http://authority"
+        service._post_json = AsyncMock(
+            return_value=LeaseGrant(
+                acquired=True,
+                owner_instance_id="instance-a",
+                fence_token=8,
+                expires_at=utcnow() + timedelta(seconds=45),
+                lease_seconds_remaining=45,
+            ).model_dump(mode="json")
+        )
+        await service._acquire_lease(
+            self.store.get_watch("watch-1"), service.capability
+        )
+        service._lease_retry_at["watch-1"] = service._monotonic() + 100
+
+        replica = self.store.get_watch("watch-1")
+        replica.status = PRWatchStatus.RETIRED
+        replica.retired_at = utcnow()
+        replica.updated_at = utcnow() + timedelta(seconds=1)
+        terminal = self.store.upsert_watch(replica, preserve_lease=True)
+        service.watch_state_changed(terminal)
+        attempts = service._post_json.await_count
+        result = await service._acquire_lease(terminal, service.capability)
+
+        self.assertEqual(result.reason, "watch_terminal")
+        self.assertEqual(service._post_json.await_count, attempts)
+        self.assertEqual(service._local_leases, {})
+        self.assertEqual(service._lease_retry_at, {})
+        self.assertEqual(service._lease_inflight, {})
+
+    async def test_remote_retirement_cancels_an_inflight_renewal_task(self) -> None:
+        service = await self.make_service([snapshot()])
+        self.settings.pr_supervisor_authority_url = "http://authority"
+        started = asyncio.Event()
+
+        async def delayed_post(_url, _payload):
+            started.set()
+            await asyncio.Event().wait()
+
+        service._post_json = AsyncMock(side_effect=delayed_post)
+        pending = asyncio.create_task(
+            service._acquire_lease(self.store.get_watch("watch-1"), service.capability)
+        )
+        await started.wait()
+
+        terminal = self.store.set_terminal("watch-1", PRWatchStatus.RETIRED)
+        service.watch_state_changed(terminal)
+        result = await pending
+
+        self.assertEqual(result.reason, "watch_inactive")
+        self.assertEqual(service._local_leases, {})
+        self.assertEqual(service._lease_retry_at, {})
+        self.assertEqual(service._lease_inflight, {})
+
+    async def test_long_poll_interval_does_not_delay_lease_renewal(self) -> None:
+        service = await self.make_service([snapshot()])
+        self.settings.pr_supervisor_authority_url = "http://authority"
+        clock = [0.0]
+        service._monotonic = lambda: clock[0]
+        grant = LeaseGrant(
+            acquired=True,
+            owner_instance_id="instance-a",
+            fence_token=10,
+            expires_at=utcnow() + timedelta(seconds=45),
+            lease_seconds_remaining=45,
+        ).model_dump(mode="json")
+        service._post_json = AsyncMock(return_value=grant)
+
+        await service._acquire_lease(
+            self.store.get_watch("watch-1"), service.capability
+        )
+        current = self.store.get_watch("watch-1")
+        current.next_poll_at = utcnow() + timedelta(minutes=5)
+        self.store.upsert_watch(current, preserve_lease=False)
+        clock[0] = 40.0
+
+        await service._renew_due_local_leases(service.capability)
+
+        self.assertEqual(service._post_json.await_count, 2)
+
+    async def test_terminal_authority_response_stops_future_attempts(self) -> None:
+        service = await self.make_service([snapshot()])
+        self.settings.pr_supervisor_authority_url = "http://authority"
+        service._post_json = AsyncMock(
+            return_value=LeaseGrant(
+                acquired=False,
+                fence_token=9,
+                reason="watch_terminal",
+                terminal_status=PRWatchStatus.MERGED,
+            ).model_dump(mode="json")
+        )
+
+        result = await service._acquire_lease(
+            self.store.get_watch("watch-1"), service.capability
+        )
+        terminal = self.store.get_watch("watch-1")
+        repeated = await service._acquire_lease(terminal, service.capability)
+
+        self.assertEqual(result.reason, "watch_terminal")
+        self.assertEqual(repeated.reason, "watch_terminal")
+        self.assertEqual(terminal.status, PRWatchStatus.MERGED)
+        self.assertEqual(terminal.fence_token, 9)
+        self.assertIsNotNone(terminal.retired_at)
+        service._post_json.assert_awaited_once()
+        self.assertEqual(service._local_leases, {})
+        self.assertEqual(service._lease_inflight, {})
+
+    async def test_six_watches_stay_below_thirty_fleet_requests_per_minute(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            authority = PRSupervisorStore(root / "authority.db")
+            watch_ids: list[str] = []
+            for index in range(6):
+                candidate = watch().model_copy(
+                    update={
+                        "id": f"watch-{index}",
+                        "pr_number": 100 + index,
+                        "pr_url": f"https://github.com/owner/repo/pull/{100 + index}",
+                    }
+                )
+                authority.upsert_watch(candidate)
+                watch_ids.append(candidate.id)
+
+            clock = [0.0]
+            base = utcnow()
+            requests = [0]
+            services: list[
+                tuple[PRSupervisor, PRSupervisorStore, GitHubCapability]
+            ] = []
+
+            for worker_index in range(3):
+                instance_id = f"worker-{worker_index}"
+                local_store = PRSupervisorStore(root / f"{instance_id}.db")
+                for watch_id in watch_ids:
+                    local_store.upsert_watch(authority.get_watch(watch_id))
+                settings = Settings(
+                    data_dir=root / instance_id,
+                    instance_id=instance_id,
+                    instance_url=f"http://{instance_id}",
+                    fleet_owner_url="http://authority",
+                    peers=[],
+                )
+                service = PRSupervisor(
+                    settings,
+                    MagicMock(),
+                    supervisor_store=local_store,
+                    github_client=_FakeGitHub([]),
+                    dispatcher=self.dispatcher,
+                    rng=random.Random(worker_index),
+                )
+                service._monotonic = lambda: clock[0]
+                capability = GitHubCapability(
+                    instance_id=instance_id, authenticated=True
+                )
+
+                async def authority_post(_url, payload):
+                    requests[0] += 1
+                    grant = authority.try_acquire_lease(
+                        payload["watch"]["id"],
+                        payload["instance_id"],
+                        ttl_seconds=payload["ttl_seconds"],
+                        renewal_window_seconds=payload["renewal_window_seconds"],
+                        now=base + timedelta(seconds=clock[0]),
+                        capability=GitHubCapability.model_validate(
+                            payload["capability"]
+                        ),
+                    )
+                    return grant.model_dump(mode="json")
+
+                service._post_json = authority_post
+                services.append((service, local_store, capability))
+
+            try:
+                for second in range(0, 121, 2):
+                    clock[0] = float(second)
+                    for service, local_store, capability in services:
+                        for watch_id in watch_ids:
+                            await service._acquire_lease(
+                                local_store.get_watch(watch_id), capability
+                            )
+                    if second == 60:
+                        requests[0] = 0
+
+                self.assertLessEqual(requests[0], 30)
+                for watch_id in watch_ids:
+                    durable = authority.get_watch(watch_id)
+                    self.assertEqual(durable.owner_instance_id, "worker-0")
+                    self.assertEqual(durable.fence_token, 1)
+            finally:
+                for service, _, _ in services:
+                    await service.stop()
+
+    async def test_twenty_second_response_delay_expires_cache_conservatively(
+        self,
+    ) -> None:
+        service = await self.make_service([snapshot()])
+        self.settings.pr_supervisor_authority_url = "http://authority"
+        clock = [0.0]
+        service._monotonic = lambda: clock[0]
+
+        async def delayed_grant(_url, _payload):
+            clock[0] = 20.0
+            return LeaseGrant(
+                acquired=True,
+                owner_instance_id="instance-a",
+                fence_token=1,
+                lease_version=1,
+                expires_at=utcnow() + timedelta(hours=5),
+                lease_seconds_remaining=45,
+                protocol_version=2,
+            ).model_dump(mode="json")
+
+        service._post_json = AsyncMock(side_effect=delayed_grant)
+        grant = await service._acquire_lease(
+            self.store.get_watch("watch-1"), service.capability
+        )
+
+        self.assertTrue(grant.acquired)
+        cached = service._local_leases["watch-1"]
+        self.assertEqual(cached.expires_at, 43.0)
+        self.assertLessEqual(
+            (
+                self.store.get_watch("watch-1").lease_expires_at - utcnow()
+            ).total_seconds(),
+            23,
+        )
+        clock[0] = 44.0
+        await service._acquire_lease(
+            self.store.get_watch("watch-1"), service.capability
+        )
+        self.assertEqual(service._post_json.await_count, 2)
+
+    async def test_legacy_wall_clock_grant_is_never_cached(self) -> None:
+        service = await self.make_service([snapshot()])
+        self.settings.pr_supervisor_authority_url = "http://legacy-authority"
+        service._post_json = AsyncMock(
+            return_value={
+                "acquired": True,
+                "owner_instance_id": "instance-a",
+                "fence_token": 1,
+                "expires_at": (utcnow() + timedelta(hours=5)).isoformat(),
+            }
+        )
+
+        grant = await service._acquire_lease(
+            self.store.get_watch("watch-1"), service.capability
+        )
+
+        self.assertFalse(grant.acquired)
+        self.assertEqual(grant.reason, "legacy_grant_uncacheable")
+        self.assertEqual(service._local_leases, {})
+        current = self.store.get_watch("watch-1")
+        self.assertIsNone(current.owner_instance_id)
+        self.assertIsNone(current.lease_expires_at)
+
+    async def test_cancelled_waiter_does_not_cancel_coalesced_renewal(self) -> None:
+        service = await self.make_service([snapshot()])
+        self.settings.pr_supervisor_authority_url = "http://authority"
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def delayed_grant(_url, _payload):
+            started.set()
+            await release.wait()
+            return LeaseGrant(
+                acquired=True,
+                owner_instance_id="instance-a",
+                fence_token=4,
+                lease_version=1,
+                lease_seconds_remaining=45,
+                protocol_version=2,
+            ).model_dump(mode="json")
+
+        service._post_json = AsyncMock(side_effect=delayed_grant)
+        current = self.store.get_watch("watch-1")
+        cancelled = asyncio.create_task(
+            service._acquire_lease(current, service.capability)
+        )
+        await started.wait()
+        survivor = asyncio.create_task(
+            service._acquire_lease(current, service.capability)
+        )
+        cancelled.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await cancelled
+        release.set()
+
+        grant = await survivor
+        await asyncio.sleep(0)
+        self.assertTrue(grant.acquired)
+        service._post_json.assert_awaited_once()
+        self.assertEqual(service._lease_inflight, {})
+
+    async def test_active_takeover_replica_invalidates_cached_generation(self) -> None:
+        service = await self.make_service([snapshot()])
+        self.settings.pr_supervisor_authority_url = "http://authority"
+        service._post_json = AsyncMock(
+            return_value=LeaseGrant(
+                acquired=True,
+                owner_instance_id="instance-a",
+                fence_token=1,
+                lease_version=1,
+                lease_seconds_remaining=45,
+                protocol_version=2,
+            ).model_dump(mode="json")
+        )
+        await service._acquire_lease(
+            self.store.get_watch("watch-1"), service.capability
+        )
+
+        replica = self.store.get_watch("watch-1")
+        replica.owner_instance_id = "instance-b"
+        replica.fence_token = 2
+        replica.lease_version = 2
+        replica.lease_expires_at = utcnow() + timedelta(seconds=45)
+        replica.updated_at = utcnow() + timedelta(seconds=1)
+        changed = self.store.upsert_watch(replica, preserve_lease=True)
+        service.watch_state_changed(changed)
+
+        self.assertEqual(service._local_leases, {})
+        self.assertEqual(service._lease_inflight, {})
+        self.assertEqual(changed.owner_instance_id, "instance-b")
+        self.assertEqual(changed.fence_token, 2)
+        self.assertEqual(changed.lease_version, 2)
+
+    async def test_operator_refresh_cancels_and_resets_all_lease_state(self) -> None:
+        service = await self.make_service([snapshot()])
+        self.settings.pr_supervisor_authority_url = "http://authority"
+        started = asyncio.Event()
+
+        async def blocked(_url, _payload):
+            started.set()
+            await asyncio.Event().wait()
+
+        service._post_json = AsyncMock(side_effect=blocked)
+        service._replicate = AsyncMock()
+        pending = asyncio.create_task(
+            service._acquire_lease(self.store.get_watch("watch-1"), service.capability)
+        )
+        await started.wait()
+        service._lease_retry_at["watch-1"] = service._monotonic() + 300
+        service._lease_failure_attempts["watch-1"] = 4
+        service._lease_suppressed["watch-1"] = "capability_ineligible"
+
+        refreshed = await service.refresh_watch("watch-1")
+        stopped = await pending
+
+        self.assertIsNotNone(refreshed)
+        self.assertEqual(stopped.reason, "watch_inactive")
+        self.assertEqual(service._local_leases, {})
+        self.assertEqual(service._lease_retry_at, {})
+        self.assertEqual(service._lease_failure_attempts, {})
+        self.assertEqual(service._lease_suppressed, {})
+        self.assertEqual(service._lease_inflight, {})
+
+    async def test_structured_422_terminal_rejection_stops_remote_renewer(
+        self,
+    ) -> None:
+        service = await self.make_service([snapshot()])
+        self.settings.pr_supervisor_authority_url = "http://authority"
+        requests = [0]
+
+        def reject_terminal(_request: httpx.Request) -> httpx.Response:
+            requests[0] += 1
+            return httpx.Response(
+                422,
+                json={
+                    "detail": {
+                        "code": "watch_terminal",
+                        "terminal_status": "closed",
+                        "fence_token": 12,
+                        "lease_version": 5,
+                        "protocol_version": 2,
+                    }
+                },
+            )
+
+        prior_client = service.http_client
+        service.http_client = httpx.AsyncClient(
+            transport=httpx.MockTransport(reject_terminal)
+        )
+        try:
+            first = await service._acquire_lease(
+                self.store.get_watch("watch-1"), service.capability
+            )
+            terminal = self.store.get_watch("watch-1")
+            second = await service._acquire_lease(terminal, service.capability)
+        finally:
+            await service.http_client.aclose()
+            service.http_client = prior_client
+
+        self.assertEqual(first.reason, "watch_terminal")
+        self.assertEqual(second.reason, "watch_terminal")
+        self.assertEqual(requests[0], 1)
+        self.assertEqual(terminal.status, PRWatchStatus.CLOSED)
+        self.assertEqual(service.authority_health()["active_renewers"], 0)
+        self.assertEqual(service.authority_health()["retrying_renewers"], [])
+
+    async def test_cached_grant_keeps_sqlite_and_audit_flat_between_windows(
+        self,
+    ) -> None:
+        service = await self.make_service([snapshot()])
+        self.settings.pr_supervisor_authority_url = "http://authority"
+        clock = [0.0]
+        service._monotonic = lambda: clock[0]
+        service._post_json = AsyncMock(
+            return_value=LeaseGrant(
+                acquired=True,
+                owner_instance_id="instance-a",
+                fence_token=3,
+                lease_version=1,
+                lease_seconds_remaining=45,
+                protocol_version=2,
+            ).model_dump(mode="json")
+        )
+        await service._acquire_lease(
+            self.store.get_watch("watch-1"), service.capability
+        )
+        durable = self.store.get_watch("watch-1")
+        updated_at = durable.updated_at
+        events = self.store.list_events("watch-1")
+
+        for second in range(2, 30, 2):
+            clock[0] = float(second)
+            await service._acquire_lease(
+                self.store.get_watch("watch-1"), service.capability
+            )
+
+        service._post_json.assert_awaited_once()
+        self.assertEqual(self.store.get_watch("watch-1").updated_at, updated_at)
+        self.assertEqual(self.store.list_events("watch-1"), events)
+
+    async def test_authority_ineligible_response_suppresses_until_refresh(self) -> None:
+        service = await self.make_service([snapshot()])
+        self.settings.pr_supervisor_authority_url = "http://authority"
+        service._post_json = AsyncMock(
+            return_value=LeaseGrant(
+                acquired=False,
+                reason="capability_ineligible",
+                protocol_version=2,
+            ).model_dump(mode="json")
+        )
+
+        first = await service._acquire_lease(
+            self.store.get_watch("watch-1"), service.capability
+        )
+        second = await service._acquire_lease(
+            self.store.get_watch("watch-1"), service.capability
+        )
+
+        self.assertEqual(first.reason, "capability_ineligible")
+        self.assertEqual(second.reason, "capability_ineligible")
+        service._post_json.assert_awaited_once()
+        self.assertEqual(service.authority_health()["active_renewers"], 0)
+        self.assertEqual(
+            service.authority_health()["stopped_renewers"][0]["watch_id"],
+            "watch-1",
+        )
+
+    async def test_green_prompt_has_accepted_semantic_authorization(self) -> None:
+        service = await self.make_service([snapshot()])
+
+        await service.run_once()
+
+        current = self.store.get_watch("watch-1")
+        authorizations = current.state["effect_authorizations"]
+        self.assertEqual(len(authorizations), 1)
+        authorization = next(iter(authorizations.values()))
+        self.assertEqual(authorization["state"], "accepted")
+        self.assertEqual(authorization["realm_id"], current.realm_id)
+        self.assertEqual(authorization["repository"], current.repository)
+        self.assertEqual(authorization["pr_number"], current.pr_number)
+        self.assertEqual(authorization["head_sha"], current.head_sha)
+        self.assertEqual(
+            authorization["condition_fingerprint"],
+            current.condition_fingerprint,
+        )
+        self.assertEqual(authorization["fence_token"], current.fence_token)
+        self.assertEqual(authorization["lease_version"], current.lease_version)
+        self.assertEqual(authorization["target_instance_id"], "instance-a")
+        self.assertEqual(authorization["target_session_id"], "session-1")
+        self.assertEqual(len(authorization["content_digest"]), 64)
+        self.assertEqual(len(authorization["policy_digest"]), 64)
+
+    async def test_takeover_during_audit_prevents_external_effect(self) -> None:
+        service = await self.make_service([snapshot()])
+        original_audit = service._audit
+
+        async def audit_with_takeover(watched, event_type, event_key, **kwargs):
+            result = await original_audit(watched, event_type, event_key, **kwargs)
+            if event_type == "green_for_agent_merge":
+                current = self.store.get_watch(watched.id)
+                current.owner_instance_id = "instance-b"
+                current.fence_token += 1
+                current.lease_version += 1
+                current.lease_expires_at = utcnow() + timedelta(seconds=45)
+                self.store.upsert_watch(current, preserve_lease=False)
+            return result
+
+        service._audit = AsyncMock(side_effect=audit_with_takeover)
+
+        await service.run_once()
+
+        self.assertEqual(self.dispatcher.calls, [])
+        self.assertEqual(
+            self.store.get_watch("watch-1").owner_instance_id, "instance-b"
+        )
+
+    async def test_failed_effect_acceptance_can_retry_same_event(self) -> None:
+        service = await self.make_service([snapshot(), snapshot()])
+        failing = SimpleNamespace(dispatch=AsyncMock(side_effect=["failed", "queued"]))
+        service.dispatcher = failing
+
+        await service.run_once()
+        self.store.schedule_now(watch_id="watch-1")
+        await service.run_once()
+
+        self.assertEqual(failing.dispatch.await_count, 2)
+        current = self.store.get_watch("watch-1")
+        authorization = next(iter(current.state["effect_authorizations"].values()))
+        self.assertEqual(authorization["state"], "accepted")
+
+    async def test_replication_failure_prevents_effect_acceptance(self) -> None:
+        service = await self.make_service([snapshot()])
+        self.settings.peers = ["http://unavailable-peer"]
+        service._post_json = AsyncMock(side_effect=RuntimeError("partition"))
+
+        await service.run_once()
+
+        self.assertEqual(self.dispatcher.calls, [])
+        current = self.store.get_watch("watch-1")
+        authorization = next(iter(current.state["effect_authorizations"].values()))
+        self.assertEqual(authorization["state"], "failed")
+        self.assertEqual(authorization["result"], "replication_unavailable")
+
+    async def test_effect_upgrade_gate_reports_legacy_peer(self) -> None:
+        service = await self.make_service([snapshot()])
+        self.store.save_capability(
+            GitHubCapability(
+                instance_id="legacy-peer",
+                pr_watch_protocol_version=1,
+                authenticated=True,
+            )
+        )
+
+        health = service.authority_health()
+
+        self.assertFalse(health["coordinated_upgrade_ready"])
+        self.assertEqual(health["incompatible_effect_instances"], ["legacy-peer"])
 
     async def test_merged_pr_without_stable_green_waits_and_retires_watch(self) -> None:
         merged = snapshot(
@@ -1097,9 +1981,7 @@ class PRSupervisorServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(migrated.project_id, card.project_id)
         self.assertIsNone(migrated.originating_session_id)
         self.assertEqual(migrated.provenance_version, 1)
-        self.assertEqual(
-            migrated.creation_reason, "legacy_explicit_integration_intent"
-        )
+        self.assertEqual(migrated.creation_reason, "legacy_explicit_integration_intent")
         self.assertEqual(migrated.qualifying_evidence, card.body)
 
     async def test_migration_ignores_upstream_pr_citations_without_intent(self) -> None:
@@ -1751,6 +2633,24 @@ class PRSupervisorApiAndMcpTests(unittest.TestCase):
                 },
             )
             self.assertEqual(remote_lease.status_code, 200, remote_lease.text)
+            supervisor_store = app.state.ctx.require_service("pr_supervisor_store")
+            leased = supervisor_store.get_watch(remote.json()["id"])
+            repeated_lease = client.post(
+                f"/api/pr-supervisor/watches/{remote.json()['id']}/lease",
+                headers=headers,
+                json={
+                    "watch": remote.json(),
+                    "instance_id": self.settings.instance_id,
+                    "capability": {
+                        "instance_id": self.settings.instance_id,
+                        "authenticated": True,
+                    },
+                },
+            )
+            unchanged = supervisor_store.get_watch(remote.json()["id"])
+            self.assertEqual(repeated_lease.json()["reason"], "lease_valid")
+            self.assertEqual(unchanged.updated_at, leased.updated_at)
+            self.assertEqual(unchanged.lease_expires_at, leased.lease_expires_at)
 
             legacy = PRWatch(
                 id="legacy-corrupt-watch",

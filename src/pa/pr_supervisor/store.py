@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
+from uuid import uuid4
 
 from pa.pr_supervisor.models import (
     GITHUB_TERMINAL_PR_WATCH_STATUSES,
@@ -86,6 +88,7 @@ class PRSupervisorStore:
                     status TEXT NOT NULL DEFAULT 'active',
                     owner_instance_id TEXT,
                     fence_token INTEGER NOT NULL DEFAULT 0,
+                    lease_version INTEGER NOT NULL DEFAULT 0,
                     lease_expires_at TEXT,
                     state_json TEXT NOT NULL DEFAULT '{}',
                     condition_fingerprint TEXT,
@@ -157,6 +160,7 @@ class PRSupervisorStore:
                 ("provenance_version", "INTEGER NOT NULL DEFAULT 0"),
                 ("creation_reason", "TEXT"),
                 ("qualifying_evidence", "TEXT"),
+                ("lease_version", "INTEGER NOT NULL DEFAULT 0"),
             ):
                 if column not in columns:
                     conn.execute(
@@ -198,16 +202,21 @@ class PRSupervisorStore:
                     )
                 )
                 if skip_replica_state:
-                    if watch.fence_token <= existing.fence_token:
+                    if (watch.fence_token, watch.lease_version) <= (
+                        existing.fence_token,
+                        existing.lease_version,
+                    ):
                         return existing
                     # The replica's state is stale, but its fence generation is
                     # independently monotonic and must still advance the next
                     # authority's baseline.
                     replica_owner = watch.owner_instance_id
                     replica_fence = watch.fence_token
+                    replica_version = watch.lease_version
                     replica_expiry = watch.lease_expires_at
                     watch = existing.model_copy(deep=True)
                     watch.fence_token = replica_fence
+                    watch.lease_version = replica_version
                     if watch.terminal:
                         watch.owner_instance_id = None
                         watch.lease_expires_at = None
@@ -216,14 +225,17 @@ class PRSupervisorStore:
                         watch.lease_expires_at = replica_expiry
                 watch.id = existing.id
                 watch.created_at = existing.created_at
-                if preserve_lease:
+                if preserve_lease and (
+                    existing.fence_token,
+                    existing.lease_version,
+                ) >= (watch.fence_token, watch.lease_version):
                     # Replicas form the next authority's durable fence baseline.
                     # Never decrease a token; carry owner/expiry from whichever
                     # record owns the greatest observed fencing generation.
-                    if existing.fence_token >= watch.fence_token:
-                        watch.owner_instance_id = existing.owner_instance_id
-                        watch.fence_token = existing.fence_token
-                        watch.lease_expires_at = existing.lease_expires_at
+                    watch.owner_instance_id = existing.owner_instance_id
+                    watch.fence_token = existing.fence_token
+                    watch.lease_version = existing.lease_version
+                    watch.lease_expires_at = existing.lease_expires_at
                 if not watch.head_sha:
                     watch.head_sha = existing.head_sha
                 if not watch.state:
@@ -255,7 +267,7 @@ class PRSupervisorStore:
                     originating_agent, executor_cwd, provenance_version,
                     creation_reason, qualifying_evidence,
                     policy_json, required_capabilities_json, status,
-                    owner_instance_id, fence_token, lease_expires_at, state_json,
+                    owner_instance_id, fence_token, lease_version, lease_expires_at, state_json,
                     condition_fingerprint, condition_version, stable_head_since,
                     stable_head_observations, next_poll_at, poll_attempt,
                     last_error, created_at, updated_at, retired_at
@@ -263,7 +275,7 @@ class PRSupervisorStore:
                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?
                 )
                 """,
                 self._watch_values(watch),
@@ -297,6 +309,7 @@ class PRSupervisorStore:
             watch.status.value,
             watch.owner_instance_id,
             watch.fence_token,
+            watch.lease_version,
             watch.lease_expires_at.isoformat() if watch.lease_expires_at else None,
             json.dumps(watch.state),
             watch.condition_fingerprint,
@@ -506,6 +519,7 @@ class PRSupervisorStore:
         instance_id: str,
         *,
         ttl_seconds: int = 45,
+        renewal_window_seconds: int = 12,
         now: datetime | None = None,
         capability: GitHubCapability | None = None,
     ) -> LeaseGrant:
@@ -518,6 +532,15 @@ class PRSupervisorStore:
             if not row:
                 return LeaseGrant(acquired=False, reason="watch_not_found")
             watch = self._row_to_watch(row)
+            if watch.terminal or watch.retired_at is not None:
+                return LeaseGrant(
+                    acquired=False,
+                    fence_token=watch.fence_token,
+                    lease_version=watch.lease_version,
+                    reason="watch_terminal",
+                    terminal_status=watch.status,
+                    protocol_version=2,
+                )
             if watch.status not in {PRWatchStatus.ACTIVE, PRWatchStatus.BLOCKED}:
                 return LeaseGrant(acquired=False, reason="watch_inactive")
             if capability and not capability.supports(watch.repository):
@@ -527,27 +550,90 @@ class PRSupervisorStore:
                 and watch.lease_expires_at
                 and watch.lease_expires_at > now
             )
+            remaining = (
+                max(0.0, (watch.lease_expires_at - now).total_seconds())
+                if lease_active and watch.lease_expires_at
+                else 0.0
+            )
+            guards = watch.state.get("effect_authorizations") or {}
+            effect_remaining = max(
+                (
+                    max(
+                        0.0,
+                        (
+                            datetime.fromisoformat(str(guard["expires_at"])) - now
+                        ).total_seconds(),
+                    )
+                    for guard in guards.values()
+                    if isinstance(guard, dict)
+                    and guard.get("state") == "prepared"
+                    and guard.get("owner_instance_id") == watch.owner_instance_id
+                    and int(guard.get("fence_token") or -1) == watch.fence_token
+                    and int(guard.get("lease_version") or -1) == watch.lease_version
+                    and guard.get("head_sha") == watch.head_sha
+                    and guard.get("condition_fingerprint")
+                    == watch.condition_fingerprint
+                ),
+                default=0.0,
+            )
+            if (
+                effect_remaining > 0
+                and watch.owner_instance_id
+                and watch.owner_instance_id != instance_id
+            ):
+                return LeaseGrant(
+                    acquired=False,
+                    owner_instance_id=watch.owner_instance_id,
+                    fence_token=watch.fence_token,
+                    lease_version=watch.lease_version,
+                    expires_at=watch.lease_expires_at,
+                    reason="effect_in_progress",
+                    lease_seconds_remaining=effect_remaining,
+                    protocol_version=2,
+                )
             if lease_active and watch.owner_instance_id != instance_id:
                 return LeaseGrant(
                     acquired=False,
                     owner_instance_id=watch.owner_instance_id,
                     fence_token=watch.fence_token,
+                    lease_version=watch.lease_version,
                     expires_at=watch.lease_expires_at,
                     reason="owned",
+                    lease_seconds_remaining=remaining,
+                    protocol_version=2,
+                )
+            if (
+                lease_active
+                and watch.owner_instance_id == instance_id
+                and remaining > max(0, renewal_window_seconds)
+            ):
+                # Concurrent or eager same-owner requests are reads while the
+                # authority still has enough time to survive one renewal delay.
+                return LeaseGrant(
+                    acquired=True,
+                    owner_instance_id=instance_id,
+                    fence_token=watch.fence_token,
+                    lease_version=watch.lease_version,
+                    expires_at=watch.lease_expires_at,
+                    reason="lease_valid",
+                    lease_seconds_remaining=remaining,
+                    protocol_version=2,
                 )
             fence = watch.fence_token
             if watch.owner_instance_id != instance_id or not lease_active:
                 fence += 1
+            lease_version = watch.lease_version + 1
             conn.execute(
                 """
                 UPDATE pr_watches
-                SET owner_instance_id = ?, fence_token = ?, lease_expires_at = ?,
+                SET owner_instance_id = ?, fence_token = ?, lease_version = ?, lease_expires_at = ?,
                     updated_at = ?
                 WHERE id = ?
                 """,
                 (
                     instance_id,
                     fence,
+                    lease_version,
                     expires.isoformat(),
                     now.isoformat(),
                     watch_id,
@@ -558,8 +644,142 @@ class PRSupervisorStore:
             acquired=True,
             owner_instance_id=instance_id,
             fence_token=fence,
+            lease_version=lease_version,
             expires_at=expires,
+            reason="renewed" if lease_active else "acquired",
+            lease_seconds_remaining=float(ttl_seconds),
+            protocol_version=2,
         )
+
+    def prepare_effect_authorization(
+        self,
+        watch_id: str,
+        *,
+        owner_instance_id: str,
+        fence_token: int,
+        lease_version: int,
+        event_key: str,
+        bindings: dict[str, Any],
+        ttl_seconds: int = 20,
+        now: datetime | None = None,
+    ) -> tuple[PRWatch, dict[str, Any]]:
+        now = now or utcnow()
+        with self._conn(immediate=True) as conn:
+            row = conn.execute(
+                "SELECT * FROM pr_watches WHERE id = ?", (watch_id,)
+            ).fetchone()
+            if not row:
+                raise KeyError(watch_id)
+            watch = self._row_to_watch(row)
+            if (
+                not watch.actionable
+                or watch.owner_instance_id != owner_instance_id
+                or watch.fence_token != fence_token
+                or watch.lease_version != lease_version
+                or not watch.lease_expires_at
+                or watch.lease_expires_at <= now
+            ):
+                raise StaleFenceError(f"stale effect fence for watch {watch_id}")
+            expected = {
+                "realm_id": watch.realm_id,
+                "watch_id": watch.id,
+                "repository": watch.repository,
+                "pr_number": watch.pr_number,
+                "head_sha": watch.head_sha,
+                "condition_fingerprint": watch.condition_fingerprint,
+                "condition_version": watch.condition_version,
+                "owner_instance_id": watch.owner_instance_id,
+                "fence_token": watch.fence_token,
+                "lease_version": watch.lease_version,
+            }
+            if any(bindings.get(key) != value for key, value in expected.items()):
+                raise StaleFenceError(f"effect binding changed for watch {watch_id}")
+            state = dict(watch.state)
+            authorizations = dict(state.get("effect_authorizations") or {})
+            prior = authorizations.get(event_key)
+            semantic = {**expected, **bindings, "event_key": event_key}
+            if isinstance(prior, dict):
+                if {key: prior.get(key) for key in semantic} != semantic:
+                    raise StaleFenceError(
+                        f"event key belongs to different effect for watch {watch_id}"
+                    )
+                if prior.get("state") == "accepted" or (
+                    prior.get("state") == "prepared"
+                    and datetime.fromisoformat(str(prior["expires_at"])) > now
+                ):
+                    return watch, prior
+            authorization = {
+                **semantic,
+                "id": str(uuid4()),
+                "state": "prepared",
+                "protocol_version": 2,
+                "issued_at": now.isoformat(),
+                "expires_at": (
+                    now + timedelta(seconds=max(1, ttl_seconds))
+                ).isoformat(),
+            }
+            authorizations[event_key] = authorization
+            if len(authorizations) > 50:
+                keys = list(authorizations)[-50:]
+                authorizations = {key: authorizations[key] for key in keys}
+            state["effect_authorizations"] = authorizations
+            cursor = conn.execute(
+                """
+                UPDATE pr_watches SET state_json = ?, updated_at = ?
+                WHERE id = ? AND owner_instance_id = ? AND fence_token = ?
+                  AND lease_version = ?
+                """,
+                (
+                    json.dumps(state),
+                    now.isoformat(),
+                    watch_id,
+                    owner_instance_id,
+                    fence_token,
+                    lease_version,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise StaleFenceError(f"stale effect fence for watch {watch_id}")
+        updated = self.get_watch(watch_id)
+        if not updated:
+            raise KeyError(watch_id)
+        return updated, authorization
+
+    def finish_effect_authorization(
+        self,
+        watch_id: str,
+        event_key: str,
+        authorization_id: str,
+        *,
+        accepted: bool,
+        detail: str,
+    ) -> PRWatch:
+        now = utcnow()
+        with self._conn(immediate=True) as conn:
+            row = conn.execute(
+                "SELECT * FROM pr_watches WHERE id = ?", (watch_id,)
+            ).fetchone()
+            if not row:
+                raise KeyError(watch_id)
+            watch = self._row_to_watch(row)
+            state = dict(watch.state)
+            authorizations = dict(state.get("effect_authorizations") or {})
+            authorization = dict(authorizations.get(event_key) or {})
+            if authorization.get("id") != authorization_id:
+                raise StaleFenceError(f"effect authorization changed for {watch_id}")
+            authorization["state"] = "accepted" if accepted else "failed"
+            authorization["result"] = detail[:500]
+            authorization["completed_at"] = now.isoformat()
+            authorizations[event_key] = authorization
+            state["effect_authorizations"] = authorizations
+            conn.execute(
+                "UPDATE pr_watches SET state_json = ?, updated_at = ? WHERE id = ?",
+                (json.dumps(state), now.isoformat(), watch_id),
+            )
+        updated = self.get_watch(watch_id)
+        if not updated:
+            raise KeyError(watch_id)
+        return updated
 
     def release_lease(self, watch_id: str, instance_id: str, fence_token: int) -> bool:
         with self._conn(immediate=True) as conn:
@@ -614,6 +834,9 @@ class PRSupervisorStore:
                 condition_version = watch.condition_version
                 if condition_fingerprint != watch.condition_fingerprint:
                     condition_version += 1
+            state = dict(state)
+            if watch.state.get("effect_authorizations"):
+                state["effect_authorizations"] = watch.state["effect_authorizations"]
             conn.execute(
                 """
                 UPDATE pr_watches
@@ -664,6 +887,8 @@ class PRSupervisorStore:
             if not row:
                 return None
             watch = self._row_to_watch(row)
+            if watch.terminal or watch.retired_at is not None:
+                return watch
             if owner_instance_id is not None and (
                 watch.owner_instance_id != owner_instance_id
                 or watch.fence_token != fence_token
@@ -699,6 +924,7 @@ class PRSupervisorStore:
         state: dict[str, Any] | None = None,
         owner_instance_id: str | None = None,
         fence_token: int | None = None,
+        fence_token_baseline: int | None = None,
         retirement_reason: str | None = None,
         retired_at: datetime | None = None,
     ) -> PRWatch | None:
@@ -742,24 +968,28 @@ class PRSupervisorStore:
                     "retired_at": retirement_at.isoformat(),
                     "terminal_status": effective_status.value,
                 }
+            effective_fence = max(watch.fence_token, fence_token_baseline or 0)
             if (
                 effective_status == watch.status
                 and merged_state == watch.state
                 and watch.retired_at == retirement_at
                 and watch.owner_instance_id is None
                 and watch.lease_expires_at is None
+                and watch.fence_token == effective_fence
             ):
                 return watch
             conn.execute(
                 """
                 UPDATE pr_watches
                 SET status = ?, state_json = ?, owner_instance_id = NULL,
-                    lease_expires_at = NULL, retired_at = ?, updated_at = ?
+                    fence_token = ?, lease_expires_at = NULL, retired_at = ?,
+                    updated_at = ?
                 WHERE id = ?
                 """,
                 (
                     effective_status.value,
                     json.dumps(merged_state),
+                    effective_fence,
                     retirement_at.isoformat(),
                     now.isoformat(),
                     watch_id,
@@ -826,9 +1056,35 @@ class PRSupervisorStore:
         target_instance_id: str | None,
         target_session_id: str | None,
     ) -> bool:
-        now = utcnow().isoformat()
-        try:
-            with self._conn(immediate=True) as conn:
+        now = utcnow()
+        with self._conn(immediate=True) as conn:
+            existing = conn.execute(
+                "SELECT * FROM pr_dispatch_claims WHERE event_key = ?",
+                (event_key,),
+            ).fetchone()
+            if existing:
+                same_target = (
+                    existing["watch_id"] == watch_id
+                    and existing["target_instance_id"] == target_instance_id
+                    and existing["target_session_id"] == target_session_id
+                )
+                stale_claim = existing["state"] == "claimed" and datetime.fromisoformat(
+                    existing["updated_at"]
+                ) <= now - timedelta(seconds=30)
+                if not same_target or (
+                    existing["state"] != "failed" and not stale_claim
+                ):
+                    return False
+                conn.execute(
+                    """
+                    UPDATE pr_dispatch_claims
+                    SET state = 'claimed', detail = NULL, updated_at = ?
+                    WHERE event_key = ?
+                    """,
+                    (now.isoformat(), event_key),
+                )
+                return True
+            try:
                 conn.execute(
                     """
                     INSERT INTO pr_dispatch_claims (
@@ -841,14 +1097,13 @@ class PRSupervisorStore:
                         watch_id,
                         target_instance_id,
                         target_session_id,
-                        now,
-                        now,
+                        now.isoformat(),
+                        now.isoformat(),
                     ),
                 )
-            return True
-        except sqlite3.IntegrityError:
-            # One key represents one delivery decision, including failure and fallback.
-            return False
+                return True
+            except sqlite3.IntegrityError:
+                return False
 
     def finish_dispatch(self, event_key: str, *, state: str, detail: str = "") -> None:
         with self._conn() as conn:
@@ -970,6 +1225,7 @@ class PRSupervisorStore:
             status=row["status"],
             owner_instance_id=row["owner_instance_id"],
             fence_token=row["fence_token"],
+            lease_version=row["lease_version"],
             lease_expires_at=_dt(row["lease_expires_at"]),
             state=json.loads(row["state_json"] or "{}"),
             condition_fingerprint=row["condition_fingerprint"],
