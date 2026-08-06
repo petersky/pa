@@ -11,6 +11,7 @@ from uuid import uuid4
 
 from pa.pr_supervisor.models import (
     GITHUB_TERMINAL_PR_WATCH_STATUSES,
+    PR_WATCH_PROTOCOL_VERSION,
     GitHubCapability,
     LeaseGrant,
     PRWatch,
@@ -543,8 +544,30 @@ class PRSupervisorStore:
                 )
             if watch.status not in {PRWatchStatus.ACTIVE, PRWatchStatus.BLOCKED}:
                 return LeaseGrant(acquired=False, reason="watch_inactive")
-            if capability and not capability.supports(watch.repository):
-                return LeaseGrant(acquired=False, reason="capability_ineligible")
+            if capability is None:
+                return LeaseGrant(
+                    acquired=False,
+                    reason="capability_missing",
+                    protocol_version=PR_WATCH_PROTOCOL_VERSION,
+                )
+            if capability.instance_id != instance_id:
+                return LeaseGrant(
+                    acquired=False,
+                    reason="capability_identity_mismatch",
+                    protocol_version=PR_WATCH_PROTOCOL_VERSION,
+                )
+            if capability.pr_watch_protocol_version < PR_WATCH_PROTOCOL_VERSION:
+                return LeaseGrant(
+                    acquired=False,
+                    reason="protocol_upgrade_required",
+                    protocol_version=PR_WATCH_PROTOCOL_VERSION,
+                )
+            if not capability.supports(watch.repository):
+                return LeaseGrant(
+                    acquired=False,
+                    reason="capability_ineligible",
+                    protocol_version=PR_WATCH_PROTOCOL_VERSION,
+                )
             lease_active = (
                 watch.owner_instance_id
                 and watch.lease_expires_at

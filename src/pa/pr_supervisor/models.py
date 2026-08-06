@@ -233,6 +233,9 @@ class GitHubCapability(BaseModel):
         return not (allowed and identity not in allowed)
 
 
+PR_WATCH_PROTOCOL_VERSION = 2
+
+
 class GateResult(BaseModel):
     green: bool = False
     actionable: bool = False

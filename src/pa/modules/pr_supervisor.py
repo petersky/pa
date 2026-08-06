@@ -20,7 +20,9 @@ from pa.pr_supervisor.github import (
 )
 from pa.pr_supervisor.models import (
     GITHUB_TERMINAL_PR_WATCH_STATUSES,
+    PR_WATCH_PROTOCOL_VERSION,
     GitHubCapability,
+    LeaseGrant,
     PRPolicy,
     PRWatch,
     PRWatchEvent,
@@ -508,6 +510,30 @@ async def ingest_retirement(request: Request, body: dict[str, Any]) -> dict[str,
 async def acquire_lease(
     request: Request, watch_id: str, body: dict[str, Any]
 ) -> dict[str, Any]:
+    instance_id = str(body.get("instance_id") or "")
+    capability = GitHubCapability.model_validate(body.get("capability") or {})
+    caller = request.headers.get("X-PA-Origin-Instance-ID", "").strip()
+    if caller != instance_id or capability.instance_id != instance_id:
+        _store(request).save_capability(capability)
+        return LeaseGrant(
+            acquired=False,
+            reason="capability_identity_mismatch",
+            protocol_version=PR_WATCH_PROTOCOL_VERSION,
+        ).model_dump(mode="json")
+    if capability.pr_watch_protocol_version < PR_WATCH_PROTOCOL_VERSION:
+        _store(request).save_capability(capability)
+        return LeaseGrant(
+            acquired=False,
+            reason="protocol_upgrade_required",
+            protocol_version=PR_WATCH_PROTOCOL_VERSION,
+        ).model_dump(mode="json")
+    if not capability.authenticated:
+        _store(request).save_capability(capability)
+        return LeaseGrant(
+            acquired=False,
+            reason="capability_ineligible",
+            protocol_version=PR_WATCH_PROTOCOL_VERSION,
+        ).model_dump(mode="json")
     canonical_id = watch_id
     if body.get("watch"):
         incoming = PRWatch.model_validate(body["watch"])
@@ -515,6 +541,13 @@ async def acquire_lease(
             incoming = await _service(request).validate_replica_provenance(incoming)
         except ProvenanceValidationError as exc:
             raise _provenance_http_error(exc) from exc
+        if not capability.supports(incoming.repository):
+            _store(request).save_capability(capability)
+            return LeaseGrant(
+                acquired=False,
+                reason="capability_ineligible",
+                protocol_version=PR_WATCH_PROTOCOL_VERSION,
+            ).model_dump(mode="json")
         store = _store(request)
         existing = store.find_watch(
             incoming.realm_id, incoming.repository, incoming.pr_number
@@ -530,10 +563,9 @@ async def acquire_lease(
             stored = existing
         _service(request).watch_state_changed(stored)
         canonical_id = stored.id
-    capability = GitHubCapability.model_validate(body.get("capability") or {})
     grant = _store(request).try_acquire_lease(
         canonical_id,
-        str(body.get("instance_id") or ""),
+        instance_id,
         ttl_seconds=min(max(int(body.get("ttl_seconds") or 45), 10), 300),
         renewal_window_seconds=min(
             max(int(body.get("renewal_window_seconds") or 12), 1), 60
@@ -582,17 +614,22 @@ async def dispatch_authorized_effect(
 @router.post("/pr-supervisor/dispatch")
 async def dispatch_executor(request: Request, body: dict[str, Any]) -> dict[str, Any]:
     authorization = body.get("authorization")
-    if authorization:
-        if not isinstance(authorization, dict):
-            raise HTTPException(
-                status_code=400, detail="authorization must be an object"
-            )
-        caller = request.headers.get("X-PA-Origin-Instance-ID", "").strip()
-        if caller != str(authorization.get("issuer_instance_id") or ""):
-            raise HTTPException(
-                status_code=401,
-                detail={"code": "effect_issuer_mismatch"},
-            )
+    if not isinstance(authorization, dict):
+        raise HTTPException(
+            status_code=428,
+            detail={"code": "pr_watch_effect_authorization_required"},
+        )
+    if authorization.get("protocol_version") != PR_WATCH_PROTOCOL_VERSION:
+        raise HTTPException(
+            status_code=426,
+            detail={"code": "pr_watch_effect_upgrade_required"},
+        )
+    caller = request.headers.get("X-PA-Origin-Instance-ID", "").strip()
+    if caller != str(authorization.get("issuer_instance_id") or ""):
+        raise HTTPException(
+            status_code=401,
+            detail={"code": "effect_issuer_mismatch"},
+        )
     service = _service(request)
     watch = PRWatch.model_validate(body.get("watch") or {})
     try:

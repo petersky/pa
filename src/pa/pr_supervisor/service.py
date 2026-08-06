@@ -30,6 +30,7 @@ from pa.pr_supervisor.gating import (
 from pa.pr_supervisor.github import GitHubClient, GitHubCredentials
 from pa.pr_supervisor.models import (
     GITHUB_TERMINAL_PR_WATCH_STATUSES,
+    PR_WATCH_PROTOCOL_VERSION,
     GateResult,
     GitHubCapability,
     LeaseGrant,
@@ -149,6 +150,11 @@ class ExecutorDispatcher:
         authorization: dict[str, Any] | None = None,
         prompt_audit: list[dict[str, Any]] | None = None,
     ) -> str:
+        if (
+            not isinstance(authorization, dict)
+            or authorization.get("protocol_version") != PR_WATCH_PROTOCOL_VERSION
+        ):
+            return "rejected"
         prompt_text = prompt.text if isinstance(prompt, RenderedPrompt) else prompt
         prompt_audit = list(prompt_audit or []) or (
             [prompt.audit_record()] if isinstance(prompt, RenderedPrompt) else []
@@ -207,6 +213,11 @@ class ExecutorDispatcher:
         *,
         authorization: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        if (
+            not isinstance(authorization, dict)
+            or authorization.get("protocol_version") != PR_WATCH_PROTOCOL_VERSION
+        ):
+            raise RuntimeError("pr_watch_effect_authorization_required")
         headers: dict[str, str] = {}
         if self.settings.sync_token:
             headers["Authorization"] = f"Bearer {self.settings.sync_token}"
@@ -243,6 +254,17 @@ class ExecutorDispatcher:
         prompt_audit: list[dict[str, Any]] | None = None,
         authorization: dict[str, Any] | None = None,
     ) -> str:
+        if (
+            not isinstance(authorization, dict)
+            or authorization.get("protocol_version") != PR_WATCH_PROTOCOL_VERSION
+        ):
+            return "rejected"
+        try:
+            authorization_expires_at = datetime.fromisoformat(
+                str(authorization.get("expires_at") or "")
+            )
+        except ValueError:
+            return "rejected"
         if authorization:
             current = await self._offload(
                 "sqlite.pr_supervisor_watch_read", self.store.get_watch, watch.id
@@ -276,7 +298,7 @@ class ExecutorDispatcher:
             if (
                 not current
                 or not current.actionable
-                or datetime.fromisoformat(str(authorization["expires_at"])) <= utcnow()
+                or authorization_expires_at <= utcnow()
                 or current_authorization != authorization
                 or any(
                     authorization.get(key) != value for key, value in expected.items()
@@ -1847,7 +1869,7 @@ class PRSupervisor:
     async def authorize_and_dispatch_effect(
         self, payload: dict[str, Any], *, caller_instance_id: str
     ) -> str:
-        if int(payload.get("protocol_version") or 0) != 2:
+        if int(payload.get("protocol_version") or 0) != PR_WATCH_PROTOCOL_VERSION:
             raise RuntimeError("pr_watch_effect_upgrade_required")
         prompt = str(payload.get("prompt") or "")
         effect_kind = str(payload.get("effect_kind") or "")
@@ -1887,7 +1909,7 @@ class PRSupervisor:
                 self.store.list_capabilities,
                 fresh_seconds=self.CAPABILITY_TTL_SECONDS,
             )
-            if item.pr_watch_protocol_version >= 2
+            if item.pr_watch_protocol_version >= PR_WATCH_PROTOCOL_VERSION
         }
         compatible_instances.add(self.capability.instance_id)
         if not required_instances <= compatible_instances:
@@ -1963,19 +1985,13 @@ class PRSupervisor:
             != authorization["review_hold_version"]
         ):
             raise StaleFenceError(f"effect changed before dispatch for {watch_id}")
-        dispatch_parameters = inspect.signature(self.dispatcher.dispatch).parameters
-        if "authorization" in dispatch_parameters:
-            state = await self.dispatcher.dispatch(
-                prepared,
-                str(payload["event_key"]),
-                str(payload["prompt"]),
-                authorization=authorization,
-                prompt_audit=list(payload.get("prompt_audit") or []),
-            )
-        else:
-            state = await self.dispatcher.dispatch(
-                prepared, str(payload["event_key"]), str(payload["prompt"])
-            )
+        state = await self.dispatcher.dispatch(
+            prepared,
+            str(payload["event_key"]),
+            str(payload["prompt"]),
+            authorization=authorization,
+            prompt_audit=list(payload.get("prompt_audit") or []),
+        )
         accepted = state not in {"failed", "rejected"}
         finished = await self._offload(
             "sqlite.pr_supervisor_effect_finish",
@@ -2025,7 +2041,6 @@ class PRSupervisor:
             }
         state["supervisor_state"] = "retired_after_merge"
         state["card_lane"] = "pending" if watch.card_id else None
-        gate = evaluate_gate(snapshot, watch.policy, stable_head=True)
         event_key = (
             f"{watch.id}:{snapshot.head_sha}:merged:"
             f"{snapshot.merge_commit_sha or 'unknown'}"
@@ -2070,18 +2085,6 @@ class PRSupervisor:
         await self._replicate(terminal)
         await self._broadcast_retirement(terminal)
         await self._complete_merged_card(terminal)
-        prompt = build_executor_prompt_rendered(
-            watch,
-            snapshot,
-            gate,
-            green=False,
-            merged=True,
-            provider=watch.originating_agent or "default",
-        )
-        try:
-            await self.dispatcher.dispatch(watch, event_key, prompt)
-        except Exception:
-            logger.exception("Could not notify executor after merge watch=%s", watch.id)
 
     async def _reconcile_merged_cards(self) -> None:
         watches = await self._offload(
@@ -2272,6 +2275,25 @@ class PRSupervisor:
                 fence_token=watch.fence_token,
                 reason="watch_terminal" if watch.terminal else "watch_inactive",
                 terminal_status=watch.status if watch.terminal else None,
+            )
+        if capability.pr_watch_protocol_version < PR_WATCH_PROTOCOL_VERSION:
+            self._forget_watch(watch.id)
+            reason = "protocol_upgrade_required"
+            self._lease_suppressed[watch.id] = reason
+            self._lease_last_response[watch.id] = {
+                "reason": reason,
+                "acquired": False,
+                "terminal_status": None,
+                "fence_token": watch.fence_token,
+                "lease_version": watch.lease_version,
+                "received_at": utcnow().isoformat(),
+            }
+            return LeaseGrant(
+                acquired=False,
+                fence_token=watch.fence_token,
+                lease_version=watch.lease_version,
+                reason=reason,
+                protocol_version=PR_WATCH_PROTOCOL_VERSION,
             )
         authority = self._lease_authority_key()
         self._handle_authority_change(authority)
@@ -2485,7 +2507,13 @@ class PRSupervisor:
             return grant
 
         self._local_leases.pop(watch.id, None)
-        if grant.reason in {"capability_ineligible", "watch_inactive"}:
+        if grant.reason in {
+            "capability_missing",
+            "capability_identity_mismatch",
+            "capability_ineligible",
+            "protocol_upgrade_required",
+            "watch_inactive",
+        }:
             reason = grant.reason or "watch_inactive"
             self._forget_watch(watch.id)
             self._lease_suppressed[watch.id] = reason
@@ -2867,6 +2895,18 @@ class PRSupervisor:
             "watch_inactive",
             "watch_not_found",
         }
+        stop_reasons = {
+            "capability_missing",
+            "capability_identity_mismatch",
+            "capability_ineligible",
+            "protocol_upgrade_required",
+        }
+        if reason in stop_reasons:
+            return LeaseGrant(
+                acquired=False,
+                reason=reason,
+                protocol_version=int((detail or {}).get("protocol_version") or 1),
+            ).model_dump(mode="json")
         if reason in terminal_reasons or terminal_status is not None:
             if reason == "watch_inactive":
                 reason = "watch_retired"
