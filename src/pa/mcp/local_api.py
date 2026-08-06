@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json as jsonlib
 import os
 import threading
 import time
@@ -378,7 +379,40 @@ def request_local_pa(
                 _circuit.last_success = time.time()
             if response.status_code == 204:
                 return None
-            return response.json()
+            try:
+                return response.json()
+            except (jsonlib.JSONDecodeError, UnicodeDecodeError) as exc:
+                response_correlation_id = (
+                    response.headers.get("X-Request-ID", "").strip()
+                    or correlation_id
+                )
+                if operation_id:
+                    raise LocalPAUnknownOutcome(
+                        "The PA API returned an unreadable success response "
+                        f"(operation={method.upper()} endpoint={path} "
+                        f"status={response.status_code} "
+                        f"correlation_id={response_correlation_id} "
+                        f"operation_id={operation_id}). The mutation outcome is "
+                        "unknown. Call get_operation_outcome with the same "
+                        "idempotency key; if it reports "
+                        "safe_to_retry_with_same_key, retry with that exact key.",
+                        operation_id=operation_id,
+                        correlation_id=response_correlation_id,
+                        endpoint=path,
+                        status=response.status_code,
+                        detail={
+                            "code": "invalid_success_response",
+                            "message": (
+                                "The PA API success response was not valid JSON."
+                            ),
+                        },
+                    ) from exc
+                raise LocalPAServerUnavailable(
+                    f"The PA API returned an unreadable response "
+                    f"(operation={method.upper()} endpoint={path} "
+                    f"status={response.status_code} "
+                    f"correlation_id={response_correlation_id})."
+                ) from exc
         except httpx.ConnectError as exc:
             if time.monotonic() >= deadline:
                 with _circuit_lock:

@@ -356,6 +356,11 @@ class DispatchOperationLookupTests(unittest.TestCase):
             self.assertIsNotNone(control)
             self.assertEqual(control[0], "dispatch.cancel")
             self.assertEqual(control[1].dispatch_id, record.dispatch_id)
+            self.assertIsNone(
+                store.find_operation_by_idempotency(
+                    "dispatch-admission", realm_id="other-realm"
+                )
+            )
             store.close()
 
 
@@ -466,6 +471,51 @@ class MutationHttpIdempotencyTests(unittest.TestCase):
                     in {"http-create-once", "http-update-once"}
                 ]
                 self.assertEqual(len(attributable), 2)
+
+    def test_dispatch_operation_lookup_is_fenced_to_the_requested_realm(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                data_dir=Path(tmp),
+                agent_enabled=False,
+                subscribed_realms=["realm-a", "realm-b"],
+            )
+            token = UserDirectory(settings.data_dir).ensure_default_user().cli_token
+            authorization = {"Authorization": f"Bearer {token}"}
+            app = Kernel.boot(settings=settings).build_app()
+            with TestClient(app) as client:
+                dispatch_store = app.state.ctx.require_service("dispatch_store")
+                dispatch_store.put(
+                    DispatchRecord(
+                        mutation_id="realm-a-mutation",
+                        idempotency_key="realm-a-dispatch",
+                        realm_id="realm-a",
+                        card_id="realm-a-card",
+                        authority_instance_id="authority",
+                        authority_url="https://authority.example",
+                        target_instance_id="target",
+                    )
+                )
+
+                cross_realm = client.get(
+                    "/api/operations/realm-a-dispatch",
+                    params={"realm": "realm-b"},
+                    headers=authorization,
+                )
+                same_realm = client.get(
+                    "/api/operations/realm-a-dispatch",
+                    params={"realm": "realm-a"},
+                    headers=authorization,
+                )
+
+            self.assertEqual(cross_realm.status_code, 200, cross_realm.text)
+            self.assertEqual(cross_realm.json()["status"], "not_found")
+            self.assertEqual(same_realm.status_code, 200, same_realm.text)
+            self.assertEqual(same_realm.json()["status"], "succeeded")
+            self.assertEqual(
+                same_realm.json()["result"]["card_id"], "realm-a-card"
+            )
 
 
 if __name__ == "__main__":

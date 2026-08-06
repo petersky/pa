@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import base64
+import hashlib
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -185,6 +188,117 @@ class BoundedHistoryTests(unittest.TestCase):
                     "history-card",
                     cursor=page["next_cursor"],
                 )
+
+    def test_history_cursor_rejects_realm_and_query_tampering(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            log = EventLog(
+                ObjectStore(Path(tmp) / "objects"),
+                Path(tmp),
+                "instance",
+                cursor_secret="stable-test-secret",
+            )
+            commits = {
+                "head-a": SyncCommit(
+                    hash="head-a",
+                    realm_id="realm-a",
+                    instance_id="instance",
+                    parent_hashes=["parent-a"],
+                    event_hashes=["event-head"],
+                    author_principal="user:test",
+                ),
+                "parent-a": SyncCommit(
+                    hash="parent-a",
+                    realm_id="realm-a",
+                    instance_id="instance",
+                    event_hashes=["event-parent"],
+                    author_principal="user:test",
+                ),
+            }
+            events = {
+                "event-head": _update_event("event-head"),
+                "event-parent": _update_event("event-parent"),
+            }
+            with (
+                patch.object(log, "get_head", return_value="head-a"),
+                patch.object(log, "get_commit", side_effect=commits.get),
+                patch.object(log, "get_event", side_effect=events.get),
+            ):
+                page = log.entity_history_page(
+                    "realm-a", "card", "history-card", limit=1
+                )
+
+            cursor = page["next_cursor"]
+            assert cursor is not None
+            decoded = json.loads(
+                base64.urlsafe_b64decode(
+                    cursor + "=" * (-len(cursor) % 4)
+                ).decode()
+            )
+            retained_head = decoded["head"]
+            decoded["realm_id"] = "realm-b"
+            query = json.dumps(
+                {
+                    "realm_id": "realm-b",
+                    "entity": "card",
+                    "entity_id": "history-card",
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+            decoded["query_digest"] = hashlib.sha256(query).hexdigest()
+            self.assertEqual(decoded["head"], retained_head)
+            tampered = base64.urlsafe_b64encode(
+                json.dumps(
+                    decoded, sort_keys=True, separators=(",", ":")
+                ).encode()
+            ).decode().rstrip("=")
+
+            with (
+                patch.object(
+                    log,
+                    "get_head",
+                    side_effect=AssertionError("realm B must not be read"),
+                ),
+                patch.object(
+                    log,
+                    "get_commit",
+                    side_effect=AssertionError("realm A head must not be trusted"),
+                ),
+                self.assertRaises(EventHistoryCursorError),
+            ):
+                log.entity_history_page(
+                    "realm-b",
+                    "card",
+                    "history-card",
+                    cursor=tampered,
+                )
+
+    def test_history_cursor_remains_valid_with_the_persisted_secret(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            objects = ObjectStore(root / "objects")
+            first = EventLog(
+                objects,
+                root,
+                "instance",
+                cursor_secret="persisted-secret",
+            )
+            restarted = EventLog(
+                objects,
+                root,
+                "instance",
+                cursor_secret="persisted-secret",
+            )
+            cursor = first._history_cursor(
+                "realm-a", "head-a", "card", "history-card", 7
+            )
+
+            self.assertEqual(
+                restarted._decode_history_cursor(
+                    cursor, "realm-a", "card", "history-card"
+                ),
+                ("head-a", 7),
+            )
 
     def test_missing_parent_is_a_typed_bounded_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

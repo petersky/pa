@@ -565,6 +565,38 @@ class LocalMcpApiTests(unittest.TestCase):
             )
             self.assertIn("same idempotency key", str(raised.exception))
 
+    def test_malformed_success_response_is_a_recoverable_unknown_outcome(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), agent_enabled=False)
+            response = httpx.Response(
+                200,
+                content=b'{"committed":',
+                headers={"X-Request-ID": "server-correlation"},
+                request=httpx.Request("POST", "http://127.0.0.1/api/cards"),
+            )
+            with (
+                patch("httpx.request", return_value=response),
+                self.assertRaises(LocalPAUnknownOutcome) as raised,
+            ):
+                request_local_pa(
+                    settings,
+                    "POST",
+                    "/api/cards",
+                    json={"title": "Possibly committed"},
+                    headers={"Idempotency-Key": "malformed-success-key"},
+                )
+
+            error = raised.exception
+            self.assertEqual(error.idempotency_key, "malformed-success-key")
+            self.assertEqual(error.status, 200)
+            self.assertEqual(error.correlation_id, "server-correlation")
+            self.assertEqual(error.recovery_state, "lookup_required")
+            self.assertEqual(error.recovery_action, "get_operation_outcome")
+            self.assertEqual(error.detail["code"], "invalid_success_response")
+            self.assertNotIn('{"committed":', str(error))
+
     def test_request_timeout_can_be_extended_for_durable_admission(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), agent_enabled=False)

@@ -6,6 +6,7 @@ import base64
 import binascii
 import fcntl
 import hashlib
+import hmac
 import json
 import os
 import threading
@@ -186,9 +187,24 @@ def _identity_conflict_value(
 
 
 class EventLog:
-    def __init__(self, store: ObjectStore, data_dir: Path, instance_id: str) -> None:
+    def __init__(
+        self,
+        store: ObjectStore,
+        data_dir: Path,
+        instance_id: str,
+        *,
+        cursor_secret: str | bytes | None = None,
+    ) -> None:
         self.store = store
         self.instance_id = instance_id
+        secret = (
+            cursor_secret.encode()
+            if isinstance(cursor_secret, str)
+            else cursor_secret or os.urandom(32)
+        )
+        self._history_cursor_secret = hmac.new(
+            secret, b"pa:event-history-cursor:v1", hashlib.sha256
+        ).digest()
         self.refs_path = data_dir / "sync_refs.json"
         self.refs_lock_path = data_dir / "sync_refs.lock"
         self._refs: dict[str, str] = {}
@@ -909,42 +925,56 @@ class EventLog:
         ).encode()
         return hashlib.sha256(canonical).hexdigest()
 
-    @classmethod
     def _history_cursor(
-        cls, realm_id: str, head: str, entity: str, entity_id: str, offset: int
+        self, realm_id: str, head: str, entity: str, entity_id: str, offset: int
     ) -> str:
-        payload = json.dumps(
-            {
-                "version": 2,
-                "realm_id": realm_id,
-                "query_digest": cls._history_query_digest(
-                    realm_id, entity, entity_id
-                ),
-                "head": head,
-                "entity": entity,
-                "entity_id": entity_id,
-                "offset": offset,
-            },
+        payload = {
+            "version": 3,
+            "realm_id": realm_id,
+            "query_digest": self._history_query_digest(
+                realm_id, entity, entity_id
+            ),
+            "head": head,
+            "entity": entity,
+            "entity_id": entity_id,
+            "offset": offset,
+        }
+        canonical = json.dumps(
+            payload,
             sort_keys=True,
             separators=(",", ":"),
         ).encode()
-        return base64.urlsafe_b64encode(payload).decode().rstrip("=")
+        payload["signature"] = hmac.new(
+            self._history_cursor_secret, canonical, hashlib.sha256
+        ).hexdigest()
+        encoded = json.dumps(
+            payload, sort_keys=True, separators=(",", ":")
+        ).encode()
+        return base64.urlsafe_b64encode(encoded).decode().rstrip("=")
 
-    @classmethod
     def _decode_history_cursor(
-        cls, cursor: str, realm_id: str, entity: str, entity_id: str
+        self, cursor: str, realm_id: str, entity: str, entity_id: str
     ) -> tuple[str, int]:
         try:
             padded = cursor + "=" * (-len(cursor) % 4)
             payload = json.loads(base64.urlsafe_b64decode(padded).decode())
+            signature = payload.pop("signature", None)
+            canonical = json.dumps(
+                payload, sort_keys=True, separators=(",", ":")
+            ).encode()
+            expected_signature = hmac.new(
+                self._history_cursor_secret, canonical, hashlib.sha256
+            ).hexdigest()
             if (
                 not isinstance(payload, dict)
-                or payload.get("version") != 2
+                or not isinstance(signature, str)
+                or not hmac.compare_digest(signature, expected_signature)
+                or payload.get("version") != 3
                 or payload.get("realm_id") != realm_id
                 or payload.get("entity") != entity
                 or payload.get("entity_id") != entity_id
                 or payload.get("query_digest")
-                != cls._history_query_digest(realm_id, entity, entity_id)
+                != self._history_query_digest(realm_id, entity, entity_id)
                 or not isinstance(payload.get("head"), str)
                 or not isinstance(payload.get("offset"), int)
                 or payload["offset"] < 0

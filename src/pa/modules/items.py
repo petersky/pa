@@ -1530,10 +1530,14 @@ def operation_outcome_api(
     dispatch_store = request.app.state.ctx.services.get("dispatch_store")
     if dispatch_store is None:
         return outcome
-    dispatch = dispatch_store.find_operation_by_idempotency(idempotency_key)
+    dispatch = dispatch_store.find_operation_by_idempotency(
+        idempotency_key, realm_id=realm_id
+    )
     if dispatch is None:
         return outcome
     operation, record = dispatch
+    if record.realm_id != realm_id:
+        return outcome
     return {
         "idempotency_key": idempotency_key,
         "operation": operation,
