@@ -36,6 +36,8 @@ class LocalPAUnknownOutcome(LocalPAServerUnavailable):
         operation_id: str,
         correlation_id: str,
         endpoint: str,
+        status: int | None = None,
+        detail: dict[str, Any] | list[dict[str, Any]] | str | None = None,
     ) -> None:
         super().__init__(message)
         self.code = "mutation_outcome_unknown"
@@ -43,9 +45,29 @@ class LocalPAUnknownOutcome(LocalPAServerUnavailable):
         self.idempotency_key = operation_id
         self.correlation_id = correlation_id
         self.endpoint = endpoint
+        self.status = status
+        self.detail = detail
         self.recoverable = True
         self.recovery_state = "lookup_required"
         self.recovery_action = "get_operation_outcome"
+
+
+def _response_proves_non_commit(
+    response: httpx.Response,
+    detail: dict[str, Any] | list[dict[str, Any]] | str | None,
+) -> bool:
+    """Accept only explicit server evidence that a mutation did not commit."""
+    committed_header = response.headers.get(
+        "X-PA-Mutation-Committed", ""
+    ).strip().lower()
+    if committed_header == "false":
+        return True
+    if not isinstance(detail, dict):
+        return False
+    return detail.get("committed") is False or detail.get("outcome") in {
+        "not_committed",
+        "rejected_before_commit",
+    }
 
 
 _ASSIGNED_MCP_ENDPOINTS = frozenset(
@@ -380,13 +402,34 @@ def request_local_pa(
             # ``response``.  Do not let diagnostics mask the real failure.
             response = getattr(exc, "response", None)
             if response is not None:
-                raise _http_error(
+                error = _http_error(
                     response,
                     method=method,
                     path=path,
                     correlation_id=correlation_id,
                     expected_instance_id=expected_instance_id,
-                ) from exc
+                )
+                if (
+                    operation_id
+                    and response.status_code >= 500
+                    and not _response_proves_non_commit(response, error.detail)
+                ):
+                    raise LocalPAUnknownOutcome(
+                        "The PA API returned an ambiguous server failure "
+                        f"(operation={method.upper()} endpoint={path} "
+                        f"status={response.status_code} "
+                        f"correlation_id={error.correlation_id} "
+                        f"operation_id={operation_id}). The mutation outcome is "
+                        "unknown. Call get_operation_outcome with the same "
+                        "idempotency key; if it reports "
+                        "safe_to_retry_with_same_key, retry with that exact key.",
+                        operation_id=operation_id,
+                        correlation_id=error.correlation_id,
+                        endpoint=path,
+                        status=response.status_code,
+                        detail=error.detail,
+                    ) from exc
+                raise error from exc
             if operation_id:
                 raise LocalPAUnknownOutcome(
                     f"The PA API request failed (operation={method.upper()} "
