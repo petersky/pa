@@ -398,6 +398,18 @@ class BoundedHistoryTests(unittest.TestCase):
                 )
             self.assertEqual(invalid.exception.code, "invalid_history_cursor")
 
+            non_object = base64.urlsafe_b64encode(b"[]").decode().rstrip("=")
+            with self.assertRaises(EventHistoryCursorError) as malformed:
+                log.entity_history_page(
+                    "default",
+                    "card",
+                    "history-card",
+                    cursor=non_object,
+                )
+            self.assertEqual(
+                malformed.exception.code, "invalid_history_cursor"
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

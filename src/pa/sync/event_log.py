@@ -958,6 +958,8 @@ class EventLog:
         try:
             padded = cursor + "=" * (-len(cursor) % 4)
             payload = json.loads(base64.urlsafe_b64decode(padded).decode())
+            if not isinstance(payload, dict):
+                raise ValueError
             signature = payload.pop("signature", None)
             canonical = json.dumps(
                 payload, sort_keys=True, separators=(",", ":")
@@ -966,8 +968,7 @@ class EventLog:
                 self._history_cursor_secret, canonical, hashlib.sha256
             ).hexdigest()
             if (
-                not isinstance(payload, dict)
-                or not isinstance(signature, str)
+                not isinstance(signature, str)
                 or not hmac.compare_digest(signature, expected_signature)
                 or payload.get("version") != 3
                 or payload.get("realm_id") != realm_id
