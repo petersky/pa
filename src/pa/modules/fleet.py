@@ -466,6 +466,18 @@ class DispatchControlBody(BaseModel):
     idempotency_key: str | None = None
 
 
+class DispatchTerminalRepairBody(BaseModel):
+    """Explicit evidence and fencing for one legacy terminal repair."""
+
+    idempotency_key: str | None = None
+    mode: Literal[
+        "acknowledged_completion", "abandoned_without_acknowledgement"
+    ] = "acknowledged_completion"
+    expected_state: str | None = None
+    reason: str | None = Field(default=None, min_length=1, max_length=1_000)
+    confirm_no_outcome_inference: bool = False
+
+
 class DispatchPriorityBody(BaseModel):
     priority: int = Field(ge=-10, le=10)
     idempotency_key: str
@@ -10924,30 +10936,209 @@ async def execute_post_turn_action(
 def repair_terminal_dispatch(
     request: Request,
     dispatch_id: str,
-    body: DispatchControlBody | None = None,
+    body: DispatchTerminalRepairBody | DispatchControlBody | None = None,
 ) -> dict[str, Any]:
-    """Audited normalization for acknowledged legacy target records."""
+    """Audited terminal repair without inventing completion evidence."""
     require_user(request)
     ledger = _dispatch_store(request)
     record = ledger.get(dispatch_id)
     if not record:
         raise HTTPException(status_code=404, detail="Dispatch not found")
     key = _dispatch_control_key(request, body)
-    if _repeat_dispatch_control(record, "repair_terminal", key):
+    mode = str(getattr(body, "mode", "acknowledged_completion"))
+    if mode not in {
+        "acknowledged_completion",
+        "abandoned_without_acknowledgement",
+    }:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "unsupported_terminal_repair_mode", "mode": mode},
+        )
+    operation = (
+        "repair_terminal"
+        if mode == "acknowledged_completion"
+        else "repair_terminal:abandoned_without_acknowledgement"
+    )
+    if _repeat_dispatch_control(record, operation, key):
         return _dispatch_public(request, record)
     acknowledged = bool(
         record.acknowledged_at or record.completion_delivery_class == "acknowledged"
     )
-    if not acknowledged:
+    if mode == "acknowledged_completion" and not acknowledged:
         raise HTTPException(
             status_code=409,
             detail={
                 "code": "completion_not_acknowledged",
-                "message": "Terminal repair requires durable completion acknowledgement.",
+                "message": (
+                    "Completion repair requires durable acknowledgement. Use the "
+                    "separate abandoned repair mode only when its evidence checks pass."
+                ),
             },
         )
+    if mode == "abandoned_without_acknowledgement":
+        expected_state = str(getattr(body, "expected_state", "") or "")
+        reason = str(getattr(body, "reason", "") or "").strip()
+        if not bool(getattr(body, "confirm_no_outcome_inference", False)):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "outcome_inference_confirmation_required",
+                    "message": (
+                        "Confirm that retiring this row does not assert dispatch or card success."
+                    ),
+                },
+            )
+        if expected_state != record.state:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "stale_dispatch_state",
+                    "expected_state": expected_state or None,
+                    "observed_state": record.state,
+                },
+            )
+        if record.state != "running":
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "dispatch_not_abandoned_repairable",
+                    "message": "Only a legacy running row can use abandoned repair.",
+                },
+            )
+        if acknowledged:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "acknowledged_completion_requires_completion_repair",
+                    "message": "Acknowledged completion must normalize to completed.",
+                },
+            )
+        if not reason:
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "terminal_repair_reason_required"},
+            )
+        if (
+            record.completion_payload is not None
+            or record.completion_envelope is not None
+            or record.completion_received_at is not None
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "completion_evidence_requires_delivery_repair",
+                    "message": (
+                        "Preserved completion evidence must use completion delivery or "
+                        "acknowledged repair, not abandonment."
+                    ),
+                },
+            )
+        card = (
+            request.app.state.ctx.store.get_card(
+                record.card_id, realm_id=record.realm_id
+            )
+            if record.card_id
+            else None
+        )
+        if card is None or card.lane != CardLane.DONE:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "canonical_card_not_done",
+                    "message": "Abandoned repair requires the canonical card to be Done.",
+                    "card_id": record.card_id,
+                    "card_lane": card.lane.value if card else None,
+                },
+            )
+        session = (
+            request.app.state.ctx.store.get_session(record.session_id)
+            if record.session_id
+            else None
+        )
+        manager = request.app.state.ctx.services.get("instance_agent")
+        runtime = manager.get(record.session_id) if manager and record.session_id else None
+        runtime_live = bool(runtime and not getattr(runtime, "_closed", False))
+        session_status = str(getattr(session, "status", "missing") or "missing")
+        if runtime_live or session_status not in {"missing", "closed", "quiesced"}:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "linked_session_not_terminal",
+                    "message": (
+                        "Close or cancel the linked session before retiring its dispatch row."
+                    ),
+                    "session_id": record.session_id,
+                    "session_status": session_status,
+                    "runtime_live": runtime_live,
+                },
+            )
+        if (
+            record.goal_provenance is not None
+            and record.goal_provenance.released_at is None
+        ):
+            if not _goal_dispatch_lifecycle_owned(request.app.state.ctx, record):
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "terminal_repair_wrong_authority",
+                        "message": (
+                            "Governed dispatch repair must run on its recorded authority."
+                        ),
+                        "authority_instance_id": record.authority_instance_id,
+                    },
+                )
+            record = _release_goal_dispatch_reservation(
+                request.app.state.ctx,
+                ledger,
+                record,
+                outcome="legacy-abandoned-retired",
+                applied=_goal_dispatch_was_applied(record),
+            )
+        previous = record.state
+        now = datetime.now(UTC)
+        record.control_operations[key] = operation
+        record.recoverable = False
+        record.error_code = "legacy_abandoned_dispatch_retired"
+        record.last_error = (
+            "Legacy running dispatch retired without completion acknowledgement; "
+            "no dispatch or card outcome was inferred."
+        )
+        record.completion_next_retry_at = None
+        record.capacity_released_at = now
+        record.capacity_release_reason = "legacy-abandoned-retired"
+        record.lifecycle_inconsistencies.append(
+            {
+                "kind": "legacy_abandoned_dispatch_retired",
+                "previous_state": previous,
+                "normalized_state": "cancelled",
+                "observed_at": now.isoformat(),
+                "idempotency_key": key,
+                "reason": reason,
+                "evidence": {
+                    "card_id": record.card_id,
+                    "card_lane": card.lane.value,
+                    "session_id": record.session_id,
+                    "session_status": session_status,
+                    "runtime_live": False,
+                    "completion_acknowledged": False,
+                },
+                "outcome_inferred": False,
+            }
+        )
+        record = ledger.transition(
+            record,
+            "cancelled",
+            "Abandoned legacy running dispatch retired without outcome inference.",
+            detail={
+                "previous_state": previous,
+                "repair": True,
+                "mode": mode,
+                "outcome_inferred": False,
+            },
+        )
+        return _dispatch_public(request, record)
     previous = record.state
-    record.control_operations[key] = "repair_terminal"
+    record.control_operations[key] = operation
     record.completion_delivery_class = "acknowledged"
     record.completion_next_retry_at = None
     record.last_error = None
@@ -11618,7 +11809,7 @@ async def authority_dispatch_mutation(
     request: Request,
     authority_instance_id: str,
     dispatch_id: str,
-    operation: Literal["retry", "cancel", "prompt"],
+    operation: Literal["retry", "cancel", "prompt", "repair-terminal"],
     body: dict[str, Any],
 ) -> dict[str, Any]:
     require_user(request)
@@ -11626,6 +11817,10 @@ async def authority_dispatch_mutation(
         if operation == "prompt":
             return await prompt_dispatch_session(
                 request, dispatch_id, DispatchFollowupBody.model_validate(body)
+            )
+        if operation == "repair-terminal":
+            return repair_terminal_dispatch(
+                request, dispatch_id, DispatchTerminalRepairBody.model_validate(body)
             )
         control = DispatchControlBody.model_validate(body)
         return (retry_dispatch if operation == "retry" else cancel_dispatch)(
@@ -13299,14 +13494,35 @@ class FleetModule(Module):
             )
 
         @mcp.tool()
-        def repair_terminal_dispatch(dispatch_id: str, idempotency_key: str) -> dict:
-            """Audit and normalize an acknowledged legacy target record to terminal."""
+        def repair_terminal_dispatch(
+            dispatch_id: str,
+            idempotency_key: str,
+            authority_instance_id: str | None = None,
+            mode: Literal[
+                "acknowledged_completion", "abandoned_without_acknowledgement"
+            ] = "acknowledged_completion",
+            expected_state: str | None = None,
+            reason: str | None = None,
+            confirm_no_outcome_inference: bool = False,
+        ) -> dict:
+            """Audit and normalize one evidence-qualified legacy dispatch row."""
             key = idempotency_key.strip()
             if not key:
                 raise ValueError("idempotency_key cannot be empty")
+            path = (
+                f"/api/fleet/instances/{authority_instance_id}/dispatch-jobs/{dispatch_id}/repair-terminal"
+                if authority_instance_id
+                else f"/api/fleet/dispatch-jobs/{dispatch_id}/repair-terminal"
+            )
             return request_local_pa(
                 ctx.settings,
                 "POST",
-                f"/api/fleet/dispatch-jobs/{dispatch_id}/repair-terminal",
-                json={"idempotency_key": key},
+                path,
+                json={
+                    "idempotency_key": key,
+                    "mode": mode,
+                    "expected_state": expected_state,
+                    "reason": reason,
+                    "confirm_no_outcome_inference": confirm_no_outcome_inference,
+                },
             )
