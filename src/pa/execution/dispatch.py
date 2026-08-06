@@ -2066,6 +2066,84 @@ class DispatchStore:
             record = self._latest_session_records_global.get(session_id)
             return self._snapshot(record) if record else None
 
+    def queue_completion_payload(
+        self, session_id: str, payload: dict[str, Any]
+    ) -> bool:
+        """Atomically queue completion against the latest durable session record."""
+        with self._lock:
+            self._require_writer()
+            stored = self._latest_session_records_global.get(session_id)
+            record = self._snapshot(stored) if stored else None
+            if (
+                record
+                and record.acknowledged_at
+                and record.state in {"completed", "acknowledged"}
+            ):
+                followup = next(
+                    (
+                        item
+                        for item in reversed(record.followup_turns)
+                        if item.get("state") == "accepted"
+                    ),
+                    None,
+                )
+                if not followup:
+                    return False
+                followup.update(
+                    {
+                        "state": "ended",
+                        "ended_at": datetime.now(UTC).isoformat(),
+                        "stop_reason": payload.get("stop_reason"),
+                        "result": payload,
+                        "final_report": (
+                            record.final_report.model_dump(mode="json")
+                            if record.final_report
+                            else None
+                        ),
+                        "delivery_state": "pending",
+                        "delivery_attempts": 0,
+                        "next_retry_at": None,
+                    }
+                )
+                self.put(record)
+                return True
+            late_repair_completion = bool(
+                record and record.accepts_late_completion_after_terminal_repair
+            )
+            if not record or (
+                record.state not in {"running", "completion_pending"}
+                and not late_repair_completion
+            ):
+                return False
+            if late_repair_completion:
+                record.lifecycle_inconsistencies.append(
+                    {
+                        "kind": "terminal_repair_superseded_by_completion",
+                        "observed_at": datetime.now(UTC).isoformat(),
+                        "reason": (
+                            "Immutable completion arrived after abandonment repair and "
+                            "was preserved for authority acknowledgement."
+                        ),
+                    }
+                )
+                record.lifecycle_inconsistencies = record.lifecycle_inconsistencies[
+                    -50:
+                ]
+                record.error_code = None
+            record.completion_payload = payload
+            record.last_error = None
+            record.completion_delivery_class = "pending"
+            record.completion_next_retry_at = None
+            self.transition(
+                record,
+                "completion_pending",
+                (
+                    "Agent turn ended; dispatch completion queued for delivery to "
+                    "the authority."
+                ),
+            )
+            return True
+
     def by_idempotency(
         self, target_instance_id: str, idempotency_key: str
     ) -> DispatchRecord | None:
@@ -4396,73 +4474,10 @@ class CompletionOutbox:
             self._task = asyncio.create_task(self._run())
 
     def queue(self, session_id: str, payload: dict[str, Any]) -> bool:
-        record = self.store.by_session(session_id)
-        if (
-            record
-            and record.acknowledged_at
-            and record.state in {"completed", "acknowledged"}
-        ):
-            followup = next(
-                (
-                    item
-                    for item in reversed(record.followup_turns)
-                    if item.get("state") == "accepted"
-                ),
-                None,
-            )
-            if not followup:
-                return False
-            followup.update(
-                {
-                    "state": "ended",
-                    "ended_at": datetime.now(UTC).isoformat(),
-                    "stop_reason": payload.get("stop_reason"),
-                    "result": payload,
-                    "final_report": (
-                        record.final_report.model_dump(mode="json")
-                        if record.final_report
-                        else None
-                    ),
-                    "delivery_state": "pending",
-                    "delivery_attempts": 0,
-                    "next_retry_at": None,
-                }
-            )
-            self.store.put(record)
+        queued = self.store.queue_completion_payload(session_id, payload)
+        if queued:
             self._wake.set()
-            return True
-        late_repair_completion = bool(
-            record and record.accepts_late_completion_after_terminal_repair
-        )
-        if not record or (
-            record.state not in {"running", "completion_pending"}
-            and not late_repair_completion
-        ):
-            return False
-        if late_repair_completion:
-            record.lifecycle_inconsistencies.append(
-                {
-                    "kind": "terminal_repair_superseded_by_completion",
-                    "observed_at": datetime.now(UTC).isoformat(),
-                    "reason": (
-                        "Immutable completion arrived after abandonment repair and "
-                        "was preserved for authority acknowledgement."
-                    ),
-                }
-            )
-            record.lifecycle_inconsistencies = record.lifecycle_inconsistencies[-50:]
-            record.error_code = None
-        record.completion_payload = payload
-        record.last_error = None
-        record.completion_delivery_class = "pending"
-        record.completion_next_retry_at = None
-        self.store.transition(
-            record,
-            "completion_pending",
-            "Agent turn ended; dispatch completion queued for delivery to the authority.",
-        )
-        self._wake.set()
-        return True
+        return queued
 
     def retry_delivery(self, dispatch_id: str) -> DispatchRecord:
         """Re-arm preserved completion evidence without changing its payload."""

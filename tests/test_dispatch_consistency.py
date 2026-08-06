@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import tempfile
+import threading
 import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -1154,6 +1155,126 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
                 persisted.lifecycle_inconsistencies[-1]["kind"],
                 "terminal_repair_superseded_by_completion",
             )
+
+    async def test_completion_callback_started_before_repair_preserves_repair_audit(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp)
+            settings = Settings(data_dir=data_dir, instance_id="target")
+            ledger = DispatchStore(data_dir)
+            session_id = "session-stale-completion"
+            dispatch_id = "dispatch-stale-completion"
+            repair_key = "repair-stale-completion"
+            payload = {
+                "stop_reason": "end_turn",
+                "outcome": "Completion callback began before repair committed.",
+            }
+            ledger.put(
+                DispatchRecord(
+                    dispatch_id=dispatch_id,
+                    mutation_id="mutation-stale-completion",
+                    card_id="card-done",
+                    authority_instance_id="target",
+                    authority_url="http://target",
+                    target_instance_id="target",
+                    session_id=session_id,
+                    state="running",
+                    recoverable=False,
+                )
+            )
+            domain = MagicMock()
+            domain.get_card.return_value = SimpleNamespace(lane=CardLane.DONE)
+            domain.get_session.return_value = SimpleNamespace(status="closed")
+            request = request_for(
+                settings, domain, {"dispatch_store": ledger}
+            )
+            body = DispatchTerminalRepairBody(
+                idempotency_key=repair_key,
+                mode="abandoned_without_acknowledgement",
+                expected_state="running",
+                reason="Exercise the callback/repair writer race.",
+                confirm_no_outcome_inference=True,
+            )
+            outbox = CompletionOutbox(ledger, "")
+            callback_started = threading.Event()
+            resume_callback = threading.Event()
+            original_queue = ledger.queue_completion_payload
+            accepted: list[bool] = []
+
+            def delayed_atomic_queue(
+                current_session_id: str, current_payload: dict
+            ) -> bool:
+                callback_started.set()
+                if not resume_callback.wait(5):
+                    raise RuntimeError("completion callback race barrier timed out")
+                return original_queue(current_session_id, current_payload)
+
+            ledger.queue_completion_payload = delayed_atomic_queue
+            worker = threading.Thread(
+                target=lambda: accepted.append(outbox.queue(session_id, payload)),
+                name="completion-callback-before-repair",
+            )
+            worker.start()
+            try:
+                self.assertTrue(callback_started.wait(5))
+                with patch("pa.modules.fleet.require_user"):
+                    repaired = await repair_terminal_dispatch(
+                        request, dispatch_id, body
+                    )
+                self.assertEqual(repaired["state"], "cancelled")
+            finally:
+                resume_callback.set()
+                worker.join(5)
+                ledger.queue_completion_payload = original_queue
+            self.assertFalse(worker.is_alive())
+            self.assertEqual(accepted, [True])
+
+            ledger.close()
+            reopened = DispatchStore(data_dir)
+            persisted = reopened.get(dispatch_id)
+            assert persisted is not None
+            self.assertEqual(persisted.state, "completion_pending")
+            self.assertEqual(persisted.completion_payload, payload)
+            self.assertEqual(persisted.completion_delivery_class, "pending")
+            self.assertEqual(
+                persisted.control_operations[repair_key],
+                "repair_terminal:abandoned_without_acknowledgement",
+            )
+            repair_audits = [
+                item
+                for item in persisted.lifecycle_inconsistencies
+                if item["kind"] == "legacy_abandoned_dispatch_retired"
+            ]
+            supersession_audits = [
+                item
+                for item in persisted.lifecycle_inconsistencies
+                if item["kind"] == "terminal_repair_superseded_by_completion"
+            ]
+            self.assertEqual(len(repair_audits), 1)
+            self.assertEqual(len(supersession_audits), 1)
+            self.assertEqual(
+                [event.state for event in persisted.events],
+                ["cancelled", "completion_pending"],
+            )
+
+            replay_request = request_for(
+                settings, domain, {"dispatch_store": reopened}
+            )
+            with patch("pa.modules.fleet.require_user"):
+                replay = await repair_terminal_dispatch(
+                    replay_request, dispatch_id, body
+                )
+            self.assertEqual(replay["state"], "completion_pending")
+            replayed = reopened.get(dispatch_id)
+            assert replayed is not None
+            self.assertEqual(replayed.control_operations, persisted.control_operations)
+            self.assertEqual(
+                replayed.lifecycle_inconsistencies,
+                persisted.lifecycle_inconsistencies,
+            )
+            self.assertEqual(replayed.events, persisted.events)
+            reopened.close()
 
     async def test_remote_target_closed_proof_repairs_without_local_replica_use(
         self,
