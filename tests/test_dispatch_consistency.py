@@ -23,6 +23,7 @@ from pa.domain.models import (
 )
 from pa.execution.dispatch import (
     CompletionOutbox,
+    DispatchCompareConflict,
     DispatchEvent,
     DispatchRecord,
     DispatchStore,
@@ -54,6 +55,7 @@ from pa.modules.fleet import (
     _goal_materialization_stage_provenance,
     _peer_terminal_repair_evidence,
     _process_remote_dispatch,
+    _release_terminal_repair_fence_if_uncommitted,
     _terminal_repair_commit_digest,
     _terminal_repair_evidence_digest,
     _terminal_repair_reservation_id,
@@ -1423,6 +1425,214 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
                 await manager.recover_session(session_id)
             with self.assertRaises(AgentSessionRecoveryError):
                 await manager.prompt("must not run", session_id=session_id)
+
+    async def test_losing_same_key_repair_cannot_release_newer_fence(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="target")
+            ledger = DispatchStore(Path(tmp))
+            session_id = "session-same-key-retry"
+            dispatch_id = "dispatch-same-key-retry"
+            fence_id = "terminal-repair:same-key"
+            record = DispatchRecord(
+                dispatch_id=dispatch_id,
+                mutation_id="mutation-same-key-retry",
+                authority_instance_id="target",
+                authority_url="http://target",
+                target_instance_id="target",
+                session_id=session_id,
+                state="running",
+                recoverable=False,
+            )
+            ledger.put(record)
+            manager = AgentSessionManager(
+                settings, MagicMock(), dispatch_store=ledger
+            )
+            request = request_for(
+                settings,
+                MagicMock(),
+                {"dispatch_store": ledger, "instance_agent": manager},
+            )
+            self.assertIsNone(
+                manager.acquire_terminal_repair_fence(
+                    session_id,
+                    fence_id=fence_id,
+                    acquisition_id="old-acquisition",
+                )
+            )
+            original_release = AgentSessionManager.release_terminal_repair_fence
+
+            def prepare_retry_before_old_release(
+                current_manager,
+                current_session_id,
+                *,
+                fence_id,
+                acquisition_id=None,
+            ):
+                self.assertIsNone(
+                    current_manager.acquire_terminal_repair_fence(
+                        current_session_id,
+                        fence_id=fence_id,
+                        acquisition_id="new-acquisition",
+                    )
+                )
+                current = ledger.get(dispatch_id)
+                assert current is not None
+                current.terminal_repair_reservation = {
+                    "state": "committed",
+                    "reservation_id": fence_id,
+                }
+                ledger.put(current)
+                return original_release(
+                    current_manager,
+                    current_session_id,
+                    fence_id=fence_id,
+                    acquisition_id=acquisition_id,
+                )
+
+            with patch.object(
+                AgentSessionManager,
+                "release_terminal_repair_fence",
+                autospec=True,
+                side_effect=prepare_retry_before_old_release,
+            ):
+                _release_terminal_repair_fence_if_uncommitted(
+                    request,
+                    record,
+                    fence_id=fence_id,
+                    fence_acquisition_id="old-acquisition",
+                )
+
+            self.assertEqual(
+                manager.terminal_repair_fence_id(session_id), fence_id
+            )
+            self.assertEqual(
+                manager._terminal_repair_fence_acquisitions[session_id],
+                "new-acquisition",
+            )
+            runtime = MagicMock()
+            runtime.session_id = session_id
+            runtime.close = AsyncMock(return_value=True)
+            with self.assertRaisesRegex(RuntimeError, "terminal dispatch repair"):
+                await manager._publish_runtime(runtime)
+            runtime.close.assert_awaited_once_with(
+                reason="terminal_dispatch_repair_fenced",
+                reconcile_workspace=False,
+            )
+
+    async def test_followup_failure_cannot_replay_state_over_terminal_repair(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="target")
+            ledger = DispatchStore(Path(tmp))
+            dispatch_id = "dispatch-followup-repair-race"
+            session_id = "session-followup-repair-race"
+            repair_key = "repair-followup-race"
+            record = DispatchRecord(
+                dispatch_id=dispatch_id,
+                mutation_id="mutation-followup-repair-race",
+                card_id="card-done",
+                authority_instance_id="target",
+                authority_url="http://target",
+                target_instance_id="target",
+                session_id=session_id,
+                state="running",
+                recoverable=False,
+            )
+            ledger.put(record)
+            stale = ledger.get(dispatch_id)
+            assert stale is not None
+            domain = MagicMock()
+            domain.get_card.return_value = SimpleNamespace(lane=CardLane.DONE)
+            domain.get_session.return_value = SimpleNamespace(status="closed")
+            manager = AgentSessionManager(
+                settings, domain, dispatch_store=ledger
+            )
+            request = request_for(
+                settings,
+                domain,
+                {"dispatch_store": ledger, "instance_agent": manager},
+            )
+            request.state.instance_authenticated = True
+            body = DispatchTerminalRepairBody(
+                idempotency_key=repair_key,
+                mode="abandoned_without_acknowledgement",
+                expected_state="running",
+                reason="Fence a stale follow-up failure writer.",
+                confirm_no_outcome_inference=True,
+            )
+            prompt_started = asyncio.Event()
+            resume_prompt = asyncio.Event()
+
+            async def rejected_after_repair(*_args, **_kwargs):
+                prompt_started.set()
+                await resume_prompt.wait()
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "terminal_dispatch_repair_fenced",
+                        "message": "Repair fenced the linked session.",
+                    },
+                )
+
+            with (
+                patch("pa.modules.fleet.require_user"),
+                patch(
+                    "pa.modules.fleet._peer_agent_json",
+                    AsyncMock(side_effect=rejected_after_repair),
+                ),
+            ):
+                prompt = asyncio.create_task(
+                    prompt_dispatch_session(
+                        request,
+                        dispatch_id,
+                        DispatchFollowupBody(
+                            message="continue",
+                            idempotency_key="followup-race",
+                        ),
+                    )
+                )
+                await asyncio.wait_for(prompt_started.wait(), timeout=5)
+                repaired = await repair_terminal_dispatch(
+                    request, dispatch_id, body
+                )
+                self.assertEqual(repaired["state"], "cancelled")
+                with self.assertRaises(DispatchCompareConflict):
+                    ledger.put(stale)
+                resume_prompt.set()
+                with self.assertRaises(HTTPException) as raised:
+                    await asyncio.wait_for(prompt, timeout=5)
+
+            self.assertEqual(raised.exception.status_code, 409)
+            persisted = ledger.get(dispatch_id)
+            assert persisted is not None
+            self.assertEqual(persisted.state, "cancelled")
+            self.assertFalse(persisted.recoverable)
+            self.assertEqual(
+                persisted.control_operations[repair_key],
+                "repair_terminal:abandoned_without_acknowledgement",
+            )
+            reservation = persisted.terminal_repair_reservation
+            assert reservation is not None
+            self.assertEqual(reservation["state"], "committed")
+            self.assertIsNotNone(persisted.capacity_released_at)
+            self.assertEqual(
+                persisted.followup_operations["followup-race"]["state"],
+                "failed",
+            )
+            self.assertEqual(
+                persisted.followup_operations["followup-race"]["error"]["code"],
+                "terminal_dispatch_repair_fenced",
+            )
+            self.assertIn(
+                "legacy_abandoned_dispatch_retired",
+                {
+                    item["kind"]
+                    for item in persisted.lifecycle_inconsistencies
+                },
+            )
 
     async def test_remote_repair_collects_target_proof_after_slow_snapshot(
         self,

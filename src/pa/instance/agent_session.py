@@ -2085,6 +2085,7 @@ class AgentSessionManager:
         # publication atomically with its no-live-runtime observation.
         self._runtime_lifecycle_lock = RLock()
         self._terminal_repair_fences: dict[str, str] = {}
+        self._terminal_repair_fence_acquisitions: dict[str, str] = {}
         self._reconnect_task: asyncio.Task[bool] | None = None
         self._label_locks: dict[str, asyncio.Lock] = {}
         self.async_runtime: AsyncRuntime | None = None
@@ -2501,7 +2502,11 @@ class AgentSessionManager:
             return self._runtimes.get(session_id)
 
     def acquire_terminal_repair_fence(
-        self, session_id: str, *, fence_id: str
+        self,
+        session_id: str,
+        *,
+        fence_id: str,
+        acquisition_id: str | None = None,
     ) -> AgentSessionRuntime | None:
         """Fence future runtime publication after observing no live runtime.
 
@@ -2516,12 +2521,18 @@ class AgentSessionManager:
             runtime = self._runtimes.get(session_id)
             if runtime is not None and not getattr(runtime, "_closed", False):
                 return runtime
-            self._terminal_repair_fences.setdefault(session_id, fence_id)
+            self._terminal_repair_fences[session_id] = fence_id
+            self._terminal_repair_fence_acquisitions[session_id] = (
+                acquisition_id or str(uuid4())
+            )
             return None
 
     def terminal_repair_fence_id(self, session_id: str) -> str | None:
         ledger = self.dispatch_store
         with self._runtime_lifecycle_lock:
+            fence_acquisition_id = self._terminal_repair_fence_acquisitions.get(
+                session_id
+            )
             fence_id = self._terminal_repair_fences.get(session_id)
         if ledger is None:
             return fence_id
@@ -2537,9 +2548,12 @@ class AgentSessionManager:
             durable_fence_id = str(reservation.get("reservation_id") or "").strip()
             if durable_fence_id:
                 with self._runtime_lifecycle_lock:
-                    return self._terminal_repair_fences.setdefault(
-                        session_id, durable_fence_id
-                    )
+                    if session_id not in self._terminal_repair_fences:
+                        self._terminal_repair_fences[session_id] = durable_fence_id
+                        self._terminal_repair_fence_acquisitions[session_id] = (
+                            f"durable:{uuid4()}"
+                        )
+                    return self._terminal_repair_fences[session_id]
         repair_lost = bool(
             record
             and (
@@ -2550,16 +2564,33 @@ class AgentSessionManager:
             )
         )
         if fence_id is not None and repair_lost:
-            self.release_terminal_repair_fence(session_id, fence_id=fence_id)
+            self.release_terminal_repair_fence(
+                session_id,
+                fence_id=fence_id,
+                acquisition_id=fence_acquisition_id,
+            )
             return None
         return fence_id
 
-    def release_terminal_repair_fence(self, session_id: str, *, fence_id: str) -> bool:
+    def release_terminal_repair_fence(
+        self,
+        session_id: str,
+        *,
+        fence_id: str,
+        acquisition_id: str | None = None,
+    ) -> bool:
         """Release only the exact losing ephemeral repair fence."""
         with self._runtime_lifecycle_lock:
             if self._terminal_repair_fences.get(session_id) != fence_id:
                 return False
+            if (
+                acquisition_id is not None
+                and self._terminal_repair_fence_acquisitions.get(session_id)
+                != acquisition_id
+            ):
+                return False
             self._terminal_repair_fences.pop(session_id, None)
+            self._terminal_repair_fence_acquisitions.pop(session_id, None)
             return True
 
     def bind_dispatch_store(self, dispatch_store: Any | None) -> None:

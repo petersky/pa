@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import hashlib
 import hmac
 import json
@@ -9102,6 +9103,42 @@ def _goal_followup_operation_key(record: DispatchRecord, idempotency_key: str) -
     return f"dispatch-followup:{record.dispatch_id}:{digest}"[:200]
 
 
+def _merge_dispatch_followup_operation(
+    ledger: DispatchStore,
+    record: DispatchRecord,
+    idempotency_key: str,
+    *,
+    event_message: str | None = None,
+    event_detail: dict[str, Any] | None = None,
+) -> DispatchRecord:
+    """Merge one follow-up result without replaying a stale lifecycle snapshot."""
+
+    source = copy.deepcopy(record.followup_operations[idempotency_key])
+
+    def merge(current: DispatchRecord) -> bool:
+        existing = current.followup_operations.get(idempotency_key)
+        if existing and existing.get("fingerprint") != source.get("fingerprint"):
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "idempotency_conflict", "recoverable": False},
+            )
+        if existing and existing.get("response") and not source.get("response"):
+            return False
+        current.followup_operations[idempotency_key] = copy.deepcopy(source)
+        if event_message is not None:
+            current.events.append(
+                DispatchEvent(
+                    seq=(current.events[-1].seq + 1 if current.events else 1),
+                    state=current.state,
+                    message=event_message,
+                    detail=copy.deepcopy(event_detail or {}),
+                )
+            )
+        return True
+
+    return ledger.mutate_current(record.dispatch_id, mutate=merge)
+
+
 def _goal_provenance_from_reservation(
     base: GoalDispatchProvenance,
     reservation,
@@ -9199,7 +9236,20 @@ def _reserve_goal_dispatch_followup(
         )
     operation["state"] = "governance_pending"
     operation["operation_key"] = operation_key
-    ledger.put(record)
+    current = _merge_dispatch_followup_operation(
+        ledger, record, idempotency_key
+    )
+    if current.state in {"failed", "cancelled"}:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "linked_session_unavailable",
+                "message": (
+                    f"Dispatch in {current.state} cannot accept follow-up work."
+                ),
+                "recoverable": current.recoverable,
+            },
+        )
 
     state = governance.get_state(goal.id)
     reservation = next(
@@ -9287,7 +9337,7 @@ def _reserve_goal_dispatch_followup(
         if reservation.state == GoalReservationState.APPLIED
         else "reserved"
     )
-    ledger.put(record)
+    _merge_dispatch_followup_operation(ledger, record, idempotency_key)
     if reservation.state == GoalReservationState.RELEASED:
         raise HTTPException(
             status_code=409,
@@ -9336,7 +9386,7 @@ def _reserve_goal_dispatch_followup(
         provenance = _goal_provenance_from_reservation(base, reservation)
     operation["goal_provenance"] = provenance.model_dump(mode="json")
     operation["state"] = "reservation_applied"
-    ledger.put(record)
+    _merge_dispatch_followup_operation(ledger, record, idempotency_key)
     return provenance
 
 
@@ -9366,8 +9416,9 @@ def _release_goal_dispatch_followup(
     operation["released_at"] = (
         provenance.released_at.isoformat() if provenance.released_at else None
     )
-    ledger.put(record)
-    return record
+    return _merge_dispatch_followup_operation(
+        ledger, record, idempotency_key
+    )
 
 
 def _reconcile_goal_dispatch_followups(
@@ -9416,7 +9467,9 @@ def _reconcile_goal_dispatch_followups(
                     "message": "Follow-up governance ended before a reservation was created.",
                     "recoverable": True,
                 }
-                ledger.put(record)
+                record = _merge_dispatch_followup_operation(
+                    ledger, record, idempotency_key
+                )
                 continue
             provenance = _goal_provenance_from_reservation(base, reservation)
             operation["goal_provenance"] = provenance.model_dump(mode="json")
@@ -9426,7 +9479,9 @@ def _reconcile_goal_dispatch_followups(
                 "code": "goal_followup_reservation_missing",
                 "recoverable": False,
             }
-            ledger.put(record)
+            record = _merge_dispatch_followup_operation(
+                ledger, record, idempotency_key
+            )
             continue
         prior_state = str(operation.get("state") or "")
         accepted = prior_state in {"accepted", "accepted_pending_release"}
@@ -9453,7 +9508,9 @@ def _reconcile_goal_dispatch_followups(
                 "message": "Follow-up delivery outcome was interrupted; usage was conservatively accounted.",
                 "recoverable": True,
             }
-        ledger.put(record)
+        record = _merge_dispatch_followup_operation(
+            ledger, record, idempotency_key
+        )
         record = _release_goal_dispatch_followup(
             ctx,
             ledger,
@@ -11350,6 +11407,7 @@ def _local_terminal_repair_session_evidence(
     record: DispatchRecord,
     *,
     fence_id: str | None = None,
+    fence_acquisition_id: str | None = None,
 ) -> tuple[AgentSession, bool]:
     session = (
         request.app.state.ctx.store.get_session(record.session_id)
@@ -11373,7 +11431,12 @@ def _local_terminal_repair_session_evidence(
     if manager and record.session_id and fence_id:
         acquire = getattr(type(manager), "acquire_terminal_repair_fence", None)
         if callable(acquire):
-            runtime = acquire(manager, record.session_id, fence_id=fence_id)
+            runtime = acquire(
+                manager,
+                record.session_id,
+                fence_id=fence_id,
+                acquisition_id=fence_acquisition_id,
+            )
         else:
             runtime = manager.get(record.session_id)
         runtime_live = bool(runtime and not getattr(runtime, "_closed", False))
@@ -11390,6 +11453,7 @@ def _release_terminal_repair_fence_if_uncommitted(
     record: DispatchRecord,
     *,
     fence_id: str,
+    fence_acquisition_id: str,
 ) -> None:
     manager = request.app.state.ctx.services.get("instance_agent")
     release = getattr(type(manager), "release_terminal_repair_fence", None)
@@ -11399,7 +11463,12 @@ def _release_terminal_repair_fence_if_uncommitted(
     reservation = current.terminal_repair_reservation if current else None
     if reservation and reservation.get("state") in {"prepared", "committed"}:
         return
-    release(manager, record.session_id, fence_id=fence_id)
+    release(
+        manager,
+        record.session_id,
+        fence_id=fence_id,
+        acquisition_id=fence_acquisition_id,
+    )
 
 
 def _validate_remote_terminal_repair_evidence(
@@ -11569,6 +11638,7 @@ def target_terminal_repair_evidence(
     reservation_id = _terminal_repair_reservation_id(record, body.idempotency_key)
     fence_id = f"{record.dispatch_id}:{body.idempotency_key}"
     reservation = record.terminal_repair_reservation or {}
+    fence_acquisition_id = str(uuid4())
     if (
         reservation.get("reservation_id") == reservation_id
         and reservation.get("idempotency_key") == body.idempotency_key
@@ -11685,6 +11755,7 @@ def target_terminal_repair_evidence(
             request,
             current,
             fence_id=fence_id,
+            fence_acquisition_id=fence_acquisition_id,
         )
         observed_at = datetime.now(UTC)
         evidence = DispatchTerminalRepairEvidenceV1(
@@ -11736,7 +11807,10 @@ def target_terminal_repair_evidence(
         ledger.compare_and_mutate(record, capture)
     except DispatchCompareConflict as exc:
         _release_terminal_repair_fence_if_uncommitted(
-            request, record, fence_id=fence_id
+            request,
+            record,
+            fence_id=fence_id,
+            fence_acquisition_id=fence_acquisition_id,
         )
         raise HTTPException(
             status_code=409,
@@ -11748,7 +11822,10 @@ def target_terminal_repair_evidence(
         ) from exc
     except Exception:
         _release_terminal_repair_fence_if_uncommitted(
-            request, record, fence_id=fence_id
+            request,
+            record,
+            fence_id=fence_id,
+            fence_acquisition_id=fence_acquisition_id,
         )
         raise
     return captured[0]
@@ -12156,12 +12233,15 @@ async def _repair_terminal_dispatch(
                 },
             )
         local_fence_id: str | None = None
+        local_fence_acquisition_id: str | None = None
         if record.target_instance_id == request.app.state.ctx.settings.instance_id:
             local_fence_id = f"{record.dispatch_id}:{key}"
+            local_fence_acquisition_id = str(uuid4())
             _session, _runtime_live = _local_terminal_repair_session_evidence(
                 request,
                 record,
                 fence_id=local_fence_id,
+                fence_acquisition_id=local_fence_acquisition_id,
             )
             evidence_source = "target_local_atomic_check"
             evidence_observed_at = datetime.now(UTC)
@@ -12378,7 +12458,10 @@ async def _repair_terminal_dispatch(
             current = ledger.get(dispatch_id)
             if local_fence_id is not None:
                 _release_terminal_repair_fence_if_uncommitted(
-                    request, record, fence_id=local_fence_id
+                    request,
+                    record,
+                    fence_id=local_fence_id,
+                    fence_acquisition_id=local_fence_acquisition_id,
                 )
             if current:
                 require_recorded_authority(current)
@@ -12398,7 +12481,10 @@ async def _repair_terminal_dispatch(
         except Exception:
             if local_fence_id is not None:
                 _release_terminal_repair_fence_if_uncommitted(
-                    request, record, fence_id=local_fence_id
+                    request,
+                    record,
+                    fence_id=local_fence_id,
+                    fence_acquisition_id=local_fence_acquisition_id,
                 )
             raise
         return _dispatch_public(request, record)
@@ -12590,8 +12676,10 @@ async def prompt_dispatch_session(
             await _offload_request(
                 request,
                 "dispatch.followup_governance_update",
-                ledger.put,
+                _merge_dispatch_followup_operation,
+                ledger,
                 record,
+                key,
             )
         result = await _peer_agent_json(
             request,
@@ -12637,8 +12725,10 @@ async def prompt_dispatch_session(
         await _offload_request(
             request,
             "dispatch.followup_failed",
-            ledger.put,
+            _merge_dispatch_followup_operation,
+            ledger,
             record,
+            key,
         )
         if operation.get("goal_provenance"):
             await _offload_request(
@@ -12670,7 +12760,14 @@ async def prompt_dispatch_session(
             "failed_pending_release" if operation.get("goal_provenance") else "failed"
         )
         operation["error"] = {**error.detail, "status_code": error.status_code}
-        await _offload_request(request, "dispatch.followup_failed", ledger.put, record)
+        await _offload_request(
+            request,
+            "dispatch.followup_failed",
+            _merge_dispatch_followup_operation,
+            ledger,
+            record,
+            key,
+        )
         if operation.get("goal_provenance"):
             await _offload_request(
                 request,
@@ -12718,11 +12815,12 @@ async def prompt_dispatch_session(
     await _offload_request(
         request,
         "dispatch.followup_ack",
-        _dispatch_store(request).transition,
+        _merge_dispatch_followup_operation,
+        ledger,
         record,
-        record.state,
-        "Linked session follow-up durably acknowledged.",
-        detail={
+        key,
+        event_message="Linked session follow-up durably acknowledged.",
+        event_detail={
             "session_id": record.session_id,
             "prompt_id": result.get("prompt_id"),
         },
