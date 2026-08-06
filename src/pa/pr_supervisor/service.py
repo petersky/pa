@@ -7,8 +7,10 @@ import json
 import logging
 import random
 import re
+import time
 from collections import Counter
-from datetime import timedelta
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 from uuid import UUID, uuid4
@@ -28,6 +30,7 @@ from pa.pr_supervisor.gating import (
 from pa.pr_supervisor.github import GitHubClient, GitHubCredentials
 from pa.pr_supervisor.models import (
     GITHUB_TERMINAL_PR_WATCH_STATUSES,
+    PR_WATCH_PROTOCOL_VERSION,
     GateResult,
     GitHubCapability,
     LeaseGrant,
@@ -69,6 +72,14 @@ class ProvenanceValidationError(ValueError):
 
     def http_detail(self) -> dict[str, Any]:
         return {"code": self.code, "message": self.message, **self.detail}
+
+
+@dataclass(frozen=True)
+class _LocalLease:
+    grant: LeaseGrant
+    authority: str
+    renew_at: float
+    expires_at: float
 
 
 def canonical_uuid(
@@ -131,10 +142,21 @@ class ExecutorDispatcher:
         return await asyncio.to_thread(call, *args, **kwargs)
 
     async def dispatch(
-        self, watch: PRWatch, event_key: str, prompt: str | RenderedPrompt
+        self,
+        watch: PRWatch,
+        event_key: str,
+        prompt: str | RenderedPrompt,
+        *,
+        authorization: dict[str, Any] | None = None,
+        prompt_audit: list[dict[str, Any]] | None = None,
     ) -> str:
+        if (
+            not isinstance(authorization, dict)
+            or authorization.get("protocol_version") != PR_WATCH_PROTOCOL_VERSION
+        ):
+            return "rejected"
         prompt_text = prompt.text if isinstance(prompt, RenderedPrompt) else prompt
-        prompt_audit = (
+        prompt_audit = list(prompt_audit or []) or (
             [prompt.audit_record()] if isinstance(prompt, RenderedPrompt) else []
         )
         target = watch.originating_instance_id
@@ -143,7 +165,12 @@ class ExecutorDispatcher:
             if url:
                 try:
                     result = await self._remote_dispatch(
-                        url, watch, event_key, prompt_text, prompt_audit
+                        url,
+                        watch,
+                        event_key,
+                        prompt_text,
+                        prompt_audit,
+                        authorization=authorization,
                     )
                     return str(result.get("state") or "queued")
                 except (httpx.ConnectError, RuntimeError) as exc:
@@ -153,6 +180,8 @@ class ExecutorDispatcher:
                         target,
                         exc,
                     )
+                    if authorization:
+                        raise
                 except httpx.HTTPError as exc:
                     # A read/protocol failure after the request left this instance is
                     # ambiguous: the destination may already have queued the prompt.
@@ -167,7 +196,11 @@ class ExecutorDispatcher:
                     )
                     raise
         return await self.dispatch_local(
-            watch, event_key, prompt_text, prompt_audit=prompt_audit
+            watch,
+            event_key,
+            prompt_text,
+            prompt_audit=prompt_audit,
+            authorization=authorization,
         )
 
     async def _remote_dispatch(
@@ -177,7 +210,14 @@ class ExecutorDispatcher:
         event_key: str,
         prompt: str,
         prompt_audit: list[dict[str, Any]],
+        *,
+        authorization: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        if (
+            not isinstance(authorization, dict)
+            or authorization.get("protocol_version") != PR_WATCH_PROTOCOL_VERSION
+        ):
+            raise RuntimeError("pr_watch_effect_authorization_required")
         headers: dict[str, str] = {}
         if self.settings.sync_token:
             headers["Authorization"] = f"Bearer {self.settings.sync_token}"
@@ -193,6 +233,7 @@ class ExecutorDispatcher:
                     "event_key": event_key,
                     "prompt": prompt,
                     "prompt_audit": prompt_audit,
+                    "authorization": authorization,
                 },
             )
             if response.status_code >= 400:
@@ -211,7 +252,59 @@ class ExecutorDispatcher:
         prompt: str,
         *,
         prompt_audit: list[dict[str, Any]] | None = None,
+        authorization: dict[str, Any] | None = None,
     ) -> str:
+        if (
+            not isinstance(authorization, dict)
+            or authorization.get("protocol_version") != PR_WATCH_PROTOCOL_VERSION
+        ):
+            return "rejected"
+        try:
+            authorization_expires_at = datetime.fromisoformat(
+                str(authorization.get("expires_at") or "")
+            )
+        except ValueError:
+            return "rejected"
+        if authorization:
+            current = await self._offload(
+                "sqlite.pr_supervisor_watch_read", self.store.get_watch, watch.id
+            )
+            current_authorization = (
+                (current.state.get("effect_authorizations") or {}).get(event_key)
+                if current
+                else None
+            )
+            expected = {
+                "realm_id": watch.realm_id,
+                "watch_id": watch.id,
+                "repository": watch.repository,
+                "pr_number": watch.pr_number,
+                "head_sha": watch.head_sha,
+                "condition_fingerprint": watch.condition_fingerprint,
+                "condition_version": watch.condition_version,
+                "owner_instance_id": watch.owner_instance_id,
+                "fence_token": watch.fence_token,
+                "lease_version": watch.lease_version,
+                "target_instance_id": self.settings.instance_id,
+                "target_session_id": watch.originating_session_id,
+                "content_digest": hashlib.sha256(prompt.encode()).hexdigest(),
+                "policy_digest": hashlib.sha256(
+                    watch.policy.model_dump_json().encode()
+                ).hexdigest(),
+                "review_hold_version": int(
+                    (watch.state or {}).get("review_hold_version") or 0
+                ),
+            }
+            if (
+                not current
+                or not current.actionable
+                or authorization_expires_at <= utcnow()
+                or current_authorization != authorization
+                or any(
+                    authorization.get(key) != value for key, value in expected.items()
+                )
+            ):
+                return "rejected"
         if not await self._offload(
             "pr_supervisor.dispatch_claim",
             self.store.claim_dispatch,
@@ -276,6 +369,10 @@ class ExecutorDispatcher:
                 else:
                     failure_reason = "provider_thread_missing"
             if runtime is None:
+                if authorization:
+                    raise RuntimeError(
+                        "fixed authorized destination session is unavailable"
+                    )
                 card = (
                     await self._offload(
                         "sqlite.card_read",
@@ -312,27 +409,87 @@ class ExecutorDispatcher:
                     surface="execution",
                 )
                 delivery = "fallback"
-            runtime.enqueue(
-                prompt,
-                action="append",
-                card_id=watch.card_id,
-                project_id=watch.project_id,
-                principal_id=runtime.session.principal_id or "user:local",
-                cwd=runtime.session.cwd,
-                source="pr-supervisor",
-                prompt_audit=prompt_audit,
-            )
-            drain = getattr(runtime, "_drain_transcripts", None)
-            if drain:
-                drained = drain()
-                if inspect.isawaitable(drained):
-                    await drained
+            dispatch_state = f"{delivery}_queued"
+            valid_dispatch_states = {
+                "live_queued",
+                "resumed_queued",
+                "fallback_queued",
+            }
+            prompt_id = str(authorization["id"]) if authorization else None
+            new_admission = True
+
+            async def persist_enqueue() -> None:
+                nonlocal dispatch_state
+                admitted = runtime.enqueue(
+                    prompt,
+                    action="append",
+                    card_id=watch.card_id,
+                    project_id=watch.project_id,
+                    principal_id=runtime.session.principal_id or "user:local",
+                    cwd=runtime.session.cwd,
+                    source="pr-supervisor",
+                    prompt_audit=prompt_audit,
+                    prompt_id=prompt_id,
+                    acceptance_result=dispatch_state if prompt_id else None,
+                )
+                if prompt_id:
+                    accepted_result = admitted.acceptance_result or dispatch_state
+                    if accepted_result not in valid_dispatch_states:
+                        raise RuntimeError(
+                            f"Prompt id {prompt_id} has an invalid acceptance result"
+                        )
+                    dispatch_state = accepted_result
+                drain = getattr(runtime, "_drain_transcripts", None)
+                if drain:
+                    drained = drain()
+                    if inspect.isawaitable(drained):
+                        await drained
+
+            if prompt_id:
+                admission_lock = runtime.__dict__.get("_prompt_admission_lock")
+                if admission_lock is None:
+                    admission_lock = asyncio.Lock()
+                    runtime._prompt_admission_lock = admission_lock
+                async with admission_lock:
+                    accepted = await self._offload(
+                        "sqlite.prompt_acceptance",
+                        self.domain_store.get_queued_prompt_acceptance,
+                        runtime.session_id,
+                        prompt_id,
+                    )
+                    if accepted:
+                        payload = accepted.payload or {}
+                        if (
+                            accepted.event_type != "queue_enqueued"
+                            or payload.get("message") != prompt
+                            or payload.get("images") not in (None, [])
+                            or payload.get("source") not in (None, "pr-supervisor")
+                        ):
+                            raise RuntimeError(
+                                f"Prompt id {prompt_id} was already accepted with "
+                                "different content"
+                            )
+                        accepted_result = str(
+                            payload.get("acceptance_result") or dispatch_state
+                        )
+                        if accepted_result not in valid_dispatch_states:
+                            raise RuntimeError(
+                                f"Prompt id {prompt_id} has an invalid acceptance result"
+                            )
+                        dispatch_state = accepted_result
+                        new_admission = False
+                    else:
+                        await persist_enqueue()
+            else:
+                await persist_enqueue()
             detail = json.dumps(
                 {
                     "session_id": runtime.session_id,
                     "originating_session_id": watch.originating_session_id,
                     "originating_agent": watch.originating_agent,
-                    "resume_state": delivery,
+                    "resume_state": dispatch_state.removesuffix("_queued"),
+                    "acceptance_replayed": not new_admission,
+                    "attempt_resume_state": delivery,
                     "fallback_reason": failure_reason,
                 },
                 sort_keys=True,
@@ -341,13 +498,16 @@ class ExecutorDispatcher:
                 "pr_supervisor.dispatch_finish",
                 self.store.finish_dispatch,
                 event_key,
-                state=f"{delivery}_queued",
+                state=dispatch_state,
                 detail=detail,
             )
-            await self._offload(
-                "pr_supervisor.metric", self.store.increment_metric, "executor_prompts"
-            )
-            return f"{delivery}_queued"
+            if new_admission:
+                await self._offload(
+                    "pr_supervisor.metric",
+                    self.store.increment_metric,
+                    "executor_prompts",
+                )
+            return dispatch_state
         except Exception as exc:  # noqa: BLE001
             await self._offload(
                 "pr_supervisor.dispatch_finish",
@@ -372,6 +532,14 @@ class ExecutorDispatcher:
 
 class PRSupervisor:
     LEASE_TTL_SECONDS = 45
+    # Renew with 8-12 seconds left. The lower bound absorbs one delayed loop or
+    # request; per-worker jitter prevents a fleet-wide renewal burst.
+    LEASE_RENEWAL_WINDOW_SECONDS = 12
+    LEASE_RENEWAL_JITTER_SECONDS = 4
+    # The worker discards this much of every authority duration in addition to
+    # all request/transport elapsed time. Deadlines always live on monotonic time.
+    LEASE_RESPONSE_SAFETY_SECONDS = 2.0
+    LEASE_TAKEOVER_JITTER_SECONDS = 4
     LOOP_SECONDS = 2.0
     CAPABILITY_TTL_SECONDS = 120
     CAPABILITY_PROBE_SECONDS = 15 * 60
@@ -444,6 +612,14 @@ class PRSupervisor:
         self._capability_heartbeat_at = None
         self._authority_last_success_at = None
         self._authority_last_error: str | None = None
+        self._monotonic = time.monotonic
+        self._local_leases: dict[str, _LocalLease] = {}
+        self._lease_retry_at: dict[str, float] = {}
+        self._lease_failure_attempts: dict[str, int] = {}
+        self._lease_inflight: dict[str, asyncio.Task[LeaseGrant]] = {}
+        self._lease_last_response: dict[str, dict[str, Any]] = {}
+        self._lease_suppressed: dict[str, str] = {}
+        self._lease_authority = self._lease_authority_key()
 
     async def _offload(self, operation: str, call, *args, **kwargs):
         if self.async_runtime:
@@ -480,6 +656,7 @@ class PRSupervisor:
             except asyncio.CancelledError:
                 pass
             self._task = None
+        self._clear_all_lease_state()
         if self._owns_http_client:
             await self.http_client.aclose()
 
@@ -533,7 +710,9 @@ class PRSupervisor:
             or now - self._capability_checked_at >= timedelta(seconds=probe_seconds)
         )
         if probe_due:
-            self._capability = await self.github.probe(self.settings.instance_id)
+            self._capability = (
+                await self.github.probe(self.settings.instance_id)
+            ).model_copy(update={"pr_watch_protocol_version": 2})
             self._capability_checked_at = now
 
         heartbeat_due = (
@@ -557,12 +736,15 @@ class PRSupervisor:
 
     async def run_once(self) -> None:
         capability = await self.refresh_capability()
+        await self._prune_lease_state(capability)
+        await self._renew_due_local_leases(capability)
         await self._reconcile_merged_cards()
         due = await self._offload("sqlite.pr_supervisor_due_read", self.store.list_due)
         if not due:
             return
         for watch in due:
             if not capability.supports(watch.repository):
+                self._forget_watch(watch.id)
                 eligible = await self._eligible_capabilities(watch.repository)
                 if not eligible:
                     next_poll = utcnow() + timedelta(
@@ -592,8 +774,10 @@ class PRSupervisor:
             current = await self._offload(
                 "sqlite.pr_supervisor_watch_read", self.store.get_watch, watch.id
             )
-            if current:
+            if current and current.actionable:
                 await self._process_watch(current, grant)
+            else:
+                self._forget_watch(watch.id)
 
     async def register_watch(
         self, watch: PRWatch, *, source: str = "api", replicate: bool = True
@@ -1193,6 +1377,9 @@ class PRSupervisor:
         return stored
 
     async def refresh_watch(self, watch_id: str) -> PRWatch | None:
+        # Operator refresh is an explicit retry: cancel stale shared work and
+        # clear cached grants, denial backoff, and failure attempts first.
+        self._forget_watch(watch_id)
         if not await self._offload(
             "sqlite.pr_supervisor_watch_write",
             self.store.schedule_now,
@@ -1234,6 +1421,7 @@ class PRSupervisor:
             status,
             retirement_reason=reason,
         )
+        self._forget_watch(watch_id)
         await self._audit(
             watch,
             "watch_retired",
@@ -1346,6 +1534,7 @@ class PRSupervisor:
                 state=current.state,
                 retirement_reason="terminal_retirement_backfill_revalidated",
             )
+            self._forget_watch(archived.id)
             await self._audit(
                 archived,
                 "watch_archived",
@@ -1397,6 +1586,22 @@ class PRSupervisor:
                 ),
                 timeout=60.0,
             )
+            current = await self._offload(
+                "sqlite.pr_supervisor_watch_read", self.store.get_watch, watch.id
+            )
+            if not current or not current.actionable:
+                self._forget_watch(watch.id)
+                return
+            confirmed = await self._acquire_lease(current, self.capability)
+            if not confirmed.acquired:
+                return
+            watch = await self._offload(
+                "sqlite.pr_supervisor_watch_read", self.store.get_watch, watch.id
+            )
+            if not watch or not watch.actionable:
+                self._forget_watch(current.id)
+                return
+            grant = confirmed
             await self._offload(
                 "sqlite.pr_supervisor_metric",
                 self.store.increment_metric,
@@ -1452,6 +1657,7 @@ class PRSupervisor:
                     fence_token=grant.fence_token,
                     retirement_reason="github_close_observed",
                 )
+                self._forget_watch(terminal.id)
                 await self._audit(
                     terminal,
                     "watch_archived",
@@ -1527,7 +1733,7 @@ class PRSupervisor:
                 self.store.increment_metric,
                 "stale_fences",
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             delay = self._next_poll(watch.policy, watch.poll_attempt + 1)
             message = str(exc)
             logger.warning("PR supervisor poll failed watch=%s: %s", watch.id, message)
@@ -1587,14 +1793,19 @@ class PRSupervisor:
             provider=watch.originating_agent or "default",
         )
         try:
-            state = await self.dispatcher.dispatch(watch, event_key, prompt)
+            state = await self._dispatch_authorized_effect(
+                watch,
+                event_key,
+                prompt,
+                effect_kind=kind,
+            )
             logger.info(
                 "PR supervisor executor dispatch watch=%s event=%s state=%s",
                 watch.id,
                 kind,
                 state,
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "PR supervisor executor dispatch failed watch=%s event=%s: %s",
                 watch.id,
@@ -1606,6 +1817,207 @@ class PRSupervisor:
                 self.store.increment_metric,
                 "dispatch_errors",
             )
+
+    async def _dispatch_authorized_effect(
+        self,
+        watch: PRWatch,
+        event_key: str,
+        prompt: RenderedPrompt,
+        *,
+        effect_kind: str,
+    ) -> str:
+        prompt_text = prompt.text
+        payload = {
+            "protocol_version": 2,
+            "realm_id": watch.realm_id,
+            "watch_id": watch.id,
+            "repository": watch.repository,
+            "pr_number": watch.pr_number,
+            "head_sha": watch.head_sha,
+            "condition_fingerprint": watch.condition_fingerprint,
+            "condition_version": watch.condition_version,
+            "effect_kind": effect_kind,
+            "event_key": event_key,
+            "content_digest": hashlib.sha256(prompt_text.encode()).hexdigest(),
+            "prompt": prompt_text,
+            "prompt_audit": [prompt.audit_record()],
+            "owner_instance_id": watch.owner_instance_id,
+            "fence_token": watch.fence_token,
+            "lease_version": watch.lease_version,
+            "target_instance_id": (
+                watch.originating_instance_id or self.settings.instance_id
+            ),
+            "target_session_id": watch.originating_session_id,
+            "policy_digest": hashlib.sha256(
+                watch.policy.model_dump_json().encode()
+            ).hexdigest(),
+            "review_hold_version": int(
+                (watch.state or {}).get("review_hold_version") or 0
+            ),
+        }
+        authority = self._authority_url()
+        if authority:
+            result = await self._post_json(
+                f"{authority}/api/pr-supervisor/effects/dispatch",
+                payload,
+            )
+            return str(result.get("state") or "failed")
+        return await self.authorize_and_dispatch_effect(
+            payload, caller_instance_id=self.settings.instance_id
+        )
+
+    async def authorize_and_dispatch_effect(
+        self, payload: dict[str, Any], *, caller_instance_id: str
+    ) -> str:
+        if int(payload.get("protocol_version") or 0) != PR_WATCH_PROTOCOL_VERSION:
+            raise RuntimeError("pr_watch_effect_upgrade_required")
+        prompt = str(payload.get("prompt") or "")
+        effect_kind = str(payload.get("effect_kind") or "")
+        event_key = str(payload.get("event_key") or "")
+        if effect_kind not in {"action_required", "green_for_agent_merge"}:
+            raise RuntimeError("unsupported_pr_watch_effect")
+        if (
+            not prompt
+            or payload.get("content_digest")
+            != hashlib.sha256(prompt.encode()).hexdigest()
+        ):
+            raise RuntimeError("pr_watch_effect_content_mismatch")
+        watch_id = str(payload.get("watch_id") or "")
+        current = await self._offload(
+            "sqlite.pr_supervisor_watch_read", self.store.get_watch, watch_id
+        )
+        if not current or not current.actionable:
+            raise StaleFenceError(f"inactive effect watch {watch_id}")
+        if caller_instance_id != current.owner_instance_id:
+            raise StaleFenceError(f"unauthenticated effect owner for {watch_id}")
+        expected_target = current.originating_instance_id or self.settings.instance_id
+        if (
+            payload.get("target_instance_id") != expected_target
+            or payload.get("target_session_id") != current.originating_session_id
+            or not event_key.startswith(f"{watch_id}:")
+            or not event_key.endswith(f":{effect_kind}")
+        ):
+            raise StaleFenceError(f"effect destination changed for {watch_id}")
+        required_instances = {
+            caller_instance_id,
+            str(payload.get("target_instance_id") or ""),
+        }
+        compatible_instances = {
+            item.instance_id
+            for item in await self._offload(
+                "sqlite.pr_supervisor_capability_read",
+                self.store.list_capabilities,
+                fresh_seconds=self.CAPABILITY_TTL_SECONDS,
+            )
+            if item.pr_watch_protocol_version >= PR_WATCH_PROTOCOL_VERSION
+        }
+        compatible_instances.add(self.capability.instance_id)
+        if not required_instances <= compatible_instances:
+            raise RuntimeError("pr_watch_effect_upgrade_required")
+        expected_policy = hashlib.sha256(
+            current.policy.model_dump_json().encode()
+        ).hexdigest()
+        if payload.get("policy_digest") != expected_policy or int(
+            payload.get("review_hold_version") or 0
+        ) != int((current.state or {}).get("review_hold_version") or 0):
+            raise StaleFenceError(f"effect policy changed for {watch_id}")
+        bindings = {
+            key: payload.get(key)
+            for key in (
+                "realm_id",
+                "watch_id",
+                "repository",
+                "pr_number",
+                "head_sha",
+                "condition_fingerprint",
+                "condition_version",
+                "effect_kind",
+                "content_digest",
+                "owner_instance_id",
+                "fence_token",
+                "lease_version",
+                "target_instance_id",
+                "target_session_id",
+                "policy_digest",
+                "review_hold_version",
+            )
+        }
+        bindings["issuer_instance_id"] = self.settings.instance_id
+        prepared, authorization = await self._offload(
+            "sqlite.pr_supervisor_effect_prepare",
+            self.store.prepare_effect_authorization,
+            watch_id,
+            owner_instance_id=current.owner_instance_id,
+            fence_token=current.fence_token,
+            lease_version=current.lease_version,
+            event_key=str(payload.get("event_key") or ""),
+            bindings=bindings,
+        )
+        if authorization.get("state") == "accepted":
+            return "deduplicated"
+        if not await self._replicate_strict(prepared):
+            failed = await self._offload(
+                "sqlite.pr_supervisor_effect_finish",
+                self.store.finish_effect_authorization,
+                watch_id,
+                str(payload.get("event_key") or ""),
+                str(authorization["id"]),
+                accepted=False,
+                detail="replication_unavailable",
+            )
+            await self._replicate(failed)
+            raise RuntimeError("effect authorization replication unavailable")
+        revalidated = await self._offload(
+            "sqlite.pr_supervisor_watch_read", self.store.get_watch, watch_id
+        )
+        if (
+            not revalidated
+            or revalidated.owner_instance_id != authorization["owner_instance_id"]
+            or revalidated.fence_token != authorization["fence_token"]
+            or revalidated.lease_version != authorization["lease_version"]
+            or revalidated.head_sha != authorization["head_sha"]
+            or revalidated.condition_fingerprint
+            != authorization["condition_fingerprint"]
+            or revalidated.condition_version != authorization["condition_version"]
+            or hashlib.sha256(revalidated.policy.model_dump_json().encode()).hexdigest()
+            != authorization["policy_digest"]
+            or int((revalidated.state or {}).get("review_hold_version") or 0)
+            != authorization["review_hold_version"]
+        ):
+            raise StaleFenceError(f"effect changed before dispatch for {watch_id}")
+        state = await self.dispatcher.dispatch(
+            prepared,
+            str(payload["event_key"]),
+            str(payload["prompt"]),
+            authorization=authorization,
+            prompt_audit=list(payload.get("prompt_audit") or []),
+        )
+        accepted = state not in {"failed", "rejected"}
+        finished = await self._offload(
+            "sqlite.pr_supervisor_effect_finish",
+            self.store.finish_effect_authorization,
+            watch_id,
+            str(payload["event_key"]),
+            str(authorization["id"]),
+            accepted=accepted,
+            detail=state,
+        )
+        await self._replicate_strict(finished)
+        return state
+
+    async def _replicate_strict(self, watch: PRWatch) -> bool:
+        urls = self._fleet_urls()
+        if not urls:
+            return True
+        payload = {"watch": watch.model_dump(mode="json")}
+        results = await asyncio.gather(
+            *(
+                self._post_json(f"{url}/api/pr-supervisor/replicas", payload)
+                for url in urls
+            ),
+            return_exceptions=True,
+        )
+        return all(not isinstance(result, Exception) for result in results)
 
     async def _handle_merged(
         self, watch: PRWatch, snapshot: PRSnapshot, grant: LeaseGrant
@@ -1629,7 +2041,6 @@ class PRSupervisor:
             }
         state["supervisor_state"] = "retired_after_merge"
         state["card_lane"] = "pending" if watch.card_id else None
-        gate = evaluate_gate(snapshot, watch.policy, stable_head=True)
         event_key = (
             f"{watch.id}:{snapshot.head_sha}:merged:"
             f"{snapshot.merge_commit_sha or 'unknown'}"
@@ -1654,6 +2065,7 @@ class PRSupervisor:
             fence_token=grant.fence_token,
             retirement_reason="github_merge_observed",
         )
+        self._forget_watch(terminal.id)
         await self._audit(
             terminal,
             "watch_archived",
@@ -1673,18 +2085,6 @@ class PRSupervisor:
         await self._replicate(terminal)
         await self._broadcast_retirement(terminal)
         await self._complete_merged_card(terminal)
-        prompt = build_executor_prompt_rendered(
-            watch,
-            snapshot,
-            gate,
-            green=False,
-            merged=True,
-            provider=watch.originating_agent or "default",
-        )
-        try:
-            await self.dispatcher.dispatch(watch, event_key, prompt)
-        except Exception:
-            logger.exception("Could not notify executor after merge watch=%s", watch.id)
 
     async def _reconcile_merged_cards(self) -> None:
         watches = await self._offload(
@@ -1745,7 +2145,7 @@ class PRSupervisor:
                     principal_id="instance:pr-supervisor",
                     instance_id=self.settings.instance_id,
                 )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             await self._audit(
                 watch,
                 "card_completion_failed",
@@ -1777,6 +2177,7 @@ class PRSupervisor:
             PRWatchStatus.MERGED,
             state=state,
         )
+        self._forget_watch(watch.id)
         reason_hash = hashlib.sha256(decision.reason.encode()).hexdigest()[:12]
         event_type = (
             "card_completed"
@@ -1867,52 +2268,394 @@ class PRSupervisor:
     async def _acquire_lease(
         self, watch: PRWatch, capability: GitHubCapability
     ) -> LeaseGrant:
-        authority = self._authority_url()
-        if not authority:
-            return await self._offload(
-                "sqlite.pr_supervisor_lease_write",
-                self.store.try_acquire_lease,
-                watch.id,
-                self.settings.instance_id,
-                ttl_seconds=self.LEASE_TTL_SECONDS,
-                capability=capability,
+        if not watch.actionable:
+            self._forget_watch(watch.id)
+            return LeaseGrant(
+                acquired=False,
+                fence_token=watch.fence_token,
+                reason="watch_terminal" if watch.terminal else "watch_inactive",
+                terminal_status=watch.status if watch.terminal else None,
             )
+        if capability.pr_watch_protocol_version < PR_WATCH_PROTOCOL_VERSION:
+            self._forget_watch(watch.id)
+            reason = "protocol_upgrade_required"
+            self._lease_suppressed[watch.id] = reason
+            self._lease_last_response[watch.id] = {
+                "reason": reason,
+                "acquired": False,
+                "terminal_status": None,
+                "fence_token": watch.fence_token,
+                "lease_version": watch.lease_version,
+                "received_at": utcnow().isoformat(),
+            }
+            return LeaseGrant(
+                acquired=False,
+                fence_token=watch.fence_token,
+                lease_version=watch.lease_version,
+                reason=reason,
+                protocol_version=PR_WATCH_PROTOCOL_VERSION,
+            )
+        authority = self._lease_authority_key()
+        self._handle_authority_change(authority)
+        now = self._monotonic()
+        if watch.id in self._lease_suppressed:
+            return LeaseGrant(acquired=False, reason=self._lease_suppressed[watch.id])
+        cached = self._local_leases.get(watch.id)
+        if cached and (
+            cached.authority != authority
+            or cached.grant.owner_instance_id != watch.owner_instance_id
+            or cached.grant.fence_token != watch.fence_token
+            or cached.grant.lease_version != watch.lease_version
+        ):
+            self._forget_watch(watch.id)
+            cached = None
+        if cached and now < cached.renew_at and now < cached.expires_at:
+            return cached.grant
+        retry_at = self._lease_retry_at.get(watch.id)
+        if retry_at is not None and now < retry_at:
+            return LeaseGrant(acquired=False, reason="lease_backoff")
+        existing = self._lease_inflight.get(watch.id)
+        if existing:
+            return await self._await_lease_task(existing)
+        task = asyncio.create_task(
+            self._request_lease(watch, capability, authority),
+            name=f"pa-pr-watch-lease:{watch.id}",
+        )
+        self._lease_inflight[watch.id] = task
+        task.add_done_callback(
+            lambda completed, watch_id=watch.id: self._lease_task_done(
+                watch_id, completed
+            )
+        )
+        return await self._await_lease_task(task)
+
+    def _lease_task_done(self, watch_id: str, task: asyncio.Task[LeaseGrant]) -> None:
+        if self._lease_inflight.get(watch_id) is task:
+            self._lease_inflight.pop(watch_id, None)
+
+    async def _await_lease_task(self, task: asyncio.Task[LeaseGrant]) -> LeaseGrant:
         try:
-            result = await self._post_json(
-                f"{authority}/api/pr-supervisor/watches/{watch.id}/lease",
-                {
-                    "instance_id": self.settings.instance_id,
-                    "ttl_seconds": self.LEASE_TTL_SECONDS,
-                    "capability": capability.model_dump(mode="json"),
-                    "watch": watch.model_dump(mode="json"),
-                },
-            )
-            grant = LeaseGrant.model_validate(result)
+            # One cancelled loop/manual caller must not cancel the coalesced
+            # request awaited by other callers.
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            current = asyncio.current_task()
+            if current is not None and current.cancelling():
+                raise
+            return LeaseGrant(acquired=False, reason="watch_inactive")
+
+    async def _request_lease(
+        self,
+        watch: PRWatch,
+        capability: GitHubCapability,
+        authority_key: str,
+    ) -> LeaseGrant:
+        remote = self._authority_url()
+        request_started = self._monotonic()
+        try:
+            if remote:
+                result = await self._post_json(
+                    f"{remote}/api/pr-supervisor/watches/{watch.id}/lease",
+                    {
+                        "instance_id": self.settings.instance_id,
+                        "ttl_seconds": self.LEASE_TTL_SECONDS,
+                        "renewal_window_seconds": self.LEASE_RENEWAL_WINDOW_SECONDS,
+                        "protocol_version": 2,
+                        "capability": capability.model_dump(mode="json"),
+                        "watch": watch.model_dump(mode="json"),
+                    },
+                )
+                grant = LeaseGrant.model_validate(result)
+            else:
+                grant = await self._offload(
+                    "sqlite.pr_supervisor_lease_write",
+                    self.store.try_acquire_lease,
+                    watch.id,
+                    self.settings.instance_id,
+                    ttl_seconds=self.LEASE_TTL_SECONDS,
+                    renewal_window_seconds=self.LEASE_RENEWAL_WINDOW_SECONDS,
+                    capability=capability,
+                )
             self._authority_last_success_at = utcnow()
             self._authority_last_error = None
-            if grant.acquired:
-                watch.owner_instance_id = grant.owner_instance_id
-                watch.fence_token = grant.fence_token
-                watch.lease_expires_at = grant.expires_at
-                await self._offload(
-                    "sqlite.pr_supervisor_watch_write",
-                    self.store.upsert_watch,
-                    watch,
-                    preserve_lease=False,
-                )
-            return grant
         except (httpx.HTTPError, RuntimeError, ValueError) as exc:
             self._authority_last_error = str(exc)[:500]
+            delay = self._lease_failure_delay(watch)
+            self._lease_retry_at[watch.id] = self._monotonic() + delay
             await self._offload(
                 "sqlite.pr_supervisor_watch_write",
                 self.store.mark_error,
                 watch.id,
                 f"Fleet lease authority unavailable: {exc}",
-                next_poll_at=utcnow()
-                + timedelta(seconds=watch.policy.poll_min_seconds),
+                next_poll_at=utcnow() + timedelta(seconds=delay),
                 visible_state="lease_authority_unavailable",
             )
             return LeaseGrant(acquired=False, reason="authority_unavailable")
+
+        response_received = self._monotonic()
+        self._lease_last_response[watch.id] = {
+            "reason": grant.reason,
+            "acquired": grant.acquired,
+            "terminal_status": (
+                grant.terminal_status.value if grant.terminal_status else None
+            ),
+            "fence_token": grant.fence_token,
+            "lease_version": grant.lease_version,
+            "received_at": utcnow().isoformat(),
+        }
+
+        if (
+            grant.reason
+            in {
+                "watch_terminal",
+                "watch_merged",
+                "watch_closed",
+                "watch_retired",
+                "watch_disabled",
+                "watch_not_found",
+            }
+            or grant.terminal_status is not None
+        ):
+            status = grant.terminal_status or PRWatchStatus.RETIRED
+            current = await self._offload(
+                "sqlite.pr_supervisor_watch_read", self.store.get_watch, watch.id
+            )
+            if current and current.actionable:
+                await self._offload(
+                    "sqlite.pr_supervisor_watch_write",
+                    self.store.set_terminal,
+                    current.id,
+                    status,
+                    fence_token_baseline=grant.fence_token,
+                    retirement_reason=f"lease_authority_{grant.reason or 'terminal'}",
+                )
+            self._forget_watch(watch.id)
+            return grant
+
+        if grant.acquired:
+            if remote and grant.lease_seconds_remaining is None:
+                # A legacy authority exposes only cross-host wall time. A skewed
+                # clock can extend that grant by hours, so fail closed and never
+                # cache or execute work from it.
+                self._local_leases.pop(watch.id, None)
+                self._lease_retry_at[watch.id] = (
+                    response_received + self._lease_failure_delay(watch)
+                )
+                return LeaseGrant(
+                    acquired=False,
+                    owner_instance_id=grant.owner_instance_id,
+                    fence_token=grant.fence_token,
+                    lease_version=grant.lease_version,
+                    reason="legacy_grant_uncacheable",
+                    protocol_version=grant.protocol_version,
+                )
+            current = await self._offload(
+                "sqlite.pr_supervisor_watch_read", self.store.get_watch, watch.id
+            )
+            if not current or not current.actionable:
+                self._forget_watch(watch.id)
+                return LeaseGrant(
+                    acquired=False,
+                    reason="watch_terminal"
+                    if current and current.terminal
+                    else "watch_inactive",
+                    terminal_status=current.status
+                    if current and current.terminal
+                    else None,
+                )
+            remaining = grant.lease_seconds_remaining or 0.0
+            conservative_seconds = max(
+                0.0,
+                remaining
+                - (response_received - request_started)
+                - self.LEASE_RESPONSE_SAFETY_SECONDS,
+            )
+            local_expiry = utcnow() + timedelta(seconds=conservative_seconds)
+            if conservative_seconds <= 0:
+                self._local_leases.pop(watch.id, None)
+                return LeaseGrant(
+                    acquired=False,
+                    owner_instance_id=grant.owner_instance_id,
+                    fence_token=grant.fence_token,
+                    lease_version=grant.lease_version,
+                    reason="grant_expired_in_transit",
+                    protocol_version=grant.protocol_version,
+                )
+            if (
+                current.owner_instance_id != grant.owner_instance_id
+                or current.fence_token != grant.fence_token
+                or current.lease_version != grant.lease_version
+                or current.lease_expires_at != local_expiry
+            ):
+                current.owner_instance_id = grant.owner_instance_id
+                current.fence_token = grant.fence_token
+                current.lease_version = grant.lease_version
+                current.lease_expires_at = local_expiry
+                await self._offload(
+                    "sqlite.pr_supervisor_watch_write",
+                    self.store.upsert_watch,
+                    current,
+                    preserve_lease=False,
+                )
+            self._remember_lease(
+                watch.id,
+                authority_key,
+                grant,
+                request_started=request_started,
+                response_received=response_received,
+            )
+            return grant
+
+        self._local_leases.pop(watch.id, None)
+        if grant.reason in {
+            "capability_missing",
+            "capability_identity_mismatch",
+            "capability_ineligible",
+            "protocol_upgrade_required",
+            "watch_inactive",
+        }:
+            reason = grant.reason or "watch_inactive"
+            self._forget_watch(watch.id)
+            self._lease_suppressed[watch.id] = reason
+            return grant
+        if grant.reason == "owned":
+            remaining = grant.lease_seconds_remaining or self.LOOP_SECONDS
+            # A holder with more than the renewal safety window left is healthy.
+            # Rechecking it sooner than one TTL only rediscovers each renewal;
+            # near expiry we still probe promptly for takeover/failover.
+            denial_delay = (
+                max(remaining, float(self.LEASE_TTL_SECONDS))
+                if remaining > self.LEASE_RENEWAL_WINDOW_SECONDS
+                else max(self.LOOP_SECONDS, remaining)
+            )
+            self._lease_retry_at[watch.id] = (
+                self._monotonic()
+                + denial_delay
+                + self.rng.uniform(0, self.LEASE_TAKEOVER_JITTER_SECONDS)
+            )
+            self._lease_failure_attempts.pop(watch.id, None)
+        else:
+            self._lease_retry_at[watch.id] = (
+                self._monotonic() + self._lease_failure_delay(watch)
+            )
+        return grant
+
+    def _remember_lease(
+        self,
+        watch_id: str,
+        authority_key: str,
+        grant: LeaseGrant,
+        *,
+        request_started: float,
+        response_received: float,
+    ) -> None:
+        remaining = grant.lease_seconds_remaining or 0.0
+        expires_at = request_started + max(
+            0.0, remaining - self.LEASE_RESPONSE_SAFETY_SECONDS
+        )
+        jitter = self.rng.uniform(0, self.LEASE_RENEWAL_JITTER_SECONDS)
+        renew_at = max(
+            response_received,
+            expires_at - self.LEASE_RENEWAL_WINDOW_SECONDS + jitter,
+        )
+        self._local_leases[watch_id] = _LocalLease(
+            grant=grant,
+            authority=authority_key,
+            renew_at=renew_at,
+            expires_at=expires_at,
+        )
+        self._lease_retry_at.pop(watch_id, None)
+        self._lease_failure_attempts.pop(watch_id, None)
+
+    def _lease_failure_delay(self, watch: PRWatch) -> float:
+        attempt = min(self._lease_failure_attempts.get(watch.id, 0) + 1, 8)
+        self._lease_failure_attempts[watch.id] = attempt
+        base = max(self.LOOP_SECONDS, float(watch.policy.poll_min_seconds))
+        cap = max(base, float(watch.policy.poll_max_seconds))
+        return min(cap, base * (2 ** (attempt - 1))) + self.rng.uniform(0, base)
+
+    def _lease_authority_key(self) -> str:
+        return self._authority_url() or f"local:{self.settings.instance_id}"
+
+    def _handle_authority_change(self, authority: str) -> None:
+        if authority == self._lease_authority:
+            return
+        self._clear_all_lease_state()
+        self._lease_authority = authority
+
+    def _forget_watch(self, watch_id: str) -> None:
+        self._local_leases.pop(watch_id, None)
+        self._lease_retry_at.pop(watch_id, None)
+        self._lease_failure_attempts.pop(watch_id, None)
+        self._lease_suppressed.pop(watch_id, None)
+        task = self._lease_inflight.pop(watch_id, None)
+        if task and task is not asyncio.current_task() and not task.done():
+            task.cancel()
+
+    def _clear_all_lease_state(self) -> None:
+        for watch_id in set(self._lease_inflight) | set(self._local_leases):
+            self._forget_watch(watch_id)
+        self._lease_retry_at.clear()
+        self._lease_failure_attempts.clear()
+        self._lease_suppressed.clear()
+
+    def watch_state_changed(self, watch: PRWatch) -> None:
+        """Converge scheduler state after a local or synced watch transition."""
+        cached = self._local_leases.get(watch.id)
+        if not watch.actionable or (
+            cached is not None
+            and (
+                cached.grant.owner_instance_id != watch.owner_instance_id
+                or cached.grant.fence_token != watch.fence_token
+                or cached.grant.lease_version != watch.lease_version
+            )
+        ):
+            self._forget_watch(watch.id)
+
+    async def _prune_lease_state(self, capability: GitHubCapability) -> None:
+        authority = self._lease_authority_key()
+        self._handle_authority_change(authority)
+        scheduled = (
+            set(self._local_leases)
+            | set(self._lease_retry_at)
+            | set(self._lease_inflight)
+        )
+        for watch_id in scheduled:
+            watch = await self._offload(
+                "sqlite.pr_supervisor_watch_read", self.store.get_watch, watch_id
+            )
+            cached = self._local_leases.get(watch_id)
+            if (
+                not watch
+                or not watch.actionable
+                or not capability.supports(watch.repository)
+                or (cached is not None and cached.authority != authority)
+                or (
+                    cached is not None
+                    and (
+                        cached.grant.owner_instance_id != watch.owner_instance_id
+                        or cached.grant.fence_token != watch.fence_token
+                        or cached.grant.lease_version != watch.lease_version
+                    )
+                )
+            ):
+                self._forget_watch(watch_id)
+
+    async def _renew_due_local_leases(self, capability: GitHubCapability) -> None:
+        now = self._monotonic()
+        due_ids = [
+            watch_id
+            for watch_id, state in self._local_leases.items()
+            if state.renew_at <= now
+        ]
+        for watch_id in due_ids:
+            watch = await self._offload(
+                "sqlite.pr_supervisor_watch_read", self.store.get_watch, watch_id
+            )
+            if not watch or not watch.actionable:
+                self._forget_watch(watch_id)
+                continue
+            await self._acquire_lease(watch, capability)
 
     async def _heartbeat_authority(self, capability: GitHubCapability) -> None:
         authority = self._authority_url()
@@ -2051,6 +2794,18 @@ class PRSupervisor:
             if watch.status in GITHUB_TERMINAL_PR_WATCH_STATUSES
             and watch.retired_at is None
         ]
+        capabilities = self.store.list_capabilities(
+            fresh_seconds=self.CAPABILITY_TTL_SECONDS
+        )
+        if not any(
+            item.instance_id == self.settings.instance_id for item in capabilities
+        ):
+            capabilities.append(self.capability)
+        incompatible = sorted(
+            item.instance_id
+            for item in capabilities
+            if item.pr_watch_protocol_version < 2
+        )
         if remote and self._authority_last_error:
             state = "authority_unreachable"
         elif remote and not self._authority_last_success_at:
@@ -2063,6 +2818,8 @@ class PRSupervisor:
             "authority_url": configured or None,
             "explicit_authority": bool(self.settings.pr_supervisor_authority_url),
             "lease_ttl_seconds": self.LEASE_TTL_SECONDS,
+            "lease_renewal_window_seconds": self.LEASE_RENEWAL_WINDOW_SECONDS,
+            "lease_renewal_jitter_seconds": self.LEASE_RENEWAL_JITTER_SECONDS,
             "last_authority_success_at": (
                 self._authority_last_success_at.isoformat()
                 if self._authority_last_success_at
@@ -2075,9 +2832,97 @@ class PRSupervisor:
             "terminal_retirement_backlog": len(backlog),
             "locally_owned_watches": len(owned),
             "max_fence_token": max((w.fence_token for w in watches), default=0),
+            "active_renewers": len(
+                set(self._local_leases)
+                | set(self._lease_retry_at)
+                | set(self._lease_inflight)
+            ),
+            "retrying_renewers": [
+                {
+                    "watch_id": watch_id,
+                    "retry_in_seconds": max(0.0, retry_at - self._monotonic()),
+                    "last_response": self._lease_last_response.get(watch_id),
+                }
+                for watch_id, retry_at in sorted(self._lease_retry_at.items())
+            ],
+            "stopped_renewers": [
+                {
+                    "watch_id": watch_id,
+                    "reason": reason,
+                    "last_response": self._lease_last_response.get(watch_id),
+                }
+                for watch_id, reason in sorted(self._lease_suppressed.items())
+            ],
+            "effect_protocol_version": 2,
+            "coordinated_upgrade_ready": not incompatible,
+            "incompatible_effect_instances": incompatible,
         }
 
+    async def _post_lease_json(
+        self, url: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Preserve structured terminal/no-op replies from mixed-version peers."""
+        headers: dict[str, str] = {"X-PA-Origin-Instance-ID": self.settings.instance_id}
+        if self.settings.sync_token:
+            headers["Authorization"] = f"Bearer {self.settings.sync_token}"
+        response = await self._observe(
+            "http.pr_supervisor_lease",
+            self.http_client.post(url, headers=headers, json=payload),
+        )
+        try:
+            body = await self._offload("pr_supervisor.response_json", response.json)
+        except ValueError:
+            body = {}
+        if response.status_code < 400:
+            return body
+        detail = body.get("detail") if isinstance(body, dict) else None
+        detail = detail if isinstance(detail, dict) else body
+        reason = str((detail or {}).get("reason") or (detail or {}).get("code") or "")
+        status_value = (detail or {}).get("terminal_status") or (detail or {}).get(
+            "status"
+        )
+        terminal_status = None
+        try:
+            terminal_status = PRWatchStatus(status_value) if status_value else None
+        except ValueError:
+            terminal_status = None
+        terminal_reasons = {
+            "watch_terminal",
+            "watch_merged",
+            "watch_closed",
+            "watch_retired",
+            "watch_disabled",
+            "watch_inactive",
+            "watch_not_found",
+        }
+        stop_reasons = {
+            "capability_missing",
+            "capability_identity_mismatch",
+            "capability_ineligible",
+            "protocol_upgrade_required",
+        }
+        if reason in stop_reasons:
+            return LeaseGrant(
+                acquired=False,
+                reason=reason,
+                protocol_version=int((detail or {}).get("protocol_version") or 1),
+            ).model_dump(mode="json")
+        if reason in terminal_reasons or terminal_status is not None:
+            if reason == "watch_inactive":
+                reason = "watch_retired"
+            return LeaseGrant(
+                acquired=False,
+                fence_token=int((detail or {}).get("fence_token") or 0),
+                lease_version=int((detail or {}).get("lease_version") or 0),
+                reason=reason or "watch_terminal",
+                terminal_status=terminal_status,
+                protocol_version=int((detail or {}).get("protocol_version") or 1),
+            ).model_dump(mode="json")
+        raise RuntimeError(f"HTTP {response.status_code}: {reason or 'lease rejected'}")
+
     async def _post_json(self, url: str, payload: dict[str, Any]) -> dict[str, Any]:
+        if url.rstrip("/").endswith("/lease"):
+            return await self._post_lease_json(url, payload)
         headers: dict[str, str] = {}
         if self.settings.sync_token:
             headers["Authorization"] = f"Bearer {self.settings.sync_token}"
