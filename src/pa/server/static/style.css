@@ -1044,7 +1044,6 @@ a:hover { color: var(--pa-accent-hover); }
 
 .status-btn.offline {
   opacity: 0.65;
-  cursor: not-allowed;
 }
 
 .status-dot {

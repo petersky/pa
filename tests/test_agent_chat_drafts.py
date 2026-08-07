@@ -74,6 +74,7 @@ class AgentChatDraftContractTests(unittest.TestCase):
             loader=FileSystemLoader(SERVER / "templates"), autoescape=True
         )
         template = env.get_template("partials/chrome-actions.html")
+        style = (SERVER / "static" / "style.css").read_text()
         common = {
             "telemetry_enabled": False,
             "appearance": "system",
@@ -92,9 +93,20 @@ class AgentChatDraftContractTests(unittest.TestCase):
         for html in (offline, starting):
             self.assertIn('href="/agent"', html)
             self.assertIn('hx-get="/agent"', html)
+            self.assertIn("status-btn offline", html)
             self.assertNotIn("disabled", html)
+            self.assertNotIn("pointer-events", html)
         self.assertIn("Offline", offline)
         self.assertIn("Starting", starting)
+        status_btn_rule = style.split(".icon-btn, .status-btn {", 1)[1].split(
+            "}", 1
+        )[0]
+        offline_rule = style.split(".status-btn.offline {", 1)[1].split("}", 1)[0]
+        self.assertIn("cursor: pointer", status_btn_rule)
+        self.assertIn("opacity:", offline_rule)
+        self.assertNotIn("not-allowed", offline_rule)
+        self.assertNotIn("pointer-events", offline_rule)
+        self.assertNotIn("cursor:", offline_rule)
 
     def test_session_routing_scopes_draft_before_restoring_conversation(self) -> None:
         script = (SERVER / "static" / "js" / "agent-chat.js").read_text()
