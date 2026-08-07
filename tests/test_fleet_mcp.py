@@ -246,7 +246,7 @@ class FleetMcpTests(unittest.TestCase):
         }
         self.local_api.return_value = card
         result = self.mcp.functions["update_card_preferred_instance"](
-            "card-1", "target", realm="fleet"
+            "card-1", "target", "preferred-target-1", realm="fleet"
         )
         self.assertEqual(result, card)
         self.local_api.assert_called_with(
@@ -256,6 +256,7 @@ class FleetMcpTests(unittest.TestCase):
             params={"realm": "fleet"},
             json={"preferred_instance": "target"},
             allow_not_found=True,
+            headers={"Idempotency-Key": "preferred-target-1"},
         )
 
 

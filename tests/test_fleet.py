@@ -339,9 +339,35 @@ class RemoteInstallHelperTests(unittest.TestCase):
             join_only=True,
         )
         cmd = build_remote_command(self.settings, req, fleet_token="tok123")
-        self.assertIn("pa fleet join", cmd)
+        self.assertIn("fleet join", cmd)
         self.assertIn("tok123", cmd)
         self.assertNotIn("password", cmd.lower())
+
+    def test_join_only_command_uses_preflight_executable(self) -> None:
+        req = RemoteInstallRequest(
+            host="mini",
+            user="peter",
+            instance_name="mini",
+            instance_url="http://mini:8080",
+            join_only=True,
+            pa_executable="/home/peter/.local/bin/pa",
+        )
+        cmd = build_remote_command(self.settings, req, fleet_token="tok123")
+        self.assertIn("PA_BIN=/home/peter/.local/bin/pa", cmd)
+        self.assertIn('"$PA_BIN" fleet join', cmd)
+        self.assertNotIn("command -v pa", cmd)
+
+    def test_legacy_join_only_checks_the_uv_tool_bin_directory(self) -> None:
+        req = RemoteInstallRequest(
+            host="mini",
+            user="peter",
+            instance_name="mini",
+            instance_url="http://mini:8080",
+            join_only=True,
+        )
+        cmd = build_remote_command(self.settings, req, fleet_token="tok123")
+        self.assertIn('$HOME/.local/bin/pa', cmd)
+        self.assertIn('[ ! -x "$PA_BIN" ]', cmd)
 
     def test_job_persist_omits_secrets(self) -> None:
         from pa.fleet.remote_install import InstallJobStore

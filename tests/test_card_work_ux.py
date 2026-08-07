@@ -249,7 +249,7 @@ class CoreWorkUiRouteTests(unittest.TestCase):
             self.assertIn("data-new-card-open", home.text)
             self.assertIn('id="new-card-dialog"', home.text)
             self.assertIn("Needs attention", home.text)
-            self.assertIn("Active work", home.text)
+            self.assertIn("In motion", home.text)
             self.assertIn("Recent outcomes", home.text)
             self.assertNotIn("page-sidebar-right", home.text)
             self.assertNotIn("FULL BODY MUST STAY OUT OF COLLECTIONS", home.text)
@@ -590,7 +590,7 @@ class CoreWorkUiRouteTests(unittest.TestCase):
         self.assertIn("Linked repositories &amp; worktrees", response.text)
         self.assertIn("Agents &amp; pull requests", response.text)
 
-    def test_home_ignores_work_board_query_filters(self) -> None:
+    def test_home_does_not_guess_motion_from_active_lane(self) -> None:
         with TestClient(self.app) as client:
             card = self.app.state.ctx.store.create_card(
                 CardCreate(
@@ -603,7 +603,8 @@ class CoreWorkUiRouteTests(unittest.TestCase):
             response = client.get("/?q=no-match&blocked=blocked&kind=concern")
 
             self.assertEqual(response.status_code, 200)
-            self.assertIn(card.title, response.text)
+            self.assertNotIn(card.title, response.text)
+            self.assertIn("No autonomous work in motion", response.text)
 
     def test_detail_save_preserves_summary_semantics_and_missing_cards_are_404(
         self,
@@ -775,7 +776,10 @@ class CoreWorkUiRouteTests(unittest.TestCase):
 
             created = client.post(
                 "/api/cards",
-                headers={"X-CSRF-Token": token},
+                headers={
+                    "X-CSRF-Token": token,
+                    "Idempotency-Key": "first-load-create",
+                },
                 json={"title": "First-load mutation", "body": "Works safely."},
             )
             self.assertEqual(created.status_code, 201, created.text)
@@ -1021,7 +1025,8 @@ class CoreWorkUiRouteTests(unittest.TestCase):
         self.assertEqual(summary.status_code, 200)
         self.assertIn('data-card-tab="summary"', summary.text)
         self.assertIn('data-card-tab-panel="agent"', summary.text)
-        self.assertIn("Blocked:", summary.text)
+        self.assertNotIn("Blocked:", summary.text)
+        self.assertIn("No operator-owned next step is recorded.", summary.text)
         self.assertNotIn("Lazy agent session", summary.text)
         self.assertEqual(agent.status_code, 200)
         self.assertIn("Lazy agent session", agent.text)
@@ -1042,7 +1047,7 @@ class CoreWorkUiRouteTests(unittest.TestCase):
         memory = (root / "pages" / "knowledge.html").read_text()
         fleet = (root / "pages" / "fleet.html").read_text()
 
-        self.assertIn('aria-label="Reconnect agent"', chrome)
+        self.assertIn('aria-label="Open Sessions; agent is', chrome)
         self.assertIn('aria-label="Toggle theme appearance"', chrome)
         self.assertIn('aria-label="Settings"', chrome)
         self.assertIn('aria-label="Tool activity"', agent)

@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from urllib.parse import urlsplit
 
+from fastapi import Response
 import httpx
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
@@ -522,34 +523,279 @@ class RealmConvergenceTests(unittest.IsolatedAsyncioTestCase):
         request = MagicMock()
         request.state = SimpleNamespace(principal_id="user:local")
         request.app.state.ctx = ctx
+        request.headers = {"Idempotency-Key": "manual-resolution-update"}
+        resolution = {
+            "realm_id": "default",
+            "remote_head": remote_head,
+            "resolutions": [
+                {
+                    "entity": "card",
+                    "id": card.id,
+                    "action": "update",
+                    "fields": {"title": "Remote title"},
+                }
+            ],
+        }
+        self.assertEqual(
+            projection.get_operation_outcome("manual-resolution-update")["status"],
+            "not_found",
+        )
         with patch("pa.modules.sync.get_store", return_value=projection):
             result = await resolve_sync_conflicts(
                 request,
-                {
-                    "realm_id": "default",
-                    "remote_head": remote_head,
-                    "resolutions": [
-                        {
-                            "entity": "card",
-                            "id": card.id,
-                            "action": "update",
-                            "fields": {"title": "Remote title"},
-                        }
-                    ],
-                },
+                resolution,
+                Response(),
+                "manual-resolution-update",
+            )
+            replay_response = Response()
+            replayed = await resolve_sync_conflicts(
+                request,
+                resolution,
+                replay_response,
+                "manual-resolution-update",
+            )
+            self.assertEqual(replayed, result)
+            self.assertEqual(
+                replay_response.headers["X-PA-Operation-Replayed"], "true"
             )
 
         self.assertEqual(result["convergence"]["phase"], "converged")
         self.assertEqual(
             {node.log.get_head("default") for node in self.nodes}, {result["head"]}
         )
+        peer_projection = CardProjection(
+            self.target.settings.data_dir / "peer-operation-rebuild.db",
+            self.target.log,
+        )
+        peer_outcome = peer_projection.get_operation_outcome(
+            "manual-resolution-update", realm_id="default"
+        )
+        self.assertEqual(peer_outcome["status"], "succeeded")
+        self.assertEqual(peer_outcome["result"], result)
         projection.rebuild_from_log("default")
+        self.assertEqual(
+            projection.get_operation_outcome(
+                "manual-resolution-update", realm_id="default"
+            )["result"],
+            result,
+        )
         self.assertEqual(projection.get_card(card.id).title, "Remote title")
         audit = self.authority.log.merge_audit("default")
         self.assertEqual(audit[0]["mode"], "manual")
         self.assertEqual(audit[0]["author_principal"], "user:local")
         self.assertEqual(
             set(audit[0]["parents"]), {conflict["local_head"], remote_head}
+        )
+
+    async def test_conflict_resolution_recovers_after_merge_before_outcome(self) -> None:
+        card = self._shared_card()
+        local = CardProjection(
+            self.authority.settings.db_path, self.authority.log
+        )
+        local.rebuild_from_log("default")
+        local.update_card(card.id, CardUpdate(title="Local crash title"))
+        remote_head = self._update(
+            self.target, card.id, title="Remote crash title"
+        )
+        state = await self.authority.engine.converge_realm("default")
+        conflict = state["conflicts"][0]
+
+        ctx = MagicMock()
+        ctx.settings = self.authority.settings
+        ctx.services = {
+            "membership": self.authority.membership,
+            "event_log": self.authority.log,
+            "sync_engine": self.authority.engine,
+        }
+        ctx.require_service.side_effect = lambda name: ctx.services[name]
+        request = MagicMock()
+        request.state = SimpleNamespace(principal_id="user:local")
+        request.app.state.ctx = ctx
+        request.headers = {"Idempotency-Key": "manual-resolution-crash"}
+        resolution = {
+            "realm_id": "default",
+            "remote_head": remote_head,
+            "resolutions": [
+                {
+                    "entity": "card",
+                    "id": card.id,
+                    "action": "update",
+                    "fields": {"title": conflict["remote"]["value"]},
+                }
+            ],
+        }
+        with (
+            patch("pa.modules.sync.get_store", return_value=local),
+            patch(
+                "pa.modules.sync._finalize_conflict_operation",
+                side_effect=RuntimeError("crash after merge commit"),
+            ),
+            self.assertRaisesRegex(RuntimeError, "crash after merge"),
+        ):
+            await resolve_sync_conflicts(
+                request,
+                resolution,
+                Response(),
+                "manual-resolution-crash",
+            )
+
+        durable = self.authority.log.find_operation_event(
+            "default", "manual-resolution-crash"
+        )
+        self.assertIsNotNone(durable)
+        self.assertFalse(durable[2].operation_result_complete)
+
+        restarted = CardProjection(
+            self.authority.settings.data_dir / "conflict-restart.db",
+            self.authority.log,
+        )
+        pending = restarted.get_operation_outcome(
+            "manual-resolution-crash", realm_id="default"
+        )
+        self.assertEqual(pending["status"], "resumable")
+        self.assertTrue(pending["durable"])
+        self.assertEqual(
+            pending["recovery_state"], "durable_append_resume_required"
+        )
+        self.assertEqual(
+            pending["recovery_action"], "retry_same_operation_with_same_key"
+        )
+        self.authority.engine.on_head_advanced(restarted.rebuild_from_log)
+        with patch("pa.modules.sync.get_store", return_value=restarted):
+            recovered_response = Response()
+            recovered = await resolve_sync_conflicts(
+                request,
+                resolution,
+                recovered_response,
+                "manual-resolution-crash",
+            )
+            replayed = await resolve_sync_conflicts(
+                request,
+                resolution,
+                Response(),
+                "manual-resolution-crash",
+            )
+
+        self.assertEqual(replayed, recovered)
+        self.assertEqual(
+            recovered_response.headers["X-PA-Operation-Replayed"], "true"
+        )
+        self.assertEqual(recovered["resolution_head"], durable[0])
+        self.assertEqual(recovered["convergence"]["phase"], "converged")
+        fresh_peer = CardProjection(
+            self.target.settings.data_dir / "crash-peer-rebuild.db",
+            self.target.log,
+        )
+        self.assertEqual(
+            fresh_peer.get_operation_outcome(
+                "manual-resolution-crash", realm_id="default"
+            )["result"],
+            recovered,
+        )
+
+    async def test_conflict_resolution_fences_overlapping_same_key_retry(self) -> None:
+        card = self._shared_card()
+        local = CardProjection(
+            self.authority.settings.db_path, self.authority.log
+        )
+        local.rebuild_from_log("default")
+        local.update_card(card.id, CardUpdate(title="Local overlap title"))
+        remote_head = self._update(
+            self.target, card.id, title="Remote overlap title"
+        )
+        state = await self.authority.engine.converge_realm("default")
+        conflict = state["conflicts"][0]
+
+        ctx = MagicMock()
+        ctx.settings = self.authority.settings
+        ctx.services = {
+            "membership": self.authority.membership,
+            "event_log": self.authority.log,
+            "sync_engine": self.authority.engine,
+        }
+        ctx.require_service.side_effect = lambda name: ctx.services[name]
+        request = MagicMock()
+        request.state = SimpleNamespace(principal_id="user:local")
+        request.app.state.ctx = ctx
+        request.headers = {"Idempotency-Key": "manual-resolution-overlap"}
+        resolution = {
+            "realm_id": "default",
+            "remote_head": remote_head,
+            "resolutions": [
+                {
+                    "entity": "card",
+                    "id": card.id,
+                    "action": "update",
+                    "fields": {"title": conflict["remote"]["value"]},
+                }
+            ],
+        }
+        first_convergence = asyncio.Event()
+        release_convergence = asyncio.Event()
+        real_converge = self.authority.engine.converge_realm
+        convergence_calls = 0
+
+        async def fenced_convergence(realm_id: str):
+            nonlocal convergence_calls
+            convergence_calls += 1
+            if convergence_calls == 1:
+                first_convergence.set()
+                await release_convergence.wait()
+            return await real_converge(realm_id)
+
+        with (
+            patch("pa.modules.sync.get_store", return_value=local),
+            patch.object(
+                self.authority.engine,
+                "converge_realm",
+                side_effect=fenced_convergence,
+            ),
+        ):
+            first = asyncio.create_task(
+                resolve_sync_conflicts(
+                    request,
+                    resolution,
+                    Response(),
+                    "manual-resolution-overlap",
+                )
+            )
+            await asyncio.wait_for(first_convergence.wait(), timeout=5)
+            with self.assertRaises(HTTPException) as retry:
+                await resolve_sync_conflicts(
+                    request,
+                    resolution,
+                    Response(),
+                    "manual-resolution-overlap",
+                )
+            self.assertEqual(retry.exception.status_code, 409)
+            self.assertEqual(retry.exception.detail["code"], "operation_in_progress")
+            release_convergence.set()
+            result = await asyncio.wait_for(first, timeout=10)
+
+        durable = self.authority.log.find_operation_event(
+            "default", "manual-resolution-overlap"
+        )
+        assert durable is not None
+        self.assertTrue(durable[2].operation_result_complete)
+        self.assertEqual(
+            local.get_operation_outcome(
+                "manual-resolution-overlap", realm_id="default"
+            )["result"],
+            result,
+        )
+        attributable = []
+        head = self.authority.log.get_head("default")
+        assert head is not None
+        for _commit_hash, commit in self.authority.log._iter_commits_parent_first(
+            head
+        ):
+            for event_hash in commit.event_hashes:
+                event = self.authority.log.get_event(event_hash)
+                if event and event.idempotency_key == "manual-resolution-overlap":
+                    attributable.append(event)
+        self.assertEqual(len(attributable), 2)
+        self.assertEqual(
+            sum(event.operation_result_complete for event in attributable), 1
         )
 
     async def test_conflicts_from_every_divergent_peer_remain_reported(self) -> None:
@@ -636,6 +882,8 @@ class RealmConvergenceTests(unittest.IsolatedAsyncioTestCase):
                         }
                     ],
                 },
+                Response(),
+                "manual-resolution-upsert",
             )
 
         restored = projection.get_card(card.id)

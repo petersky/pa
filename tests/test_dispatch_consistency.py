@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import tempfile
+import threading
 import unittest
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -12,32 +13,53 @@ import httpx
 from fastapi import HTTPException
 
 from pa.config import Settings
-from pa.domain.models import Card, CardEvent, CardLane, EventType, FleetInstance
+from pa.domain.models import (
+    AgentSession,
+    Card,
+    CardEvent,
+    CardLane,
+    EventType,
+    FleetInstance,
+)
 from pa.execution.dispatch import (
     CompletionOutbox,
+    DispatchCompareConflict,
+    DispatchEvent,
     DispatchRecord,
     DispatchStore,
     DispatchWorker,
     GoalDispatchProvenance,
 )
 from pa.execution.progress import CompletionReportV1
+from pa.execution.reconciliation import CompletionReconciler
 from pa.goals.materialization import (
     GoalMaterializationEnvelopeV1,
     GoalMaterializationReceiptV1,
     GoalMaterializationResourceClaimV1,
     canonical_materialization_digest,
 )
+from pa.instance.agent_session import AgentSessionManager, AgentSessionRecoveryError
 from pa.modules.fleet import (
     DispatchCompletionBody,
     DispatchControlBody,
     DispatchFollowupBody,
     DispatchMaterializeBody,
     DispatchTerminalRepairBody,
+    DispatchTerminalRepairCommitRequest,
+    DispatchTerminalRepairCommitV1,
+    DispatchTerminalRepairEvidenceRequest,
+    DispatchTerminalRepairEvidenceV1,
     RemoteAgentStartBody,
     _assert_dispatch_sync_health,
     _expected_goal_dispatch_execution_identity,
     _goal_materialization_stage_provenance,
+    _merge_dispatch_followup_operation,
+    _peer_terminal_repair_evidence,
     _process_remote_dispatch,
+    _release_terminal_repair_fence_if_uncommitted,
+    _terminal_repair_commit_digest,
+    _terminal_repair_evidence_digest,
+    _terminal_repair_reservation_id,
     _wait_for_dispatch_sync_health,
     cancel_dispatch,
     complete_dispatch,
@@ -46,6 +68,8 @@ from pa.modules.fleet import (
     repair_terminal_dispatch,
     retry_dispatch,
     start_remote_agent_work,
+    target_terminal_repair_commit,
+    target_terminal_repair_evidence,
 )
 from pa.pr_supervisor.models import PRWatch
 from pa.sync.event_log import EventLog
@@ -72,6 +96,157 @@ def request_for(settings: Settings, store: MagicMock, services: dict | None = No
     request.app.state.ctx = ctx
     request.headers = {}
     return request
+
+
+def terminal_repair_evidence(
+    record: DispatchRecord,
+    idempotency_key: str,
+    *,
+    session_status: str = "closed",
+    runtime_live: bool = False,
+    observed_at: datetime | None = None,
+) -> DispatchTerminalRepairEvidenceV1:
+    observed = observed_at or datetime.now(UTC)
+    evidence = DispatchTerminalRepairEvidenceV1(
+        dispatch_id=record.dispatch_id,
+        mutation_id=record.mutation_id,
+        authority_instance_id=record.authority_instance_id,
+        target_instance_id=record.target_instance_id,
+        session_id=record.session_id or "",
+        idempotency_key=idempotency_key,
+        reservation_id=_terminal_repair_reservation_id(record, idempotency_key),
+        dispatch_state=record.state,
+        dispatch_recoverable=record.recoverable,
+        dispatch_updated_at=record.updated_at,
+        session_status=session_status,
+        completion_acknowledged=False,
+        completion_evidence_present=False,
+        session_updated_at=observed,
+        runtime_live=runtime_live,
+        observed_at=observed,
+        evidence_digest="0" * 64,
+    )
+    evidence.evidence_digest = _terminal_repair_evidence_digest(evidence)
+    return evidence
+
+
+def terminal_repair_commit(
+    record: DispatchRecord,
+    evidence: DispatchTerminalRepairEvidenceV1,
+) -> DispatchTerminalRepairCommitV1:
+    receipt = DispatchTerminalRepairCommitV1(
+        dispatch_id=record.dispatch_id,
+        mutation_id=record.mutation_id,
+        authority_instance_id=record.authority_instance_id,
+        target_instance_id=record.target_instance_id,
+        session_id=record.session_id or "",
+        idempotency_key=evidence.idempotency_key,
+        reservation_id=evidence.reservation_id,
+        evidence_digest=evidence.evidence_digest,
+        target_state="cancelled",
+        session_status="closed",
+        committed_at=datetime.now(UTC),
+        receipt_digest="0" * 64,
+    )
+    receipt.receipt_digest = _terminal_repair_commit_digest(receipt)
+    return receipt
+
+
+def remote_terminal_repair_context(
+    data_dir: str,
+    suffix: str,
+) -> tuple[
+    DispatchStore,
+    DispatchRecord,
+    MagicMock,
+    DispatchTerminalRepairBody,
+]:
+    settings = Settings(data_dir=Path(data_dir), instance_id="authority")
+    ledger = DispatchStore(Path(data_dir))
+    record = DispatchRecord(
+        dispatch_id=f"dispatch-remote-{suffix}",
+        mutation_id=f"mutation-remote-{suffix}",
+        card_id="card-done",
+        authority_instance_id="authority",
+        authority_url="http://authority",
+        target_instance_id="target",
+        session_id=f"session-remote-{suffix}",
+        state="running",
+        recoverable=False,
+    )
+    ledger.put(record)
+    domain = MagicMock()
+    domain.get_card.return_value = SimpleNamespace(lane=CardLane.DONE)
+    domain.get_session.return_value = SimpleNamespace(status="closed")
+    manager = MagicMock()
+    manager.get.return_value = None
+    request = request_for(
+        settings,
+        domain,
+        {"dispatch_store": ledger, "instance_agent": manager},
+    )
+    body = DispatchTerminalRepairBody(
+        idempotency_key=f"repair-remote-{suffix}",
+        mode="abandoned_without_acknowledgement",
+        expected_state="running",
+        reason="Verified target-local terminal evidence.",
+        confirm_no_outcome_inference=True,
+    )
+    return ledger, record, request, body
+
+
+def target_terminal_repair_context(data_dir: str, suffix: str) -> SimpleNamespace:
+    settings = Settings(data_dir=Path(data_dir), instance_id="target")
+    ledger = DispatchStore(Path(data_dir))
+    record = DispatchRecord(
+        dispatch_id=f"dispatch-target-{suffix}",
+        mutation_id=f"mutation-target-{suffix}",
+        authority_instance_id="authority",
+        authority_url="http://authority",
+        target_instance_id="target",
+        session_id=f"session-target-{suffix}",
+        state="running",
+        recoverable=False,
+    )
+    ledger.put(record)
+    session = AgentSession(
+        id=record.session_id or "",
+        agent_name="codex",
+        origin_instance_id="target",
+        authority_instance_id="authority",
+        dispatch_id=record.dispatch_id,
+        status="closed",
+    )
+    domain = MagicMock()
+    domain.get_session.return_value = session
+    manager = AgentSessionManager(settings, domain, dispatch_store=ledger)
+    request = request_for(
+        settings, domain, {"dispatch_store": ledger, "instance_agent": manager}
+    )
+    request.state.instance_authenticated = True
+    key = f"repair-target-{suffix}"
+    request.headers = {
+        "X-PA-Origin-Instance-ID": "authority",
+        "Idempotency-Key": key,
+    }
+    proof_body = DispatchTerminalRepairEvidenceRequest(
+        mutation_id=record.mutation_id,
+        authority_instance_id="authority",
+        target_instance_id="target",
+        session_id=session.id,
+        idempotency_key=key,
+        expected_state="running",
+    )
+    return SimpleNamespace(
+        settings=settings,
+        ledger=ledger,
+        record=record,
+        session=session,
+        domain=domain,
+        manager=manager,
+        request=request,
+        proof_body=proof_body,
+    )
 
 
 class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
@@ -154,6 +329,137 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
             persisted = DispatchStore(Path(tmp)).get("dispatch-1")
             self.assertNotIn("continue", str(persisted.followup_operations))
 
+    def test_concurrent_same_key_receipts_append_one_authority_event(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = DispatchStore(Path(tmp))
+            ledger.put(
+                DispatchRecord(
+                    dispatch_id="dispatch-concurrent-followup",
+                    mutation_id="mutation-concurrent-followup",
+                    authority_instance_id="authority",
+                    authority_url="http://authority",
+                    target_instance_id="target",
+                    session_id="session-concurrent-followup",
+                    state="running",
+                )
+            )
+            first = ledger.get("dispatch-concurrent-followup")
+            second = ledger.get("dispatch-concurrent-followup")
+            assert first is not None and second is not None
+            receipt = {
+                "accepted": True,
+                "accepted_event": "queue_enqueued",
+                "dispatch_id": first.dispatch_id,
+                "prompt_id": "prompt-concurrent-followup",
+                "queued": True,
+                "session_id": first.session_id,
+                "started": False,
+                "stop_reason": "queued",
+                "duplicate": False,
+            }
+            for snapshot, duplicate in ((first, False), (second, True)):
+                snapshot.followup_operations["same-key"] = {
+                    "fingerprint": "same-fingerprint",
+                    "response": {**receipt, "duplicate": duplicate},
+                    "state": "accepted",
+                }
+
+            _merge_dispatch_followup_operation(
+                ledger,
+                first,
+                "same-key",
+                event_message="Linked session follow-up durably acknowledged.",
+            )
+            _merge_dispatch_followup_operation(
+                ledger,
+                second,
+                "same-key",
+                event_message="Linked session follow-up durably acknowledged.",
+            )
+
+            persisted = ledger.get(first.dispatch_id)
+            assert persisted is not None
+            self.assertEqual(
+                [
+                    event.message
+                    for event in persisted.events
+                    if event.message == "Linked session follow-up durably acknowledged."
+                ],
+                ["Linked session follow-up durably acknowledged."],
+            )
+            self.assertFalse(
+                persisted.followup_operations["same-key"]["response"]["duplicate"]
+            )
+
+    async def test_governed_ambiguous_followup_keeps_receipt_recovery_open(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="authority")
+            ledger = DispatchStore(Path(tmp))
+            record = DispatchRecord(
+                dispatch_id="dispatch-ambiguous-followup",
+                mutation_id="mutation-ambiguous-followup",
+                authority_instance_id="authority",
+                authority_url="http://authority",
+                target_instance_id="target",
+                session_id="session-ambiguous-followup",
+                state="running",
+            )
+            ledger.put(record)
+            request = request_for(settings, MagicMock(), {"dispatch_store": ledger})
+            request.state.instance_authenticated = True
+            provenance = GoalDispatchProvenance(
+                goal_id="goal-ambiguous-followup",
+                goal_version=1,
+                policy_revision=1,
+                authority_instance_id="authority",
+                fencing_token=1,
+                action_reservation_id="reservation-ambiguous-followup",
+                actor_principal="service:goal-supervisor:authority",
+            )
+
+            def reserve(_ctx, _ledger, current, *, idempotency_key, fingerprint):
+                current.followup_operations[idempotency_key] = {
+                    "fingerprint": fingerprint,
+                    "state": "reservation_applied",
+                    "goal_provenance": provenance.model_dump(mode="json"),
+                }
+                return provenance
+
+            with (
+                patch(
+                    "pa.modules.fleet._reserve_goal_dispatch_followup",
+                    side_effect=reserve,
+                ),
+                patch(
+                    "pa.modules.fleet._validate_goal_dispatch_provenance",
+                    return_value=provenance,
+                ),
+                patch(
+                    "pa.modules.fleet._peer_agent_json",
+                    AsyncMock(side_effect=TimeoutError("response lost")),
+                ),
+                patch("pa.modules.fleet._release_goal_dispatch_followup") as release,
+                self.assertRaises(TimeoutError),
+            ):
+                await prompt_dispatch_session(
+                    request,
+                    record.dispatch_id,
+                    DispatchFollowupBody(
+                        message="continue",
+                        idempotency_key="ambiguous-key",
+                    ),
+                )
+
+            release.assert_not_called()
+            persisted = ledger.get(record.dispatch_id)
+            assert persisted is not None
+            operation = persisted.followup_operations["ambiguous-key"]
+            self.assertEqual(operation["state"], "delivery_ambiguous")
+            self.assertTrue(operation["error"]["recoverable"])
+            self.assertIsNone(operation["goal_provenance"].get("released_at"))
+
     async def test_followup_on_completed_dispatch_retains_terminal_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), instance_id="monica")
@@ -196,7 +502,9 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(persisted.state, "completed")
             self.assertTrue(persisted.public_dict()["dispatch_completion"]["completed"])
 
-    def test_acknowledged_legacy_running_record_repairs_idempotently(self) -> None:
+    async def test_acknowledged_legacy_running_record_repairs_idempotently(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), instance_id="target")
             ledger = DispatchStore(Path(tmp))
@@ -213,16 +521,12 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
                     completion_delivery_class="acknowledged",
                 )
             )
-            request = request_for(
-                settings, MagicMock(), {"dispatch_store": ledger}
-            )
+            request = request_for(settings, MagicMock(), {"dispatch_store": ledger})
             request.headers = {"idempotency-key": "repair-1"}
             body = DispatchControlBody(idempotency_key="repair-1")
             with patch("pa.modules.fleet.require_user"):
-                first = repair_terminal_dispatch(
-                    request, "dispatch-legacy", body
-                )
-                second = repair_terminal_dispatch(
+                first = await repair_terminal_dispatch(request, "dispatch-legacy", body)
+                second = await repair_terminal_dispatch(
                     request, "dispatch-legacy", body
                 )
 
@@ -234,7 +538,98 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
                 "legacy_terminal_record_repaired",
             )
 
-    def test_abandoned_running_repair_is_terminal_audited_and_idempotent(
+    async def test_acknowledged_repair_rejects_stale_put(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="authority")
+            ledger = DispatchStore(Path(tmp))
+            acknowledged_at = datetime.now(UTC)
+            ledger.put(
+                DispatchRecord(
+                    dispatch_id="dispatch-acknowledged-stale-put",
+                    mutation_id="mutation-acknowledged-stale-put",
+                    authority_instance_id="authority",
+                    authority_url="http://authority",
+                    target_instance_id="target",
+                    session_id="session-acknowledged-stale-put",
+                    state="running",
+                    acknowledged_at=acknowledged_at,
+                    completion_payload={"outcome": "durably received"},
+                    completion_envelope={
+                        "completion_id": "completion-acknowledged-stale-put",
+                        "payload_digest": "a" * 64,
+                    },
+                    completion_received_at=acknowledged_at,
+                    completion_delivery_class="acknowledged",
+                    capacity_reserved_at=acknowledged_at,
+                )
+            )
+            stale = ledger.get("dispatch-acknowledged-stale-put")
+            assert stale is not None
+            request = request_for(settings, MagicMock(), {"dispatch_store": ledger})
+            with patch("pa.modules.fleet.require_user"):
+                repaired = await repair_terminal_dispatch(
+                    request,
+                    stale.dispatch_id,
+                    DispatchControlBody(idempotency_key="repair-acknowledged-stale"),
+                )
+
+            self.assertEqual(repaired["state"], "completed")
+            with self.assertRaises(DispatchCompareConflict):
+                ledger.put(stale)
+            persisted = ledger.get(stale.dispatch_id)
+            assert persisted is not None
+            self.assertEqual(persisted.state, "completed")
+            self.assertEqual(
+                persisted.control_operations["repair-acknowledged-stale"],
+                "repair_terminal",
+            )
+            self.assertEqual(
+                persisted.lifecycle_inconsistencies[-1]["kind"],
+                "legacy_terminal_record_repaired",
+            )
+            self.assertEqual(persisted.completion_payload, stale.completion_payload)
+
+    async def test_acknowledged_repair_releases_queued_capacity_atomically(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="target")
+            ledger = DispatchStore(Path(tmp))
+            reserved_at = datetime.now(UTC)
+            ledger.put(
+                DispatchRecord(
+                    dispatch_id="dispatch-queued-acknowledged",
+                    mutation_id="mutation-queued-acknowledged",
+                    authority_instance_id="target",
+                    authority_url="http://target",
+                    target_instance_id="target",
+                    state="queued",
+                    acknowledged_at=reserved_at,
+                    completion_delivery_class="acknowledged",
+                    capacity_reserved_at=reserved_at,
+                )
+            )
+            request = request_for(
+                settings, MagicMock(), {"dispatch_store": ledger}
+            )
+            body = DispatchControlBody(idempotency_key="repair-queued-acknowledged")
+
+            with patch("pa.modules.fleet.require_user"):
+                result = await repair_terminal_dispatch(
+                    request, "dispatch-queued-acknowledged", body
+                )
+
+            self.assertEqual(result["state"], "completed")
+            repaired = ledger.get("dispatch-queued-acknowledged")
+            assert repaired is not None
+            self.assertEqual(repaired.state, "completed")
+            self.assertIsNotNone(repaired.capacity_released_at)
+            self.assertEqual(repaired.capacity_release_reason, "completed")
+            self.assertEqual(
+                ledger.capacity_snapshot("target")["dispatch_reservations"], 0
+            )
+
+    async def test_abandoned_running_repair_is_terminal_audited_and_idempotent(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -250,6 +645,7 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
                     target_instance_id="target",
                     session_id="session-gone",
                     state="running",
+                    recoverable=False,
                 )
             )
             domain = MagicMock()
@@ -268,10 +664,10 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
             )
 
             with patch("pa.modules.fleet.require_user"):
-                first = repair_terminal_dispatch(
+                first = await repair_terminal_dispatch(
                     request, "dispatch-abandoned", body
                 )
-                second = repair_terminal_dispatch(
+                second = await repair_terminal_dispatch(
                     request, "dispatch-abandoned", body
                 )
 
@@ -302,7 +698,7 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
                 ledger.capacity_snapshot("target")["dispatch_reservations"], 0
             )
 
-    def test_abandoned_running_repair_requires_terminal_session(self) -> None:
+    async def test_abandoned_running_repair_requires_terminal_session(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), instance_id="target")
             ledger = DispatchStore(Path(tmp))
@@ -316,6 +712,7 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
                     target_instance_id="target",
                     session_id="session-live",
                     state="running",
+                    recoverable=False,
                 )
             )
             domain = MagicMock()
@@ -336,13 +733,1973 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
                 patch("pa.modules.fleet.require_user"),
                 self.assertRaises(HTTPException) as raised,
             ):
-                repair_terminal_dispatch(request, "dispatch-live", body)
+                await repair_terminal_dispatch(request, "dispatch-live", body)
 
             self.assertEqual(raised.exception.status_code, 409)
             self.assertEqual(
                 raised.exception.detail["code"], "linked_session_not_terminal"
             )
             self.assertEqual(ledger.get("dispatch-live").state, "running")
+
+    async def test_abandoned_repair_fails_closed_on_concurrent_completion(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="target")
+            ledger = DispatchStore(Path(tmp))
+            ledger.put(
+                DispatchRecord(
+                    dispatch_id="dispatch-race",
+                    mutation_id="mutation-race",
+                    card_id="card-done",
+                    authority_instance_id="target",
+                    authority_url="http://target",
+                    target_instance_id="target",
+                    session_id="session-race",
+                    state="running",
+                    recoverable=False,
+                    events=[
+                        DispatchEvent(
+                            seq=1,
+                            state="running",
+                            message="Legacy dispatch running.",
+                        )
+                    ],
+                )
+            )
+            session = AgentSession(
+                id="session-race",
+                agent_name="codex",
+                origin_instance_id="target",
+                authority_instance_id="target",
+                dispatch_id="dispatch-race",
+                status="closed",
+            )
+            domain = MagicMock()
+            domain.get_card.return_value = SimpleNamespace(lane=CardLane.DONE)
+            session_reads = 0
+            acknowledged_at = datetime.now(UTC)
+            completion_payload = {
+                "stop_reason": "end_turn",
+                "outcome": "Concurrent completion won.",
+            }
+            completion_envelope = {
+                "completion_id": "completion-race",
+                "payload_digest": "a" * 64,
+            }
+
+            def get_session(_session_id):
+                nonlocal session_reads
+                session_reads += 1
+                if session_reads == 2:
+                    concurrent = ledger.get("dispatch-race")
+                    assert concurrent is not None
+                    concurrent.acknowledged_at = acknowledged_at
+                    concurrent.completion_payload = completion_payload
+                    concurrent.completion_envelope = completion_envelope
+                    concurrent.completion_received_at = acknowledged_at
+                    concurrent.completion_delivery_class = "acknowledged"
+                    ledger.transition(
+                        concurrent,
+                        "completed",
+                        "Concurrent completion durably acknowledged.",
+                    )
+                return session
+
+            domain.get_session.side_effect = get_session
+            manager = AgentSessionManager(settings, domain, dispatch_store=ledger)
+            request = request_for(
+                settings,
+                domain,
+                {"dispatch_store": ledger, "instance_agent": manager},
+            )
+            body = DispatchTerminalRepairBody(
+                idempotency_key="repair-race-1",
+                mode="abandoned_without_acknowledgement",
+                expected_state="running",
+                reason="Attempt to retire a stale row.",
+                confirm_no_outcome_inference=True,
+            )
+
+            with (
+                patch("pa.modules.fleet.require_user"),
+                self.assertRaises(HTTPException) as raised,
+            ):
+                await repair_terminal_dispatch(request, "dispatch-race", body)
+
+            self.assertEqual(raised.exception.status_code, 409)
+            self.assertEqual(
+                raised.exception.detail["code"],
+                "terminal_repair_concurrent_change",
+            )
+            self.assertEqual(session_reads, 2)
+            self.assertIn("acknowledged_at", raised.exception.detail["changed_fields"])
+            self.assertIn("events", raised.exception.detail["changed_fields"])
+            repaired = ledger.get("dispatch-race")
+            assert repaired is not None
+            self.assertEqual(repaired.state, "completed")
+            self.assertEqual(repaired.acknowledged_at, acknowledged_at)
+            self.assertEqual(repaired.completion_payload, completion_payload)
+            self.assertEqual(repaired.completion_envelope, completion_envelope)
+            self.assertEqual(repaired.completion_received_at, acknowledged_at)
+            self.assertEqual(repaired.completion_delivery_class, "acknowledged")
+            self.assertEqual(
+                repaired.events[-1].message,
+                "Concurrent completion durably acknowledged.",
+            )
+            self.assertNotIn("repair-race-1", repaired.control_operations)
+            self.assertFalse(
+                any(
+                    item["kind"] == "legacy_abandoned_dispatch_retired"
+                    for item in repaired.lifecycle_inconsistencies
+                )
+            )
+            self.assertIsNone(manager.terminal_repair_fence_id(session.id))
+            queued = manager.enqueue_prompt(
+                "completion won, so admission is no longer repair-fenced",
+                session_id=session.id,
+            )
+            self.assertEqual(queued.session_id, session.id)
+            with self.assertRaisesRegex(
+                AgentSessionRecoveryError, "closed and has no resumable"
+            ):
+                await manager.recover_session(session.id)
+
+    async def test_governed_repairs_require_recorded_authority_after_release(
+        self,
+    ) -> None:
+        released = GoalDispatchProvenance(
+            goal_id="goal-repair",
+            goal_version=1,
+            policy_revision=1,
+            authority_instance_id="authority",
+            fencing_token=7,
+            action_reservation_id="reservation-repair",
+            actor_principal="service:goal-supervisor:authority",
+            released_at=datetime.now(UTC),
+            release_reason="prior terminal reconciliation",
+        )
+        cases = (
+            (
+                "abandoned",
+                DispatchTerminalRepairBody(
+                    idempotency_key="repair-governed-abandoned",
+                    mode="abandoned_without_acknowledgement",
+                    expected_state="running",
+                    reason="Wrong authority must not retire this row.",
+                    confirm_no_outcome_inference=True,
+                ),
+                None,
+            ),
+            (
+                "acknowledged",
+                DispatchTerminalRepairBody(
+                    idempotency_key="repair-governed-acknowledged",
+                    mode="acknowledged_completion",
+                ),
+                datetime.now(UTC),
+            ),
+        )
+        for name, body, acknowledged_at in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
+                settings = Settings(data_dir=Path(tmp), instance_id="target")
+                ledger = DispatchStore(Path(tmp))
+                ledger.put(
+                    DispatchRecord(
+                        dispatch_id=f"dispatch-governed-{name}",
+                        mutation_id=f"mutation-governed-{name}",
+                        card_id="card-done",
+                        authority_instance_id="authority",
+                        authority_url="http://authority",
+                        target_instance_id="target",
+                        session_id="session-closed",
+                        state="running",
+                        acknowledged_at=acknowledged_at,
+                        completion_delivery_class=(
+                            "acknowledged" if acknowledged_at else None
+                        ),
+                        goal_provenance=released,
+                    )
+                )
+                domain = MagicMock()
+                domain.get_card.return_value = SimpleNamespace(lane=CardLane.DONE)
+                domain.get_session.return_value = SimpleNamespace(status="closed")
+                request = request_for(settings, domain, {"dispatch_store": ledger})
+
+                with (
+                    patch("pa.modules.fleet.require_user"),
+                    self.assertRaises(HTTPException) as raised,
+                ):
+                    await repair_terminal_dispatch(
+                        request, f"dispatch-governed-{name}", body
+                    )
+
+                self.assertEqual(raised.exception.status_code, 409)
+                self.assertEqual(
+                    raised.exception.detail["code"],
+                    "terminal_repair_wrong_authority",
+                )
+                persisted = ledger.get(f"dispatch-governed-{name}")
+                assert persisted is not None
+                self.assertEqual(persisted.state, "running")
+                self.assertEqual(persisted.goal_provenance, released)
+                self.assertNotIn(body.idempotency_key, persisted.control_operations)
+
+    async def test_abandoned_repair_rejects_live_runtime_for_closed_session(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="target")
+            ledger = DispatchStore(Path(tmp))
+            ledger.put(
+                DispatchRecord(
+                    dispatch_id="dispatch-live-runtime",
+                    mutation_id="mutation-live-runtime",
+                    card_id="card-done",
+                    authority_instance_id="target",
+                    authority_url="http://target",
+                    target_instance_id="target",
+                    session_id="session-live-runtime",
+                    state="running",
+                    recoverable=False,
+                )
+            )
+            domain = MagicMock()
+            domain.get_card.return_value = SimpleNamespace(lane=CardLane.DONE)
+            domain.get_session.return_value = SimpleNamespace(status="closed")
+            manager = MagicMock()
+            manager.get.return_value = SimpleNamespace(_closed=False)
+            request = request_for(
+                settings,
+                domain,
+                {"dispatch_store": ledger, "instance_agent": manager},
+            )
+            body = DispatchTerminalRepairBody(
+                idempotency_key="repair-live-runtime-1",
+                mode="abandoned_without_acknowledgement",
+                expected_state="running",
+                reason="Attempted repair while runtime is live.",
+                confirm_no_outcome_inference=True,
+            )
+
+            with (
+                patch("pa.modules.fleet.require_user"),
+                self.assertRaises(HTTPException) as raised,
+            ):
+                await repair_terminal_dispatch(request, "dispatch-live-runtime", body)
+
+            self.assertEqual(raised.exception.status_code, 409)
+            self.assertEqual(
+                raised.exception.detail["code"], "linked_session_not_terminal"
+            )
+            self.assertTrue(raised.exception.detail["runtime_live"])
+            self.assertEqual(ledger.get("dispatch-live-runtime").state, "running")
+
+    async def test_local_repair_runtime_install_race_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="target")
+            ledger = DispatchStore(Path(tmp))
+            record = DispatchRecord(
+                dispatch_id="dispatch-local-runtime-race",
+                mutation_id="mutation-local-runtime-race",
+                card_id="card-done",
+                authority_instance_id="target",
+                authority_url="http://target",
+                target_instance_id="target",
+                session_id="session-local-runtime-race",
+                state="running",
+                recoverable=False,
+            )
+            ledger.put(record)
+            session = AgentSession(
+                id=record.session_id or "",
+                agent_name="codex",
+                origin_instance_id="target",
+                authority_instance_id="target",
+                dispatch_id=record.dispatch_id,
+                status="closed",
+            )
+            domain = MagicMock()
+            domain.get_card.return_value = SimpleNamespace(lane=CardLane.DONE)
+            domain.get_session.return_value = session
+            manager = AgentSessionManager(settings, domain)
+            live_runtime = SimpleNamespace(_closed=False)
+            original_get = manager.get
+            first_read = True
+
+            def racing_get(session_id: str):
+                nonlocal first_read
+                if first_read:
+                    first_read = False
+                    manager._runtimes[session_id] = live_runtime
+                    return None
+                return original_get(session_id)
+
+            manager.get = MagicMock(side_effect=racing_get)
+            request = request_for(
+                settings,
+                domain,
+                {"dispatch_store": ledger, "instance_agent": manager},
+            )
+            body = DispatchTerminalRepairBody(
+                idempotency_key="repair-local-runtime-race",
+                mode="abandoned_without_acknowledgement",
+                expected_state="running",
+                reason="Exercise runtime publication during local repair.",
+                confirm_no_outcome_inference=True,
+            )
+
+            with (
+                patch("pa.modules.fleet.require_user"),
+                self.assertRaises(HTTPException) as raised,
+            ):
+                await repair_terminal_dispatch(request, record.dispatch_id, body)
+
+            self.assertEqual(raised.exception.status_code, 409)
+            self.assertEqual(
+                raised.exception.detail["code"], "linked_session_not_terminal"
+            )
+            self.assertTrue(raised.exception.detail["runtime_live"])
+            persisted = ledger.get(record.dispatch_id)
+            assert persisted is not None
+            self.assertEqual(persisted.state, "running")
+            self.assertNotIn(body.idempotency_key, persisted.control_operations)
+            self.assertIsNone(manager.terminal_repair_fence_id(session.id))
+
+    async def test_abandoned_repair_rejects_recoverable_and_quiesced_sessions(
+        self,
+    ) -> None:
+        cases = (
+            ("recoverable-quiesced", True, "quiesced", "dispatch_still_recoverable"),
+            (
+                "nonrecoverable-quiesced",
+                False,
+                "quiesced",
+                "linked_session_not_terminal",
+            ),
+        )
+        for suffix, recoverable, session_status, expected_code in cases:
+            with self.subTest(case=suffix), tempfile.TemporaryDirectory() as tmp:
+                settings = Settings(data_dir=Path(tmp), instance_id="target")
+                ledger = DispatchStore(Path(tmp))
+                dispatch_id = f"dispatch-{suffix}"
+                ledger.put(
+                    DispatchRecord(
+                        dispatch_id=dispatch_id,
+                        mutation_id=f"mutation-{suffix}",
+                        card_id="card-done",
+                        authority_instance_id="target",
+                        authority_url="http://target",
+                        target_instance_id="target",
+                        session_id=f"session-{suffix}",
+                        state="running",
+                        recoverable=recoverable,
+                    )
+                )
+                domain = MagicMock()
+                domain.get_card.return_value = SimpleNamespace(lane=CardLane.DONE)
+                domain.get_session.return_value = SimpleNamespace(status=session_status)
+                request = request_for(settings, domain, {"dispatch_store": ledger})
+                body = DispatchTerminalRepairBody(
+                    idempotency_key=f"repair-{suffix}",
+                    mode="abandoned_without_acknowledgement",
+                    expected_state="running",
+                    reason="Retryable or retained work must not be retired.",
+                    confirm_no_outcome_inference=True,
+                )
+
+                with (
+                    patch("pa.modules.fleet.require_user"),
+                    self.assertRaises(HTTPException) as raised,
+                ):
+                    await repair_terminal_dispatch(request, dispatch_id, body)
+
+                self.assertEqual(raised.exception.status_code, 409)
+                self.assertEqual(raised.exception.detail["code"], expected_code)
+                persisted = ledger.get(dispatch_id)
+                assert persisted is not None
+                self.assertEqual(persisted.state, "running")
+                self.assertEqual(persisted.recoverable, recoverable)
+                self.assertNotIn(body.idempotency_key, persisted.control_operations)
+
+    def test_target_terminal_evidence_acquires_durable_reservation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="target")
+            ledger = DispatchStore(Path(tmp))
+            record = DispatchRecord(
+                dispatch_id="dispatch-target-proof",
+                mutation_id="mutation-target-proof",
+                card_id="card-done",
+                authority_instance_id="authority",
+                authority_url="http://authority",
+                target_instance_id="target",
+                session_id="session-target-proof",
+                state="running",
+                recoverable=False,
+            )
+            ledger.put(record)
+            stored_before = ledger.get(record.dispatch_id)
+            assert stored_before is not None
+            session = AgentSession(
+                id=record.session_id or "",
+                agent_name="codex",
+                origin_instance_id="target",
+                authority_instance_id="authority",
+                dispatch_id=record.dispatch_id,
+                status="closed",
+            )
+            domain = MagicMock()
+            domain.get_session.return_value = session
+            manager = MagicMock()
+            manager.get.return_value = None
+            request = request_for(
+                settings,
+                domain,
+                {"dispatch_store": ledger, "instance_agent": manager},
+            )
+            request.state.instance_authenticated = True
+            request.headers = {
+                "X-PA-Origin-Instance-ID": "authority",
+                "Idempotency-Key": "repair-target-proof",
+            }
+            body = DispatchTerminalRepairEvidenceRequest(
+                mutation_id=record.mutation_id,
+                authority_instance_id="authority",
+                target_instance_id="target",
+                session_id=session.id,
+                idempotency_key="repair-target-proof",
+                expected_state="running",
+            )
+
+            evidence = target_terminal_repair_evidence(
+                request, record.dispatch_id, body
+            )
+
+            self.assertEqual(evidence.target_instance_id, "target")
+            self.assertEqual(evidence.session_status, "closed")
+            self.assertFalse(evidence.runtime_live)
+            self.assertFalse(evidence.dispatch_recoverable)
+            self.assertFalse(evidence.completion_acknowledged)
+            self.assertFalse(evidence.completion_evidence_present)
+            self.assertEqual(
+                evidence.evidence_digest,
+                _terminal_repair_evidence_digest(evidence),
+            )
+            stored_after = ledger.get(record.dispatch_id)
+            assert stored_after is not None
+            self.assertEqual(stored_after.state, stored_before.state)
+            reservation = stored_after.terminal_repair_reservation
+            assert reservation is not None
+            self.assertEqual(reservation["state"], "prepared")
+            self.assertEqual(reservation["reservation_id"], evidence.reservation_id)
+            self.assertEqual(reservation["evidence_digest"], evidence.evidence_digest)
+
+    def test_prepared_terminal_reservation_can_refresh_after_timeout(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = target_terminal_repair_context(tmp, "refresh")
+            first = target_terminal_repair_evidence(
+                ctx.request, ctx.record.dispatch_id, ctx.proof_body
+            )
+            stale = ctx.ledger.get(ctx.record.dispatch_id)
+            assert stale is not None
+            reservation = dict(stale.terminal_repair_reservation or {})
+            evidence_payload = dict(reservation["evidence"])
+            evidence_payload["observed_at"] = (
+                datetime.now(UTC) - timedelta(seconds=30)
+            ).isoformat()
+            reservation["evidence"] = evidence_payload
+            reservation["prepared_at"] = evidence_payload["observed_at"]
+            stale.terminal_repair_reservation = reservation
+            ctx.ledger.put(stale)
+
+            refreshed = target_terminal_repair_evidence(
+                ctx.request, ctx.record.dispatch_id, ctx.proof_body
+            )
+
+            self.assertEqual(refreshed.reservation_id, first.reservation_id)
+            self.assertGreater(refreshed.observed_at, first.observed_at)
+            self.assertEqual(
+                refreshed.evidence_digest,
+                _terminal_repair_evidence_digest(refreshed),
+            )
+            persisted = ctx.ledger.get(ctx.record.dispatch_id)
+            assert persisted is not None
+            self.assertEqual(persisted.terminal_repair_reservation["state"], "prepared")
+            self.assertEqual(
+                persisted.terminal_repair_reservation["evidence_digest"],
+                refreshed.evidence_digest,
+            )
+
+    def test_target_commit_revalidates_current_session_provenance(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = target_terminal_repair_context(tmp, "session-binding")
+            prepared = target_terminal_repair_evidence(
+                ctx.request, ctx.record.dispatch_id, ctx.proof_body
+            )
+            ctx.domain.get_session.return_value = ctx.session.model_copy(
+                update={"dispatch_id": "different-dispatch"}
+            )
+            commit_body = DispatchTerminalRepairCommitRequest(
+                mutation_id=ctx.record.mutation_id,
+                authority_instance_id="authority",
+                target_instance_id="target",
+                session_id=ctx.session.id,
+                idempotency_key=ctx.proof_body.idempotency_key,
+                reservation_id=prepared.reservation_id,
+                evidence_digest=prepared.evidence_digest,
+                expected_state="running",
+            )
+
+            with self.assertRaises(HTTPException) as raised:
+                target_terminal_repair_commit(
+                    ctx.request, ctx.record.dispatch_id, commit_body
+                )
+
+            self.assertEqual(
+                raised.exception.detail["code"],
+                "linked_session_provenance_mismatch",
+            )
+            self.assertIn("dispatch_id", raised.exception.detail["mismatched_fields"])
+            persisted = ctx.ledger.get(ctx.record.dispatch_id)
+            assert persisted is not None
+            self.assertEqual(persisted.state, "running")
+            self.assertEqual(persisted.terminal_repair_reservation["state"], "prepared")
+
+    async def test_durable_terminal_repair_fence_survives_manager_restart(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = target_terminal_repair_context(tmp, "restart-fence")
+            prepared = target_terminal_repair_evidence(
+                ctx.request, ctx.record.dispatch_id, ctx.proof_body
+            )
+            target_terminal_repair_commit(
+                ctx.request,
+                ctx.record.dispatch_id,
+                DispatchTerminalRepairCommitRequest(
+                    mutation_id=ctx.record.mutation_id,
+                    authority_instance_id="authority",
+                    target_instance_id="target",
+                    session_id=ctx.session.id,
+                    idempotency_key=ctx.proof_body.idempotency_key,
+                    reservation_id=prepared.reservation_id,
+                    evidence_digest=prepared.evidence_digest,
+                    expected_state="running",
+                ),
+            )
+            restarted = AgentSessionManager(
+                ctx.settings, ctx.domain, dispatch_store=ctx.ledger
+            )
+
+            self.assertEqual(
+                restarted.terminal_repair_fence_id(ctx.session.id),
+                prepared.reservation_id,
+            )
+            with self.assertRaises(AgentSessionRecoveryError):
+                restarted.enqueue_prompt("must remain fenced", session_id=ctx.session.id)
+            with self.assertRaises(AgentSessionRecoveryError):
+                await restarted.recover_session(ctx.session.id)
+            runtime = MagicMock(session_id=ctx.session.id)
+            runtime.close = AsyncMock(return_value=True)
+            with self.assertRaisesRegex(RuntimeError, "terminal dispatch repair"):
+                await restarted._publish_runtime(runtime)
+            runtime.close.assert_awaited_once()
+
+    def test_target_terminal_commit_replays_after_lost_response(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="target")
+            ledger = DispatchStore(Path(tmp))
+            record = DispatchRecord(
+                dispatch_id="dispatch-target-commit-replay",
+                mutation_id="mutation-target-commit-replay",
+                authority_instance_id="authority",
+                authority_url="http://authority",
+                target_instance_id="target",
+                session_id="session-target-commit-replay",
+                state="running",
+                recoverable=False,
+            )
+            ledger.put(record)
+            session = AgentSession(
+                id=record.session_id or "",
+                agent_name="codex",
+                origin_instance_id="target",
+                authority_instance_id="authority",
+                dispatch_id=record.dispatch_id,
+                status="closed",
+            )
+            domain = MagicMock()
+            domain.get_session.return_value = session
+            manager = MagicMock()
+            manager.get.return_value = None
+            request = request_for(
+                settings,
+                domain,
+                {"dispatch_store": ledger, "instance_agent": manager},
+            )
+            request.state.instance_authenticated = True
+            request.headers = {
+                "X-PA-Origin-Instance-ID": "authority",
+                "Idempotency-Key": "repair-target-commit-replay",
+            }
+            proof_body = DispatchTerminalRepairEvidenceRequest(
+                mutation_id=record.mutation_id,
+                authority_instance_id="authority",
+                target_instance_id="target",
+                session_id=session.id,
+                idempotency_key="repair-target-commit-replay",
+                expected_state="running",
+            )
+            prepared = target_terminal_repair_evidence(
+                request, record.dispatch_id, proof_body
+            )
+            first = target_terminal_repair_commit(
+                request,
+                record.dispatch_id,
+                DispatchTerminalRepairCommitRequest(
+                    mutation_id=record.mutation_id,
+                    authority_instance_id="authority",
+                    target_instance_id="target",
+                    session_id=session.id,
+                    idempotency_key=proof_body.idempotency_key,
+                    reservation_id=prepared.reservation_id,
+                    evidence_digest=prepared.evidence_digest,
+                    expected_state="running",
+                ),
+            )
+
+            replayed_proof = target_terminal_repair_evidence(
+                request, record.dispatch_id, proof_body
+            )
+            replayed = target_terminal_repair_commit(
+                request,
+                record.dispatch_id,
+                DispatchTerminalRepairCommitRequest(
+                    mutation_id=record.mutation_id,
+                    authority_instance_id="authority",
+                    target_instance_id="target",
+                    session_id=session.id,
+                    idempotency_key=proof_body.idempotency_key,
+                    reservation_id=replayed_proof.reservation_id,
+                    evidence_digest=replayed_proof.evidence_digest,
+                    expected_state="running",
+                ),
+            )
+
+            self.assertEqual(replayed_proof.reservation_state, "committed")
+            self.assertEqual(replayed.reservation_id, first.reservation_id)
+            self.assertEqual(replayed.evidence_digest, replayed_proof.evidence_digest)
+            self.assertEqual(
+                replayed.receipt_digest, _terminal_repair_commit_digest(replayed)
+            )
+            persisted = ledger.get(record.dispatch_id)
+            assert persisted is not None
+            self.assertEqual(persisted.state, "cancelled")
+            self.assertEqual(
+                persisted.terminal_repair_reservation["state"], "committed"
+            )
+            self.assertEqual(len(persisted.events), 1)
+
+    def test_target_terminal_evidence_fails_closed_on_concurrent_completion(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="target")
+            ledger = DispatchStore(Path(tmp))
+            record = DispatchRecord(
+                dispatch_id="dispatch-target-proof-race",
+                mutation_id="mutation-target-proof-race",
+                card_id="card-done",
+                authority_instance_id="authority",
+                authority_url="http://authority",
+                target_instance_id="target",
+                session_id="session-target-proof-race",
+                state="running",
+                recoverable=False,
+                events=[
+                    DispatchEvent(
+                        seq=1,
+                        state="running",
+                        message="Legacy dispatch running.",
+                    )
+                ],
+            )
+            ledger.put(record)
+            acknowledged_at = datetime.now(UTC)
+            completion_payload = {"outcome": "Concurrent target completion won."}
+            completion_envelope = {
+                "completion_id": "completion-target-proof-race",
+                "payload_digest": "b" * 64,
+            }
+            session = AgentSession(
+                id=record.session_id or "",
+                agent_name="codex",
+                origin_instance_id="target",
+                authority_instance_id="authority",
+                dispatch_id=record.dispatch_id,
+                status="closed",
+            )
+
+            def get_session(_session_id):
+                concurrent = ledger.get(record.dispatch_id)
+                assert concurrent is not None
+                concurrent.acknowledged_at = acknowledged_at
+                concurrent.completion_payload = completion_payload
+                concurrent.completion_envelope = completion_envelope
+                concurrent.completion_received_at = acknowledged_at
+                concurrent.completion_delivery_class = "acknowledged"
+                ledger.transition(
+                    concurrent,
+                    "completed",
+                    "Concurrent target completion durably acknowledged.",
+                )
+                return session
+
+            domain = MagicMock()
+            domain.get_session.side_effect = get_session
+            manager = MagicMock()
+            manager.get.return_value = None
+            request = request_for(
+                settings,
+                domain,
+                {"dispatch_store": ledger, "instance_agent": manager},
+            )
+            request.state.instance_authenticated = True
+            request.headers = {
+                "X-PA-Origin-Instance-ID": "authority",
+                "Idempotency-Key": "repair-target-proof-race",
+            }
+            body = DispatchTerminalRepairEvidenceRequest(
+                mutation_id=record.mutation_id,
+                authority_instance_id="authority",
+                target_instance_id="target",
+                session_id=session.id,
+                idempotency_key="repair-target-proof-race",
+                expected_state="running",
+            )
+
+            with self.assertRaises(HTTPException) as raised:
+                target_terminal_repair_evidence(request, record.dispatch_id, body)
+
+            self.assertEqual(raised.exception.status_code, 409)
+            self.assertEqual(
+                raised.exception.detail["code"], "target_terminal_evidence_changed"
+            )
+            self.assertIn("acknowledged_at", raised.exception.detail["changed_fields"])
+            self.assertIn("events", raised.exception.detail["changed_fields"])
+            persisted = ledger.get(record.dispatch_id)
+            assert persisted is not None
+            self.assertEqual(persisted.state, "completed")
+            self.assertEqual(persisted.acknowledged_at, acknowledged_at)
+            self.assertEqual(persisted.completion_payload, completion_payload)
+            self.assertEqual(persisted.completion_envelope, completion_envelope)
+            self.assertEqual(persisted.completion_delivery_class, "acknowledged")
+
+    def test_target_terminal_evidence_fences_runtime_publication_race(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="target")
+            ledger = DispatchStore(Path(tmp))
+            record = DispatchRecord(
+                dispatch_id="dispatch-target-runtime-race",
+                mutation_id="mutation-target-runtime-race",
+                card_id="card-done",
+                authority_instance_id="authority",
+                authority_url="http://authority",
+                target_instance_id="target",
+                session_id="session-target-runtime-race",
+                state="running",
+                recoverable=False,
+            )
+            ledger.put(record)
+            session = AgentSession(
+                id=record.session_id or "",
+                agent_name="codex",
+                origin_instance_id="target",
+                authority_instance_id="authority",
+                dispatch_id=record.dispatch_id,
+                status="closed",
+            )
+            domain = MagicMock()
+            domain.get_session.return_value = session
+            manager = AgentSessionManager(settings, domain)
+            live_runtime = SimpleNamespace(_closed=False)
+            original_get = manager.get
+            first_read = True
+
+            def racing_get(session_id: str):
+                nonlocal first_read
+                if first_read:
+                    first_read = False
+                    # Model provider startup publishing immediately after the
+                    # first empty observation. The atomic acquisition must
+                    # observe it before a proof can be returned.
+                    manager._runtimes[session_id] = live_runtime
+                    return None
+                return original_get(session_id)
+
+            manager.get = MagicMock(side_effect=racing_get)
+            request = request_for(
+                settings,
+                domain,
+                {"dispatch_store": ledger, "instance_agent": manager},
+            )
+            request.state.instance_authenticated = True
+            request.headers = {
+                "X-PA-Origin-Instance-ID": "authority",
+                "Idempotency-Key": "repair-target-runtime-race",
+            }
+            body = DispatchTerminalRepairEvidenceRequest(
+                mutation_id=record.mutation_id,
+                authority_instance_id="authority",
+                target_instance_id="target",
+                session_id=session.id,
+                idempotency_key="repair-target-runtime-race",
+                expected_state="running",
+            )
+
+            with self.assertRaises(HTTPException) as raised:
+                target_terminal_repair_evidence(request, record.dispatch_id, body)
+
+            self.assertEqual(raised.exception.status_code, 409)
+            self.assertEqual(
+                raised.exception.detail["code"], "linked_session_not_terminal"
+            )
+            self.assertTrue(raised.exception.detail["runtime_live"])
+            self.assertIsNone(manager.terminal_repair_fence_id(session.id))
+
+    async def test_runtime_started_before_terminal_fence_cannot_publish_after_it(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            manager = AgentSessionManager(
+                Settings(data_dir=Path(tmp), instance_id="target"), MagicMock()
+            )
+            self.assertIsNone(
+                manager.acquire_terminal_repair_fence(
+                    "session-fenced", fence_id="dispatch:repair"
+                )
+            )
+            runtime = MagicMock()
+            runtime.session_id = "session-fenced"
+            runtime.close = AsyncMock(return_value=True)
+
+            with self.assertRaisesRegex(RuntimeError, "terminal dispatch repair"):
+                await manager._publish_runtime(runtime)
+
+            runtime.close.assert_awaited_once_with(
+                reason="terminal_dispatch_repair_fenced",
+                reconcile_workspace=False,
+            )
+            self.assertIsNone(manager.get("session-fenced"))
+
+    async def test_terminal_repair_fence_blocks_recovery_and_prompt_admission(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            manager = AgentSessionManager(
+                Settings(data_dir=Path(tmp), instance_id="target"), MagicMock()
+            )
+            session_id = "session-repair-admission-fence"
+            self.assertIsNone(
+                manager.acquire_terminal_repair_fence(
+                    session_id, fence_id="dispatch:repair"
+                )
+            )
+
+            with self.assertRaises(AgentSessionRecoveryError):
+                manager.enqueue_prompt("must not queue", session_id=session_id)
+            with self.assertRaises(AgentSessionRecoveryError):
+                await manager.recover_session(session_id)
+            with self.assertRaises(AgentSessionRecoveryError):
+                await manager.prompt("must not run", session_id=session_id)
+
+    def test_lost_release_cannot_report_newer_fence_as_absent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="target")
+            ledger = DispatchStore(Path(tmp))
+            session_id = "session-newer-repair-fence"
+            fence_id = "dispatch:newer-repair-fence"
+            ledger.put(
+                DispatchRecord(
+                    dispatch_id="dispatch-newer-repair-fence",
+                    mutation_id="mutation-newer-repair-fence",
+                    authority_instance_id="target",
+                    authority_url="http://target",
+                    target_instance_id="target",
+                    session_id=session_id,
+                    state="completed",
+                    acknowledged_at=datetime.now(UTC),
+                )
+            )
+            manager = AgentSessionManager(
+                settings, MagicMock(), dispatch_store=ledger
+            )
+            manager.acquire_terminal_repair_fence(
+                session_id,
+                fence_id=fence_id,
+                acquisition_id="old-acquisition",
+            )
+            original_release = manager.release_terminal_repair_fence
+
+            def replace_before_release(
+                current_session_id,
+                *,
+                fence_id,
+                acquisition_id=None,
+            ):
+                manager.acquire_terminal_repair_fence(
+                    current_session_id,
+                    fence_id=fence_id,
+                    acquisition_id="new-acquisition",
+                )
+                return original_release(
+                    current_session_id,
+                    fence_id=fence_id,
+                    acquisition_id=acquisition_id,
+                )
+
+            with patch.object(
+                manager,
+                "release_terminal_repair_fence",
+                side_effect=replace_before_release,
+            ):
+                with self.assertRaises(AgentSessionRecoveryError):
+                    manager._require_not_terminal_repair_fenced(session_id)
+
+            self.assertEqual(
+                manager._terminal_repair_fence_acquisitions[session_id],
+                "new-acquisition",
+            )
+
+    async def test_local_compare_conflict_releases_exact_fence_acquisition(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="target")
+            ledger = DispatchStore(Path(tmp))
+            record = DispatchRecord(
+                dispatch_id="dispatch-local-fence-conflict",
+                mutation_id="mutation-local-fence-conflict",
+                card_id="card-done",
+                authority_instance_id="target",
+                authority_url="http://target",
+                target_instance_id="target",
+                session_id="session-local-fence-conflict",
+                state="running",
+                recoverable=False,
+            )
+            ledger.put(record)
+            session = AgentSession(
+                id=record.session_id or "",
+                agent_name="codex",
+                origin_instance_id="target",
+                authority_instance_id="target",
+                dispatch_id=record.dispatch_id,
+                status="closed",
+            )
+            domain = MagicMock()
+            domain.get_card.return_value = SimpleNamespace(lane=CardLane.DONE)
+            reads = 0
+
+            def mutate_on_revalidation(_session_id):
+                nonlocal reads
+                reads += 1
+                if reads == 2:
+                    concurrent = ledger.get(record.dispatch_id)
+                    assert concurrent is not None
+                    ledger.transition(
+                        concurrent,
+                        "running",
+                        "Concurrent same-state lifecycle evidence.",
+                    )
+                return session
+
+            domain.get_session.side_effect = mutate_on_revalidation
+            manager = AgentSessionManager(settings, domain, dispatch_store=ledger)
+            request = request_for(
+                settings,
+                domain,
+                {"dispatch_store": ledger, "instance_agent": manager},
+            )
+            body = DispatchTerminalRepairBody(
+                idempotency_key="repair-local-fence-conflict",
+                mode="abandoned_without_acknowledgement",
+                expected_state="running",
+                reason="Exercise the exact local fence generation cleanup.",
+                confirm_no_outcome_inference=True,
+            )
+
+            with (
+                patch("pa.modules.fleet.require_user"),
+                self.assertRaises(HTTPException) as raised,
+            ):
+                await repair_terminal_dispatch(request, record.dispatch_id, body)
+
+            self.assertEqual(
+                raised.exception.detail["code"],
+                "terminal_repair_concurrent_change",
+            )
+            persisted = ledger.get(record.dispatch_id)
+            assert persisted is not None
+            self.assertEqual(persisted.state, "running")
+            self.assertIsNone(persisted.terminal_repair_reservation)
+            self.assertIsNone(manager.terminal_repair_fence_id(session.id))
+
+    async def test_losing_same_key_repair_cannot_release_newer_fence(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="target")
+            ledger = DispatchStore(Path(tmp))
+            session_id = "session-same-key-retry"
+            dispatch_id = "dispatch-same-key-retry"
+            fence_id = "terminal-repair:same-key"
+            record = DispatchRecord(
+                dispatch_id=dispatch_id,
+                mutation_id="mutation-same-key-retry",
+                authority_instance_id="target",
+                authority_url="http://target",
+                target_instance_id="target",
+                session_id=session_id,
+                state="running",
+                recoverable=False,
+            )
+            ledger.put(record)
+            manager = AgentSessionManager(
+                settings, MagicMock(), dispatch_store=ledger
+            )
+            request = request_for(
+                settings,
+                MagicMock(),
+                {"dispatch_store": ledger, "instance_agent": manager},
+            )
+            self.assertIsNone(
+                manager.acquire_terminal_repair_fence(
+                    session_id,
+                    fence_id=fence_id,
+                    acquisition_id="old-acquisition",
+                )
+            )
+            original_release = AgentSessionManager.release_terminal_repair_fence
+
+            def prepare_retry_before_old_release(
+                current_manager,
+                current_session_id,
+                *,
+                fence_id,
+                acquisition_id=None,
+            ):
+                self.assertIsNone(
+                    current_manager.acquire_terminal_repair_fence(
+                        current_session_id,
+                        fence_id=fence_id,
+                        acquisition_id="new-acquisition",
+                    )
+                )
+                current = ledger.get(dispatch_id)
+                assert current is not None
+                current.terminal_repair_reservation = {
+                    "state": "committed",
+                    "reservation_id": fence_id,
+                }
+                ledger.put(current)
+                return original_release(
+                    current_manager,
+                    current_session_id,
+                    fence_id=fence_id,
+                    acquisition_id=acquisition_id,
+                )
+
+            with patch.object(
+                AgentSessionManager,
+                "release_terminal_repair_fence",
+                autospec=True,
+                side_effect=prepare_retry_before_old_release,
+            ):
+                _release_terminal_repair_fence_if_uncommitted(
+                    request,
+                    record,
+                    fence_id=fence_id,
+                    fence_acquisition_id="old-acquisition",
+                )
+
+            self.assertEqual(
+                manager.terminal_repair_fence_id(session_id), fence_id
+            )
+            self.assertEqual(
+                manager._terminal_repair_fence_acquisitions[session_id],
+                "new-acquisition",
+            )
+            runtime = MagicMock()
+            runtime.session_id = session_id
+            runtime.close = AsyncMock(return_value=True)
+            with self.assertRaisesRegex(RuntimeError, "terminal dispatch repair"):
+                await manager._publish_runtime(runtime)
+            runtime.close.assert_awaited_once_with(
+                reason="terminal_dispatch_repair_fenced",
+                reconcile_workspace=False,
+            )
+
+    async def test_followup_failure_cannot_replay_state_over_terminal_repair(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="target")
+            ledger = DispatchStore(Path(tmp))
+            dispatch_id = "dispatch-followup-repair-race"
+            session_id = "session-followup-repair-race"
+            repair_key = "repair-followup-race"
+            record = DispatchRecord(
+                dispatch_id=dispatch_id,
+                mutation_id="mutation-followup-repair-race",
+                card_id="card-done",
+                authority_instance_id="target",
+                authority_url="http://target",
+                target_instance_id="target",
+                session_id=session_id,
+                state="running",
+                recoverable=False,
+            )
+            ledger.put(record)
+            stale = ledger.get(dispatch_id)
+            assert stale is not None
+            domain = MagicMock()
+            domain.get_card.return_value = SimpleNamespace(lane=CardLane.DONE)
+            domain.get_session.return_value = SimpleNamespace(status="closed")
+            manager = AgentSessionManager(
+                settings, domain, dispatch_store=ledger
+            )
+            request = request_for(
+                settings,
+                domain,
+                {"dispatch_store": ledger, "instance_agent": manager},
+            )
+            request.state.instance_authenticated = True
+            body = DispatchTerminalRepairBody(
+                idempotency_key=repair_key,
+                mode="abandoned_without_acknowledgement",
+                expected_state="running",
+                reason="Fence a stale follow-up failure writer.",
+                confirm_no_outcome_inference=True,
+            )
+            prompt_started = asyncio.Event()
+            resume_prompt = asyncio.Event()
+
+            async def rejected_after_repair(*_args, **_kwargs):
+                prompt_started.set()
+                await resume_prompt.wait()
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "terminal_dispatch_repair_fenced",
+                        "message": "Repair fenced the linked session.",
+                    },
+                )
+
+            with (
+                patch("pa.modules.fleet.require_user"),
+                patch(
+                    "pa.modules.fleet._peer_agent_json",
+                    AsyncMock(side_effect=rejected_after_repair),
+                ),
+            ):
+                prompt = asyncio.create_task(
+                    prompt_dispatch_session(
+                        request,
+                        dispatch_id,
+                        DispatchFollowupBody(
+                            message="continue",
+                            idempotency_key="followup-race",
+                        ),
+                    )
+                )
+                await asyncio.wait_for(prompt_started.wait(), timeout=5)
+                repaired = await repair_terminal_dispatch(
+                    request, dispatch_id, body
+                )
+                self.assertEqual(repaired["state"], "cancelled")
+                with self.assertRaises(DispatchCompareConflict):
+                    ledger.put(stale)
+                resume_prompt.set()
+                with self.assertRaises(HTTPException) as raised:
+                    await asyncio.wait_for(prompt, timeout=5)
+
+            self.assertEqual(raised.exception.status_code, 409)
+            persisted = ledger.get(dispatch_id)
+            assert persisted is not None
+            self.assertEqual(persisted.state, "cancelled")
+            self.assertFalse(persisted.recoverable)
+            self.assertEqual(
+                persisted.control_operations[repair_key],
+                "repair_terminal:abandoned_without_acknowledgement",
+            )
+            reservation = persisted.terminal_repair_reservation
+            assert reservation is not None
+            self.assertEqual(reservation["state"], "committed")
+            self.assertIsNotNone(persisted.capacity_released_at)
+            self.assertEqual(
+                persisted.followup_operations["followup-race"]["state"],
+                "failed",
+            )
+            self.assertEqual(
+                persisted.followup_operations["followup-race"]["error"]["code"],
+                "terminal_dispatch_repair_fenced",
+            )
+            self.assertIn(
+                "legacy_abandoned_dispatch_retired",
+                {
+                    item["kind"]
+                    for item in persisted.lifecycle_inconsistencies
+                },
+            )
+
+    async def test_remote_repair_collects_target_proof_after_slow_snapshot(
+        self,
+    ) -> None:
+        with (
+            tempfile.TemporaryDirectory() as authority_tmp,
+            tempfile.TemporaryDirectory() as target_tmp,
+        ):
+            authority_ledger, record, authority_request, body = (
+                remote_terminal_repair_context(authority_tmp, "late-completion")
+            )
+            target_ledger = DispatchStore(Path(target_tmp))
+            target_ledger.put(record.model_copy(deep=True))
+            target_session = AgentSession(
+                id=record.session_id or "",
+                agent_name="codex",
+                origin_instance_id="target",
+                authority_instance_id="authority",
+                dispatch_id=record.dispatch_id,
+                status="closed",
+            )
+            target_domain = MagicMock()
+            target_domain.get_session.return_value = target_session
+            target_manager = MagicMock()
+            target_manager.get.return_value = None
+            target_request = request_for(
+                Settings(data_dir=Path(target_tmp), instance_id="target"),
+                target_domain,
+                {
+                    "dispatch_store": target_ledger,
+                    "instance_agent": target_manager,
+                },
+            )
+            target_request.state.instance_authenticated = True
+            target_request.headers = {
+                "X-PA-Origin-Instance-ID": "authority",
+                "Idempotency-Key": body.idempotency_key,
+            }
+
+            def slow_card_snapshot(*_args, **_kwargs):
+                completed = target_ledger.get(record.dispatch_id)
+                assert completed is not None
+                if completed.state != "completed":
+                    now = datetime.now(UTC)
+                    completed.acknowledged_at = now
+                    completed.completion_received_at = now
+                    completed.completion_delivery_class = "acknowledged"
+                    completed.completion_payload = {
+                        "outcome": "Completion won during the slow card snapshot."
+                    }
+                    target_ledger.transition(
+                        completed,
+                        "completed",
+                        "Target completion was acknowledged before final proof.",
+                    )
+                return SimpleNamespace(lane=CardLane.DONE)
+
+            authority_request.app.state.ctx.store.get_card.side_effect = (
+                slow_card_snapshot
+            )
+
+            async def final_target_proof(_request, _target, dispatch_id, proof_body):
+                return target_terminal_repair_evidence(
+                    target_request, dispatch_id, proof_body
+                )
+
+            with (
+                patch("pa.modules.fleet.require_user"),
+                patch(
+                    "pa.modules.fleet._peer_terminal_repair_evidence",
+                    AsyncMock(side_effect=final_target_proof),
+                ) as peer,
+                self.assertRaises(HTTPException),
+            ):
+                await repair_terminal_dispatch(
+                    authority_request, record.dispatch_id, body
+                )
+
+            peer.assert_awaited_once()
+            authority = authority_ledger.get(record.dispatch_id)
+            target = target_ledger.get(record.dispatch_id)
+            assert authority is not None and target is not None
+            self.assertEqual(authority.state, "running")
+            self.assertEqual(target.state, "completed")
+            self.assertEqual(target.completion_delivery_class, "acknowledged")
+
+    async def test_remote_completion_after_prepare_prevents_authority_commit(
+        self,
+    ) -> None:
+        with (
+            tempfile.TemporaryDirectory() as authority_tmp,
+            tempfile.TemporaryDirectory() as target_tmp,
+        ):
+            authority_ledger, record, authority_request, body = (
+                remote_terminal_repair_context(
+                    authority_tmp, "completion-after-prepare"
+                )
+            )
+            target_ledger = DispatchStore(Path(target_tmp))
+            target_ledger.put(record.model_copy(deep=True))
+            session = AgentSession(
+                id=record.session_id or "",
+                agent_name="codex",
+                origin_instance_id="target",
+                authority_instance_id="authority",
+                dispatch_id=record.dispatch_id,
+                status="closed",
+            )
+            target_domain = MagicMock()
+            target_domain.get_session.return_value = session
+            target_settings = Settings(data_dir=Path(target_tmp), instance_id="target")
+            target_manager = AgentSessionManager(
+                target_settings, target_domain, dispatch_store=target_ledger
+            )
+            target_request = request_for(
+                target_settings,
+                target_domain,
+                {
+                    "dispatch_store": target_ledger,
+                    "instance_agent": target_manager,
+                },
+            )
+            target_request.state.instance_authenticated = True
+            target_request.headers = {
+                "X-PA-Origin-Instance-ID": "authority",
+                "Idempotency-Key": body.idempotency_key,
+            }
+            payload = {
+                "stop_reason": "end_turn",
+                "outcome": "Completion won after reservation preparation.",
+            }
+
+            async def prepare(_request, _target, dispatch_id, proof_body):
+                return target_terminal_repair_evidence(
+                    target_request, dispatch_id, proof_body
+                )
+
+            async def complete_then_consume(
+                _request, _target, dispatch_id, commit_body
+            ):
+                self.assertTrue(
+                    target_ledger.queue_completion_payload(session.id, payload)
+                )
+                return target_terminal_repair_commit(
+                    target_request, dispatch_id, commit_body
+                )
+
+            with (
+                patch("pa.modules.fleet.require_user"),
+                patch(
+                    "pa.modules.fleet._peer_terminal_repair_evidence",
+                    AsyncMock(side_effect=prepare),
+                ),
+                patch(
+                    "pa.modules.fleet._peer_terminal_repair_commit",
+                    AsyncMock(side_effect=complete_then_consume),
+                ),
+                self.assertRaises(HTTPException) as raised,
+            ):
+                await repair_terminal_dispatch(
+                    authority_request, record.dispatch_id, body
+                )
+
+            self.assertEqual(raised.exception.status_code, 409)
+            self.assertEqual(
+                raised.exception.detail["code"],
+                "target_terminal_reservation_not_consumable",
+            )
+            authority = authority_ledger.get(record.dispatch_id)
+            target = target_ledger.get(record.dispatch_id)
+            assert authority is not None and target is not None
+            self.assertEqual(authority.state, "running")
+            self.assertNotIn(body.idempotency_key, authority.control_operations)
+            self.assertEqual(target.state, "completion_pending")
+            self.assertEqual(target.completion_payload, payload)
+            reservation = target.terminal_repair_reservation
+            assert reservation is not None
+            self.assertEqual(reservation["state"], "superseded_by_completion")
+            self.assertIsNone(target_manager.terminal_repair_fence_id(session.id))
+            queued = target_manager.enqueue_prompt(
+                "completion superseded the target repair reservation",
+                session_id=session.id,
+            )
+            self.assertEqual(queued.session_id, session.id)
+            with self.assertRaisesRegex(
+                AgentSessionRecoveryError, "closed and has no resumable"
+            ):
+                await target_manager.recover_session(session.id)
+
+    async def test_completion_callback_supersedes_local_terminal_repair(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = DispatchStore(Path(tmp))
+            session_id = "session-late-after-repair"
+            repair_key = "repair-local-late-completion"
+            ledger.put(
+                DispatchRecord(
+                    dispatch_id="dispatch-local-late-completion",
+                    mutation_id="mutation-local-late-completion",
+                    card_id="card-done",
+                    authority_instance_id="target",
+                    authority_url="http://target",
+                    target_instance_id="target",
+                    session_id=session_id,
+                    state="cancelled",
+                    recoverable=False,
+                    error_code="legacy_abandoned_dispatch_retired",
+                    control_operations={
+                        repair_key: (
+                            "repair_terminal:abandoned_without_acknowledgement"
+                        )
+                    },
+                )
+            )
+            outbox = CompletionOutbox(ledger, "")
+            agent = MagicMock()
+            agent.async_runtime = None
+            reconciler = CompletionReconciler(
+                ledger,
+                agent,
+                outbox,
+                MagicMock(),
+                lambda: None,
+            )
+            payload = {
+                "stop_reason": "end_turn",
+                "outcome": "Late immutable completion must win.",
+            }
+
+            accepted = await reconciler.handle_completion(session_id, payload)
+
+            self.assertTrue(accepted)
+            persisted = ledger.by_session(session_id)
+            assert persisted is not None
+            self.assertEqual(persisted.state, "completion_pending")
+            self.assertEqual(persisted.completion_payload, payload)
+            self.assertEqual(persisted.completion_delivery_class, "pending")
+            self.assertIsNone(persisted.error_code)
+            self.assertEqual(
+                persisted.lifecycle_inconsistencies[-1]["kind"],
+                "terminal_repair_superseded_by_completion",
+            )
+
+    async def test_completion_callback_started_before_repair_preserves_repair_audit(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp)
+            settings = Settings(data_dir=data_dir, instance_id="target")
+            ledger = DispatchStore(data_dir)
+            session_id = "session-stale-completion"
+            dispatch_id = "dispatch-stale-completion"
+            repair_key = "repair-stale-completion"
+            payload = {
+                "stop_reason": "end_turn",
+                "outcome": "Completion callback began before repair committed.",
+            }
+            ledger.put(
+                DispatchRecord(
+                    dispatch_id=dispatch_id,
+                    mutation_id="mutation-stale-completion",
+                    card_id="card-done",
+                    authority_instance_id="target",
+                    authority_url="http://target",
+                    target_instance_id="target",
+                    session_id=session_id,
+                    state="running",
+                    recoverable=False,
+                )
+            )
+            domain = MagicMock()
+            domain.get_card.return_value = SimpleNamespace(lane=CardLane.DONE)
+            domain.get_session.return_value = SimpleNamespace(status="closed")
+            request = request_for(
+                settings, domain, {"dispatch_store": ledger}
+            )
+            body = DispatchTerminalRepairBody(
+                idempotency_key=repair_key,
+                mode="abandoned_without_acknowledgement",
+                expected_state="running",
+                reason="Exercise the callback/repair writer race.",
+                confirm_no_outcome_inference=True,
+            )
+            outbox = CompletionOutbox(ledger, "")
+            callback_started = threading.Event()
+            resume_callback = threading.Event()
+            original_queue = ledger.queue_completion_payload
+            accepted: list[bool] = []
+
+            def delayed_atomic_queue(
+                current_session_id: str, current_payload: dict
+            ) -> bool:
+                callback_started.set()
+                if not resume_callback.wait(5):
+                    raise RuntimeError("completion callback race barrier timed out")
+                return original_queue(current_session_id, current_payload)
+
+            ledger.queue_completion_payload = delayed_atomic_queue
+            worker = threading.Thread(
+                target=lambda: accepted.append(outbox.queue(session_id, payload)),
+                name="completion-callback-before-repair",
+            )
+            worker.start()
+            try:
+                self.assertTrue(callback_started.wait(5))
+                with patch("pa.modules.fleet.require_user"):
+                    repaired = await repair_terminal_dispatch(
+                        request, dispatch_id, body
+                    )
+                self.assertEqual(repaired["state"], "cancelled")
+            finally:
+                resume_callback.set()
+                worker.join(5)
+                ledger.queue_completion_payload = original_queue
+            self.assertFalse(worker.is_alive())
+            self.assertEqual(accepted, [True])
+
+            ledger.close()
+            reopened = DispatchStore(data_dir)
+            persisted = reopened.get(dispatch_id)
+            assert persisted is not None
+            self.assertEqual(persisted.state, "completion_pending")
+            self.assertEqual(persisted.completion_payload, payload)
+            self.assertEqual(persisted.completion_delivery_class, "pending")
+            self.assertEqual(
+                persisted.control_operations[repair_key],
+                "repair_terminal:abandoned_without_acknowledgement",
+            )
+            repair_audits = [
+                item
+                for item in persisted.lifecycle_inconsistencies
+                if item["kind"] == "legacy_abandoned_dispatch_retired"
+            ]
+            supersession_audits = [
+                item
+                for item in persisted.lifecycle_inconsistencies
+                if item["kind"] == "terminal_repair_superseded_by_completion"
+            ]
+            self.assertEqual(len(repair_audits), 1)
+            self.assertEqual(len(supersession_audits), 1)
+            self.assertEqual(
+                [event.state for event in persisted.events],
+                ["cancelled", "completion_pending"],
+            )
+
+            replay_request = request_for(
+                settings, domain, {"dispatch_store": reopened}
+            )
+            with patch("pa.modules.fleet.require_user"):
+                replay = await repair_terminal_dispatch(
+                    replay_request, dispatch_id, body
+                )
+            self.assertEqual(replay["state"], "completion_pending")
+            replayed = reopened.get(dispatch_id)
+            assert replayed is not None
+            self.assertEqual(replayed.control_operations, persisted.control_operations)
+            self.assertEqual(
+                replayed.lifecycle_inconsistencies,
+                persisted.lifecycle_inconsistencies,
+            )
+            self.assertEqual(replayed.events, persisted.events)
+            reopened.close()
+
+    async def test_reconciliation_save_cannot_erase_concurrent_repair(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="target")
+            ledger = DispatchStore(Path(tmp))
+            record = DispatchRecord(
+                dispatch_id="dispatch-reconciliation-race",
+                mutation_id="mutation-reconciliation-race",
+                card_id="card-done",
+                authority_instance_id="target",
+                authority_url="http://target",
+                target_instance_id="target",
+                session_id="session-reconciliation-race",
+                state="running",
+                recoverable=False,
+            )
+            ledger.put(record)
+            domain = MagicMock()
+            domain.get_card.return_value = SimpleNamespace(lane=CardLane.DONE)
+            domain.get_session.return_value = SimpleNamespace(status="closed")
+            request = request_for(settings, domain, {"dispatch_store": ledger})
+            body = DispatchTerminalRepairBody(
+                idempotency_key="repair-reconciliation-race",
+                mode="abandoned_without_acknowledgement",
+                expected_state="running",
+                reason="Fence a stale reconciliation metadata save.",
+                confirm_no_outcome_inference=True,
+            )
+            agent = MagicMock()
+            agent.store = domain
+            agent.get.return_value = None
+            agent.async_runtime = None
+            reconciler = CompletionReconciler(
+                ledger, agent, CompletionOutbox(ledger, ""), domain, lambda: None
+            )
+            save_started = asyncio.Event()
+            resume_save = asyncio.Event()
+            original_save = reconciler._save
+
+            async def delayed_save(stale: DispatchRecord) -> None:
+                save_started.set()
+                await resume_save.wait()
+                await original_save(stale)
+
+            reconciler._save = delayed_save
+            payload = {
+                "card_disposition": {
+                    "contract": "pa.card-disposition/v1",
+                    "lane": "active",
+                    "outcome": "Completion won the reconciliation race.",
+                    "evidence": {"integration_required": False},
+                }
+            }
+            completion = asyncio.create_task(
+                reconciler.handle_completion(record.session_id or "", payload)
+            )
+            await asyncio.wait_for(save_started.wait(), timeout=5)
+            try:
+                with patch("pa.modules.fleet.require_user"):
+                    repaired = await repair_terminal_dispatch(
+                        request, record.dispatch_id, body
+                    )
+                self.assertEqual(repaired["state"], "cancelled")
+            finally:
+                resume_save.set()
+            self.assertTrue(await asyncio.wait_for(completion, timeout=5))
+            await original_save(record)
+
+            persisted = ledger.get(record.dispatch_id)
+            assert persisted is not None
+            self.assertEqual(persisted.state, "completion_pending")
+            self.assertEqual(persisted.completion_payload, payload)
+            self.assertEqual(
+                persisted.control_operations[body.idempotency_key],
+                "repair_terminal:abandoned_without_acknowledgement",
+            )
+            reservation = persisted.terminal_repair_reservation
+            assert reservation is not None
+            self.assertEqual(reservation["state"], "committed")
+            restarted = AgentSessionManager(
+                settings, domain, dispatch_store=ledger
+            )
+            self.assertEqual(
+                restarted.terminal_repair_fence_id(record.session_id or ""),
+                reservation["reservation_id"],
+            )
+            with self.assertRaises(AgentSessionRecoveryError):
+                restarted.enqueue_prompt(
+                    "must remain fenced", session_id=record.session_id
+                )
+            with self.assertRaises(AgentSessionRecoveryError):
+                await restarted.recover_session(record.session_id or "")
+            kinds = {item["kind"] for item in persisted.lifecycle_inconsistencies}
+            self.assertIn("legacy_abandoned_dispatch_retired", kinds)
+            self.assertIn("terminal_repair_superseded_by_completion", kinds)
+
+    async def test_missing_disposition_save_queues_after_concurrent_repair(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="target")
+            ledger = DispatchStore(Path(tmp))
+            record = DispatchRecord(
+                dispatch_id="dispatch-missing-disposition-race",
+                mutation_id="mutation-missing-disposition-race",
+                card_id="card-done",
+                authority_instance_id="target",
+                authority_url="http://target",
+                target_instance_id="target",
+                session_id="session-missing-disposition-race",
+                state="running",
+                recoverable=False,
+            )
+            ledger.put(record)
+            domain = MagicMock()
+            domain.get_card.return_value = SimpleNamespace(lane=CardLane.DONE)
+            domain.get_session.return_value = SimpleNamespace(status="closed")
+            request = request_for(settings, domain, {"dispatch_store": ledger})
+            body = DispatchTerminalRepairBody(
+                idempotency_key="repair-missing-disposition-race",
+                mode="abandoned_without_acknowledgement",
+                expected_state="running",
+                reason="Fence a missing-disposition completion metadata save.",
+                confirm_no_outcome_inference=True,
+            )
+            agent = MagicMock()
+            agent.store = domain
+            agent.get.return_value = None
+            agent.async_runtime = None
+            reconciler = CompletionReconciler(
+                ledger, agent, CompletionOutbox(ledger, ""), domain, lambda: None
+            )
+            save_started = asyncio.Event()
+            resume_save = asyncio.Event()
+            original_save = reconciler._save
+
+            async def delayed_save(stale: DispatchRecord):
+                save_started.set()
+                await resume_save.wait()
+                return await original_save(stale)
+
+            reconciler._save = delayed_save
+            payload = {
+                "stop_reason": "end_turn",
+                "outcome": "Missing disposition completion won the repair race.",
+            }
+            completion = asyncio.create_task(
+                reconciler.handle_completion(record.session_id or "", payload)
+            )
+            await asyncio.wait_for(save_started.wait(), timeout=5)
+            try:
+                with patch("pa.modules.fleet.require_user"):
+                    repaired = await repair_terminal_dispatch(
+                        request, record.dispatch_id, body
+                    )
+                self.assertEqual(repaired["state"], "cancelled")
+            finally:
+                resume_save.set()
+
+            self.assertTrue(await asyncio.wait_for(completion, timeout=5))
+            persisted = ledger.get(record.dispatch_id)
+            assert persisted is not None
+            self.assertEqual(persisted.state, "completion_pending")
+            self.assertEqual(persisted.completion_payload, payload)
+            self.assertEqual(persisted.completion_delivery_class, "pending")
+            self.assertEqual(persisted.reconciliation_state, "pending")
+            self.assertEqual(
+                persisted.control_operations[body.idempotency_key],
+                "repair_terminal:abandoned_without_acknowledgement",
+            )
+            reservation = persisted.terminal_repair_reservation
+            assert reservation is not None
+            self.assertEqual(reservation["state"], "committed")
+            kinds = {item["kind"] for item in persisted.lifecycle_inconsistencies}
+            self.assertIn("legacy_abandoned_dispatch_retired", kinds)
+            self.assertIn("terminal_repair_superseded_by_completion", kinds)
+
+    async def test_remote_target_closed_proof_repairs_without_local_replica_use(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger, record, request, body = remote_terminal_repair_context(
+                tmp, "closed"
+            )
+            proof = terminal_repair_evidence(record, body.idempotency_key)
+            commit = terminal_repair_commit(record, proof)
+            with (
+                patch("pa.modules.fleet.require_user"),
+                patch(
+                    "pa.modules.fleet._peer_terminal_repair_evidence",
+                    AsyncMock(return_value=proof),
+                ) as peer,
+                patch(
+                    "pa.modules.fleet._peer_terminal_repair_commit",
+                    AsyncMock(return_value=commit),
+                ) as peer_commit,
+            ):
+                result = await repair_terminal_dispatch(
+                    request, record.dispatch_id, body
+                )
+
+            self.assertEqual(result["state"], "cancelled")
+            peer.assert_awaited_once()
+            peer_commit.assert_awaited_once()
+            request.app.state.ctx.store.get_session.assert_not_called()
+            request.app.state.ctx.services["instance_agent"].get.assert_not_called()
+            persisted = ledger.get(record.dispatch_id)
+            assert persisted is not None
+            diagnostic = persisted.lifecycle_inconsistencies[-1]
+            self.assertEqual(
+                diagnostic["evidence"]["source"], "authenticated_remote_target"
+            )
+            self.assertEqual(
+                diagnostic["evidence"]["target_evidence_digest"],
+                proof.evidence_digest,
+            )
+
+    async def test_remote_target_live_proof_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger, record, request, body = remote_terminal_repair_context(tmp, "live")
+            proof = terminal_repair_evidence(
+                record, body.idempotency_key, runtime_live=True
+            )
+            with (
+                patch("pa.modules.fleet.require_user"),
+                patch(
+                    "pa.modules.fleet._peer_terminal_repair_evidence",
+                    AsyncMock(return_value=proof),
+                ),
+                self.assertRaises(HTTPException) as raised,
+            ):
+                await repair_terminal_dispatch(request, record.dispatch_id, body)
+
+            self.assertEqual(raised.exception.status_code, 409)
+            self.assertEqual(
+                raised.exception.detail["code"], "linked_session_not_terminal"
+            )
+            self.assertTrue(raised.exception.detail["runtime_live"])
+            persisted = ledger.get(record.dispatch_id)
+            assert persisted is not None
+            self.assertEqual(persisted.state, "running")
+            self.assertNotIn(body.idempotency_key, persisted.control_operations)
+
+    async def test_remote_target_stale_closed_proof_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger, record, request, body = remote_terminal_repair_context(tmp, "stale")
+            proof = terminal_repair_evidence(
+                record,
+                body.idempotency_key,
+                observed_at=datetime.now(UTC) - timedelta(seconds=30),
+            )
+            with (
+                patch("pa.modules.fleet.require_user"),
+                patch(
+                    "pa.modules.fleet._peer_terminal_repair_evidence",
+                    AsyncMock(return_value=proof),
+                ),
+                self.assertRaises(HTTPException) as raised,
+            ):
+                await repair_terminal_dispatch(request, record.dispatch_id, body)
+
+            self.assertEqual(raised.exception.status_code, 409)
+            self.assertEqual(
+                raised.exception.detail["code"], "target_terminal_evidence_stale"
+            )
+            persisted = ledger.get(record.dispatch_id)
+            assert persisted is not None
+            self.assertEqual(persisted.state, "running")
+            self.assertNotIn(body.idempotency_key, persisted.control_operations)
+
+    async def test_remote_target_unreachable_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger, record, request, body = remote_terminal_repair_context(
+                tmp, "unreachable"
+            )
+            unavailable = HTTPException(
+                status_code=502,
+                detail={
+                    "code": "target_terminal_evidence_unavailable",
+                    "target_instance_id": "target",
+                    "recoverable": True,
+                },
+            )
+            with (
+                patch("pa.modules.fleet.require_user"),
+                patch(
+                    "pa.modules.fleet._peer_terminal_repair_evidence",
+                    AsyncMock(side_effect=unavailable),
+                ),
+                self.assertRaises(HTTPException) as raised,
+            ):
+                await repair_terminal_dispatch(request, record.dispatch_id, body)
+
+            self.assertEqual(raised.exception.status_code, 502)
+            self.assertEqual(
+                raised.exception.detail["code"],
+                "target_terminal_evidence_unavailable",
+            )
+            request.app.state.ctx.store.get_session.assert_not_called()
+            request.app.state.ctx.services["instance_agent"].get.assert_not_called()
+            persisted = ledger.get(record.dispatch_id)
+            assert persisted is not None
+            self.assertEqual(persisted.state, "running")
+            self.assertNotIn(body.idempotency_key, persisted.control_operations)
+
+    async def test_remote_target_evidence_timeout_is_normalized(self) -> None:
+        settings = Settings(
+            instance_id="authority",
+            instance_url="http://authority",
+            sync_token="secret",
+        )
+        fleet = MagicMock()
+        fleet.list_instances.return_value = [
+            FleetInstance(
+                instance_id="target",
+                name="target",
+                url="http://target",
+            )
+        ]
+        client = MagicMock()
+        request = request_for(
+            settings,
+            MagicMock(),
+            {
+                "fleet_registry": fleet,
+                "fleet_http_client": client,
+            },
+        )
+        body = DispatchTerminalRepairEvidenceRequest(
+            mutation_id="mutation-timeout",
+            authority_instance_id="authority",
+            target_instance_id="target",
+            session_id="session-timeout",
+            idempotency_key="repair-timeout",
+            expected_state="running",
+        )
+
+        with (
+            patch(
+                "pa.modules.fleet._fleet_http",
+                AsyncMock(side_effect=TimeoutError),
+            ),
+            self.assertRaises(HTTPException) as raised,
+        ):
+            await _peer_terminal_repair_evidence(
+                request, "target", "dispatch-timeout", body
+            )
+
+        self.assertEqual(raised.exception.status_code, 502)
+        self.assertEqual(
+            raised.exception.detail["code"], "target_terminal_evidence_unavailable"
+        )
+        self.assertEqual(raised.exception.detail["target_instance_id"], "target")
+        self.assertTrue(raised.exception.detail["recoverable"])
+
+    async def test_mixed_version_target_without_proof_route_fails_closed(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger, record, request, body = remote_terminal_repair_context(
+                tmp, "mixed-version"
+            )
+            unsupported = HTTPException(
+                status_code=404,
+                detail={
+                    "code": "target_terminal_evidence_unsupported",
+                    "target_instance_id": "target",
+                    "upgrade_required": True,
+                    "recoverable": True,
+                },
+            )
+            with (
+                patch("pa.modules.fleet.require_user"),
+                patch(
+                    "pa.modules.fleet._peer_terminal_repair_evidence",
+                    AsyncMock(side_effect=unsupported),
+                ),
+                self.assertRaises(HTTPException) as raised,
+            ):
+                await repair_terminal_dispatch(request, record.dispatch_id, body)
+
+            self.assertEqual(raised.exception.status_code, 404)
+            self.assertEqual(
+                raised.exception.detail["code"],
+                "target_terminal_evidence_unsupported",
+            )
+            self.assertTrue(raised.exception.detail["upgrade_required"])
+            persisted = ledger.get(record.dispatch_id)
+            assert persisted is not None
+            self.assertEqual(persisted.state, "running")
+            self.assertNotIn(body.idempotency_key, persisted.control_operations)
 
 
 class MaterializationTests(unittest.TestCase):
@@ -734,6 +3091,78 @@ class CompletionTests(unittest.TestCase):
                 ledger.get("dispatch-1").post_turn_evaluations[-1].decision.value,
                 "outcome_achieved",
             )
+
+    def test_acknowledged_completion_preserves_concurrent_repair_commit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = target_terminal_repair_context(tmp, "ack-race")
+            card = Card(id="card-ack-race", title="Completion race")
+            current = ctx.ledger.get(ctx.record.dispatch_id)
+            assert current is not None
+            current.card_id = card.id
+            current.card_version = card.updated_at.isoformat()
+            current.card_snapshot = card.model_dump(mode="json")
+            ctx.ledger.put(current)
+            domain = MagicMock()
+            domain.get_card.return_value = card
+            complete_request = request_for(
+                ctx.settings, domain, {"dispatch_store": ctx.ledger}
+            )
+            complete_request.headers = {"idempotency-key": ctx.record.mutation_id}
+            body = DispatchCompletionBody(
+                mutation_id=ctx.record.mutation_id,
+                card_id=card.id,
+                card_version=card.updated_at.isoformat(),
+                realm_id="default",
+                source_instance_id="target",
+                session_id=ctx.session.id,
+                result={"outcome": "Concurrent immutable completion won."},
+            )
+            original_mutate = ctx.ledger.mutate_current
+
+            def commit_then_ack(dispatch_id: str, *, mutate):
+                prepared = target_terminal_repair_evidence(
+                    ctx.request, ctx.record.dispatch_id, ctx.proof_body
+                )
+                target_terminal_repair_commit(
+                    ctx.request,
+                    ctx.record.dispatch_id,
+                    DispatchTerminalRepairCommitRequest(
+                        mutation_id=ctx.record.mutation_id,
+                        authority_instance_id="authority",
+                        target_instance_id="target",
+                        session_id=ctx.session.id,
+                        idempotency_key=ctx.proof_body.idempotency_key,
+                        reservation_id=prepared.reservation_id,
+                        evidence_digest=prepared.evidence_digest,
+                        expected_state="running",
+                    ),
+                )
+                return original_mutate(dispatch_id, mutate=mutate)
+
+            ctx.ledger.mutate_current = MagicMock(side_effect=commit_then_ack)
+            result = complete_dispatch(complete_request, ctx.record.dispatch_id, body)
+
+            self.assertTrue(result["acknowledged"])
+            persisted = ctx.ledger.get(ctx.record.dispatch_id)
+            assert persisted is not None
+            self.assertEqual(persisted.state, "completed")
+            self.assertIsNotNone(persisted.acknowledged_at)
+            self.assertEqual(
+                persisted.completion_payload,
+                {"outcome": "Concurrent immutable completion won."},
+            )
+            self.assertEqual(
+                persisted.terminal_repair_reservation["state"], "committed"
+            )
+            self.assertEqual(
+                persisted.control_operations[ctx.proof_body.idempotency_key],
+                "repair_terminal:abandoned_without_acknowledgement",
+            )
+            kinds = {
+                item["kind"] for item in persisted.lifecycle_inconsistencies
+            }
+            self.assertIn("target_terminal_repair_reservation_committed", kinds)
+            self.assertIn("terminal_repair_superseded_by_completion", kinds)
 
     def test_duplicate_completion_updates_card_exactly_once(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

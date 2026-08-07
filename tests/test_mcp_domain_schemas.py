@@ -15,6 +15,7 @@ from pa.domain.models import (
 from pa.modules.fleet import FleetModule
 from pa.modules.items import ItemsModule
 from pa.modules.projects import ProjectsModule
+from pa.modules.sync import SyncModule
 
 
 def _property_enum(schema: dict, property_name: str) -> list[str]:
@@ -34,6 +35,7 @@ class McpDomainSchemaTests(IsolatedAsyncioTestCase):
         ItemsModule().register_mcp(self.mcp, ctx)
         FleetModule().register_mcp(self.mcp, ctx)
         ProjectsModule().register_mcp(self.mcp, ctx)
+        SyncModule().register_mcp(self.mcp, ctx)
         self.schemas = {
             tool.name: tool.input_schema for tool in await self.mcp.list_tools()
         }
@@ -80,6 +82,7 @@ class McpDomainSchemaTests(IsolatedAsyncioTestCase):
                 "project_id",
                 "tags",
                 "auto_enrich",
+                "idempotency_key",
             }.issubset(create)
         )
         self.assertTrue(
@@ -94,6 +97,7 @@ class McpDomainSchemaTests(IsolatedAsyncioTestCase):
                 "tags",
                 "expected_version",
                 "field_intent",
+                "idempotency_key",
             }.issubset(update)
         )
 
@@ -122,11 +126,32 @@ class McpDomainSchemaTests(IsolatedAsyncioTestCase):
             ["append", "prepend", "interrupt"],
         )
 
+    async def test_card_and_sync_mutations_require_recoverable_operation_keys(
+        self,
+    ) -> None:
+        for tool_name in (
+            "create_card",
+            "update_card",
+            "sync_reconcile",
+            "resolve_sync_conflicts",
+        ):
+            self.assertIn(
+                "idempotency_key", self.schemas[tool_name]["required"]
+            )
+        self.assertIn(
+            "idempotency_key",
+            self.schemas["get_operation_outcome"]["required"],
+        )
+
     async def test_invalid_enum_value_fails_before_tool_handler_runs(self) -> None:
         with self.assertRaises(ToolError) as raised:
             await self.mcp.call_tool(
                 "create_card",
-                {"title": "invalid", "lane": "not-a-lane"},
+                {
+                    "title": "invalid",
+                    "lane": "not-a-lane",
+                    "idempotency_key": "invalid-enum-test",
+                },
             )
 
         self.assertIn(

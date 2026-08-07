@@ -482,6 +482,7 @@ def test_card_tools_round_trip_the_union_of_supported_fields() -> None:
         ItemsModule().register_mcp(delegate, ctx)
         delegate.functions["create_card"](
             title="Child",
+            idempotency_key="create-card-round-trip",
             body="Body",
             lane="active",
             realm="team",
@@ -502,9 +503,13 @@ def test_card_tools_round_trip_the_union_of_supported_fields() -> None:
             "tags": ["one"],
             "auto_enrich": False,
         }
+        assert create.kwargs["headers"] == {
+            "Idempotency-Key": "create-card-round-trip"
+        }
 
         delegate.functions["update_card"](
             card_id="card",
+            idempotency_key="update-card-round-trip",
             parent_id="new-parent",
             project_id="new-project",
             tags=["two"],
@@ -519,6 +524,9 @@ def test_card_tools_round_trip_the_union_of_supported_fields() -> None:
             "tags": ["two"],
             "updated_at": "version",
             "field_intent": ["parent_id", "project_id", "tags"],
+        }
+        assert update.kwargs["headers"] == {
+            "Idempotency-Key": "update-card-round-trip"
         }
 
 

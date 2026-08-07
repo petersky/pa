@@ -208,6 +208,7 @@ class DispatchRecord(BaseModel):
     recoverable: bool = True
     cancel_requested: bool = False
     control_operations: dict[str, str] = Field(default_factory=dict)
+    terminal_repair_reservation: dict[str, Any] | None = None
     followup_operations: dict[str, dict[str, Any]] = Field(default_factory=dict)
     prompt_acknowledged_at: datetime | None = None
     prompt_ack: dict[str, Any] | None = None
@@ -259,6 +260,20 @@ class DispatchRecord(BaseModel):
             self.progress_events,
             key=lambda event: (event.sequence, event.occurred_at),
             default=None,
+        )
+
+    @property
+    def accepts_late_completion_after_terminal_repair(self) -> bool:
+        """Whether immutable completion may supersede an abandonment repair."""
+        return bool(
+            self.state == "cancelled"
+            and self.error_code == "legacy_abandoned_dispatch_retired"
+            and self.acknowledged_at is None
+            and self.completion_payload is None
+            and any(
+                operation == "repair_terminal:abandoned_without_acknowledgement"
+                for operation in self.control_operations.values()
+            )
         )
 
     def public_dict(self) -> dict[str, Any]:
@@ -2052,6 +2067,108 @@ class DispatchStore:
             record = self._latest_session_records_global.get(session_id)
             return self._snapshot(record) if record else None
 
+    def queue_completion_payload(
+        self, session_id: str, payload: dict[str, Any]
+    ) -> bool:
+        """Atomically queue completion against the latest durable session record."""
+        with self._lock:
+            self._require_writer()
+            stored = self._latest_session_records_global.get(session_id)
+            record = self._snapshot(stored) if stored else None
+            if (
+                record
+                and record.acknowledged_at
+                and record.state in {"completed", "acknowledged"}
+            ):
+                followup = next(
+                    (
+                        item
+                        for item in reversed(record.followup_turns)
+                        if item.get("state") == "accepted"
+                    ),
+                    None,
+                )
+                if not followup:
+                    return False
+                followup.update(
+                    {
+                        "state": "ended",
+                        "ended_at": datetime.now(UTC).isoformat(),
+                        "stop_reason": payload.get("stop_reason"),
+                        "result": payload,
+                        "final_report": (
+                            record.final_report.model_dump(mode="json")
+                            if record.final_report
+                            else None
+                        ),
+                        "delivery_state": "pending",
+                        "delivery_attempts": 0,
+                        "next_retry_at": None,
+                    }
+                )
+                self.put(record)
+                return True
+            late_repair_completion = bool(
+                record and record.accepts_late_completion_after_terminal_repair
+            )
+            if not record or (
+                record.state not in {"running", "completion_pending"}
+                and not late_repair_completion
+            ):
+                return False
+            reservation = record.terminal_repair_reservation if record else None
+            if reservation and reservation.get("state") == "prepared":
+                reservation = copy.deepcopy(reservation)
+                reservation.update(
+                    {
+                        "state": "superseded_by_completion",
+                        "superseded_at": datetime.now(UTC).isoformat(),
+                    }
+                )
+                record.terminal_repair_reservation = reservation
+                record.lifecycle_inconsistencies.append(
+                    {
+                        "kind": "terminal_repair_reservation_superseded",
+                        "observed_at": datetime.now(UTC).isoformat(),
+                        "reason": (
+                            "Immutable completion arrived before the target-side "
+                            "repair reservation was consumed."
+                        ),
+                        "reservation_id": reservation.get("reservation_id"),
+                    }
+                )
+                record.lifecycle_inconsistencies = record.lifecycle_inconsistencies[
+                    -50:
+                ]
+            if late_repair_completion:
+                record.lifecycle_inconsistencies.append(
+                    {
+                        "kind": "terminal_repair_superseded_by_completion",
+                        "observed_at": datetime.now(UTC).isoformat(),
+                        "reason": (
+                            "Immutable completion arrived after abandonment repair and "
+                            "was preserved for authority acknowledgement."
+                        ),
+                    }
+                )
+                record.lifecycle_inconsistencies = record.lifecycle_inconsistencies[
+                    -50:
+                ]
+                record.error_code = None
+            record.completion_payload = payload
+            record.last_error = None
+            record.completion_delivery_class = "pending"
+            record.completion_next_retry_at = None
+            self.transition(
+                record,
+                "completion_pending",
+                (
+                    "Agent turn ended; dispatch completion queued for delivery to "
+                    "the authority."
+                ),
+            )
+            return True
+
     def by_idempotency(
         self, target_instance_id: str, idempotency_key: str
     ) -> DispatchRecord | None:
@@ -2087,6 +2204,32 @@ class DispatchStore:
                 default=None,
             )
             return self._snapshot(record) if record else None
+
+    def find_operation_by_idempotency(
+        self, idempotency_key: str, *, realm_id: str | None = None
+    ) -> tuple[str, DispatchRecord] | None:
+        """Find a durable dispatch admission or control operation by its key."""
+        self._require_readable()
+        self._yield_to_index_writer()
+        with self._index_lock:
+            matches: list[tuple[str, DispatchRecord]] = []
+            for record in self._records.values():
+                if realm_id is not None and record.realm_id != realm_id:
+                    continue
+                if record.idempotency_key == idempotency_key:
+                    matches.append(("dispatch.create", record))
+                control = record.control_operations.get(idempotency_key)
+                if control:
+                    matches.append((f"dispatch.{control}", record))
+                if idempotency_key in record.followup_operations:
+                    matches.append(("dispatch.followup", record))
+            if not matches:
+                return None
+            operation, record = max(
+                matches,
+                key=lambda item: item[1].updated_at,
+            )
+            return operation, self._snapshot(record)
 
     @staticmethod
     def _class_key(record: DispatchRecord) -> str:
@@ -2455,6 +2598,144 @@ class DispatchStore:
             existing = self._records.get(record.dispatch_id)
             if existing and existing.mutation_id != record.mutation_id:
                 raise ValueError("dispatch id already belongs to another mutation")
+            existing_reservation = (
+                existing.terminal_repair_reservation if existing else None
+            )
+            existing_repair_controls = {
+                key: operation
+                for key, operation in (
+                    existing.control_operations.items() if existing else ()
+                )
+                if operation
+                in {
+                    "repair_terminal",
+                    "repair_terminal:abandoned_without_acknowledgement",
+                }
+            }
+            terminal_repair_present = bool(
+                existing
+                and (
+                    existing_repair_controls
+                    or (
+                        existing_reservation
+                        and existing_reservation.get("state")
+                        in {
+                            "prepared",
+                            "committed",
+                            "superseded_by_completion",
+                            "aborted",
+                        }
+                    )
+                )
+            )
+            if terminal_repair_present:
+                assert existing is not None
+                changed_fields: list[str] = []
+                if any(
+                    record.control_operations.get(key) != value
+                    for key, value in existing_repair_controls.items()
+                ):
+                    changed_fields.append("control_operations")
+                repair_diagnostics = [
+                    item
+                    for item in existing.lifecycle_inconsistencies
+                    if str(item.get("kind") or "").startswith("terminal_repair")
+                    or item.get("kind")
+                    in {
+                        "legacy_abandoned_dispatch_retired",
+                        "legacy_terminal_record_repaired",
+                    }
+                ]
+                if any(
+                    item not in record.lifecycle_inconsistencies
+                    for item in repair_diagnostics
+                ):
+                    changed_fields.append("lifecycle_inconsistencies")
+                repair_events = [
+                    event
+                    for event in existing.events
+                    if bool(event.detail.get("repair"))
+                ]
+                if any(event not in record.events for event in repair_events):
+                    changed_fields.append("events")
+                if (
+                    existing.capacity_released_at != record.capacity_released_at
+                    or existing.capacity_release_reason
+                    != record.capacity_release_reason
+                ):
+                    changed_fields.append("capacity_released_at")
+                incoming_reservation = record.terminal_repair_reservation
+                if existing_reservation:
+                    if (
+                        not incoming_reservation
+                        or incoming_reservation.get("reservation_id")
+                        != existing_reservation.get("reservation_id")
+                    ):
+                        changed_fields.append("terminal_repair_reservation")
+                    else:
+                        allowed_reservation_states = {
+                            "prepared": {
+                                "prepared",
+                                "committed",
+                                "superseded_by_completion",
+                                "aborted",
+                            },
+                            "committed": {
+                                "committed",
+                                "superseded_by_completion",
+                            },
+                            "superseded_by_completion": {
+                                "superseded_by_completion"
+                            },
+                            "aborted": {"aborted"},
+                        }
+                        existing_state = str(
+                            existing_reservation.get("state") or ""
+                        )
+                        incoming_state = str(
+                            incoming_reservation.get("state") or ""
+                        )
+                        if incoming_state not in allowed_reservation_states.get(
+                            existing_state, {existing_state}
+                        ):
+                            changed_fields.append(
+                                "terminal_repair_reservation"
+                            )
+                allowed_terminal_transitions = {
+                    "cancelled": {
+                        "cancelled",
+                        "completion_pending",
+                        "completed",
+                        "acknowledged",
+                    },
+                    "completed": {"completed", "acknowledged"},
+                    "failed": {"failed"},
+                }
+                if (
+                    existing.state in TERMINAL_DISPATCH_STATES
+                    and record.state
+                    not in allowed_terminal_transitions[existing.state]
+                ):
+                    changed_fields.append("state")
+                if not existing.recoverable and record.recoverable:
+                    changed_fields.append("recoverable")
+                for field in (
+                    "acknowledged_at",
+                    "completion_payload",
+                    "completion_envelope",
+                    "completion_received_at",
+                ):
+                    if (
+                        getattr(existing, field) is not None
+                        and getattr(record, field) is None
+                    ):
+                        changed_fields.append(field)
+                changed_fields = list(dict.fromkeys(changed_fields))
+                if changed_fields:
+                    raise DispatchCompareConflict(
+                        dispatch_id=record.dispatch_id,
+                        changed_fields=changed_fields,
+                    )
             record = self._snapshot(record)
             if existing:
                 # Progress rows and their delivery state are maintained by the
@@ -2494,6 +2775,94 @@ class DispatchStore:
             record.updated_at = datetime.now(UTC)
             self._save(record, durability="full")
             return self._snapshot(self._records[record.dispatch_id])
+
+    def mutate_current(
+        self,
+        dispatch_id: str,
+        *,
+        mutate: Callable[[DispatchRecord], bool | None],
+    ) -> DispatchRecord:
+        """Atomically mutate the latest durable record without a detached snapshot.
+
+        The callback must use only evidence already supplied by the caller and must
+        not perform external reads. This is the commit primitive for lifecycle
+        publications, such as completion acknowledgement, that must observe and
+        preserve a concurrently committed terminal-repair reservation.
+        """
+
+        with self._lock:
+            self._require_writer()
+            stored = self._records.get(dispatch_id)
+            if stored is None:
+                raise ValueError("dispatch not found")
+            record = self._snapshot(stored)
+            if mutate(record) is False:
+                return self._snapshot(stored)
+            record.updated_at = datetime.now(UTC)
+            self._save(record, durability="full")
+            return self._snapshot(self._records[dispatch_id])
+
+    def compare_and_mutate(
+        self,
+        expected: DispatchRecord,
+        mutate: Callable[[DispatchRecord], bool | None],
+    ) -> DispatchRecord:
+        """Mutate one fresh record only if its complete durable snapshot is unchanged.
+
+        ``get()`` returns a detached snapshot, so callers that perform external
+        evidence checks must not later pass that snapshot to ``put()``. This
+        operation re-reads under the writer lock, compares every durable field
+        except the derived write timestamp, and gives the mutator a fresh copy.
+        A concurrent lifecycle, completion, progress, provenance, or event write
+        therefore fails closed instead of being overwritten.
+        The backing record is compared again after the callback so re-entrant
+        writes during evidence reads are detected for mutating and read-only
+        callbacks alike.
+        """
+
+        with self._lock:
+            self._require_writer()
+            stored = self._records.get(expected.dispatch_id)
+            if stored is None:
+                raise ValueError("dispatch not found")
+            if stored.mutation_id != expected.mutation_id:
+                raise ValueError("dispatch id already belongs to another mutation")
+            expected_payload = expected.model_dump(mode="json", exclude={"updated_at"})
+            current_payload = stored.model_dump(mode="json", exclude={"updated_at"})
+            changed_fields = sorted(
+                field
+                for field in set(expected_payload) | set(current_payload)
+                if expected_payload.get(field) != current_payload.get(field)
+            )
+            if changed_fields:
+                raise DispatchCompareConflict(
+                    dispatch_id=expected.dispatch_id,
+                    changed_fields=changed_fields,
+                )
+            current = self._snapshot(stored)
+            changed = mutate(current)
+            latest = self._records.get(expected.dispatch_id)
+            if latest is None:
+                raise DispatchCompareConflict(
+                    dispatch_id=expected.dispatch_id,
+                    changed_fields=["dispatch_id"],
+                )
+            latest_payload = latest.model_dump(mode="json", exclude={"updated_at"})
+            callback_changed_fields = sorted(
+                field
+                for field in set(current_payload) | set(latest_payload)
+                if current_payload.get(field) != latest_payload.get(field)
+            )
+            if callback_changed_fields:
+                raise DispatchCompareConflict(
+                    dispatch_id=expected.dispatch_id,
+                    changed_fields=callback_changed_fields,
+                )
+            if changed is False:
+                return self._snapshot(latest)
+            current.updated_at = datetime.now(UTC)
+            self._save(current, durability="full")
+            return self._snapshot(self._records[current.dispatch_id])
 
     def begin_admission(
         self,
@@ -3840,6 +4209,15 @@ class DispatchIdempotencyConflict(ValueError):
         self.existing = existing
 
 
+class DispatchCompareConflict(ValueError):
+    """A detached dispatch snapshot changed before its atomic mutation."""
+
+    def __init__(self, *, dispatch_id: str, changed_fields: list[str]) -> None:
+        super().__init__("dispatch changed before atomic mutation")
+        self.dispatch_id = dispatch_id
+        self.changed_fields = list(changed_fields)
+
+
 class DispatchReceiptConflict(ValueError):
     def __init__(self, dispatch_id: str, idempotency_key: str, message: str) -> None:
         super().__init__(message)
@@ -4311,54 +4689,10 @@ class CompletionOutbox:
             self._task = asyncio.create_task(self._run())
 
     def queue(self, session_id: str, payload: dict[str, Any]) -> bool:
-        record = self.store.by_session(session_id)
-        if (
-            record
-            and record.acknowledged_at
-            and record.state in {"completed", "acknowledged"}
-        ):
-            followup = next(
-                (
-                    item
-                    for item in reversed(record.followup_turns)
-                    if item.get("state") == "accepted"
-                ),
-                None,
-            )
-            if not followup:
-                return False
-            followup.update(
-                {
-                    "state": "ended",
-                    "ended_at": datetime.now(UTC).isoformat(),
-                    "stop_reason": payload.get("stop_reason"),
-                    "result": payload,
-                    "final_report": (
-                        record.final_report.model_dump(mode="json")
-                        if record.final_report
-                        else None
-                    ),
-                    "delivery_state": "pending",
-                    "delivery_attempts": 0,
-                    "next_retry_at": None,
-                }
-            )
-            self.store.put(record)
+        queued = self.store.queue_completion_payload(session_id, payload)
+        if queued:
             self._wake.set()
-            return True
-        if not record or record.state not in {"running", "completion_pending"}:
-            return False
-        record.completion_payload = payload
-        record.last_error = None
-        record.completion_delivery_class = "pending"
-        record.completion_next_retry_at = None
-        self.store.transition(
-            record,
-            "completion_pending",
-            "Agent turn ended; dispatch completion queued for delivery to the authority.",
-        )
-        self._wake.set()
-        return True
+        return queued
 
     def retry_delivery(self, dispatch_id: str) -> DispatchRecord:
         """Re-arm preserved completion evidence without changing its payload."""

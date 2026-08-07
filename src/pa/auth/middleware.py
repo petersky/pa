@@ -101,6 +101,12 @@ def _is_fleet_instance_route(request: Request) -> bool:
         request.url.path,
     ):
         return True
+    if request.method == "POST" and re.fullmatch(
+        r"/api/fleet/dispatch-jobs/[A-Za-z0-9-]{1,80}/"
+        r"(?:repair-terminal|terminal-repair-evidence|terminal-repair-commit)",
+        request.url.path,
+    ):
+        return True
     if request.method == "POST" and request.url.path == "/api/fleet/dispatch":
         return True
     if request.method == "POST" and re.fullmatch(

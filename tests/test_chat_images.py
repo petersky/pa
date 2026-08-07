@@ -627,10 +627,12 @@ setImmediate(function () {
         self.assertIn('name="model_id"', source)
         self.assertIn('name="mode_id"', source)
         self.assertIn('name="effort"', source)
+        self.assertIn("data-agent-new-model-provider", source)
         self.assertIn("data-agent-new-model", source)
         self.assertIn("data-agent-new-mode", source)
         self.assertIn("data-agent-new-effort", source)
         self.assertIn("data-agent-new-related", source)
+        self.assertIn("model_provider", source)
         self.assertNotIn("<datalist", source)
         self.assertIn('name="cwd"', source)
 

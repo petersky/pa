@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import logging
 import random
 from collections.abc import Callable
@@ -10,7 +11,12 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from pa.acp.final_message import assemble_final_assistant_message
-from pa.execution.dispatch import CompletionOutbox, DispatchRecord, DispatchStore
+from pa.execution.dispatch import (
+    CompletionOutbox,
+    DispatchEvent,
+    DispatchRecord,
+    DispatchStore,
+)
 from pa.execution.disposition import extract_card_disposition, parse_card_disposition
 from pa.prompts import PROMPTS
 
@@ -193,6 +199,11 @@ class CompletionReconciler:
             # Ordinary follow-up turns have their own durable delivery and
             # evaluation path. They never reopen or replay the dispatch envelope.
             return await self._queue_delivery(session_id, payload)
+        if record and record.accepts_late_completion_after_terminal_repair:
+            # A completion callback already existed when a closed-session repair
+            # won its local race. The immutable completion must reopen delivery
+            # instead of being discarded because the interim state is cancelled.
+            return await self._queue_delivery(session_id, payload)
         if (
             not record
             or not record.card_id
@@ -270,8 +281,13 @@ class CompletionReconciler:
         )
         record.reconciliation_recoverable = True
         record.reconciliation_updated_at = datetime.now(UTC)
-        await self._save(record)
-        await self._advance(record)
+        saved = await self._save(record)
+        reservation = saved.terminal_repair_reservation or {}
+        if saved.accepts_late_completion_after_terminal_repair or reservation.get(
+            "state"
+        ) in {"prepared", "committed"}:
+            return await self._queue_delivery(session_id, payload)
+        await self._advance(saved)
         return True
 
     async def _queue_delivery(self, session_id: str, payload: dict[str, Any]) -> bool:
@@ -656,9 +672,48 @@ class CompletionReconciler:
             candidates.append(runtime._in_flight)
         return next((item for item in candidates if item.source == source), None)
 
-    async def _save(self, record: DispatchRecord) -> None:
-        await self._offload(
-            "reconciliation.dispatch_write", self.dispatch_store.put, record
+    @staticmethod
+    def _merge_reconciliation_fields(
+        current: DispatchRecord, source: DispatchRecord
+    ) -> None:
+        for field in (
+            "card_disposition_error",
+            "reconciliation_state",
+            "reconciliation_reason",
+            "reconciliation_condition",
+            "reconciliation_last_dependency_error",
+            "reconciliation_recovery_action",
+            "reconciliation_recoverable",
+            "reconciliation_attempts",
+            "reconciliation_prompt_count",
+            "reconciliation_prompt_id",
+            "reconciliation_next_retry_at",
+            "reconciliation_updated_at",
+            "reconciliation_current_card",
+        ):
+            setattr(current, field, copy.deepcopy(getattr(source, field)))
+
+    async def _save(self, record: DispatchRecord) -> DispatchRecord:
+        def merge(current: DispatchRecord) -> bool:
+            self._merge_reconciliation_fields(current, record)
+            reservation = current.terminal_repair_reservation or {}
+            repair_fenced = bool(
+                current.accepts_late_completion_after_terminal_repair
+                or reservation.get("state") in {"prepared", "committed"}
+            )
+            if (
+                not repair_fenced
+                and current.completion_payload is None
+                and record.completion_payload is not None
+            ):
+                current.completion_payload = copy.deepcopy(record.completion_payload)
+            return True
+
+        return await self._offload(
+            "reconciliation.dispatch_write",
+            self.dispatch_store.mutate_current,
+            record.dispatch_id,
+            mutate=merge,
         )
 
     async def _transition(
@@ -669,11 +724,25 @@ class CompletionReconciler:
         *,
         detail: dict[str, Any] | None = None,
     ) -> None:
+        def merge_and_transition(current: DispatchRecord) -> bool:
+            self._merge_reconciliation_fields(current, record)
+            reservation = current.terminal_repair_reservation or {}
+            if reservation.get("state") in {"prepared", "committed"}:
+                return True
+            current.state = state
+            current.events.append(
+                DispatchEvent(
+                    seq=(current.events[-1].seq + 1 if current.events else 1),
+                    state=state,
+                    message=message,
+                    detail=detail or {},
+                )
+            )
+            return True
+
         await self._offload(
             "reconciliation.dispatch_write",
-            self.dispatch_store.transition,
-            record,
-            state,
-            message,
-            detail=detail,
+            self.dispatch_store.mutate_current,
+            record.dispatch_id,
+            mutate=merge_and_transition,
         )

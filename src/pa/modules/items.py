@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import mimetypes
 import os
@@ -9,7 +10,7 @@ import shutil
 from datetime import UTC, datetime, timedelta
 from itertools import zip_longest
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 from urllib.parse import quote, urlencode, urlsplit
 from uuid import uuid4
 
@@ -19,6 +20,7 @@ from fastapi import (
     BackgroundTasks,
     File,
     Form,
+    Header,
     HTTPException,
     Request,
     Response,
@@ -47,6 +49,7 @@ from pa.core.ui.instance_identity import (
     resolve_instance_identity,
 )
 from pa.core.ui.pages import PageDefinition, PageRegistry
+from pa.core.ui.work_presentation import present_work_item
 from pa.domain.card_enrichment import enrich_card, explicit_enrichment_fields
 from pa.domain.models import (
     CardAttachment,
@@ -66,7 +69,11 @@ from pa.domain.models import (
     KnowledgeStatus,
     KnowledgeUpdate,
 )
-from pa.domain.projection import CardVersionConflict
+from pa.domain.projection import (
+    CardVersionConflict,
+    MutationOperationConflict,
+    MutationOperationInProgress,
+)
 from pa.domain.session_selection import preferred_sessions_by_card
 from pa.domain.store import get_store
 from pa.knowledge.capture import (
@@ -75,6 +82,7 @@ from pa.knowledge.capture import (
     record_lifecycle_change,
     regenerate_knowledge,
 )
+from pa.sync.event_log import HISTORY_PAGE_LIMIT, EventHistoryError
 
 router = APIRouter()
 ui_router = APIRouter()
@@ -90,6 +98,13 @@ SAFE_IMAGE_TYPES = {
     "image/png",
     "image/webp",
 }
+
+HOME_ATTENTION_LIMIT = 6
+HOME_MOTION_LIMIT = 8
+HOME_OUTCOME_LIMIT = 6
+HOME_FLEET_LIMIT = 50
+HOME_ROUTE_LIMIT = 200
+WORK_PRESENTATION_PAGE_LIMIT = 100
 
 
 class KnowledgePromotionRequest(BaseModel):
@@ -453,6 +468,103 @@ def _progress_from_dispatch(ctx: AppContext, record) -> dict:
     return progress
 
 
+def _session_presentation_signal(ctx: AppContext, session) -> dict | None:
+    if session is None:
+        return None
+    agent = ctx.services.get("instance_agent")
+    runtime = agent.get(session.id) if agent and hasattr(agent, "get") else None
+    if runtime and not getattr(runtime, "_closed", False):
+        active = bool(
+            getattr(runtime, "prompting", False) or getattr(runtime, "_in_flight", None)
+        )
+        return {
+            "id": session.id,
+            "session_state": "busy" if active else "connected",
+            "state": "working" if active else "connected",
+            "connected": bool(getattr(runtime, "connected", False)),
+            "turn": {"state": "running"} if active else None,
+            "liveness": {
+                "classification": "live" if active else "completed_idle",
+            },
+        }
+    status = str(session.status or "")
+    failed = status in {"failed", "error", "recovery_blocked"}
+    terminal = status in {"closed", "quiesced"} or failed
+    return {
+        "id": session.id,
+        "session_state": "failed" if failed else "closed" if terminal else "stale",
+        "state": "failed" if failed else "completed" if terminal else "stale",
+        "connected": False,
+        "turn": None,
+        "liveness": {
+            "classification": "failed_closed" if failed else "stale",
+        },
+    }
+
+
+def _watches_for_cards(request: Request, card_ids: set[str]) -> dict[str, list]:
+    if not card_ids:
+        return {}
+    store = request.app.state.ctx.services.get("pr_supervisor_store")
+    if not store:
+        return {}
+    if hasattr(store, "list_watches_for_cards"):
+        watches = store.list_watches_for_cards(
+            card_ids,
+            realm_id=_active_realm(request),
+            include_retired=False,
+            per_card_limit=3,
+        )
+    else:
+        watches = [
+            watch
+            for watch in store.list_watches(include_retired=False)
+            if watch.card_id in card_ids
+        ][: len(card_ids) * 3]
+    result: dict[str, list] = {}
+    for watch in watches:
+        if watch.card_id:
+            result.setdefault(watch.card_id, []).append(watch)
+    return result
+
+
+def _presentation_context_for_cards(
+    request: Request,
+    cards: list,
+) -> tuple[dict, dict, dict, dict]:
+    card_ids = {card.id for card in cards}
+    store = get_store()
+    sessions = preferred_sessions_by_card(store.list_sessions_for_cards(card_ids))
+    dispatch_store = request.app.state.ctx.services.get("dispatch_store")
+    dispatches = dispatch_store.latest_by_card(card_ids) if dispatch_store else {}
+    watches = _watches_for_cards(request, card_ids)
+    progress: dict[str, dict] = {}
+    presentations: dict[str, dict] = {}
+    ctx = request.app.state.ctx
+    for card in cards:
+        record = dispatches.get(card.id)
+        public = canonicalize_dispatch_public(ctx, record) if record else None
+        if record:
+            progress[card.id] = _progress_from_dispatch(ctx, record)
+        presentations[card.id] = present_work_item(
+            card,
+            dispatch=public,
+            session=_session_presentation_signal(ctx, sessions.get(card.id)),
+            watches=watches.get(card.id, ()),
+            target_instance_name=(
+                public.get("target_instance_name") if public else None
+            ),
+        )
+    return sessions, progress, presentations, dispatches
+
+
+def _work_presentation_for_card(request: Request, card) -> dict:
+    _sessions, _progress, presentations, _dispatches = _presentation_context_for_cards(
+        request, [card]
+    )
+    return presentations[card.id]
+
+
 def _card_project_impact(request: Request, card, project_id: str | None) -> dict:
     """Describe project-sensitive relationships without changing their provenance."""
     store = get_store()
@@ -556,6 +668,7 @@ def _card_summary_context(request: Request, card) -> dict:
         ],
         "critical_watch": critical_watch,
         "current_progress": _latest_card_progress(request, card.id),
+        "work_presentation": _work_presentation_for_card(request, card),
         "card_reconciliations": (
             [
                 record.public_dict()["card_reconciliation"]
@@ -1062,6 +1175,159 @@ def _card_activity_context(request: Request, card) -> dict:
     }
 
 
+def _canonical_presentation_counts(request: Request) -> dict[str, int]:
+    """Count every lifecycle group from fixed-size, body-free cached pages."""
+    store = get_store()
+    realm = _active_realm(request)
+    counts = {group: 0 for group in ("attention", "motion", "outcome", "quiet")}
+    offset = 0
+    while True:
+        page = store.list_card_work_projections(
+            realm_id=realm,
+            limit=WORK_PRESENTATION_PAGE_LIMIT,
+            offset=offset,
+        )
+        if not page:
+            break
+        _, _, presentations, _ = _presentation_context_for_cards(request, page)
+        for card in page:
+            group = presentations[card.id]["group"]
+            counts[group] = counts.get(group, 0) + 1
+        offset += len(page)
+        if len(page) < WORK_PRESENTATION_PAGE_LIMIT:
+            break
+    return counts
+
+
+def _bounded_attention_cards_context(
+    request: Request,
+    *,
+    kind: CardKind | None,
+    lane: CardLane | None,
+    result_limit: int,
+    result_offset: int = 0,
+) -> dict:
+    """Filter lifecycle groups in fixed-size body-free pages before hydration."""
+    store = get_store()
+    realm = _active_realm(request)
+    project_id = _active_project(request)
+    query = request.query_params.get("q", "").strip()
+    owner = request.query_params.get("owner", "").strip()
+    instance = request.query_params.get("instance", "").strip()
+    blocked = request.query_params.get("blocked", "").strip()
+    tag = request.query_params.get("tag", "").strip()
+    updated = request.query_params.get("updated", "").strip()
+    try:
+        updated_days = int(updated) if updated else None
+    except ValueError:
+        updated = ""
+        updated_days = None
+    attention = request.query_params.get("attention", "").strip()
+    expected_group = {
+        "actionable": "attention",
+        "motion": "motion",
+        "outcome": "outcome",
+    }[attention]
+    matching_ids: list[str] = []
+    total_cards = 0
+    offset = 0
+    while True:
+        projection_page = store.list_card_work_projections(
+            realm_id=realm,
+            lane=lane,
+            kind=kind,
+            project_id=project_id,
+            query=query,
+            owner=owner,
+            instance=instance,
+            blocked=blocked,
+            tag=tag,
+            updated_days=updated_days,
+            limit=WORK_PRESENTATION_PAGE_LIMIT,
+            offset=offset,
+        )
+        if not projection_page:
+            break
+        _, _, page_presentations, _ = _presentation_context_for_cards(
+            request, projection_page
+        )
+        for projection in projection_page:
+            if page_presentations[projection.id]["group"] != expected_group:
+                continue
+            total_cards += 1
+            match_index = total_cards - 1
+            if (
+                match_index >= result_offset
+                and len(matching_ids) < result_limit
+            ):
+                matching_ids.append(projection.id)
+        offset += len(projection_page)
+        if len(projection_page) < WORK_PRESENTATION_PAGE_LIMIT:
+            break
+
+    cards_by_id = {
+        card.id: card
+        for card in store.list_cards_by_ids(matching_ids, realm_id=realm)
+    }
+    cards = [
+        cards_by_id[card_id]
+        for card_id in matching_ids
+        if card_id in cards_by_id
+    ]
+    projects = store.list_projects(realm_id=realm)
+    project_by_id = {project.id: project for project in projects}
+    card_sessions, card_progress, card_presentations, _ = (
+        _presentation_context_for_cards(request, cards)
+    )
+    filter_params = {
+        "realm": realm,
+        "project": project_id or "",
+        "q": query,
+        "kind": kind.value if kind else "",
+        "owner": owner,
+        "instance": instance,
+        "blocked": blocked,
+        "tag": tag,
+        "updated": updated,
+        "attention": attention,
+    }
+    return {
+        "cards": cards,
+        "total_cards": total_cards,
+        "page_offset": result_offset,
+        "items": [Item.from_card(card) for card in cards],
+        "kinds": list(CardKind),
+        "lanes": list(CardLane),
+        "projects": projects,
+        "card_projects": {
+            card.id: project_by_id.get(card.project_id) for card in cards
+        },
+        "card_sessions": card_sessions,
+        "card_progress": card_progress,
+        "card_presentations": card_presentations,
+        "owners": [],
+        "instances": [],
+        "tags": [],
+        "filters": {
+            "q": query,
+            "project": project_id or "",
+            "kind": kind.value if kind else "",
+            "owner": owner,
+            "instance": instance,
+            "blocked": blocked,
+            "tag": tag,
+            "updated": updated,
+            "attention": attention,
+        },
+        "filter_query": urlencode(
+            {key: value for key, value in filter_params.items() if value}
+        ),
+        "realms": request.app.state.ctx.settings.subscribed_realms,
+        "active_realm": realm,
+        "active_project": project_id,
+    }
+
+
 def _cards_context(
     request: Request,
     *,
@@ -1069,6 +1335,7 @@ def _cards_context(
     lane: CardLane | None = None,
     apply_filters: bool = True,
     result_limit: int | None = None,
+    result_offset: int = 0,
 ) -> dict:
     store = get_store()
     realm = _active_realm(request)
@@ -1078,6 +1345,21 @@ def _cards_context(
             kind = CardKind(request.query_params["kind"])
         except ValueError:
             kind = None
+    attention_filter = (
+        request.query_params.get("attention", "").strip() if apply_filters else ""
+    )
+    if (
+        result_limit is not None
+        and attention_filter in {"actionable", "motion", "outcome"}
+        and hasattr(store, "list_card_work_projections")
+    ):
+        return _bounded_attention_cards_context(
+            request,
+            kind=kind,
+            lane=lane,
+            result_limit=result_limit,
+            result_offset=result_offset,
+        )
     cards = store.list_cards(
         realm_id=realm,
         kind=kind,
@@ -1114,21 +1396,32 @@ def _cards_context(
             cards = [card for card in cards if card.updated_at >= cutoff]
         except ValueError:
             updated = ""
+    attention = (
+        request.query_params.get("attention", "").strip() if apply_filters else ""
+    )
+    candidate_presentations: dict[str, dict] = {}
+    if attention in {"actionable", "motion", "outcome"}:
+        _, _, candidate_presentations, _ = _presentation_context_for_cards(
+            request, cards
+        )
+        expected_group = {
+            "actionable": "attention",
+            "motion": "motion",
+            "outcome": "outcome",
+        }[attention]
+        cards = [
+            card
+            for card in cards
+            if candidate_presentations[card.id]["group"] == expected_group
+        ]
     total_cards = len(cards)
     if result_limit is not None:
-        cards = cards[:result_limit]
+        cards = cards[result_offset : result_offset + result_limit]
     projects = store.list_projects(realm_id=realm)
     project_by_id = {project.id: project for project in projects}
-    card_ids = {card.id for card in cards}
-    card_sessions = preferred_sessions_by_card(store.list_sessions_for_cards(card_ids))
-    dispatch_store = request.app.state.ctx.services.get("dispatch_store")
-    selected_dispatches = (
-        dispatch_store.latest_by_card(card_ids) if dispatch_store else {}
+    card_sessions, card_progress, card_presentations, _ = (
+        _presentation_context_for_cards(request, cards)
     )
-    card_progress = {
-        card_id: _progress_from_dispatch(request.app.state.ctx, record)
-        for card_id, record in selected_dispatches.items()
-    }
     filter_params = {
         "realm": realm,
         "project": project_id or "",
@@ -1139,6 +1432,7 @@ def _cards_context(
         "blocked": blocked,
         "tag": tag,
         "updated": updated,
+        "attention": attention,
     }
     return {
         "cards": cards,
@@ -1152,6 +1446,7 @@ def _cards_context(
         },
         "card_sessions": card_sessions,
         "card_progress": card_progress,
+        "card_presentations": card_presentations,
         "owners": sorted(
             {card.owner_principal for card in all_cards if card.owner_principal}
         ),
@@ -1180,6 +1475,7 @@ def _cards_context(
             "blocked": blocked,
             "tag": tag,
             "updated": updated,
+            "attention": attention,
         },
         "filter_query": urlencode(
             {key: value for key, value in filter_params.items() if value}
@@ -1209,7 +1505,15 @@ def _work_context(request: Request) -> dict:
         selected_lane = CardLane.ACTIVE.value
     filters = {
         key: request.query_params.get(key, "").strip()
-        for key in ("q", "owner", "instance", "blocked", "tag", "updated")
+        for key in (
+            "q",
+            "owner",
+            "instance",
+            "blocked",
+            "tag",
+            "updated",
+            "attention",
+        )
     }
     filters["project"] = project_id or ""
     filters["kind"] = request.query_params.get("kind", "").strip()
@@ -1241,25 +1545,85 @@ def _work_context(request: Request) -> dict:
 
 
 def _home_context(request: Request) -> dict:
+    """Build Home from one bounded, cached-first operational projection."""
+    from pa.fleet.overview import build_overview
+    from pa.fleet.workshop import build_workshop_snapshot
+
     realm = _active_realm(request)
-    context = _cards_context(request, apply_filters=False)
-    cards = context["cards"]
     ctx = request.app.state.ctx
     agent = ctx.services.get("instance_agent")
     fleet = ctx.services.get("fleet_registry")
+    peer_table = ctx.services.get("peer_table")
+    fleet_instances = list(fleet.list_instances())[:HOME_FLEET_LIMIT] if fleet else []
+    routes = list(peer_table.all_routes())[:HOME_ROUTE_LIMIT] if peer_table else []
+    overview = (
+        build_overview(ctx, fleet_instances, routes)
+        if fleet_instances
+        else {"nodes": [], "edges": []}
+    )
+    snapshot = build_workshop_snapshot(ctx, overview, realm_id=realm)
+    canonical_counts = _canonical_presentation_counts(request)
+    snapshot_total = snapshot["counts"].get(
+        "total", snapshot.get("inventory", {}).get("total", 0)
+    )
+    if sum(canonical_counts.values()) != snapshot_total:
+        projected_counts = snapshot["counts"].get("presentations", {})
+        rendered_counts = {
+            group: sum(
+                1
+                for item in snapshot.get("work_orders", ())
+                if item.get("presentation", {}).get("group") == group
+            )
+            for group in ("attention", "motion", "outcome", "quiet")
+        }
+        canonical_counts = {
+            "attention": projected_counts.get(
+                "attention", rendered_counts["attention"]
+            ),
+            "motion": projected_counts.get("motion", rendered_counts["motion"]),
+            "outcome": snapshot["counts"].get("lanes", {}).get(
+                CardLane.DONE.value,
+                projected_counts.get("outcome", rendered_counts["outcome"]),
+            ),
+            "quiet": projected_counts.get("quiet", rendered_counts["quiet"]),
+        }
+    work_orders = list(snapshot["work_orders"])
+
+    def sort_key(item: dict) -> tuple[int, str, str]:
+        presentation = item["presentation"]
+        return (
+            int(presentation["priority"]),
+            str(presentation.get("occurred_at") or item.get("updated_at") or ""),
+            str(item["id"]),
+        )
+
+    attention = sorted(
+        (item for item in work_orders if item["presentation"]["group"] == "attention"),
+        key=sort_key,
+        reverse=True,
+    )
+    in_motion = sorted(
+        (item for item in work_orders if item["presentation"]["group"] == "motion"),
+        key=sort_key,
+        reverse=True,
+    )
+    outcomes = sorted(
+        (item for item in work_orders if item["presentation"]["group"] == "outcome"),
+        key=sort_key,
+        reverse=True,
+    )
     return {
-        **context,
-        "needs_attention": [
-            card
-            for card in cards
-            if card.lane == CardLane.WAITING
-            or (card.kind == CardKind.CONCERN and card.lane != CardLane.DONE)
-        ][:6],
-        "active_work": [card for card in cards if card.lane == CardLane.ACTIVE][:8],
-        "recent_outcomes": [card for card in cards if card.lane == CardLane.DONE][:6],
+        "needs_attention": attention[:HOME_ATTENTION_LIMIT],
+        "needs_attention_total": canonical_counts["attention"],
+        "active_work": in_motion[:HOME_MOTION_LIMIT],
+        "active_work_total": canonical_counts["motion"],
+        "recent_outcomes": outcomes[:HOME_OUTCOME_LIMIT],
+        "recent_outcomes_total": canonical_counts["outcome"],
+        "home_inventory": snapshot["inventory"],
         "agent_connected": bool(agent and agent.connected),
-        "fleet_instances": fleet.list_instances() if fleet else [],
+        "fleet_instances": fleet_instances,
         "instance_name": ctx.settings.instance_name,
+        "realms": ctx.settings.subscribed_realms,
         "active_realm": realm,
     }
 
@@ -1341,28 +1705,209 @@ def card_summary_diagnostics_api(request: Request) -> dict:
     return request.app.state.ctx.require_service("card_summary_service").diagnostics()
 
 
+def _operation_key(request: Request) -> str:
+    supplied = request.headers.get("Idempotency-Key", "")
+    key = supplied.strip() if isinstance(supplied, str) else ""
+    if not key:
+        key = f"server-generated:{uuid4()}"
+    if len(key) > 300:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "idempotency_key_too_long", "max_length": 300},
+        )
+    return key
+
+
+def _operation_fingerprint(request: Request, operation: str, payload: dict) -> str:
+    canonical = {
+        "operation": operation,
+        "principal": get_principal_id(request),
+        "payload": payload,
+    }
+    return hashlib.sha256(
+        json.dumps(
+            canonical, sort_keys=True, separators=(",", ":"), default=str
+        ).encode()
+    ).hexdigest()
+
+
+def _replay_operation(
+    request: Request,
+    *,
+    operation: str,
+    realm_id: str,
+    payload: dict,
+    store=None,
+) -> tuple[str, str, dict | None]:
+    """Replay a known receipt before validating state that may have advanced."""
+    key = _operation_key(request)
+    fingerprint = _operation_fingerprint(request, operation, payload)
+    operation_store = store or get_store()
+    try:
+        replay = operation_store.replay_operation(
+            idempotency_key=key,
+            operation=operation,
+            request_fingerprint=fingerprint,
+            realm_id=realm_id,
+        )
+    except MutationOperationConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "idempotency_conflict",
+                "message": str(exc),
+                "idempotency_key": key,
+                "recovery_state": "new_key_required",
+            },
+        ) from exc
+    except MutationOperationInProgress as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "operation_in_progress",
+                "message": str(exc),
+                "idempotency_key": key,
+                "correlation_id": exc.correlation_id,
+                "recoverable": True,
+                "recovery_state": "lookup_required",
+                "recovery_action": "get_operation_outcome",
+            },
+        ) from exc
+    return key, fingerprint, replay
+
+
+def _begin_operation(
+    request: Request,
+    *,
+    operation: str,
+    realm_id: str,
+    payload: dict,
+    store=None,
+) -> tuple[str, str, dict | None]:
+    key = _operation_key(request)
+    fingerprint = _operation_fingerprint(request, operation, payload)
+    operation_store = store or get_store()
+    supplied_correlation = request.headers.get("X-Request-ID")
+    correlation_id = (
+        supplied_correlation
+        if isinstance(supplied_correlation, str)
+        else None
+    )
+    try:
+        replay = operation_store.begin_operation(
+            idempotency_key=key,
+            operation=operation,
+            request_fingerprint=fingerprint,
+            realm_id=realm_id,
+            correlation_id=correlation_id,
+        )
+    except MutationOperationConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "idempotency_conflict",
+                "message": str(exc),
+                "idempotency_key": key,
+                "recovery_state": "new_key_required",
+            },
+        ) from exc
+    except MutationOperationInProgress as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "operation_in_progress",
+                "message": str(exc),
+                "idempotency_key": key,
+                "correlation_id": exc.correlation_id,
+                "recoverable": True,
+                "recovery_state": "lookup_required",
+                "recovery_action": "get_operation_outcome",
+            },
+        ) from exc
+    return key, fingerprint, replay
+
+
 @router.post("/cards", status_code=201)
 def create_card_api(
-    request: Request, data: CardCreate, background_tasks: BackgroundTasks
+    request: Request,
+    response: Response,
+    data: CardCreate,
+    background_tasks: BackgroundTasks,
+    _idempotency_key: Annotated[
+        str,
+        Header(alias="Idempotency-Key", min_length=1, max_length=300),
+    ],
 ) -> dict:
     store = get_store()
     settings = request.app.state.ctx.settings
-    card = store.create_card(
-        data,
-        principal_id=get_principal_id(request),
-        instance_id=settings.instance_id,
+    payload = data.model_dump(mode="json") | {"auto_enrich": data.auto_enrich}
+    key, fingerprint, replay = _begin_operation(
+        request, operation="card.create", realm_id=data.realm_id, payload=payload
     )
-    if data.auto_enrich:
-        background_tasks.add_task(
-            enrich_card,
-            request.app.state.ctx,
-            card.id,
-            card.realm_id,
-            explicit_enrichment_fields(data),
+    response.headers["X-PA-Operation-ID"] = key
+    if replay is not None:
+        response.headers["X-PA-Operation-Replayed"] = "true"
+        return replay
+    try:
+        card = store.create_card(
+            data,
+            principal_id=get_principal_id(request),
+            instance_id=settings.instance_id,
+            idempotency_key=key,
+            request_fingerprint=fingerprint,
         )
-    if not data.summary.strip():
-        card = _schedule_card_summary(request, background_tasks, card)
-    return card.model_dump(mode="json")
+        if data.auto_enrich:
+            background_tasks.add_task(
+                enrich_card,
+                request.app.state.ctx,
+                card.id,
+                card.realm_id,
+                explicit_enrichment_fields(data),
+            )
+        if not data.summary.strip():
+            card = _schedule_card_summary(request, background_tasks, card)
+        result = card.model_dump(mode="json")
+        store.complete_operation(key, result)
+        return result
+    except Exception as exc:
+        store.fail_operation(key, type(exc).__name__)
+        raise
+
+
+@router.get("/operations/{idempotency_key}")
+def operation_outcome_api(
+    request: Request, idempotency_key: str, realm: str | None = None
+) -> dict:
+    realm_id = realm or request.app.state.ctx.settings.primary_realm
+    outcome = get_store().get_operation_outcome(
+        idempotency_key, realm_id=realm_id
+    )
+    if outcome["status"] != "not_found":
+        return outcome
+    dispatch_store = request.app.state.ctx.services.get("dispatch_store")
+    if dispatch_store is None:
+        return outcome
+    dispatch = dispatch_store.find_operation_by_idempotency(
+        idempotency_key, realm_id=realm_id
+    )
+    if dispatch is None:
+        return outcome
+    operation, record = dispatch
+    if record.realm_id != realm_id:
+        return outcome
+    return {
+        "idempotency_key": idempotency_key,
+        "operation": operation,
+        "status": "succeeded",
+        "durable": True,
+        "recovery_state": "durable_dispatch_record_found",
+        "result": {
+            "dispatch_id": record.dispatch_id,
+            "state": record.state,
+            "card_id": record.card_id,
+            "session_id": record.session_id,
+        },
+    }
 
 
 @router.get("/cards/{card_id}")
@@ -1375,15 +1920,30 @@ def get_card_api(request: Request, card_id: str, realm: str | None = None) -> di
 
 
 @router.get("/cards/{card_id}/history")
-def card_history_api(request: Request, card_id: str, realm: str | None = None) -> dict:
+def card_history_api(
+    request: Request,
+    card_id: str,
+    realm: str | None = None,
+    limit: int = 100,
+    cursor: str | None = None,
+) -> dict:
     realm_id = realm or request.app.state.ctx.settings.primary_realm
     log = request.app.state.ctx.require_service("event_log")
-    return {
-        "card_id": card_id,
-        "realm_id": realm_id,
-        "head": log.get_head(realm_id),
-        "events": log.entity_history(realm_id, "card", card_id),
-    }
+    if limit < 1 or limit > HISTORY_PAGE_LIMIT:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "invalid_history_limit",
+                "message": f"limit must be between 1 and {HISTORY_PAGE_LIMIT}",
+            },
+        )
+    try:
+        page = log.entity_history_page(
+            realm_id, "card", card_id, limit=limit, cursor=cursor
+        )
+    except EventHistoryError as exc:
+        raise HTTPException(status_code=422, detail=exc.as_detail()) from exc
+    return {"card_id": card_id, "realm_id": realm_id, **page}
 
 
 @router.post("/cards/repair-legacy-history")
@@ -1411,22 +1971,46 @@ def repair_legacy_card_history_api(request: Request, body: CardRepairRequest) ->
 @router.patch("/cards/{card_id}")
 def update_card_api(
     request: Request,
+    response: Response,
     card_id: str,
     data: CardUpdate,
     background_tasks: BackgroundTasks,
+    _idempotency_key: Annotated[
+        str,
+        Header(alias="Idempotency-Key", min_length=1, max_length=300),
+    ],
     realm: str | None = None,
 ) -> dict:
     settings = request.app.state.ctx.settings
     realm_id = realm or settings.primary_realm
+    payload = {
+        "card_id": card_id,
+        **data.model_dump(mode="json", exclude_unset=True),
+        "expected_version": (
+            data.expected_version.isoformat() if data.expected_version else None
+        ),
+        "field_intent": data.field_intent,
+    }
+    key, fingerprint, replay = _begin_operation(
+        request, operation="card.update", realm_id=realm_id, payload=payload
+    )
+    response.headers["X-PA-Operation-ID"] = key
+    if replay is not None:
+        response.headers["X-PA-Operation-Replayed"] = "true"
+        return replay
+    store = get_store()
     try:
-        card = get_store().update_card(
+        card = store.update_card(
             card_id,
             data,
             realm_id=realm_id,
             principal_id=get_principal_id(request),
             instance_id=settings.instance_id,
+            idempotency_key=key,
+            request_fingerprint=fingerprint,
         )
     except CardVersionConflict as exc:
+        store.fail_operation(key, "stale_card_version")
         raise HTTPException(
             status_code=409,
             detail={
@@ -1437,11 +2021,17 @@ def update_card_api(
                 "message": "The card changed after this snapshot was read. Retry with field_intent or the current updated_at.",
             },
         ) from exc
+    except Exception as exc:
+        store.fail_operation(key, type(exc).__name__)
+        raise
     if not card:
+        store.fail_operation(key, "card_not_found")
         raise HTTPException(status_code=404, detail="Card not found")
     if {"title", "body"} & data.model_fields_set:
         card = _schedule_card_summary(request, background_tasks, card)
-    return card.model_dump(mode="json")
+    result = card.model_dump(mode="json")
+    store.complete_operation(key, result)
+    return result
 
 
 @router.post("/cards/{card_id}/summary/regenerate", status_code=202)
@@ -2169,14 +2759,43 @@ def cards_partial(
     realm: str | None = None,
     project: str | None = None,
     limit: int = 10,
+    offset: int = 0,
 ) -> HTMLResponse:
     page_limit = min(100, max(10, limit))
-    context = _cards_context(request, lane=lane, result_limit=page_limit)
+    attention_filter = request.query_params.get("attention", "").strip()
+    filtered_pagination = attention_filter in {
+        "actionable",
+        "motion",
+        "outcome",
+    }
+    page_offset = max(0, offset) if filtered_pagination else 0
+    context = _cards_context(
+        request,
+        lane=lane,
+        result_limit=page_limit,
+        result_offset=page_offset,
+    )
+    filtered_total = context["total_cards"] if filtered_pagination else 0
+    filtered_visible = min(
+        filtered_total, page_offset + len(context["cards"])
+    )
+    filtered_show_more_count = min(
+        page_limit, max(0, filtered_total - filtered_visible)
+    )
+    filtered_show_more_query = ""
+    if filtered_show_more_count:
+        continuation_params = dict(request.query_params)
+        if lane:
+            continuation_params["lane"] = lane.value
+        continuation_params["limit"] = str(page_limit)
+        continuation_params["offset"] = str(filtered_visible)
+        filtered_show_more_query = urlencode(continuation_params)
+
     done_total = 0
     done_visible = 0
     done_show_more_count = 0
     done_show_more_query = ""
-    if lane == CardLane.DONE:
+    if lane == CardLane.DONE and not filtered_pagination:
         done_total = context["total_cards"]
         done_visible = len(context["cards"])
         done_show_more_count = min(10, done_total - done_visible)
@@ -2191,6 +2810,11 @@ def cards_partial(
         {
             **context,
             "lane": lane,
+            "filtered_pagination": filtered_pagination and filtered_total > 0,
+            "filtered_total": filtered_total,
+            "filtered_visible": filtered_visible,
+            "filtered_show_more_count": filtered_show_more_count,
+            "filtered_show_more_query": filtered_show_more_query,
             "done_total": done_total,
             "done_visible": done_visible,
             "done_show_more_count": done_show_more_count,
@@ -2379,6 +3003,7 @@ def card_detail_progress_partial(
         {
             "card": card,
             "current_progress": _latest_card_progress(request, card.id),
+            "work_presentation": _work_presentation_for_card(request, card),
         },
     )
 
@@ -2717,6 +3342,7 @@ class ItemsModule(Module):
         @mcp.tool()
         def create_card(
             title: str,
+            idempotency_key: str,
             kind: CardKind | None = None,
             body: str = "",
             lane: CardLane = CardLane.INBOX,
@@ -2727,6 +3353,9 @@ class ItemsModule(Module):
             auto_enrich: bool = True,
         ) -> dict:
             """Create a canonical card. Use lane: inbox, active, waiting, or done."""
+            key = idempotency_key.strip()
+            if not key:
+                raise ValueError("idempotency_key cannot be empty")
             return request_local_pa(
                 ctx.settings,
                 "POST",
@@ -2742,11 +3371,13 @@ class ItemsModule(Module):
                     "auto_enrich": auto_enrich,
                     **({"kind": kind} if kind is not None else {}),
                 },
+                headers={"Idempotency-Key": key},
             )
 
         @mcp.tool()
         def update_card(
             card_id: str,
+            idempotency_key: str,
             title: str | None = None,
             body: str | None = None,
             lane: CardLane | None = None,
@@ -2758,6 +3389,9 @@ class ItemsModule(Module):
             field_intent: list[str] | None = None,
         ) -> dict | None:
             """Update a canonical card. Omitted fields remain unchanged."""
+            key = idempotency_key.strip()
+            if not key:
+                raise ValueError("idempotency_key cannot be empty")
             changes = {
                 key: value
                 for key, value in {
@@ -2781,16 +3415,26 @@ class ItemsModule(Module):
                 params={"realm": realm},
                 json=changes,
                 allow_not_found=True,
+                headers={"Idempotency-Key": key},
             )
 
         @mcp.tool()
-        def get_card_history(card_id: str, realm: str = "default") -> dict:
-            """Inspect immutable card mutations with actor, instance, parents, intent, and timestamps."""
+        def get_card_history(
+            card_id: str,
+            realm: str = "default",
+            limit: int = 100,
+            cursor: str | None = None,
+        ) -> dict:
+            """Inspect one stable cursor page of immutable card mutations."""
             return request_local_pa(
                 ctx.settings,
                 "GET",
                 f"/api/cards/{card_id}/history",
-                params={"realm": realm},
+                params={
+                    "realm": realm,
+                    "limit": limit,
+                    "cursor": cursor,
+                },
             )
 
         @mcp.tool()
@@ -2848,18 +3492,23 @@ class ItemsModule(Module):
         def update_card_preferred_instance(
             card_id: str,
             instance_id: str,
+            idempotency_key: str,
             realm: str = "default",
         ) -> dict | None:
             """Set a card's preferred fleet instance and return its new authority version."""
             instance_id = instance_id.strip()
+            key = idempotency_key.strip()
             if not instance_id:
                 raise ValueError("instance_id cannot be empty")
+            if not key:
+                raise ValueError("idempotency_key cannot be empty")
             return request_local_pa(
                 ctx.settings,
                 "PATCH",
                 f"/api/cards/{card_id}",
                 params={"realm": realm},
                 json={"preferred_instance": instance_id},
+                headers={"Idempotency-Key": key},
                 allow_not_found=True,
             )
 
@@ -2972,4 +3621,19 @@ class ItemsModule(Module):
                 "POST",
                 f"/api/knowledge/{entry_id}/regenerate",
                 json={},
+            )
+
+        @mcp.tool()
+        def get_operation_outcome(
+            idempotency_key: str, realm: str = "default"
+        ) -> dict:
+            """Look up the authoritative durable outcome of a mutation."""
+            key = idempotency_key.strip()
+            if not key:
+                raise ValueError("idempotency_key cannot be empty")
+            return request_local_pa(
+                ctx.settings,
+                "GET",
+                f"/api/operations/{quote(key, safe='')}",
+                params={"realm": realm},
             )

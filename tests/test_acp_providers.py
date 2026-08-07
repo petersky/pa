@@ -34,7 +34,13 @@ from pa.acp.providers.cursor import CursorProvider, _cursor_auth_status
 from pa.acp.providers.openinterpreter import (
     OpenInterpreterProvider,
     _run_official_installer,
+    _repair_managed_config_if_needed,
+    _spawn_args,
+    preflight_session_start,
+    provider_options_snapshot,
 )
+from pa.acp.errors import ProviderStartError, classify_acp_failure
+from pa.acp.providers.metadata import ProviderMetadata, save_metadata
 from pa.acp.providers.codex_auth import (
     CodexLoginJob,
     CodexLoginJobStore,
@@ -283,6 +289,97 @@ class AcpProviderTests(unittest.TestCase):
             provider.resolve_spawn(data_dir=self.data_dir).env["ACME_API_KEY"],
             secret,
         )
+
+    def test_openinterpreter_builtin_provider_does_not_write_incomplete_override(
+        self,
+    ) -> None:
+        provider = OpenInterpreterProvider()
+        provider.configure(
+            self.data_dir,
+            ProviderConfigureBody(
+                model="MiniMax-M2.5",
+                model_provider="minimax-coding-plan",
+                model_provider_env_key="MINIMAX_API_KEY",
+                model_provider_wire_api="messages",
+                secrets={"MINIMAX_API_KEY": "secret"},
+            ),
+        )
+        config = tomllib.loads(
+            (
+                self.data_dir
+                / "agent_providers"
+                / "openinterpreter"
+                / "home"
+                / "config.toml"
+            ).read_text()
+        )
+        self.assertEqual(
+            config,
+            {"model": "MiniMax-M2.5", "model_provider": "minimax-coding-plan"},
+        )
+        self.assertNotIn("model_providers", config)
+
+    def test_openinterpreter_repairs_incomplete_model_provider_override(self) -> None:
+        home = self.data_dir / "agent_providers" / "openinterpreter" / "home"
+        home.mkdir(parents=True)
+        (home / "config.toml").write_text(
+            "# Managed by PA for the OpenInterpreter ACP provider.\n"
+            'model = "MiniMax-M2.5"\n'
+            'model_provider = "minimax-coding-plan"\n'
+            "\n"
+            '[model_providers."minimax-coding-plan"]\n'
+            'env_key = "MINIMAX_API_KEY"\n'
+            'wire_api = "messages"\n',
+            encoding="utf-8",
+        )
+        save_metadata(
+            self.data_dir,
+            ProviderMetadata(
+                provider_id="openinterpreter",
+                configuration={
+                    "model": "MiniMax-M2.5",
+                    "model_provider": "minimax-coding-plan",
+                    "model_provider_env_key": "MINIMAX_API_KEY",
+                    "model_provider_wire_api": "messages",
+                },
+            ),
+        )
+        self.assertTrue(_repair_managed_config_if_needed(self.data_dir))
+        config = tomllib.loads((home / "config.toml").read_text())
+        self.assertEqual(
+            config,
+            {"model": "MiniMax-M2.5", "model_provider": "minimax-coding-plan"},
+        )
+
+    def test_openinterpreter_options_and_preflight_after_configure(self) -> None:
+        provider = OpenInterpreterProvider()
+        provider.configure(
+            self.data_dir,
+            ProviderConfigureBody(
+                model="MiniMax-M2.5",
+                model_provider="minimax-coding-plan",
+                secrets={"MINIMAX_API_KEY": "secret"},
+            ),
+        )
+        snap = provider_options_snapshot(self.data_dir)
+        self.assertTrue(snap["supports_model_provider"])
+        self.assertEqual(snap["model_provider"], "minimax-coding-plan")
+        self.assertTrue(snap["models"]["availableModels"])
+        self.assertTrue(snap["modes"]["availableModes"])
+        self.assertTrue(snap["config_options"])
+        self.assertTrue(
+            any(item["id"] == "minimax-coding-plan" for item in snap["model_providers"])
+        )
+        self.assertIsNone(preflight_session_start(self.data_dir))
+        missing = preflight_session_start(
+            Path(tempfile.mkdtemp()), model_provider="openai"
+        )
+        self.assertEqual(missing["code"], "auth_missing")
+        classified = classify_acp_failure(
+            ProviderStartError(missing), provider_id="openinterpreter"
+        )
+        self.assertEqual(classified["code"], "auth_missing")
+        self.assertIn("-c", _spawn_args(model_provider="minimax-coding-plan"))
 
     def test_openinterpreter_rejects_unsafe_model_configuration(self) -> None:
         provider = OpenInterpreterProvider()

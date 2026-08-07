@@ -9,6 +9,7 @@ import os
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
+from threading import RLock
 from typing import TYPE_CHECKING, Any, Literal
 from uuid import uuid4
 
@@ -1143,8 +1144,39 @@ class AgentSessionRuntime:
         source: str = "api",
         prompt_audit: list[dict[str, Any]] | None = None,
         prompt_id: str | None = None,
+        acceptance_result: str | None = None,
     ) -> QueuedPrompt:
         cwd = self._validated_cwd(cwd)
+        requested_images = [image.public_dict() for image in (images or [])]
+        if prompt_id:
+            accepted = ([self._in_flight] if self._in_flight else []) + self._queue
+            for queued in accepted:
+                if queued.id != prompt_id:
+                    continue
+                queued_images = [image.public_dict() for image in queued.images]
+                if queued.message != message or queued_images != requested_images:
+                    raise RuntimeError(
+                        f"Prompt id {prompt_id} was already accepted with different content"
+                    )
+                if acceptance_result is not None:
+                    accepted_result = queued.acceptance_result or acceptance_result
+                    position = (
+                        self._queue.index(queued) if queued in self._queue else 0
+                    )
+                    self._append_transcript(
+                        "queue_enqueued",
+                        {
+                            "id": queued.id,
+                            "message": queued.message,
+                            "images": queued_images,
+                            "action": "append",
+                            "position": position,
+                            "source": source,
+                            "acceptance_result": accepted_result,
+                        },
+                    )
+                    self._flush_transcript()
+                return queued
         item = QueuedPrompt(
             id=prompt_id or str(uuid4()),
             message=message,
@@ -1157,6 +1189,7 @@ class AgentSessionRuntime:
             agent_env=self._merged_agent_env(agent_env),
             source=source,
             prompt_audit=list(prompt_audit or []),
+            acceptance_result=acceptance_result,
         )
         if action == "prepend":
             self._queue.insert(0, item)
@@ -1170,6 +1203,8 @@ class AgentSessionRuntime:
                 "images": [image.public_dict() for image in item.images],
                 "action": action,
                 "position": 0 if action == "prepend" else len(self._queue) - 1,
+                "source": source,
+                "acceptance_result": item.acceptance_result,
             },
         )
         try:
@@ -1440,12 +1475,29 @@ class AgentSessionRuntime:
                         cwd=item.cwd,
                     )
                 except Exception as exc:
+                    from pa.acp.errors import classify_acp_failure, format_acp_error
+
                     if self._is_connection_loss(exc):
                         self._finish_turn_state()
                         self._notify_connection_lost(item, exc)
                         await self._drain_transcripts()
                         return "connection_lost"
-                    raise
+                    classified = classify_acp_failure(
+                        exc,
+                        provider_id=self.session.agent_name,
+                        stage="prompt",
+                    )
+                    self._append_transcript(
+                        "prompt_failed",
+                        {
+                            "id": item.id,
+                            "error": format_acp_error(exc)[:1000],
+                            "failure": classified,
+                        },
+                    )
+                    self._flush_transcript()
+                    await self._drain_transcripts()
+                    raise RuntimeError(classified.get("message") or str(exc)) from exc
                 usage = self.connection.last_usage if self.connection else None
                 if usage:
                     metrics = dict(self.session.metrics_json or {})
@@ -2052,9 +2104,15 @@ class AgentSessionRuntime:
 class AgentSessionManager:
     """Tracks many concurrent ACP sessions (one subprocess each)."""
 
-    def __init__(self, settings: Settings, store: Store) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        store: Store,
+        dispatch_store: Any | None = None,
+    ) -> None:
         self.settings = settings
         self.store = store
+        self.dispatch_store = dispatch_store
         self._runtimes: dict[str, AgentSessionRuntime] = {}
         self._quiescing = False
         self._accepting = True
@@ -2073,6 +2131,12 @@ class AgentSessionManager:
         self._default_label = "default"
         self._lock = asyncio.Lock()
         self._reconnect_lock = asyncio.Lock()
+        # Runtime publication also happens after awaited provider startup. A
+        # synchronous fleet repair probe must be able to fence that final
+        # publication atomically with its no-live-runtime observation.
+        self._runtime_lifecycle_lock = RLock()
+        self._terminal_repair_fences: dict[str, str] = {}
+        self._terminal_repair_fence_acquisitions: dict[str, str] = {}
         self._reconnect_task: asyncio.Task[bool] | None = None
         self._label_locks: dict[str, asyncio.Lock] = {}
         self.async_runtime: AsyncRuntime | None = None
@@ -2485,13 +2549,142 @@ class AgentSessionManager:
         return self._quiescing or is_shutting_down()
 
     def get(self, session_id: str) -> AgentSessionRuntime | None:
-        return self._runtimes.get(session_id)
+        with self._runtime_lifecycle_lock:
+            return self._runtimes.get(session_id)
+
+    def acquire_terminal_repair_fence(
+        self,
+        session_id: str,
+        *,
+        fence_id: str,
+        acquisition_id: str | None = None,
+    ) -> AgentSessionRuntime | None:
+        """Fence future runtime publication after observing no live runtime.
+
+        Provider startup is asynchronous and used to publish directly into the
+        runtime map after its final await. The lifecycle lock makes that
+        publication race with this check instead of racing after it. A fence is
+        intentionally retained: terminal repair is only valid for a closed,
+        nonrecoverable dispatch, so publishing a later runtime for that exact PA
+        session would invalidate the evidence used to retire it.
+        """
+        with self._runtime_lifecycle_lock:
+            runtime = self._runtimes.get(session_id)
+            if runtime is not None and not getattr(runtime, "_closed", False):
+                return runtime
+            self._terminal_repair_fences[session_id] = fence_id
+            self._terminal_repair_fence_acquisitions[session_id] = (
+                acquisition_id or str(uuid4())
+            )
+            return None
+
+    def terminal_repair_fence_id(self, session_id: str) -> str | None:
+        ledger = self.dispatch_store
+        with self._runtime_lifecycle_lock:
+            fence_acquisition_id = self._terminal_repair_fence_acquisitions.get(
+                session_id
+            )
+            fence_id = self._terminal_repair_fences.get(session_id)
+        if ledger is None:
+            return fence_id
+        record = ledger.by_session(session_id)
+        reservation = record.terminal_repair_reservation if record else None
+        reservation_state = reservation.get("state") if reservation else None
+        if (
+            record
+            and record.target_instance_id == self.settings.instance_id
+            and reservation
+            and reservation_state in {"prepared", "committed"}
+        ):
+            durable_fence_id = str(reservation.get("reservation_id") or "").strip()
+            if durable_fence_id:
+                with self._runtime_lifecycle_lock:
+                    if session_id not in self._terminal_repair_fences:
+                        self._terminal_repair_fences[session_id] = durable_fence_id
+                        self._terminal_repair_fence_acquisitions[session_id] = (
+                            f"durable:{uuid4()}"
+                        )
+                    return self._terminal_repair_fences[session_id]
+        repair_lost = bool(
+            record
+            and (
+                reservation_state in {"superseded_by_completion", "aborted"}
+                or record.state not in {"queued", "dispatching", "running"}
+                or record.completion_payload is not None
+                or record.acknowledged_at is not None
+            )
+        )
+        if fence_id is not None and repair_lost:
+            released = self.release_terminal_repair_fence(
+                session_id,
+                fence_id=fence_id,
+                acquisition_id=fence_acquisition_id,
+            )
+            if released:
+                return None
+            # A same-key retry may have installed a newer acquisition between
+            # the snapshot above and the generation-checked release. Never tell
+            # admission that the session is unfenced after losing that race.
+            with self._runtime_lifecycle_lock:
+                return self._terminal_repair_fences.get(session_id)
+        return fence_id
+
+    def release_terminal_repair_fence(
+        self,
+        session_id: str,
+        *,
+        fence_id: str,
+        acquisition_id: str | None = None,
+    ) -> bool:
+        """Release only the exact losing ephemeral repair fence."""
+        with self._runtime_lifecycle_lock:
+            if self._terminal_repair_fences.get(session_id) != fence_id:
+                return False
+            if (
+                acquisition_id is not None
+                and self._terminal_repair_fence_acquisitions.get(session_id)
+                != acquisition_id
+            ):
+                return False
+            self._terminal_repair_fences.pop(session_id, None)
+            self._terminal_repair_fence_acquisitions.pop(session_id, None)
+            return True
+
+    def bind_dispatch_store(self, dispatch_store: Any | None) -> None:
+        """Bind the canonical ledger used to restore durable repair fences."""
+        self.dispatch_store = dispatch_store
+
+    def _require_not_terminal_repair_fenced(self, session_id: str) -> None:
+        fence_id = self.terminal_repair_fence_id(session_id)
+        if fence_id is not None:
+            raise AgentSessionRecoveryError(
+                "PA session admission is fenced by terminal dispatch repair"
+            )
+
+    async def _publish_runtime(self, runtime: AgentSessionRuntime) -> None:
+        """Publish a started runtime unless terminal evidence fenced its session."""
+        durable_fence_id = self.terminal_repair_fence_id(runtime.session_id)
+        with self._runtime_lifecycle_lock:
+            fence_id = self._terminal_repair_fences.get(runtime.session_id)
+            fence_id = fence_id or durable_fence_id
+            if fence_id is None:
+                self._runtimes[runtime.session_id] = runtime
+                return
+        await runtime.close(
+            reason="terminal_dispatch_repair_fenced",
+            reconcile_workspace=False,
+        )
+        raise RuntimeError(
+            "session runtime publication was fenced by terminal dispatch repair"
+        )
 
     def list_sessions(self) -> list[AgentSession]:
-        return [rt.session for rt in self._runtimes.values()]
+        with self._runtime_lifecycle_lock:
+            return [rt.session for rt in self._runtimes.values()]
 
     def list_runtimes(self) -> list[AgentSessionRuntime]:
-        return list(self._runtimes.values())
+        with self._runtime_lifecycle_lock:
+            return list(self._runtimes.values())
 
     async def reconcile_closed_sessions(self, session_ids: list[str]) -> None:
         """Expire closed-session leases, then reconcile and collect once."""
@@ -3171,7 +3364,7 @@ class AgentSessionManager:
             queue_paused=snap.queue_paused,
             provider_spec=provider_spec,
         )
-        self._runtimes[runtime.session_id] = runtime
+        await self._publish_runtime(runtime)
         self._invalidate_provider_overview()
         return runtime
 
@@ -3315,11 +3508,42 @@ class AgentSessionManager:
             if existing
             else None
         )
+        requested_model_provider = (
+            initial_configuration.model_provider
+            if initial_configuration is not None
+            else None
+        )
+        requested_model = (
+            initial_configuration.model_id
+            if initial_configuration is not None
+            else None
+        )
         if provider_id == "codex" and requested_mode:
             # codex-acp chooses its sandbox before ACP initialize/session-new.
             # Applying the mode later is too late and can silently start a
             # workspace-write provider for an agent-full-access dispatch.
             resolved_spec.env["INITIAL_AGENT_MODE"] = requested_mode
+        if provider_id == "openinterpreter":
+            from pa.acp.errors import ProviderStartError
+            from pa.acp.providers.openinterpreter import (
+                _spawn_args,
+                preflight_session_start,
+            )
+
+            failure = preflight_session_start(
+                self.settings.data_dir,
+                model_provider=requested_model_provider,
+                model_id=requested_model,
+            )
+            if failure:
+                raise ProviderStartError(failure)
+            # Session overrides / explicit defaults must reach the process before
+            # initialize; host config.toml alone cannot express per-session picks.
+            if requested_model_provider or requested_model:
+                resolved_spec.args = _spawn_args(
+                    model_provider=requested_model_provider,
+                    model=requested_model,
+                )
 
         session = existing or AgentSession(
             id=session_id or str(uuid4()),
@@ -3410,10 +3634,26 @@ class AgentSessionManager:
             await runtime.start(**start_kwargs)
             self._last_error = None
         except Exception as exc:
-            self._last_error = str(exc)
+            from pa.acp.errors import classify_acp_failure, format_acp_error
+
+            self._last_error = format_acp_error(exc)
             configuration = dict(
                 ((session.config_json or {}).get("configuration") or {})
             )
+            classified = classify_acp_failure(
+                exc,
+                provider_id=provider_id,
+                stage=(
+                    "session_configuration"
+                    if configuration.get("state") == "failed"
+                    else "provider_startup"
+                ),
+            )
+            config = dict(session.config_json or {})
+            diagnostics = dict(config.get("diagnostics") or {})
+            diagnostics["last_startup_failure"] = classified
+            config["diagnostics"] = diagnostics
+            session.config_json = config
             session.status = (
                 "configuration_failed"
                 if configuration.get("state") == "failed"
@@ -3430,7 +3670,7 @@ class AgentSessionManager:
                     stage="session_configuration"
                     if configuration.get("state") == "failed"
                     else "provider_startup",
-                    error=str(exc),
+                    error=classified.get("message") or str(exc),
                     timeout=30.0,
                 )
             except Exception:
@@ -3438,8 +3678,8 @@ class AgentSessionManager:
                     "Could not fence workspace after session startup failure for %s",
                     session.id,
                 )
-            raise
-        self._runtimes[runtime.session_id] = runtime
+            raise RuntimeError(classified.get("message") or str(exc)) from exc
+        await self._publish_runtime(runtime)
         self._invalidate_provider_overview()
         return runtime
 
@@ -3497,6 +3737,7 @@ class AgentSessionManager:
         """Reconnect one durable PA session without creating a second PA identity."""
         self.require_startup_complete()
         async with self.label_lock(f"recover:{session_id}"):
+            self._require_not_terminal_repair_fenced(session_id)
             runtime = self.get(session_id)
             if runtime and not runtime._closed:
                 return runtime
@@ -3572,7 +3813,8 @@ class AgentSessionManager:
     ) -> QueuedPrompt:
         runtime = None
         if session_id:
-            runtime = self._runtimes.get(session_id)
+            self._require_not_terminal_repair_fenced(session_id)
+            runtime = self.get(session_id)
         if runtime is None:
             # Best-effort: use default if present
             for rt in self._runtimes.values():
@@ -3622,7 +3864,8 @@ class AgentSessionManager:
     ) -> str:
         self.require_startup_complete()
         if session_id:
-            runtime = self._runtimes.get(session_id)
+            self._require_not_terminal_repair_fenced(session_id)
+            runtime = self.get(session_id)
             if not runtime:
                 runtime = await self.recover_session(session_id)
         else:
@@ -3846,10 +4089,18 @@ InstanceAgent = AgentSessionManager
 _instance_agent: AgentSessionManager | None = None
 
 
-def get_instance_agent(settings: Settings, store: Store) -> AgentSessionManager:
+def get_instance_agent(
+    settings: Settings,
+    store: Store,
+    dispatch_store: Any | None = None,
+) -> AgentSessionManager:
     global _instance_agent
     if _instance_agent is None:
-        _instance_agent = AgentSessionManager(settings, store)
+        _instance_agent = AgentSessionManager(
+            settings, store, dispatch_store=dispatch_store
+        )
+    elif dispatch_store is not None:
+        _instance_agent.bind_dispatch_store(dispatch_store)
     return _instance_agent
 
 

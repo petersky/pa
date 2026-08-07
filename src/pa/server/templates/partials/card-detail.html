@@ -57,11 +57,9 @@
       </div>
     </div>
 
-    {% if card.lane.value == 'waiting' or card.summary_stale or critical_watch %}
-    <div class="card-critical-status" role="status" aria-live="polite">
-      {% if card.lane.value == 'waiting' %}<span><strong>Blocked:</strong> this card is waiting.</span>{% endif %}
-      {% if card.summary_stale %}<span><strong>Summary needs review.</strong></span>{% endif %}
-      {% if critical_watch %}<span><strong>Pull request:</strong> {{ critical_watch.last_error or 'supervision is blocked.' }}</span>{% endif %}
+    {% if card.summary_stale %}
+    <div class="card-critical-status" role="status">
+      <span><strong>Summary needs review.</strong></span>
     </div>
     {% endif %}
 
