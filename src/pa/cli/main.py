@@ -941,7 +941,10 @@ def fleet_list() -> None:
         inst.healthy = healthy
         fleet.upsert_instance(inst)
         status = "up" if healthy else "down"
-        typer.echo(f"  {inst.name:<16} {inst.url:<30} zone={inst.zone} [{status}]")
+        typer.echo(
+            f"  {inst.name:<16} {inst.instance_id}  {inst.url:<30} "
+            f"zone={inst.zone} [{status}]"
+        )
 
 
 def _print_credential_rotation(data: dict | list) -> None:
