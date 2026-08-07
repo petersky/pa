@@ -93,8 +93,19 @@ class AgentChatDraftContractTests(unittest.TestCase):
             self.assertIn('href="/agent"', html)
             self.assertIn('hx-get="/agent"', html)
             self.assertNotIn("disabled", html)
+            self.assertNotIn("pointer-events: none", html)
         self.assertIn("Offline", offline)
         self.assertIn("Starting", starting)
+
+        style = (SERVER / "static" / "style.css").read_text()
+        offline_rule = style.split(".status-btn.offline {", 1)[1].split("}", 1)[0]
+        status_btn_rule = style.split(".icon-btn, .status-btn {", 1)[1].split(
+            "}", 1
+        )[0]
+        self.assertIn("cursor: pointer", status_btn_rule)
+        self.assertIn("opacity: 0.65", offline_rule)
+        self.assertNotIn("cursor: not-allowed", offline_rule)
+        self.assertNotIn("pointer-events", offline_rule)
 
     def test_session_routing_scopes_draft_before_restoring_conversation(self) -> None:
         script = (SERVER / "static" / "js" / "agent-chat.js").read_text()
