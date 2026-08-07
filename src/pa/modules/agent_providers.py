@@ -6,14 +6,12 @@ import asyncio
 import json
 import sys
 from contextlib import asynccontextmanager
-from functools import partial
 from typing import Any
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from pa.acp.mcp_config import McpHandshakeError, probe_pa_mcp_stdio
 from pa.acp.providers.base import ProviderConfigureBody
 from pa.acp.providers.codex_auth import get_codex_login_store, resolve_codex_cli
 from pa.acp.providers.registry import get_provider
@@ -24,6 +22,7 @@ from pa.core.context import AppContext
 from pa.core.contracts import Module
 from pa.core.subprocesses import run_process
 from pa.domain.instance_config import update_instance_config
+from pa.domain.models import FleetInstance
 
 router = APIRouter(prefix="/agent/providers")
 
@@ -138,29 +137,40 @@ async def list_local_providers(request: Request) -> list[dict]:
 
 @router.get("/mcp-bootstrap")
 async def probe_local_mcp_bootstrap(request: Request) -> dict[str, Any]:
-    """Exercise the exact PA stdio MCP child required by every ACP session."""
-    settings = request.app.state.ctx.settings
-    try:
-        return await _offload_request(
-            request,
-            "mcp.bootstrap_probe",
-            partial(probe_pa_mcp_stdio, settings, timeout=12.0),
-            timeout=15.0,
-        )
-    except McpHandshakeError as exc:
-        return {
-            "state": "unavailable",
-            "classification": exc.classification,
-            "phase": exc.phase,
-            "detail": exc.detail,
-            "context": exc.context,
-            "recoverable": True,
-            "recovery_actions": [
-                "run pa doctor --verbose on the target instance",
-                "repair or upgrade the target PA installation and restart it",
-                "retry this instance or choose an alternate instance/provider",
-            ],
-        }
+    """Return a bounded, cache-first probe of the exact PA stdio MCP child."""
+    from pa.fleet.overview import probe_dimension
+
+    ctx = request.app.state.ctx
+    settings = ctx.settings
+    fleet = ctx.services.get("fleet_registry")
+    instance = fleet.get_instance(settings.instance_id) if fleet else None
+    instance = instance or FleetInstance(
+        instance_id=settings.instance_id,
+        name=settings.instance_name,
+        url=f"http://127.0.0.1:{settings.port}",
+        zone=settings.zone,
+    )
+    result = await probe_dimension(
+        ctx,
+        instance,
+        "mcp_bootstrap",
+        force=request.query_params.get("force", "").lower() in {"1", "true", "yes"},
+    )
+    value = result.get("value")
+    if isinstance(value, dict):
+        return value
+    return {
+        "state": "unavailable",
+        "classification": str(
+            (result.get("failure") or {}).get("code") or result.get("state")
+        ),
+        "detail": str(result.get("error") or "MCP bootstrap probe failed"),
+        "recoverable": True,
+        "recovery_actions": [
+            "run pa doctor --verbose on the target instance",
+            "retry after the bounded probe cooldown",
+        ],
+    }
 
 
 @router.get("/{provider_id}")
@@ -418,9 +428,9 @@ class AgentProvidersModule(Module):
         from pa.fleet.overview import cache_for
 
         ctx.register_service("provider_action_gate", ProviderActionGate())
-        cache_for(ctx.settings.data_dir).invalidate(
-            ctx.settings.instance_id, "providers"
-        )
+        cache = cache_for(ctx.settings.data_dir)
+        cache.invalidate(ctx.settings.instance_id, "providers")
+        cache.invalidate(ctx.settings.instance_id, "mcp_bootstrap")
 
     def api_routers(self):
         return [("/api", router, ["agent-providers"])]

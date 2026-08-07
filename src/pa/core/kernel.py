@@ -450,8 +450,11 @@ class Kernel:
         )
 
     def register_mcp(self, mcp: Any) -> None:
+        from pa.core.mcp_registration import UniqueToolRegistrationProxy
+
+        guarded = UniqueToolRegistrationProxy(mcp)
         for entry in self.registry.modules:
-            entry.module.register_mcp(mcp, self.ctx)
+            entry.module.register_mcp(guarded, self.ctx)
 
     def _install_debug_middleware(self, app: FastAPI) -> None:
         import time

@@ -3,12 +3,16 @@ from __future__ import annotations
 import asyncio
 import json
 import tempfile
+import threading
+import time
 from contextlib import AbstractAsyncContextManager
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
+from mcp.server.mcpserver import MCPServer
 from typer.testing import CliRunner
 
 from pa import __version__
@@ -19,6 +23,11 @@ from pa.acp.mcp_config import (
 )
 from pa.cli.main import app
 from pa.config import Settings
+from pa.core.mcp_registration import (
+    DuplicateMcpToolError,
+    UniqueToolRegistrationProxy,
+)
+from pa.core.kernel import Kernel
 from pa.domain.models import FleetInstance
 from pa.execution.dispatch import DispatchRecord, DispatchStore
 from pa.execution.progress import (
@@ -27,8 +36,10 @@ from pa.execution.progress import (
     DispatchProgressEventV1,
     ProgressValidationV1,
 )
+from pa.fleet import overview as fleet_overview
 from pa.fleet.overview import (
     MCP_BOOTSTRAP_TIMEOUT,
+    MCP_BOOTSTRAP_WARM_CACHE_SLO,
     MCP_STDIO_HANDSHAKE_TIMEOUT,
     probe_dimension,
 )
@@ -39,6 +50,7 @@ from pa.fleet.placement import (
     PlacementService,
     RoundRobinCursorStore,
 )
+from pa.modules.items import ItemsModule
 
 
 def _event_payload(*, command: str = "pytest") -> dict:
@@ -258,6 +270,264 @@ def test_forced_bootstrap_refreshes_coalesce(tmp_path: Path) -> None:
     first, second = asyncio.run(exercise())
     assert calls == 1
     assert first["state"] == second["state"] == "fresh"
+
+
+class _RecordingMcp:
+    def __init__(self) -> None:
+        self.functions: dict[str, object] = {}
+        self.registration_count: dict[str, int] = {}
+        self.lock = threading.Lock()
+
+    def tool(self, name: str | None = None, **_kwargs):
+        def register(fn):
+            resolved = name or fn.__name__
+            with self.lock:
+                self.functions[resolved] = fn
+                self.registration_count[resolved] = (
+                    self.registration_count.get(resolved, 0) + 1
+                )
+            return fn
+
+        return register
+
+
+def test_items_module_registers_each_tool_once_and_rejects_reload() -> None:
+    delegate = _RecordingMcp()
+    guarded = UniqueToolRegistrationProxy(delegate)
+    ctx = SimpleNamespace(settings=SimpleNamespace())
+
+    ItemsModule().register_mcp(guarded, ctx)
+
+    assert delegate.registration_count["create_card"] == 1
+    assert delegate.registration_count["update_card"] == 1
+    assert all(count == 1 for count in delegate.registration_count.values())
+    with pytest.raises(
+        DuplicateMcpToolError,
+        match="duplicate MCP tool registration for 'list_items'",
+    ):
+        ItemsModule().register_mcp(guarded, ctx)
+    assert all(count == 1 for count in delegate.registration_count.values())
+
+
+def test_full_kernel_tool_discovery_is_unique_and_repeat_registration_fails(
+    tmp_path: Path,
+) -> None:
+    kernel = Kernel.boot(settings=Settings(data_dir=tmp_path, agent_enabled=False))
+    server = MCPServer("registration-contract")
+
+    kernel.register_mcp(server)
+    tools = asyncio.run(server.list_tools())
+    names = [tool.name for tool in tools]
+
+    assert len(names) == len(set(names))
+    assert names.count("create_card") == names.count("update_card") == 1
+    with pytest.raises(
+        DuplicateMcpToolError, match="duplicate MCP tool registration"
+    ):
+        kernel.register_mcp(server)
+
+
+def test_concurrent_duplicate_registration_has_one_deterministic_winner() -> None:
+    delegate = _RecordingMcp()
+    guarded = UniqueToolRegistrationProxy(delegate)
+    start = threading.Barrier(3)
+    errors: list[BaseException] = []
+
+    def register(origin: str) -> None:
+        def handler() -> str:
+            return origin
+
+        handler.__name__ = f"handler_{origin}"
+        start.wait()
+        try:
+            guarded.tool(name="same_name")(handler)
+        except BaseException as exc:
+            errors.append(exc)
+
+    threads = [
+        threading.Thread(target=register, args=(origin,)) for origin in ("a", "b")
+    ]
+    for thread in threads:
+        thread.start()
+    start.wait()
+    for thread in threads:
+        thread.join()
+
+    assert delegate.registration_count == {"same_name": 1}
+    assert len(errors) == 1
+    assert isinstance(errors[0], DuplicateMcpToolError)
+
+
+def test_cancelled_bootstrap_waiter_observes_failure_and_allows_retry(
+    tmp_path: Path, caplog
+) -> None:
+    ctx = SimpleNamespace(
+        settings=SimpleNamespace(data_dir=tmp_path),
+        services={},
+    )
+    instance = FleetInstance(
+        instance_id="target-cancelled",
+        name="target-cancelled",
+        url="http://target.test",
+    )
+
+    async def exercise() -> dict:
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def late_failure(_ctx, _instance, _dimension):
+            started.set()
+            await release.wait()
+            raise AssertionError("late bootstrap failure")
+
+        with patch("pa.fleet.overview._probe", side_effect=late_failure):
+            waiter = asyncio.create_task(
+                probe_dimension(ctx, instance, "mcp_bootstrap", force=True)
+            )
+            await started.wait()
+            waiter.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await waiter
+            release.set()
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+
+        async def successful_retry(_ctx, _instance, _dimension):
+            return {
+                "state": "fresh",
+                "value": {"state": "connected"},
+                "observed_at": datetime.now(UTC).isoformat(),
+            }
+
+        with patch("pa.fleet.overview._probe", side_effect=successful_retry):
+            return await probe_dimension(ctx, instance, "mcp_bootstrap", force=True)
+
+    result = asyncio.run(exercise())
+    assert result["value"]["state"] == "connected"
+    assert "probe task failed" in caplog.text
+    key = (str(tmp_path), instance.instance_id, "mcp_bootstrap")
+    assert key not in fleet_overview._probe_tasks
+
+
+def test_warm_bootstrap_is_cache_only_and_within_slo(tmp_path: Path) -> None:
+    ctx = SimpleNamespace(
+        settings=SimpleNamespace(data_dir=tmp_path),
+        services={},
+    )
+    instance = FleetInstance(
+        instance_id="target-warm",
+        name="target-warm",
+        url="http://target.test",
+    )
+
+    async def successful_probe(_ctx, _instance, _dimension):
+        return {
+            "state": "fresh",
+            "value": {"state": "connected"},
+            "observed_at": datetime.now(UTC).isoformat(),
+        }
+
+    async def exercise() -> tuple[dict, float]:
+        with patch("pa.fleet.overview._probe", side_effect=successful_probe):
+            await probe_dimension(ctx, instance, "mcp_bootstrap", force=True)
+        started_at = time.perf_counter()
+        with patch(
+            "pa.fleet.overview._probe",
+            side_effect=AssertionError("warm cache must not spawn a probe"),
+        ):
+            cached = await probe_dimension(ctx, instance, "mcp_bootstrap")
+        return cached, time.perf_counter() - started_at
+
+    cached, elapsed = asyncio.run(exercise())
+    assert cached["cache_hit"] is True
+    assert elapsed < MCP_BOOTSTRAP_WARM_CACHE_SLO
+
+
+def test_failed_handshake_is_cached_as_fresh_unavailable_state(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(
+        data_dir=tmp_path,
+        instance_id="local-bootstrap",
+        agent_enabled=False,
+    )
+    ctx = SimpleNamespace(settings=settings, services={})
+    instance = FleetInstance(
+        instance_id=settings.instance_id,
+        name="local-bootstrap",
+        url="http://127.0.0.1:8090",
+    )
+    failure = McpHandshakeError(
+        "initialize_failed",
+        "repair the duplicate registration",
+        "duplicate MCP tool registration for 'create_card'",
+        phase="initialize",
+    )
+
+    with patch("pa.acp.mcp_config.probe_pa_mcp_stdio", side_effect=failure):
+        result = asyncio.run(
+            probe_dimension(ctx, instance, "mcp_bootstrap", force=True)
+        )
+
+    assert result["state"] == "fresh"
+    assert result["value"]["state"] == "unavailable"
+    assert result["value"]["classification"] == "initialize_failed"
+    assert result["value"]["phase"] == "initialize"
+
+
+def test_card_tools_round_trip_the_union_of_supported_fields() -> None:
+    delegate = _RecordingMcp()
+    ctx = SimpleNamespace(settings=SimpleNamespace())
+    with patch("pa.mcp.local_api.request_local_pa", return_value={}) as request:
+        ItemsModule().register_mcp(delegate, ctx)
+        delegate.functions["create_card"](
+            title="Child",
+            idempotency_key="create-card-round-trip",
+            body="Body",
+            lane="active",
+            realm="team",
+            parent_id="parent",
+            project_id="project",
+            tags=["one"],
+            auto_enrich=False,
+        )
+        create = request.call_args
+        assert create.args[1:3] == ("POST", "/api/cards")
+        assert create.kwargs["json"] == {
+            "realm_id": "team",
+            "title": "Child",
+            "body": "Body",
+            "lane": "active",
+            "parent_id": "parent",
+            "project_id": "project",
+            "tags": ["one"],
+            "auto_enrich": False,
+        }
+        assert create.kwargs["headers"] == {
+            "Idempotency-Key": "create-card-round-trip"
+        }
+
+        delegate.functions["update_card"](
+            card_id="card",
+            idempotency_key="update-card-round-trip",
+            parent_id="new-parent",
+            project_id="new-project",
+            tags=["two"],
+            expected_version="version",
+            field_intent=["parent_id", "project_id", "tags"],
+        )
+        update = request.call_args
+        assert update.args[1:3] == ("PATCH", "/api/cards/card")
+        assert update.kwargs["json"] == {
+            "parent_id": "new-parent",
+            "project_id": "new-project",
+            "tags": ["two"],
+            "updated_at": "version",
+            "field_intent": ["parent_id", "project_id", "tags"],
+        }
+        assert update.kwargs["headers"] == {
+            "Idempotency-Key": "update-card-round-trip"
+        }
 
 
 def _fresh(value):

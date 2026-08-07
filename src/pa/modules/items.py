@@ -3381,6 +3381,8 @@ class ItemsModule(Module):
             title: str | None = None,
             body: str | None = None,
             lane: CardLane | None = None,
+            parent_id: str | None = None,
+            project_id: str | None = None,
             realm: str = "default",
             tags: list[str] | None = None,
             expected_version: str | None = None,
@@ -3396,6 +3398,8 @@ class ItemsModule(Module):
                     "title": title,
                     "body": body,
                     "lane": lane,
+                    "parent_id": parent_id,
+                    "project_id": project_id,
                     "tags": tags,
                 }.items()
                 if value is not None
@@ -3554,83 +3558,6 @@ class ItemsModule(Module):
                     if value is not None
                 },
                 allow_not_found=True,
-            )
-
-        @mcp.tool()
-        def create_card(
-            title: str,
-            idempotency_key: str,
-            kind: CardKind | None = None,
-            body: str = "",
-            lane: CardLane = CardLane.INBOX,
-            realm: str = "default",
-            parent_id: str | None = None,
-            project_id: str | None = None,
-            auto_enrich: bool = True,
-        ) -> dict:
-            """Create a card in a realm."""
-            key = idempotency_key.strip()
-            if not key:
-                raise ValueError("idempotency_key cannot be empty")
-            return request_local_pa(
-                ctx.settings,
-                "POST",
-                "/api/cards",
-                json={
-                    "realm_id": realm,
-                    "title": title,
-                    "body": body,
-                    "lane": lane,
-                    "parent_id": parent_id,
-                    "project_id": project_id,
-                    "auto_enrich": auto_enrich,
-                    **({"kind": kind} if kind is not None else {}),
-                },
-                headers={"Idempotency-Key": key},
-            )
-
-        @mcp.tool()
-        def update_card(
-            card_id: str,
-            idempotency_key: str,
-            title: str | None = None,
-            body: str | None = None,
-            lane: CardLane | None = None,
-            parent_id: str | None = None,
-            project_id: str | None = None,
-            realm: str = "default",
-            tags: list[str] | None = None,
-            expected_version: str | None = None,
-            field_intent: list[str] | None = None,
-        ) -> dict | None:
-            """Update a card's mutable fields."""
-            key = idempotency_key.strip()
-            if not key:
-                raise ValueError("idempotency_key cannot be empty")
-            changes = {
-                key: value
-                for key, value in {
-                    "title": title,
-                    "body": body,
-                    "lane": lane,
-                    "parent_id": parent_id,
-                    "project_id": project_id,
-                    "tags": tags,
-                }.items()
-                if value is not None
-            }
-            if expected_version is not None:
-                changes["updated_at"] = expected_version
-            if field_intent is not None:
-                changes["field_intent"] = field_intent
-            return request_local_pa(
-                ctx.settings,
-                "PATCH",
-                f"/api/cards/{card_id}",
-                params={"realm": realm},
-                json=changes,
-                allow_not_found=True,
-                headers={"Idempotency-Key": key},
             )
 
         @mcp.tool()

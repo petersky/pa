@@ -54,6 +54,9 @@ REACHABILITY_TIMEOUT = 2.5
 MCP_STDIO_HANDSHAKE_TIMEOUT = 12.0
 MCP_BOOTSTRAP_TIMEOUT = 15.0
 MCP_BOOTSTRAP_CACHE_TTL = 30.0
+# A warm bootstrap read is cache-only and should remain comfortably below a
+# page-frame budget even on modest fleet hosts.
+MCP_BOOTSTRAP_WARM_CACHE_SLO = 0.5
 GOOD_STATES = {"fresh", "stale"}
 EDGE_STATUS_SEVERITY = {
     "healthy": 0,
@@ -837,18 +840,33 @@ async def _probe(ctx: Any, inst: FleetInstance, dimension: str) -> dict[str, Any
                 timeout=max(0.5, timeout - 0.5),
             )
         elif is_local and dimension == "mcp_bootstrap":
-            from pa.acp.mcp_config import probe_pa_mcp_stdio
+            from pa.acp.mcp_config import McpHandshakeError, probe_pa_mcp_stdio
 
-            value = await _offload(
-                ctx,
-                "fleet.overview.mcp_bootstrap",
-                partial(
-                    probe_pa_mcp_stdio,
-                    ctx.settings,
-                    timeout=MCP_STDIO_HANDSHAKE_TIMEOUT,
-                ),
-                timeout=timeout,
-            )
+            try:
+                value = await _offload(
+                    ctx,
+                    "fleet.overview.mcp_bootstrap",
+                    partial(
+                        probe_pa_mcp_stdio,
+                        ctx.settings,
+                        timeout=MCP_STDIO_HANDSHAKE_TIMEOUT,
+                    ),
+                    timeout=timeout,
+                )
+            except McpHandshakeError as exc:
+                value = {
+                    "state": "unavailable",
+                    "classification": exc.classification,
+                    "phase": exc.phase,
+                    "detail": exc.detail,
+                    "context": exc.context,
+                    "recoverable": True,
+                    "recovery_actions": [
+                        "run pa doctor --verbose on the target instance",
+                        "repair or upgrade the target PA installation and restart it",
+                        "retry this instance or choose an alternate instance/provider",
+                    ],
+                }
         elif is_local and dimension == "update":
             from pa.update.runner import check_update
 
@@ -1045,17 +1063,34 @@ async def probe_dimension(
             or (force and dimension != "mcp_bootstrap")
         ):
             attempt_id = time.time_ns()
-            task = asyncio.create_task(_probe(ctx, inst, dimension))
+            task = asyncio.create_task(
+                _run_dimension_probe(
+                    ctx,
+                    inst,
+                    dimension,
+                    cache=cache,
+                    cached=cached,
+                    attempt_id=attempt_id,
+                )
+            )
+            task.add_done_callback(partial(_observe_probe_task, key, attempt_id))
             _probe_tasks[key] = (attempt_id, task)
         else:
             attempt_id, task = active
-    try:
-        result = await asyncio.shield(task)
-    finally:
-        if task.done():
-            async with _probe_lock:
-                if _probe_tasks.get(key) == (attempt_id, task):
-                    _probe_tasks.pop(key, None)
+    return await asyncio.shield(task)
+
+
+async def _run_dimension_probe(
+    ctx: Any,
+    inst: FleetInstance,
+    dimension: str,
+    *,
+    cache: FleetOverviewCache,
+    cached: dict[str, Any] | None,
+    attempt_id: int,
+) -> dict[str, Any]:
+    """Keep the single-flight active until its authoritative cache write lands."""
+    result = await _probe(ctx, inst, dimension)
     if dimension == "providers" and result.get("state") in GOOD_STATES:
         result = {
             **result,
@@ -1090,6 +1125,25 @@ async def probe_dimension(
         result.get("duration_ms"),
     )
     return merged
+
+
+def _observe_probe_task(
+    key: tuple[str, str, str], attempt_id: int, task: asyncio.Task
+) -> None:
+    """Consume shielded probe failures and retire abandoned single-flight work."""
+    try:
+        error = task.exception()
+    except asyncio.CancelledError:
+        error = None
+    if error is not None:
+        logger.error(
+            "fleet overview probe task failed instance=%s dimension=%s error=%s",
+            key[1],
+            key[2],
+            error.__class__.__name__,
+        )
+    if _probe_tasks.get(key) == (attempt_id, task):
+        _probe_tasks.pop(key, None)
 
 
 def build_overview(
