@@ -15,28 +15,29 @@ from pa.acp.providers.openinterpreter import builtin_model_provider_env_key
 from pa.acp.providers.registry import get_provider, list_providers
 from pa.acp.providers.resolve import list_provider_summaries
 from pa.config import get_settings
-from pa.fleet.registry import FleetRegistry
+from pa.fleet.registry import FleetInstanceResolveError, FleetRegistry
 
 agent_provider_app = typer.Typer(
     help="Manage ACP agent providers (Cursor, Codex, OpenInterpreter, …)"
 )
 
+_INSTANCE_OPTION = typer.Option(
+    "--instance", help="Fleet instance name or ID"
+)
+
 
 def _remote(
-    instance_id: str,
+    instance_ref: str,
     method: str,
     path: str,
     body: dict | None = None,
 ) -> object:
     settings = get_settings()
     fleet = FleetRegistry(settings.data_dir, settings.fleet_id)
-    inst = None
-    for candidate in fleet.list_instances():
-        if candidate.instance_id == instance_id:
-            inst = candidate
-            break
-    if not inst:
-        raise typer.BadParameter(f"Unknown fleet instance: {instance_id}")
+    try:
+        inst = fleet.resolve_instance(instance_ref)
+    except FleetInstanceResolveError as exc:
+        raise typer.BadParameter(str(exc)) from exc
     headers: dict[str, str] = {}
     if settings.sync_token:
         headers["Authorization"] = f"Bearer {settings.sync_token}"
@@ -52,7 +53,7 @@ def _remote(
 @agent_provider_app.command("list")
 def list_cmd(
     instance: Annotated[
-        Optional[str], typer.Option("--instance", help="Fleet instance id")
+        Optional[str], _INSTANCE_OPTION
     ] = None,
 ) -> None:
     """List registered ACP providers and local status."""
@@ -66,7 +67,7 @@ def list_cmd(
 @agent_provider_app.command("status")
 def status_cmd(
     provider: Annotated[str, typer.Option("--provider", "-p")] = "codex",
-    instance: Annotated[Optional[str], typer.Option("--instance")] = None,
+    instance: Annotated[Optional[str], _INSTANCE_OPTION] = None,
 ) -> None:
     """Show install/auth status for one provider."""
     if instance:
@@ -83,7 +84,7 @@ def status_cmd(
 @agent_provider_app.command("install")
 def install_cmd(
     provider: Annotated[str, typer.Option("--provider", "-p")] = "codex",
-    instance: Annotated[Optional[str], typer.Option("--instance")] = None,
+    instance: Annotated[Optional[str], _INSTANCE_OPTION] = None,
 ) -> None:
     """Install or verify a provider on this host or a fleet peer."""
     if instance:
@@ -102,7 +103,7 @@ def install_cmd(
 @agent_provider_app.command("update")
 def update_cmd(
     provider: Annotated[str, typer.Option("--provider", "-p")] = "codex",
-    instance: Annotated[Optional[str], typer.Option("--instance")] = None,
+    instance: Annotated[Optional[str], _INSTANCE_OPTION] = None,
 ) -> None:
     """Update a provider package/binary."""
     if instance:
@@ -121,7 +122,7 @@ def update_cmd(
 @agent_provider_app.command("configure")
 def configure_cmd(
     provider: Annotated[str, typer.Option("--provider", "-p")] = "codex",
-    instance: Annotated[Optional[str], typer.Option("--instance")] = None,
+    instance: Annotated[Optional[str], _INSTANCE_OPTION] = None,
     api_key: Annotated[
         Optional[str],
         typer.Option(
@@ -212,7 +213,7 @@ def configure_cmd(
 @agent_provider_app.command("probe")
 def probe_cmd(
     provider: Annotated[str, typer.Option("--provider", "-p")] = "codex",
-    instance: Annotated[Optional[str], typer.Option("--instance")] = None,
+    instance: Annotated[Optional[str], _INSTANCE_OPTION] = None,
 ) -> None:
     """Run ACP initialize probe against a provider."""
     if instance:
@@ -227,7 +228,7 @@ def probe_cmd(
 @agent_provider_app.command("login")
 def login_cmd(
     provider: Annotated[str, typer.Option("--provider", "-p")] = "codex",
-    instance: Annotated[Optional[str], typer.Option("--instance")] = None,
+    instance: Annotated[Optional[str], _INSTANCE_OPTION] = None,
     consent: Annotated[
         bool, typer.Option("--consent", help="Confirm starting ChatGPT device sign-in")
     ] = False,
@@ -266,7 +267,7 @@ def login_cmd(
 
 @agent_provider_app.command("install-codex-cli")
 def install_codex_cli_cmd(
-    instance: Annotated[Optional[str], typer.Option("--instance")] = None,
+    instance: Annotated[Optional[str], _INSTANCE_OPTION] = None,
 ) -> None:
     """Install the official Codex CLI separately from codex-acp."""
     if instance:
@@ -281,7 +282,7 @@ def install_codex_cli_cmd(
 @agent_provider_app.command("login-status")
 def login_status_cmd(
     job_id: Annotated[str, typer.Argument()],
-    instance: Annotated[Optional[str], typer.Option("--instance")] = None,
+    instance: Annotated[Optional[str], _INSTANCE_OPTION] = None,
 ) -> None:
     """Show a Codex login job (verification instructions, never credentials)."""
     if instance:
@@ -299,7 +300,7 @@ def login_status_cmd(
 @agent_provider_app.command("login-cancel")
 def login_cancel_cmd(
     job_id: Annotated[str, typer.Argument()],
-    instance: Annotated[Optional[str], typer.Option("--instance")] = None,
+    instance: Annotated[Optional[str], _INSTANCE_OPTION] = None,
 ) -> None:
     """Cancel a Codex login job."""
     if instance:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import secrets
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -28,6 +29,50 @@ _SEMANTIC_MEMBER_FIELDS = {
     "lifecycle_state",
     "credential_fingerprint",
 }
+
+
+class FleetInstanceResolveError(ValueError):
+    """Raised when a fleet instance name or id cannot be resolved uniquely."""
+
+
+def resolve_fleet_instance(
+    instances: Sequence[FleetInstance],
+    value: str,
+) -> FleetInstance:
+    """Resolve a CLI/operator reference to exactly one fleet instance.
+
+    Accepts an exact ``instance_id`` or an exact instance ``name`` (case-insensitive,
+    matching card dispatch). Never silently picks among ambiguous names.
+    """
+    needle = str(value or "").strip()
+    if not needle:
+        raise FleetInstanceResolveError(
+            "Fleet instance not found: empty value. Run `pa fleet list`."
+        )
+    exact = [item for item in instances if item.instance_id == needle]
+    if len(exact) == 1:
+        return exact[0]
+    named = [
+        item for item in instances if item.name.casefold() == needle.casefold()
+    ]
+    if len(named) == 1:
+        return named[0]
+    if len(named) > 1:
+        ids = ", ".join(item.instance_id for item in named)
+        raise FleetInstanceResolveError(
+            f"Instance name {needle!r} is ambiguous; use an ID: {ids}"
+        )
+    available = ", ".join(
+        f"{item.name} ({item.instance_id})" for item in instances
+    )
+    suffix = (
+        f" Available instances: {available}."
+        if available
+        else " No instances are registered."
+    )
+    raise FleetInstanceResolveError(
+        f"Unknown fleet instance: {needle}.{suffix} Hint: run `pa fleet list`."
+    )
 
 
 def semantic_member(inst: FleetInstance) -> dict[str, Any]:
@@ -455,6 +500,14 @@ class FleetRegistry:
         if inst and inst.lifecycle_state == "removed" and not include_removed:
             return None
         return inst
+
+    def resolve_instance(
+        self, value: str, *, include_removed: bool = False
+    ) -> FleetInstance:
+        """Resolve an exact instance id or case-insensitive name."""
+        return resolve_fleet_instance(
+            self.list_instances(include_removed=include_removed), value
+        )
 
     def remove_instance(self, instance_id: str, *, actor: str = "") -> bool:
         self._reload_instances()
