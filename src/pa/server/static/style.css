@@ -1043,8 +1043,8 @@ a:hover { color: var(--pa-accent-hover); }
 }
 
 .status-btn.offline {
+  /* Muted status color only — control remains an enabled Sessions link. */
   opacity: 0.65;
-  cursor: not-allowed;
 }
 
 .status-dot {
