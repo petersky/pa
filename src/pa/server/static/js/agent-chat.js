@@ -311,6 +311,10 @@
     if (end) end.addEventListener("click", function () { self.closeSession(); });
     const restart = this.root.querySelector("[data-acw-restart]");
     if (restart) restart.addEventListener("click", function () { self.restartSession(); });
+    const cardLink = this.root.querySelector("[data-acw-card-link]");
+    if (cardLink) cardLink.addEventListener("click", function () {
+      openSessionCardDialog(self);
+    });
     if (this.els.recoveryRetry) {
       this.els.recoveryRetry.addEventListener("click", function () {
         self.retrySession();
@@ -2880,6 +2884,37 @@
     });
   }
 
+  function paFetch(path, opts) {
+    opts = opts || {};
+    const headers = Object.assign({}, csrfHeaders(), opts.headers || {});
+    return fetch(path, Object.assign({
+      headers: headers,
+      credentials: "same-origin",
+    }, opts, { headers: headers })).then(function (res) {
+      if (!res.ok) {
+        return res.json().catch(function () { return {}; }).then(function (body) {
+          const error = new Error(apiErrorMessage(body, res.statusText || "Request failed"));
+          error.status = res.status;
+          error.detail = body.detail;
+          throw error;
+        });
+      }
+      return res.json();
+    });
+  }
+
+  function openSessionCardDialog(widget) {
+    const dialog = document.querySelector("[data-agent-card-dialog]");
+    if (!dialog || !widget || !widget.sessionId) return;
+    dialog._agentWidget = widget;
+    const form = dialog.querySelector("[data-agent-card-form]");
+    const error = dialog.querySelector("[data-agent-card-error]");
+    if (form) form.reset();
+    if (error) error.hidden = true;
+    if (typeof dialog.showModal === "function") dialog.showModal();
+    else dialog.setAttribute("open", "");
+  }
+
   let sessionListRecovery = null;
 
   function renderSessionListState(list, message, blocked) {
@@ -2934,7 +2969,13 @@
         metadataField("Model", s.model_id || "Default model") +
         (s.mode_id ? metadataField("Mode", s.mode_id) : "") +
         metadataField("Status", s.status || "unknown") +
-        "</dl>" + sessionConfigSummary(s.config_json);
+        "</dl>" + sessionConfigSummary(s.config_json) +
+        ((s.cards || []).map(function (card) {
+          return '<a class="agent-session-card-link" href="/work?card=' +
+            encodeURIComponent(card.id) + '">' +
+            escapeHtml(card.primary ? "Current card · " : "Card · ") +
+            escapeHtml(card.title) + "</a>";
+        }).join(""));
       if (s.status !== "closed") {
         const close = document.createElement("button");
         close.type = "button";
@@ -3471,6 +3512,77 @@
               submit.textContent = "Start session";
             }
           });
+      });
+    }
+    const cardDialog = root.querySelector("[data-agent-card-dialog]");
+    if (cardDialog && !cardDialog._acwBound) {
+      cardDialog._acwBound = true;
+      cardDialog.querySelectorAll("[data-agent-card-cancel]").forEach(function (button) {
+        button.addEventListener("click", function () { cardDialog.close(); });
+      });
+      const cardForm = cardDialog.querySelector("[data-agent-card-form]");
+      if (cardForm) cardForm.addEventListener("submit", function (event) {
+        event.preventDefault();
+        const widget = cardDialog._agentWidget;
+        if (!widget || !widget.sessionId) return;
+        const data = new FormData(cardForm);
+        const selectedCardId = String(data.get("card_id") || "").trim();
+        const title = String(data.get("title") || "").trim();
+        const projectId = String(data.get("project_id") || "").trim();
+        const error = cardDialog.querySelector("[data-agent-card-error]");
+        const submit = cardDialog.querySelector("[data-agent-card-submit]");
+        if (!selectedCardId && !title) {
+          if (error) {
+            error.textContent = "Choose an existing card or enter a new card title.";
+            error.hidden = false;
+          }
+          return;
+        }
+        if (error) error.hidden = true;
+        if (submit) submit.disabled = true;
+        let cardPromise = Promise.resolve({ id: selectedCardId, title: "the selected card" });
+        if (!selectedCardId) {
+          const key = "session-card:" + widget.sessionId + ":" +
+            (window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : Date.now());
+          cardPromise = paFetch("/api/cards", {
+            method: "POST",
+            headers: { "Idempotency-Key": key },
+            body: JSON.stringify({
+              realm_id: cardDialog.dataset.agentCardRealm || "default",
+              kind: "task",
+              title: title,
+              body: "Captured from agent session " + widget.sessionId + ".",
+              lane: "active",
+              project_id: projectId || null,
+              tags: ["agent-session"],
+              auto_enrich: false,
+            }),
+          });
+        }
+        cardPromise.then(function (card) {
+          return widget.api(
+            "/sessions/" + encodeURIComponent(widget.sessionId) +
+              "/cards/" + encodeURIComponent(card.id),
+            { method: "POST", body: JSON.stringify({ make_primary: true }) }
+          ).then(function () { return card; });
+        }).then(function (card) {
+          widget.cardId = card.id;
+          cardDialog.close();
+          widget.addBubble(
+            "system",
+            "This session is now captured in card “" + card.title + "”.",
+            new Date().toISOString(),
+            { system: true, forceVisible: true }
+          );
+          refreshSessionList(widget.sessionId);
+        }).catch(function (err) {
+          if (error) {
+            error.textContent = err.message;
+            error.hidden = false;
+          }
+        }).finally(function () {
+          if (submit) submit.disabled = false;
+        });
       });
     }
     root.querySelectorAll("[data-agent-sidebar-toggle]").forEach(function (toggle) {

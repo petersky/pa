@@ -143,7 +143,9 @@ def build_project_context_prefix(
     return "\n\n".join(rendered)
 
 
-def _execution_values(settings: Settings, session: AgentSession) -> dict[str, Any]:
+def _execution_values(
+    store: Store, settings: Settings, session: AgentSession
+) -> dict[str, Any]:
     config = dict(session.config_json or {})
     execution = dict(config.get("execution_context") or {})
     execution_instance = dict(execution.get("instance") or {})
@@ -171,6 +173,11 @@ def _execution_values(settings: Settings, session: AgentSession) -> dict[str, An
         or "(none)"
     )
     return {
+        "session": {
+            "id": session.id,
+            "card_ids": ", ".join(store.list_card_ids_for_session(session.id))
+            or "(none)",
+        },
         "execution_instance": execution_instance,
         "authority_instance": authority,
         "repository": {
@@ -182,6 +189,33 @@ def _execution_values(settings: Settings, session: AgentSession) -> dict[str, An
         "branch": repository.get("branch") or "(not linked)",
         "base_sha": repository.get("base_sha") or "(not linked)",
         "attachment_paths": attachment_paths,
+    }
+
+
+def _workspace_catalog_values(store: Store, realm_id: str) -> dict[str, str]:
+    projects = store.list_projects(realm_id=realm_id, limit=50)
+    repositories = store.list_repositories(realm_id=realm_id)[:50]
+    cards = store.list_cards(realm_id=realm_id, limit=50)
+    return {
+        "projects": _bounded_text(
+            "\n".join(f"- {item.title} ({item.id})" for item in projects) or "- (none)",
+            16_000,
+        ),
+        "repositories": _bounded_text(
+            "\n".join(
+                f"- {item.name or item.url} ({item.id}): {item.url}"
+                for item in repositories
+            )
+            or "- (none)",
+            16_000,
+        ),
+        "cards": _bounded_text(
+            "\n".join(
+                f"- [{item.lane.value}] {item.title} ({item.id})" for item in cards
+            )
+            or "- (none)",
+            24_000,
+        ),
     }
 
 
@@ -226,11 +260,19 @@ def compose_session_prompt(
                 provider=provider,
             )
         )
+    if not card and not project:
+        prompts.append(
+            PROMPTS.render(
+                "agent.context.workspace_catalog",
+                _workspace_catalog_values(store, realm),
+                provider=provider,
+            )
+        )
     prompts.extend(
         [
             PROMPTS.render(
                 "agent.context.execution",
-                _execution_values(settings, session),
+                _execution_values(store, settings, session),
                 provider=provider,
             ),
             PROMPTS.render("agent.context.data_safety", provider=provider),

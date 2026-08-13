@@ -39,10 +39,26 @@ from pa.fleet.remote_install import (
     build_remote_env,
 )
 from pa.network.peer_table import PeerTable
-from pa.modules.fleet import _proxy_agent_providers, fleet_agent_provider_login_start
+from pa.modules.fleet import (
+    RemoteAgentStartBody,
+    _apply_dispatch_mode_default,
+    _proxy_agent_providers,
+    fleet_agent_provider_login_start,
+)
 
 
 class FleetRegistryReloadTests(unittest.TestCase):
+    def test_codex_and_cortex_dispatches_default_to_full_access(self) -> None:
+        for provider in ("codex", "cortex"):
+            with self.subTest(provider=provider):
+                body = RemoteAgentStartBody(provider=provider)
+                _apply_dispatch_mode_default(body)
+                self.assertEqual(body.mode_id, "agent-full-access")
+
+        explicit = RemoteAgentStartBody(provider="codex", mode_id="agent")
+        _apply_dispatch_mode_default(explicit)
+        self.assertEqual(explicit.mode_id, "agent")
+
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
         self.data_dir = Path(self._tmp.name)

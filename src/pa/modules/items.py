@@ -751,9 +751,7 @@ def _card_session_view(session, local_instance_id: str) -> dict:
 def _card_agent_context(request: Request, card) -> dict:
     store = get_store()
     ctx = request.app.state.ctx
-    related_sessions = [
-        session for session in store.list_sessions() if session.card_id == card.id
-    ]
+    related_sessions = store.list_sessions_for_cards({card.id})
     session_views = [
         _card_session_view(session, ctx.settings.instance_id)
         for session in related_sessions

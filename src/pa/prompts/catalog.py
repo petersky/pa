@@ -35,6 +35,8 @@ _register(
     scope="session",
     version=1,
     template="""## PA execution context
+- Agent session: {{ session.id }}
+- Associated cards: {{ session.card_ids }}
 - Execution instance: {{ execution_instance.name }} ({{ execution_instance.id }})
 - Authority instance: {{ authority_instance.name }} ({{ authority_instance.id }})
 - Repository: {{ repository.url }} ({{ repository.id }})
@@ -46,6 +48,12 @@ _register(
 
 These are resolved values for this session. Do not substitute a remembered host or path.""",
     variables=(
+        _v("session.id", "Canonical PA agent session ID.", "session-synthetic"),
+        _v(
+            "session.card_ids",
+            "Canonical cards associated with this session.",
+            "card-synthetic",
+        ),
         _v(
             "execution_instance.name",
             "Selected execution instance name.",
@@ -89,6 +97,38 @@ These are resolved values for this session. Do not substitute a remembered host 
             "Verified dispatch attachment paths.",
             "/synthetic/attachments/brief.pdf",
         ),
+    ),
+)
+
+_register(
+    key="agent.context.workspace_catalog",
+    purpose="Orient an unbound session to canonical PA work before it chooses a card.",
+    scope="session",
+    version=1,
+    template="""## Available PA work context
+This session is not yet bound to a project or card. The compact catalog below is
+a starting snapshot; use PA MCP list tools for current details. Once the work is
+clear, create or choose a canonical card and call `associate_agent_session_card`
+with this session ID. Association captures the transcript relationship but does
+not silently move a live provider process into a different repository; dispatch
+repository work so PA can materialize and fence the correct worktree.
+
+### Projects
+{{ projects }}
+
+### Repositories
+{{ repositories }}
+
+### Recent cards
+{{ cards }}""",
+    variables=(
+        _v("projects", "Bounded canonical project index.", "- Synthetic (project-1)"),
+        _v(
+            "repositories",
+            "Bounded canonical repository index.",
+            "- Widgets (repository-1): https://example.invalid/widgets",
+        ),
+        _v("cards", "Bounded recent card index.", "- [active] Fix widget (card-1)"),
     ),
 )
 

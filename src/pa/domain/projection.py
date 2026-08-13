@@ -261,6 +261,14 @@ class CardProjection:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS agent_session_cards (
+                    session_id TEXT NOT NULL,
+                    card_id TEXT NOT NULL,
+                    realm_id TEXT NOT NULL DEFAULT 'default',
+                    linked_by_principal TEXT,
+                    linked_at TEXT NOT NULL,
+                    PRIMARY KEY(session_id, card_id)
+                );
                 CREATE TABLE IF NOT EXISTS knowledge (
                     id TEXT PRIMARY KEY,
                     session_id TEXT,
@@ -520,6 +528,31 @@ class CardProjection:
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_agent_sessions_project_history "
             "ON agent_sessions(realm_id, project_id, status, updated_at DESC)"
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS agent_session_cards (
+                session_id TEXT NOT NULL,
+                card_id TEXT NOT NULL,
+                realm_id TEXT NOT NULL DEFAULT 'default',
+                linked_by_principal TEXT,
+                linked_at TEXT NOT NULL,
+                PRIMARY KEY(session_id, card_id)
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_agent_session_cards_card "
+            "ON agent_session_cards(realm_id, card_id, linked_at DESC)"
+        )
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO agent_session_cards
+                (session_id, card_id, realm_id, linked_by_principal, linked_at)
+            SELECT id, card_id, realm_id, principal_id, created_at
+            FROM agent_sessions
+            WHERE card_id IS NOT NULL
+            """
         )
 
         conn.execute(
@@ -3746,7 +3779,151 @@ class CardProjection:
                     session.updated_at.isoformat(),
                 ),
             )
+            if session.card_id or session.item_id:
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO agent_session_cards
+                        (session_id, card_id, realm_id, linked_by_principal, linked_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        session.id,
+                        session.card_id or session.item_id,
+                        session.realm_id,
+                        session.principal_id,
+                        session.created_at.isoformat(),
+                    ),
+                )
         return session
+
+    def link_session_card(
+        self,
+        session_id: str,
+        card_id: str,
+        *,
+        principal_id: str | None = None,
+        make_primary: bool = True,
+    ) -> AgentSession:
+        """Associate a durable session and card without discarding older links."""
+        linked_at = datetime.now(UTC)
+        with self._mutation_lock, self._conn() as conn:
+            session_row = conn.execute(
+                "SELECT * FROM agent_sessions WHERE id = ?", (session_id,)
+            ).fetchone()
+            if session_row is None:
+                raise ValueError("Session not found")
+            session = self._row_to_session(session_row)
+            card_row = conn.execute(
+                "SELECT id, realm_id, project_id FROM cards WHERE id = ? AND realm_id = ?",
+                (card_id, session.realm_id),
+            ).fetchone()
+            if card_row is None:
+                raise ValueError("Card not found in the session realm")
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO agent_session_cards
+                    (session_id, card_id, realm_id, linked_by_principal, linked_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    session_id,
+                    card_id,
+                    session.realm_id,
+                    principal_id,
+                    linked_at.isoformat(),
+                ),
+            )
+            if make_primary:
+                conn.execute(
+                    """
+                    UPDATE agent_sessions
+                    SET card_id = ?, item_id = ?, project_id = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        card_id,
+                        card_id,
+                        card_row["project_id"],
+                        linked_at.isoformat(),
+                        session_id,
+                    ),
+                )
+            refreshed = conn.execute(
+                "SELECT * FROM agent_sessions WHERE id = ?", (session_id,)
+            ).fetchone()
+        return self._row_to_session(refreshed)
+
+    def unlink_session_card(self, session_id: str, card_id: str) -> AgentSession:
+        """Remove one association and select a remaining card as current if needed."""
+        updated_at = datetime.now(UTC)
+        with self._mutation_lock, self._conn() as conn:
+            session_row = conn.execute(
+                "SELECT * FROM agent_sessions WHERE id = ?", (session_id,)
+            ).fetchone()
+            if session_row is None:
+                raise ValueError("Session not found")
+            session = self._row_to_session(session_row)
+            conn.execute(
+                "DELETE FROM agent_session_cards WHERE session_id = ? AND card_id = ?",
+                (session_id, card_id),
+            )
+            if session.card_id == card_id:
+                replacement = conn.execute(
+                    """
+                    SELECT links.card_id, cards.project_id
+                    FROM agent_session_cards AS links
+                    JOIN cards ON cards.id = links.card_id
+                    WHERE links.session_id = ? AND links.realm_id = ?
+                    ORDER BY links.linked_at DESC, links.card_id DESC
+                    LIMIT 1
+                    """,
+                    (session_id, session.realm_id),
+                ).fetchone()
+                next_card_id = replacement["card_id"] if replacement else None
+                next_project_id = replacement["project_id"] if replacement else None
+                conn.execute(
+                    """
+                    UPDATE agent_sessions
+                    SET card_id = ?, item_id = ?, project_id = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        next_card_id,
+                        next_card_id,
+                        next_project_id,
+                        updated_at.isoformat(),
+                        session_id,
+                    ),
+                )
+            refreshed = conn.execute(
+                "SELECT * FROM agent_sessions WHERE id = ?", (session_id,)
+            ).fetchone()
+        return self._row_to_session(refreshed)
+
+    def list_card_ids_for_session(self, session_id: str) -> list[str]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT card_id FROM agent_session_cards
+                WHERE session_id = ?
+                ORDER BY linked_at ASC, card_id ASC
+                """,
+                (session_id,),
+            ).fetchall()
+        return [str(row["card_id"]) for row in rows]
+
+    def list_cards_for_session(self, session_id: str) -> list[Card]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT cards.* FROM cards
+                JOIN agent_session_cards AS links ON links.card_id = cards.id
+                WHERE links.session_id = ?
+                ORDER BY links.linked_at ASC, cards.id ASC
+                """,
+                (session_id,),
+            ).fetchall()
+        return [self._row_to_card(row) for row in rows]
 
     def list_sessions(self, *, label: str | None = None) -> list[AgentSession]:
         with self._conn() as conn:
@@ -3816,12 +3993,24 @@ class CardProjection:
         placeholders = ",".join("?" for _ in card_ids)
         with self._conn() as conn:
             rows = conn.execute(
-                f"""SELECT * FROM agent_sessions
-                    WHERE card_id IN ({placeholders})
-                    ORDER BY updated_at DESC""",
+                f"""
+                SELECT sessions.*, links.card_id AS linked_card_id
+                FROM agent_sessions AS sessions
+                JOIN agent_session_cards AS links ON links.session_id = sessions.id
+                WHERE links.card_id IN ({placeholders})
+                ORDER BY sessions.updated_at DESC
+                """,
                 tuple(card_ids),
             ).fetchall()
-        return [self._row_to_session(row) for row in rows]
+        return [
+            self._row_to_session(row).model_copy(
+                update={
+                    "card_id": str(row["linked_card_id"]),
+                    "item_id": str(row["linked_card_id"]),
+                }
+            )
+            for row in rows
+        ]
 
     def list_preferred_sessions_for_project_cards(
         self, project_id: str, *, realm_id: str = "default"
@@ -3831,9 +4020,9 @@ class CardProjection:
             rows = conn.execute(
                 """
                 WITH ranked AS (
-                    SELECT sessions.*,
+                    SELECT sessions.*, links.card_id AS linked_card_id,
                            ROW_NUMBER() OVER (
-                               PARTITION BY sessions.card_id
+                               PARTITION BY links.card_id
                                ORDER BY
                                    CASE
                                        WHEN sessions.status IN ('closed', 'quiesced')
@@ -3844,7 +4033,9 @@ class CardProjection:
                                    sessions.id DESC
                            ) AS session_rank
                     FROM agent_sessions AS sessions
-                    JOIN cards ON cards.id = sessions.card_id
+                    JOIN agent_session_cards AS links
+                      ON links.session_id = sessions.id
+                    JOIN cards ON cards.id = links.card_id
                     WHERE cards.realm_id = ?
                       AND cards.project_id = ?
                       AND sessions.realm_id = ?
@@ -3854,7 +4045,15 @@ class CardProjection:
                 """,
                 (realm_id, project_id, realm_id),
             ).fetchall()
-        return [self._row_to_session(row) for row in rows]
+        return [
+            self._row_to_session(row).model_copy(
+                update={
+                    "card_id": str(row["linked_card_id"]),
+                    "item_id": str(row["linked_card_id"]),
+                }
+            )
+            for row in rows
+        ]
 
     def count_project_sessions(
         self,
@@ -3877,9 +4076,12 @@ class CardProjection:
                 WHERE realm_id = ?
                   AND (
                       project_id = ?
-                      OR card_id IN (
-                          SELECT id FROM cards
-                          WHERE realm_id = ? AND project_id = ?
+                      OR EXISTS (
+                          SELECT 1
+                          FROM agent_session_cards AS links
+                          JOIN cards ON cards.id = links.card_id
+                          WHERE links.session_id = agent_sessions.id
+                            AND cards.realm_id = ? AND cards.project_id = ?
                       )
                   )
                   AND {status_clause}
@@ -3913,9 +4115,12 @@ class CardProjection:
                 WHERE realm_id = ?
                   AND (
                       project_id = ?
-                      OR card_id IN (
-                          SELECT id FROM cards
-                          WHERE realm_id = ? AND project_id = ?
+                      OR EXISTS (
+                          SELECT 1
+                          FROM agent_session_cards AS links
+                          JOIN cards ON cards.id = links.card_id
+                          WHERE links.session_id = agent_sessions.id
+                            AND cards.realm_id = ? AND cards.project_id = ?
                       )
                   )
                   AND {status_clause}

@@ -62,7 +62,7 @@
       {% set requested = admission.get('requested', {}) %}
       {% set effective = admission.get('effective', {}) %}
       {% if requested or effective %}<span class="muted small agent-session-config"><b>Requested</b> {{ requested.get('model_id') or 'default model' }}{% if requested.get('reasoning') %} · effort {{ requested.get('reasoning') }}{% endif %}<br><b>Effective</b> {{ effective.get('model_id') or s.model_id or 'default model' }}{% if effective.get('reasoning') %} · effort {{ effective.get('reasoning') }}{% endif %}<br><b>Settings status</b> {{ admission.get('state', 'unknown') }}</span>{% endif %}
-      {% if detail.card %}<a href="/work?card={{ detail.card.id }}">Card · {{ detail.card.title }}</a>{% endif %}
+      {% for card in detail.cards or [] %}<a href="/work?card={{ card.id }}">{{ 'Current card' if card.id == s.card_id else 'Card' }} · {{ card.title }}</a>{% endfor %}
       {% if detail.project %}<a href="/projects?project={{ detail.project.id }}">Project · {{ detail.project.title }}</a>{% endif %}
       <span class="muted small">Elapsed {{ detail.elapsed }} · Last activity <time datetime="{{ s.updated_at.isoformat() }}">{{ s.updated_at.strftime('%Y-%m-%d %H:%M') }}</time></span>
       <a class="text-btn small" href="/knowledge?session={{ s.id }}">Promote conclusion to memory</a>
@@ -148,6 +148,41 @@
     </div>
   </form>
 </dialog>
+<dialog class="agent-new-session-dialog" data-agent-card-dialog data-agent-card-realm="{{ agent_realm_id }}">
+  <form method="dialog" data-agent-card-form>
+    <header>
+      <div>
+        <h2>Capture session in a card</h2>
+        <p class="muted">Link an existing card or create one without ending this session.</p>
+      </div>
+      <button type="button" class="ghost" data-agent-card-cancel aria-label="Close">×</button>
+    </header>
+    <label>
+      <span>Existing card</span>
+      <select name="card_id" data-agent-card-existing>
+        <option value="">Create a new card</option>
+        {% for card in available_cards %}<option value="{{ card.id }}">[{{ card.lane.value }}] {{ card.title }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>
+      <span>New card title</span>
+      <input name="title" data-agent-card-title autocomplete="off" placeholder="What is this session working on?">
+    </label>
+    <label>
+      <span>Project</span>
+      <select name="project_id">
+        <option value="">No project yet</option>
+        {% for project in available_projects %}<option value="{{ project.id }}">{{ project.title }}</option>{% endfor %}
+      </select>
+    </label>
+    <p class="muted small">The link captures provenance and makes this the current card context. Repository work still needs a PA dispatch to materialize a fenced worktree.</p>
+    <p class="agent-new-session-error" data-agent-card-error hidden></p>
+    <div class="form-actions">
+      <button type="button" class="ghost" data-agent-card-cancel>Cancel</button>
+      <button type="submit" class="primary" data-agent-card-submit>Capture session</button>
+    </div>
+  </form>
+</dialog>
 <details class="panel agent-tips-panel">
   <summary class="panel-header"><h2>Tips</h2></summary>
   <ul class="muted tip-list">
@@ -173,7 +208,8 @@
       show_queue=true,
       show_metrics=true,
       compact=false,
-      show_sidebar_toggle=true
+      show_sidebar_toggle=true,
+      allow_card_capture=true
   %}
     {% include "partials/agent/chat-widget.html" %}
   {% endwith %}
