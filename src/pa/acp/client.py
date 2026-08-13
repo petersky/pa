@@ -42,6 +42,7 @@ from pa.acp.final_message import normalize_provider_phase
 from pa.acp.mcp_config import (
     McpHandshakeError,
     OwnerChannelError,
+    owner_endpoint,
     pa_mcp_servers,
     probe_owner_channel,
     probe_pa_mcp_stdio,
@@ -751,6 +752,17 @@ class AgentConnection:
                 "MCP server name collision in effective session configuration"
             )
         mcp.extend(auxiliary)
+        # Codex starts client-provided stdio MCP servers inside its session
+        # sandbox.  The private PA owner socket intentionally lives outside the
+        # repository, so workspace-write/read-only sessions must admit the
+        # socket directory explicitly or Codex cancels the MCP startup before
+        # the child can connect.  This grants only the per-instance runtime
+        # directory, not PA_DATA_DIR or another mutable PA store.
+        mcp_additional_directories: list[str] | None = None
+        if provider_id == "codex" and mcp:
+            endpoint = owner_endpoint(self.settings)
+            if endpoint.uds:
+                mcp_additional_directories = [str(Path(endpoint.uds).parent)]
         if mcp:
             try:
                 owner_health = await self._offload(
@@ -948,11 +960,16 @@ class AgentConnection:
                             },
                         },
                     )
-                    restore_resp = await restore(
-                        cwd=load_cwd,
-                        session_id=resume_external_id,
-                        mcp_servers=mcp,
-                    )
+                    restore_kwargs: dict[str, Any] = {
+                        "cwd": load_cwd,
+                        "session_id": resume_external_id,
+                        "mcp_servers": mcp,
+                    }
+                    if mcp_additional_directories:
+                        restore_kwargs["additional_directories"] = (
+                            mcp_additional_directories
+                        )
+                    restore_resp = await restore(**restore_kwargs)
                     session_meta = extract_models_modes_config(restore_resp)
                     restored = True
                     break
@@ -981,10 +998,15 @@ class AgentConnection:
             # sessions from the next process's session/list, which cascades into
             # more orphan creates on the following boot.
             await self._abort_connect_if_shutting_down(stage="session/new")
-            acp_session = await self._conn.new_session(
-                cwd=session_cwd,
-                mcp_servers=mcp,
-            )
+            new_session_kwargs: dict[str, Any] = {
+                "cwd": session_cwd,
+                "mcp_servers": mcp,
+            }
+            if mcp_additional_directories:
+                new_session_kwargs["additional_directories"] = (
+                    mcp_additional_directories
+                )
+            acp_session = await self._conn.new_session(**new_session_kwargs)
             session_meta = extract_models_modes_config(acp_session)
             self._wire_log(
                 "out",
