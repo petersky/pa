@@ -110,31 +110,30 @@ def _request(
 
 
 def _resolve_instance(settings: Settings, value: str) -> dict[str, Any]:
+    from pa.domain.models import FleetInstance
+    from pa.fleet.registry import FleetInstanceResolveError, resolve_fleet_instance
+
     payload = _request(settings, "GET", "/api/fleet/instances")
     instances = payload if isinstance(payload, list) else []
-    exact = [item for item in instances if item.get("instance_id") == value]
-    named = [
-        item
-        for item in instances
-        if str(item.get("name") or "").casefold() == value.casefold()
-    ]
-    matches = exact or named
-    if len(matches) == 1:
-        return matches[0]
-    if len(matches) > 1:
-        ids = ", ".join(str(item.get("instance_id")) for item in matches)
-        raise CardCommandError(
-            f"Instance name {value!r} is ambiguous; use an ID: {ids}"
+    try:
+        resolved = resolve_fleet_instance(
+            [
+                FleetInstance(
+                    instance_id=str(item.get("instance_id") or ""),
+                    name=str(item.get("name") or ""),
+                    url=str(item.get("url") or "http://invalid.local"),
+                )
+                for item in instances
+                if isinstance(item, dict)
+            ],
+            value,
         )
-    available = ", ".join(
-        f"{item.get('name')} ({item.get('instance_id')})" for item in instances
-    )
-    suffix = (
-        f" Available instances: {available}"
-        if available
-        else " No instances are registered."
-    )
-    raise CardCommandError(f"Fleet instance not found: {value}.{suffix}")
+    except FleetInstanceResolveError as exc:
+        raise CardCommandError(str(exc)) from exc
+    for item in instances:
+        if isinstance(item, dict) and item.get("instance_id") == resolved.instance_id:
+            return item
+    raise CardCommandError(f"Unknown fleet instance: {value}. Hint: run `pa fleet list`.")
 
 
 def _run(command: Callable[[], None]) -> None:
