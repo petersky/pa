@@ -1,7 +1,8 @@
 {# Modular agent chat widget — embeddable on Agent page or card panes.
    Context / data attributes:
      session_id, owner_instance_id, create_label, card_id, fresh, show_model, show_mode, show_thinking,
-     show_system_prompts, show_queue, show_metrics, compact, api_base, auto_start
+     show_system_prompts, show_queue, show_metrics, compact, api_base, auto_start,
+     allow_card_capture
 #}
 {% set sid = session_id | default('') %}
 {% set owner_id = owner_instance_id | default('') %}
@@ -18,6 +19,7 @@
 {% set api_base = api_base | default('/api/agent') %}
 {% set auto_start = auto_start if auto_start is defined else true %}
 {% set fresh = fresh if fresh is defined else false %}
+{% set allow_card_capture = allow_card_capture if allow_card_capture is defined else false %}
 
 <div class="agent-chat-widget{% if compact %} is-compact{% endif %}"
      data-agent-chat
@@ -78,6 +80,7 @@
           <button type="button" class="ghost" data-acw-recover hidden>Recover session</button>
           <button type="button" class="ghost" data-acw-restart>Restart session</button>
           <button type="button" class="ghost" data-acw-history hidden>Open durable history</button>
+          {% if allow_card_capture %}<button type="button" class="ghost" data-acw-card-link>Capture in card…</button>{% endif %}
           <a class="text-btn" data-acw-promote
              href="/knowledge{% if sid %}?session={{ sid }}{% endif %}">Promote to memory</a>
           <button type="button" class="ghost danger" data-acw-end>End session</button>

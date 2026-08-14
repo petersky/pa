@@ -27,6 +27,11 @@ def test_session_observability_tools_allow_bounded_server_collection_time() -> N
         mcp.functions["get_agent_session_liveness"]("session-1")
         mcp.functions["list_agent_session_turns"]("session-1")
         mcp.functions["request_agent_session_diagnostics"]("session-1", limit=10)
+        mcp.functions["list_agent_session_cards"]("session-1")
+        mcp.functions["associate_agent_session_card"](
+            "session-1", "card-1", make_primary=False
+        )
+        mcp.functions["dissociate_agent_session_card"]("session-1", "card-1")
 
     assert local_api.call_args_list[0].kwargs == {
         "params": {"limit": 5},
@@ -42,3 +47,8 @@ def test_session_observability_tools_allow_bounded_server_collection_time() -> N
         "allow_not_found": True,
         "timeout_seconds": 15.0,
     }
+    assert local_api.call_args_list[4].args[2] == (
+        "/api/agent/sessions/session-1/cards"
+    )
+    assert local_api.call_args_list[5].kwargs["json"] == {"make_primary": False}
+    assert local_api.call_args_list[6].args[1] == "DELETE"

@@ -33,6 +33,39 @@ from pa.instance.agent_session import reset_instance_agent
 
 
 class CardSummaryTests(unittest.TestCase):
+    def test_sessions_and_cards_have_durable_many_to_many_associations(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = CardProjection(Path(tmp) / "pa.db")
+            first = store.create_card(CardCreate(title="First"))
+            second = store.create_card(CardCreate(title="Second"))
+            session = store.save_session(
+                AgentSession(
+                    id="session-many-cards",
+                    agent_name="codex",
+                    card_id=first.id,
+                )
+            )
+
+            store.link_session_card(session.id, second.id, make_primary=True)
+
+            self.assertEqual(
+                store.list_card_ids_for_session(session.id), [first.id, second.id]
+            )
+            self.assertEqual(store.get_session(session.id).card_id, second.id)
+            self.assertEqual(
+                {item.id for item in store.list_sessions_for_cards({first.id})},
+                {session.id},
+            )
+            self.assertEqual(
+                {item.id for item in store.list_sessions_for_cards({second.id})},
+                {session.id},
+            )
+
+            store.unlink_session_card(session.id, second.id)
+
+            self.assertEqual(store.get_session(session.id).card_id, first.id)
+            self.assertEqual(store.list_card_ids_for_session(session.id), [first.id])
+
     def test_unsummarized_cards_are_pending_and_edits_are_stale(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = CardProjection(Path(tmp) / "pa.db")

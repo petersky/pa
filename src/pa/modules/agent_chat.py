@@ -401,6 +401,10 @@ class RecoverSessionBody(BaseModel):
     provider: str | None = None
 
 
+class SessionCardLinkBody(BaseModel):
+    make_primary: bool = True
+
+
 class PreferencesBody(BaseModel):
     agent_auto_approve_permissions: bool | None = None
     agent_provider: str | None = None
@@ -1227,6 +1231,7 @@ def _session_list_item(
     )
     durable = config.get("durable_runtime", {})
     queued = durable.get("queued_prompts") or []
+    associated_cards = request.app.state.ctx.store.list_cards_for_session(session.id)
     return {
         "id": session.id,
         "title": session.title,
@@ -1248,6 +1253,18 @@ def _session_list_item(
         "orphan": runtime is None,
         "model_id": session.model_id,
         "mode_id": session.mode_id,
+        "card_id": session.card_id,
+        "project_id": session.project_id,
+        "cards": [
+            {
+                "id": card.id,
+                "title": card.title,
+                "project_id": card.project_id,
+                "primary": card.id == session.card_id,
+            }
+            for card in associated_cards
+        ],
+        "card_ids": [card.id for card in associated_cards],
         "requested_model_id": configuration.get("requested", {}).get("model_id"),
         "requested_reasoning": configuration.get("requested", {}).get("reasoning"),
         "effective_reasoning": configuration.get("effective", {}).get("reasoning"),
@@ -1402,12 +1419,19 @@ def list_agent_session_history(
     settings = request.app.state.ctx.settings
     sessions = mgr.store.list_sessions()
     if card_id:
-        sessions = [session for session in sessions if session.card_id == card_id]
+        sessions = [
+            session
+            for session in sessions
+            if session.card_id == card_id
+            or card_id in mgr.store.list_card_ids_for_session(session.id)
+        ]
     if project_id:
         sessions = [session for session in sessions if session.project_id == project_id]
     return [
         {
             **session.model_dump(mode="json"),
+            "cards": _session_cards_payload(request, session),
+            "card_ids": mgr.store.list_card_ids_for_session(session.id),
             "instance_id": settings.instance_id,
             "instance_name": settings.instance_name,
             "pr_watches": _session_pr_watches(request, session),
@@ -1589,7 +1613,82 @@ async def get_session_snapshot(request: Request, session_id: str) -> dict:
         runtime.session,
         events=[],
     )
+    snapshot["cards"] = _session_cards_payload(request, runtime.session)
     return snapshot
+
+
+def _session_cards_payload(request: Request, session: AgentSession) -> list[dict]:
+    return [
+        {
+            "id": card.id,
+            "title": card.title,
+            "project_id": card.project_id,
+            "lane": card.lane.value,
+            "primary": card.id == session.card_id,
+        }
+        for card in request.app.state.ctx.store.list_cards_for_session(session.id)
+    ]
+
+
+@router.get("/sessions/{session_id}/cards")
+def list_session_cards(request: Request, session_id: str) -> dict:
+    mgr = _manager(request)
+    session = mgr.store.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {
+        "session_id": session_id,
+        "primary_card_id": session.card_id,
+        "cards": _session_cards_payload(request, session),
+    }
+
+
+@router.post("/sessions/{session_id}/cards/{card_id}")
+def link_session_card(
+    request: Request,
+    session_id: str,
+    card_id: str,
+    body: SessionCardLinkBody,
+) -> dict:
+    mgr = _manager(request)
+    try:
+        session = mgr.store.link_session_card(
+            session_id,
+            card_id,
+            principal_id=get_principal_id(request),
+            make_primary=body.make_primary,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    runtime = mgr.get(session_id)
+    if runtime and body.make_primary:
+        runtime.session.card_id = session.card_id
+        runtime.session.item_id = session.item_id
+        runtime.session.project_id = session.project_id
+    return {
+        "session_id": session_id,
+        "primary_card_id": session.card_id,
+        "cards": _session_cards_payload(request, session),
+    }
+
+
+@router.delete("/sessions/{session_id}/cards/{card_id}")
+def unlink_session_card(request: Request, session_id: str, card_id: str) -> dict:
+    mgr = _manager(request)
+    try:
+        session = mgr.store.unlink_session_card(session_id, card_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    runtime = mgr.get(session_id)
+    if runtime:
+        runtime.session.card_id = session.card_id
+        runtime.session.item_id = session.item_id
+        runtime.session.project_id = session.project_id
+    return {
+        "session_id": session_id,
+        "primary_card_id": session.card_id,
+        "cards": _session_cards_payload(request, session),
+    }
 
 
 @router.get("/sessions/{session_id}/events")
@@ -2744,6 +2843,47 @@ class AgentChatModule(Module):
                 "POST",
                 f"/api/agent/observability/v1/sessions/{session_id}/diagnostics",
                 params={"limit": limit},
+                allow_not_found=True,
+                timeout_seconds=15.0,
+            )
+
+        @mcp.tool()
+        def list_agent_session_cards(session_id: str) -> dict | None:
+            """List every card associated with one local ACP session."""
+            return request_local_pa(
+                ctx.settings,
+                "GET",
+                f"/api/agent/sessions/{session_id}/cards",
+                allow_not_found=True,
+                timeout_seconds=15.0,
+            )
+
+        @mcp.tool()
+        def associate_agent_session_card(
+            session_id: str,
+            card_id: str,
+            make_primary: bool = True,
+        ) -> dict | None:
+            """Associate a canonical card with a local ACP session without replacing older links."""
+            return request_local_pa(
+                ctx.settings,
+                "POST",
+                f"/api/agent/sessions/{session_id}/cards/{card_id}",
+                json={"make_primary": make_primary},
+                allow_not_found=True,
+                timeout_seconds=15.0,
+            )
+
+        @mcp.tool()
+        def dissociate_agent_session_card(
+            session_id: str,
+            card_id: str,
+        ) -> dict | None:
+            """Remove one card association while preserving the session and its other cards."""
+            return request_local_pa(
+                ctx.settings,
+                "DELETE",
+                f"/api/agent/sessions/{session_id}/cards/{card_id}",
                 allow_not_found=True,
                 timeout_seconds=15.0,
             )

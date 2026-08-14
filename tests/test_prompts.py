@@ -30,6 +30,7 @@ EXPECTED_PROMPT_KEYS = {
     "agent.context.execution",
     "agent.context.interactions",
     "agent.context.project",
+    "agent.context.workspace_catalog",
     "agent.message.wrapper",
     "dispatch.remote.default",
     "pr_supervisor.action.green",
@@ -68,6 +69,37 @@ class PromptRegistryTests(unittest.TestCase):
         self.assertIn("set `integration_required` to false", prompt)
         self.assertIn("do not invent or inspect pull-request work", prompt)
         self.assertIn("A verified no-integration task may use `done`", prompt)
+
+    def test_unbound_session_receives_canonical_pa_catalog_and_link_guidance(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            from pa.domain.models import CardCreate, ProjectCreate, RepositoryCreate
+            from pa.domain.projection import CardProjection
+
+            store = CardProjection(Path(tmp) / "pa.db")
+            project = store.create_project(ProjectCreate(title="PA Core"))
+            card = store.create_card(
+                CardCreate(title="Capture standalone work", project_id=project.id)
+            )
+            repository = store.create_repository(
+                RepositoryCreate(url="https://example.invalid/acme/pa", name="PA")
+            )
+            session = AgentSession(id="session-unbound", agent_name="codex")
+            store.save_session(session)
+            settings = Settings(
+                data_dir=Path(tmp),
+                instance_id="executor",
+                instance_name="Executor",
+            )
+
+            result = compose_session_prompt(store, settings, session, "Find the work.")
+
+            self.assertIn("Agent session: session-unbound", result.text)
+            self.assertIn(f"PA Core ({project.id})", result.text)
+            self.assertIn(f"Capture standalone work ({card.id})", result.text)
+            self.assertIn(repository.url, result.text)
+            self.assertIn("associate_agent_session_card", result.text)
 
     def test_all_registered_prompts_have_an_operational_call_site(self) -> None:
         root = Path(__file__).parents[1] / "src" / "pa"

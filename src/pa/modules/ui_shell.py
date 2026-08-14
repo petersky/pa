@@ -227,8 +227,11 @@ def _agent_context(request: Request) -> dict:
     # Durable nonterminal sessions remain actionable even when their ACP
     # runtime was lost. Closed sessions are still opt-in history.
     sessions = live + orphans
-    cards = {card.id: card for card in ctx.store.list_cards()}
-    projects = {project.id: project for project in ctx.store.list_projects()}
+    realm_id = ctx.settings.primary_realm
+    cards = {card.id: card for card in ctx.store.list_cards(realm_id=realm_id)}
+    projects = {
+        project.id: project for project in ctx.store.list_projects(realm_id=realm_id)
+    }
     now = datetime.now(UTC)
     session_details = {}
     for session in sessions:
@@ -240,8 +243,10 @@ def _agent_context(request: Request) -> dict:
         else:
             elapsed_label = f"{elapsed}s"
         config = session.config_json or {}
+        associated_cards = ctx.store.list_cards_for_session(session.id)
         session_details[session.id] = {
             "card": cards.get(session.card_id),
+            "cards": associated_cards,
             "project": projects.get(session.project_id),
             "host": config.get("instance_name") or ctx.settings.instance_name,
             "elapsed": elapsed_label,
@@ -270,6 +275,14 @@ def _agent_context(request: Request) -> dict:
         or (default.origin_instance_id if default else None)
         or ctx.settings.instance_id,
         "session_details": session_details,
+        "agent_realm_id": realm_id,
+        "available_cards": sorted(
+            cards.values(), key=lambda card: (card.title.casefold(), card.id)
+        ),
+        "available_projects": sorted(
+            projects.values(),
+            key=lambda project: (project.title.casefold(), project.id),
+        ),
         "pr_watches_by_session": watches_by_session,
     }
 

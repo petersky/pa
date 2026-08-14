@@ -2820,6 +2820,23 @@ code {
   overflow-wrap: anywhere;
 }
 
+.agent-session-metadata pa-instance-identity {
+  max-width: calc(32ch + 1.85rem);
+}
+
+.session-list li[data-session-id] .agent-session-metadata .instance-identity-name {
+  display: block;
+  width: auto;
+  max-width: 32ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-list li[data-session-id] .agent-session-metadata .instance-identity-feedback {
+  width: auto;
+}
+
 .session-list li[data-session-id] .agent-session-config {
   white-space: pre-line;
   overflow: visible;

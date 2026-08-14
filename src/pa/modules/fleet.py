@@ -7612,6 +7612,14 @@ def _bind_effective_goal_dispatch_provider(
         )
 
 
+def _apply_dispatch_mode_default(body: RemoteAgentStartBody) -> None:
+    """Default agent-capable ACP dispatches to their explicit full-access mode."""
+
+    provider = str(body.provider or "").strip().lower()
+    if body.mode_id is None and provider in {"codex", "cortex"}:
+        body.mode_id = "agent-full-access"
+
+
 def _goal_dispatch_placement_input(
     body: RemoteAgentStartBody,
     *,
@@ -10023,6 +10031,7 @@ async def dispatch_fleet_work(request: Request, body: FleetDispatchBody) -> dict
             }
 
     _bind_effective_goal_dispatch_provider(body, settings.agent_provider)
+    _apply_dispatch_mode_default(body)
     if preadmission_record is None:
         preadmission_record, created = await _offload_request(
             request,
@@ -10112,6 +10121,7 @@ async def dispatch_fleet_work(request: Request, body: FleetDispatchBody) -> dict
         error = _placement_http_error(exc)
         await _reject_goal_dispatch_admission(request, preadmission_record, error)
         raise error from exc
+    _apply_dispatch_mode_default(body)
 
     start_payload = body.model_dump(
         mode="json",
@@ -10211,6 +10221,7 @@ async def start_remote_agent_work(
                 "dispatch": _dispatch_public(request, existing_record),
             }
     _bind_effective_goal_dispatch_provider(body, ctx.settings.agent_provider)
+    _apply_dispatch_mode_default(body)
     if preadmission_record is None:
         preadmission_record, created = await _offload_request(
             request,
@@ -10283,6 +10294,7 @@ async def start_remote_agent_work(
         await _reject_goal_dispatch_admission(request, preadmission_record, error)
         raise error from exc
     body.provider = placement_body.provider
+    _apply_dispatch_mode_default(body)
     return await _admit_remote_agent_work(
         request,
         instance_id,
@@ -10460,6 +10472,7 @@ async def _admit_remote_agent_work(
             }
 
     _bind_effective_goal_dispatch_provider(body, settings.agent_provider)
+    _apply_dispatch_mode_default(body)
     if preadmission_record is None:
         preadmission_record, created = await _offload_request(
             request,

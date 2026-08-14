@@ -140,6 +140,11 @@ assert.ok(identity.html("id-two").includes('instance-id="id-two"'));
         self.assertIn('element.setFeedback("Copy failed")', source)
         self.assertIn('button.addEventListener("keydown"', source)
         self.assertIn(".instance-identity-copy:focus-visible", style)
+        self.assertIn("max-width: 32ch", style)
+        self.assertIn(
+            ".agent-session-metadata .instance-identity-name",
+            style,
+        )
 
 
 class InstanceIdentitySurfaceAuditTests(unittest.TestCase):
