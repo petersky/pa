@@ -211,7 +211,9 @@ def _agent_context(request: Request) -> dict:
     ctx: AppContext = request.app.state.ctx
     agent = ctx.require_service("instance_agent")
     runtimes = agent.list_runtimes() if hasattr(agent, "list_runtimes") else []
-    live = [rt.session for rt in runtimes if not getattr(rt, "_closed", False)]
+    active_runtimes = [rt for rt in runtimes if not getattr(rt, "_closed", False)]
+    live = [rt.session for rt in active_runtimes]
+    runtimes_by_session = {rt.session.id: rt for rt in active_runtimes}
     live_ids = {session.id for session in live}
     orphans = [
         session
@@ -243,6 +245,33 @@ def _agent_context(request: Request) -> dict:
         else:
             elapsed_label = f"{elapsed}s"
         config = session.config_json or {}
+        runtime = runtimes_by_session.get(session.id)
+        durable = dict(config.get("durable_runtime") or {})
+        queued = list(runtime._queue) if runtime else durable.get("queued_prompts") or []
+        pending_approval = bool(
+            (session.metrics_json or {}).get("pending_approval")
+            or config.get("pending_approval")
+        )
+        state = (
+            "waiting"
+            if pending_approval
+            else "working"
+            if runtime and runtime.prompting
+            else "queued"
+            if queued
+            else "idle"
+            if runtime
+            else session.status
+        )
+        execution = dict(config.get("execution_context") or {})
+        repositories = list(execution.get("repositories") or [])
+        repository = dict(repositories[0]) if repositories else {}
+        repository_url = str(repository.get("repository_url") or "")
+        repository_name = repository_url.rstrip("/").rsplit("/", 1)[-1]
+        if repository_name.endswith(".git"):
+            repository_name = repository_name[:-4]
+        metrics = dict(session.metrics_json or {})
+        usage = dict(metrics.get("last_usage") or metrics.get("usage") or {})
         associated_cards = ctx.store.list_cards_for_session(session.id)
         session_details[session.id] = {
             "card": cards.get(session.card_id),
@@ -250,10 +279,13 @@ def _agent_context(request: Request) -> dict:
             "project": projects.get(session.project_id),
             "host": config.get("instance_name") or ctx.settings.instance_name,
             "elapsed": elapsed_label,
-            "pending_approval": bool(
-                (session.metrics_json or {}).get("pending_approval")
-                or config.get("pending_approval")
-            ),
+            "pending_approval": pending_approval,
+            "state": state,
+            "repository_name": repository_name,
+            "repository_url": repository_url,
+            "branch": repository.get("branch"),
+            "turns": metrics.get("turns"),
+            "total_tokens": usage.get("total_tokens") or usage.get("totalTokens"),
         }
     watches_by_session: dict[str, list] = {session.id: [] for session in sessions}
     supervisor_store = ctx.services.get("pr_supervisor_store")

@@ -142,7 +142,7 @@ assert.ok(identity.html("id-two").includes('instance-id="id-two"'));
         self.assertIn(".instance-identity-copy:focus-visible", style)
         self.assertIn("max-width: 32ch", style)
         self.assertIn(
-            ".agent-session-metadata .instance-identity-name",
+            ".agent-session-instance .instance-identity-name",
             style,
         )
 

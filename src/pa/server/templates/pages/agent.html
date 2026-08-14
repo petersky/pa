@@ -49,36 +49,54 @@
         role="button"
         tabindex="0">
       {% set session_title = s.title or s.label or s.agent_name %}
-      <strong class="agent-session-title" data-agent-session-title data-full-title="{{ session_title }}">{{ session_title }}</strong>
-      <span class="agent-session-title-tooltip" role="tooltip">{{ session_title }}</span>
-      <dl class="agent-session-metadata">
-        <div><dt>Instance</dt><dd>{% if s.origin_instance_id %}{{ instance_identity(s.origin_instance_id) }}{% else %}{{ detail.host or 'Local instance' }}{% endif %}</dd></div>
-        <div><dt>Provider</dt><dd>{{ s.agent_name }}</dd></div>
-        <div><dt>Model</dt><dd>{{ s.model_id or 'Default model' }}</dd></div>
-        {% if s.mode_id %}<div><dt>Mode</dt><dd>{{ s.mode_id }}</dd></div>{% endif %}
-        <div><dt>Status</dt><dd><span class="badge">{{ s.status }}</span>{% if detail.pending_approval %} <span class="badge status-waiting">Approval needed</span>{% endif %}</dd></div>
-      </dl>
+      {% set state = detail.state or s.status or 'unknown' %}
+      <div class="agent-session-shell">
+        <span class="agent-session-provider-mark" aria-hidden="true">{{ (s.agent_name or 'PA')[:2] | upper }}</span>
+        <div class="agent-session-summary">
+          <div class="agent-session-row-head">
+            <strong class="agent-session-title" data-agent-session-title data-full-title="{{ session_title }}">{{ session_title }}</strong>
+            <span class="agent-session-state agent-session-state-{{ state }}"><span aria-hidden="true">●</span> {{ 'Approval' if detail.pending_approval else state | replace('_', ' ') | title }}</span>
+          </div>
+          <span class="agent-session-title-tooltip" role="tooltip">{{ session_title }}</span>
+          <div class="agent-session-context-line">
+            {% if detail.card %}<a href="/work?card={{ detail.card.id }}" title="Current card">Card · {{ detail.card.title }}</a>
+            {% elif detail.project %}<a href="/projects?project={{ detail.project.id }}" title="Project">Project · {{ detail.project.title }}</a>
+            {% else %}<span class="muted">Standalone session</span>{% endif %}
+            {% if detail.repository_name %}<span title="{{ detail.repository_url }}">{{ detail.repository_name }}{% if detail.branch %} · {{ detail.branch }}{% endif %}</span>{% endif %}
+          </div>
+          <div class="agent-session-facts">
+            <span class="agent-session-instance" title="Execution instance">{% if s.origin_instance_id %}{{ instance_identity(s.origin_instance_id) }}{% else %}{{ detail.host or 'Local instance' }}{% endif %}</span>
+            <span class="agent-session-age" title="Elapsed time">{{ detail.elapsed }}</span>
+            <span class="agent-session-runtime" title="Provider and model">{{ s.agent_name }} · {{ s.model_id or 'default model' }}{% if s.mode_id %} · {{ s.mode_id }}{% endif %}</span>
+            {% if detail.turns or detail.total_tokens %}<span class="agent-session-usage" title="Session usage">{% if detail.turns %}{{ detail.turns }} turn{{ '' if detail.turns == 1 else 's' }}{% endif %}{% if detail.turns and detail.total_tokens %} · {% endif %}{% if detail.total_tokens %}{{ '%.1fk' | format(detail.total_tokens / 1000) if detail.total_tokens >= 1000 else detail.total_tokens }} tokens{% endif %}</span>{% else %}<span class="agent-session-usage muted">No usage yet</span>{% endif %}
+          </div>
+        </div>
+      </div>
       {% set admission = (s.config_json or {}).get('configuration', {}) %}
       {% set requested = admission.get('requested', {}) %}
       {% set effective = admission.get('effective', {}) %}
-      {% if requested or effective %}<span class="muted small agent-session-config"><b>Requested</b> {{ requested.get('model_id') or 'default model' }}{% if requested.get('reasoning') %} · effort {{ requested.get('reasoning') }}{% endif %}<br><b>Effective</b> {{ effective.get('model_id') or s.model_id or 'default model' }}{% if effective.get('reasoning') %} · effort {{ effective.get('reasoning') }}{% endif %}<br><b>Settings status</b> {{ admission.get('state', 'unknown') }}</span>{% endif %}
-      {% for card in detail.cards or [] %}<a href="/work?card={{ card.id }}">{{ 'Current card' if card.id == s.card_id else 'Card' }} · {{ card.title }}</a>{% endfor %}
-      {% if detail.project %}<a href="/projects?project={{ detail.project.id }}">Project · {{ detail.project.title }}</a>{% endif %}
-      <span class="muted small">Elapsed {{ detail.elapsed }} · Last activity <time datetime="{{ s.updated_at.isoformat() }}">{{ s.updated_at.strftime('%Y-%m-%d %H:%M') }}</time></span>
-      <a class="text-btn small" href="/knowledge?session={{ s.id }}">Promote conclusion to memory</a>
-      {% for watch in pr_watches_by_session.get(s.id, []) %}
-      <a class="badge" href="/pull-requests?watch={{ watch.id }}"
+      <div class="agent-session-related">
+      {% for card in detail.cards or [] %}{% if not detail.card or card.id != detail.card.id %}<a class="agent-session-chip" href="/work?card={{ card.id }}">Card · {{ card.title }}</a>{% endif %}{% endfor %}
+      {% for watch in pr_watches_by_session.get(s.id, []) %}<a class="agent-session-chip" href="/pull-requests?watch={{ watch.id }}"
          title="{{ watch.repository }}#{{ watch.pr_number }} PR supervision">
         PR #{{ watch.pr_number }} · {{ watch.status.value }}
-      </a>
-      {% endfor %}
-      <span class="agent-session-actions">
+      </a>{% endfor %}
+      </div>
+      <details class="agent-session-details">
+        <summary>Details</summary>
+        <div class="agent-session-details-body">
+          {% if requested or effective %}<span class="muted small agent-session-config"><b>Requested</b> {{ requested.get('model_id') or 'default model' }}{% if requested.get('reasoning') %} · effort {{ requested.get('reasoning') }}{% endif %}<br><b>Effective</b> {{ effective.get('model_id') or s.model_id or 'default model' }}{% if effective.get('reasoning') %} · effort {{ effective.get('reasoning') }}{% endif %}<br><b>Settings status</b> {{ admission.get('state', 'unknown') }}</span>{% endif %}
+          <span class="muted small">Last activity <time datetime="{{ s.updated_at.isoformat() }}">{{ s.updated_at.strftime('%Y-%m-%d %H:%M') }}</time></span>
+          <a class="text-btn small" href="/knowledge?session={{ s.id }}">Promote conclusion to memory</a>
+          <span class="agent-session-actions">
         <button type="button" class="ghost small danger agent-session-close"
                 data-agent-session-close
                 title="{{ 'Close the live session' if s.id in live_session_ids else 'Forget this orphan so it is not retried' }}">
           {{ 'Close' if s.id in live_session_ids else 'Forget' }}
         </button>
-      </span>
+          </span>
+        </div>
+      </details>
     </li>
     {% endfor %}
     {% else %}

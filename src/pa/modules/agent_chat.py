@@ -101,6 +101,18 @@ def _session_pr_watches(request: Request, session) -> list[dict[str, Any]]:
     ]
 
 
+def _session_project_payload(request: Request, session: AgentSession) -> dict | None:
+    if not session.project_id:
+        return None
+    project = request.app.state.ctx.store.get_project(
+        session.project_id,
+        realm_id=session.realm_id,
+    )
+    if not project:
+        return None
+    return {"id": project.id, "title": project.title}
+
+
 def _session_reconciliation(request: Request, session_id: str) -> dict[str, Any]:
     store = request.app.state.ctx.services.get("dispatch_store")
     record = store.by_session(session_id) if store else None
@@ -1253,8 +1265,11 @@ def _session_list_item(
         "orphan": runtime is None,
         "model_id": session.model_id,
         "mode_id": session.mode_id,
+        "created_at": session.created_at.isoformat(),
+        "metrics_json": session.metrics_json or {},
         "card_id": session.card_id,
         "project_id": session.project_id,
+        "project": _session_project_payload(request, session),
         "cards": [
             {
                 "id": card.id,
@@ -1276,6 +1291,7 @@ def _session_list_item(
         "queue_length": len(runtime._queue) if runtime else len(queued),
         "last_seq": runtime._seq if runtime else durable.get("last_event_cursor", 0),
         "updated_at": session.updated_at.isoformat(),
+        "pr_watches": _session_pr_watches(request, session),
         "card_reconciliation": _session_reconciliation(request, session.id),
         "observability": _observability(request, session),
     }
@@ -1432,6 +1448,7 @@ def list_agent_session_history(
             **session.model_dump(mode="json"),
             "cards": _session_cards_payload(request, session),
             "card_ids": mgr.store.list_card_ids_for_session(session.id),
+            "project": _session_project_payload(request, session),
             "instance_id": settings.instance_id,
             "instance_name": settings.instance_name,
             "pr_watches": _session_pr_watches(request, session),
