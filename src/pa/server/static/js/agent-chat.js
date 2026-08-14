@@ -2959,23 +2959,84 @@
         ? window.PAInstanceIdentity.html(sessionInstanceId)
         : "";
       const title = s.title || s.label || "Agent";
+      const state = sessionListState(s);
+      const cards = s.cards || [];
+      const primaryCard = cards.find(function (card) { return card.primary; }) || cards[0];
+      const project = s.project || null;
+      const execution = sessionListExecution(s);
+      const metrics = s.metrics_json || {};
+      const usage = metrics.last_usage || metrics.usage || {};
+      const totalTokens = usage.total_tokens != null
+        ? usage.total_tokens
+        : usage.totalTokens;
+      const contextParts = [];
+      if (primaryCard) {
+        contextParts.push('<a href="/work?card=' + encodeURIComponent(primaryCard.id) +
+          '" title="Current card">Card · ' + escapeHtml(primaryCard.title) + "</a>");
+      } else if (project) {
+        contextParts.push('<a href="/projects?project=' + encodeURIComponent(project.id) +
+          '" title="Project">Project · ' + escapeHtml(project.title) + "</a>");
+      } else {
+        contextParts.push('<span class="muted">Standalone session</span>');
+      }
+      if (execution.repositoryName) {
+        contextParts.push('<span title="' + escapeHtml(execution.repositoryUrl) + '">' +
+          escapeHtml(execution.repositoryName + (execution.branch ? " · " + execution.branch : "")) +
+          "</span>");
+      }
+      const usageParts = [];
+      if (metrics.turns) usageParts.push(metrics.turns + " turn" + (metrics.turns === 1 ? "" : "s"));
+      if (totalTokens) usageParts.push(compactSessionNumber(totalTokens) + " tokens");
+      const related = cards.filter(function (card) {
+        return !primaryCard || card.id !== primaryCard.id;
+      }).map(function (card) {
+        return '<a class="agent-session-chip" href="/work?card=' +
+          encodeURIComponent(card.id) + '">Card · ' + escapeHtml(card.title) + "</a>";
+      }).concat((s.pr_watches || []).map(function (watch) {
+        return '<a class="agent-session-chip" href="/pull-requests?watch=' +
+          encodeURIComponent(watch.id) + '" title="' +
+          escapeHtml(watch.repository + "#" + watch.pr_number + " PR supervision") +
+          '">PR #' + escapeHtml(watch.pr_number) + " · " + escapeHtml(watch.status) + "</a>";
+      })).join("");
       li.innerHTML =
-        '<strong class="agent-session-title" data-agent-session-title data-full-title="' +
-        escapeHtml(title) + '">' + escapeHtml(title) + "</strong>" +
-        '<span class="agent-session-title-tooltip" role="tooltip">' + escapeHtml(title) + "</span>" +
-        '<dl class="agent-session-metadata">' +
-        metadataField("Instance", sessionIdentity || "Local instance", !!sessionIdentity) +
-        metadataField("Provider", s.agent_name || "Default provider") +
-        metadataField("Model", s.model_id || "Default model") +
-        (s.mode_id ? metadataField("Mode", s.mode_id) : "") +
-        metadataField("Status", s.status || "unknown") +
-        "</dl>" + sessionConfigSummary(s.config_json) +
-        ((s.cards || []).map(function (card) {
-          return '<a class="agent-session-card-link" href="/work?card=' +
-            encodeURIComponent(card.id) + '">' +
-            escapeHtml(card.primary ? "Current card · " : "Card · ") +
-            escapeHtml(card.title) + "</a>";
-        }).join(""));
+        '<div class="agent-session-shell">' +
+          '<span class="agent-session-provider-mark" aria-hidden="true">' +
+            escapeHtml(String(s.agent_name || "PA").slice(0, 2).toUpperCase()) + "</span>" +
+          '<div class="agent-session-summary">' +
+            '<div class="agent-session-row-head">' +
+              '<strong class="agent-session-title" data-agent-session-title data-full-title="' +
+                escapeHtml(title) + '">' + escapeHtml(title) + "</strong>" +
+              '<span class="agent-session-state agent-session-state-' + escapeHtml(state.key) + '">' +
+                '<span aria-hidden="true">●</span> ' + escapeHtml(state.label) + "</span>" +
+            "</div>" +
+            '<span class="agent-session-title-tooltip" role="tooltip">' +
+              escapeHtml(title) + "</span>" +
+            '<div class="agent-session-context-line">' + contextParts.join("") + "</div>" +
+            '<div class="agent-session-facts">' +
+              '<span class="agent-session-instance" title="Execution instance">' +
+                (sessionIdentity || escapeHtml(s.origin_instance_name || "Local instance")) + "</span>" +
+              '<span class="agent-session-age" title="Elapsed time">' +
+                escapeHtml(sessionElapsed(s.created_at)) + "</span>" +
+              '<span class="agent-session-runtime" title="Provider and model">' +
+                escapeHtml((s.agent_name || "Default provider") + " · " +
+                  (s.model_id || "default model") + (s.mode_id ? " · " + s.mode_id : "")) +
+                "</span>" +
+              '<span class="agent-session-usage' + (usageParts.length ? "" : " muted") +
+                '" title="Session usage">' +
+                escapeHtml(usageParts.length ? usageParts.join(" · ") : "No usage yet") + "</span>" +
+            "</div>" +
+          "</div>" +
+        "</div>" +
+        '<div class="agent-session-related">' + related + "</div>" +
+        '<details class="agent-session-details"><summary>Details</summary>' +
+          '<div class="agent-session-details-body">' + sessionConfigSummary(s.config_json) +
+            '<span class="muted small">Last activity <time datetime="' +
+              escapeHtml(s.updated_at || "") + '">' + escapeHtml(sessionTimestamp(s.updated_at)) +
+              "</time></span>" +
+            '<a class="text-btn small" href="/knowledge?session=' + encodeURIComponent(s.id) +
+              '">Promote conclusion to memory</a>' +
+            '<span class="agent-session-actions"></span>' +
+          "</div></details>";
       if (s.status !== "closed") {
         const close = document.createElement("button");
         close.type = "button";
@@ -2985,10 +3046,8 @@
         close.title = s.live === false
           ? "Forget this orphan so it is not retried"
           : "Close the live session";
-        const actions = document.createElement("span");
-        actions.className = "agent-session-actions";
+        const actions = li.querySelector(".agent-session-actions");
         actions.appendChild(close);
-        li.appendChild(actions);
       }
       list.appendChild(li);
     });
@@ -3062,9 +3121,58 @@
     return sessionListRecovery.controller.start(false);
   }
 
-  function metadataField(label, value, trustedHtml) {
-    return "<div><dt>" + escapeHtml(label) + "</dt><dd>" +
-      (trustedHtml ? value : escapeHtml(value)) + "</dd></div>";
+  function compactSessionNumber(value) {
+    const number = Number(value || 0);
+    if (number >= 1000000) return (number / 1000000).toFixed(1).replace(/\.0$/, "") + "m";
+    if (number >= 1000) return (number / 1000).toFixed(1).replace(/\.0$/, "") + "k";
+    return String(number);
+  }
+
+  function sessionElapsed(createdAt) {
+    const created = Date.parse(createdAt || "");
+    if (!Number.isFinite(created)) return "—";
+    const seconds = Math.max(0, Math.floor((Date.now() - created) / 1000));
+    if (seconds >= 86400) return Math.floor(seconds / 86400) + "d";
+    if (seconds >= 3600) return (seconds / 3600).toFixed(1).replace(/\.0$/, "") + "h";
+    if (seconds >= 60) return Math.floor(seconds / 60) + "m";
+    return seconds + "s";
+  }
+
+  function sessionTimestamp(value) {
+    const timestamp = Date.parse(value || "");
+    if (!Number.isFinite(timestamp)) return "unknown";
+    return new Date(timestamp).toLocaleString();
+  }
+
+  function sessionListExecution(session) {
+    const config = session.config_json || {};
+    const execution = config.execution_context || {};
+    const repository = (execution.repositories || [])[0] || {};
+    const repositoryUrl = String(repository.repository_url || "");
+    let repositoryName = repositoryUrl.replace(/\/$/, "").split("/").pop() || "";
+    repositoryName = repositoryName.replace(/\.git$/, "");
+    return {
+      repositoryName: repositoryName,
+      repositoryUrl: repositoryUrl,
+      branch: repository.branch || "",
+    };
+  }
+
+  function sessionListState(session) {
+    if ((session.metrics_json || {}).pending_approval ||
+        (session.config_json || {}).pending_approval) {
+      return { key: "waiting", label: "Approval" };
+    }
+    if (session.prompting) return { key: "working", label: "Working" };
+    if (session.queue_length) return { key: "queued", label: "Queued" };
+    if (session.live && session.connected) return { key: "idle", label: "Idle" };
+    const raw = String(session.status || "unknown");
+    return {
+      key: raw.toLowerCase().replace(/[^a-z0-9_-]/g, "-"),
+      label: raw.replace(/_/g, " ").replace(/\b\w/g, function (letter) {
+        return letter.toUpperCase();
+      }),
+    };
   }
 
   function updateSessionTitleTooltips(scope) {
@@ -3358,6 +3466,7 @@
           });
           return;
         }
+        if (e.target.closest("a, summary, details, button, pa-instance-identity")) return;
         const widget = document.querySelector("[data-agent-chat]");
         if (widget && widget._acw) {
           widget._acw.switchSession(
@@ -3369,7 +3478,7 @@
       });
       list.addEventListener("keydown", function (e) {
         if (e.key !== "Enter" && e.key !== " ") return;
-        if (e.target.closest("[data-agent-session-close]")) return;
+        if (e.target.closest("a, summary, details, button, pa-instance-identity")) return;
         const li = e.target.closest("[data-session-id]");
         if (!li) return;
         e.preventDefault();

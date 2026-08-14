@@ -21,8 +21,15 @@ def test_agent_sidebar_exposes_opt_in_history_controls() -> None:
     assert "data-agent-end-all" in template
     assert "agent-session-title-tooltip" in template
     assert 'role="tooltip"' in template
-    for label in ("Instance", "Provider", "Model", "Mode", "Status"):
-        assert f"<dt>{label}</dt>" in template
+    for marker in (
+        "agent-session-provider-mark",
+        "agent-session-row-head",
+        "agent-session-state",
+        "agent-session-context-line",
+        "agent-session-facts",
+        "agent-session-details",
+    ):
+        assert marker in template
     assert "data-acw-recover" in widget
     assert "data-acw-history" in widget
 
@@ -51,7 +58,10 @@ def test_agent_sidebar_loads_and_selects_durable_history() -> None:
     assert 'getAttribute("aria-checked") === "true"' in script
     assert "updateSessionTitleTooltips" in script
     assert 'item.setAttribute("aria-label"' in script
-    assert 'metadataField("Instance"' in script
+    assert "sessionListExecution" in script
+    assert "sessionListState" in script
+    assert "compactSessionNumber" in script
+    assert "sessionElapsed" in script
 
 
 def test_fleet_session_panel_recovery_is_decoupled_and_teardown_safe() -> None:
@@ -89,11 +99,14 @@ def test_agent_session_layout_regression_contracts_cover_density_and_viewports()
     assert "@media (max-width: 768px)" in css
     assert "@media (max-width: 430px)" in css
     assert ".page-agent.is-sidebar-collapsed .page-sidebar-left" in css
-    assert "-webkit-line-clamp: 3" in css
+    assert "text-overflow: ellipsis" in css
     assert "font-size: 0.8rem" in css
     assert 'data-title-clamped="true"' in css
-    assert "overflow-wrap: anywhere" in css
-    assert "grid-template-columns: 1fr" in css
+    assert "grid-template-columns: 2rem minmax(0, 1fr)" in css
+    assert "agent-session-context-line" in css
+    assert "agent-session-facts" in css
+    assert "agent-session-provider-mark" in template
+    assert "agent-session-provider-mark" in script
     assert "min-height: 2.5rem" in css
     assert "agent-session-actions" in template
     assert "agent-session-actions" in script

@@ -780,6 +780,13 @@ class AgentChatSseTests(unittest.TestCase):
         runtime.session.status = "idle"
         runtime.session.model_id = "gpt-test"
         runtime.session.mode_id = "code"
+        runtime.session.card_id = None
+        runtime.session.project_id = None
+        runtime.session.metrics_json = {
+            "turns": 3,
+            "last_usage": {"total_tokens": 8400},
+        }
+        runtime.session.created_at.isoformat.return_value = "2026-07-16T23:00:00Z"
         runtime.session.config_json = {
             "values": {"reasoningEffort": "high", "approvalPolicy": "on-request"},
             "configuration": {
@@ -808,6 +815,11 @@ class AgentChatSseTests(unittest.TestCase):
             sessions[0]["config_json"]["values"]["reasoningEffort"], "high"
         )
         self.assertEqual(sessions[0]["last_seq"], 12)
+        self.assertEqual(sessions[0]["metrics_json"]["turns"], 3)
+        self.assertEqual(
+            sessions[0]["metrics_json"]["last_usage"]["total_tokens"], 8400
+        )
+        self.assertEqual(sessions[0]["created_at"], "2026-07-16T23:00:00Z")
         self.assertTrue(sessions[0]["live"])
         self.assertFalse(sessions[0]["orphan"])
 
