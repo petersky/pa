@@ -205,6 +205,15 @@ class SessionLifecycleDecisionTests(unittest.IsolatedAsyncioTestCase):
             await self.decide(_session(label="advisor")),
             ("close", "single_purpose_finished"),
         )
+        self.assertEqual(
+            await self.decide(
+                _session(
+                    label="card-enrichment:card-1",
+                    status="disconnected",
+                )
+            ),
+            ("close", "single_purpose_terminal"),
+        )
 
     async def test_deleted_and_completed_card_close(self):
         linked = _session(card_id="card-1")

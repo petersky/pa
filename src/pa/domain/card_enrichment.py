@@ -7,6 +7,7 @@ import logging
 import re
 from collections.abc import Collection
 from typing import Any
+from uuid import uuid4
 
 from pa.acp.final_message import assemble_final_assistant_message
 from pa.domain.models import CardKind, CardUpdate
@@ -17,6 +18,43 @@ _JSON_FENCE = re.compile(
     r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL | re.IGNORECASE
 )
 _ENRICHABLE = {"body", "kind", "project_id", "preferred_capabilities", "tags"}
+
+
+async def _close_enrichment_session(
+    manager: Any,
+    session_id: str,
+    runtime: Any | None,
+) -> None:
+    """Close a one-shot enrichment even when startup failed before returning it."""
+    needs_reconciliation = False
+    if runtime is not None:
+        try:
+            needs_reconciliation = await runtime.close(
+                reason="card_enrichment_complete",
+                reconcile_workspace=False,
+            )
+        except Exception:
+            logger.exception("Could not close card enrichment runtime %s", session_id)
+
+    persisted = await manager._offload(
+        "card_enrichment.session_read",
+        manager.store.get_session,
+        session_id,
+    )
+    if persisted is not None and persisted.status != "closed":
+        closed, prior_status = await manager._offload(
+            "card_enrichment.session_close",
+            manager.store.close_session,
+            session_id,
+            reason="card_enrichment_complete",
+        )
+        needs_reconciliation = bool(closed is not None and prior_status is not None)
+
+    runtimes = getattr(manager, "_runtimes", None)
+    if isinstance(runtimes, dict):
+        runtimes.pop(session_id, None)
+    if needs_reconciliation:
+        await manager.reconcile_closed_sessions([session_id])
 
 
 def explicit_enrichment_fields(data: Any) -> set[str]:
@@ -110,9 +148,11 @@ async def enrich_card(
         f"Fields that must not change: {json.dumps(sorted(explicit_fields))}"
     )
     manager = ctx.require_service("instance_agent")
+    session_id = str(uuid4())
     runtime = None
     try:
         runtime = await manager.create_session(
+            session_id=session_id,
             label=f"card-enrichment:{card.id}",
             title=f"Enrich: {card.title[:80]}",
             principal_id=card.created_by_principal,
@@ -173,8 +213,7 @@ async def enrich_card(
                     getattr(runtime, "session_id", None),
                 )
     finally:
-        if runtime is not None:
-            try:
-                await runtime.close(reason="card_enrichment_complete")
-            except Exception:
-                logger.exception("Could not close card enrichment session %s", card_id)
+        try:
+            await _close_enrichment_session(manager, session_id, runtime)
+        except Exception:
+            logger.exception("Could not close card enrichment session %s", card_id)

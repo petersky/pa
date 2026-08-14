@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 _SINGLE_PURPOSE_LABELS = frozenset(
     {"advisor", "coordinator", "device-login", "login", "operational", "pr-executor"}
 )
+_SINGLE_PURPOSE_LABEL_PREFIXES = ("card-enrichment:",)
 _ACTIVE_WATCH_STATUSES = frozenset({PRWatchStatus.ACTIVE, PRWatchStatus.BLOCKED})
 
 
@@ -246,8 +247,13 @@ class SessionLifecyclePolicy:
             return "close", "card_deleted"
         if card and card.lane == CardLane.DONE:
             return "close", "card_completed"
-        if session.label in _SINGLE_PURPOSE_LABELS and session.status == "idle":
+        single_purpose = session.label in _SINGLE_PURPOSE_LABELS or str(
+            session.label or ""
+        ).startswith(_SINGLE_PURPOSE_LABEL_PREFIXES)
+        if single_purpose and session.status == "idle":
             return "close", "single_purpose_finished"
+        if str(session.label or "").startswith(_SINGLE_PURPOSE_LABEL_PREFIXES):
+            return "close", "single_purpose_terminal"
         retention = timedelta(
             hours=self.manager.settings.agent_session_idle_retention_hours
         )

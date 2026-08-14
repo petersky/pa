@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 import json
+import tempfile
 import unittest
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 from pa.domain.card_enrichment import (
+    _close_enrichment_session,
     build_enrichment_update,
     explicit_enrichment_fields,
 )
-from pa.domain.models import CardCreate, CardKind
+from pa.domain.models import AgentSession, CardCreate, CardKind
+from pa.domain.projection import CardProjection
 
 
 class CardEnrichmentTest(unittest.TestCase):
@@ -78,6 +84,39 @@ class CardEnrichmentTest(unittest.TestCase):
         self.assertTrue(enabled.auto_enrich)
         self.assertFalse(disabled.auto_enrich)
         self.assertNotIn("auto_enrich", disabled.model_dump())
+
+
+class CardEnrichmentLifecycleTest(unittest.IsolatedAsyncioTestCase):
+    async def test_startup_orphan_is_durably_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = CardProjection(Path(tmp) / "pa.db")
+            session = store.save_session(
+                AgentSession(
+                    id="enrichment-orphan",
+                    agent_name="codex",
+                    label="card-enrichment:card-1",
+                    status="disconnected",
+                )
+            )
+            manager = SimpleNamespace(
+                store=store,
+                _runtimes={},
+                reconcile_closed_sessions=AsyncMock(),
+            )
+
+            async def offload(_operation, call, *args, **kwargs):
+                return call(*args, **kwargs)
+
+            manager._offload = offload
+
+            await _close_enrichment_session(manager, session.id, None)
+
+            self.assertEqual(store.get_session(session.id).status, "closed")
+            self.assertEqual(
+                store.list_transcript_events(session.id)[0].event_type,
+                "session_closed",
+            )
+            manager.reconcile_closed_sessions.assert_awaited_once_with([session.id])
 
 
 if __name__ == "__main__":
