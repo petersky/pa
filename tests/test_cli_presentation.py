@@ -76,17 +76,23 @@ def test_structured_console_is_always_unstyled(monkeypatch) -> None:
 
 def test_help_error_and_representative_command_are_stable_without_color() -> None:
     runner = CliRunner()
-    help_result = runner.invoke(app, ["--help"], env={"NO_COLOR": "1"})
+    help_result = runner.invoke(
+        app, ["--help"], env={"NO_COLOR": "1"}, color=False
+    )
     assert help_result.exit_code == 0
     assert "PA — human–agent orchestration" in help_result.stdout
     assert "\x1b[" not in help_result.stdout
 
-    command_result = runner.invoke(app, ["version"], env={"NO_COLOR": "1"})
+    command_result = runner.invoke(
+        app, ["version"], env={"NO_COLOR": "1"}, color=False
+    )
     assert command_result.exit_code == 0
     assert command_result.stdout.startswith("pa ")
     assert "\x1b[" not in command_result.stdout
 
-    error_result = runner.invoke(app, ["not-a-command"], env={"NO_COLOR": "1"})
+    error_result = runner.invoke(
+        app, ["not-a-command"], env={"NO_COLOR": "1"}, color=False
+    )
     assert error_result.exit_code != 0
     assert "No such command" in error_result.output
     assert "\x1b[" not in error_result.output

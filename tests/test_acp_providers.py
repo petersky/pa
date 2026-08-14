@@ -370,7 +370,11 @@ class AcpProviderTests(unittest.TestCase):
         self.assertTrue(
             any(item["id"] == "minimax-coding-plan" for item in snap["model_providers"])
         )
-        self.assertIsNone(preflight_session_start(self.data_dir))
+        with patch(
+            "pa.acp.providers.openinterpreter.resolve_executable",
+            return_value=Path("/test/openinterpreter-acp"),
+        ):
+            self.assertIsNone(preflight_session_start(self.data_dir))
         missing = preflight_session_start(
             Path(tempfile.mkdtemp()), model_provider="openai"
         )
