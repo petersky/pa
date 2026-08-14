@@ -125,6 +125,7 @@ class PaMcpServersTests(unittest.TestCase):
                     session_environment=browser_env,
                     private_environment=private,
                 )[0]
+                expected_socket = str(owner_socket_path(settings, os.environ))
 
         environment = {item.name: item.value for item in server.env}
         self.assertEqual(
@@ -133,7 +134,7 @@ class PaMcpServersTests(unittest.TestCase):
                 "PA_DATA_DIR": str(settings.data_dir),
                 "PA_LOCAL_API_URL": "http://pa-owner",
                 "PA_LOCAL_API_ENDPOINT_TYPE": "unix",
-                "PA_LOCAL_API_SOCKET": str(owner_socket_path(settings)),
+                "PA_LOCAL_API_SOCKET": expected_socket,
                 "PA_INSTANCE_ID": "owner-instance",
                 **private,
             },

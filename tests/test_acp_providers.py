@@ -192,7 +192,7 @@ class AcpProviderTests(unittest.TestCase):
             self.settings, AgentInvocationContext(surface=SURFACE_CHAT_DEFAULT)
         )
         self.assertEqual(resolved.provider_id, DEFAULT_PROVIDER_ID)
-        self.assertEqual(resolved.spec.command, "agent")
+        self.assertEqual(Path(resolved.spec.command).name, "agent")
         self.assertEqual(resolved.spec.args, ["acp"])
 
     def test_codex_spawn_without_override(self) -> None:

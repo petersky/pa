@@ -19,6 +19,9 @@ from pa.core.async_runtime import AsyncRuntime
 
 logger = logging.getLogger(__name__)
 
+BROWSER_STARTUP_TIMEOUT_SECONDS = 12.0
+BROWSER_STARTUP_MAX_ATTEMPTS = 100
+
 
 def _browser_executable() -> str | None:
     override = os.environ.get("PA_BROWSER_EXECUTABLE")
@@ -198,23 +201,31 @@ class BrowserManager:
                     endpoint = f"http://127.0.0.1:{port}"
                     target = None
                     client = self._http_client()
-                    async with asyncio.timeout(6.0):
-                        for _ in range(50):
-                            if process.returncode is not None:
-                                break
-                            try:
-                                response = await client.get(f"{endpoint}/json/list")
-                                pages = [
-                                    item
-                                    for item in response.json()
-                                    if item.get("type") == "page"
-                                ]
-                                if pages:
-                                    target = pages[0]
+                    try:
+                        async with asyncio.timeout(BROWSER_STARTUP_TIMEOUT_SECONDS):
+                            for _ in range(BROWSER_STARTUP_MAX_ATTEMPTS):
+                                if process.returncode is not None:
                                     break
-                            except httpx.HTTPError, ValueError:
-                                pass
-                            await asyncio.sleep(0.1)
+                                try:
+                                    response = await client.get(
+                                        f"{endpoint}/json/list"
+                                    )
+                                    pages = [
+                                        item
+                                        for item in response.json()
+                                        if item.get("type") == "page"
+                                    ]
+                                    if pages:
+                                        target = pages[0]
+                                        break
+                                except httpx.HTTPError, ValueError:
+                                    pass
+                                await asyncio.sleep(0.1)
+                    except TimeoutError:
+                        # A busy host can accept the debugging connection before
+                        # Chromium finishes serving targets. Preserve the fallback
+                        # page creation and the actionable diagnostic below.
+                        pass
                     if not target and process.returncode is None:
                         try:
                             response = await client.put(
@@ -233,7 +244,8 @@ class BrowserManager:
                         )
                         raise RuntimeError(
                             "Chromium started but did not expose a usable page within "
-                            f"6 seconds ({state}, endpoint={endpoint}). Check that the "
+                            f"{BROWSER_STARTUP_TIMEOUT_SECONDS:g} seconds ({state}, "
+                            f"endpoint={endpoint}). Check that the "
                             "configured executable supports --headless=new and remote "
                             "debugging, and that its profile directory is writable."
                         )

@@ -25,6 +25,9 @@ jobs:
       - name: Boot smoke test
         run: uv run python -c "from pa.core.kernel import Kernel; Kernel.boot().build_app()"
 
+      - name: Test
+        run: uv run pytest -q
+
       - name: Build published artifacts
         run: uv build
 

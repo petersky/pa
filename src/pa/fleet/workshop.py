@@ -374,9 +374,10 @@ def build_workshop_snapshot(
     operational_sessions = [
         session
         for node in overview.get("nodes", [])
-        for session in ((node.get("dimensions") or {}).get("activity") or {})
-        .get("value", {})
-        .get("sessions", [])
+        for session in (
+            (((node.get("dimensions") or {}).get("activity") or {}).get("value") or {})
+            .get("sessions", [])
+        )
         if session.get("realm_id") == realm_id
     ]
     for session in operational_sessions:

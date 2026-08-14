@@ -87,8 +87,8 @@ def test_card_modal_distinguishes_local_start_preference_and_durable_dispatch() 
             Path(__file__).parents[1]
             / "src/pa/server/templates/partials/card-detail-agent.html"
         ).read_text()
-        assert "Start local agent" in template
-        assert "Resume local agent" in template
+        assert "Start new session" in template
+        assert "Resume session" in template
         assert "data-card-dispatch-form" not in agent.text
         assert "Durable fleet dispatch" not in agent.text
         assert 'data-card-dispatch-open' in detail.text
@@ -108,8 +108,7 @@ def test_card_modal_distinguishes_local_start_preference_and_durable_dispatch() 
         assert 'name="provider" placeholder=' not in dispatch.text
         assert 'name="model_id" placeholder=' not in dispatch.text
         assert "documented default" in dispatch.text
-        assert 'data-card-dispatch-open' in home.text
-        assert 'data-card-dispatch-open' in work.text
+        assert 'data-contextual-work-action="open_card"' in work.text
 
 
 def test_card_modal_separates_prompt_backlog_from_execution_slots() -> None:
@@ -219,7 +218,7 @@ def test_card_modal_renders_dispatch_progress_retry_and_session_links() -> None:
         assert '" queued; "' in script
 
 
-def test_existing_dispatch_hides_card_item_action_but_detail_opens_status() -> None:
+def test_card_item_actions_follow_context_and_detail_opens_dispatch_status() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         app = Kernel.boot(settings=Settings(data_dir=Path(tmp), instance_id="local", instance_name="Local", instance_url="http://pa.test:8080", agent_enabled=False, subscribed_realms=["default"], peers=[])).build_app()
         with TestClient(app) as client:
@@ -229,7 +228,8 @@ def test_existing_dispatch_hides_card_item_action_but_detail_opens_status() -> N
             cards = client.get("/partials/cards?lane=inbox")
             detail = client.get(f"/partials/cards/{dispatched.id}/detail")
 
-        assert f'aria-label="Dispatch {eligible.title}"' in cards.text
+        assert f'aria-label="Open card for {eligible.title}"' in cards.text
+        assert f'aria-label="Inspect progress for {dispatched.title}"' in cards.text
         assert f'aria-label="Dispatch {dispatched.title}"' not in cards.text
         assert "data-card-dispatch-open" in detail.text
 
