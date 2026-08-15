@@ -8,7 +8,13 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from pa.browser.cdp import CdpError, CdpPage, validate_browser_url
-from pa.browser.manager import BrowserAttachment, BrowserManager, _browser_executable
+from pa.browser.manager import (
+    BROWSER_STARTUP_MAX_ATTEMPTS,
+    BROWSER_STARTUP_TIMEOUT_SECONDS,
+    BrowserAttachment,
+    BrowserManager,
+    _browser_executable,
+)
 from pa.instance.agent_session import AgentSessionRuntime
 
 
@@ -203,6 +209,10 @@ class BrowserSessionRuntimeTests(unittest.IsolatedAsyncioTestCase):
 
 
 class BrowserDiagnosticTests(unittest.IsolatedAsyncioTestCase):
+    def test_startup_timeout_allows_loaded_hosts_more_than_six_seconds(self) -> None:
+        self.assertGreaterEqual(BROWSER_STARTUP_TIMEOUT_SECONDS, 12)
+        self.assertGreaterEqual(BROWSER_STARTUP_MAX_ATTEMPTS, 100)
+
     async def test_manager_creates_page_target_when_chromium_starts_empty(self) -> None:
         class EmptyClient:
             async def get(self, _url):

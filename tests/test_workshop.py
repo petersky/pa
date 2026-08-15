@@ -243,6 +243,22 @@ def test_stale_activity_is_preserved_but_never_presented_as_live():
     assert bay["workers"][0]["state"] == "stalled"
 
 
+def test_unavailable_activity_value_is_treated_as_empty():
+    overview = _overview()
+    overview["nodes"][0]["dimensions"]["activity"] = {
+        "state": "unavailable",
+        "value": None,
+    }
+    context = _ctx()
+    context.services = {}
+
+    snapshot = build_workshop_snapshot(context, overview)
+
+    bay = snapshot["bays"][0]
+    assert bay["activity_freshness"] == "unavailable"
+    assert bay["workers"] == []
+
+
 def test_multi_instance_activity_can_begin_after_initial_snapshot():
     overview = _overview()
     remote = {

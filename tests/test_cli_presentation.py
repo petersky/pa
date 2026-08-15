@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 
+from typer import rich_utils
 from typer.testing import CliRunner
 
 from pa.cli import presentation as ui
@@ -74,19 +75,31 @@ def test_structured_console_is_always_unstyled(monkeypatch) -> None:
     assert "\x1b[" not in output.getvalue()
 
 
-def test_help_error_and_representative_command_are_stable_without_color() -> None:
+def test_help_error_and_representative_command_are_stable_without_color(
+    monkeypatch,
+) -> None:
+    # Typer caches FORCE_COLOR when rich_utils is imported. GitHub-hosted
+    # runners may set it before pytest starts, so make the no-color harness
+    # independent of the host environment.
+    monkeypatch.setattr(rich_utils, "FORCE_TERMINAL", False)
     runner = CliRunner()
-    help_result = runner.invoke(app, ["--help"], env={"NO_COLOR": "1"})
+    help_result = runner.invoke(
+        app, ["--help"], env={"NO_COLOR": "1"}, color=False
+    )
     assert help_result.exit_code == 0
     assert "PA — human–agent orchestration" in help_result.stdout
     assert "\x1b[" not in help_result.stdout
 
-    command_result = runner.invoke(app, ["version"], env={"NO_COLOR": "1"})
+    command_result = runner.invoke(
+        app, ["version"], env={"NO_COLOR": "1"}, color=False
+    )
     assert command_result.exit_code == 0
     assert command_result.stdout.startswith("pa ")
     assert "\x1b[" not in command_result.stdout
 
-    error_result = runner.invoke(app, ["not-a-command"], env={"NO_COLOR": "1"})
+    error_result = runner.invoke(
+        app, ["not-a-command"], env={"NO_COLOR": "1"}, color=False
+    )
     assert error_result.exit_code != 0
     assert "No such command" in error_result.output
     assert "\x1b[" not in error_result.output

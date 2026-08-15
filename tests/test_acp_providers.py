@@ -192,7 +192,7 @@ class AcpProviderTests(unittest.TestCase):
             self.settings, AgentInvocationContext(surface=SURFACE_CHAT_DEFAULT)
         )
         self.assertEqual(resolved.provider_id, DEFAULT_PROVIDER_ID)
-        self.assertEqual(resolved.spec.command, "agent")
+        self.assertEqual(Path(resolved.spec.command).name, "agent")
         self.assertEqual(resolved.spec.args, ["acp"])
 
     def test_codex_spawn_without_override(self) -> None:
@@ -370,7 +370,11 @@ class AcpProviderTests(unittest.TestCase):
         self.assertTrue(
             any(item["id"] == "minimax-coding-plan" for item in snap["model_providers"])
         )
-        self.assertIsNone(preflight_session_start(self.data_dir))
+        with patch(
+            "pa.acp.providers.openinterpreter.resolve_executable",
+            return_value=Path("/test/openinterpreter-acp"),
+        ):
+            self.assertIsNone(preflight_session_start(self.data_dir))
         missing = preflight_session_start(
             Path(tempfile.mkdtemp()), model_provider="openai"
         )

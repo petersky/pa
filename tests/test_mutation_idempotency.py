@@ -598,6 +598,11 @@ class DispatchOperationLookupTests(unittest.TestCase):
 
 
 class MutationHttpIdempotencyTests(unittest.TestCase):
+    def setUp(self) -> None:
+        reset_instance_agent()
+        reset_store()
+        reset_settings()
+
     def tearDown(self) -> None:
         reset_instance_agent()
         reset_store()
