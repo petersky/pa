@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import time
 from dataclasses import dataclass, field
@@ -10,6 +11,7 @@ from pathlib import Path
 
 from pa.release.notes import notes_path_for_tag, write_release_notes
 from pa.release.version import (
+    INIT_PY,
     ROOT,
     bump_major,
     bump_minor,
@@ -20,6 +22,20 @@ from pa.release.version import (
     tag_for_version,
     track_for_version,
     validate_version,
+)
+
+RELATIVE_VERSION_BUMPS = frozenset({"patch", "minor", "major", "alpha", "beta", "rc"})
+_TRANSIENT_GITHUB_MARKERS = (
+    "http 502",
+    "http 503",
+    "http 504",
+    "502 bad gateway",
+    "503 service",
+    "504 gateway",
+    "timed out",
+    "timeout",
+    "couldn't respond",
+    "try resubmitting",
 )
 
 
@@ -88,9 +104,19 @@ def ensure_release_branch(tag: str, *, amend: bool = False) -> str:
     if current == branch:
         return branch
     if current != "main":
+        hints = [
+            "Switch to an up-to-date main branch, then rerun the release command.",
+        ]
+        current_version = parse_release_branch_version(current)
+        if current_version:
+            hints.insert(
+                0,
+                f"If you are finishing {current}, rerun the same release command "
+                "from this branch to resume PR creation, merge, and publish.",
+            )
         raise ReleaseError(
             f"release preparation must start from main or {branch}; currently on {current}",
-            hints=["Switch to an up-to-date main branch, then rerun the release command."],
+            hints=hints,
         )
     if _capture(["git", "status", "--porcelain"], cwd=ROOT).stdout.strip():
         raise ReleaseError(
@@ -325,6 +351,74 @@ def commits_behind_origin_main(
     return int(text) if text else 0
 
 
+def parse_release_branch_version(branch: str) -> str | None:
+    """Return the version encoded in ``release/vX.Y.Z``, or None."""
+    prefix = "release/v"
+    if not branch.startswith(prefix):
+        return None
+    try:
+        return validate_version(branch[len(prefix) :])
+    except ValueError:
+        return None
+
+
+def parse_requested_version(bump: str) -> str | None:
+    """Return an explicit semver from ``bump``, or None for relative bumps."""
+    text = bump[1:] if bump.startswith("v") and len(bump) > 1 and bump[1].isdigit() else bump
+    try:
+        return validate_version(text)
+    except ValueError:
+        return None
+
+
+def origin_main_version() -> str | None:
+    """Read ``__version__`` from origin/main, if that ref is available."""
+    rel = INIT_PY.relative_to(ROOT).as_posix()
+    result = _capture(["git", "show", f"origin/main:{rel}"], cwd=ROOT)
+    if result.returncode != 0:
+        return None
+    match = re.search(r'__version__\s*=\s*"([^"]+)"', result.stdout)
+    return match.group(1) if match else None
+
+
+def release_already_prepared(version: str, notes_path: Path | None = None) -> bool:
+    """Return True when this checkout already has the release bump and notes."""
+    path = notes_path or notes_path_for_tag(tag_for_version(version))
+    return read_version() == version and path.is_file()
+
+
+def resolve_release_target(bump: str) -> tuple[str, bool]:
+    """Resolve the version to release.
+
+    If HEAD is already a prepared ``release/vX.Y.Z`` branch (version matches the
+    branch name), a relative bump or the same explicit version resumes that
+    release instead of incrementing again. Returns ``(version, resuming)``.
+    """
+    try:
+        branch = current_branch()
+    except ReleaseError:
+        return resolve_version(bump), False
+
+    branch_version = parse_release_branch_version(branch)
+    if not branch_version or read_version() != branch_version:
+        return resolve_version(bump), False
+
+    requested = bump.lower()
+    explicit = parse_requested_version(bump)
+    if requested in RELATIVE_VERSION_BUMPS or explicit == branch_version:
+        return branch_version, True
+
+    raise ReleaseError(
+        f"release branch {branch} is already prepared as {branch_version}; "
+        f"refusing to start {explicit or bump} from it",
+        hints=[
+            "Rerun the same release command to finish this release "
+            "(create/reuse the PR, then merge and publish).",
+            "To start a different version, switch to an up-to-date main first.",
+        ],
+    )
+
+
 def resolve_version(bump: str) -> str:
     bump = bump.lower()
     old = read_version()
@@ -334,7 +428,7 @@ def resolve_version(bump: str) -> str:
         return bump_minor(old)
     if bump == "major":
         return bump_major(old)
-    if bump in {"alpha", "beta", "rc"}:
+    if bump in RELATIVE_VERSION_BUMPS:
         return bump_prerelease(old, bump)
     return validate_version(bump)
 
@@ -352,9 +446,12 @@ def _require_release_branch(branch: str, *, amend: bool = False) -> None:
     )
 
 
-def ensure_release_pr(tag: str, branch: str) -> str:
-    """Create the release PR if needed and return its URL."""
-    tag = _normalize_tag(tag)
+def _is_transient_github_error(message: str) -> bool:
+    lower = message.lower()
+    return any(marker in lower for marker in _TRANSIENT_GITHUB_MARKERS)
+
+
+def _list_open_release_pr_url(branch: str) -> str | None:
     existing = _capture_checked(
         [
             "gh",
@@ -377,32 +474,84 @@ def ensure_release_pr(tag: str, branch: str) -> str:
         matches = json.loads(existing or "[]")
     except json.JSONDecodeError as exc:
         raise RuntimeError(f"could not parse gh pr list output: {exc}") from exc
-    if matches:
-        url = str(matches[0]["url"])
-        print(f"  Using existing release PR: {url}", flush=True)
-        return url
+    if not matches:
+        return None
+    return str(matches[0]["url"])
 
-    print(f"==> Creating release PR for {tag}...", flush=True)
-    url = _capture_checked(
-        [
-            "gh",
-            "pr",
-            "create",
-            "--base",
-            "main",
-            "--head",
-            branch,
-            "--title",
-            f"Release {tag}",
-            "--body",
-            f"Prepare PA {tag} for publication.",
-        ],
-        cwd=ROOT,
-    )
-    if not url:
-        raise RuntimeError("gh pr create did not return a pull request URL")
-    print(f"  Created release PR: {url}", flush=True)
-    return url
+
+def _release_pr_recovery_hints(tag: str, branch: str) -> list[str]:
+    return [
+        "Rerun the same release command; the prepared branch will be reused.",
+        (
+            "Or create the PR manually, then continue shipping:\n"
+            f"    gh pr create --base main --head {branch} "
+            f"--title 'Release {tag}' --body 'Prepare PA {tag} for publication.'\n"
+            f"    ./scripts/release.sh <same-bump> --ship"
+        ),
+        (
+            f"If the PR already exists and is merged:\n"
+            f"    ./scripts/release.sh --publish --tag {tag}"
+        ),
+    ]
+
+
+def ensure_release_pr(tag: str, branch: str, *, attempts: int = 3) -> str:
+    """Create the release PR if needed and return its URL.
+
+    Retries transient GitHub failures (502/504/timeouts). A timed-out create
+    can still succeed server-side, so each retry re-lists open PRs first.
+    """
+    tag = _normalize_tag(tag)
+    last_error: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            existing = _list_open_release_pr_url(branch)
+            if existing:
+                print(f"  Using existing release PR: {existing}", flush=True)
+                return existing
+
+            if attempt == 1:
+                print(f"==> Creating release PR for {tag}...", flush=True)
+            url = _capture_checked(
+                [
+                    "gh",
+                    "pr",
+                    "create",
+                    "--base",
+                    "main",
+                    "--head",
+                    branch,
+                    "--title",
+                    f"Release {tag}",
+                    "--body",
+                    f"Prepare PA {tag} for publication.",
+                ],
+                cwd=ROOT,
+            )
+            if not url:
+                raise RuntimeError("gh pr create did not return a pull request URL")
+            print(f"  Created release PR: {url}", flush=True)
+            return url
+        except RuntimeError as exc:
+            last_error = exc
+            if attempt < attempts and _is_transient_github_error(str(exc)):
+                delay = 2 ** (attempt - 1)
+                print(
+                    f"  GitHub request failed; retrying in {delay}s...",
+                    flush=True,
+                )
+                time.sleep(delay)
+                continue
+            raise ReleaseError(
+                f"could not create the release PR for {tag}: {exc}",
+                hints=_release_pr_recovery_hints(tag, branch),
+            ) from exc
+
+    assert last_error is not None
+    raise ReleaseError(
+        f"could not create the release PR for {tag}: {last_error}",
+        hints=_release_pr_recovery_hints(tag, branch),
+    ) from last_error
 
 
 def merge_release_pr(
@@ -595,16 +744,34 @@ def create_release(
     if check_tag:
         ensure_tag_available(tag)
 
-    print(f"==> Bumping version {old} -> {new}...", flush=True)
-    set_version(new)
-    # Keep the editable package version in uv.lock aligned with pyproject.toml.
-    # channels.json is updated by CI after the tag exists (avoids advertising a missing tag).
-    print("==> Updating uv.lock...", flush=True)
-    _run(["uv", "lock"], cwd=ROOT)
+    if old == new:
+        dirty = bool(_capture(["git", "status", "--porcelain"], cwd=ROOT).stdout.strip())
+        if dirty:
+            print(
+                f"==> Version already {new}; finishing leftover release files...",
+                flush=True,
+            )
+            print("==> Updating uv.lock...", flush=True)
+            _run(["uv", "lock"], cwd=ROOT)
+        else:
+            print(f"==> Version already {new}; skipping bump.", flush=True)
+    else:
+        print(f"==> Bumping version {old} -> {new}...", flush=True)
+        set_version(new)
+        # Keep the editable package version in uv.lock aligned with pyproject.toml.
+        # channels.json is updated by CI after the tag exists (avoids advertising a missing tag).
+        print("==> Updating uv.lock...", flush=True)
+        _run(["uv", "lock"], cwd=ROOT)
 
     written_notes: Path | None = None
     if notes_content:
         written_notes = write_release_notes(tag, notes_content, path=notes_path)
+    elif notes_path and notes_path.is_file():
+        written_notes = notes_path
+    else:
+        existing_notes = notes_path_for_tag(tag)
+        if existing_notes.is_file():
+            written_notes = existing_notes
 
     if commit:
         files = ["pyproject.toml", "src/pa/__init__.py", "uv.lock"]
@@ -612,8 +779,12 @@ def create_release(
             files.append(str(written_notes.relative_to(ROOT)))
         print(f"==> Committing release ({', '.join(files)})...", flush=True)
         _run(["git", "add", *files])
-        commit_msg = message or f"Release {tag}"
-        _run(["git", "commit", "-m", commit_msg])
+        cached = _capture(["git", "diff", "--cached", "--quiet"], cwd=ROOT)
+        if cached.returncode == 0:
+            print("==> Release commit already present; skipping.", flush=True)
+        else:
+            commit_msg = message or f"Release {tag}"
+            _run(["git", "commit", "-m", commit_msg])
     else:
         print("==> Skipping commit (--no-commit).", flush=True)
 

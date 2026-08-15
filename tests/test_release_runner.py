@@ -10,6 +10,7 @@ from pa.release.runner import (
     create_release,
     ensure_release_pr,
     merge_release_pr,
+    resolve_release_target,
 )
 
 
@@ -44,6 +45,140 @@ def test_ensure_release_pr_reuses_open_pr() -> None:
 
     assert url == "https://example.test/pr/7"
     assert capture.call_count == 1
+
+
+def test_ensure_release_pr_retries_transient_create_then_succeeds() -> None:
+    list_empty = subprocess.CompletedProcess([], 0, stdout="[]\n", stderr="")
+    create_timeout = subprocess.CompletedProcess(
+        [],
+        1,
+        stdout="",
+        stderr=(
+            "pull request create failed: HTTP 504: We couldn't respond to your "
+            "request in time. Sorry about that. Please try resubmitting your request"
+        ),
+    )
+    created = subprocess.CompletedProcess(
+        [], 0, stdout="https://example.test/pr/8\n", stderr=""
+    )
+    with (
+        patch(
+            "pa.release.runner._capture",
+            side_effect=[list_empty, create_timeout, list_empty, created],
+        ),
+        patch("pa.release.runner.time.sleep") as sleep,
+    ):
+        url = ensure_release_pr("v1.2.3", "release/v1.2.3")
+
+    assert url == "https://example.test/pr/8"
+    sleep.assert_called_once_with(1)
+
+
+def test_ensure_release_pr_uses_pr_created_before_timeout() -> None:
+    list_empty = subprocess.CompletedProcess([], 0, stdout="[]\n", stderr="")
+    create_timeout = subprocess.CompletedProcess(
+        [], 1, stdout="", stderr="HTTP 504: gateway timeout"
+    )
+    list_found = subprocess.CompletedProcess(
+        [], 0, stdout='[{"url":"https://example.test/pr/9"}]\n', stderr=""
+    )
+    with (
+        patch(
+            "pa.release.runner._capture",
+            side_effect=[list_empty, create_timeout, list_found],
+        ),
+        patch("pa.release.runner.time.sleep"),
+    ):
+        url = ensure_release_pr("v1.2.3", "release/v1.2.3")
+
+    assert url == "https://example.test/pr/9"
+
+
+def test_ensure_release_pr_wraps_exhausted_failures() -> None:
+    list_empty = subprocess.CompletedProcess([], 0, stdout="[]\n", stderr="")
+    create_timeout = subprocess.CompletedProcess(
+        [], 1, stdout="", stderr="HTTP 504: gateway timeout"
+    )
+    with (
+        patch(
+            "pa.release.runner._capture",
+            side_effect=[list_empty, create_timeout] * 3,
+        ),
+        patch("pa.release.runner.time.sleep"),
+        pytest.raises(ReleaseError, match="could not create the release PR") as raised,
+    ):
+        ensure_release_pr("v1.2.3", "release/v1.2.3")
+
+    assert raised.value.hints
+    assert "Rerun the same release command" in raised.value.hints[0]
+
+
+def test_resolve_release_target_resumes_prepared_branch() -> None:
+    with (
+        patch("pa.release.runner.current_branch", return_value="release/v1.0.6"),
+        patch("pa.release.runner.read_version", return_value="1.0.6"),
+    ):
+        version, resuming = resolve_release_target("patch")
+
+    assert version == "1.0.6"
+    assert resuming is True
+
+
+def test_resolve_release_target_accepts_matching_explicit_version() -> None:
+    with (
+        patch("pa.release.runner.current_branch", return_value="release/v1.0.6"),
+        patch("pa.release.runner.read_version", return_value="1.0.6"),
+    ):
+        version, resuming = resolve_release_target("v1.0.6")
+
+    assert version == "1.0.6"
+    assert resuming is True
+
+
+def test_resolve_release_target_from_main_still_bumps() -> None:
+    with (
+        patch("pa.release.runner.current_branch", return_value="main"),
+        patch("pa.release.runner.read_version", return_value="1.0.5"),
+    ):
+        version, resuming = resolve_release_target("patch")
+
+    assert version == "1.0.6"
+    assert resuming is False
+
+
+def test_resolve_release_target_rejects_mismatched_explicit_version() -> None:
+    with (
+        patch("pa.release.runner.current_branch", return_value="release/v1.0.6"),
+        patch("pa.release.runner.read_version", return_value="1.0.6"),
+        pytest.raises(ReleaseError, match="already prepared as 1.0.6"),
+    ):
+        resolve_release_target("1.0.7")
+
+
+def test_create_release_skips_bump_and_empty_commit_when_already_prepared() -> None:
+    clean = subprocess.CompletedProcess([], 0, stdout="", stderr="")
+    cached_empty = subprocess.CompletedProcess([], 0, stdout="", stderr="")
+    with (
+        patch("pa.release.runner.read_version", return_value="1.2.4"),
+        patch("pa.release.runner.set_version") as set_version,
+        patch("pa.release.runner._run") as run,
+        patch(
+            "pa.release.runner._capture",
+            side_effect=[clean, cached_empty],
+        ),
+    ):
+        result = create_release(
+            "patch",
+            target_version="1.2.4",
+            commit=True,
+            check_tag=False,
+        )
+
+    set_version.assert_not_called()
+    assert call(["uv", "lock"], cwd=ROOT) not in run.call_args_list
+    assert call(["git", "commit", "-m", "Release v1.2.4"]) not in run.call_args_list
+    assert result.old_version == "1.2.4"
+    assert result.new_version == "1.2.4"
 
 
 def test_merge_release_pr_waits_for_checks_before_merge() -> None:

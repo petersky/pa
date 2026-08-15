@@ -575,12 +575,12 @@ def _release_command(bump: str):
             create_release,
             ensure_release_branch,
             ensure_tag_available,
-            resolve_version,
+            resolve_release_target,
         )
         from pa.release.version import tag_for_version
 
         try:
-            target_version = resolve_version(bump)
+            target_version, _resuming = resolve_release_target(bump)
             tag = tag_for_version(target_version)
             ensure_tag_available(tag)
             branch = ensure_release_branch(tag)
