@@ -51,6 +51,8 @@ class TelemetryService:
         self._writer_task: asyncio.Task | None = None
         self._stopping = False
         self._latest: dict[tuple[str, str], TelemetrySample] = {}
+        self._live_rows: list[dict[str, Any]] = []
+        self._live_health: dict[str, Any] = {}
         self.started_at: datetime | None = None
         self.last_collection_at: datetime | None = None
         self.last_persisted_at: datetime | None = None
@@ -61,6 +63,7 @@ class TelemetryService:
         self.storage_failures = 0
         self.samples_collected = 0
         self.samples_persisted = 0
+        self._rebuild_live_cache()
 
     async def _run(self, call, /, *args, **kwargs):
         if self._executor_closed:
@@ -166,6 +169,7 @@ class TelemetryService:
         self.samples_collected += len(samples)
         for sample in samples:
             self._latest[(sample.scope_type, sample.scope_id)] = sample
+        self._rebuild_live_cache()
         if persist:
             self._enqueue(samples)
         return samples
@@ -235,6 +239,22 @@ class TelemetryService:
             finally:
                 self._queue.task_done()
 
+    def _rebuild_live_cache(self) -> None:
+        rows = []
+        for sample in self._latest.values():
+            rows.append(
+                {
+                    "scope_type": sample.scope_type,
+                    "scope_id": sample.scope_id,
+                    "principal_id": sample.principal_id,
+                    "timestamp": sample.timestamp,
+                    "public": sample.public_dict(),
+                }
+            )
+        rows.sort(key=lambda item: (item["scope_type"], item["scope_id"]))
+        self._live_rows = rows
+        self._live_health = self.health(include_storage=False)
+
     def live(
         self,
         *,
@@ -244,39 +264,32 @@ class TelemetryService:
         auth_required: bool = False,
     ) -> dict:
         now = datetime.now(UTC)
+        interval = self.settings.telemetry_live_interval_seconds
         samples = []
-        for (sample_scope_type, sample_scope_id), sample in self._latest.items():
-            if scope_type and sample_scope_type != scope_type:
+        for row in self._live_rows:
+            if scope_type and row["scope_type"] != scope_type:
                 continue
-            if scope_id and sample_scope_id != scope_id:
+            if scope_id and row["scope_id"] != scope_id:
                 continue
             if (
                 auth_required
-                and sample.scope_type == "session"
-                and sample.principal_id != principal_id
+                and row["scope_type"] == "session"
+                and row.get("principal_id") != principal_id
             ):
                 continue
-            data = sample.public_dict()
-            age = max(0.0, (now - sample.timestamp).total_seconds())
-            data["freshness"] = {
+            age = max(0.0, (now - row["timestamp"]).total_seconds())
+            public = dict(row["public"])
+            public["freshness"] = {
                 "age_seconds": age,
-                "state": (
-                    "fresh"
-                    if age <= self.settings.telemetry_live_interval_seconds * 2.5
-                    else "stale"
-                ),
-                "expected_interval_seconds": (
-                    self.settings.telemetry_live_interval_seconds
-                ),
+                "state": "fresh" if age <= interval * 2.5 else "stale",
+                "expected_interval_seconds": interval,
             }
-            samples.append(data)
+            samples.append(public)
         return {
             "enabled": self.settings.telemetry_enabled,
             "restart_id": self.restart_id,
-            "samples": sorted(
-                samples, key=lambda item: (item["scope_type"], item["scope_id"])
-            ),
-            "health": self.health(include_storage=False),
+            "samples": samples,
+            "health": dict(self._live_health or self.health(include_storage=False)),
         }
 
     def health(self, *, include_storage: bool = True) -> dict:

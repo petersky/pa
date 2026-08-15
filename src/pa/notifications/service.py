@@ -55,6 +55,7 @@ class NotificationService:
         self._locks: dict[str, asyncio.Lock] = {}
         self._mutation_locks: dict[str, threading.RLock] = {}
         self._create_lock = threading.RLock()
+        self._expire_mono: dict[str, float] = {}
 
     def register_delivery_handler(
         self, notification_id: str, handler: DeliveryHandler
@@ -183,6 +184,27 @@ class NotificationService:
         ):
             raise KeyError(notification_id)
         return notification
+
+    def list_inbox(
+        self,
+        *,
+        principal_id: str,
+        realms: set[str],
+        realm_id: str,
+        **filters: Any,
+    ) -> tuple[list[Notification], int]:
+        records = self.list_authorized(
+            principal_id=principal_id,
+            realms=realms,
+            realm_id=realm_id,
+            **filters,
+        )
+        outstanding_count = 0
+        if realm_id in realms:
+            outstanding_count = self.store.count_outstanding_notifications(
+                realm_id=realm_id, principal_id=principal_id
+            )
+        return records, outstanding_count
 
     def list_authorized(
         self,

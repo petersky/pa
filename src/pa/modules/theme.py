@@ -93,15 +93,22 @@ def list_themes() -> list[dict]:
 
 
 @router.get("/assets")
-def asset_info(request: Request) -> dict:
+def asset_info(request: Request) -> JSONResponse:
     from pa import __version__
 
     assets = request.app.state.ctx.require_service("assets")
-    return {
+    payload = {
         "version": assets.version,
         "pa_version": __version__,
         "build_id": f"{__version__}+{assets.version}",
     }
+    return JSONResponse(
+        payload,
+        headers={
+            "ETag": f'"{assets.version}"',
+            "Cache-Control": "private, max-age=5",
+        },
+    )
 
 
 @router.get("/theme")

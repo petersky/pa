@@ -2342,7 +2342,7 @@ class CardProjection:
             row = conn.execute(query, params).fetchone()
         return int(row["count"] if row else 0)
 
-    def list_card_work_projections(
+    def _card_work_clauses(
         self,
         *,
         realm_id: str,
@@ -2355,10 +2355,7 @@ class CardProjection:
         blocked: str = "",
         tag: str = "",
         updated_days: int | None = None,
-        limit: int = 100,
-        offset: int = 0,
-    ) -> list[Card]:
-        """Return a fixed-size, body-free page for lifecycle presentation."""
+    ) -> tuple[str, list[object]]:
         clauses = ["realm_id = ?"]
         params: list[object] = [realm_id]
         if lane:
@@ -2392,6 +2389,37 @@ class CardProjection:
             cutoff = datetime.now(UTC) - timedelta(days=updated_days)
             clauses.append("updated_at >= ?")
             params.append(cutoff.isoformat())
+        return " AND ".join(clauses), params
+
+    def list_card_work_projections(
+        self,
+        *,
+        realm_id: str,
+        lane: CardLane | None = None,
+        kind: CardKind | None = None,
+        project_id: str | None = None,
+        query: str = "",
+        owner: str = "",
+        instance: str = "",
+        blocked: str = "",
+        tag: str = "",
+        updated_days: int | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[Card]:
+        """Return a fixed-size, body-free page for lifecycle presentation."""
+        where, params = self._card_work_clauses(
+            realm_id=realm_id,
+            lane=lane,
+            kind=kind,
+            project_id=project_id,
+            query=query,
+            owner=owner,
+            instance=instance,
+            blocked=blocked,
+            tag=tag,
+            updated_days=updated_days,
+        )
         bounded_limit = max(1, min(int(limit), 100))
         params.extend([bounded_limit, max(0, int(offset))])
         columns = """
@@ -2405,12 +2433,84 @@ class CardProjection:
             created_at, updated_at
         """
         sql = (
-            f"SELECT {columns} FROM cards WHERE {' AND '.join(clauses)} "
+            f"SELECT {columns} FROM cards WHERE {where} "
             "ORDER BY updated_at DESC, id LIMIT ? OFFSET ?"
         )
         with self._conn() as conn:
             rows = conn.execute(sql, params).fetchall()
         return [self._row_to_card(row) for row in rows]
+
+    def count_card_work_projections(
+        self,
+        *,
+        realm_id: str,
+        lane: CardLane | None = None,
+        kind: CardKind | None = None,
+        project_id: str | None = None,
+        query: str = "",
+        owner: str = "",
+        instance: str = "",
+        blocked: str = "",
+        tag: str = "",
+        updated_days: int | None = None,
+    ) -> int:
+        where, params = self._card_work_clauses(
+            realm_id=realm_id,
+            lane=lane,
+            kind=kind,
+            project_id=project_id,
+            query=query,
+            owner=owner,
+            instance=instance,
+            blocked=blocked,
+            tag=tag,
+            updated_days=updated_days,
+        )
+        with self._conn() as conn:
+            row = conn.execute(
+                f"SELECT COUNT(*) AS count FROM cards WHERE {where}", params
+            ).fetchone()
+        return int(row["count"] if row else 0)
+
+    def list_card_filter_facets(self, *, realm_id: str) -> dict[str, list[str]]:
+        """Distinct filter values without loading card bodies."""
+        with self._conn() as conn:
+            owners = [
+                str(row["owner_principal"])
+                for row in conn.execute(
+                    """
+                    SELECT DISTINCT owner_principal FROM cards
+                    WHERE realm_id = ? AND owner_principal IS NOT NULL
+                      AND owner_principal != ''
+                    ORDER BY owner_principal
+                    """,
+                    (realm_id,),
+                )
+            ]
+            instances = [
+                str(row["preferred_instance"])
+                for row in conn.execute(
+                    """
+                    SELECT DISTINCT preferred_instance FROM cards
+                    WHERE realm_id = ? AND preferred_instance IS NOT NULL
+                      AND preferred_instance != ''
+                    ORDER BY preferred_instance
+                    """,
+                    (realm_id,),
+                )
+            ]
+            tags = [
+                str(row["value"])
+                for row in conn.execute(
+                    """
+                    SELECT DISTINCT value FROM cards, json_each(cards.tags)
+                    WHERE realm_id = ? AND value IS NOT NULL AND value != ''
+                    ORDER BY value
+                    """,
+                    (realm_id,),
+                )
+            ]
+        return {"owners": owners, "instances": instances, "tags": tags}
 
     def list_cards_by_ids(
         self, card_ids: list[str], *, realm_id: str

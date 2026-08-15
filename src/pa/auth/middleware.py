@@ -7,7 +7,7 @@ import re
 from urllib.parse import urlsplit
 
 from fastapi import HTTPException, Request
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.datastructures import MutableHeaders
 from starlette.responses import JSONResponse, Response
 
 from pa.auth.cookies import use_secure_cookies
@@ -18,6 +18,7 @@ from pa.config import Settings
 
 PUBLIC_PATHS = {
     "/api/health",
+    "/api/ready",
     "/api/auth/login",
     "/api/fleet/join",
     "/api/pr-supervisor/webhook/github",
@@ -211,16 +212,48 @@ def _origin_allowed(request: Request, settings: Settings) -> bool:
     return f"{parsed.scheme}://{parsed.netloc}".lower() in allowed
 
 
-class AuthMiddleware(BaseHTTPMiddleware):
+class AuthMiddleware:
+    """Pure ASGI auth so nested owner-channel probes are not serialized."""
+
     def __init__(
         self, app, settings: Settings, users: UserDirectory, sessions: SessionManager
     ):
-        super().__init__(app)
+        self.app = app
         self.settings = settings
         self.users = users
         self.sessions = sessions
 
-    async def dispatch(self, request: Request, call_next) -> Response:
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        request = Request(scope, receive)
+        denied, rotate_csrf = self._prepare(request)
+        if denied is not None:
+            await denied(scope, receive, send)
+            return
+
+        async def send_wrapper(message):
+            if rotate_csrf and message["type"] == "http.response.start":
+                headers = MutableHeaders(raw=message.setdefault("headers", []))
+                headers.append("set-cookie", self._csrf_set_cookie(request))
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
+
+    def _csrf_set_cookie(self, request: Request) -> str:
+        dummy = Response()
+        dummy.set_cookie(
+            COOKIE_NAME,
+            request.state.csrf_token,
+            httponly=False,
+            samesite="lax",
+            secure=use_secure_cookies(request, self.settings),
+            max_age=86400 * 30,
+        )
+        return dummy.headers["set-cookie"]
+
+    def _prepare(self, request: Request) -> tuple[Response | None, bool]:
         request.state.principal_id = None
         request.state.user = None
         request.state.user_authenticated = False
@@ -286,10 +319,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
             and not is_public
             and not request.state.instance_authenticated
         ):
-            return _error(
-                "missing_authentication",
-                "Fleet instance authentication is missing or invalid.",
-                401,
+            return (
+                _error(
+                    "missing_authentication",
+                    "Fleet instance authentication is missing or invalid.",
+                    401,
+                ),
+                rotate_csrf,
             )
 
         if not request.state.principal_id:
@@ -313,25 +349,37 @@ class AuthMiddleware(BaseHTTPMiddleware):
             )
             if needs_user_auth:
                 if request.state.instance_authenticated:
-                    return _error(
-                        "insufficient_authorization",
-                        "Fleet instance credentials do not authorize this user operation.",
-                        403,
+                    return (
+                        _error(
+                            "insufficient_authorization",
+                            "Fleet instance credentials do not authorize this user operation.",
+                            403,
+                        ),
+                        rotate_csrf,
                     )
                 if session_status == "expired":
-                    return _error(
-                        "expired_session",
-                        "The authenticated browser session has expired; sign in again.",
-                        401,
+                    return (
+                        _error(
+                            "expired_session",
+                            "The authenticated browser session has expired; sign in again.",
+                            401,
+                        ),
+                        rotate_csrf,
                     )
                 if bearer_supplied and not bearer_valid:
-                    return _error(
-                        "invalid_authentication",
-                        "The supplied bearer credential is invalid.",
-                        401,
+                    return (
+                        _error(
+                            "invalid_authentication",
+                            "The supplied bearer credential is invalid.",
+                            401,
+                        ),
+                        rotate_csrf,
                     )
-                return _error(
-                    "missing_authentication", "Authentication is required.", 401
+                return (
+                    _error(
+                        "missing_authentication", "Authentication is required.", 401
+                    ),
+                    rotate_csrf,
                 )
             default = self.users.ensure_default_user()
             request.state.user = default
@@ -339,10 +387,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         if _needs_csrf(request):
             if not _origin_allowed(request, self.settings):
-                return _error(
-                    "invalid_origin",
-                    "The browser request Origin is not this PA instance or its advertised URL.",
-                    403,
+                return (
+                    _error(
+                        "invalid_origin",
+                        "The browser request Origin is not this PA instance or its advertised URL.",
+                        403,
+                    ),
+                    rotate_csrf,
                 )
             csrf = validate_request(request, self.settings.session_secret)
             if not csrf.ok:
@@ -362,21 +413,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
                         secure=use_secure_cookies(request, self.settings),
                         max_age=86400 * 30,
                     )
-                return response
+                return response, rotate_csrf
 
-        response = await call_next(request)
-
-        if rotate_csrf:
-            response.set_cookie(
-                COOKIE_NAME,
-                request.state.csrf_token,
-                httponly=False,
-                samesite="lax",
-                secure=use_secure_cookies(request, self.settings),
-                max_age=86400 * 30,
-            )
-
-        return response
+        return None, rotate_csrf
 
 
 def require_user(request: Request):

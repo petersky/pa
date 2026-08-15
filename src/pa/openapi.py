@@ -14,6 +14,7 @@ from pa.auth.sessions import SessionManager
 
 PUBLIC_API_PATHS = {
     "/api/health",
+    "/api/ready",
     "/api/auth/login",
     "/api/fleet/join",
     "/api/pr-supervisor/webhook/github",

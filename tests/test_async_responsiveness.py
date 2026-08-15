@@ -652,5 +652,92 @@ class WorkerResponsivenessTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((await task).status_code, 200)
 
 
+class MixedLoadLoopLagTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
+        self.runtime = AsyncRuntime(
+            max_workers=4,
+            max_queue=16,
+            default_timeout=1,
+            lag_interval_seconds=0.005,
+            slow_call_seconds=1,
+        )
+        await self.runtime.start()
+        telemetry = {"enabled": True, "samples": [], "health": {"state": "ready"}}
+        fleet = [{"instance_id": "local", "name": "local"}]
+        app = FastAPI()
+        app.state.ctx = SimpleNamespace(
+            services={"async_runtime": self.runtime},
+            require_service=lambda name: self.runtime,
+        )
+
+        @app.get("/api/ready")
+        async def ready():
+            return {"status": "ready"}
+
+        @app.get("/partials/cards")
+        def cards():
+            time.sleep(0.04)
+            return HTMLResponse("<article class='compact-card'></article>")
+
+        @app.get("/api/telemetry/live")
+        async def live():
+            return dict(telemetry)
+
+        @app.get("/api/notifications")
+        async def notifications():
+            def load_inbox() -> dict:
+                time.sleep(0.04)
+                return {"items": [], "outstanding_count": 0}
+
+            return await self.runtime.run_blocking(
+                "notifications.list_page", load_inbox
+            )
+
+        @app.get("/api/fleet/instances")
+        def instances():
+            return list(fleet)
+
+        self.client = httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        )
+
+    async def asyncTearDown(self) -> None:
+        await self.client.aclose()
+        await self.runtime.close()
+
+    async def test_mixed_hot_paths_keep_probe_near_5ms_and_loop_p95_under_20ms(
+        self,
+    ) -> None:
+        loaders = [
+            asyncio.create_task(self.client.get(path))
+            for path in (
+                "/partials/cards",
+                "/api/telemetry/live",
+                "/api/notifications",
+                "/api/fleet/instances",
+            )
+            for _ in range(3)
+        ]
+        await asyncio.sleep(0)
+
+        async def probe() -> float:
+            started = time.perf_counter()
+            await asyncio.sleep(0.005)
+            return (time.perf_counter() - started) * 1000
+
+        ready_started = time.perf_counter()
+        ready = await self.client.get("/api/ready")
+        ready_ms = (time.perf_counter() - ready_started) * 1000
+        probe_ms = await probe()
+        responses = await asyncio.gather(*loaders)
+        await asyncio.sleep(0.05)
+
+        self.assertTrue(all(item.status_code == 200 for item in responses))
+        self.assertEqual(ready.status_code, 200)
+        self.assertLess(probe_ms, 20)
+        self.assertLess(ready_ms, 20)
+        self.assertLess(self.runtime.snapshot()["event_loop"]["p95_lag_ms"], 20)
+
+
 if __name__ == "__main__":
     unittest.main()

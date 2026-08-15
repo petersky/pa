@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import asyncio
+import os
 import tempfile
 import threading
 import time
@@ -78,6 +79,26 @@ class FleetRegistryReloadTests(unittest.TestCase):
         self.assertIsNotNone(consumed)
         self.assertEqual(consumed.token, token)
         self.assertIsNone(reader.consume_join_token(token))
+
+    def test_instance_reload_skips_unchanged_mtime(self) -> None:
+        registry = FleetRegistry(self.data_dir, "fleet-a")
+        registry.upsert_instance(
+            FleetInstance(instance_id="peer-1", name="peer", url="http://peer:8080")
+        )
+        with patch("pa.fleet.registry.json.loads", wraps=json.loads) as loads:
+            first = registry.list_instances()
+            second = registry.list_instances()
+            loads.assert_not_called()
+        self.assertEqual([item.instance_id for item in first], ["peer-1"])
+        self.assertEqual([item.instance_id for item in second], ["peer-1"])
+        info = registry.instances_path.stat()
+        os.utime(
+            registry.instances_path,
+            ns=(info.st_atime_ns, info.st_mtime_ns + 1_000_000),
+        )
+        with patch("pa.fleet.registry.json.loads", wraps=json.loads) as loads:
+            registry.list_instances()
+            loads.assert_called()
 
     def test_create_merges_disk_tokens(self) -> None:
         a = FleetRegistry(self.data_dir, "fleet-a")

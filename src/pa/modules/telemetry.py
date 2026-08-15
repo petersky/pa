@@ -163,7 +163,7 @@ def _make_query(
 
 
 @router.get("/telemetry/live")
-def live(
+async def live(
     request: Request,
     scope_type: Literal["instance", "session"] | None = None,
     scope_id: str | None = None,

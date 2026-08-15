@@ -817,6 +817,31 @@ def test_concurrent_notification_heads_merge_deterministically(tmp_path: Path) -
     assert set(projected_a.idempotency_keys) == {"read-left", "ack-right"}
 
 
+def test_notification_polls_throttle_expiry_and_use_one_store_call(
+    tmp_path: Path,
+) -> None:
+    kernel = _kernel(tmp_path)
+    with TestClient(kernel.build_app()) as client:
+        service = client.app.state.ctx.require_service("notifications")
+        list_calls: list[int] = []
+        original_inbox = service.list_inbox
+
+        def wrapped_inbox(**kwargs):
+            list_calls.append(1)
+            return original_inbox(**kwargs)
+
+        service.list_inbox = wrapped_inbox
+        first = client.get("/api/notifications")
+        stamped = service._expire_mono.get("default")
+        second = client.get("/api/notifications")
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert "outstanding_count" in first.json()
+        assert stamped is not None
+        assert service._expire_mono.get("default") == stamped
+        assert len(list_calls) == 2
+
+
 @pytest.mark.parametrize(
     ("text", "expected"),
     [

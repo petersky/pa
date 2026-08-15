@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 
 from pa.config import Settings, reset_settings
 from pa.core.kernel import Kernel
-from pa.domain.models import CardCreate, CardLane
+from pa.domain.models import CardCreate, CardKind, CardLane
 from pa.domain.store import reset_store
 from pa.instance.agent_session import reset_instance_agent
 
@@ -86,6 +86,43 @@ def test_lane_batches_sessions_and_dispatch_progress_once() -> None:
         assert dispatch_store.latest_by_card.call_count == 1
         requested_ids = store.list_sessions_for_cards.call_args.args[0]
         assert len(requested_ids) == 10
+
+
+def test_cards_partial_filters_in_sql_and_paginates_before_joins() -> None:
+    with tempfile.TemporaryDirectory() as tmp, TestClient(_app(tmp)) as client:
+        store = client.app.state.ctx.store
+        for index in range(40):
+            store.create_card(
+                CardCreate(
+                    title=f"Task {index:02d}",
+                    kind=CardKind.TASK,
+                    tags=["alpha"],
+                    body="payload " * 80,
+                )
+            )
+        store.create_card(CardCreate(title="Other kind", kind=CardKind.GOAL))
+        store.list_cards = Mock(wraps=store.list_cards)
+        page = store.list_card_work_projections(
+            realm_id="default",
+            kind=CardKind.TASK,
+            tag="alpha",
+            limit=10,
+        )
+        total = store.count_card_work_projections(
+            realm_id="default",
+            kind=CardKind.TASK,
+            tag="alpha",
+        )
+        facets = store.list_card_filter_facets(realm_id="default")
+        response = client.get("/partials/cards?lane=inbox&kind=task&tag=alpha")
+
+        assert len(page) == 10
+        assert all(not card.body for card in page)
+        assert total == 40
+        assert "alpha" in facets["tags"]
+        assert response.status_code == 200
+        assert response.text.count('<article class="compact-card') == 10
+        store.list_cards.assert_not_called()
 
 
 def test_work_sse_has_pre_swap_teardown_and_observable_resource_count() -> None:

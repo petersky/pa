@@ -221,15 +221,27 @@ class FleetRegistry:
         self._instances: dict[str, FleetInstance] = {}
         self._tokens: dict[str, FleetJoinToken] = {}
         self._generation = 0
+        self._instances_file_key: tuple[int, int] | None = None
         self._load()
 
     def _load(self) -> None:
         self._reload_instances()
         self._reload_tokens()
 
+    def _instances_disk_key(self) -> tuple[int, int] | None:
+        try:
+            info = self.instances_path.stat()
+        except OSError:
+            return None
+        return info.st_mtime_ns, info.st_size
+
     def _reload_instances(self) -> None:
         """Merge instances from disk so CLI and server stay consistent."""
-        if not self.instances_path.exists():
+        key = self._instances_disk_key()
+        if key is None:
+            self._instances_file_key = None
+            return
+        if key == self._instances_file_key:
             return
         try:
             data = json.loads(self.instances_path.read_text())
@@ -249,6 +261,7 @@ class FleetRegistry:
                 # Legacy registries had no version. Member count is only a migration
                 # ordering hint; equal-sized but different rosters remain conflicts.
                 self._generation = max(self._generation, len(raw_instances))
+            self._instances_file_key = key
         except json.JSONDecodeError, ValueError:
             pass
 
@@ -270,6 +283,7 @@ class FleetRegistry:
         self.instances_path.parent.mkdir(parents=True, exist_ok=True)
         payload = self.snapshot()
         atomic_write_json(self.instances_path, payload)
+        self._instances_file_key = self._instances_disk_key()
 
     @staticmethod
     def normalize_name(name: str) -> str:
