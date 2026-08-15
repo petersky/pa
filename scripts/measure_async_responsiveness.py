@@ -82,12 +82,14 @@ async def main() -> None:
                     "bounded_unrelated_ms": round(latency, 3),
                 }
             )
+        mixed = await _mixed_hot_path_unrelated_latency(runtime)
         print(
             json.dumps(
                 {
                     "delay_ms": DELAY_SECONDS * 1000,
                     "scenarios": rows,
                     "runtime": runtime.snapshot(),
+                    "mixed_hot_paths": mixed,
                 },
                 indent=2,
                 sort_keys=True,
@@ -95,6 +97,24 @@ async def main() -> None:
         )
     finally:
         await runtime.close()
+
+
+async def _mixed_hot_path_unrelated_latency(runtime: AsyncRuntime) -> dict:
+    """Cards/SQLite-like work stays off-loop so a 5ms probe stays ~5ms."""
+
+    async def load_mix() -> None:
+        await asyncio.gather(
+            runtime.run_blocking("benchmark.cards", time.sleep, DELAY_SECONDS),
+            runtime.run_blocking("benchmark.notifications", time.sleep, DELAY_SECONDS),
+            runtime.run_blocking("benchmark.fleet_instances", time.sleep, DELAY_SECONDS),
+            asyncio.sleep(DELAY_SECONDS),
+        )
+
+    latency = await unrelated_latency(load_mix)
+    return {
+        "unrelated_probe_ms": round(latency, 3),
+        "loop_p95_lag_ms": runtime.snapshot()["event_loop"]["p95_lag_ms"],
+    }
 
 
 async def _direct_block(delay: float) -> None:

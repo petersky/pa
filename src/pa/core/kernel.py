@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.datastructures import MutableHeaders
 
 from pa.config import Settings, get_settings
 from pa.core.context import AppContext
@@ -19,6 +20,146 @@ if TYPE_CHECKING:
     from pa.instance.agent_session import AgentSessionManager
 
 logger = logging.getLogger(__name__)
+
+
+class _IdentityHeadersMiddleware:
+    """Pure ASGI identity headers so nested owner probes are not serialized."""
+
+    def __init__(self, app, instance_id: str) -> None:
+        self.app = app
+        self.instance_id = instance_id
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        correlation_id = ""
+        for key, value in scope.get("headers") or []:
+            if key == b"x-request-id":
+                correlation_id = value.decode("latin-1")
+                break
+        if not correlation_id:
+            from uuid import uuid4
+
+            correlation_id = str(uuid4())
+        instance_id = self.instance_id
+
+        async def send_wrapper(message):
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(raw=message.setdefault("headers", []))
+                headers["X-PA-Instance-ID"] = instance_id
+                headers["X-Request-ID"] = correlation_id
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
+
+
+class _ResponsivenessMiddleware:
+    """Record request timing without BaseHTTPMiddleware hitching."""
+
+    def __init__(self, app, runtime_getter) -> None:
+        self.app = app
+        self.runtime_getter = runtime_getter
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        import time
+
+        started = time.perf_counter()
+        status = 500
+        path = str(scope.get("path") or "")
+
+        async def send_wrapper(message):
+            nonlocal status
+            if message["type"] == "http.response.start":
+                status = int(message.get("status") or 500)
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_wrapper)
+        finally:
+            runtime = self.runtime_getter()
+            if runtime:
+                runtime.record_request(
+                    path, status, (time.perf_counter() - started) * 1000
+                )
+
+
+class _CacheControlMiddleware:
+    """Assign cache headers without BaseHTTPMiddleware hitching."""
+
+    def __init__(self, app) -> None:
+        self.app = app
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        from urllib.parse import parse_qs
+
+        path = str(scope.get("path") or "")
+        query = parse_qs((scope.get("query_string") or b"").decode("latin-1"))
+
+        async def send_wrapper(message):
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(raw=message.setdefault("headers", []))
+                content_type = headers.get("content-type", "")
+                if path.startswith("/static/"):
+                    if query.get("v"):
+                        headers["Cache-Control"] = (
+                            "public, max-age=31536000, immutable"
+                        )
+                    else:
+                        headers["Cache-Control"] = "no-cache"
+                elif "text/html" in content_type:
+                    headers["Cache-Control"] = "no-cache, must-revalidate"
+                    headers["Pragma"] = "no-cache"
+                elif path.startswith("/api/"):
+                    headers["Cache-Control"] = "no-store"
+                headers.setdefault("Vary", "Accept")
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
+
+
+class _DebugRequestMiddleware:
+    """Debug request hooks without BaseHTTPMiddleware hitching."""
+
+    def __init__(self, app, ctx: AppContext) -> None:
+        self.app = app
+        self.ctx = ctx
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        import time
+
+        start = time.perf_counter()
+        method = str(scope.get("method") or "")
+        path = str(scope.get("path") or "")
+        status = 500
+
+        async def send_wrapper(message):
+            nonlocal status
+            if message["type"] == "http.response.start":
+                status = int(message.get("status") or 500)
+                headers = MutableHeaders(raw=message.setdefault("headers", []))
+                headers["X-PA-Debug"] = "1"
+            await send(message)
+
+        await self.ctx.hooks.emit("request.start", method=method, path=path)
+        await self.app(scope, receive, send_wrapper)
+        await self.ctx.hooks.emit(
+            "request.end",
+            method=method,
+            path=path,
+            status=status,
+            elapsed_ms=(time.perf_counter() - start) * 1000,
+        )
+
 
 SERVER_DIR = Path(__file__).resolve().parent.parent / "server"
 DEFAULT_TEMPLATES = SERVER_DIR / "templates"
@@ -186,6 +327,13 @@ class Kernel:
             ctx=self.ctx,
             modules=self.registry.describe(),
         )
+        from pa.server.readiness import warm_ready_contract
+
+        warm_ready_contract(app)
+        if not self.ctx.settings.agent_enabled:
+            # Disabled agents still run workspace housekeeping. Await it so
+            # /api/ready is deterministic for tests and `pa start` without ACP.
+            await agent_start_task
 
     async def shutdown(self, app: FastAPI) -> None:
         import asyncio
@@ -397,38 +545,16 @@ class Kernel:
         app.add_exception_handler(BlockingOperationTimeout, timed_out)
 
     def _install_identity_middleware(self, app: FastAPI) -> None:
-        from uuid import uuid4
-
-        from starlette.requests import Request
-        from starlette.responses import Response
-
-        @app.middleware("http")
-        async def identity(request: Request, call_next) -> Response:
-            correlation_id = request.headers.get("X-Request-ID") or str(uuid4())
-            response = await call_next(request)
-            response.headers["X-PA-Instance-ID"] = self.ctx.settings.instance_id
-            response.headers["X-Request-ID"] = correlation_id
-            return response
+        app.add_middleware(
+            _IdentityHeadersMiddleware,
+            instance_id=self.ctx.settings.instance_id,
+        )
 
     def _install_responsiveness_middleware(self, app: FastAPI) -> None:
-        import time
-
-        from starlette.requests import Request
-        from starlette.responses import Response
-
-        @app.middleware("http")
-        async def responsiveness(request: Request, call_next) -> Response:
-            started = time.perf_counter()
-            status = 500
-            try:
-                response = await call_next(request)
-                status = response.status_code
-                return response
-            finally:
-                elapsed_ms = (time.perf_counter() - started) * 1000
-                runtime = self.ctx.services.get("async_runtime")
-                if runtime:
-                    runtime.record_request(request.url.path, status, elapsed_ms)
+        app.add_middleware(
+            _ResponsivenessMiddleware,
+            runtime_getter=lambda: self.ctx.services.get("async_runtime"),
+        )
 
     def _install_auth_middleware(self, app: FastAPI) -> None:
         from pa.auth.middleware import AuthMiddleware
@@ -457,56 +583,10 @@ class Kernel:
             entry.module.register_mcp(guarded, self.ctx)
 
     def _install_debug_middleware(self, app: FastAPI) -> None:
-        import time
-
-        from starlette.requests import Request
-        from starlette.responses import Response
-
-        @app.middleware("http")
-        async def debug_request_logger(request: Request, call_next) -> Response:
-            start = time.perf_counter()
-            await self.ctx.hooks.emit(
-                "request.start",
-                method=request.method,
-                path=request.url.path,
-            )
-            response = await call_next(request)
-            elapsed_ms = (time.perf_counter() - start) * 1000
-            await self.ctx.hooks.emit(
-                "request.end",
-                method=request.method,
-                path=request.url.path,
-                status=response.status_code,
-                elapsed_ms=elapsed_ms,
-            )
-            response.headers["X-PA-Debug"] = "1"
-            return response
+        app.add_middleware(_DebugRequestMiddleware, ctx=self.ctx)
 
     def _install_cache_middleware(self, app: FastAPI) -> None:
-        from starlette.requests import Request
-        from starlette.responses import Response
-
-        @app.middleware("http")
-        async def cache_control(request: Request, call_next) -> Response:
-            response = await call_next(request)
-            path = request.url.path
-            content_type = response.headers.get("content-type", "")
-
-            if path.startswith("/static/"):
-                if request.query_params.get("v"):
-                    response.headers["Cache-Control"] = (
-                        "public, max-age=31536000, immutable"
-                    )
-                else:
-                    response.headers["Cache-Control"] = "no-cache"
-            elif "text/html" in content_type:
-                response.headers["Cache-Control"] = "no-cache, must-revalidate"
-                response.headers["Pragma"] = "no-cache"
-            elif path.startswith("/api/"):
-                response.headers["Cache-Control"] = "no-store"
-
-            response.headers.setdefault("Vary", "Accept")
-            return response
+        app.add_middleware(_CacheControlMiddleware)
 
 
 _kernel: Kernel | None = None

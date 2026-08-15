@@ -1129,6 +1129,31 @@ class SamplerTests(unittest.IsolatedAsyncioTestCase):
             await service.stop(close=True)
 
 
+class LiveSnapshotCacheTests(unittest.TestCase):
+    def test_live_serves_prebuilt_rows_without_rebuilding_from_latest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), telemetry_enabled=True)
+            service = TelemetryService(
+                settings,
+                storage=TelemetryStorage(Path(tmp) / "telemetry.db"),
+            )
+            captured = sample(datetime.now(UTC))
+            service._live_rows = [
+                {
+                    "scope_type": captured.scope_type,
+                    "scope_id": captured.scope_id,
+                    "principal_id": captured.principal_id,
+                    "timestamp": captured.timestamp,
+                    "public": captured.public_dict(),
+                }
+            ]
+            service._latest.clear()
+            payload = service.live(scope_type="instance")
+            self.assertEqual(len(payload["samples"]), 1)
+            self.assertEqual(payload["samples"][0]["scope_id"], "instance-a")
+            self.assertIn("freshness", payload["samples"][0])
+
+
 class TelemetryUITests(unittest.TestCase):
     def test_reports_and_live_surfaces_expose_gaps_and_quality(self) -> None:
         root = Path(__file__).parents[1]

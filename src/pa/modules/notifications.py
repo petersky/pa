@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from contextlib import suppress
 from typing import Any
 
@@ -123,10 +124,13 @@ async def list_notifications(
     realm_id = realm or request.app.state.ctx.settings.primary_realm
     service = _service(request)
     authorized_realms = _realms(request)
-    if realm_id in authorized_realms:
+    now = time.monotonic()
+    last_expire = service._expire_mono.get(realm_id, 0.0)
+    if realm_id in authorized_realms and now - last_expire >= 5.0:
         await service.expire_due(realm_id=realm_id)
-    records = await asyncio.to_thread(
-        service.list_authorized,
+        service._expire_mono[realm_id] = now
+    runtime = request.app.state.ctx.services.get("async_runtime")
+    list_kwargs = dict(
         principal_id=principal,
         realms=authorized_realms,
         realm_id=realm_id,
@@ -138,12 +142,13 @@ async def list_notifications(
         limit=limit,
         offset=offset,
     )
-    outstanding_count = 0
-    if realm_id in authorized_realms:
-        outstanding_count = await asyncio.to_thread(
-            request.app.state.ctx.store.count_outstanding_notifications,
-            realm_id=realm_id,
-            principal_id=principal,
+    if runtime:
+        records, outstanding_count = await runtime.run_blocking(
+            "notifications.list_page", service.list_inbox, **list_kwargs
+        )
+    else:
+        records, outstanding_count = await asyncio.to_thread(
+            service.list_inbox, **list_kwargs
         )
     return {
         "items": [

@@ -926,6 +926,7 @@ class SyncModule(Module):
         await runtime.run_blocking(
             "sync.startup_reconcile", repair_local_projections, timeout=120.0
         )
+        ctx.register_service("sync_startup_repaired", True)
         engine.start()
         for realm in settings.subscribed_realms:
             engine.request_convergence(realm)

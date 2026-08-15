@@ -41,6 +41,7 @@ class SyncTokenAuthSeparationTests(unittest.TestCase):
                 Route("/api/fleet/join-token", _ok, methods=["POST"]),
                 Route("/api/sync/push", _ok, methods=["POST"]),
                 Route("/api/health", _ok, methods=["GET"]),
+                Route("/api/ready", _ok, methods=["GET"]),
                 Route("/api/status", _ok, methods=["GET"]),
                 Route("/api/agent/quiesce", _ok, methods=["GET", "POST"]),
                 Route("/api/fleet/peer-update-check", _ok, methods=["GET"]),
@@ -295,6 +296,11 @@ class SyncTokenAuthSeparationTests(unittest.TestCase):
         response = self.client.get("/api/config")
         self.assertEqual(response.status_code, 401)
         self.assertEqual(response.json()["detail"]["code"], "expired_session")
+
+    def test_ready_is_public_when_auth_required(self) -> None:
+        self.settings.auth_required = True
+        response = self.client.get("/api/ready")
+        self.assertEqual(response.status_code, 200)
 
 
 if __name__ == "__main__":

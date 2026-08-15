@@ -1358,68 +1358,50 @@ def _cards_context(
             result_limit=result_limit,
             result_offset=result_offset,
         )
-    cards = store.list_cards(
-        realm_id=realm,
-        kind=kind,
-        lane=lane,
-        project_id=project_id,
-    )
     query = request.query_params.get("q", "").strip() if apply_filters else ""
     owner = request.query_params.get("owner", "").strip() if apply_filters else ""
     instance = request.query_params.get("instance", "").strip() if apply_filters else ""
     blocked = request.query_params.get("blocked", "").strip() if apply_filters else ""
     tag = request.query_params.get("tag", "").strip() if apply_filters else ""
     updated = request.query_params.get("updated", "").strip() if apply_filters else ""
-    all_cards = store.list_cards(realm_id=realm)
-    if query:
-        needle = query.casefold()
-        cards = [
-            card
-            for card in cards
-            if needle in " ".join((card.title, card.summary, card.body)).casefold()
-        ]
-    if owner:
-        cards = [card for card in cards if card.owner_principal == owner]
-    if instance:
-        cards = [card for card in cards if card.preferred_instance == instance]
-    if blocked == "blocked":
-        cards = [card for card in cards if card.lane == CardLane.WAITING]
-    elif blocked == "unblocked":
-        cards = [card for card in cards if card.lane != CardLane.WAITING]
-    if tag:
-        cards = [card for card in cards if tag in card.tags]
-    if updated:
-        try:
-            cutoff = datetime.now(UTC) - timedelta(days=int(updated))
-            cards = [card for card in cards if card.updated_at >= cutoff]
-        except ValueError:
-            updated = ""
-    attention = (
-        request.query_params.get("attention", "").strip() if apply_filters else ""
+    try:
+        updated_days = int(updated) if updated else None
+    except ValueError:
+        updated = ""
+        updated_days = None
+    page_limit = 100 if result_limit is None else max(1, min(int(result_limit), 100))
+    cards = store.list_card_work_projections(
+        realm_id=realm,
+        lane=lane,
+        kind=kind,
+        project_id=project_id,
+        query=query,
+        owner=owner,
+        instance=instance,
+        blocked=blocked,
+        tag=tag,
+        updated_days=updated_days,
+        limit=page_limit,
+        offset=max(0, result_offset),
     )
-    candidate_presentations: dict[str, dict] = {}
-    if attention in {"actionable", "motion", "outcome"}:
-        _, _, candidate_presentations, _ = _presentation_context_for_cards(
-            request, cards
-        )
-        expected_group = {
-            "actionable": "attention",
-            "motion": "motion",
-            "outcome": "outcome",
-        }[attention]
-        cards = [
-            card
-            for card in cards
-            if candidate_presentations[card.id]["group"] == expected_group
-        ]
-    total_cards = len(cards)
-    if result_limit is not None:
-        cards = cards[result_offset : result_offset + result_limit]
+    total_cards = store.count_card_work_projections(
+        realm_id=realm,
+        lane=lane,
+        kind=kind,
+        project_id=project_id,
+        query=query,
+        owner=owner,
+        instance=instance,
+        blocked=blocked,
+        tag=tag,
+        updated_days=updated_days,
+    )
     projects = store.list_projects(realm_id=realm)
     project_by_id = {project.id: project for project in projects}
     card_sessions, card_progress, card_presentations, _ = (
         _presentation_context_for_cards(request, cards)
     )
+    facets = store.list_card_filter_facets(realm_id=realm)
     filter_params = {
         "realm": realm,
         "project": project_id or "",
@@ -1430,7 +1412,7 @@ def _cards_context(
         "blocked": blocked,
         "tag": tag,
         "updated": updated,
-        "attention": attention,
+        "attention": attention_filter,
     }
     return {
         "cards": cards,
@@ -1445,9 +1427,7 @@ def _cards_context(
         "card_sessions": card_sessions,
         "card_progress": card_progress,
         "card_presentations": card_presentations,
-        "owners": sorted(
-            {card.owner_principal for card in all_cards if card.owner_principal}
-        ),
+        "owners": facets["owners"],
         "instances": [
             {
                 "id": instance_id,
@@ -1455,15 +1435,9 @@ def _cards_context(
                     request.app.state.ctx, instance_id
                 )["display_name"],
             }
-            for instance_id in sorted(
-                {
-                    card.preferred_instance
-                    for card in all_cards
-                    if card.preferred_instance
-                }
-            )
+            for instance_id in facets["instances"]
         ],
-        "tags": sorted({tag for card in all_cards for tag in card.tags}),
+        "tags": facets["tags"],
         "filters": {
             "q": query,
             "project": project_id or "",
@@ -1473,7 +1447,7 @@ def _cards_context(
             "blocked": blocked,
             "tag": tag,
             "updated": updated,
-            "attention": attention,
+            "attention": attention_filter,
         },
         "filter_query": urlencode(
             {key: value for key, value in filter_params.items() if value}
@@ -1495,7 +1469,7 @@ def _work_context(request: Request) -> dict:
     """Build only filter metadata; lane rows are fetched as bounded partials."""
     realm = _active_realm(request)
     store = get_store()
-    cards = store.list_cards(realm_id=realm)
+    facets = store.list_card_filter_facets(realm_id=realm)
     projects = store.list_projects(realm_id=realm)
     project_id = _active_project(request)
     selected_lane = request.query_params.get("lane", CardLane.ACTIVE.value)
@@ -1520,7 +1494,7 @@ def _work_context(request: Request) -> dict:
         "kinds": list(CardKind),
         "lanes": list(CardLane),
         "projects": projects,
-        "owners": sorted({c.owner_principal for c in cards if c.owner_principal}),
+        "owners": facets["owners"],
         "instances": [
             {
                 "id": instance_id,
@@ -1528,11 +1502,9 @@ def _work_context(request: Request) -> dict:
                     request.app.state.ctx, instance_id
                 )["display_name"],
             }
-            for instance_id in sorted(
-                {c.preferred_instance for c in cards if c.preferred_instance}
-            )
+            for instance_id in facets["instances"]
         ],
-        "tags": sorted({tag for card in cards for tag in card.tags}),
+        "tags": facets["tags"],
         "filters": filters,
         "filter_query": urlencode(
             {key: value for key, value in filter_params.items() if value}

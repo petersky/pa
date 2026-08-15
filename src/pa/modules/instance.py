@@ -213,55 +213,30 @@ async def health() -> dict[str, str]:
 
 @router.get("/ready")
 async def ready(request: Request) -> dict:
-    """Report API readiness only after owner-scoped runtime services exist."""
+    """Admission gate: warmed routes, local init, ACP startup. Not liveness."""
+    from pa.server.readiness import evaluate_ready
+
     ctx = request.app.state.ctx
-    required = {
-        "instance_agent",
-        "async_runtime",
-        "event_log",
-        "fleet_registry",
-    }
-    missing = sorted(required - ctx.services.keys())
-    if missing:
-        raise HTTPException(
-            status_code=503,
-            detail={"status": "starting", "missing_services": missing},
-        )
-    # FastAPI's public OpenAPI view is stable across router implementations.
-    # Newer FastAPI releases may keep included routers in ``app.routes`` as
-    # internal objects without a ``path`` attribute.
-    paths = set(request.app.openapi().get("paths", {}))
-    required_paths = {
-        "/api/cards",
-        "/api/items",
-        "/api/projects",
-        "/api/sync/status",
-    }
-    missing_routes = sorted(required_paths - paths)
-    if missing_routes:
-        raise HTTPException(
-            status_code=503,
-            detail={"status": "starting", "missing_routes": missing_routes},
-        )
+    blocked = evaluate_ready(request.app, ctx, ctx.settings)
+    if blocked:
+        raise HTTPException(status_code=503, detail=blocked)
+    lifecycle = dict(ctx.services.get("agent_lifecycle") or {})
     return {
         "status": "ready",
         "instance_id": ctx.settings.instance_id,
         "routes": ["cards", "items", "projects", "sync"],
+        "lifecycle": lifecycle.get("phase") or "ready",
     }
 
 
-@router.get("/runtime")
-async def async_runtime_status(request: Request) -> dict:
-    """Cheap telemetry that remains independent of disk/network health."""
-    runtime = request.app.state.ctx.require_service("async_runtime")
+def _runtime_status_snapshot(ctx) -> dict:
+    runtime = ctx.require_service("async_runtime")
     snapshot = runtime.snapshot()
     from pa.acp.sandbox_health import sandbox_health_registry
 
     snapshot["sandbox_health"] = sandbox_health_registry.snapshot()
-    snapshot["lifecycle"] = dict(
-        request.app.state.ctx.services.get("agent_lifecycle") or {}
-    )
-    agent = request.app.state.ctx.services.get("instance_agent")
+    snapshot["lifecycle"] = dict(ctx.services.get("agent_lifecycle") or {})
+    agent = ctx.services.get("instance_agent")
     runtimes = agent.list_runtimes() if agent else []
     snapshot["pa_mcp"] = [
         {
@@ -282,28 +257,36 @@ async def async_runtime_status(request: Request) -> dict:
             len(item._transcript_buffer) for item in runtimes
         ),
         "agent_prompts": sum(len(item._queue) for item in runtimes),
-        "dispatch_active": len(
-            request.app.state.ctx.services.get("dispatch_worker")._active
-        )
-        if request.app.state.ctx.services.get("dispatch_worker")
+        "dispatch_active": len(ctx.services.get("dispatch_worker")._active)
+        if ctx.services.get("dispatch_worker")
         else 0,
     }
-    dispatch_worker = request.app.state.ctx.services.get("dispatch_worker")
+    dispatch_worker = ctx.services.get("dispatch_worker")
     if dispatch_worker:
         snapshot["dispatch_worker"] = dispatch_worker.snapshot()
-    progress_service = request.app.state.ctx.services.get("progress_service")
+    progress_service = ctx.services.get("progress_service")
     if progress_service:
         snapshot["progress_backpressure"] = progress_service.snapshot()
-    dispatch_store = request.app.state.ctx.services.get("dispatch_store")
+    dispatch_store = ctx.services.get("dispatch_store")
     if dispatch_store and hasattr(dispatch_store, "storage_metrics"):
         snapshot["dispatch_storage"] = dispatch_store.storage_metrics()
-    provider_gate = request.app.state.ctx.services.get("provider_action_gate")
+    provider_gate = ctx.services.get("provider_action_gate")
     if provider_gate:
         snapshot["queues"]["provider_actions"] = provider_gate.snapshot()
     from pa.core.sse_observability import sse_connections
 
     snapshot["sse_connections"] = sse_connections.snapshot()
     return snapshot
+
+
+@router.get("/runtime")
+async def async_runtime_status(request: Request) -> dict:
+    """Runtime telemetry assembled off the event loop."""
+    ctx = request.app.state.ctx
+    runtime = ctx.require_service("async_runtime")
+    return await runtime.run_blocking(
+        "runtime.status_snapshot", _runtime_status_snapshot, ctx, timeout=5.0
+    )
 
 
 @router.get("/status")
