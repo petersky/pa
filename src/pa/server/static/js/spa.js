@@ -1685,6 +1685,10 @@
       }
       restoreHomeRefreshFocus("Home attention queue refreshed.");
     }
+    if (target && target.id === "home-command-grid") {
+      decorateLinks(target);
+      restoreHomeRefreshFocus("Home attention queue refreshed.");
+    }
     var boardBody = target && typeof target.closest === "function"
       ? target.closest(".board-column-body")
       : null;

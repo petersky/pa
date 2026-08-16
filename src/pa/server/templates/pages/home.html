@@ -1,14 +1,8 @@
 {% from "macros/layout.html" import page_layout %}
-{% from "macros/instance_identity.html" import instance_identity %}
-{% from "macros/cards.html" import attention_queue_card %}
 
 {% set main %}
 <div class="command-center"
-     data-home-attention-queue
-     hx-get="/?realm={{ active_realm }}"
-     hx-trigger="homeRefresh from:body"
-     hx-target="#app-view"
-     hx-swap="innerHTML">
+     data-home-attention-queue>
   <p class="sr-only" role="status" tabindex="-1"
      data-home-refresh-status aria-live="polite">Home attention queue refreshed.</p>
   <header class="page-heading">
@@ -20,7 +14,11 @@
     <a class="ghost" href="/work?realm={{ active_realm }}">Open work board</a>
   </header>
 
-  <div class="command-center-grid">
+  <div class="command-center-grid"
+       id="home-command-grid"
+       hx-get="/partials/home/sections?realm={{ active_realm }}"
+       hx-trigger="load, homeRefresh from:body"
+       hx-swap="innerHTML">
     <section class="panel command-section command-attention"
              aria-labelledby="needs-attention-title">
       <div class="panel-header">
@@ -28,27 +26,8 @@
           <p class="eyebrow">Operator-owned next steps</p>
           <h2 id="needs-attention-title">Needs attention</h2>
         </div>
-        <span class="section-count"
-              aria-label="Showing {{ needs_attention | length }} of {{ needs_attention_total }} actionable cards">
-          {{ needs_attention | length }}{% if needs_attention_total > needs_attention | length %} / {{ needs_attention_total }}{% endif %}
-        </span>
       </div>
-      {% if needs_attention %}
-      <div class="attention-card-list">
-        {% for order in needs_attention %}
-          {{ attention_queue_card(order) }}
-        {% endfor %}
-      </div>
-      {% else %}
-      <div class="empty-state compact-empty">
-        <h3>No operator action is waiting</h3>
-        <p class="muted">Waiting cards without a concrete request stay in Work and do not create false urgency.</p>
-      </div>
-      {% endif %}
-      <a class="section-route"
-         href="/work?realm={{ active_realm }}&attention=actionable">
-        View all actionable work
-      </a>
+      <p class="muted" role="status">Loading actionable work…</p>
     </section>
 
     <section class="panel command-section" aria-labelledby="active-work-title">
@@ -57,29 +36,8 @@
           <p class="eyebrow">Autonomous progress</p>
           <h2 id="active-work-title">In motion</h2>
         </div>
-        <span class="section-count"
-              aria-label="Showing {{ active_work | length }} of {{ active_work_total }} cards in motion">
-          {{ active_work | length }}{% if active_work_total > active_work | length %} / {{ active_work_total }}{% endif %}
-        </span>
       </div>
-      <div id="home-active-work">
-        {% if active_work %}
-        <div class="attention-card-list">
-          {% for order in active_work %}
-            {{ attention_queue_card(order) }}
-          {% endfor %}
-        </div>
-        {% else %}
-        <div class="empty-state compact-empty">
-          <h3>No autonomous work in motion</h3>
-          <p class="muted">Current dispatch or live-turn evidence will appear here.</p>
-        </div>
-        {% endif %}
-      </div>
-      <a class="section-route"
-         href="/work?realm={{ active_realm }}&attention=motion">
-        View all work in motion
-      </a>
+      <p class="muted" role="status">Loading work in motion…</p>
     </section>
 
     <section class="panel command-section" aria-labelledby="recent-outcomes-title">
@@ -88,41 +46,13 @@
           <p class="eyebrow">Terminal work</p>
           <h2 id="recent-outcomes-title">Recent outcomes</h2>
         </div>
-        <span class="section-count"
-              aria-label="Showing {{ recent_outcomes | length }} of {{ recent_outcomes_total }} completed cards">
-          {{ recent_outcomes | length }}{% if recent_outcomes_total > recent_outcomes | length %} / {{ recent_outcomes_total }}{% endif %}
-        </span>
       </div>
-      {% if recent_outcomes %}
-      <div class="attention-card-list">
-        {% for order in recent_outcomes %}
-          {{ attention_queue_card(order) }}
-        {% endfor %}
-      </div>
-      {% else %}
-      <div class="empty-state compact-empty">
-        <h3>No recent outcomes</h3>
-        <p class="muted">Terminal results will collect here without masquerading as active work.</p>
-      </div>
-      {% endif %}
-      <a class="section-route"
-         href="/work?realm={{ active_realm }}&attention=outcome">
-        View all outcomes
-      </a>
+      <p class="muted" role="status">Loading recent outcomes…</p>
     </section>
 
     <aside class="panel command-health" aria-labelledby="system-health-title">
       <div class="panel-header"><h2 id="system-health-title">Agent &amp; fleet health</h2></div>
-      <dl class="health-summary">
-        <div><dt>Local agent</dt><dd><span class="status status-{{ 'active' if agent_connected else 'waiting' }}">{{ 'Connected' if agent_connected else 'Offline' }}</span></dd></div>
-        <div><dt>This instance</dt><dd>{{ instance_identity(instance_id) }}</dd></div>
-        <div><dt>Fleet instances</dt><dd>{{ fleet_instances | length }}</dd></div>
-        <div><dt>Cached inventory</dt><dd>{{ home_inventory.loaded }} / {{ home_inventory.total }}</dd></div>
-      </dl>
-      {% if home_inventory.omitted %}
-      <p class="muted small">{{ home_inventory.omitted }} older cards are intentionally omitted from Home.</p>
-      {% endif %}
-      <a class="text-btn" href="/fleet">Review fleet health</a>
+      <p class="muted" role="status">Loading fleet health…</p>
     </aside>
   </div>
 </div>
