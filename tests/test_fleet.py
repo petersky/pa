@@ -1579,6 +1579,106 @@ class FleetOverviewTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(activity["capacity"]["consumed"], 0)
             self.assertEqual(activity["capacity_consumer_links"], [])
 
+    def test_required_readiness_ignores_stale_inconsistent_sync(self) -> None:
+        from pa.fleet.overview import field, required_readiness
+
+        stale_mismatch = {
+            "reachability": field(
+                "stale",
+                {"health": "up"},
+                observed_at="2026-08-16T16:00:00+00:00",
+            ),
+            "status": field(
+                "timeout", None, duration_ms=4000, error="status exceeded 4s deadline"
+            ),
+            "sync": {
+                **field(
+                    "timeout",
+                    None,
+                    duration_ms=4000,
+                    error="sync exceeded 4s deadline",
+                ),
+                "state": "stale",
+                "last_attempt_state": "timeout",
+                "value": {
+                    "consistent": False,
+                    "head": "old",
+                    "projection_head": "older",
+                },
+            },
+        }
+        stale_mismatch["reachability"]["last_attempt_state"] = "fresh"
+        self.assertEqual(required_readiness(stale_mismatch), "timeout")
+
+        live_mismatch = {
+            "reachability": field("fresh", {"health": "up"}),
+            "status": field("fresh", {"version": "1.0.11"}),
+            "sync": field(
+                "fresh",
+                {"consistent": False, "head": "a", "projection_head": "b"},
+            ),
+        }
+        self.assertEqual(required_readiness(live_mismatch), "error")
+
+    def test_background_refresh_skips_recent_failures_and_probes_the_rest(
+        self,
+    ) -> None:
+        from pa.fleet.overview import (
+            field,
+            should_skip_background_probe,
+        )
+
+        recent = field(
+            "timeout", None, duration_ms=4000, error="deadline"
+        )
+        self.assertTrue(should_skip_background_probe(recent))
+        old = field(
+            "timeout",
+            None,
+            duration_ms=4000,
+            error="deadline",
+            attempted_at="2026-08-16T00:00:00+00:00",
+        )
+        self.assertFalse(should_skip_background_probe(old))
+
+    async def test_refresh_required_dimensions_probes_active_instances(self) -> None:
+        from pa.fleet.overview import refresh_required_dimensions
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="local")
+            ctx = MagicMock(settings=settings)
+            active = FleetInstance(
+                instance_id="remote",
+                name="remote",
+                url="http://remote:8080",
+                lifecycle_state="active",
+            )
+            removed = FleetInstance(
+                instance_id="gone",
+                name="gone",
+                url="http://gone:8080",
+                lifecycle_state="removed",
+            )
+            probed = []
+
+            async def fake_probe(_ctx, inst, dimension, *, force=False):
+                probed.append((inst.instance_id, dimension, force))
+                return {"state": "fresh"}
+
+            with patch(
+                "pa.fleet.overview.probe_dimension", side_effect=fake_probe
+            ):
+                await refresh_required_dimensions(ctx, [active, removed])
+
+            self.assertEqual(
+                probed,
+                [
+                    ("remote", "reachability", False),
+                    ("remote", "status", False),
+                    ("remote", "sync", False),
+                ],
+            )
+
 
 class FleetUpdateUiTests(unittest.TestCase):
     def test_update_form_uses_peer_track_and_rechecks_selected_channel(self) -> None:

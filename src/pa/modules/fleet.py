@@ -145,7 +145,15 @@ from pa.fleet.join import (
     unwire_instance_peers,
 )
 from pa.fleet.membership import MembershipStore
-from pa.fleet.overview import DIMENSIONS, build_overview, cache_for, probe_dimension
+from pa.fleet.overview import (
+    BACKGROUND_REFRESH_INTERVAL,
+    BACKGROUND_STARTUP_DELAY,
+    DIMENSIONS,
+    build_overview,
+    cache_for,
+    probe_dimension,
+    refresh_required_dimensions,
+)
 from pa.fleet.placement import (
     PlacementCandidate,
     PlacementError,
@@ -4940,6 +4948,25 @@ async def _membership_convergence_loop(ctx: AppContext) -> None:
         except Exception:
             logger.exception("Periodic fleet membership convergence failed")
         await asyncio.sleep(5.0)
+
+
+async def _overview_refresh_loop(ctx: AppContext) -> None:
+    """Keep required fleet dimensions fresh without a browser on the Fleet page."""
+    from pa.server.shutdown import is_shutting_down, wait_for_shutdown
+
+    if await wait_for_shutdown(BACKGROUND_STARTUP_DELAY):
+        return
+    while not is_shutting_down():
+        try:
+            fleet = ctx.services.get("fleet_registry")
+            instances = list(fleet.list_instances()) if fleet else []
+            await refresh_required_dimensions(ctx, instances)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Periodic fleet overview refresh failed")
+        if await wait_for_shutdown(BACKGROUND_REFRESH_INTERVAL):
+            return
 
 
 def _require_instance(request: Request) -> None:
@@ -14078,6 +14105,11 @@ class FleetModule(Module):
             name="fleet-membership-convergence",
         )
         ctx.register_service("membership_convergence_task", convergence_task)
+        overview_refresh_task = asyncio.create_task(
+            _overview_refresh_loop(ctx),
+            name="fleet-overview-refresh",
+        )
+        ctx.register_service("overview_refresh_task", overview_refresh_task)
         recoverable = await async_runtime.run_blocking(
             "fleet.update_recovery",
             prepare_update_job_recovery,
@@ -14183,6 +14215,10 @@ class FleetModule(Module):
         if convergence_task:
             convergence_task.cancel()
             await asyncio.gather(convergence_task, return_exceptions=True)
+        overview_refresh_task = ctx.services.get("overview_refresh_task")
+        if overview_refresh_task:
+            overview_refresh_task.cancel()
+            await asyncio.gather(overview_refresh_task, return_exceptions=True)
         client = ctx.services.get("fleet_http_client")
         if client:
             await client.aclose()
