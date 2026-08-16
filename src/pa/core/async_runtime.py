@@ -28,9 +28,11 @@ T = TypeVar("T")
 _SLOW_OPERATION_SECONDS = {
     "dispatch.runnable_read": 2.0,
     "filesystem.github_credentials_read": 2.0,
+    "session_lifecycle.sessions": 2.0,
     "sync.object_collect": 2.0,
     "sync.object_list": 2.0,
     "workspace.project_provision": 5.0,
+    "workspace.reconcile_terminal_state": 2.0,
 }
 
 

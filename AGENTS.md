@@ -16,7 +16,7 @@ files under the data dir) — there is no separate database, cache, or broker to
 ### Run / lint / test / build
 - Run the server (dev): `uv run pa serve --host 127.0.0.1 --port 8081`. There is no
   separate lint step configured in CI; the CI "checks" are the boot smoke test + pytest
-  (see `.github/workflows/ci.yml`).
+  (see `.github/workflows/ci.yml`). Release PRs (`release/v*`) skip the pytest shards.
 - Boot smoke test: `uv run python -c "from pa.core.kernel import Kernel; Kernel.boot().build_app()"`.
 - Tests: `uv run pytest -q` (serial) or `uv run pytest -n auto --dist worksteal`
   (parallel; CI uses this plus two shards). Chrome dump-dom layout tests are

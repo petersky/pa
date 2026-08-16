@@ -1911,6 +1911,7 @@ class DispatchStore:
         target_instance_id: str | None = None,
         realm_id: str | None = None,
         limit: int = 100,
+        deep: bool = True,
     ) -> list[DispatchRecord]:
         self._require_readable()
         self._yield_to_index_writer()
@@ -1925,12 +1926,12 @@ class DispatchStore:
             ]
         if realm_id:
             records = [record for record in records if record.realm_id == realm_id]
-        return [
-            self._snapshot(record)
-            for record in sorted(
-                records, key=lambda record: record.updated_at, reverse=True
-            )[:limit]
+        selected = sorted(records, key=lambda record: record.updated_at, reverse=True)[
+            :limit
         ]
+        if deep:
+            return [self._snapshot(record) for record in selected]
+        return [record.model_copy(deep=False) for record in selected]
 
     def pending_goal_lifecycle(
         self, authority_instance_id: str, *, limit: int = 100
@@ -4153,26 +4154,48 @@ class DispatchStore:
         for record in self.waiting():
             if record.state == "waiting_capacity" and not record.placement_decision:
                 self.promote_waiting(record)
-        return [record for record in self.list(limit=1000) if record.state == "queued"]
+        self._require_readable()
+        self._yield_to_index_writer()
+        with self._index_lock:
+            return [
+                self._snapshot(record)
+                for record in self._records.values()
+                if record.state == "queued"
+            ]
 
     def pending(self) -> list[DispatchRecord]:
-        return [
-            record
-            for record in self.list(limit=1000)
-            if record.state == "completion_pending"
-        ]
+        self._require_readable()
+        self._yield_to_index_writer()
+        with self._index_lock:
+            return [
+                self._snapshot(record)
+                for record in self._records.values()
+                if record.state == "completion_pending"
+            ]
 
     def pending_followup_turns(self) -> list[tuple[DispatchRecord, dict[str, Any]]]:
         pending: list[tuple[DispatchRecord, dict[str, Any]]] = []
         now = datetime.now(UTC)
-        for record in self.list(limit=1000):
-            for turn in record.followup_turns:
+        self._require_readable()
+        self._yield_to_index_writer()
+        with self._index_lock:
+            candidates = [
+                record
+                for record in self._records.values()
+                if any(
+                    turn.get("delivery_state") == "pending"
+                    for turn in record.followup_turns
+                )
+            ]
+        for record in candidates:
+            snapshot = self._snapshot(record)
+            for turn in snapshot.followup_turns:
                 if turn.get("delivery_state") != "pending":
                     continue
                 retry_at = turn.get("next_retry_at")
                 if retry_at and datetime.fromisoformat(str(retry_at)) > now:
                     continue
-                pending.append((record, turn))
+                pending.append((snapshot, turn))
         return pending
 
     def reconcile_interrupted(self) -> list[DispatchRecord]:

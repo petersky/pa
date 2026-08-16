@@ -275,18 +275,25 @@ class SyncEngine:
                 await asyncio.sleep(interval_seconds)
 
     async def _fetch_peer(
-        self, client: httpx.AsyncClient, realm_id: str, route: PeerRoute
+        self,
+        client: httpx.AsyncClient,
+        realm_id: str,
+        route: PeerRoute,
+        *,
+        local_hashes: list[str] | None = None,
     ) -> dict:
         base = route.target_url.rstrip("/")
         descriptor = self._instance(route.target_instance_id, base)
         try:
-            local_hashes = await self._offload(
-                "sync.object_list", self.store.list_hashes
+            hashes = (
+                local_hashes
+                if local_hashes is not None
+                else await self._offload("sync.object_list", self.store.list_hashes)
             )
             have = await self._request(
                 "POST",
                 f"{base}/api/sync/have",
-                payload={"realm_id": realm_id, "hashes": local_hashes},
+                payload={"realm_id": realm_id, "hashes": hashes},
             )
             have.raise_for_status()
             have_data = await self._response_json(have)
@@ -563,8 +570,16 @@ class SyncEngine:
                 self._set_state(realm_id, phase="exchanging", attempt=pass_number)
                 instances = []
                 all_conflicts = []
+                local_hashes = await self._offload(
+                    "sync.object_list", self.store.list_hashes
+                )
                 fetched = await asyncio.gather(
-                    *(self._fetch_peer(client, realm_id, route) for route in routes)
+                    *(
+                        self._fetch_peer(
+                            client, realm_id, route, local_hashes=local_hashes
+                        )
+                        for route in routes
+                    )
                 )
                 for peer in fetched:
                     if peer["head"] and peer["status"] == "reachable":

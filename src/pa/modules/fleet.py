@@ -3717,6 +3717,12 @@ async def fleet_workshop(request: Request, refresh: bool = False) -> dict:
 @router.get("/fleet/workshop/events")
 async def fleet_workshop_events(request: Request) -> StreamingResponse:
     """Stream one fleet-wide Workshop projection with bounded probe fallback."""
+    from pa.server.shutdown import (
+        is_shutting_down,
+        wait_for_shutdown,
+        wait_for_shutdown_or,
+    )
+
     require_user(request)
     ctx = request.app.state.ctx
     fleet: FleetRegistry = ctx.require_service("fleet_registry")
@@ -3725,11 +3731,13 @@ async def fleet_workshop_events(request: Request) -> StreamingResponse:
     async def stream() -> AsyncIterator[str]:
         last_digest = ""
         sequence = 0
-        while not await request.is_disconnected():
+        while not is_shutting_down() and not await request.is_disconnected():
             instances = list(fleet.list_instances())
-            observations = await _refresh_workshop_dimensions(
-                ctx, instances, force=False
+            stopping, observations = await wait_for_shutdown_or(
+                _refresh_workshop_dimensions(ctx, instances, force=False)
             )
+            if stopping or observations is None:
+                return
             snapshot = _build_workshop(
                 ctx, instances, list(peer_table.all_routes()), observations
             )
@@ -3737,7 +3745,8 @@ async def fleet_workshop_events(request: Request) -> StreamingResponse:
                 snapshot, last_digest, sequence
             )
             yield event
-            await asyncio.sleep(2.0)
+            if await wait_for_shutdown(2.0):
+                return
 
     return StreamingResponse(
         stream(),

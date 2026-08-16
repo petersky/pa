@@ -27,6 +27,14 @@ class RepositoryProjectionTests(unittest.TestCase):
         log = EventLog(objects, root, instance_id)
         return CardProjection(root / "pa.db", log)
 
+    def test_projection_enables_wal(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = self.projection(Path(tmp))
+            store.create_project(ProjectCreate(title="WAL"))
+            with sqlite3.connect(Path(tmp) / "pa.db") as conn:
+                mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
+            self.assertEqual(str(mode).lower(), "wal")
+
     def test_many_to_many_links_and_instance_checkouts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = self.projection(Path(tmp))

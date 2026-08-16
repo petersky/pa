@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 import unittest
 from unittest.mock import patch
 
 from pa.server.shutdown import (
     ShutdownAwareServer,
+    is_shutting_down,
     reset_shutdown_event,
     signal_shutdown,
     wait_for_shutdown_or,
@@ -45,3 +47,21 @@ class ShutdownCoordinationTests(unittest.IsolatedAsyncioTestCase):
         stopping, _ = await wait_for_shutdown_or(asyncio.sleep(60))
         self.assertTrue(stopping)
         parent.assert_called_once_with(15, None)
+
+    async def test_signal_from_another_thread_wakes_waiters(self) -> None:
+        started = asyncio.Event()
+
+        async def waiter() -> tuple[bool, object | None]:
+            started.set()
+            return await wait_for_shutdown_or(asyncio.sleep(60))
+
+        task = asyncio.create_task(waiter())
+        await started.wait()
+        await asyncio.sleep(0)
+        thread = threading.Thread(target=signal_shutdown)
+        thread.start()
+        thread.join()
+        stopping, value = await asyncio.wait_for(task, timeout=1.0)
+        self.assertTrue(stopping)
+        self.assertIsNone(value)
+        self.assertTrue(is_shutting_down())
